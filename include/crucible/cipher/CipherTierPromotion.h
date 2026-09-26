@@ -1,13 +1,15 @@
 #pragma once
 
-// A tier wrapper refuses to strengthen itself, so a cold value cannot
+// A tier band refuses to strengthen itself, so a cold value cannot
 // relabel itself as replicated in memory. Every real movement between
 // tiers goes through one of the factories below.
 
 #include <crucible/Types.h>
-#include <crucible/safety/_CipherTier.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/sessions/_SessionDelegate.h>
+#include <fixy/Bands.h>
+#include <fixy/session/Delegate.h>
+#include <fixy/session/Protocol.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <concepts>
 #include <expected>
@@ -16,9 +18,9 @@
 
 namespace crucible::cipher {
 
-using ::crucible::safety::CipherTier;
-using ::crucible::safety::CipherTierLattice;
-using ::crucible::safety::CipherTierTag_v;
+using ::fixy::CipherTier;
+using ::fixy::CipherTierLattice;
+using ::fixy::CipherTierTag_v;
 
 // The two argument orders differ, and that difference is the whole
 // content of the pair. The tiers form a chain from cold through warm
@@ -27,10 +29,10 @@ using ::crucible::safety::CipherTierTag_v;
 // the destination is strong enough to replace the source. A demotion
 // asks the reverse.
 template <CipherTierTag_v From, CipherTierTag_v To>
-inline constexpr bool can_promote_tier_v = ::crucible::decide::tier_replaces(To, From);
+inline constexpr bool can_promote_tier_v = ::foundation::decide::tier_replaces(To, From);
 
 template <CipherTierTag_v From, CipherTierTag_v To>
-inline constexpr bool can_demote_tier_v = ::crucible::decide::tier_replaces(From, To);
+inline constexpr bool can_demote_tier_v = ::foundation::decide::tier_replaces(From, To);
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
 concept PromotableTier = can_promote_tier_v<From, To> && std::move_constructible<T>;
@@ -64,20 +66,25 @@ concept RestorableHashed = requires(const T& v) {
 template <typename T>
 concept RestorableTier = std::move_constructible<T> && RestorableHashed<T>;
 
+// A promotion and a demotion each move the value into the band of the
+// destination tier.  The band's own door, mint_band, asserts the tier,
+// and these two are the only sites that assert a tier the source did
+// not hold.
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
     requires PromotableTier<From, To, T>
 [[nodiscard]] constexpr CipherTier<To, T>
 mint_promote(CipherTier<From, T> source) noexcept(std::is_nothrow_move_constructible_v<T>) {
-    return CipherTier<To, T>{std::move(source).consume()};
+    return ::fixy::mint_band<CipherTier<To, T>>(std::move(source).consume());
 }
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
     requires DemotableTier<From, To, T>
 [[nodiscard]] constexpr CipherTier<To, T>
 mint_demote(CipherTier<From, T> source) noexcept(std::is_nothrow_move_constructible_v<T>) {
-    return CipherTier<To, T>{std::move(source).consume()};
+    return ::fixy::mint_band<CipherTier<To, T>>(std::move(source).consume());
 }
 
+// A diagnostic prints a refusal with ::foundation::reflect::enum_name.
 enum class RestoreError : std::uint8_t {
     EmptyContentHash,
     EmptyColdHandle,
@@ -85,29 +92,14 @@ enum class RestoreError : std::uint8_t {
     BackendUnavailable,
 };
 
-[[nodiscard]] consteval const char* restore_error_name(RestoreError error) noexcept {
-    switch (error) {
-        case RestoreError::EmptyContentHash:
-            return "EmptyContentHash";
-        case RestoreError::EmptyColdHandle:
-            return "EmptyColdHandle";
-        case RestoreError::ContentHashMismatch:
-            return "ContentHashMismatch";
-        case RestoreError::BackendUnavailable:
-            return "BackendUnavailable";
-        default:
-            return "<unknown RestoreError>";
-    }
-}
+template <typename T>
+using ColdTierHandle = ::fixy::cipher_tier::Cold<T>;
 
 template <typename T>
-using ColdTierHandle = ::crucible::safety::cipher_tier::Cold<T>;
+using WarmTierHandle = ::fixy::cipher_tier::Warm<T>;
 
 template <typename T>
-using WarmTierHandle = ::crucible::safety::cipher_tier::Warm<T>;
-
-template <typename T>
-using HotTierHandle = ::crucible::safety::cipher_tier::Hot<T>;
+using HotTierHandle = ::fixy::cipher_tier::Hot<T>;
 
 template <typename T>
     requires RestorableTier<T>
@@ -129,17 +121,22 @@ mint_restore(ColdTierHandle<T> cold_handle,
     return mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(std::move(cold_handle));
 }
 
+// The protocol of a hand-off of a hot replica: one hot-tier value and
+// End.  HotPromoteDelegate and HotPromoteAccept state the hand-off of an
+// endpoint of that protocol in a protocol type.  A hand-off that runs is
+// a Send of the DelegatedSession that fixy/session/Delegate.h mints, and
+// no mint admits a protocol that holds one of the two heads.
 template <typename T>
 using HotPromotePayload = HotTierHandle<T>;
 
 template <typename T>
-using HotPromote = ::crucible::safety::proto::Send<HotPromotePayload<T>, ::crucible::safety::proto::End>;
+using HotPromote = ::fixy::session::Send<HotPromotePayload<T>, ::fixy::session::End>;
 
-template <typename T, typename K = ::crucible::safety::proto::End>
-using HotPromoteDelegate = ::crucible::safety::proto::Delegate<HotPromote<T>, K>;
+template <typename T, typename K = ::fixy::session::End>
+using HotPromoteDelegate = ::fixy::session::Delegate<HotPromote<T>, K>;
 
-template <typename T, typename K = ::crucible::safety::proto::End>
-using HotPromoteAccept = ::crucible::safety::proto::Accept<HotPromote<T>, K>;
+template <typename T, typename K = ::fixy::session::End>
+using HotPromoteAccept = ::fixy::session::Accept<HotPromote<T>, K>;
 
 namespace detail::cipher_tier_promotion_self_test {
 
@@ -157,20 +154,26 @@ static_assert(can_demote_tier_v<CipherTierTag_v::Hot, CipherTierTag_v::Cold>);
 static_assert(can_demote_tier_v<CipherTierTag_v::Warm, CipherTierTag_v::Cold>);
 static_assert(!can_demote_tier_v<CipherTierTag_v::Cold, CipherTierTag_v::Hot>);
 
-static_assert(
-    std::is_same_v<decltype(mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(ColdHash{ContentHash{1}})),
-                   WarmHash>);
-static_assert(std::is_same_v<
-              decltype(mint_demote<CipherTierTag_v::Hot, CipherTierTag_v::Cold>(HotHash{ContentHash{2}})), ColdHash>);
+static_assert(std::is_same_v<decltype(mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(
+                                 ::fixy::mint_band<ColdHash>(ContentHash{1}))),
+                             WarmHash>);
+static_assert(std::is_same_v<decltype(mint_demote<CipherTierTag_v::Hot, CipherTierTag_v::Cold>(
+                                 ::fixy::mint_band<HotHash>(ContentHash{2}))),
+                             ColdHash>);
+static_assert(mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Hot>(::fixy::mint_band<ColdHash>(ContentHash{3}))
+                  .peek()
+              == ContentHash{3});
+
+static_assert(::foundation::reflect::enum_name(RestoreError::ContentHashMismatch) == "ContentHashMismatch");
 
 using HotPromoteHash = HotPromote<ContentHash>;
 using HotPromoteCarrier = HotPromoteDelegate<ContentHash>;
 using HotPromotePeer = HotPromoteAccept<ContentHash>;
 
-static_assert(::crucible::safety::proto::is_well_formed_v<HotPromoteHash>);
-static_assert(::crucible::safety::proto::DelegatesTo<HotPromoteCarrier, HotPromoteHash>);
-static_assert(::crucible::safety::proto::AcceptsFrom<HotPromotePeer, HotPromoteHash>);
-static_assert(std::is_same_v<::crucible::safety::proto::dual_of_t<HotPromoteCarrier>, HotPromotePeer>);
+static_assert(::fixy::session::is_well_formed_v<HotPromoteHash>);
+static_assert(::fixy::session::DelegatesTo<HotPromoteCarrier, HotPromoteHash>);
+static_assert(::fixy::session::AcceptsFrom<HotPromotePeer, HotPromoteHash>);
+static_assert(std::is_same_v<::fixy::session::dual_of_t<HotPromoteCarrier>, HotPromotePeer>);
 
 }  // namespace detail::cipher_tier_promotion_self_test
 

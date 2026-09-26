@@ -7735,10 +7735,12 @@ crucible_neg_compile_test(neg_storage_nbytes_det_cross_tier
 # body is retained.  ValidCipherHead catches the value at the call
 # site at compile-time via the typed alias path; the existing body
 # guard catches it at runtime if a caller bypasses the typed path.
-crucible_neg_compile_test(neg_cipher_head_zero_literal
-  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_cipher_head_default_construct
-  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+crucible_neg_compile_multi_test(neg_cipher_head_zero_literal
+  "__builtin_trap... is not a constant expression"
+  "in .constexpr. expansion of .fixy::mint_refined<IsNonZero.., crucible::ContentHash>.crucible::ContentHash.0..")
+crucible_neg_compile_multi_test(neg_cipher_head_default_construct
+  "__builtin_trap... is not a constant expression"
+  "in .constexpr. expansion of .fixy::mint_refined<IsNonZero.., crucible::ContentHash>.empty..")
 
 # ─── ValidMerkleRoot neg-compile tests ──────────────────────────────
 #
@@ -9041,20 +9043,30 @@ crucible_neg_compile_test(neg_hot_path_cold_at_hot_fence
 # user state declared PER_REQUEST silently flowed to fleet-durable
 # cold storage).  Companion to the FOUND-G11 wrapper-surface
 # matrix-fill fixtures.
-crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
-  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_multi_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
+  "no matching function for call to .crucible::Cipher::commit_per_fleet."
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
 
-# FOUND-G12-AUDIT — matrix-fill of the lifetime → tier rejection set:
-#   neg_opaque_lifetime_per_request_at_per_program_fence — secondary
-#       leak fence (request data cannot promise program-long persistence;
-#       Warm-tier cross-restart leak class).
-#   neg_opaque_lifetime_per_program_at_per_fleet_fence — distinct bug
-#       class (program-instance scratch replicated across fleet =
-#       canary / blue-green contamination on reshard).
-crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_program_fence
-  "constraints not satisfied|no matching function|associated constraints")
-crucible_neg_compile_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
-  "constraints not satisfied|no matching function|associated constraints")
+# The rest of the lifetime to tier refusals.  A request-scoped region
+# does not reach the warm tier, which survives a restart, and a
+# program-scoped region does not reach the fleet-wide cold tier.  A bare
+# pointer and a band of another lattice state no scope, so they reach no
+# commit entry point.
+crucible_neg_compile_multi_test(neg_opaque_lifetime_per_request_at_per_program_fence
+  "no matching function for call to .crucible::Cipher::commit_per_program."
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_PROGRAM.. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
+  "no matching function for call to .crucible::Cipher::commit_per_fleet."
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_PROGRAM>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_cipher_commit_per_request_bare_pointer
+  "no matching function for call to .crucible::Cipher::commit_per_request."
+  "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
+crucible_neg_compile_multi_test(neg_cipher_commit_per_request_wrong_band
+  "no matching function for call to .crucible::Cipher::commit_per_request."
+  "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Hot>, const crucible::RegionNode.>.. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_cipher_commit_per_program_bare_pointer
+  "no matching function for call to .crucible::Cipher::commit_per_program."
+  "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
 
 # ─── FOUND-G32 MemOrder production-call-site neg-compile ───────────
 #
@@ -10267,41 +10279,46 @@ crucible_neg_compile_multi_test(neg_computation_cache_closure_argument
 crucible_neg_compile_test(neg_subset_row_mask_geq_64
   "constraints not satisfied|template constraint failure|associated constraints")
 
-# ─── FOUND-I09 record_event row-fence ───────────────────────────────
-# Cipher::record_event<CallerRow> requires Subrow<Row<IO, Block>,
-# CallerRow>.  Empty / Hot / Pure caller rows fail substitution at
-# the requires-clause; this fixture pins that the fence fires loudly
-# instead of silently misdispatching to the file-I/O path.
-crucible_neg_compile_test(neg_cipher_record_event_pure_row
-  "constraints not satisfied|template constraint failure|associated constraints")
-
-# ─── FOUND-I09-AUDIT (Finding A) per-axis neg-compile parity ────────
-# Each fixture pins a distinct rejection leg of the
-# Subrow<Row<IO, Block>, CallerRow> constraint:
-#   • io_only    — Row<IO> rejects (missing Block leg)
-#   • block_only — Row<Block> rejects (missing IO leg)
-#   • alloc_only — Row<Alloc> rejects (wrong axis entirely)
-#   • bg_only    — Row<Bg> rejects (Bg-tag does not imply IO/Block)
-# Together with neg_pure_row, these four prevent any silent widening
-# of the constraint via single-atom drift.
-crucible_neg_compile_test(neg_cipher_record_event_io_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_cipher_record_event_block_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_cipher_record_event_alloc_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_cipher_record_event_bg_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-
-# An open view of the store needs a context whose row admits IO and Block.
-# The row of the hot foreground context is empty, and the row of the
-# startup context admits IO but not Block, so the gate refuses both.
+# Every Cipher operation that reaches the store takes a context whose row
+# admits IO and Block: open, mint_open_view, record_event and
+# persist_session_events.  Each fixture below refuses one context, and
+# the second regex names the context the gate refused.  The four
+# record_event rows hold each atom of the gate on its own: IO alone,
+# Block alone, Alloc alone, and the background drain row, whose Bg atom
+# implies neither IO nor Block.
+crucible_neg_compile_multi_test(neg_cipher_record_event_pure_row
+  "no matching function for call to .crucible::Cipher::record_event."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
+crucible_neg_compile_multi_test(neg_cipher_record_event_io_only
+  "no matching function for call to .crucible::Cipher::record_event."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >")
+crucible_neg_compile_multi_test(neg_cipher_record_event_block_only
+  "no matching function for call to .crucible::Cipher::record_event."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >")
+crucible_neg_compile_multi_test(neg_cipher_record_event_alloc_only
+  "no matching function for call to .crucible::Cipher::record_event."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >")
+crucible_neg_compile_multi_test(neg_cipher_record_event_bg_only
+  "no matching function for call to .crucible::Cipher::record_event."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >")
 crucible_neg_compile_multi_test(neg_cipher_open_view_hot_fg_ctx
-  "no matching function for call to .crucible::Cipher::mint_open_view.crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg, "
-  "required for the satisfaction of .CtxAdmits<Ctx, crucible::effects::Row<crucible::effects::Effect::IO, crucible::effects::Effect::Block> >")
+  "no matching function for call to .crucible::Cipher::mint_open_view.foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. const."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
 crucible_neg_compile_multi_test(neg_cipher_open_view_init_ctx
-  "no matching function for call to .crucible::Cipher::mint_open_view.crucible::effects::ColdInitCtx."
-  "required for the satisfaction of .CtxAdmits<Ctx, crucible::effects::Row<crucible::effects::Effect::IO, crucible::effects::Effect::Block> >")
+  "no matching function for call to .crucible::Cipher::mint_open_view.fixy::ColdInitCtx. const."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
+crucible_neg_compile_multi_test(neg_cipher_open_ctx_without_block
+  "no matching function for call to .crucible::Cipher::open.const fixy::ColdInitCtx&, "
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
+crucible_neg_compile_multi_test(neg_cipher_open_non_context
+  "no matching function for call to .crucible::Cipher::open.foundation::effects::Test, "
+  "the expression .is_exec_ctx_v<T> .with T = foundation::effects::Test.. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_cipher_persist_session_events_fg_ctx
+  "no matching function for call to .crucible::Cipher::persist_session_events."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
+crucible_neg_compile_multi_test(neg_cipher_persist_session_events_compile_ctx
+  "no matching function for call to .crucible::Cipher::persist_session_events."
+  "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
 
 # ─── FOUND-F12-AUDIT federation-bridge concept-fence parity ─────────
 # F12's federation primitives carry the SAME `IsCacheableFunction<FnPtr>
@@ -10519,26 +10536,33 @@ crucible_neg_compile_test(neg_cipher_tier_at_cross_tier_mixing
 crucible_neg_compile_test(neg_cipher_tier_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
-# GAPS-041 — named CipherTier mint sites must preserve direction:
-# promote is upward-only, demote is downward-only.
-crucible_neg_compile_test(neg_cipher_tier_promote_hot_to_cold
-  "constraints not satisfied|no matching function|associated constraints")
-crucible_neg_compile_test(neg_cipher_tier_promote_unmovable_payload
-  "PromotableTier|constraints not satisfied|no matching function|associated constraints")
-crucible_neg_compile_test(neg_cipher_tier_demote_cold_to_hot
-  "constraints not satisfied|no matching function|associated constraints")
-crucible_neg_compile_test(neg_cipher_tier_demote_unmovable_payload
-  "DemotableTier|constraints not satisfied|no matching function|associated constraints")
-crucible_neg_compile_test(neg_cipher_tier_restore_unmovable_payload
-  "RestorableTier|constraints not satisfied|no matching function|associated constraints")
-crucible_neg_compile_test(neg_cipher_tier_restore_wrong_value_type
-  "no matching function|could not convert|cannot convert|no viable")
-# fixy-CR-10 fixture: production-shape T (movable, no
-# content_hash_projection specialization) must red at the
-# RestorableHashed gate; pre-CR-10 it compiled silently with the
-# verification check elided for every T != ContentHash.
-crucible_neg_compile_test(neg_cipher_tier_restore_no_hash_projection
-  "RestorableTier|RestorableHashed|content_hash_projection|constraints not satisfied|no matching function|associated constraints")
+# The tier mints keep their direction: mint_promote goes up the chain
+# only and mint_demote goes down only.  Each mint and mint_restore also
+# refuses a payload that cannot move, and mint_restore refuses a cold
+# band over another value type and a payload with no content hash
+# projection, because without the projection the hash check would run
+# for ContentHash alone.
+crucible_neg_compile_multi_test(neg_cipher_tier_promote_hot_to_cold
+  "no matching function for call to .mint_promote<foundation::algebra::lattices::CipherTierTag::Hot, foundation::algebra::lattices::CipherTierTag::Cold>"
+  "the expression .can_promote_tier_v<From, To> .with From = foundation::algebra::lattices::CipherTierTag::Hot. To = foundation::algebra::lattices::CipherTierTag::Cold.. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_cipher_tier_promote_unmovable_payload
+  "required for the satisfaction of .PromotableTier<From, To, T>. .with From = foundation::algebra::lattices::CipherTierTag::Cold. To = foundation::algebra::lattices::CipherTierTag::Warm. T = ImmovablePayload."
+  "required for the satisfaction of .move_constructible<T>. .with T = ImmovablePayload.")
+crucible_neg_compile_multi_test(neg_cipher_tier_demote_cold_to_hot
+  "no matching function for call to .mint_demote<foundation::algebra::lattices::CipherTierTag::Cold, foundation::algebra::lattices::CipherTierTag::Hot>"
+  "the expression .can_demote_tier_v<From, To> .with From = foundation::algebra::lattices::CipherTierTag::Cold. To = foundation::algebra::lattices::CipherTierTag::Hot.. evaluated to .false.")
+crucible_neg_compile_multi_test(neg_cipher_tier_demote_unmovable_payload
+  "required for the satisfaction of .DemotableTier<From, To, T>. .with From = foundation::algebra::lattices::CipherTierTag::Hot. To = foundation::algebra::lattices::CipherTierTag::Warm. T = ImmovablePayload."
+  "required for the satisfaction of .move_constructible<T>. .with T = ImmovablePayload.")
+crucible_neg_compile_multi_test(neg_cipher_tier_restore_unmovable_payload
+  "required for the satisfaction of .RestorableTier<T>. .with T = ImmovablePayload."
+  "required for the satisfaction of .move_constructible<T>. .with T = ImmovablePayload.")
+crucible_neg_compile_multi_test(neg_cipher_tier_restore_wrong_value_type
+  "could not convert .std::declval<foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Cold>, int> >"
+  "from .Graded<.....,.....,int>. to .Graded<.....,.....,crucible::ContentHash>.")
+crucible_neg_compile_multi_test(neg_cipher_tier_restore_no_hash_projection
+  "no matching function for call to .mint_restore<ProductionPayload>"
+  "required for the satisfaction of .RestorableHashed<T>. .with T = ProductionPayload.")
 
 # ─── FOUND-G51 ResidencyHeat negative-compile fixtures ──────────────
 #
@@ -11633,8 +11657,9 @@ crucible_neg_compile_test(neg_refined_withinrange_alias_rejects_half_ordering
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
-crucible_neg_compile_test(neg_cipher_wrong_tag
-  "cannot convert.*SchemaTable.*Sealed.*Cipher::OpenView")
+crucible_neg_compile_multi_test(neg_cipher_wrong_tag
+  "cannot convert .fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Sealed>. to .const crucible::Cipher::OpenView&."
+  "aka .const fixy::ScopedView<crucible::Cipher, crucible::cipher_state::Open>&.")
 
 # ─── Session-type negative-compile tests (SEPLOG-J4, task #354) ───
 #
@@ -14614,19 +14639,17 @@ crucible_neg_compile_fixy_test(neg_fixy_perm_mint_grid_permissions_zero_n
     "constraints.*not satisfied"
     "can_split_grid|mint_grid_permissions|no matching")
 
-# ── FIXY-V-031 — Cipher::open trust-boundary fixtures (HS14) ────────
-# Cipher::open()'s signature was changed from `const std::string& root`
-# to `crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>`
-# so every operator-supplied path is mint-typed at the boundary.  HS14
-# requires ≥2 neg-compile fixtures per new mint; V-031 ships three —
-# bare-string rejection, cross-tag (Sanitized→External) rejection, and
-# sanitize_path() wrong-source-tag rejection.
+# Cipher::open takes the root as fixy::Path<fixy::tags::source::External>,
+# so every operator-supplied path is tagged at the boundary, and open runs
+# the sanitizer itself.  It refuses a bare string and a path that a caller
+# tagged Sanitized.  The third fixture refuses sanitize_path on a path of
+# the wrong source.
 crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_bare_string
-    "cannot convert|could not convert"
-    "wrap::Path|source::External")
+    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const char .35.."
+    "to type .fixy::Path<fixy::tags::source::External>.")
 crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_sanitized_input
-    "cannot convert|could not convert|no matching function"
-    "source::Sanitized|source::External")
+    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, std::remove_reference<fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>&>::type."
+    "aka .fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>... to type .fixy::Path<fixy::tags::source::External>.")
 crucible_neg_compile_fixy_test(neg_fixy_sanitize_path_rejects_wrong_source
     "invalid initialization|could not convert|cannot convert|no matching function"
     "source::External|source::FromUser")

@@ -4,8 +4,8 @@
 // wait refuses the value at compile time instead of stalling on it.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_Wait.h>
+#include <fixy/Bands.h>
+#include <fixy/Ctx.h>
 #include "test_assert.h"
 
 #include <cstdio>
@@ -15,14 +15,18 @@
 #include <type_traits>
 #include <utility>
 
-// The open view of the store needs a context whose row admits IO and Block.
-[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
-    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+// Opening the store and its open view need a context whose row admits IO
+// and Block.
+[[nodiscard]] inline ::fixy::TestRunnerCtx store_ctx() {
+    return ::fixy::TestRunnerCtx{::foundation::effects::testing::test()};
 }
 
-using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
-
 using crucible::Cipher;
+
+[[nodiscard]] static Cipher open_cipher(const char* dir) {
+    return Cipher::open(store_ctx(), ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+}
+
 using crucible::ContentHash;
 using crucible::RegionNode;
 using crucible::Arena;
@@ -32,10 +36,10 @@ using crucible::OpIndex;
 using crucible::SlotId;
 using crucible::TensorMeta;
 using crucible::ScalarType;
-using crucible::safety::Wait;
-using crucible::safety::WaitStrategy_v;
+using ::fixy::Wait;
+using ::fixy::WaitStrategy_v;
 
-static auto g_test = crucible::effects::testing::test();
+static auto g_test = ::foundation::effects::testing::test();
 
 static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
     constexpr uint32_t NUM_OPS = 1;
@@ -64,7 +68,7 @@ static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
 static void test_store_pinned_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
@@ -77,14 +81,14 @@ static void test_store_pinned_bit_equality(const char* dir) {
 static void test_store_pinned_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.store_pinned(view, payload, nullptr));
     using Want = Wait<WaitStrategy_v::Block, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "store_pinned must return Wait<Block, ContentHash>");
-    static_assert(Got::strategy == WaitStrategy_v::Block);
+    static_assert(::fixy::band_tier_v<Got> == WaitStrategy_v::Block);
 
     // The result must not be discarded.
     auto p = cipher.store_pinned(view, payload, nullptr);
@@ -94,7 +98,7 @@ static void test_store_pinned_type_identity(const char* dir) {
 static void test_store_pinned_payload_route(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
 
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -111,12 +115,12 @@ static void test_store_pinned_payload_route(const char* dir) {
 // itself and no stronger requirement.
 static void test_block_fence_simulation() {
     using B = Wait<WaitStrategy_v::Block, ContentHash>;
-    static_assert(B::satisfies<WaitStrategy_v::Block>);
-    static_assert(!B::satisfies<WaitStrategy_v::Park>);
-    static_assert(!B::satisfies<WaitStrategy_v::AcquireWait>);
-    static_assert(!B::satisfies<WaitStrategy_v::UmwaitC01>);
-    static_assert(!B::satisfies<WaitStrategy_v::BoundedSpin>);
-    static_assert(!B::satisfies<WaitStrategy_v::SpinPause>);
+    static_assert(::fixy::satisfies_v<B, WaitStrategy_v::Block>);
+    static_assert(!::fixy::satisfies_v<B, WaitStrategy_v::Park>);
+    static_assert(!::fixy::satisfies_v<B, WaitStrategy_v::AcquireWait>);
+    static_assert(!::fixy::satisfies_v<B, WaitStrategy_v::UmwaitC01>);
+    static_assert(!::fixy::satisfies_v<B, WaitStrategy_v::BoundedSpin>);
+    static_assert(!::fixy::satisfies_v<B, WaitStrategy_v::SpinPause>);
 }
 
 static void test_layout_invariant() {
@@ -124,7 +128,7 @@ static void test_layout_invariant() {
 }
 
 template <typename W>
-    requires(W::template satisfies<WaitStrategy_v::Block>)
+    requires(::fixy::satisfies_v<W, WaitStrategy_v::Block>)
 static ContentHash block_fence_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }
@@ -132,7 +136,7 @@ static ContentHash block_fence_consumer(W wrapped) noexcept {
 static void test_e2e_block_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 

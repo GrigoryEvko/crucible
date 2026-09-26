@@ -16,28 +16,24 @@
 #include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/Diag.h>
-#include <crucible/fixy/Handle.h>
-#include <crucible/fixy/Is.h>
-#include <crucible/fixy/SessContentAddr.h>
-#include <crucible/fixy/SessEventLog.h>
-#include <crucible/fixy/_Source.h>
-#include <crucible/fixy/_Time.h>
-#include <crucible/fixy/Wrap.h>
-#include <crucible/safety/source/_Path.h>
-#include <crucible/safety/_ClockSource.h>
-// safety/Decide.h, safety/Post.h and safety/Pre.h are included directly
-// rather than through the fixy umbrella.  The umbrella header that
-// re-exports the contract macros includes this header, so reaching the
-// macros through it would be a circular include.
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Pre.h>
+#include <fixy/Bands.h>
+#include <fixy/Mutation.h>
+#include <fixy/Path.h>
+#include <fixy/Refined.h>
+#include <fixy/ScopedView.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <fixy/os/Fs.h>
+#include <fixy/session/ContentAddressed.h>
 #include <fixy/session/EventLog.h>
+#include <foundation/Platform.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
+#include <foundation/diag/RowHash.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/reflect/EnumName.h>
+#include <foundation/effects/Row.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -45,10 +41,12 @@
 #include <array>
 #include <charconv>
 #include <chrono>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -61,33 +59,47 @@
 
 namespace crucible {
 
+class Cipher;
+
 namespace cipher {
 
+template <typename T>
+class ContentAddressedPayload;
+
+template <typename T>
+[[nodiscard]] constexpr ContentAddressedPayload<T> content_addressed_payload(const T* value) noexcept;
+
+// A pointer to a value that the store names by its content.  The one
+// door is content_addressed_payload, so every site that claims a value
+// is content-addressed is a call of that name.
 template <typename T>
 class [[nodiscard]] ContentAddressedPayload {
 public:
     using value_type = T;
-    using payload_type = crucible::fixy::sess::contentaddr::ContentAddressed<T>;
-
-    constexpr explicit ContentAddressedPayload(const T* value) noexcept : value_(value) {}
+    using payload_type = ::fixy::session::ContentAddressed<T>;
 
     [[nodiscard]] constexpr const T* get() const noexcept { return value_; }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_ != nullptr; }
 
 private:
+    constexpr explicit ContentAddressedPayload(const T* value) noexcept : value_(value) {}
+
+    template <typename U>
+    friend constexpr ContentAddressedPayload<U> content_addressed_payload(const U* value) noexcept;
+
     const T* value_ = nullptr;
 };
 
+// The result of a load.  An empty result is a null pointer.  Only the
+// store builds a result that holds a value, because the cache flag is a
+// claim about where the bytes came from.
 template <typename T>
 class [[nodiscard]] LoadedContentAddressedPayload {
 public:
     using value_type = T;
-    using payload_type = crucible::fixy::sess::contentaddr::ContentAddressed<T>;
+    using payload_type = ::fixy::session::ContentAddressed<T>;
 
-    constexpr LoadedContentAddressedPayload() noexcept = default;
     constexpr LoadedContentAddressedPayload(std::nullptr_t) noexcept {}
-
-    constexpr LoadedContentAddressedPayload(T* value, bool cache_hit) noexcept : value_(value), cache_hit_(cache_hit) {}
 
     [[nodiscard]] constexpr T* get() const noexcept { return value_; }
     [[nodiscard]] constexpr bool cache_hit() const noexcept { return cache_hit_; }
@@ -95,6 +107,10 @@ public:
     [[nodiscard]] constexpr operator T*() const noexcept { return value_; }
 
 private:
+    constexpr LoadedContentAddressedPayload(T* value, bool cache_hit) noexcept : value_(value), cache_hit_(cache_hit) {}
+
+    friend class ::crucible::Cipher;
+
     T* value_ = nullptr;
     bool cache_hit_ = false;
 };
@@ -103,6 +119,13 @@ template <typename T>
 [[nodiscard]] constexpr ContentAddressedPayload<T> content_addressed_payload(const T* value) noexcept {
     return ContentAddressedPayload<T>{value};
 }
+
+// A region whose lifetime band is at least Scope.  A commit entry point
+// persists into a tier that lives as long as its scope, so a narrower
+// band would leak its region into storage that outlives it.
+template <typename W, ::fixy::Lifetime_v Scope>
+concept LifetimePinnedRegion = ::fixy::is_band_of_v<::fixy::LifetimeLattice, W> && ::fixy::satisfies_v<W, Scope>
+                            && std::convertible_to<::fixy::band_value_t<W>, const RegionNode*>;
 
 }  // namespace cipher
 
@@ -113,30 +136,32 @@ public:
 
     using ContentAddressedRegionPayload = cipher::ContentAddressedPayload<RegionNode>;
     using LoadedContentAddressedRegionPayload = cipher::LoadedContentAddressedPayload<RegionNode>;
-    using SessionEvent = crucible::fixy::sess::eventlog::SessionEvent;
+    using SessionEvent = ::fixy::session::SessionEvent;
 
     using persist_session_events_required_row = ::crucible::CipherSessionEventPersistenceRow;
 
     inline static constexpr RowHash SESSION_EVENT_FEDERATION_ROW_HASH{
-        ::crucible::fixy::diag::row_hash_contribution_v<persist_session_events_required_row>};
+        ::foundation::diag::row_hash_contribution_v<persist_session_events_required_row>};
 
     static_assert(static_cast<bool>(SESSION_EVENT_FEDERATION_ROW_HASH));
-    static_assert(sizeof(SessionEvent) == 72, "Cipher session-event persistence is pinned to the SessionEvent "
-                                              "cold-tier wire size.");
-    static_assert(std::is_trivially_copyable_v<SessionEvent>,
-                  "Cipher session-event persistence bulk-serializes SessionEvent "
-                  "bytes and therefore requires a trivially-copyable payload.");
+    static_assert(sizeof(SessionEvent) == ::fixy::session::session_event_size && sizeof(SessionEvent) == 72,
+                  "Cipher session-event persistence is pinned to the SessionEvent cold-tier wire size.");
 
     [[nodiscard]] static constexpr ContentAddressedRegionPayload content_addressed(const RegionNode* region) noexcept {
-        return ContentAddressedRegionPayload{region};
+        return cipher::content_addressed_payload(region);
     }
 
+    // The open call creates the object directory and reads HEAD and the
+    // log.  Its context must admit IO and Block.
+    //
     // The path check here is string-level only.  Symlink defense lives in
     // the O_NOFOLLOW-anchored openat helpers below.
-    [[gnu::cold]] static Cipher open(crucible::fixy::wrap::Path<crucible::fixy::tags::source::External> root_external) {
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[gnu::cold]] static Cipher open(Ctx const& ctx, ::fixy::Path<::fixy::tags::source::External> root_external) {
         Cipher c;
 
-        auto sanitized_e = crucible::fixy::wrap::sanitize_path(std::move(root_external));
+        auto sanitized_e = ::fixy::sanitize_path(std::move(root_external));
         if (!sanitized_e) {
             return c;
         }
@@ -149,37 +174,43 @@ public:
         if (root.empty() || root.size() > MAX_ROOT_PATH_BYTES) {
             return c;
         }
-        [[maybe_unused]] const bool root_set =
-            c.root_.try_set(crucible::fixy::wrap::Tagged<std::string, crucible::fixy::tags::source::Durable>{root});
+        [[maybe_unused]] const bool root_set = c.root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(root));
         [[assume(root_set)]];
         std::filesystem::create_directories(root + "/objects");
 
-        // O_NOFOLLOW makes a symlinked root fail with ELOOP.  Abort rather
-        // than continue: the durable-on-return contract needs a root
-        // directory whose identity is stable for this instance's lifetime.
+        // The root passed the sanitizer and holds no `..`, so the HEAD path
+        // under it passes too.
+        auto head_sanitized = ::fixy::sanitize_path(
+            ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{root} / "HEAD"));
+
+        // The root opens with O_NOFOLLOW, so a symlinked root fails with
+        // ELOOP.  Abort rather than continue: the durable-on-return
+        // contract needs a root directory whose identity is stable for
+        // this instance's lifetime.
         {
-            const int dfd = ::open(root.c_str(), O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-            if (dfd < 0) std::abort();
-            c.root_dirfd_ = crucible::fixy::handle::FileHandle{dfd};
+            auto dirfd = ::fixy::fs::open_dirfd(ctx, std::move(*sanitized_e));
+            if (!dirfd) std::abort();
+            c.root_dirfd_ = std::move(*dirfd);
         }
 
         c.load_log();
 
         // HEAD is the authoritative pointer and overrides the log's last
         // hash.  std::from_chars is exception-free, unlike std::stoull which
-        // throws on malformed input and so cannot be used under
-        // -fno-exceptions, so a corrupt HEAD falls through to the log.
-        const std::string head_path = root + "/HEAD";
-        auto hf_e = crucible::fixy::handle::open_read(head_path.c_str());
+        // throws on malformed input, so a corrupt HEAD falls through to the
+        // log.
         bool head_from_file = false;
-        if (hf_e && hf_e->is_open()) {
-            auto& hf = *hf_e;
-            char buf[32];
-            const ssize_t n = ::read(hf.get(), buf, sizeof(buf));
-            if (n > 0) {
+        auto head_file = head_sanitized ? ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*head_sanitized))
+                                        : std::expected<::fixy::Linear<::fixy::fs::OwnedFd>, std::error_code>{
+                                              std::unexpected{std::make_error_code(std::errc::invalid_argument)}};
+        if (head_file) {
+            const ::fixy::fs::OwnedFd head_fd = std::move(*head_file).consume();
+            std::array<char, 32> buf{};
+            const auto n = ::fixy::fs::read_full(ctx, head_fd, std::as_writable_bytes(std::span<char>{buf}));
+            if (n && *n > 0) {
                 uint64_t raw = 0;
-                const auto* begin = buf;
-                const auto* end = buf + n;
+                const char* begin = buf.data();
+                const char* end = buf.data() + *n;
                 auto [p, ec] = std::from_chars(begin, end, raw, /*base=*/16);
                 if (ec == std::errc{} && p != begin) {
                     c.head_ = ContentHash{raw};
@@ -198,7 +229,9 @@ public:
     Cipher(const Cipher&) = delete("Cipher holds mutable log state; move instead");
     Cipher& operator=(const Cipher&) = delete("Cipher holds mutable log state; move instead");
     Cipher(Cipher&&) = default;
-    Cipher& operator=(Cipher&&) = default;
+    Cipher& operator=(Cipher&&) =
+        delete("Cipher holds a write-once root and an append-only log.  An assignment would drop both; move-construct "
+               "a new Cipher instead");
 
     [[nodiscard]] constexpr bool is_open() const noexcept { return root_.has_value(); }
 
@@ -209,15 +242,15 @@ public:
     // A hot foreground context holds neither and gets no view.
     using open_view_required_row = ::crucible::CipherSessionEventPersistenceRow;
 
-    template <class Ctx>
-        requires ::crucible::effects::CtxAdmits<Ctx, open_view_required_row>
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard]] OpenView mint_open_view(Ctx const&) const noexcept {
         // CRUCIBLE_PRE rather than a pre() clause: on this toolchain a pre()
         // predicate that reads a member through `this` is silently skipped
         // at consteval.  Every in-body precondition in this file has the
         // same reason.
         CRUCIBLE_PRE(is_open());
-        return crucible::fixy::wrap::mint_view<cipher_state::Open>(*this);
+        return ::fixy::mint_view<cipher_state::Open>(*this);
     }
 
     [[nodiscard]] friend constexpr bool view_ok(Cipher const& c, std::type_identity<cipher_state::Open>) noexcept {
@@ -279,35 +312,34 @@ public:
         return hash;
     }
 
-    [[nodiscard]] crucible::fixy::wrap::Wait<crucible::fixy::wrap::WaitStrategy_v::Block, ContentHash>
-    store_pinned(OpenView const& view, ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
-        return crucible::fixy::wrap::Wait<crucible::fixy::wrap::WaitStrategy_v::Block, ContentHash>{
-            store(view, payload, meta_log)};
+    [[nodiscard]] ::fixy::wait::Block<ContentHash> store_pinned(OpenView const& view,
+                                                                ContentAddressedRegionPayload payload,
+                                                                const MetaLog* meta_log) {
+        return ::fixy::mint_band<::fixy::wait::Block<ContentHash>>(store(view, payload, meta_log));
     }
 
-    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Warm<ContentHash>
-    publish_warm(OpenView const& view, ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
-        return crucible::fixy::wrap::cipher_tier::Warm<ContentHash>{store(view, payload, meta_log)};
+    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> publish_warm(OpenView const& view,
+                                                                      ContentAddressedRegionPayload payload,
+                                                                      const MetaLog* meta_log) {
+        return ::fixy::mint_band<::fixy::cipher_tier::Warm<ContentHash>>(store(view, payload, meta_log));
     }
 
     // The type declares Hot residency, but nothing is replicated.  The
     // returned none hash lets a caller testing the hash tell that no
     // Hot-tier store happened.
-    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Hot<ContentHash>
+    [[nodiscard]] ::fixy::cipher_tier::Hot<ContentHash>
     publish_hot(OpenView const&, ContentAddressedRegionPayload /*payload*/, const MetaLog* /*meta_log*/) noexcept {
-        return cipher::mint_promote<crucible::fixy::wrap::CipherTierTag_v::Cold,
-                                    crucible::fixy::wrap::CipherTierTag_v::Hot>(
-            crucible::fixy::wrap::cipher_tier::Cold<ContentHash>{ContentHash{}});
+        return cipher::mint_promote<::fixy::CipherTierTag_v::Cold, ::fixy::CipherTierTag_v::Hot>(
+            ::fixy::mint_band<::fixy::cipher_tier::Cold<ContentHash>>(ContentHash{}));
     }
 
     // The type declares Cold residency, but nothing is written to durable
     // storage.  The returned none hash lets a caller testing the hash tell
     // that no Cold-tier store happened.
-    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Cold<ContentHash>
+    [[nodiscard]] ::fixy::cipher_tier::Cold<ContentHash>
     publish_cold(OpenView const&, ContentAddressedRegionPayload /*payload*/, const MetaLog* /*meta_log*/) noexcept {
-        return cipher::mint_demote<crucible::fixy::wrap::CipherTierTag_v::Hot,
-                                   crucible::fixy::wrap::CipherTierTag_v::Cold>(
-            crucible::fixy::wrap::cipher_tier::Hot<ContentHash>{ContentHash{}});
+        return cipher::mint_demote<::fixy::CipherTierTag_v::Hot, ::fixy::CipherTierTag_v::Cold>(
+            ::fixy::mint_band<::fixy::cipher_tier::Hot<ContentHash>>(ContentHash{}));
     }
 
     // The commit_per_* family pairs a declared data lifetime with the
@@ -317,27 +349,24 @@ public:
     // into durable fleet-wide storage.
 
     template <typename W>
-        requires(crucible::fixy::is::is_opaque_lifetime_v<W>
-                 && W::template satisfies<crucible::fixy::wrap::Lifetime_v::PER_REQUEST>)
-    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Hot<ContentHash>
+        requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_REQUEST>
+    [[nodiscard]] ::fixy::cipher_tier::Hot<ContentHash>
     commit_per_request(OpenView const& view, W lifetime_pinned_region, const MetaLog* meta_log) noexcept {
         const RegionNode* region = std::move(lifetime_pinned_region).consume();
         return publish_hot(view, content_addressed(region), meta_log);
     }
 
     template <typename W>
-        requires(crucible::fixy::is::is_opaque_lifetime_v<W>
-                 && W::template satisfies<crucible::fixy::wrap::Lifetime_v::PER_PROGRAM>)
-    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Warm<ContentHash>
+        requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_PROGRAM>
+    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash>
     commit_per_program(OpenView const& view, W lifetime_pinned_region, const MetaLog* meta_log) {
         const RegionNode* region = std::move(lifetime_pinned_region).consume();
         return publish_warm(view, content_addressed(region), meta_log);
     }
 
     template <typename W>
-        requires(crucible::fixy::is::is_opaque_lifetime_v<W>
-                 && W::template satisfies<crucible::fixy::wrap::Lifetime_v::PER_FLEET>)
-    [[nodiscard]] crucible::fixy::wrap::cipher_tier::Cold<ContentHash>
+        requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_FLEET>
+    [[nodiscard]] ::fixy::cipher_tier::Cold<ContentHash>
     commit_per_fleet(OpenView const& view, W lifetime_pinned_region, const MetaLog* meta_log) noexcept {
         const RegionNode* region = std::move(lifetime_pinned_region).consume();
         return publish_cold(view, content_addressed(region), meta_log);
@@ -348,8 +377,7 @@ public:
     // or adversarial length that would make the loader allocate SIZE_MAX.
     static constexpr size_t MAX_OBJECT_BYTES = size_t{256} << 20;
 
-    using ValidatedObjectSize =
-        crucible::fixy::wrap::Refined<crucible::fixy::wrap::bounded_above<MAX_OBJECT_BYTES>, size_t>;
+    using ValidatedObjectSize = ::fixy::Refined<::fixy::bounded_above<MAX_OBJECT_BYTES>, size_t>;
 
     // const even though it writes the resident cache: the cache is
     // process-local acceleration for the content-addressed quotient, not
@@ -378,11 +406,11 @@ public:
         const auto raw = f.tellg();
         if (raw < 0) return nullptr;
         const auto len = static_cast<size_t>(raw);
-        // The early return and the Refined constructor check the same
-        // ceiling on purpose.  If this function is later split and the
-        // early return is dropped, the constructor's contract still fires.
+        // The early return and the mint check the same ceiling on purpose.
+        // If this function is later split and the early return is dropped,
+        // the mint's precondition still fires.
         if (len == 0 || len > MAX_OBJECT_BYTES) return nullptr;
-        const ValidatedObjectSize validated_len{len};
+        const ValidatedObjectSize validated_len = ::fixy::mint_refined<::fixy::bounded_above<MAX_OBJECT_BYTES>>(len);
         f.seekg(0, std::ios::beg);
 
         std::vector<uint8_t> buf(validated_len.value());
@@ -404,14 +432,14 @@ public:
     // so a step recorded with hash zero is indistinguishable from "before
     // the first commit" and corrupts the binary search in hash_at_step.
     void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id)
-        pre(::crucible::decide::is_non_zero(content_hash)) {
+        pre(::foundation::decide::is_non_zero(content_hash)) {
         // Weakly increasing, not strictly: duplicate step ids are accepted
         // at this gate.  The strict consecutive-by-one check belongs to the
         // session-event batch invariant, not to the head log.
         if (!log_.empty()) {
-            uint64_t const ordering[2] = {log_.back().step_id.value, step_id};
+            uint64_t const ordering[2] = {log_.back().step_id().value, step_id};
             CRUCIBLE_PRE(
-                ::crucible::decide::weakly_increasing<std::uint64_t>(std::span<const std::uint64_t>{ordering, 2}));
+                ::foundation::decide::weakly_increasing<std::uint64_t>(std::span<const std::uint64_t>{ordering, 2}));
         }
         head_ = content_hash;
 
@@ -428,10 +456,10 @@ public:
             (void)atomic_write_at_(root_dirfd_.get(), "HEAD", std::span<const std::uint8_t>{buf, sizeof(buf)});
         }
 
-        auto ts_bytes = now_ns();
-        const uint64_t ts = std::move(ts_bytes).consume();
-        log_.emplace(
-            LogEntry::cipher_store_committed(crucible::fixy::sess::eventlog::StepId{step_id}, content_hash, ts));
+        const uint64_t ts = now_ns();
+        log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
+                                               ::fixy::session::StepId{step_id},
+                                               ::fixy::session::StateHash{content_hash.raw()}, ts));
         {
             // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".
             // Longest form is 20 decimal digits + 1 + 16 + 1 + 20 decimal
@@ -460,65 +488,65 @@ public:
 
         CRUCIBLE_POST(0, head_ == content_hash);
         CRUCIBLE_POST(0, !log_.empty());
-        CRUCIBLE_POST(0, log_.back().step_id.value == step_id);
+        CRUCIBLE_POST(0, log_.back().step_id().value == step_id);
     }
 
-    // The row constraint is what keeps a foreground caller out.
-    // record_event writes HEAD and appends to the log, so it needs IO and
-    // Block.  A hot-path context holds neither, and performing file I/O
-    // there would break replay determinism.
+    // The context is what keeps a foreground caller out.  record_event
+    // writes HEAD and appends to the log, so it needs IO and Block.  A
+    // hot-path context holds neither, and performing file I/O there would
+    // break replay determinism.
     using record_event_required_row =
-        ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
+        ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
     // The asserts below pin the exact row contents.  Narrowing the alias to
     // Row<IO> would still compile and still reject an empty row, so it would
     // silently drop the Block half of the fence without these.
-    static_assert(
-        std::is_same_v<record_event_required_row,
-                       ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>>,
-        "Cipher::record_event_required_row must be exactly Row<IO, Block>.  "
-        "Adding or removing an atom changes the fence every call site "
-        "depends on.");
-    static_assert(::crucible::effects::row_size_v<record_event_required_row> == 2u,
+    static_assert(std::is_same_v<record_event_required_row,
+                                 ::foundation::effects::Row<::foundation::effects::Effect::IO,
+                                                            ::foundation::effects::Effect::Block>>,
+                  "Cipher::record_event_required_row must be exactly Row<IO, Block>.  "
+                  "Adding or removing an atom changes the fence every call site "
+                  "depends on.");
+    static_assert(::foundation::effects::row_size_v<record_event_required_row> == 2u,
                   "record_event_required_row must be exactly 2 atoms (IO + Block).");
     static_assert(
-        ::crucible::effects::
+        ::foundation::effects::
             row_contains_v<  // ROW-CONTAINS-OK: concrete-row static_assert (record_event_required_row), not a Ctx capability check
-                record_event_required_row, ::crucible::effects::Effect::IO>,
+                record_event_required_row, ::foundation::effects::Effect::IO>,
         "record_event_required_row must contain Effect::IO.  It is the "
         "fence's reason for existence: HEAD and log file writes.");
     static_assert(
-        ::crucible::effects::
+        ::foundation::effects::
             row_contains_v<  // ROW-CONTAINS-OK: concrete-row static_assert (record_event_required_row), not a Ctx capability check
-                record_event_required_row, ::crucible::effects::Effect::Block>,
+                record_event_required_row, ::foundation::effects::Effect::Block>,
         "record_event_required_row must contain Effect::Block.  File writes "
         "block on the kernel.");
     static_assert(std::is_same_v<persist_session_events_required_row, record_event_required_row>,
                   "Session-event persistence uses the same IO+Block row fence "
                   "as Cipher::record_event.");
 
-    template <typename CallerRow>
-        requires ::crucible::effects::Subrow<record_event_required_row, CallerRow>
-    void record_event(OpenView const& view, ContentHash content_hash, uint64_t step_id) {
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    void record_event(Ctx const&, OpenView const& view, ContentHash content_hash, uint64_t step_id) {
         advance_head(view, content_hash, step_id);
     }
 
-    template <typename CallerRow>
-        requires ::crucible::effects::Subrow<persist_session_events_required_row, CallerRow>
-    [[nodiscard]] ContentHash persist_session_events(OpenView const&, std::span<const SessionEvent> events) {
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[nodiscard]] ContentHash persist_session_events(Ctx const&, OpenView const&, std::span<const SessionEvent> events) {
         if (events.empty()) return ContentHash{};
 
         if (events.size() > MAX_SESSION_EVENT_BATCH_EVENTS) {
             return ContentHash{};
         }
 
-        const crucible::fixy::sess::eventlog::SessionTagId session = events.front().session;
+        const ::fixy::session::SessionTagId session = events.front().session();
         for (std::size_t i = 1; i < events.size(); ++i) {
-            if (events[i].session != session) [[unlikely]] {
+            if (events[i].session() != session) [[unlikely]] {
                 return ContentHash{};
             }
-            const uint64_t prev_step = events[i - 1].step_id.value;
-            if (prev_step == std::numeric_limits<uint64_t>::max() || prev_step + 1 != events[i].step_id.value)
+            const uint64_t prev_step = events[i - 1].step_id().value;
+            if (prev_step == std::numeric_limits<uint64_t>::max() || prev_step + 1 != events[i].step_id().value)
                 [[unlikely]] {
                 return ContentHash{};
             }
@@ -529,17 +557,20 @@ public:
             return ContentHash{};
         }
 
-        // SessionEvent is trivially copyable and standard layout, so a byte
-        // view of it is permitted.  No uint8_t array lifetime is started:
-        // the span is read-only and the hash consumes the bytes structurally.
-        const auto payload = std::span<const std::uint8_t>{
-            static_cast<const std::uint8_t*>(static_cast<const void*>(events.data())), payload_bytes};
-        const ContentHash hash = session_event_payload_hash_(payload);
+        // Each event goes to the batch through its own encoder, which is
+        // the one route from an event to bytes.  The hash consumes those
+        // bytes structurally.  Complexity: linear in the number of events.
+        std::vector<std::uint8_t> payload(payload_bytes);
+        for (std::size_t i = 0; i < events.size(); ++i) {
+            const auto record = events[i].encode();
+            std::memcpy(payload.data() + i * sizeof(SessionEvent), record.data(), record.size());
+        }
+        const ContentHash hash = session_event_batch_hash(std::span<const std::uint8_t>{payload});
         const KernelCacheKey key{hash, SESSION_EVENT_FEDERATION_ROW_HASH};
 
         std::vector<std::uint8_t> encoded(cipher::federation::FEDERATION_HEADER_BYTES + payload.size());
-        const auto written =
-            cipher::federation::serialize_federation_entry(std::span<std::uint8_t>{encoded}, key, payload);
+        const auto written = cipher::federation::serialize_federation_entry(std::span<std::uint8_t>{encoded}, key,
+                                                                            std::span<const std::uint8_t>{payload});
         if (!written) return ContentHash{};
         encoded.resize(*written);
 
@@ -569,11 +600,11 @@ public:
         // re-appends the entry.
         char idx_rec[96];
         std::size_t off = 0;
-        auto [p1, ec1] = std::to_chars(idx_rec + off, idx_rec + sizeof(idx_rec), events.front().step_id.value);
+        auto [p1, ec1] = std::to_chars(idx_rec + off, idx_rec + sizeof(idx_rec), events.front().step_id().value);
         if (ec1 != std::errc{}) return ContentHash{};
         off = static_cast<std::size_t>(p1 - idx_rec);
         idx_rec[off++] = ',';
-        auto [p2, ec2] = std::to_chars(idx_rec + off, idx_rec + sizeof(idx_rec), events.back().step_id.value);
+        auto [p2, ec2] = std::to_chars(idx_rec + off, idx_rec + sizeof(idx_rec), events.back().step_id().value);
         if (ec2 != std::errc{}) return ContentHash{};
         off = static_cast<std::size_t>(p2 - idx_rec);
         idx_rec[off++] = ',';
@@ -593,7 +624,7 @@ public:
         // directory needs write access to the Cipher root, which is outside
         // the threat model.
         const std::string sess_rel = session_event_dir_relpath_(session);
-        crucible::fixy::handle::FileHandle session_dirfd = open_dir_at_(root_dirfd_.get(), sess_rel.c_str());
+        const AnchoredFd session_dirfd = open_dir_at_(root_dirfd_.get(), sess_rel.c_str());
         if (!session_dirfd.is_open()) {
             return ContentHash{};
         }
@@ -607,9 +638,8 @@ public:
         return hash;
     }
 
-    [[nodiscard]] std::vector<SessionEvent>
-    load_session_events(OpenView const&, crucible::fixy::sess::eventlog::SessionTagId session,
-                        crucible::fixy::sess::eventlog::StepId from_step = {}) const {
+    [[nodiscard]] std::vector<SessionEvent> load_session_events(OpenView const&, ::fixy::session::SessionTagId session,
+                                                                ::fixy::session::StepId from_step = {}) const {
         std::vector<SessionEvent> out;
         std::ifstream index(session_event_dir(session) + "/index");
         if (!index) return out;
@@ -657,7 +687,7 @@ public:
             if (view->header.row_hash != SESSION_EVENT_FEDERATION_ROW_HASH) {
                 continue;
             }
-            if (session_event_payload_hash_(view->payload) != hash) continue;
+            if (session_event_batch_hash(view->payload) != hash) continue;
             if ((view->payload.size() % sizeof(SessionEvent)) != 0u) continue;
 
             const std::size_t n = view->payload.size() / sizeof(SessionEvent);
@@ -665,41 +695,39 @@ public:
 
             // The hashes prove only that the batch is the one its writer
             // stored, and anyone who writes the store can compute them.  So
-            // each record must be one the event decoder accepts, and its
-            // operation byte must name an operation of this event type,
-            // before it is copied into an event.
-            if (!are_session_event_records_valid_(view->payload)) continue;
-
-            std::vector<SessionEvent> decoded(n);
-            std::memcpy(decoded.data(), view->payload.data(), view->payload.size());
-            if (decoded.front().step_id.value != first) continue;
-            if (decoded.back().step_id.value != last) continue;
+            // each record goes through the event decoder, which is the one
+            // route from bytes to an event and refuses a record with a byte
+            // outside its field.
+            auto decoded = ::fixy::session::decode_session_log(std::as_bytes(view->payload));
+            if (!decoded) continue;
+            if (decoded->front().step_id().value != first) continue;
+            if (decoded->back().step_id().value != last) continue;
             bool valid_batch = true;
-            for (std::size_t i = 0; i < decoded.size(); ++i) {
-                if (decoded[i].session != session) {
+            for (std::size_t i = 0; i < decoded->size(); ++i) {
+                const SessionEvent& event = (*decoded)[i];
+                if (event.session() != session) {
                     valid_batch = false;
                     break;
                 }
                 if (i != 0) {
-                    const uint64_t prev_step = decoded[i - 1].step_id.value;
-                    if (prev_step == std::numeric_limits<uint64_t>::max()
-                        || prev_step + 1u != decoded[i].step_id.value) {
+                    const uint64_t prev_step = (*decoded)[i - 1].step_id().value;
+                    if (prev_step == std::numeric_limits<uint64_t>::max() || prev_step + 1u != event.step_id().value) {
                         valid_batch = false;
                         break;
                     }
                 }
-                if (have_loaded && decoded[i].step_id.value <= highest_loaded) {
+                if (have_loaded && event.step_id().value <= highest_loaded) {
                     valid_batch = false;
                     break;
                 }
             }
             if (!valid_batch) continue;
 
-            out.reserve(out.size() + decoded.size());
-            for (const SessionEvent& event : decoded) {
-                if (event.step_id.value >= from_step.value) {
+            out.reserve(out.size() + decoded->size());
+            for (const SessionEvent& event : *decoded) {
+                if (event.step_id().value >= from_step.value) {
                     out.push_back(event);
-                    highest_loaded = event.step_id.value;
+                    highest_loaded = event.step_id().value;
                     have_loaded = true;
                 }
             }
@@ -719,7 +747,7 @@ public:
 
         while (lo < hi) {
             const std::size_t mid = lo + (hi - lo) / 2;
-            if (log_[mid].step_id.value <= step_id) {
+            if (log_[mid].step_id().value <= step_id) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -729,8 +757,8 @@ public:
         while (lo > 0) {
             --lo;
             const LogEntry& entry = log_[lo];
-            if (entry.commits_cipher_head()) {
-                return entry.cipher_content_hash();
+            if (commits_head_(entry)) {
+                return committed_hash_(entry);
             }
         }
         return ContentHash{};
@@ -740,16 +768,60 @@ public:
     [[nodiscard]] bool empty() const { return !head_; }
     [[nodiscard]] const std::string& root() const CRUCIBLE_LIFETIMEBOUND { return root_str(); }
 
-private:
-    using LogEntry = crucible::fixy::sess::eventlog::SessionEvent;
+    // The content hash that names a session-event batch and its index
+    // line.  Anyone who writes the store can compute it, so it proves
+    // only which bytes a batch holds, and the loader checks each record
+    // after it.  Complexity: linear in the payload size.
+    [[nodiscard]] static ContentHash session_event_batch_hash(std::span<const std::uint8_t> bytes) noexcept {
+        uint64_t h = 0xcbf29ce484222325ULL ^ 0x53455353494f4e45ULL ^ bytes.size();
+        for (std::uint8_t byte : bytes) {
+            h ^= static_cast<uint64_t>(byte);
+            h *= 0x100000001b3ULL;
+        }
+        h ^= h >> 33;
+        h *= 0xff51afd7ed558ccdULL;
+        h ^= h >> 33;
+        h *= 0xc4ceb9fe1a85ec53ULL;
+        h ^= h >> 33;
+        if (h == 0u) h = 0x53455353494f4e45ULL;
+        if (h == std::numeric_limits<uint64_t>::max()) --h;
+        return ContentHash{h};
+    }
 
-    static_assert(std::is_same_v<LogEntry, crucible::fixy::sess::eventlog::SessionEvent>);
+private:
+    using LogEntry = ::fixy::session::SessionEvent;
+
     static_assert(sizeof(LogEntry) == 72);
-    static_assert(std::is_trivially_copyable_v<LogEntry>);
 
     struct CachedObjectBytes {
         ContentHash hash;
         std::vector<uint8_t> bytes;
+    };
+
+    // One descriptor that a helper below opened relative to a directory
+    // descriptor.  open_at_ is the one door: it builds an owner only from
+    // the value that ::openat returned, and the destructor closes it.
+    class AnchoredFd {
+        int fd_ = -1;
+
+        constexpr explicit AnchoredFd(int fd) noexcept : fd_{fd} {}
+
+        friend class Cipher;
+
+    public:
+        AnchoredFd(const AnchoredFd&) = delete("a descriptor is unique; a copy would close it twice");
+        AnchoredFd& operator=(const AnchoredFd&) = delete("a descriptor is unique; a copy would close it twice");
+        AnchoredFd(AnchoredFd&& other) noexcept : fd_{std::exchange(other.fd_, -1)} {}
+        AnchoredFd& operator=(AnchoredFd&&) = delete("an owner is built once, by open_at_, and never reassigned");
+
+        ~AnchoredFd() {
+            if (fd_ >= 0) {
+                ::close(fd_);  // SYSCALL-CAP-OK: Cipher::AnchoredFd releases the descriptor that open_at_ acquired under the CtxFitsCipherPersistence gate of the open view
+            }
+        }
+
+        [[nodiscard]] bool is_open() const noexcept { return fd_ >= 0; }
+        [[nodiscard]] int get() const noexcept { return fd_; }
     };
 
     static constexpr size_t MAX_RESIDENT_CACHE_BYTES = size_t{8} << 20;
@@ -758,11 +830,8 @@ private:
     static constexpr size_t MAX_SESSION_EVENT_BATCH_EVENTS =
         MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES / sizeof(SessionEvent);
 
-    using LogEntryByStepId = crucible::fixy::sess::eventlog::StepIdKeyFn;
-    using LogEntryStepLess = crucible::fixy::sess::eventlog::StepIdLess;
-
-    crucible::fixy::wrap::WriteOnce<crucible::fixy::wrap::Tagged<std::string, crucible::fixy::tags::source::Durable>>
-        root_;
+    ::fixy::WriteOnce<::fixy::Tagged<std::string, ::fixy::tags::source::Durable>> root_ =
+        ::fixy::mint_write_once<::fixy::Tagged<std::string, ::fixy::tags::source::Durable>>();
     // Dirfd anchor for the Cipher root.  Every helper that touches the
     // on-disk tree opens relative to this fd with O_NOFOLLOW, which buys
     // three properties:
@@ -781,27 +850,43 @@ private:
     // intermediate directories.  Substituting an intermediate directory
     // needs write access to the Cipher root, which is outside the threat
     // model: whoever owns this dirfd also owns the root's permissions.
-    crucible::fixy::handle::FileHandle root_dirfd_{};
+    ::fixy::fs::Dirfd root_dirfd_{};
     ContentHash head_{};
 
     [[nodiscard]] const std::string& root_str() const noexcept {
         [[assume(root_.has_value())]];
         return root_.get_assuming_set().value();
     }
-    crucible::fixy::wrap::OrderedAppendOnly<LogEntry, LogEntryByStepId, LogEntryStepLess> log_;
+    ::fixy::OrderedAppendOnly<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess> log_ =
+        ::fixy::mint_ordered_append_only<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess>();
     mutable std::vector<CachedObjectBytes> resident_cache_;
     mutable size_t resident_cache_bytes_ = 0;
+
+    [[nodiscard]] static constexpr bool commits_head_(const LogEntry& entry) noexcept {
+        return ::fixy::session::session_op_commits_cipher_head(entry.op());
+    }
+
+    [[nodiscard]] static constexpr ContentHash committed_hash_(const LogEntry& entry) noexcept {
+        return ContentHash{entry.cipher_content().value};
+    }
 
     [[nodiscard]] ContentHash latest_committed_head() const noexcept {
         std::size_t i = log_.size();
         while (i > 0) {
             --i;
             const LogEntry& entry = log_[i];
-            if (entry.commits_cipher_head()) {
-                return entry.cipher_content_hash();
+            if (commits_head_(entry)) {
+                return committed_hash_(entry);
             }
         }
         return ContentHash{};
+    }
+
+    [[nodiscard]] static AnchoredFd open_at_(int parent_dirfd, const char* relpath, int flags, ::mode_t perms) noexcept {
+        return AnchoredFd{::openat(
+            parent_dirfd,
+            relpath,  // SYSCALL-CAP-OK: Cipher cold-tier anchored open — effects::IO, held by the CtxFitsCipherPersistence gate of the open view that every caller of these static helpers holds on the persistence thread
+            flags, perms)};
     }
 
     // Re-opens `relpath` relative to `parent_dirfd` read-only and
@@ -822,17 +907,12 @@ private:
     // Routing the skip path through fdatasync either forces the flush or
     // fails, in which case B reports failure exactly as A did.
     [[nodiscard]] static bool fdatasync_at_(int parent_dirfd, const std::string& relpath) noexcept {
-        const int fd = ::openat(
-            parent_dirfd,
-            relpath
-                .c_str(),  // SYSCALL-CAP-OK: Cipher cold-tier durable-flush open — effects::IO, held by the record_event/persist_session_events Subrow<Row<IO,Block>> boundary that reaches this static helper on the Bg persistence thread
-            O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-        if (fd < 0) return false;
-        crucible::fixy::handle::FileHandle guard{fd};
+        const AnchoredFd guard = open_at_(parent_dirfd, relpath.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
+        if (!guard.is_open()) return false;
         int rc;
         do {
             rc = ::fdatasync(
-                fd);  // SYSCALL-CAP-OK: Cipher cold-tier durable flush blocks on disk — effects::IO + effects::Block, held by the Subrow<Row<IO,Block>> persistence boundary
+                guard.get());  // SYSCALL-CAP-OK: Cipher cold-tier durable flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
         } while (rc < 0 && errno == EINTR);
         return rc == 0;
     }
@@ -865,23 +945,19 @@ private:
     [[nodiscard]] static bool atomic_write_at_(int parent_dirfd, const std::string& relpath,
                                                std::span<const std::uint8_t> bytes) noexcept {
         const std::string tmp_relpath = relpath + ".tmp";
-        const int tmp_fd = ::openat(
-            parent_dirfd,
-            tmp_relpath
-                .c_str(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace tmp open — effects::IO, held by the record_event Subrow<Row<IO,Block>> boundary that reaches this static helper on the Bg persistence thread
-            O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
-        if (tmp_fd < 0) return false;
 
         // The nested scope closes the writer before the renameat below,
         // which is what POSIX recommends for atomic-rename writes and keeps
         // no extra descriptor open across the rename window.
         {
-            crucible::fixy::handle::FileHandle write_guard{tmp_fd};
+            const AnchoredFd write_guard = open_at_(parent_dirfd, tmp_relpath.c_str(),
+                                                    O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
+            if (!write_guard.is_open()) return false;
 
             std::size_t off = 0;
             while (off < bytes.size()) {
                 const ssize_t r = ::write(
-                    tmp_fd,  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace bytes write — effects::IO, held by the record_event Subrow<Row<IO,Block>> persistence boundary
+                    write_guard.get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace bytes write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
                     bytes.data() + off, bytes.size() - off);
                 if (r < 0) {
                     if (errno == EINTR) continue;
@@ -894,7 +970,7 @@ private:
             int frc;
             do {
                 frc = ::fdatasync(
-                    tmp_fd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace flush blocks on disk — effects::IO + effects::Block, held by the Subrow<Row<IO,Block>> persistence boundary
+                    write_guard.get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
             } while (frc < 0 && errno == EINTR);
             if (frc != 0) {
                 ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
@@ -918,7 +994,7 @@ private:
         int drc;
         do {
             drc = ::fsync(
-                parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the record_event Subrow<Row<IO,Block>> persistence boundary
+                parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
         } while (drc < 0 && errno == EINTR);
         return drc == 0;
     }
@@ -944,15 +1020,10 @@ private:
     // only when both the record bytes and the directory entry are durable.
     [[nodiscard]] static bool atomic_append_at_(int parent_dirfd, const std::string& relpath,
                                                 std::span<const std::uint8_t> bytes) noexcept {
-        const int fd = ::openat(
-            parent_dirfd,
-            relpath
-                .c_str(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append log open — effects::IO, held by the record_event/persist_session_events Subrow<Row<IO,Block>> persistence boundary on the Bg thread
-            O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0644);
-        if (fd < 0) return false;
-
         {
-            crucible::fixy::handle::FileHandle guard{fd};
+            const AnchoredFd guard =
+                open_at_(parent_dirfd, relpath.c_str(), O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0644);
+            if (!guard.is_open()) return false;
 
             // With O_APPEND and a record smaller than a block, ::write
             // either fails outright or writes every byte.  The loop covers
@@ -961,7 +1032,7 @@ private:
             std::size_t off = 0;
             while (off < bytes.size()) {
                 const ssize_t r = ::write(
-                    fd,  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append record write — effects::IO, held by the record_event/persist_session_events Subrow<Row<IO,Block>> persistence boundary
+                    guard.get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append record write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
                     bytes.data() + off, bytes.size() - off);
                 if (r < 0) {
                     if (errno == EINTR) continue;
@@ -973,7 +1044,7 @@ private:
             int frc;
             do {
                 frc = ::fdatasync(
-                    fd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append flush blocks on disk — effects::IO + effects::Block, held by the Subrow<Row<IO,Block>> persistence boundary
+                    guard.get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
             } while (frc < 0 && errno == EINTR);
             if (frc != 0) return false;
         }
@@ -982,26 +1053,19 @@ private:
         int drc;
         do {
             drc = ::fsync(
-                parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the record_event/persist_session_events Subrow<Row<IO,Block>> persistence boundary
+                parent_dirfd);  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append parent-dir fsync blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
         } while (drc < 0 && errno == EINTR);
         return drc == 0;
     }
 
-    // Returns a closed FileHandle on failure.  O_DIRECTORY makes the open
-    // fail with ENOTDIR if a regular file has been substituted for the
+    // Returns a closed owner on failure.  O_DIRECTORY makes the open fail
+    // with ENOTDIR if a regular file has been substituted for the
     // directory, and O_NOFOLLOW rejects a symlinked leaf.
-    [[nodiscard]] static crucible::fixy::handle::FileHandle open_dir_at_(int parent_dirfd,
-                                                                         const char* relpath) noexcept {
-        const int dfd = ::openat(
-            parent_dirfd,
-            relpath,  // SYSCALL-CAP-OK: Cipher cold-tier session-subdir open — effects::IO, held by the persist_session_events Subrow<Row<IO,Block>> persistence boundary that reaches this static helper on the Bg thread
-            O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-        if (dfd < 0) return crucible::fixy::handle::FileHandle{};
-        return crucible::fixy::handle::FileHandle{dfd};
+    [[nodiscard]] static AnchoredFd open_dir_at_(int parent_dirfd, const char* relpath) noexcept {
+        return open_at_(parent_dirfd, relpath, O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
     }
 
-    [[nodiscard]] auto obj_path(uint64_t hash) const
-        -> ::crucible::fixy::wrap::Tagged<std::string, ::crucible::fixy::tags::source::CipherPath> {
+    [[nodiscard]] auto obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath> {
         char hex[16];
         hex16_(hash, hex);
         const std::string& root = root_str();
@@ -1014,13 +1078,13 @@ private:
         path.append(hex, 2);
         path.push_back('/');
         path.append(hex + 2, 14);
-        return ::crucible::fixy::wrap::Tagged<std::string, ::crucible::fixy::tags::source::CipherPath>{std::move(path)};
+        return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(path));
     }
 
     // Returns "objects/<XX>/<14hex>".  No leading slash: openat resolves a
     // relative path under the parent dirfd's inode, not under "/".
     [[nodiscard]] static auto obj_relpath_(std::uint64_t hash)
-        -> ::crucible::fixy::wrap::Tagged<std::string, ::crucible::fixy::tags::source::CipherPath> {
+        -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath> {
         char hex[16];
         hex16_(hash, hex);
         std::string r;
@@ -1029,10 +1093,10 @@ private:
         r.append(hex, 2);
         r.push_back('/');
         r.append(hex + 2, 14);
-        return ::crucible::fixy::wrap::Tagged<std::string, ::crucible::fixy::tags::source::CipherPath>{std::move(r)};
+        return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(r));
     }
 
-    std::string session_event_dir(crucible::fixy::sess::eventlog::SessionTagId session) const {
+    std::string session_event_dir(::fixy::session::SessionTagId session) const {
         char hex[16];
         hex16_(session.value, hex);
         const std::string& root = root_str();
@@ -1043,7 +1107,7 @@ private:
         return path;
     }
 
-    static std::string session_event_dir_relpath_(crucible::fixy::sess::eventlog::SessionTagId session) {
+    static std::string session_event_dir_relpath_(::fixy::session::SessionTagId session) {
         char hex[16];
         hex16_(session.value, hex);
         std::string path;
@@ -1053,7 +1117,7 @@ private:
         return path;
     }
 
-    std::string session_event_batch_path(crucible::fixy::sess::eventlog::SessionTagId session, ContentHash hash) const {
+    std::string session_event_batch_path(::fixy::session::SessionTagId session, ContentHash hash) const {
         char hex[16];
         hex16_(hash.raw(), hex);
         std::string path = session_event_dir(session);
@@ -1111,14 +1175,6 @@ private:
         }
     }
 
-    static void write_u64_dec_(std::ofstream& out, uint64_t value) {
-        char buf[20];
-        auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), value);
-        if (ec == std::errc{}) {
-            out.write(buf, ptr - buf);
-        }
-    }
-
     [[nodiscard]] static bool file_bytes_equal_(const std::string& path, std::span<const std::uint8_t> expected) {
         std::ifstream in(path, std::ios::binary);
         if (!in) return false;
@@ -1144,25 +1200,9 @@ private:
         return true;
     }
 
-    [[nodiscard]] static ContentHash session_event_payload_hash_(std::span<const std::uint8_t> bytes) noexcept {
-        uint64_t h = 0xcbf29ce484222325ULL ^ 0x53455353494f4e45ULL ^ bytes.size();
-        for (std::uint8_t byte : bytes) {
-            h ^= static_cast<uint64_t>(byte);
-            h *= 0x100000001b3ULL;
-        }
-        h ^= h >> 33;
-        h *= 0xff51afd7ed558ccdULL;
-        h ^= h >> 33;
-        h *= 0xc4ceb9fe1a85ec53ULL;
-        h ^= h >> 33;
-        if (h == 0u) h = 0x53455353494f4e45ULL;
-        if (h == std::numeric_limits<uint64_t>::max()) --h;
-        return ContentHash{h};
-    }
-
-    // std::from_chars, not std::stoull: stoull throws on malformed input,
-    // which is undefined under -fno-exceptions.  Returns true only when the
-    // whole [begin, end) range parsed as a number in the given base.
+    // std::from_chars, not std::stoull: stoull throws on malformed input.
+    // Returns true only when the whole [begin, end) range parsed as a
+    // number in the given base.
     [[nodiscard]] static bool parse_u64(const char* begin, const char* end, int base, uint64_t& out) noexcept {
         if (begin >= end) return false;
         auto [p, ec] = std::from_chars(begin, end, out, base);
@@ -1184,23 +1224,6 @@ private:
         if (!parse_u64(begin + p2 + 1, begin + p3, 10, count)) return false;
         if (!parse_u64(begin + p3 + 1, end, 16, hash)) return false;
         return first <= last;
-    }
-
-    // True when every record of a session-event batch is one the event
-    // decoder accepts, and its operation byte names an operation of the
-    // event type that this store copies it into.  The decoder is the one
-    // route from bytes to an event, so the records pass the same checks
-    // here as anywhere else.  Complexity: linear in the number of records.
-    [[nodiscard]] static bool are_session_event_records_valid_(std::span<const std::uint8_t> payload) noexcept {
-        if (payload.size() % sizeof(SessionEvent) != 0) return false;
-        for (std::size_t offset = 0; offset < payload.size(); offset += sizeof(SessionEvent)) {
-            const auto record = std::as_bytes(payload.subspan(offset, sizeof(SessionEvent)));
-            if (!::fixy::session::decode_session_event(record)) return false;
-            const auto op = static_cast<crucible::fixy::sess::eventlog::SessionOp>(
-                std::to_integer<std::uint8_t>(record[offsetof(SessionEvent, op)]));
-            if (::foundation::reflect::enumerator_name(op).empty()) return false;
-        }
-        return true;
     }
 
     // Malformed lines are skipped rather than fatal.  A corrupt or
@@ -1227,10 +1250,11 @@ private:
             // The log only grows in step order, and its append checks that
             // order with a contract that aborts.  A line out of order is a
             // corrupt line, so it is skipped like the others.
-            if (!log_.empty() && step_id < log_.back().step_id.value) continue;
+            if (!log_.empty() && step_id < log_.back().step_id().value) continue;
 
-            log_.emplace(LogEntry::cipher_store_committed(crucible::fixy::sess::eventlog::StepId{step_id},
-                                                          ContentHash{raw_hash}, ts_ns));
+            log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
+                                                   ::fixy::session::StepId{step_id},
+                                                   ::fixy::session::StateHash{raw_hash}, ts_ns));
         }
     }
 
@@ -1239,9 +1263,9 @@ private:
     // The three unconditional terms sum to 352 bytes, so the result is
     // positive by construction.  Stating that in the return type means a
     // refactor that drops the headroom or makes a header conditional trips
-    // the contract here, instead of silently handing the caller a
-    // zero-length buffer to serialize into.
-    static crucible::fixy::wrap::Positive<std::size_t> estimate_serial_size(const RegionNode* region) {
+    // the mint's precondition here, instead of silently handing the caller
+    // a zero-length buffer to serialize into.
+    static ::fixy::Positive<std::size_t> estimate_serial_size(const RegionNode* region) {
         size_t sz = 64;  // header
         sz += 32;  // region fixed fields
         if (region->plan) {
@@ -1259,26 +1283,19 @@ private:
             sz += n_in * sizeof(uint32_t);  // input_slot_ids
             sz += n_out * sizeof(uint32_t);  // output_slot_ids
         }
-        return crucible::fixy::wrap::Positive<std::size_t>{sz + 256};  // headroom
+        return ::fixy::mint_refined<::fixy::positive>(sz + 256);  // headroom
     }
 
     // steady_clock on Linux is CLOCK_MONOTONIC, which is the right source
     // for ordering commit events within one process run.  It freezes through
     // suspend and is immune to the NTP back-jumps that would scramble the
-    // log's ordering invariant.
-    [[nodiscard]] static auto now_ns() noexcept -> ::crucible::fixy::time::MonotonicClockBytes<std::uint64_t> {
+    // log's ordering invariant.  The value goes into the log line and the
+    // in-memory event, and nothing downstream reads it as a clock.
+    [[nodiscard]] static std::uint64_t now_ns() noexcept {
         const auto tp = std::chrono::steady_clock::now();
-        const std::uint64_t raw = static_cast<std::uint64_t>(
+        return static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count());
-        return ::crucible::fixy::time::mint_clock_source<::crucible::fixy::time::ClockSource_v::Monotonic,
-                                                         std::uint64_t>(raw);
     }
-
-    static_assert(std::is_same_v<decltype(now_ns()), ::crucible::fixy::time::MonotonicClockBytes<std::uint64_t>>,
-                  "Cipher::now_ns must return MonotonicClockBytes<u64>.");
-    static_assert(sizeof(decltype(now_ns())) == sizeof(std::uint64_t), "MonotonicClockBytes must be a zero-cost wrap.");
-    static_assert(decltype(now_ns())::source == ::crucible::fixy::time::ClockSource_v::Monotonic,
-                  "Cipher commit timestamp provenance must be Monotonic.");
 };
 
 // Type-level witness that a caller validated a head hash at its source.
@@ -1289,17 +1306,16 @@ private:
 // This catches the value where it is produced.  The precondition on
 // advance_head catches it at the function boundary.  Both layers stay,
 // because either alone can be bypassed.
-using ValidCipherHead = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::non_zero, ContentHash>;
+using ValidCipherHead = ::fixy::Refined<::fixy::non_zero, ContentHash>;
 
 [[nodiscard, gnu::const]] inline constexpr ContentHash make_cipher_head(ValidCipherHead raw) noexcept {
     return raw.value();
 }
 
-static_assert(crucible::fixy::wrap::no_scoped_view_field_check<Cipher>());
+static_assert(::fixy::no_scoped_view_field_check<Cipher>());
 static_assert(sizeof(Cipher::ContentAddressedRegionPayload) == sizeof(const RegionNode*));
-static_assert(crucible::fixy::sess::contentaddr::is_content_addressed_v<
-              typename Cipher::ContentAddressedRegionPayload::payload_type>);
-static_assert(crucible::fixy::sess::contentaddr::is_content_addressed_v<
-              typename Cipher::LoadedContentAddressedRegionPayload::payload_type>);
+static_assert(::fixy::session::is_content_addressed_v<typename Cipher::ContentAddressedRegionPayload::payload_type>);
+static_assert(
+    ::fixy::session::is_content_addressed_v<typename Cipher::LoadedContentAddressedRegionPayload::payload_type>);
 
 }  // namespace crucible

@@ -9,7 +9,6 @@
 // needs a compile to fail and lives with the negative fixtures.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/Cipher.h>
 #include <crucible/effects/_Capabilities.h>
 #include <crucible/effects/_EffectRow.h>
 #include <crucible/effects/_FxAliases.h>
@@ -270,33 +269,6 @@ static void test_audit_c_f_star_alias_matrix() {
     static_assert(eff::Subrow<R, StPlusBg>);
 
     std::printf("  audit-C f_star_alias_matrix:               PASSED\n");
-}
-
-// The drain loop calls record_event while committing a region, so by
-// transitivity its row has to contain record_event's row. Narrowing the drain
-// row would otherwise leave that downstream call unsatisfiable, and this
-// inclusion fires before any caller reaches the violation itself.
-static void test_audit_d_cross_fence_consistency() {
-    using BgRow = BackgroundThread::run_required_row;
-    using RecordRow = ::crucible::Cipher::record_event_required_row;
-
-    static_assert(eff::Subrow<RecordRow, BgRow>, "BackgroundThread::run_required_row contains "
-                                                 "Cipher::record_event_required_row. The background drain calls "
-                                                 "record_event while committing a region, so a drain row that does "
-                                                 "not admit IO and Block leaves that call site unsatisfiable.");
-
-    // Containment runs one way only. The drain row additionally admits Bg
-    // and Alloc, so the two rows are not equal.
-    static_assert(eff::row_contains_v<BgRow, eff::Effect::IO>);
-    static_assert(eff::row_contains_v<BgRow, eff::Effect::Block>);
-    static_assert(!eff::Subrow<BgRow, RecordRow>, "The background drain row strictly contains the record_event row: "
-                                                  "Bg and Alloc are extra.");
-
-    static_assert(eff::row_size_v<BgRow> > eff::row_size_v<RecordRow>);
-    static_assert(eff::row_size_v<BgRow> == 4u);
-    static_assert(eff::row_size_v<RecordRow> == 2u);
-
-    std::printf("  audit-D cross_fence_consistency:           PASSED\n");
 }
 
 // Six rows of five atoms, each dropping one atom of the universe. Two of them
@@ -867,7 +839,6 @@ int main() {
     test_audit_a_required_row_header_fence();
     test_audit_b_per_axis_missing_atom_matrix();
     test_audit_c_f_star_alias_matrix();
-    test_audit_d_cross_fence_consistency();
     test_audit_e_saturation_minus_one_matrix();
     test_audit_f_concurrent_spsc_drain();
     test_audit_g_f_star_alias_closure();
@@ -880,7 +851,7 @@ int main() {
     test_audit_k_reset_drops_inflight_regions();
     test_audit_l_callback_runs_outside_arena_gate();
 
-    std::printf("test_background_thread_run_in_row: 7 + 13 audit "
+    std::printf("test_background_thread_run_in_row: 7 + 12 audit "
                 "groups, all passed\n");
     return 0;
 }

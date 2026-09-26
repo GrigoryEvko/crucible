@@ -41,19 +41,13 @@
 #   - vis holds no consumer, and examples holds none outside the frozen
 #     examples/fn.
 
-bench/bench_cipher.cpp
 bench/bench_dispatch.cpp
 bench/bench_merkle_dag.cpp
 bench/bench_phases.cpp
 bench/bench_record_leaf.cpp
-bench/bench_serialize.cpp
-fuzz/boundary/old_tree.h
 include/crucible/BackgroundThread.h
-include/crucible/Cipher.h
 include/crucible/Vigil.h
 include/crucible/_Saturate.h
-include/crucible/cipher/CipherTierPromotion.h
-include/crucible/cipher/SessionPersistenceSurface.h
 include/crucible/cntp/Tcam.h
 include/crucible/mimic/Semaphore.h
 include/crucible/warden/DeadlineWatchdog.h

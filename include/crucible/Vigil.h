@@ -182,8 +182,8 @@ private:
             // The configured path is operator-supplied, so it crosses the
             // trust boundary here and is declared external until the store's
             // own sanitizer promotes it.
-            cipher_.emplace(
-                Cipher::open(crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>{cfg_.cipher_path}));
+            cipher_.emplace(Cipher::open(
+                startup, ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{cfg_.cipher_path})));
         }
 
         bg_.set_region_ready_callback(this, [](void* self, effects::Bg const& bg, BackgroundThread::PublishStage stage,
@@ -451,7 +451,7 @@ public:
     // A no-op when no store path was configured.  The store writes and
     // flushes files, so the caller's context must admit IO and Block.
     template <class Ctx>
-        requires effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
+        requires ::foundation::effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
         if (!cipher_.has_value()) return false;
         const RegionNode* region = active_region();
@@ -469,7 +469,7 @@ public:
     // replay too when that region carries a memory plan.  The activation is
     // foreground state, so this runs on the producer thread.
     template <class Ctx>
-        requires effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
+        requires ::foundation::effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, effects::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         auto open_view = cipher_->mint_open_view(ctx);

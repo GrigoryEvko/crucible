@@ -47,7 +47,7 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | · | HS14: 12 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | · | HS14: 3 |
-| `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | · | HS14: 10 |
+| `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | · | HS14: 15 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | · | HS14: 4 |

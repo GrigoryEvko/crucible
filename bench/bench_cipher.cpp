@@ -18,23 +18,21 @@
 
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
+#include <fixy/Ctx.h>
 
 #include "bench_harness.h"
 
-// The open view of the store needs a context whose row admits IO and Block.
-[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
-    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+// Opening the store and its open view need a context whose row admits IO
+// and Block.
+[[nodiscard]] inline ::fixy::TestRunnerCtx store_ctx() {
+    return ::fixy::TestRunnerCtx{::foundation::effects::testing::test()};
 }
-
-// Cipher::open() takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 using namespace crucible;
 
-static const auto BG = effects::testing::bg();
+static const auto BG = ::foundation::effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 static RegionNode* synth_region(Arena& arena, uint32_t num_ops, uint64_t salt) {
@@ -89,8 +87,10 @@ int main() {
         // Cipher + warm_region live in THIS scope, shared across the
         // three benches for this num_ops.  Distinct 'salt' per size
         // avoids collisions in the dedup hash space.
-        auto cipher = Cipher::open(CipherRoot{dir});
-        auto open_view = cipher.mint_open_view(store_ctx());
+        const auto ctx = store_ctx();
+        auto cipher =
+            Cipher::open(ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+        auto open_view = cipher.mint_open_view(ctx);
 
         Arena warm_arena{1 << 18};
         auto* warm_region = synth_region(warm_arena, num_ops, 0xC0FFEE + num_ops);
@@ -151,7 +151,7 @@ int main() {
         reports.push_back(bench::run(label_record_event, [&] {
             const uint64_t step = ++record_step;
             const ContentHash event_hash{warm_h.raw() ^ step};
-            cipher.record_event<Cipher::record_event_required_row>(open_view, event_hash, step);
+            cipher.record_event(ctx, open_view, event_hash, step);
             bench::do_not_optimize(event_hash);
         }));
 

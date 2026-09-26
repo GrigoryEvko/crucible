@@ -1,15 +1,12 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-041 mint_demote fixture #2: demotion consumes the source tier and
-// materializes the colder tier, so DemotableTier requires a move-constructible
-// payload. An immovable payload cannot cross this mint boundary.
+// mint_demote refuses a payload that cannot move.  A demotion consumes the
+// source band and moves its value into the band of the colder tier, so the
+// payload must be move-constructible.
 
 #include <crucible/cipher/CipherTierPromotion.h>
 
 #include <utility>
-
-namespace cipher = ::crucible::cipher;
-namespace tier = ::crucible::safety::cipher_tier;
 
 struct ImmovablePayload {
     ImmovablePayload() = default;
@@ -19,8 +16,7 @@ struct ImmovablePayload {
     ImmovablePayload& operator=(ImmovablePayload&&) = delete;
 };
 
-using BadMint =
-    decltype(cipher::mint_demote<::crucible::safety::CipherTierTag_v::Hot, ::crucible::safety::CipherTierTag_v::Warm>(
-        std::declval<tier::Hot<ImmovablePayload>>()));
+using BadMint = decltype(::crucible::cipher::mint_demote<::fixy::CipherTierTag_v::Hot, ::fixy::CipherTierTag_v::Warm>(
+    std::declval<::fixy::cipher_tier::Hot<ImmovablePayload>>()));
 
 int main() { return sizeof(BadMint); }

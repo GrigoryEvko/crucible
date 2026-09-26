@@ -52,7 +52,7 @@ include/crucible/vis/TraceVisualizer.h:layout_edges.reserve(view.edges.size());
 # isn't forgotten.  Two entries (obj_relpath_ and
 # session_event_dir_relpath_) are the relative-path counterparts of
 # obj_path / session_event_dir for dirfd-anchored openat().
-include/crucible/Cipher.h:out.reserve(out.size() + decoded.size());
+include/crucible/Cipher.h:out.reserve(out.size() + decoded->size());
 include/crucible/Cipher.h:path.reserve(root.size() + OBJECT_PATH_SUFFIX_BYTES);
 include/crucible/Cipher.h:r.reserve(sizeof("objects/") - 1 + 2 + 1 + 14);
 include/crucible/Cipher.h:path.reserve(root.size() + sizeof("/session_events/") - 1 + 16);

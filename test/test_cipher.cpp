@@ -1,7 +1,8 @@
 #include <crucible/Cipher.h>
 
 #include <memory>
-#include <crucible/effects/_Capabilities.h>
+#include <fixy/Ctx.h>
+#include <fixy/session/Subtype.h>
 #include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>
@@ -11,16 +12,20 @@
 #include <string>
 #include <type_traits>
 
-// The open view of the store needs a context whose row admits IO and Block.
-[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
-    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+// Opening the store and its open view need a context whose row admits IO
+// and Block.
+[[nodiscard]] inline ::fixy::TestRunnerCtx store_ctx() {
+    return ::fixy::TestRunnerCtx{::foundation::effects::testing::test()};
 }
 
-static auto g_test = crucible::effects::testing::test();
+static auto g_test = ::foundation::effects::testing::test();
 
 // The root path crosses a trust boundary, and every call site here has
-// to say so.  The alias keeps that declaration from swamping the calls.
-using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
+// to say so.  The helper keeps that declaration from swamping the calls.
+[[nodiscard]] static crucible::Cipher open_cipher(const std::string& dir) {
+    return crucible::Cipher::open(store_ctx(),
+                                  ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+}
 
 static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
     constexpr uint32_t NUM_OPS = 2;
@@ -65,13 +70,22 @@ static std::string object_path(const char* dir, crucible::ContentHash hash) {
     return std::string(dir) + "/objects/" + std::string(hex, 2) + "/" + (hex + 2);
 }
 
-static_assert(crucible::safety::proto::is_content_addressed_v<
-              typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
-static_assert(crucible::safety::proto::is_content_addressed_v<
+static_assert(
+    ::fixy::session::is_content_addressed_v<typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
+static_assert(::fixy::session::is_content_addressed_v<
               typename crucible::Cipher::LoadedContentAddressedRegionPayload::payload_type>);
-static_assert(crucible::safety::proto::is_subsort_v<
+static_assert(::fixy::session::is_payload_subsort_v<
               crucible::RegionNode, typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
 static_assert(sizeof(crucible::Cipher::ContentAddressedRegionPayload) == sizeof(const crucible::RegionNode*));
+
+// A load result that holds a region comes only from the store, because its
+// cache flag is a claim about where the bytes came from.  A payload comes
+// only from content_addressed_payload.
+static_assert(!std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, crucible::RegionNode*,
+                                       bool>);
+static_assert(std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, std::nullptr_t>);
+static_assert(!std::is_constructible_v<crucible::Cipher::ContentAddressedRegionPayload, const crucible::RegionNode*>);
+static_assert(!std::is_default_constructible_v<crucible::Cipher::ContentAddressedRegionPayload>);
 
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_XXXXXX";
@@ -81,7 +95,7 @@ int main() {
     crucible::Arena arena(1 << 16);
 
     {
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         assert(cipher.empty() && "freshly opened Cipher must be empty");
         assert(cipher.root() == dir);
         assert(std::filesystem::is_directory(std::string(dir) + "/objects"));
@@ -92,7 +106,7 @@ int main() {
     assert(static_cast<bool>(expected_hash));
 
     {
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash stored_hash =
             cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
@@ -111,7 +125,7 @@ int main() {
     {
         // A fresh arena receives the loaded region, so nothing it holds
         // can be a pointer back into the arena that produced it.
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         crucible::Arena arena2(1 << 16);
         auto loaded_ca = cipher.load_content_addressed(ov, g_test.alloc, expected_hash, arena2);
@@ -122,7 +136,7 @@ int main() {
     }
 
     {
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         (void)cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
 
@@ -150,7 +164,7 @@ int main() {
         // Opening again reads the log back from disk, so the queries
         // below run against the parsed file and not against state left
         // in memory by the block above.
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
 
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
@@ -167,7 +181,7 @@ int main() {
     }
 
     {
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         crucible::Arena arena3(1 << 16);
         assert(
@@ -184,7 +198,7 @@ int main() {
         auto* ca_region = make_test_region(ca_arena);
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
-        auto cipher = crucible::Cipher::open(CipherRoot{dir_ca});
+        auto cipher = open_cipher(dir_ca);
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash hash = cipher.store(ov, ca_payload, nullptr);
         assert(hash == ca_region->content_hash);
@@ -233,8 +247,8 @@ int main() {
         auto* ca_region = make_test_region(ca_arena);
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
-        auto sender = crucible::Cipher::open(CipherRoot{sender_dir});
-        auto receiver = crucible::Cipher::open(CipherRoot{receiver_dir});
+        auto sender = open_cipher(sender_dir);
+        auto receiver = open_cipher(receiver_dir);
         auto sender_ov = sender.mint_open_view(store_ctx());
         auto receiver_ov = receiver.mint_open_view(store_ctx());
         const crucible::ContentHash sender_hash = sender.store(sender_ov, ca_payload, nullptr);
@@ -262,7 +276,7 @@ int main() {
     }
 
     {
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         assert(cipher.is_open());
         // Minting the view is itself the check.  Every call below takes
         // it as proof and repeats no check of its own.
@@ -276,7 +290,7 @@ int main() {
     }
 
     {
-        auto cipher = crucible::Cipher::open(CipherRoot{dir});
+        auto cipher = open_cipher(dir);
         assert(cipher.is_open());
         auto moved = std::move(cipher);
         assert(moved.is_open() && "moved-to must be Open");
@@ -303,7 +317,7 @@ int main() {
             lf << "40,deadbeef00000004,4000\n";  // valid
         }
 
-        auto cipher = crucible::Cipher::open(CipherRoot{dir2});
+        auto cipher = open_cipher(dir2);
         auto ov = cipher.mint_open_view(store_ctx());
         assert(cipher.hash_at_step(ov, 10) == crucible::ContentHash{0xdeadbeef00000001ULL});
         assert(cipher.hash_at_step(ov, 40) == crucible::ContentHash{0xdeadbeef00000004ULL});

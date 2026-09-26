@@ -1,34 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I09-AUDIT (Finding A) fixture — pins that record_event
-// rejects callers with completely unrelated atoms.  Required row
-// is Row<IO, Block>; a caller that declares Row<Alloc> has neither
-// IO nor Block and must be rejected.
-//
-// Why this matters: an arena-allocating caller (Row<Alloc>) is a
-// realistic scenario that must NOT be allowed to write to HEAD/log
-// files.  Allocators belong to the AllocClass axis; the IO/Block
-// axes are orthogonal.  This fixture pins that orthogonality at
-// the constraint level — a caller cannot "almost" satisfy
-// record_event by holding the wrong axis.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<IO, Block>, Row<Alloc>>.
+// Cipher::record_event refuses a context whose row holds Alloc alone.  An
+// allocating caller holds neither IO nor Block, and allocation is on an
+// axis of its own, so it does not come near the gate.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <fixy/Ctx.h>
 
-// FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
-
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
-    // Caller declares Row<Alloc> — wrong axis entirely.
-    //   {IO, Block} ⊄ {Alloc} → Subrow false → constraint fails.
-    auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_record_event_alloc_only"});
-    cipher.record_event<eff::Row<eff::Effect::Alloc>>(cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()}), ::crucible::ContentHash{1u},
-                                                      std::uint64_t{1u});
+    const ::fixy::TestRunnerCtx store_ctx{eff::testing::test()};
+    auto cipher = ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                                          std::filesystem::path{"/tmp/crucible_neg_record_event_alloc_only"}));
+    const auto view = cipher.mint_open_view(store_ctx);
+    const auto alloc_only = store_ctx.in_row<eff::Row<eff::Effect::Alloc>>();
+    cipher.record_event(alloc_only, view, ::crucible::ContentHash{1u}, std::uint64_t{1u});
     return 0;
 }

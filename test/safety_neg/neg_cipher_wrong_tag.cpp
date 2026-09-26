@@ -1,14 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: passing a ScopedView with the WRONG state tag to a Cipher
-// operation.  Cipher::store(OpenView const&, ...) only accepts a view
-// tagged cipher_state::Open.  A SchemaTable::SealedView (tagged with
-// schema_state::Sealed) must not convert — the two views parametrize
-// ScopedView on different Carrier types AND different Tag types.
-//
-// This proves the type-state discipline is per-carrier, not a single
-// global "any valid state is fine" — each carrier's phase gate is its
-// own parametric lock.
+// Cipher::store refuses a scoped view of another carrier.  store takes a
+// view of a Cipher tagged cipher_state::Open.  A sealed SchemaTable view
+// names another carrier and another tag, so it does not convert.  Each
+// carrier's phase gate is its own lock, not one global "some valid state"
+// check.
 
 #include <crucible/Cipher.h>
 #include <crucible/SchemaTable.h>
@@ -18,13 +14,9 @@ int main() {
     st.seal();
     auto st_view = st.mint_sealed_view();
 
-    crucible::Cipher c;  // Closed; we never open it — we never reach
-    // the typed store() body anyway: compilation
-    // fails at the overload resolution step.
-
-    // Cipher::store requires an OpenView over Cipher.  st_view is a
-    // sealed SchemaTable view, so GCC rejects the call before the typed
-    // store() body is reachable.
-    (void)c.store(st_view, nullptr, nullptr);
+    // The store is never opened.  Overload resolution refuses the call
+    // before the body of store could run.
+    crucible::Cipher c;
+    (void)c.store(st_view, ::crucible::Cipher::content_addressed(nullptr), nullptr);
     return 0;
 }

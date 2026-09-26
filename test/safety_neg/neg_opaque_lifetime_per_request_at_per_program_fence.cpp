@@ -1,70 +1,29 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: passing an `OpaqueLifetime<PER_REQUEST, T>` value to
-// `Cipher::commit_per_program`, whose `requires` clause demands
-// `OpaqueLifetime::satisfies<PER_PROGRAM>`.  Companion to the main
-// FOUND-G12 fixture (PER_REQUEST → commit_per_fleet) — covers the
-// SECONDARY leak fence in the lifetime → tier matrix.
-//
-// SECONDARY LEAK CLASS: a PER_REQUEST-scoped value (e.g., per-query
-// KV-cache slice, per-decode PdaState, request-local grammar
-// constraint) cannot reach commit_per_program — the Warm tier
-// persists across program-restart but dies at process boundary.  A
-// PER_REQUEST value flushed to Warm would be VALID FROM THE CIPHER'S
-// PERSPECTIVE (NVMe-resident, durable across reboots) but
-// SEMANTICALLY ROTTEN — it would reappear on the next program start
-// and be replayed as if request-scoped, contaminating subsequent
-// inferences.
-//
-// Lattice direction (LifetimeLattice.h):
-//     PER_REQUEST(narrowest) ⊑ PER_PROGRAM ⊑ PER_FLEET(widest)
-//
-// satisfies<Required> = leq(Required, Self).  PER_REQUEST::
-// satisfies<PER_PROGRAM> = leq(PER_PROGRAM, PER_REQUEST) = false.
-// The requires-clause rejects.
-//
-// Concrete bug-class this catches: a refactor moves "checkpoint
-// inferlet user state to a local recovery file" from request-end
-// teardown (correct: drop / commit_per_request only) to a
-// program-shutdown hook (incorrect: commit_per_program).  Today:
-// silent corruption — the saved state survives reboot and is
-// replayed as if newly minted.  With this fixture: the call rejects
-// at compile time naming PER_REQUEST::satisfies<PER_PROGRAM> as the
-// failed predicate.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause rejection of cross-scope flow.
+// Cipher::commit_per_program refuses a region whose lifetime band is
+// PER_REQUEST.  The warm tier survives a program restart, so a
+// request-scoped value written there would come back on the next start
+// and be replayed as if it were new.  PER_PROGRAM sits above PER_REQUEST,
+// so the gate refuses the call.
 
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
-#include <crucible/safety/_OpaqueLifetime.h>
+#include <fixy/Bands.h>
+#include <fixy/Ctx.h>
 
 #include <utility>
 
-using crucible::Cipher;
-using crucible::Arena;
-using crucible::ContentHash;
-using crucible::MetaLog;
-using crucible::RegionNode;
-using crucible::safety::OpaqueLifetime;
-using crucible::safety::Lifetime_v;
-
 int main() {
-    Cipher c;
-    auto view = c.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
-    Arena arena;
-    MetaLog log;
-    auto* region = arena.alloc_obj<RegionNode>(crucible::effects::testing::test().alloc);
-    region->content_hash = ContentHash{0xDEADBEEF};
+    const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
+    auto cipher = ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                                          std::filesystem::path{"/tmp/crucible_neg_request_at_program"}));
+    const auto view = cipher.mint_open_view(store_ctx);
+    ::crucible::MetaLog log;
 
-    OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*> request_scoped{region};
-
-    // Should FAIL: commit_per_program requires satisfies<PER_PROGRAM>;
-    // PER_REQUEST is strictly weaker → leq(PER_PROGRAM, PER_REQUEST)
-    // is FALSE → the constraint fails.  Without this fence, request-
-    // scoped data leaks across program restart via the Warm-tier
-    // recovery path.
-    auto pinned = c.commit_per_program(view, std::move(request_scoped), &log);
-    return static_cast<int>(static_cast<bool>(std::move(pinned).consume()));
+    auto request_scoped =
+        ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<const ::crucible::RegionNode*>>(nullptr);
+    auto result = cipher.commit_per_program(view, std::move(request_scoped), &log);
+    return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

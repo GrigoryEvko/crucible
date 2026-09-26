@@ -12,15 +12,15 @@
 #include <vector>
 
 #include <crucible/Arena.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
+#include <foundation/effects/Effect.h>
 
 #include "bench_harness.h"
 
 using namespace crucible;
 
-static const auto BG = effects::testing::bg();
+static const auto BG = ::foundation::effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 // Avoids collision with crucible::make_region — this one builds a region

@@ -1,35 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I09 fixture — pins the requires-clause on
-// Cipher::record_event<CallerRow>.  The template parameter must
-// satisfy `Subrow<Row<IO, Block>, CallerRow>`.  A caller in a
-// Hot/Pure context (empty row, Row<>) cannot satisfy the constraint
-// because {IO, Block} ⊄ {} — the substitution must fail loudly with
-// a constraint diagnostic, NOT silently proceed.
-//
-// Why this matters: the 8th-axiom fence on record_event prevents
-// foreground hot-path code from invoking the file-I/O side effect.
-// Without this fence, a refactor that accidentally calls
-// cipher.record_event(...) from a Hot context would compile cleanly
-// AND silently break replay determinism on the hot path (each
-// foreground iteration would do a blocking file write).  The fence
-// catches that drift at substitution time.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<IO, Block>, Row<>>.
+// Cipher::record_event refuses the hot foreground context, whose row is
+// empty.  Recording writes HEAD and appends to the log, which needs IO
+// and Block.  A foreground caller that recorded an event would do a
+// blocking file write on each iteration and break replay determinism.
+// The caller also holds an open view here, so the refusal comes from the
+// context and not from a missing view.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-
-// FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
-
-namespace eff = ::crucible::effects;
+#include <fixy/Ctx.h>
 
 int main() {
-    // Hot/Pure context — empty row.  {IO, Block} ⊄ {} → fence fires.
-    auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_record_event"});
-    cipher.record_event<eff::Row<>>(cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()}), ::crucible::ContentHash{1u}, std::uint64_t{1u});
+    const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
+    auto cipher = ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                                          std::filesystem::path{"/tmp/crucible_neg_record_event"}));
+    const auto view = cipher.mint_open_view(store_ctx);
+    cipher.record_event(::foundation::effects::testing::foreground(), view, ::crucible::ContentHash{1u},
+                        std::uint64_t{1u});
     return 0;
 }

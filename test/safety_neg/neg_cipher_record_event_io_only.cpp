@@ -1,35 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I09-AUDIT (Finding A) fixture — pins the Block leg of the
-// row constraint on Cipher::record_event<CallerRow>.  Required row
-// is Row<IO, Block>; a caller that holds Row<IO> alone is missing
-// Block and must be rejected at substitution time.
-//
-// Why this matters: a refactor that "improves" the constraint to
-// Subrow<Row<IO>, CallerRow> (only IO required) would silently
-// accept this caller AND would remove the Block-fence.  The
-// neg_pure_row fixture would still pass (Row<> still fails) but
-// this fixture catches the silent widening.  The four per-axis
-// fixtures (io_only / block_only / alloc_only / bg_only) ensure
-// each leg of the {IO, Block} constraint is independently fenced.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<IO, Block>, Row<IO>>.
+// Cipher::record_event refuses a context whose row holds IO and not
+// Block.  A gate that asked for IO alone would still refuse the empty
+// row, so this fixture is the one that holds the Block half of the gate.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <fixy/Ctx.h>
 
-// FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
-
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
-    // Caller declares Row<IO> — has IO, missing Block.
-    //   {IO, Block} ⊄ {IO} → Subrow false → constraint fails.
-    auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_record_event_io_only"});
-    cipher.record_event<eff::Row<eff::Effect::IO>>(cipher.mint_open_view(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()}), ::crucible::ContentHash{1u},
-                                                   std::uint64_t{1u});
+    const ::fixy::TestRunnerCtx store_ctx{eff::testing::test()};
+    auto cipher = ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                                          std::filesystem::path{"/tmp/crucible_neg_record_event_io_only"}));
+    const auto view = cipher.mint_open_view(store_ctx);
+    const auto io_only = store_ctx.in_row<eff::Row<eff::Effect::IO>>();
+    cipher.record_event(io_only, view, ::crucible::ContentHash{1u}, std::uint64_t{1u});
     return 0;
 }

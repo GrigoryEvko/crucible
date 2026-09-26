@@ -1,8 +1,9 @@
 #pragma once
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/safety/_ScopedView.h>
+#include <fixy/ScopedView.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 namespace crucible {
 
@@ -19,11 +20,17 @@ namespace cipher_state {
 struct Open {};
 }  // namespace cipher_state
 
-using CipherOpenView = safety::ScopedView<Cipher, cipher_state::Open>;
+using CipherOpenView = ::fixy::ScopedView<Cipher, cipher_state::Open>;
 
 // The row is IO because the persistence path writes object files, and
 // Block because it flushes them to storage at boundaries.
 using CipherSessionEventPersistenceRow =
-    ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
+    ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+
+// The gate of every Cipher operation that reaches the store: a context
+// whose row admits IO and Block.  A hot foreground context holds
+// neither, so it opens no store and gets no view.
+template <typename Ctx>
+concept CtxFitsCipherPersistence = ::foundation::effects::CtxAdmits<Ctx, CipherSessionEventPersistenceRow>;
 
 }  // namespace crucible

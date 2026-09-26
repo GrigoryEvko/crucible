@@ -9,8 +9,8 @@
 // wherever the returned hash is read.
 
 #include <crucible/Cipher.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_CipherTier.h>
+#include <fixy/Bands.h>
+#include <fixy/Ctx.h>
 #include "test_assert.h"
 
 #include <cstdio>
@@ -19,14 +19,18 @@
 #include <type_traits>
 #include <utility>
 
-// The open view of the store needs a context whose row admits IO and Block.
-[[nodiscard]] inline ::crucible::effects::TestRunnerCtx store_ctx() {
-    return ::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()};
+// Opening the store and its open view need a context whose row admits IO
+// and Block.
+[[nodiscard]] inline ::fixy::TestRunnerCtx store_ctx() {
+    return ::fixy::TestRunnerCtx{::foundation::effects::testing::test()};
 }
 
-using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
-
 using crucible::Cipher;
+
+[[nodiscard]] static Cipher open_cipher(const char* dir) {
+    return Cipher::open(store_ctx(), ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+}
+
 using crucible::ContentHash;
 using crucible::RegionNode;
 using crucible::Arena;
@@ -36,10 +40,14 @@ using crucible::OpIndex;
 using crucible::SlotId;
 using crucible::TensorMeta;
 using crucible::ScalarType;
-using crucible::safety::CipherTier;
-using crucible::safety::CipherTierTag_v;
+using ::fixy::CipherTier;
+using ::fixy::CipherTierTag_v;
 
-static auto g_test = crucible::effects::testing::test();
+static auto g_test = ::foundation::effects::testing::test();
+
+// The tier of a band, read from its type.
+template <typename W>
+inline constexpr CipherTierTag_v tier_v = ::fixy::band_tier_v<W>;
 
 // The seed varies the schema hash, so every test gets a region with its
 // own content hash and writes its own file.
@@ -70,7 +78,7 @@ static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
 static void test_publish_warm_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
@@ -87,14 +95,14 @@ static void test_publish_warm_bit_equality(const char* dir) {
 static void test_publish_warm_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.publish_warm(view, payload, nullptr));
     using Want = CipherTier<CipherTierTag_v::Warm, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "publish_warm must return CipherTier<Warm, ContentHash>");
-    static_assert(Got::tier == CipherTierTag_v::Warm);
+    static_assert(tier_v<Got> == CipherTierTag_v::Warm);
 
     auto p = cipher.publish_warm(view, payload, nullptr);
     (void)std::move(p).consume();
@@ -103,14 +111,14 @@ static void test_publish_warm_type_identity(const char* dir) {
 static void test_publish_hot_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.publish_hot(view, payload, nullptr));
     using Want = CipherTier<CipherTierTag_v::Hot, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "publish_hot must return CipherTier<Hot, ContentHash>");
-    static_assert(Got::tier == CipherTierTag_v::Hot);
+    static_assert(tier_v<Got> == CipherTierTag_v::Hot);
 
     // The hot path writes nothing yet, so the hash it returns is none.
     auto p = cipher.publish_hot(view, payload, nullptr);
@@ -121,14 +129,14 @@ static void test_publish_hot_type_identity(const char* dir) {
 static void test_publish_cold_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     using Got = decltype(cipher.publish_cold(view, payload, nullptr));
     using Want = CipherTier<CipherTierTag_v::Cold, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "publish_cold must return CipherTier<Cold, ContentHash>");
-    static_assert(Got::tier == CipherTierTag_v::Cold);
+    static_assert(tier_v<Got> == CipherTierTag_v::Cold);
 
     // The cold path writes nothing yet, so the hash it returns is none.
     auto p = cipher.publish_cold(view, payload, nullptr);
@@ -139,7 +147,7 @@ static void test_publish_cold_type_identity(const char* dir) {
 static void test_view_and_payload_route(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 5);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
 
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -161,42 +169,42 @@ static void test_view_and_payload_route(const char* dir) {
 static void test_hot_satisfies_weaker_tiers() {
     using Hot = CipherTier<CipherTierTag_v::Hot, ContentHash>;
 
-    static_assert(Hot::satisfies<CipherTierTag_v::Hot>);
-    static_assert(Hot::satisfies<CipherTierTag_v::Warm>);
-    static_assert(Hot::satisfies<CipherTierTag_v::Cold>);
+    static_assert(::fixy::satisfies_v<Hot, CipherTierTag_v::Hot>);
+    static_assert(::fixy::satisfies_v<Hot, CipherTierTag_v::Warm>);
+    static_assert(::fixy::satisfies_v<Hot, CipherTierTag_v::Cold>);
 }
 
 static void test_warm_rejected_at_hot_fence() {
     using Warm = CipherTier<CipherTierTag_v::Warm, ContentHash>;
 
-    static_assert(Warm::satisfies<CipherTierTag_v::Warm>);
-    static_assert(Warm::satisfies<CipherTierTag_v::Cold>);
-    static_assert(!Warm::satisfies<CipherTierTag_v::Hot>, "Warm must not satisfy Hot.  The hot-tier reincarnation gate "
-                                                          "depends on this rejection.");
+    static_assert(::fixy::satisfies_v<Warm, CipherTierTag_v::Warm>);
+    static_assert(::fixy::satisfies_v<Warm, CipherTierTag_v::Cold>);
+    static_assert(!::fixy::satisfies_v<Warm, CipherTierTag_v::Hot>,
+                  "Warm must not satisfy Hot.  The hot-tier reincarnation gate depends on this rejection.");
 }
 
 static void test_cold_rejected_at_higher_fences() {
     using Cold = CipherTier<CipherTierTag_v::Cold, ContentHash>;
 
-    static_assert(Cold::satisfies<CipherTierTag_v::Cold>);
-    static_assert(!Cold::satisfies<CipherTierTag_v::Warm>);
-    static_assert(!Cold::satisfies<CipherTierTag_v::Hot>);
+    static_assert(::fixy::satisfies_v<Cold, CipherTierTag_v::Cold>);
+    static_assert(!::fixy::satisfies_v<Cold, CipherTierTag_v::Warm>);
+    static_assert(!::fixy::satisfies_v<Cold, CipherTierTag_v::Hot>);
 }
 
 static void test_relax_to_weaker_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 9);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
     // Relaxing twice in succession, to show the weakening composes and
     // carries the same value the whole way down.
     auto hot = cipher.publish_hot(view, payload, nullptr);
-    auto warm = std::move(hot).relax<CipherTierTag_v::Warm>();
+    auto warm = ::fixy::relax<CipherTierTag_v::Warm>(std::move(hot));
     static_assert(std::is_same_v<decltype(warm), CipherTier<CipherTierTag_v::Warm, ContentHash>>);
 
-    auto cold = std::move(warm).relax<CipherTierTag_v::Cold>();
+    auto cold = ::fixy::relax<CipherTierTag_v::Cold>(std::move(warm));
     static_assert(std::is_same_v<decltype(cold), CipherTier<CipherTierTag_v::Cold, ContentHash>>);
 
     ContentHash h = std::move(cold).consume();
@@ -213,7 +221,7 @@ static void test_layout_invariant() {
 // requirement is part of the signature, so a weaker value never reaches
 // the body.
 template <typename W>
-    requires(W::template satisfies<CipherTierTag_v::Hot>)
+    requires(::fixy::satisfies_v<W, CipherTierTag_v::Hot>)
 static ContentHash hot_reshard_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }
@@ -221,7 +229,7 @@ static ContentHash hot_reshard_consumer(W wrapped) noexcept {
 static void test_e2e_hot_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 11);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
@@ -233,7 +241,7 @@ static void test_e2e_hot_fence_consumer(const char* dir) {
 }
 
 template <typename W>
-    requires(W::template satisfies<CipherTierTag_v::Warm>)
+    requires(::fixy::satisfies_v<W, CipherTierTag_v::Warm>)
 static ContentHash warm_publish_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }
@@ -241,7 +249,7 @@ static ContentHash warm_publish_consumer(W wrapped) noexcept {
 static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 12);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
@@ -258,7 +266,7 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
 static void test_phase5_stub_semantics(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 13);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
@@ -277,21 +285,21 @@ static void test_phase5_stub_semantics(const char* dir) {
 }
 
 // Drift attribution has to tell a hot-tier problem apart from a
-// cold-storage latency spike.  The tier is a static member, so the
+// cold-storage latency spike.  The tier is part of the type, so the
 // classification happens at compile time and no runtime tag field is
 // needed on the value.
 template <typename W>
 [[nodiscard]] static constexpr int classify_tier_for_drift_attribution() noexcept {
-    if constexpr (W::tier == CipherTierTag_v::Hot) return 1;
-    if constexpr (W::tier == CipherTierTag_v::Warm) return 2;
-    if constexpr (W::tier == CipherTierTag_v::Cold) return 3;
+    if constexpr (tier_v<W> == CipherTierTag_v::Hot) return 1;
+    if constexpr (tier_v<W> == CipherTierTag_v::Warm) return 2;
+    if constexpr (tier_v<W> == CipherTierTag_v::Cold) return 3;
     return 0;
 }
 
 static void test_runtime_tier_reader_pattern(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 14);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
@@ -312,7 +320,7 @@ static void test_runtime_tier_reader_pattern(const char* dir) {
 // canonical source is the cold archive, and a gate on the bottom of the
 // lattice is the weakest one there is, so it admits every tier.
 template <typename W>
-    requires(W::template satisfies<CipherTierTag_v::Cold>)
+    requires(::fixy::satisfies_v<W, CipherTierTag_v::Cold>)
 static ContentHash replay_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }
@@ -320,7 +328,7 @@ static ContentHash replay_consumer(W wrapped) noexcept {
 static void test_replay_engine_admits_all_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 15);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
@@ -342,7 +350,7 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
 static void test_sequential_three_tier_publish(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 16);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
 
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -374,7 +382,7 @@ static void test_sequential_three_tier_publish(const char* dir) {
 // the rejection.
 template <typename W, CipherTierTag_v T_target>
 concept can_tighten = requires(W&& w) {
-    { std::move(w).template relax<T_target>() };
+    { ::fixy::relax<T_target>(std::move(w)) };
 };
 
 static void test_cannot_tighten_to_stronger_tier() {
@@ -399,11 +407,11 @@ static void test_content_addressed_publish_overloads(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 18);
     const auto payload = Cipher::content_addressed(region);
-    auto cipher = Cipher::open(CipherRoot{dir});
+    auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
 
     using Payload = decltype(payload);
-    static_assert(crucible::safety::proto::is_content_addressed_v<typename Payload::payload_type>);
+    static_assert(::fixy::session::is_content_addressed_v<typename Payload::payload_type>);
 
     using WarmGot = decltype(cipher.publish_warm(view, payload, nullptr));
     using HotGot = decltype(cipher.publish_hot(view, payload, nullptr));

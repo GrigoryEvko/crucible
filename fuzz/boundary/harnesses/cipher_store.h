@@ -2,20 +2,22 @@
 
 // A Cipher store on disk, written by someone other than this process.  The
 // input fills the files a store holds: HEAD, the head log, one object, a
-// session-event index, and one session-event batch.  The batch goes through
-// the store's own writer, so its hashes are right and the loader reaches
-// the event bytes, which come from the input.  A content hash is not a
-// signature: anyone who writes the store can compute it.
+// session-event index, and one session-event batch.  The batch records come
+// from the input.  The harness writes the batch the way an attacker does,
+// with the store's own batch hash, so the hashes are right and the loader
+// reaches the record bytes.  A content hash is not a signature: anyone who
+// writes the store can compute it.  When every record decodes, the same
+// events also go through the store's own writer.
 //
 // What the loader returns must be what the store's types claim.  A region
 // loaded by its hash has that hash and passes every region claim, and each
 // loaded session event is a record that the event decoder accepts.
 
 #include "../harness.h"
-#include "../old_tree.h"
 #include "region.h"
 
 #include <crucible/Cipher.h>
+#include <fixy/Ctx.h>
 #include <fixy/session/EventLog.h>
 
 #include <array>
@@ -37,9 +39,20 @@ namespace cipher_store_detail {
     return (root / "objects" / std::string(hex, 2) / (hex + 2)).string();
 }
 
+[[nodiscard]] inline std::string hex16(std::uint64_t value) {
+    char hex[17];
+    std::snprintf(hex, sizeof(hex), "%016" PRIx64, value);
+    return std::string(hex, 16);
+}
+
+// Byte offsets of the step and the session in a 72-byte event record.
+inline constexpr std::size_t kRecordStepOffset = 0;
+inline constexpr std::size_t kRecordSessionOffset = 8;
+
 }  // namespace cipher_store_detail
 
 inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
+    using cipher_store_detail::hex16;
     using cipher_store_detail::take_chunk;
     using SessionEvent = Cipher::SessionEvent;
 
@@ -53,32 +66,53 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     const auto object_hash = cursor.take<std::uint64_t>();
     write_file(cipher_store_detail::object_path(root, object_hash), take_chunk(cursor));
 
+    // Each record is the input's bytes with this batch's session and its
+    // own step written in, so the batch is one session whose steps run on
+    // by one.
     const auto session_raw = cursor.take<std::uint64_t>();
     const auto first_step = cursor.take<std::uint32_t>();
     const std::size_t event_count = cursor.take<std::uint8_t>() % 9;
-    std::vector<SessionEvent> events(event_count);
+    std::vector<std::uint8_t> records(event_count * sizeof(SessionEvent));
     for (std::size_t i = 0; i < event_count; ++i) {
-        const auto record = cursor.take_bytes(sizeof(SessionEvent));
-        std::memcpy(&events[i], record.data(), record.size());
-        events[i].session = old_tree::session_tag(session_raw);
-        events[i].step_id = old_tree::step(std::uint64_t{first_step} + i);
+        std::uint8_t* record = records.data() + i * sizeof(SessionEvent);
+        const auto input = cursor.take_bytes(sizeof(SessionEvent));
+        if (!input.empty()) std::memcpy(record, input.data(), input.size());
+        const std::uint64_t step = std::uint64_t{first_step} + i;
+        std::memcpy(record + cipher_store_detail::kRecordStepOffset, &step, sizeof(step));
+        std::memcpy(record + cipher_store_detail::kRecordSessionOffset, &session_raw, sizeof(session_raw));
     }
     const auto extra_index_lines = take_chunk(cursor);
 
-    auto cipher = old_tree::open_cipher(root.string());
-    const auto view = old_tree::open_view(cipher);
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto cipher = Cipher::open(ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(root));
+    const auto view = cipher.mint_open_view(ctx);
 
-    if (!events.empty()) {
-        (void)cipher.persist_session_events<Cipher::persist_session_events_required_row>(
-            view, std::span<const SessionEvent>{events});
+    const std::filesystem::path session_dir = root / "session_events" / hex16(session_raw);
+    std::filesystem::create_directories(session_dir);
+    if (event_count > 0) {
+        // The batch file and its index line, as an attacker writes them.
+        const ContentHash batch_hash = Cipher::session_event_batch_hash(records);
+        std::vector<std::uint8_t> entry(cipher::federation::FEDERATION_HEADER_BYTES + records.size());
+        const auto written = cipher::federation::serialize_federation_entry(
+            entry, KernelCacheKey{batch_hash, Cipher::SESSION_EVENT_FEDERATION_ROW_HASH}, records);
+        if (written) {
+            entry.resize(*written);
+            write_file(session_dir / (hex16(batch_hash.raw()) + ".cfed"), entry);
+            const std::string line = std::to_string(first_step) + "," + std::to_string(std::uint64_t{first_step} + event_count - 1)
+                                   + "," + std::to_string(event_count) + "," + hex16(batch_hash.raw()) + "\n";
+            std::ofstream index(session_dir / "index", std::ios::binary | std::ios::app);
+            index.write(line.data(), static_cast<std::streamsize>(line.size()));
+        }
+
+        // The store's own writer takes only events, and only the decoder
+        // turns bytes into an event.
+        if (auto events = ::fixy::session::decode_session_log(as_bytes_view(records))) {
+            (void)cipher.persist_session_events(ctx, view, std::span<const SessionEvent>{*events});
+        }
     }
     // Lines an attacker appends to the index after the writer ran.
     {
-        char hex[17];
-        std::snprintf(hex, sizeof(hex), "%016" PRIx64, session_raw);
-        const auto index_path = root / "session_events" / std::string(hex, 16) / "index";
-        std::filesystem::create_directories(index_path.parent_path());
-        std::ofstream index(index_path, std::ios::binary | std::ios::app);
+        std::ofstream index(session_dir / "index", std::ios::binary | std::ios::app);
         index.write(as_text(extra_index_lines).data(), static_cast<std::streamsize>(extra_index_lines.size()));
     }
 
@@ -91,12 +125,11 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
         }
     }
 
-    const auto loaded_events = cipher.load_session_events(view, old_tree::session_tag(session_raw));
+    const auto loaded_events = cipher.load_session_events(view, ::fixy::session::SessionTagId{session_raw});
     for (const SessionEvent& event : loaded_events) {
-        std::array<std::byte, sizeof(SessionEvent)> record{};
-        std::memcpy(record.data(), &event, sizeof(SessionEvent));
-        CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op));
-        CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_event(record).has_value());
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_event(event.encode()).has_value());
     }
 }
 

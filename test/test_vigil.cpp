@@ -362,7 +362,7 @@ int main() {
 
     // The store writes and flushes files, so persist takes a context whose row
     // admits IO and Block.
-    const bool persisted = vigil.persist(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
+    const bool persisted = vigil.persist(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     assert(persisted && "persist() must succeed with a cipher_path set");
     assert(static_cast<bool>(vigil.head_hash()) && "Cipher HEAD must be non-zero after persist()");
     assert(std::filesystem::exists(object_path) && "foreground persist() must be the direct Cipher object writer");

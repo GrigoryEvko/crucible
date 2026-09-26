@@ -1,28 +1,16 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-V-031 fixture: Cipher::open() refuses bare std::string at the
-// trust boundary.  Pre-V-031, Cipher's signature was
-//     static Cipher open(const std::string& root);
-// which made the operator's untrusted bytes invisible to the type
-// system.  V-031 changed the signature to
-//     static Cipher open(crucible::fixy::wrap::Path<
-//                            crucible::fixy::tags::source::External> root);
-// so every call site MUST mint an External-tagged Path explicitly.
-//
-// `Tagged<T, Source>`'s constructor is `explicit` — there is no
-// implicit conversion from `const char*` / `std::string` / a path
-// literal into `Tagged<std::filesystem::path, External>`.  Passing
-// a bare string therefore fails substitution at the call site.
-//
-// Expected diagnostic family (matched by CMakeLists regex):
-//   "no matching function" / "could not convert" / "cannot convert"
-//   "explicit" / "candidate constructor not viable".
+// Cipher::open refuses a bare string for the root.  The root comes from
+// an operator, so it crosses a trust boundary, and the caller must state
+// that with a path tagged External.  The value constructor of Tagged is
+// private and mint_tagged is its door, so no string converts to a path by
+// itself.  The context here is valid, so the refusal names the path.
 
 #include <crucible/Cipher.h>
+#include <fixy/Ctx.h>
 
 int main() {
-    // Should FAIL: bare const-char* literal cannot implicitly convert
-    // to Path<External>; the explicit Tagged ctor refuses the bridge.
-    [[maybe_unused]] auto cipher = ::crucible::Cipher::open("/tmp/crucible_neg_v031_bare_string");
+    const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
+    [[maybe_unused]] auto cipher = ::crucible::Cipher::open(store_ctx, "/tmp/crucible_neg_open_bare_string");
     return 0;
 }
