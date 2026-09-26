@@ -190,9 +190,12 @@ def unlifted_checks(tree: tsast.Tree, marked: set[int]) -> Iterator[int]:
 def unlifted_macro_checks(body: tsast.MacroBody, marked: set[int]) -> Iterator[int]:
     """Yield the file row of each context capability check in one macro body that does not use a lift.
 
-    A marker on any row of the definition exempts the checks of its body.
+    A marker on any row of the definition exempts the checks of its body.  The
+    parser ends a definition at column 0 of the row after it, because the node
+    holds the closing newline, so that row is not part of the definition.
     """
-    if any(row in marked for row in range(body.define.start[0], body.define.end[0] + 1)):
+    last = body.define.end[0] - (body.define.end[1] == 0)
+    if any(row in marked for row in range(body.define.start[0], last + 1)):
         return
     if body.is_parsed:
         for node in context_checks(body.root.descendants("template_type", "template_function")):
@@ -292,9 +295,9 @@ def self_test() -> int:
         ("#define HAS(R, E) effects::row_contains_v<R, E>", False, "a macro over a concrete row"),
         ("#define SPLIT_OWNS(C, E) row_contains_v< /* ctx */ \\", True, "a macro body split by a block comment"),
         ("    row_type_of_t<C>, E>", None, ""),
-        ("#define PASTE_OWNS(C, E) row_contains_v<row_type_of_t<C##_ctx>, E>", True,
-         "a macro body that pastes tokens, read from its tokens"),
         ("#define PASTE_ROW(R, E) row_contains_v<R##_row, E>", False, "a pasting macro over a concrete row"),
+        ("#define PASTE_OWNS(C, E) row_contains_v<row_type_of_t<C##_ctx>, E>", True,
+         "a macro body that pastes tokens, read from its tokens, with a marked definition on the next row"),
         ("#define MARKED_OWNS(C, E) row_contains_v<row_type_of_t<C>, E>  // ROW-CONTAINS-OK: fixture", False,
          "a marked macro"),
         ("template <class Ctx> requires row_contains_\\", True, "a check whose name a line splice cuts in two"),

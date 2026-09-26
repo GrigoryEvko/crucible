@@ -343,8 +343,10 @@ def scan(root: Path) -> tuple[list[Site], list[str]]:
                      if not any(row in marks[rel] for row in marker_rows(node))}
     for body in tsast.macro_bodies(trees):
         rel = Path(body.define.tree.path).relative_to(root).as_posix()
-        # A marker on any row of the definition exempts the tests of its body.
-        if any(row in marks[rel] for row in range(body.define.start[0], body.define.end[0] + 1)):
+        # A marker on any row of the definition exempts the tests of its body.  The node ends at
+        # column 0 of the row after the definition, because it holds the closing newline.
+        last = body.define.end[0] - (body.define.end[1] == 0)
+        if any(row in marks[rel] for row in range(body.define.start[0], last + 1)):
             continue
         if body.is_parsed:
             rows[rel].update(body.origin(node)[0] for node in fullness_nodes(body.root))
@@ -472,9 +474,10 @@ def self_test() -> int:
         ("};", None, ""),
         ("#define FULL_IN_MACRO(s) ((s).count == Capacity)", True, "a macro body"),
         ("#define REVERSED_IN_MACRO(s) (Traits::MaxItems == (s)->n)", True, "a bound name first in a macro body"),
-        ("#define CALL_IN_MACRO(s) (s.n == s.slots.size())", True, "a size() bound in a macro body"),
         ("#define PRIVATE_IN_MACRO(s) (s.count_ == Capacity)", False, "a protected counter in a macro body"),
         ("#define OWN_SIZE_IN_MACRO(v) (v.size() == v.max_size())", False, "a call counter in a macro body"),
+        ("#define CALL_IN_MACRO(s) (s.n == s.slots.size())", True,
+         "a size() bound in a macro body, with a marked definition on the next row"),
         ("#define MARKED_IN_MACRO(s) (s.count == Capacity)  // FULLNESS-OK: fixture", False,
          "a marked macro body"),
         ('#define TEXT_IN_MACRO "count == Capacity"', False, "a string literal in a macro body"),
