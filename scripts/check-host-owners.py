@@ -22,12 +22,12 @@ THE RULE
       own file.  An alias name with two targets keeps both, so a spelling can
       only be found more often.
     - A class definition inside a macro body counts.  The guard parses each
-      macro body on its own, through tsast.macro_bodies.  A body that does
-      not parse, or whose parse a line splice inside a name has split, is
-      read from its preprocessing tokens: a class key, its attributes and a
-      qualified name before `{`, `:` or `final`.  A body of that kind that
-      opens a namespace named host fails, because the guard cannot read what
-      its expansion defines.
+      macro body on its own, through tsast.macro_bodies, which joins a line
+      splice first.  A body that does not parse is read from its
+      preprocessing tokens: a class key, its attributes and a qualified name
+      before `{`, `:` or `final`.  A body of that kind that opens a namespace
+      named host fails, because the guard cannot read what its expansion
+      defines.
     - Each owner definition must match a roster row by name and file.
     - Each roster row must match an owner definition.  A row whose file does
       not define the owner fails, so the roster cannot go stale.
@@ -125,11 +125,6 @@ def scope_files(root: Path) -> list[str]:
     return sorted(p for p in paths if tsast.is_in_cpp_scope(p) and not NEG_FIXTURE.search(p) and (root / p).is_file())
 
 
-def joined(parts: tuple[str, ...]) -> NsPath:
-    """Return name parts with each line splice inside them removed, as translation phase 2 does."""
-    return tuple("".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part for part in parts)
-
-
 class Aliases:
     """The namespace aliases of the whole scan, by alias name.
 
@@ -144,7 +139,7 @@ class Aliases:
     def add(self, tree: tsast.Tree) -> None:
         """Record every alias of one parsed file."""
         for alias in tsast.namespace_aliases(tree):
-            self.targets.setdefault(joined((alias.name,))[0], set()).add(joined(alias.target))
+            self.targets.setdefault(alias.name, set()).add(alias.target)
 
     def expand(self, path: NsPath, depth: int = 0) -> list[NsPath]:
         """Return the path and each path that its first name reaches through an alias.
@@ -177,8 +172,8 @@ def parsed_heads(rel: str, root: tsast.Node, row_of: callable) -> list[Head]:
         written = None if name is None or body is None else tsast.qualified_parts(name)
         if written is None:
             continue
-        is_global, qualifier = written[0], joined(written[1])
-        enclosing = joined(tsast.namespace_path(node, skip_inline=True))
+        is_global, qualifier = written
+        enclosing = tsast.namespace_path(node, skip_inline=True)
         paths = (qualifier,) if is_global else (enclosing + qualifier, qualifier)
         found.append(Head(qualifier[-1], rel, row_of(node) + 1, paths))
     return found
@@ -258,13 +253,10 @@ def macro_heads(root: Path, trees: list[tsast.Tree]) -> tuple[list[Head], list[s
     problems: list[str] = []
     for body in tsast.macro_bodies(trees):
         rel = str(Path(body.define.tree.path).relative_to(root))
-        values = [child for child in body.define.children if child.field == "value"]
-        raw = tsast.pp_tokens(body.define.tree.slice(values[0].start, values[-1].end), body.first_row)
-        is_split = [token.text for token in raw] != [token.text for token in tsast.pp_tokens(body.text)]
-        if body.is_parsed and not is_split:
+        if body.is_parsed:
             heads += parsed_heads(rel, body.root, lambda node, body=body: body.origin(node)[0])
             continue
-        found, opened = token_heads(rel, raw)
+        found, opened = token_heads(rel, tsast.pp_tokens(body.text, body.first_row))
         heads += found
         problems += [f"MACRO     {rel}:{row + 1} — the macro {body.name} opens a namespace named host, and the guard "
                      f"cannot read what its expansion defines.  Define the owner in its roster file without a "

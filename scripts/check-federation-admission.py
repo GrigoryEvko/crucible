@@ -54,10 +54,10 @@ WHAT READS THE SITES
     file that the parser cannot read fails.
 
     The kit keeps a macro body as raw text, so the guard parses each body
-    on its own, through tsast.macro_bodies.  A body that does not parse, or
-    whose parse a splice inside a name has split, is read from its
-    preprocessing tokens: a class key with its attribute groups and a name
-    that ends in FederationAdmission before `<`, `{`, `:` or `final`, and a
+    on its own, through tsast.macro_bodies, which joins a line splice first.
+    A body that does not parse is read from its preprocessing tokens: a
+    class key with its attribute groups and a name that ends in
+    FederationAdmission before `<`, `{`, `:` or `final`, and a
     `template <...>` that a qualified member name follows before `;`, `{`
     or `}`.
 
@@ -131,22 +131,17 @@ class Site:
     reason: str
 
 
-def joined(text: str) -> str:
-    """Return a name part as its tokens alone, so a line splice inside it joins."""
-    return "".join(token.text for token in tsast.pp_tokens(text))
-
-
 def name_parts(node: tsast.Node) -> tuple[str, ...]:
     """Return the names of a declarator id or of a class head name, outermost first, without template arguments.
 
     A name whose scope the kit cannot read, such as a decltype, gives its
-    last name alone.
+    last name alone.  The kit joins a line splice inside a name.
     """
     written = tsast.qualified_parts(node)
     if written is None:
         leaf = tsast.leaf_name(node)
-        return (joined(leaf),) if leaf else ()
-    return tuple(joined(part) for part in written[1])
+        return (leaf,) if leaf else ()
+    return written[1]
 
 
 def declarator_id(node: tsast.Node) -> tsast.Node | None:
@@ -230,11 +225,6 @@ def member_names(body: tsast.Node) -> set[str]:
     return names
 
 
-def first_line(node: tsast.Node) -> str:
-    """Return the first line of a node's text, for the report."""
-    return node.text.splitlines()[0].strip() if node.text else ""
-
-
 def class_head_sites(root: tsast.Node, path: str, members: set[str], row_of) -> list[Site]:
     """Return each class head under a node that defines or specializes a part of the admission."""
     sites = []
@@ -256,7 +246,7 @@ def class_head_sites(root: tsast.Node, path: str, members: set[str], row_of) -> 
         elif scopes and last in members:
             reason = f"a qualified class head named after the member {last} of {CLASS}"
         if reason is not None:
-            sites.append(Site(path, row_of(head) + 1, first_line(head), reason))
+            sites.append(Site(path, row_of(head) + 1, tsast.excerpt(head), reason))
     return sites
 
 
@@ -278,7 +268,7 @@ def declarator_sites(root: tsast.Node, path: str, members: set[str], row_of) -> 
                 reason = f"a qualified definition named after the member {parts[-1]} of {CLASS}"
             else:
                 continue
-            sites.append(Site(path, row_of(declaration) + 1, first_line(declaration), reason))
+            sites.append(Site(path, row_of(declaration) + 1, tsast.excerpt(declaration), reason))
     return sites
 
 
@@ -353,15 +343,13 @@ def macro_sites(root: Path, trees: list[tsast.Tree], members: set[str]) -> list[
     sites: list[Site] = []
     for body in tsast.macro_bodies(trees):
         rel = Path(body.define.tree.path).relative_to(root).as_posix()
-        values = [child for child in body.define.children if child.field == "value"]
-        raw = tsast.pp_tokens(body.define.tree.slice(values[0].start, values[-1].end), body.first_row)
-        is_split = [token.text for token in raw] != [token.text for token in tsast.pp_tokens(body.text)]
-        if body.is_parsed and not is_split:
+        if body.is_parsed:
             row_of = lambda node, body=body: body.origin(node)[0]  # noqa: E731
             sites += class_head_sites(body.root, rel, members, row_of)
             sites += declarator_sites(body.root, rel, members, row_of)
         else:
-            sites += token_sites(raw, rel, members, first_line(body.define))
+            sites += token_sites(tsast.pp_tokens(body.text, body.first_row), rel, members,
+                                 tsast.excerpt(body.define))
     return sites
 
 

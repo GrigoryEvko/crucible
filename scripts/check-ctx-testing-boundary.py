@@ -81,11 +81,6 @@ class Run(NamedTuple):
     alias_name: str | None
 
 
-def joined(part: str) -> str:
-    """Return one name part with each line splice inside it removed, as translation phase 2 does."""
-    return "".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part
-
-
 def scope_files(root: Path) -> list[Path]:
     """Return every C++ file under the scan directories, sorted, relative to the root."""
     found: list[Path] = []
@@ -154,7 +149,7 @@ def alias_targets(trees: Sequence[tsast.Tree]) -> dict[str, set[tuple[str, ...]]
     targets: dict[str, set[tuple[str, ...]]] = {}
     for tree in trees:
         for alias in tsast.namespace_aliases(tree):
-            targets.setdefault(joined(alias.name), set()).add(tuple(joined(part) for part in alias.target))
+            targets.setdefault(alias.name, set()).add(alias.target)
         for tokens in macro_bodies(tree):
             for run in macro_runs(tokens):
                 if run.alias_name is not None:
@@ -231,17 +226,18 @@ def tree_uses(tree: tsast.Tree, doors: frozenset[str]) -> list[int]:
         leaves = name_leaves(node)
         if leaves is None:
             continue
-        found, held = pair_rows([joined(leaf.text) for leaf in leaves], [leaf.start[0] for leaf in leaves], doors)
+        found, held = pair_rows([tsast.leaf_name(leaf) or "" for leaf in leaves], [leaf.start[0] for leaf in leaves],
+                                doors)
         rows += found
         held_leaves |= {(leaves[position].start, leaves[position].end) for position in held}
     for leaf in tree.find(*LEAVES):
-        if joined(leaf.text) in WITNESSES and (leaf.start, leaf.end) not in held_leaves:
+        if tsast.leaf_name(leaf) in WITNESSES and (leaf.start, leaf.end) not in held_leaves:
             rows.append(leaf.start[0])
     for using in tsast.using_names(tree):
-        if using.is_directive and any(joined(part) in doors for part in using.target):
+        if using.is_directive and any(part in doors for part in using.target):
             rows.append(using.node.start[0])
     for alias in tsast.namespace_aliases(tree):
-        if alias.target and joined(alias.target[-1]) in doors:
+        if alias.target and alias.target[-1] in doors:
             rows.append(alias.node.start[0])
     for tokens in macro_bodies(tree):
         for run in macro_runs(tokens):

@@ -183,14 +183,9 @@ def detail_namespace(path: NsPath) -> str | None:
     return "::" + "::".join(path[:path.index("detail", 1) + 1])
 
 
-def joined(parts: tuple[str, ...]) -> NsPath:
-    """Return name parts with each line splice inside them removed, as translation phase 2 does."""
-    return tuple("".join(token.text for token in tsast.pp_tokens(part)) if "\\" in part else part for part in parts)
-
-
 def enclosing_of(node: tsast.Node) -> NsPath:
     """Return the namespaces around a node, outermost first, an inline namespace left out."""
-    return joined(tsast.namespace_path(node, skip_inline=True))
+    return tsast.namespace_path(node, skip_inline=True)
 
 
 def prefixes(path: NsPath) -> list[NsPath]:
@@ -368,7 +363,7 @@ def resolved_includes(root: Path, rel: str, tree: tsast.Tree) -> list[str]:
         path = node.child_by_field("path")
         if path is None or path.type not in ("string_literal", "system_lib_string"):
             continue
-        body = path.text[1:-1].strip()
+        body = tsast.prose_text(path)[1:-1].strip()
         candidates = [(root / rel).parent / body] if path.type == "string_literal" else []
         candidates += [root / directory / body for directory in INCLUDE_DIRS]
         for candidate in candidates:
@@ -391,14 +386,14 @@ def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> F
     directives: list[Directive] = []
     directive_nodes: set[Position] = set()
     for alias in tsast.namespace_aliases(tree):
-        enclosing, target = enclosing_of(alias.node), joined(alias.target)
-        aliases.append(AliasDef(joined((alias.name,))[0], alias.is_global, target, enclosing, alias.scope.start,
+        enclosing, target = enclosing_of(alias.node), alias.target
+        aliases.append(AliasDef(alias.name, alias.is_global, target, enclosing, alias.scope.start,
                                 alias.scope.end, alias.node.start, alias.scope.type in NAMESPACE_SCOPES))
         names.append(Name(alias.node.line, alias.is_global, target, enclosing, alias.node.start))
     for using in tsast.using_names(tree):
         if using.is_directive:
             directive_nodes.add(using.node.start)
-            enclosing, target = enclosing_of(using.node), joined(using.target)
+            enclosing, target = enclosing_of(using.node), using.target
             names.append(Name(using.node.line, using.is_global, target, enclosing, using.node.start))
             directives.append(Directive(using.node.start, using.scope.end, using.is_global, target, enclosing,
                                         using.scope.type in NAMESPACE_SCOPES))
@@ -411,7 +406,7 @@ def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> F
             continue
         parts = tsast.qualified_parts(node)
         if parts is not None:
-            names.append(Name(node.line, parts[0], joined(parts[1]), enclosing_of(node), node.start))
+            names.append(Name(node.line, parts[0], parts[1], enclosing_of(node), node.start))
     for definition in tree.find("namespace_definition"):
         body = definition.child_by_field("body")
         if body is not None and detail_namespace(enclosing_of(body)):
