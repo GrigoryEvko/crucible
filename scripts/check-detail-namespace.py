@@ -6,8 +6,8 @@ gate of its own: the gate is the public door that calls it.  A file that
 names the detail function directly skips the gate.  So a use of
 ::foundation::...::detail or ::fixy::...::detail outside the two layers is
 refused.  The layers are include/foundation, include/fixy and their sources,
-src/foundation and src/fixy.  Every other C or C++ file under the scan roots
-is in scope: include/crucible, src, vessel, bench, tools, examples, fuzz and
+src/foundation and src/fixy.  Every other C++ file under the scan roots is
+in scope: include/crucible, src, vessel, bench, tools, examples, fuzz and
 test.
 
 WHAT COUNTS AS A USE
@@ -24,12 +24,20 @@ WHAT COUNTS AS A USE
         through an enclosing namespace or a directive counts only when the
         name itself spells detail and the layers declare that namespace, so
         `crucible::detail::x` after a directive of a layer is not a use.
-      - A namespace alias: its target counts as a use, and a name that
-        starts with the alias is read through the target.
+      - A name that starts with a namespace alias is read through the
+        target of the alias, chains of aliases included.  An alias of the
+        file itself wins when it is visible where the name stands.  An alias
+        at namespace scope in a file that the file includes, directly or
+        through other includes, applies when the name stands inside the
+        namespace of the alias.  So an alias that a header defines still
+        marks a use in a file that includes it, and so does an alias of the
+        detail namespace itself.
+      - A namespace alias: its target counts as a use.
       - A using-declaration and a using-directive of a detail namespace.
       - A namespace definition inside a detail namespace of a layer.
-      - A name in a macro body, read from its tokens, because the parse
-        keeps a macro body as raw text.
+      - A name in a macro body, read from its preprocessing tokens, because
+        the parse keeps a macro body as raw text.  The tokens come from the
+        whole replacement list, so a comment inside it hides nothing.
     A comment, a string literal and a raw string are not uses.
 
 WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
@@ -40,6 +48,9 @@ WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
       friend or a function object.  A file that names the argument type
       through the detail namespace is refused as usual.
     - A name that a macro builds from pieces with ##.
+    - An alias in a header that the include is not resolved to: a system
+      header, a computed include, or a path outside the including
+      directory, include/ and test/.
     - A negative-compile fixture, a file under a test directory named neg
       or *_neg.  It must fail to compile, so it builds nothing.
 
@@ -52,8 +63,9 @@ THE ALLOWLIST
     row that admits more uses than the file has is stale, so the list only
     shrinks.
 
-A file in scope that the parser cannot read fails the guard, unless
-scripts/tsast.py lists it as not C++, and then the token rule reads it.
+The guard parses every C++ file of the scan roots and of the layers once,
+because an alias in any header of an include closure can open a detail
+namespace.  A file in scope that the parser cannot read fails the guard.
 
 Exit 0 clean, 1 on an unlisted use, a surplus, a stale row or a parse
 failure, 2 on a usage error, a bad allowlist or a failed self-test, 3 when
@@ -71,10 +83,10 @@ import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
@@ -82,276 +94,377 @@ ALLOWLIST = "scripts/detail-namespace-allowlist.txt"
 SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "examples")
 LAYER_ROOTS = ("include/foundation/", "include/fixy/", "src/foundation/", "src/fixy/")
 LAYERS = frozenset({"foundation", "fixy"})
-SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inl", ".ipp", ".tpp"})
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
-# Only a text that names detail can use a detail namespace, so only such a
-# file is parsed.  A backslash line splice can split the word.
-DETAIL_WORD = re.compile(r"\bdetail\b|\\\r?\n")
 MACROS = ("preproc_def", "preproc_function_def")
 ROW = re.compile(r"^(?P<path>\S+)\s+(?P<namespace>::\S+)(?:\s+x(?P<count>[1-9][0-9]*))?$")
-# A qualified name in a token stream: an optional leading ::, then names
-# joined by ::.
-TOKEN = re.compile(r"::|[A-Za-z_]\w*|\S")
+
+# A namespace path, outermost name first.
+NsPath = tuple[str, ...]
+Position = tuple[int, int]
 
 
 class Refused(Exception):
     """The allowlist is missing or malformed (exit 2)."""
 
 
-def spelled(text: str) -> str:
-    """Return a piece of source as its tokens alone: comments and white space removed."""
-    return re.sub(r"\s+", "", cxx_lex.blank(text)[0])
+class Name(NamedTuple):
+    """One name of a file that can reach a detail namespace, as the parse gives it.
+
+    at is the position where lookup happens, or None for a macro body,
+    which can expand anywhere, so every directive of the file applies.
+    """
+
+    line: int
+    is_global: bool
+    parts: NsPath
+    enclosing: NsPath
+    at: Position | None
 
 
-def without_template_arguments(text: str) -> str:
-    """Return a spelled name with each balanced <...> removed."""
-    out: list[str] = []
-    depth = 0
-    for ch in text:
-        if ch == "<":
-            depth += 1
-        elif ch == ">" and depth > 0:
-            depth -= 1
-        elif depth == 0:
-            out.append(ch)
-    return "".join(out)
+class Directive(NamedTuple):
+    """One using-directive: its target, where it stands, and the end of the block that holds it.
+
+    is_shared says that the directive is at namespace scope, so it applies
+    in each later block of its namespace, not only to the end of its own.
+    """
+
+    start: Position
+    end: Position
+    is_global: bool
+    target: NsPath
+    enclosing: NsPath
+    is_shared: bool
 
 
-def parts_of(text: str) -> tuple[bool, list[str]]:
-    """Return (absolute, components) of a spelled qualified name."""
-    name = without_template_arguments(spelled(text))
-    absolute = name.startswith("::")
-    return absolute, [part for part in name.split("::") if part]
+class AliasDef(NamedTuple):
+    """One namespace alias of a file.
+
+    scope_start and scope_end bound the block that the alias is visible in,
+    and at is where the definition stands.  is_shared says that the alias is
+    at namespace scope, so a file that includes this one sees it.
+    """
+
+    name: str
+    is_global: bool
+    target: NsPath
+    enclosing: NsPath
+    scope_start: Position
+    scope_end: Position
+    at: Position
+    is_shared: bool
 
 
-def detail_namespace(path: list[str]) -> str | None:
+class FileFacts(NamedTuple):
+    """What the scan keeps of one parsed file once its tree is gone.
+
+    names is empty for a layer file: the scan reads a layer file only for
+    its includes, its aliases and its directives.
+    """
+
+    rel: str
+    includes: list[str]
+    aliases: list[AliasDef]
+    directives: list[Directive]
+    names: list[Name]
+
+
+# The scopes where a namespace alias is a namespace member, so that a file
+# which includes its file can name it.
+NAMESPACE_SCOPES = frozenset({"translation_unit", "declaration_list"})
+# The directories a bracket include resolves against, after the directory of
+# the including file for a quoted include.
+INCLUDE_DIRS = ("include", "test")
+
+
+def detail_namespace(path: NsPath) -> str | None:
     """Return the detail namespace that a path of a layer passes through, as ::a::b::detail, or None."""
     if not path or path[0] not in LAYERS or "detail" not in path[1:]:
         return None
     return "::" + "::".join(path[:path.index("detail", 1) + 1])
 
 
-class Scope:
-    """What a name in one file can resolve through: the aliases and the using-directives of the file.
+def enclosing_of(node: tsast.Node) -> NsPath:
+    """Return the namespaces around a node, outermost first, an inline namespace left out."""
+    return tsast.namespace_path(node, skip_inline=True)
 
-    A reading through an enclosing namespace or a using-directive counts
-    only when the name itself spells detail and the layers declare that
-    detail namespace.  Without that rule every name inside a reopened
-    namespace would count, and a name such as crucible::detail::x after a
-    directive of a layer namespace would read as a namespace that no layer
-    declares.
+
+def prefixes(path: NsPath) -> list[NsPath]:
+    """Return each enclosing namespace of a path, innermost first, for the readings of an unqualified name."""
+    return [path[:depth] for depth in range(len(path), 0, -1)]
+
+
+def is_within(enclosing: NsPath, scope: NsPath) -> bool:
+    """Say whether a name that stands in one namespace sees a member of another namespace.
+
+    An unnamed namespace is transparent, because its enclosing namespace
+    reads its members through an implicit using-directive.
+    """
+    named = tuple(part for part in scope if part)
+    return tuple(part for part in enclosing if part)[:len(named)] == named
+
+
+def chosen(paths: list[NsPath]) -> tuple[NsPath, ...]:
+    """Return the readings that an alias or a directive records: every layer reading, or else the first one."""
+    layer = [path for path in paths if path and path[0] in LAYERS]
+    return tuple(dict.fromkeys(layer)) if layer else tuple(paths[:1])
+
+
+# One alias of the scan: the file that defines it and its index there.
+AliasKey = tuple[str, int]
+
+
+class Resolver:
+    """Resolve the names of the scan the way C++ lookup can resolve them.
+
+    An unqualified start reads through the aliases of its file, then the
+    aliases at namespace scope of its include closure, then the global
+    namespace, each enclosing namespace and each open using-directive.  A
+    reading through an enclosing namespace or a directive counts only when
+    the name itself spells detail and the layers declare that detail
+    namespace.  Without that rule every name inside a reopened namespace
+    would count, and a name such as crucible::detail::x after a directive of
+    a layer namespace would read as a namespace that no layer declares.
     """
 
-    def __init__(self, declared: frozenset[str]) -> None:
-        self.aliases: dict[str, list[str]] = {}
-        # (start, end, target): a directive opens its target from where it
-        # stands to the end of the block that holds it.
-        self.directives: list[tuple[tuple[int, int], tuple[int, int], list[str]]] = []
+    def __init__(self, facts: dict[str, FileFacts], declared: frozenset[str]) -> None:
+        """Index the aliases of every parsed file."""
+        self.facts = facts
         self.declared = declared
+        self.shared_names = frozenset(alias.name for fact in facts.values() for alias in fact.aliases
+                                      if alias.is_shared)
+        self._closures: dict[str, tuple[str, ...]] = {}
+        self._bases: dict[AliasKey, tuple[NsPath, ...]] = {}
+        self._targets: dict[tuple[str, int], tuple[NsPath, ...]] = {}
 
-    def readings(self, absolute: bool, parts: list[str], enclosing: list[list[str]],
-                 at: tuple[int, int] | None) -> list[tuple[list[str], bool]]:
-        """Return each (path, through a prefix) that a name at a position can resolve to.
+    def closure(self, rel: str) -> tuple[str, ...]:
+        """Return every file that one file includes, directly or through other includes, sorted.
 
-        An unqualified start has several readings.  A position of None, for
-        a macro body that expands elsewhere, takes every directive of the
-        file.
+        Complexity: linear in the size of the include graph under the file, once for each file.
         """
+        if rel not in self._closures:
+            seen: set[str] = set()
+            pending = list(self.facts[rel].includes) if rel in self.facts else []
+            while pending:
+                included = pending.pop()
+                if included in seen or included == rel:
+                    continue
+                seen.add(included)
+                pending.extend(self.facts[included].includes if included in self.facts else ())
+            self._closures[rel] = tuple(sorted(seen))
+        return self._closures[rel]
+
+    def local_aliases(self, rel: str, name: str, enclosing: NsPath, at: Position | None) -> list[AliasKey]:
+        """Return the alias of the file that a name starts with, where the name stands.
+
+        An alias at namespace scope is visible after its definition in each
+        block of its namespace, because a namespace block that closes and
+        opens again is still the same namespace.  An alias in a function is
+        visible to the end of its block.  The innermost visible alias wins.
+        A macro body can expand anywhere, so every alias of the file with
+        that name applies to it.
+        """
+        aliases = self.facts[rel].aliases
+        named = [index for index, alias in enumerate(aliases) if alias.name == name]
+        if at is None:
+            return [(rel, index) for index in named]
+        visible = [index for index in named if aliases[index].at < at and (
+            is_within(enclosing, aliases[index].enclosing) if aliases[index].is_shared
+            else aliases[index].scope_start <= at < aliases[index].scope_end)]
+        if not visible:
+            return []
+        return [(rel, max(visible, key=lambda index: (not aliases[index].is_shared, len(aliases[index].enclosing),
+                                                      aliases[index].scope_start, aliases[index].at)))]
+
+    def shared_aliases(self, rel: str, name: str, enclosing: NsPath, at: Position | None) -> list[AliasKey]:
+        """Return each alias of the include closure that a name can start with, where the name stands."""
+        if name not in self.shared_names:
+            return []
+        found: list[AliasKey] = []
+        for included in self.closure(rel):
+            for index, alias in enumerate(self.facts[included].aliases):
+                if alias.is_shared and alias.name == name and (
+                        at is None or is_within(enclosing, alias.enclosing)):
+                    found.append((included, index))
+        return found
+
+    def bases(self, key: AliasKey, visiting: frozenset[AliasKey]) -> tuple[NsPath, ...]:
+        """Return the namespaces that one alias stands for, read at its definition; a cycle stops the walk."""
+        if key in self._bases:
+            return self._bases[key]
+        if key in visiting:
+            return ()
+        rel, index = key
+        alias = self.facts[rel].aliases[index]
+        readings = self.readings(rel, alias.is_global, alias.target, alias.enclosing, alias.at, visiting | {key})
+        result = chosen([path for path, _ in readings])
+        self._bases[key] = result
+        return result
+
+    def opened(self, rel: str, enclosing: NsPath, at: Position | None,
+               visiting: frozenset[AliasKey]) -> list[NsPath]:
+        """Return each namespace that a using-directive of the file opens where a name stands.
+
+        A directive at namespace scope applies after it in each block of its
+        namespace.  A directive in a function applies to the end of its block.
+        """
+        found: list[NsPath] = []
+        for index, directive in enumerate(self.facts[rel].directives):
+            if at is not None and not (directive.start < at and (
+                    is_within(enclosing, directive.enclosing) if directive.is_shared
+                    else at < directive.end)):
+                continue
+            if (rel, index) not in self._targets:
+                readings = self.readings(rel, directive.is_global, directive.target, directive.enclosing,
+                                         directive.start, visiting)
+                self._targets[(rel, index)] = chosen([path for path, _ in readings])
+            found += self._targets[(rel, index)]
+        return found
+
+    def readings(self, rel: str, is_global: bool, parts: NsPath, enclosing: NsPath, at: Position | None,
+                 visiting: frozenset[AliasKey] = frozenset()) -> list[tuple[NsPath, bool]]:
+        """Return each (path, through a prefix) that a name of one file can resolve to."""
         if not parts:
             return []
-        if absolute:
+        if is_global:
             return [(parts, False)]
-        if parts[0] in self.aliases:
-            return [(self.aliases[parts[0]] + parts[1:], False)]
-        opened = [target for start, end, target in self.directives if at is None or start <= at < end]
-        return [(parts, False)] + [(prefix + parts, True) for prefix in enclosing + opened]
+        local = self.local_aliases(rel, parts[0], enclosing, at)
+        if local:
+            return [(base + parts[1:], False) for key in local for base in self.bases(key, visiting)]
+        found = [(parts, False)]
+        for key in self.shared_aliases(rel, parts[0], enclosing, at):
+            found += [(base + parts[1:], False) for base in self.bases(key, visiting)]
+        opened = self.opened(rel, enclosing, at, visiting)
+        return found + [(prefix + parts, True) for prefix in prefixes(enclosing) + opened]
 
-    def reaches(self, absolute: bool, parts: list[str], enclosing: list[list[str]],
-                at: tuple[int, int] | None) -> str | None:
-        """Return the detail namespace that a name reaches, or None."""
-        for path, through_prefix in self.readings(absolute, parts, enclosing, at):
+    def reaches(self, rel: str, name: Name) -> str | None:
+        """Return the detail namespace that a name of one file reaches, or None."""
+        for path, through_prefix in self.readings(rel, name.is_global, name.parts, name.enclosing, name.at):
             namespace = detail_namespace(path)
-            if namespace and (not through_prefix or ("detail" in parts and namespace in self.declared)):
+            if namespace and (not through_prefix or ("detail" in name.parts and namespace in self.declared)):
                 return namespace
         return None
 
-    def resolved(self, absolute: bool, parts: list[str], enclosing: list[list[str]],
-                 at: tuple[int, int] | None) -> list[str]:
-        """Return the one reading that an alias or a directive records: a layer reading when one exists."""
-        readings = [path for path, _ in self.readings(absolute, parts, enclosing, at)]
-        return next((r for r in readings if r and r[0] in LAYERS), readings[0] if readings else [])
+
+def outermost_qualified(tree: tsast.Tree) -> list[tsast.Node]:
+    """Return each qualified_identifier that no other qualified_identifier holds as its name."""
+    return [node for node in tree.find("qualified_identifier")
+            if not (node.parent is not None and node.parent.type == "qualified_identifier" and node.field == "name")]
 
 
-def namespace_path(node: tsast.Node) -> list[str]:
-    """Return the path of the namespaces around a node, outermost first."""
-    path: list[str] = []
-    current = node.parent
-    while current is not None:
-        if current.type == "namespace_definition":
-            name = current.child_by_field("name")
-            if name is not None:
-                path[:0] = parts_of(name.text)[1]
-        current = current.parent
-    return path
+def resolved_includes(root: Path, rel: str, tree: tsast.Tree) -> list[str]:
+    """Return each file of the scan that one file includes, relative to the root.
 
-
-def prefixes(path: list[str]) -> list[list[str]]:
-    """Return each enclosing namespace of a path, innermost first, for the readings of an unqualified name."""
-    return [path[:i] for i in range(len(path), 0, -1)]
-
-
-def macro_uses(text: str, scope: Scope, first_line: int) -> list[tuple[int, str]]:
-    """Return (line, detail namespace) for each qualified name in a macro body that reaches one.
-
-    Complexity: linear in the length of the text.
+    A quoted include resolves against the directory of the file first, then
+    every include resolves against INCLUDE_DIRS.  A system header and a
+    computed include resolve to nothing.
     """
-    joined, joins = cxx_lex.splice(text)
-    blanked, _ = cxx_lex.blank(joined, blank_literals=True)
-    tokens = [(m.group(), m.start()) for m in TOKEN.finditer(blanked)]
-    found = []
-    i = 0
-    while i < len(tokens):
-        start = i
-        absolute = tokens[i][0] == "::"
-        if absolute:
-            i += 1
-        parts: list[str] = []
-        while i < len(tokens) and re.fullmatch(r"[A-Za-z_]\w*", tokens[i][0]):
-            parts.append(tokens[i][0])
-            if i + 1 < len(tokens) and tokens[i + 1][0] == "::":
-                i += 2
-            else:
-                i += 1
+    found: list[str] = []
+    for node in tree.find("preproc_include"):
+        path = node.child_by_field("path")
+        if path is None or path.type not in ("string_literal", "system_lib_string"):
+            continue
+        body = path.text[1:-1].strip()
+        candidates = [(root / rel).parent / body] if path.type == "string_literal" else []
+        candidates += [root / directory / body for directory in INCLUDE_DIRS]
+        for candidate in candidates:
+            if candidate.is_file():
+                found.append(os.path.relpath(candidate.resolve(), root.resolve()))
                 break
-        if len(parts) > 1 or (absolute and parts):
-            namespace = scope.reaches(absolute, parts, [], None)
-            if namespace:
-                found.append((first_line + cxx_lex.line_of(blanked, joins, tokens[start][1]) - 1, namespace))
-        if i == start:
-            i += 1
     return found
 
 
-def tree_uses(tree: tsast.Tree, declared: frozenset[str]) -> list[tuple[int, str]]:
-    """Return (line, detail namespace) for each use in one parsed file.
+def file_facts(root: Path, rel: str, tree: tsast.Tree, *, with_names: bool) -> FileFacts:
+    """Return the includes, aliases, directives and names of one parsed file.
 
-    Complexity: linear in the number of nodes, times the depth of the
-    namespaces for each qualified name.
+    with_names false keeps no name: a layer file serves only its includes,
+    its aliases and its directives.
+
+    Complexity: linear in the number of nodes, plus the length of the macro bodies.
     """
-    scope = Scope(declared)
-    found: list[tuple[int, str]] = []
-
-    def record(node: tsast.Node, absolute: bool, parts: list[str], enclosing: list[list[str]]) -> None:
-        """Record one use when the name reaches a detail namespace of a layer."""
-        namespace = scope.reaches(absolute, parts, enclosing, node.start)
-        if namespace:
-            found.append((node.line, namespace))
-
-    # Aliases and directives first, in order: a later name reads through them.
-    for node in tree.find("namespace_alias_definition", "using_declaration"):
-        enclosing = prefixes(namespace_path(node))
-        if node.type == "namespace_alias_definition":
-            name = node.child_by_field("name")
-            target = next((c for c in node.children if c.type in ("nested_namespace_specifier",
-                                                                    "namespace_identifier", "qualified_identifier")
-                           and c.field != "name"), None)
-            if name is None or target is None:
-                continue
-            absolute, parts = parts_of(target.text)
-            record(node, absolute, parts, enclosing)
-            scope.aliases[spelled(name.text)] = scope.resolved(absolute, parts, enclosing, node.start)
-        elif spelled(node.text).startswith("usingnamespace"):
-            absolute, parts = parts_of(re.sub(r"^\s*using\s+namespace\b", "", cxx_lex.blank(node.text)[0]).rstrip(";"))
-            record(node, absolute, parts, enclosing)
-            block_end = node.parent.end if node.parent is not None else node.end
-            scope.directives.append((node.start, block_end, scope.resolved(absolute, parts, enclosing, node.start)))
-    for node in tree.find("qualified_identifier"):
-        if node.parent is not None and node.parent.type == "qualified_identifier":
+    names: list[Name] = []
+    aliases: list[AliasDef] = []
+    directives: list[Directive] = []
+    directive_nodes: set[Position] = set()
+    for alias in tsast.namespace_aliases(tree):
+        enclosing = enclosing_of(alias.node)
+        aliases.append(AliasDef(alias.name, alias.is_global, alias.target, enclosing, alias.scope.start,
+                                alias.scope.end, alias.node.start, alias.scope.type in NAMESPACE_SCOPES))
+        names.append(Name(alias.node.line, alias.is_global, alias.target, enclosing, alias.node.start))
+    for using in tsast.using_names(tree):
+        if using.is_directive:
+            directive_nodes.add(using.node.start)
+            enclosing = enclosing_of(using.node)
+            names.append(Name(using.node.line, using.is_global, using.target, enclosing, using.node.start))
+            directives.append(Directive(using.node.start, using.scope.end, using.is_global, using.target, enclosing,
+                                        using.scope.type in NAMESPACE_SCOPES))
+    includes = resolved_includes(root, rel, tree)
+    if not with_names:
+        return FileFacts(rel, includes, aliases, directives, [])
+    for node in outermost_qualified(tree):
+        parent = node.parent
+        if parent is not None and parent.type == "using_declaration" and parent.start in directive_nodes:
             continue
-        if node.parent is not None and node.parent.type == "using_declaration" \
-                and spelled(node.parent.text).startswith("usingnamespace"):
+        parts = tsast.qualified_parts(node)
+        if parts is not None:
+            names.append(Name(node.line, parts[0], parts[1], enclosing_of(node), node.start))
+    for definition in tree.find("namespace_definition"):
+        body = definition.child_by_field("body")
+        if body is not None and detail_namespace(enclosing_of(body)):
+            names.append(Name(definition.line, True, enclosing_of(body), (), definition.start))
+    for define in tree.find(*MACROS):
+        values = [child for child in define.children if child.field == "value"]
+        if not values:
             continue
-        absolute, parts = parts_of(node.text)
-        record(node, absolute, parts, prefixes(namespace_path(node)))
-    for node in tree.find("namespace_definition"):
-        name = node.child_by_field("name")
-        if name is not None:
-            path = namespace_path(node) + parts_of(name.text)[1]
-            namespace = detail_namespace(path)
-            if namespace:
-                found.append((node.line, namespace))
-    for node in tree.find(*MACROS):
-        value = node.child_by_field("value")
-        if value is not None:
-            found += macro_uses(value.text, scope, value.line)
-    return found
+        tokens = tsast.pp_tokens(tree.slice(values[0].start, values[-1].end), values[0].start[0])
+        for is_global, parts, row in tsast.token_qualified_names(tokens):
+            if len(parts) > 1 or (is_global and parts):
+                names.append(Name(row + 1, is_global, parts, (), None))
+    return FileFacts(rel, includes, aliases, directives, names)
 
 
-def scope_files(root: Path) -> list[str]:
-    """Return the C and C++ files in scope: under the scan roots, outside the layers and the fixtures."""
+def listed_files(root: Path, roots: tuple[str, ...]) -> list[str]:
+    """Return the C++ files under the given roots that git does not ignore, relative to the root, sorted."""
     listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard",
-                             "--", *SCAN_ROOTS], capture_output=True, check=False)
+                             "--", *roots], capture_output=True, check=False)
     if listed.returncode == 0:
         paths = {p for p in listed.stdout.decode().split("\0") if p}
     else:
-        paths = {str(p.relative_to(root)) for r in SCAN_ROOTS for p in (root / r).rglob("*") if p.is_file()}
-    return sorted(p for p in paths if Path(p).suffix in SUFFIXES and not p.startswith(LAYER_ROOTS)
-                  and not NEG_FIXTURE.search(p) and (root / p).is_file())
-
-
-def names_detail(root: Path, rel: str) -> bool:
-    """Return whether a file names detail outside its comments and literals."""
-    return DETAIL_WORD.search(cxx_lex.blank((root / rel).read_text(errors="replace"))[0]) is not None
-
-
-def declared_detail_namespaces(root: Path) -> frozenset[str]:
-    """Return each detail namespace that the layers declare, as ::a::b::detail.
-
-    Complexity: one parse of each layer header that names detail.
-    """
-    listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard",
-                             "--", *LAYER_ROOTS], capture_output=True, check=False)
-    if listed.returncode == 0:
-        paths = [p for p in listed.stdout.decode().split("\0") if p]
-    else:
-        paths = [str(p.relative_to(root)) for r in LAYER_ROOTS for p in (root / r).rglob("*") if p.is_file()]
-    layer_files = [p for p in sorted(paths) if Path(p).suffix in SUFFIXES and (root / p).is_file()
-                   and names_detail(root, p)]
-    declared = set()
-    for tree in tsast.parse([root / rel for rel in layer_files], strict=False):
-        for node in tree.find("namespace_definition"):
-            name = node.child_by_field("name")
-            if name is not None:
-                namespace = detail_namespace(namespace_path(node) + parts_of(name.text)[1])
-                if namespace:
-                    declared.add(namespace)
-    return frozenset(declared)
+        paths = {str(p.relative_to(root)) for r in roots for p in (root / r).rglob("*") if p.is_file()}
+    return sorted(p for p in paths if tsast.is_in_cpp_scope(p) and (root / p).is_file())
 
 
 def scan(root: Path) -> tuple[Counter, dict[tuple[str, str], list[int]], list[str]]:
     """Return the count of uses for each (path, namespace), their lines, and each parse failure.
 
-    Complexity: one lexical pass over each file in scope, and one parse of
-    each file that names detail, in scope and in the layers.
+    Complexity: one parse of each C++ file under the scan roots and the layers.
     """
-    declared = declared_detail_namespaces(root)
-    hinted = [rel for rel in scope_files(root) if names_detail(root, rel)]
+    layer = listed_files(root, LAYER_ROOTS)
+    scope = [rel for rel in listed_files(root, SCAN_ROOTS)
+             if not rel.startswith(LAYER_ROOTS) and not NEG_FIXTURE.search(rel)]
+    in_scope = set(scope)
+    declared: set[str] = set()
+    facts: dict[str, FileFacts] = {}
+    problems: list[str] = []
+    for tree in tsast.parse([root / rel for rel in layer + scope], strict=False):
+        rel = str(Path(tree.path).relative_to(root))
+        if rel not in in_scope:
+            declared |= {namespace for definition in tree.find("namespace_definition")
+                         if (body := definition.child_by_field("body")) is not None
+                         and (namespace := detail_namespace(enclosing_of(body)))}
+        elif tree.diagnostic is not None:
+            problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its uses of a "
+                            f"detail namespace: {tree.diagnostic}")
+            continue
+        facts[rel] = file_facts(root, rel, tree, with_names=rel in in_scope)
+    resolver = Resolver(facts, frozenset(declared))
     counts: Counter = Counter()
     lines: dict[tuple[str, str], list[int]] = {}
-    problems: list[str] = []
-    for tree in tsast.parse([root / rel for rel in hinted], strict=False):
-        rel = str(Path(tree.path).relative_to(root))
-        if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its uses of "
-                                f"a detail namespace: {tree.diagnostic}")
-                continue
-            uses = macro_uses((root / rel).read_text(errors="replace"), Scope(declared), 1)
-        else:
-            uses = tree_uses(tree, declared)
-        for line, namespace in uses:
-            counts[(rel, namespace)] += 1
-            lines.setdefault((rel, namespace), []).append(line)
+    for rel in scope:
+        for name in facts[rel].names if rel in facts else ():
+            namespace = resolver.reaches(rel, name)
+            if namespace:
+                counts[(rel, namespace)] += 1
+                lines.setdefault((rel, namespace), []).append(name.line)
     return counts, lines, problems
 
 
@@ -394,7 +507,7 @@ def check(root: Path) -> int:
         rel, namespace = key
         admitted = rows.get(key, (0, 0))[0]
         if counts[key] > admitted:
-            where = ", ".join(map(str, lines[key]))
+            where = ", ".join(map(str, sorted(lines[key])))
             problems.append(f"REFUSED   {rel}:{where} — {counts[key]} use(s) of {namespace}, {admitted} admitted.  A "
                             f"detail namespace does the work of a door with no gate of its own.  Call the public "
                             f"door of the layer.")
@@ -467,7 +580,10 @@ def self_test() -> int:
               "auto pin = ::crucible::fixy::sched::detail::Pin{};\n"
               "namespace crucible { namespace detail { int own; } int n = detail::own; }\n"
               "void call() { foundation::effects::frob({}); }\n"
-              "using namespace foundation::effects;\nauto other = crucible::detail::own;\n")
+              "using namespace foundation::effects;\nauto other = crucible::detail::own;\n"
+              '#define TEXT "::foundation::effects::detail::Key"\n'
+              "#define OWN ::crucible::detail::Own\n"
+              "using foundation::effects::frob;\n")
         # One directive into a detail namespace is one use, however many
         # names come after it.
         write(root, "test/fixy/test_directive.cpp",
@@ -476,8 +592,9 @@ def self_test() -> int:
         write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n"
                                "test/fixy/test_directive.cpp ::foundation::effects::detail x1 — one directive\n")
         expect(root, 0, "3 use(s) of a detail namespace", "a use inside the layers, reviewed tests, a fixture, a "
-                                                            "comment, a string, the old tree, a public door and a "
-                                                            "crucible detail after a layer directive pass")
+                                                            "comment, a string, the old tree, a public door, a "
+                                                            "macro string and a crucible detail after a layer "
+                                                            "directive pass", True)
         (root / "test/fixy/test_directive.cpp").unlink()
         write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n")
 
@@ -487,20 +604,67 @@ def self_test() -> int:
             "src/UsingDeclaration.cpp": "using foundation::effects::detail::Key;\nvoid f() { frob(Key{}); }\n",
             "src/Alias.cpp": "namespace fe = ::foundation::effects;\nvoid f() { frob(fe::detail::Key{}); }\n",
             "src/AliasOfDetail.cpp": "namespace fd = foundation::effects::detail;\n",
+            "src/AliasComment.cpp": "namespace fe = foundation:: /*x*/ effects;\nvoid f(fe::detail::Key);\n",
             "src/Directive.cpp": "using namespace fixy::session::detail;\n",
             "src/DirectiveOfParent.cpp": "using namespace foundation::effects;\nauto key = detail::Key{};\n",
+            "src/DirectiveComment.cpp": "using namespace foundation:: /*c*/ effects;\nauto k = detail::Key{};\n",
             "src/Reopened.cpp": "namespace foundation::effects::detail { int forged; }\n",
+            "src/ReopenComment.cpp": "namespace foundation:: /*c*/ effects::detail { int forged; }\n",
             "src/ReopenedParent.cpp": "namespace foundation { namespace effects {\nauto key = detail::Key{};\n} }\n",
             "src/Adl.cpp": "namespace fe = foundation::effects;\nvoid call(fe::detail::Key key) { helper(key); }\n",
+            "src/ReopenedAlias.cpp": "namespace { namespace fe = foundation::effects; }\n"
+                                     "namespace { auto key = fe::detail::Key{}; }\n",
+            "src/ReopenedDirective.cpp": "namespace probe { using namespace foundation::effects; }\n"
+                                         "namespace probe { auto key = detail::Key{}; }\n",
+            "src/UnnamedAlias.cpp": "namespace { namespace fe = foundation::effects; }\nauto key = fe::detail::Key{};\n",
             "src/Macro.cpp": "#define REACH ::fixy::session::detail::Core\nREACH core;\n",
+            "src/SplitMacro.cpp": "#define REACH ::fixy::session:: /* c */ \\\n    detail::Core\nREACH core;\n",
             "src/MultiLine.cpp": "auto key = foundation /* hidden */ ::\n    effects::detail::Key{};\n",
             "src/TemplateArgument.cpp": "std::vector<::fixy::session::detail::Core> cores;\n",
+            "src/ParenArgument.cpp": "auto k = ::foundation::effects::detail::Key<(1 > 0)>{};\n",
             "include/crucible/Base.h": "struct Derived : fixy::session::detail::Core {};\n",
             "vessel/Decltype.cpp": "decltype(::foundation::effects::detail::Key{}) key;\n",
         }
         for rel, text in forgeries.items():
             write(root, rel, text)
             expect(root, 1, f"REFUSED   {rel}", f"a use outside the layers: {rel}", True)
+            (root / rel).unlink()
+
+        # An alias that another file defines opens the namespace too, and
+        # an alias of the detail namespace itself names it with no word
+        # detail in the using file.
+        cross = {
+            "include/crucible/Alias.h": "#pragma once\nnamespace fe2 = ::foundation::effects;\n",
+            "include/foundation/effects/Alias.h": "#pragma once\nnamespace fd2 = ::foundation::effects::detail;\n",
+        }
+        for rel, text in cross.items():
+            write(root, rel, text)
+        for rel, text, name in (
+                ("src/UseAlias.cpp", "#include <crucible/Alias.h>\nauto k = fe2::detail::Key{};\n",
+                 "a use through an alias of an included header"),
+                ("src/UseLayerAlias.cpp", "#include <foundation/effects/Alias.h>\nauto k = fd2::Key{};\n",
+                 "a use through an alias of the detail namespace that a layer header defines"),
+                ("src/UseChained.cpp", '#include "Chain.h"\nauto k = fe4::detail::Key{};\n',
+                 "a use through an alias of a header that another header includes")):
+            write(root, "src/Chain.h", "#pragma once\n#include <crucible/Alias.h>\nnamespace fe4 = fe2;\n")
+            write(root, rel, text)
+            expect(root, 1, f"REFUSED   {rel}", name, True)
+            (root / rel).unlink()
+        (root / "src/Chain.h").unlink()
+        # An alias counts only where C++ can see it: in a file that includes
+        # its header, unless the file defines an alias of the same name.
+        write(root, "src/Unincluded.cpp", "auto k = fe2::detail::Key{};\n")
+        write(root, "src/Shadowed.cpp", "#include <crucible/Alias.h>\nnamespace fe2 = ::crucible::effects;\n"
+                                        "auto k = fe2::detail::Key{};\n")
+        write(root, "src/OtherScope.cpp", "#include <crucible/Scoped.h>\nauto k = fs::detail::Key{};\n")
+        write(root, "include/crucible/Scoped.h", "#pragma once\nnamespace crucible { namespace fs = "
+                                                 "::foundation::effects; }\n")
+        expect(root, 0, "2 use(s) of a detail namespace", "an alias from a header the file does not include, an "
+                                                          "alias the file shadows and an alias of another "
+                                                          "namespace scope pass", True)
+        for rel in ("src/Unincluded.cpp", "src/Shadowed.cpp", "src/OtherScope.cpp", "include/crucible/Scoped.h"):
+            (root / rel).unlink()
+        for rel in cross:
             (root / rel).unlink()
 
         write(root, "test/fixy/test_probe.cpp",
