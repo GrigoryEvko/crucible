@@ -2,7 +2,7 @@
 // payloads must declare an explicit VendorPinned/VendorCtx boundary.
 
 #include <crucible/safety/_Vendor.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

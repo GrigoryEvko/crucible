@@ -1,13 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // proto::mint_session<Proto>(ctx, resource) is deleted in
-// sessions/SessionMint.h.  Its deletion message sends the caller to
+// sessions/_SessionMint.h.  Its deletion message sends the caller to
 // mint_permissioned_session<Proto>(ctx, resource, perms...).
 //
 // Expected diagnostic: "is removed" / "mint_permissioned_session".
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

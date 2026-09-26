@@ -11,7 +11,7 @@
 // Expected diagnostic: "associated constraints are not satisfied"
 // pointing at IsExecCtx (inside CtxFitsProtocol).
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace proto = crucible::safety::proto;
 

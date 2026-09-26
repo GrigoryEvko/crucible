@@ -5,7 +5,7 @@
 // constraint of std::bit_cast refuses it, and a claim about the session epoch
 // cannot come from bytes.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <bit>
 

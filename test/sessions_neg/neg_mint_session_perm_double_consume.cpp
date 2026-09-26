@@ -5,7 +5,7 @@
 // rejects duplicate tags structurally at the mint boundary.
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

@@ -5,7 +5,7 @@
 // aggregate, and no constructor of it is trivial.  The mandate of
 // std::start_lifetime_as refuses it.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <memory>
 

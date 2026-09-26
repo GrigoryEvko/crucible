@@ -48,7 +48,7 @@
 // -fsanitize=thread through the shared crucible_test factory.
 
 #include <crucible/bridges/_CrashTransport.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include "../test_assert.h"
 
 #include <atomic>

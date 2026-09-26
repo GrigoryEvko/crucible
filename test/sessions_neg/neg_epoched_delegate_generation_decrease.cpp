@@ -5,7 +5,7 @@
 // minting requires an exact (epoch, generation) match so stale peers
 // cannot satisfy a deliberately lowered threshold.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;

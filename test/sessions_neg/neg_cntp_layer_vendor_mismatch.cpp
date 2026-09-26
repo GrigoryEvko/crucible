@@ -1,7 +1,7 @@
 // GAPS-068 fixture #2: a CNTP carrier pinned to NV cannot delegate an
 // AMD-pinned upper-layer protocol.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

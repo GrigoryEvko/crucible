@@ -187,10 +187,8 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_channel` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
-| `mint_channel` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 11 |
 | `mint_coord` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_federation_pool` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | - | token | · | [✗ NO-FIXY] | HS14: 18 |
-| `mint_permissioned_session` | `include/crucible/sessions/SessionMint.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 43 |
 | `mint_receiver` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
 | `mint_sender` | `include/crucible/sessions/FederationProtocol.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 12 |
 | `mint_session_handle` | `include/crucible/sessions/Session.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 25 |
@@ -382,5 +380,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 112 | 57 | 46 | 9 | 0 | 101 | 41 |
+| old (`include/crucible/`) | 110 | 55 | 46 | 9 | 0 | 99 | 41 |
 | new (`include/foundation/`, `include/fixy/`) | 110 | 47 | 60 | 3 | 0 | · | 22 |

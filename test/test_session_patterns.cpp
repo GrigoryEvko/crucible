@@ -4,7 +4,7 @@
 // type-checks on its own.
 
 #include <crucible/sessions/_SessionPatterns.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <cstdio>
 #include <deque>

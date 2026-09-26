@@ -7,7 +7,7 @@
 #include <crucible/sessions/SessionAssoc.h>
 #include <crucible/sessions/SessionContext.h>
 #include <crucible/sessions/SessionGlobal.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <cstdio>
 #include <deque>

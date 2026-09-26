@@ -1980,6 +1980,27 @@ crucible/bridges/_RecordingSessionHandle.h:mint_recording_session  → include/f
 crucible/bridges/_RecordingSessionHandle.h:RecordingCrashWatchedHandle  → include/fixy/session/Recording.h  — Folded into Recorded, which wraps a CrashWatched handle and records a send to a crashed peer as LostToCrashedPeer and a crash branch as Stop.
 crucible/bridges/_RecordingSessionHandle.h:RecordingSessionHandle  → include/fixy/session/Recording.h  — Replaced by Recorded, one decorator over a plain handle, a crash-watched handle or a checkpoint handle.
 
+# ── sessions: the context gates of the session mints and the protocol rows ──
+crucible/sessions/_SessionMint.h:CtxFitsChannel  → include/fixy/session/Handle.h  — Replaced by CtxFitsForkedChannel. The new channel mint forks the two sides from one context, so the gate checks the protocol and its dual against that one context.
+crucible/sessions/_SessionMint.h:CtxFitsPermissionedProtocol  → include/fixy/session/Handle.h  — Replaced by CtxFitsSessionFrom and CtxFitsPermissionedSession, which also require that the context admits each permission of the set.
+crucible/sessions/_SessionMint.h:CtxFitsProtocol  → include/fixy/session/Handle.h  — Replaced by CtxAdmitsProtocolRow, which also admits the permission row of each region that the protocol delivers.
+crucible/sessions/_SessionMint.h:EpochExecCtx  — Dropped with the epoched delegation heads, which have no carrier. No other reader asks a context for an epoch.
+crucible/sessions/_SessionMint.h:ProtocolEpochAdmittedByLoopCtx  — Dropped with the epoched delegation heads, whose thresholds it compared with the epoch of the context.
+crucible/sessions/_SessionMint.h:ProtocolPermissionedRunnable  → include/fixy/session/Handle.h  — Replaced by WellFormedRunnableProtocol, which the channel gate reads for the protocol and for its dual.
+crucible/sessions/_SessionMint.h:ProtocolVendorAdmittedByLoopCtx  — Dropped. In the new tree the vendor pin is a declaration for the layer above, and the handle steps the protocol that it pins.
+crucible/sessions/_SessionMint.h:proto_row_admitted_by  → include/fixy/session/Handle.h  — The per-combinator walk became protocol_payload_row_t, one payload walk over the rules of fixy/concurrent/PayloadRow.h, which CtxAdmitsProtocolRow compares with the row of the context.
+crucible/sessions/_SessionMint.h:proto_row_admitted_by_v  → include/fixy/session/Handle.h  — Replaced by CtxAdmitsProtocolRow.
+crucible/sessions/_SessionMint.h:runtime_smoke_test_session_mint  — Dropped. The tests of fixy/session exercise the session mints, and no header of the new tree carries a smoke test that no one calls.
+crucible/sessions/_SessionMint.h:SessionEpochAuthority  — Dropped with the epoched delegation heads, the only readers of the session epoch.
+crucible/sessions/_SessionMint.h:SessionEpochSource  — Dropped with the epoched delegation heads, the only readers of the session epoch. The compare-exchange writer that its mirror row describes has no port to carry it.
+crucible/sessions/_SessionMint.h:with_session_epoch  — Dropped with EpochExecCtx, the context that it built.
+crucible/sessions/_SessionRowExtraction.h:NumericalPayloadRow  — Dropped. A NumericalTier band is a Graded wrapper, and the payload walk of fixy/concurrent/PayloadRow.h reports the row that the band hides, as it does for every band.
+crucible/sessions/_SessionRowExtraction.h:payload_row_effect  — Dropped with NumericalPayloadRow, the one pairing that it projected.
+crucible/sessions/_SessionRowExtraction.h:payload_row_effect_t  — Dropped with payload_row_effect.
+crucible/sessions/_SessionRowExtraction.h:protocol_effect_row  → include/fixy/session/Handle.h  — Replaced by protocol_payload_row_t, the union of the payload rows of a protocol, and protocol_delivered_permission_row_t for the regions that it delivers.
+crucible/sessions/_SessionRowExtraction.h:protocol_effect_row_t  → include/fixy/session/Handle.h  — Replaced by protocol_payload_row_t.
+crucible/sessions/_SessionRowExtraction.h:runtime_smoke_test_payload_row  — Dropped. The tests of fixy/concurrent/PayloadRow.h exercise the payload walk, and no header of the new tree carries a smoke test that no one calls.
+
 # ── safety: the stage-shape recognizers and the signature inference ─────
 # No production file and no header of the new tree classifies a function
 # by its parameter shape, infers a row or a tag set from a signature, or

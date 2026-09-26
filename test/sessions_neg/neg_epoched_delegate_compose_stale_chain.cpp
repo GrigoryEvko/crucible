@@ -5,7 +5,7 @@
 // handoff is fresh at epoch 6; the composed continuation attempts to
 // delegate again at epoch 5 and is rejected by the same mint gate.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;

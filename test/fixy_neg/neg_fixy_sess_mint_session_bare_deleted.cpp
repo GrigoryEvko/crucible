@@ -1,13 +1,13 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // proto::mint_session<Proto>(resource), the overload without a context, is
-// deleted in sessions/SessionMint.h.  Its deletion message sends the caller
+// deleted in sessions/_SessionMint.h.  Its deletion message sends the caller
 // to mint_permissioned_session<Proto>(ctx, resource, perms...).  The
 // overload that takes a context has its own fixture.
 //
 // Expected diagnostic: "is removed" / "mint_permissioned_session".
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

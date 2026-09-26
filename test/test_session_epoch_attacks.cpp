@@ -8,7 +8,7 @@
 // still succeeds is an entry of the ledger at the foot of this file, and
 // the ledger only shrinks.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <atomic>
 #include <cstdint>

@@ -21,7 +21,7 @@
 // AutoSplit.h read the workload hint, Endpoint.h reads the heat tier
 // and the allocator class, permissions/PermissionFork.h reads the
 // workload budget to choose between running the children inline and
-// spawning them, and sessions/SessionMint.h re-exports every axis.
+// spawning them, and sessions/_SessionMint.h re-exports every axis.
 // This layer carries none of that policy.  Where a caller wants to say
 // how hot a path is or which allocator it reaches for, it grades the
 // value with the band wrapper for that axis; a channel or a fork that

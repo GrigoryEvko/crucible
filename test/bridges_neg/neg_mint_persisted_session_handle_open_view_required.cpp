@@ -16,7 +16,7 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/_SessionPersistence.h>
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;

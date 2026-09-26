@@ -21,8 +21,8 @@
 #include <crucible/sessions/_SessionPayloadSubsort.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
 #include <crucible/sessions/SessionQueue.h>
-#include <crucible/sessions/SessionMint.h>
-#include <crucible/sessions/SessionRowExtraction.h>
+#include <crucible/sessions/_SessionMint.h>
+#include <crucible/sessions/_SessionRowExtraction.h>
 #include <crucible/sessions/_SessionSubtype.h>
 #include <crucible/sessions/_SessionSubtypeReason.h>
 #include <crucible/sessions/_SessionView.h>

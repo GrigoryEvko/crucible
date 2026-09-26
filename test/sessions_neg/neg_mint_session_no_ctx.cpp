@@ -5,7 +5,7 @@
 // mint_permissioned_session(ctx, resource, perms...) or, for tests of
 // bare mechanics, mint_session_handle(resource).
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 using namespace crucible::safety::proto;
 

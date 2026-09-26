@@ -9,7 +9,7 @@
 #include <crucible/bridges/_RecordingSessionHandle.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/_SessionEventLog.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <array>
 #include <cstdio>

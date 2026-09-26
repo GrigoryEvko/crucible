@@ -4,7 +4,7 @@
 // reshard handoff that requires epoch 5. EpochedAccept admits newer
 // recipients, but stale recipients fail at the ctx-bound mint.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;

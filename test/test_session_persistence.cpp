@@ -5,7 +5,7 @@
 #include <crucible/bridges/_SessionPersistence.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include "test_assert.h"
 

@@ -3,7 +3,7 @@
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/_SessionCheckpoint.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <cstdio>
 #include <deque>

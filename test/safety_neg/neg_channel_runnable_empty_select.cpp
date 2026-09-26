@@ -15,7 +15,7 @@
 // Expected diagnostic: ProtocolPermissionedRunnable /
 // CtxFitsChannel / constraints not satisfied.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include <crucible/effects/_ExecCtx.h>
 
 namespace proto = ::crucible::safety::proto;

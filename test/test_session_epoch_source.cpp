@@ -12,7 +12,7 @@
 //      again at the mint when the source advanced after the door.
 //   4. A second live source ends the process.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include <foundation/Lifetime.h>
 
 #include <sys/types.h>

@@ -4,7 +4,7 @@
 // The old two-resource form is intentionally removed so a caller cannot
 // bypass receiver-side row admission by relying on an implicit default Ctx.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace proto = crucible::safety::proto;
 

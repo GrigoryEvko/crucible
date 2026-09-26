@@ -5,7 +5,7 @@
 // delegated handle to completion on the receiving side.
 
 #include <crucible/sessions/SessionDelegate.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <cstdio>
 #include <cstdlib>

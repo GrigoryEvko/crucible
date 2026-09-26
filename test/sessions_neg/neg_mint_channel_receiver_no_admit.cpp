@@ -6,7 +6,7 @@
 // has Row<> and must be rejected by CtxFitsChannel.
 
 #include <crucible/effects/_Computation.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;

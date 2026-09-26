@@ -6,7 +6,7 @@
 // close(); the ctx-bound mint catches it at construction.
 
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

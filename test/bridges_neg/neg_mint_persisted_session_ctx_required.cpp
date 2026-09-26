@@ -15,7 +15,7 @@
 
 #include <crucible/Cipher.h>
 #include <crucible/bridges/_SessionPersistence.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace proto = ::crucible::safety::proto;
 

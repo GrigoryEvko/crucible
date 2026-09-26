@@ -7,7 +7,7 @@
 
 #include <crucible/effects/_Computation.h>
 #include <crucible/permissions/_Permission.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

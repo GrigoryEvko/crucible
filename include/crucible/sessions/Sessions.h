@@ -14,11 +14,11 @@
 #include <crucible/sessions/FederationProtocol.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/PermissionedSession.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/_SessionPatterns.h>
 #include <crucible/sessions/_SessionPayloadSubsort.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
-#include <crucible/sessions/SessionRowExtraction.h>
+#include <crucible/sessions/_SessionRowExtraction.h>
 #include <crucible/sessions/SessionQueue.h>
 #include <crucible/sessions/_SessionGrade.h>
 #include <crucible/sessions/_SessionSubtype.h>

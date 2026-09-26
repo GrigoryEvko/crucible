@@ -4,7 +4,7 @@
 #include <crucible/concurrent/_PermissionedSpscChannel.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <type_traits>
 #include <utility>

@@ -5,7 +5,7 @@
 // the recovered runtime state.
 
 #include <crucible/bridges/_CrashTransport.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

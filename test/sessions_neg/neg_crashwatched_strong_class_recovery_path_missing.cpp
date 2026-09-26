@@ -6,7 +6,7 @@
 // is not present at the protocol boundary.
 
 #include <crucible/bridges/_CrashTransport.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <utility>
 

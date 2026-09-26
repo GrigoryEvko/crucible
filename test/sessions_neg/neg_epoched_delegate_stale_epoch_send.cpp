@@ -4,7 +4,7 @@
 // handoff whose protocol declares MinEpoch 5. The ctx-bound mint must
 // reject this before any delegated endpoint is constructed.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;

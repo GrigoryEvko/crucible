@@ -10,7 +10,7 @@
 // test/effects_neg/, registered beside this test.
 
 #include <crucible/effects/_ExecCtx.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include <foundation/Lifetime.h>
 
 #include <cstdio>

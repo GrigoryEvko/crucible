@@ -32,7 +32,7 @@
 //                       constraints not satisfied /
 //                       no matching function / EffectRowMismatch.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/SessionDelegate.h>
 
 namespace proto = ::crucible::safety::proto;

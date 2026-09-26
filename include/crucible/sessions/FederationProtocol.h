@@ -17,7 +17,7 @@
 #include <crucible/safety/diag/_RowMismatch.h>
 #include <crucible/sessions/_SessionContentAddressed.h>
 #include <crucible/sessions/SessionGlobal.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <span>
 #include <type_traits>

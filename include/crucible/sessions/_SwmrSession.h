@@ -8,7 +8,7 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/_SessionContentAddressed.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include <crucible/sessions/_SessionPermPayloads.h>
 
 #include <cstdint>

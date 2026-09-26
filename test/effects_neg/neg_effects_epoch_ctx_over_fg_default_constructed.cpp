@@ -7,7 +7,7 @@
 // The one route to a wrapper is the claim door, which reads the live
 // epoch source.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;

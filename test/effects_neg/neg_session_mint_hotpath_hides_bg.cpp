@@ -20,7 +20,7 @@
 
 #include <crucible/effects/_Computation.h>
 #include <crucible/safety/_HotPath.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace eff = crucible::effects;
 namespace saf = crucible::safety;

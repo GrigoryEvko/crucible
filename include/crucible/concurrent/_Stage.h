@@ -21,7 +21,7 @@
 #include <crucible/safety/_IsSwmrHandle.h>
 #include <crucible/safety/_SignatureTraits.h>
 #include <crucible/safety/diag/_RowMismatch.h>
-#include <crucible/sessions/SessionRowExtraction.h>
+#include <crucible/sessions/_SessionRowExtraction.h>
 
 #include <cstddef>
 #include <optional>

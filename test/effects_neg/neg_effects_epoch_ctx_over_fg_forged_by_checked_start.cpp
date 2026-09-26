@@ -4,7 +4,7 @@
 // checked lifetime start.  The wrapper has no trivial constructor, so it is
 // not an implicit-lifetime type, and the checked start refuses it.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 #include <foundation/Lifetime.h>
 
 namespace eff = ::crucible::effects;

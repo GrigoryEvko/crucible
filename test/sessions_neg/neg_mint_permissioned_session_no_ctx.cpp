@@ -4,7 +4,7 @@
 // supply an ExecCtx so row/vendor/epoch admission runs before a handle
 // exists.
 
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 namespace proto = ::crucible::safety::proto;
 

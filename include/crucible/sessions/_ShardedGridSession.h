@@ -6,7 +6,7 @@
 #include <crucible/safety/_PermissionGridGenerator.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/_SessionMint.h>
 
 #include <concepts>
 #include <cstddef>
