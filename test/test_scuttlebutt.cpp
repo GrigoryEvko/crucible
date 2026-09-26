@@ -130,7 +130,7 @@ int main() {
 
     // A duplicated (origin, key) pair, which well_formed() must reject.
     // push() dedups, so the pair is planted by overwriting a live slot
-    // rather than by advancing the count: ScuttlebuttSlotCount has no
+    // rather than by advancing the count: SlotCount has no
     // caller-facing mutator, which is what keeps a count past capacity
     // unrepresentable.
     cc::ScuttlebuttDigest<4, 4> malformed{};

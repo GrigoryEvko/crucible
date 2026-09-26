@@ -62,7 +62,7 @@
 //
 // The generated sequences still cannot REACH a count past the bound, and
 // that is now a property of the code rather than a gap in the generator:
-// ScuttlebuttSlotCount has no caller-facing mutator, so the state is
+// SlotCount has no caller-facing mutator, so the state is
 // unrepresentable.  The static_asserts below pin that, and are what
 // would fail if a future change reopened the hole.
 // ═══════════════════════════════════════════════════════════════════
@@ -101,9 +101,9 @@ static_assert(!std::is_assignable_v<DigCount&, std::uint16_t>,
               "ScuttlebuttDigest::count must not be settable past its bound");
 static_assert(!std::is_assignable_v<ReqCount&, std::uint16_t>,
               "ScuttlebuttRequestSet::count must not be settable past its bound");
-static_assert(std::is_same_v<DigCount, cc::ScuttlebuttSlotCount<kCap>>,
+static_assert(std::is_same_v<DigCount, cc::SlotCount<kCap>>,
               "the count must stay the bounded type, not revert to a bare integer");
-static_assert(std::is_same_v<ReqCount, cc::ScuttlebuttSlotCount<kCap>>,
+static_assert(std::is_same_v<ReqCount, cc::SlotCount<kCap>>,
               "the count must stay the bounded type, not revert to a bare integer");
 inline constexpr std::uint32_t kOrigins = 3;  // 3×3 universe > cap → overflow
 inline constexpr std::uint32_t kKeys = 3;

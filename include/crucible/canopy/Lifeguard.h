@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
+#include <crucible/canopy/SlotTable.h>
 #include <crucible/canopy/Swim.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Refined.h>
@@ -22,15 +23,6 @@ concept LifeguardShape = MaxPeers > 0 && RttWindow > 1 && MaxEvents > 0
                       && MaxPeers <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
                       && RttWindow <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
                       && MaxEvents <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
-
-// The bound of a count: at most Capacity.
-template <std::size_t Capacity>
-    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
-inline constexpr auto lifeguard_count_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(Capacity)>;
-
-template <std::size_t Capacity>
-    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
-using LifeguardCount = ::fixy::Refined<lifeguard_count_bound<Capacity>, std::uint16_t>;
 
 using LifeguardDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 using LifeguardPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
@@ -88,21 +80,14 @@ struct LifeguardRefutePlan {
     SwimEvent alive{};
 };
 
+// The multiplier events that the next drain hands to the caller.
 template <std::size_t Capacity>
-    requires(Capacity > 0)
-struct LifeguardEventBatch {
-    ::fixy::FixedArray<LifeguardEvent, Capacity> events{};
-    std::uint16_t count = 0;
-
-    // The drain copies at most Capacity events.
-    [[nodiscard]] constexpr LifeguardCount<Capacity> size() const noexcept {
-        return ::fixy::mint_refined_trusted<lifeguard_count_bound<Capacity>>(count);
-    }
-};
+    requires SlotCapacity<Capacity>
+struct LifeguardEventBatch : SlotTable<LifeguardEvent, Capacity> {};
 
 template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
           std::size_t MaxEvents = MaxPeers * 4>
-    requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
+    requires SlotCapacity<MaxPeers> && SlotCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
 class alignas(64) LifeguardSwim
     : public ::foundation::Pinned<LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>> {
 public:
@@ -125,10 +110,7 @@ public:
 
     [[nodiscard]] cog::CogIdentity local_peer() const noexcept { return local_; }
 
-    // The membership count carries the same bound.
-    [[nodiscard]] LifeguardCount<MaxPeers> size() const noexcept {
-        return ::fixy::mint_refined_trusted<lifeguard_count_bound<MaxPeers>>(swim_.size().value());
-    }
+    [[nodiscard]] BoundedSlotCount<MaxPeers> size() const noexcept { return swim_.size(); }
 
     [[nodiscard]] std::expected<void, LifeguardError> add_peer(SwimPeer peer) noexcept {
         auto added = swim_.add_peer(peer);
@@ -256,8 +238,9 @@ public:
             if (live[i].uuid == suspect) {
                 continue;
             }
-            out.peers[out.count] = live[i].uuid;
-            ++out.count;
+            // The set has MaxPeers slots, and the live view holds at most
+            // MaxPeers peers.
+            (void)out.push(live[i].uuid);
         }
         return out;
     }
@@ -300,9 +283,9 @@ public:
 
     [[nodiscard]] event_batch_type event_batch() const noexcept {
         event_batch_type out{};
-        out.count = event_count_;
         for (std::uint16_t i = 0; i < event_count_; ++i) {
-            out.events[i] = events_[i];
+            // The batch and the event queue have the same MaxEvents slots.
+            (void)out.push(events_[i]);
         }
         return out;
     }
@@ -318,8 +301,9 @@ public:
     [[nodiscard]] swim_type const& swim() const noexcept { return swim_; }
 
 private:
+    // Slots are dense and a peer never leaves its slot, so the live slots
+    // are [0, slot_count_).
     struct alignas(64) Slot {
-        bool occupied = false;
         cog::CogIdentity peer{};
         std::uint16_t lhm = 1;
         ::fixy::FixedArray<std::uint64_t, RttWindow> rtt_ns{};
@@ -361,22 +345,15 @@ private:
         return a > max / b ? max : a * b;
     }
 
-    [[nodiscard]] Slot* find_slot_(cog::Uuid peer) noexcept {
-        for (std::uint16_t i = 0; i < slot_count_; ++i) {
-            if (slots_[i].occupied && slots_[i].peer.uuid == peer) {
-                return &slots_[i];
+    // A Slot* from a mutable LifeguardSwim, a Slot const* from a const one.
+    [[nodiscard]] auto* find_slot_(this auto& self, cog::Uuid peer) noexcept {
+        using slot_pointer = decltype(&self.slots_[0]);
+        for (std::uint16_t i = 0; i < self.slot_count_; ++i) {
+            if (self.slots_[i].peer.uuid == peer) {
+                return slot_pointer{&self.slots_[i]};
             }
         }
-        return nullptr;
-    }
-
-    [[nodiscard]] Slot const* find_slot_(cog::Uuid peer) const noexcept {
-        for (std::uint16_t i = 0; i < slot_count_; ++i) {
-            if (slots_[i].occupied && slots_[i].peer.uuid == peer) {
-                return &slots_[i];
-            }
-        }
-        return nullptr;
+        return slot_pointer{nullptr};
     }
 
     [[nodiscard]] bool ensure_slot_(cog::CogIdentity peer) noexcept {
@@ -386,15 +363,14 @@ private:
         if (find_slot_(peer.uuid) != nullptr) {
             return true;
         }
-        if (slot_count_ == MaxPeers) {
+        const auto index = slot_count_.reserve_next();
+        if (!index) {
             return false;
         }
-        slots_[slot_count_] = Slot{
-            .occupied = true,
+        slots_.at(*index) = Slot{
             .peer = peer,
             .lhm = lifeguard_config_.min_lhm.value(),
         };
-        ++slot_count_;
         return true;
     }
 
@@ -476,7 +452,7 @@ private:
     cog::CogIdentity local_{};
     LifeguardConfig lifeguard_config_{};
     ::fixy::FixedArray<Slot, MaxPeers> slots_{};
-    std::uint16_t slot_count_ = 0;
+    SlotCount<MaxPeers> slot_count_{};
     ::fixy::FixedArray<LifeguardEvent, MaxEvents> events_{};
     std::uint16_t event_count_ = 0;
     std::uint64_t sequence_ = 0;
@@ -487,7 +463,7 @@ static_assert(!std::is_move_constructible_v<LifeguardSwim<4, 8, 4, 8>>);
 
 template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
           std::size_t MaxEvents = MaxPeers * 4>
-    requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
+    requires SlotCapacity<MaxPeers> && SlotCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
 [[nodiscard]] LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
 mint_lifeguard_swim(::foundation::effects::Init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
                     LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept {

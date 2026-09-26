@@ -66,8 +66,8 @@ int main() {
 
     auto witnesses = membership.indirect_witnesses(peer(1).uuid);
     assert(witnesses.size().value() == 2);
-    assert(witnesses.peers[0] == peer(2).uuid);
-    assert(witnesses.peers[1] == peer(3).uuid);
+    assert(witnesses.slots[0] == peer(2).uuid);
+    assert(witnesses.slots[1] == peer(3).uuid);
 
     assert(membership.on_indirect_ack(peer(1).uuid, 2000).has_value());
     h = membership.health(peer(1).uuid);

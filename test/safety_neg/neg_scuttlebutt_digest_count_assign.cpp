@@ -2,7 +2,7 @@
 //
 // ScuttlebuttDigest::count cannot be set from outside.  A count past the
 // capacity would make the next push() scan and write past `entries`.
-// ScuttlebuttSlotCount has no caller-facing mutator, so that state cannot
+// SlotCount has no caller-facing mutator, so that state cannot
 // be represented.  FixedArray::operator[] carries no precondition, so in
 // Release the type is what holds the bound.
 

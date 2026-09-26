@@ -2,6 +2,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/canopy/Crdt.h>
+#include <crucible/canopy/SlotTable.h>
 #include <crucible/canopy/Swim.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Refined.h>
@@ -30,65 +31,6 @@ concept ScuttlebuttShape = MaxPeers > 0 && MaxKeys > 0
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
 inline constexpr std::size_t scuttlebutt_entry_capacity = MaxPeers * MaxKeys;
-
-template <std::size_t MaxPeers, std::size_t MaxKeys>
-    requires ScuttlebuttShape<MaxPeers, MaxKeys>
-inline constexpr auto scuttlebutt_entry_bound =
-    ::fixy::bounded_above<static_cast<std::uint16_t>(scuttlebutt_entry_capacity<MaxPeers, MaxKeys>)>;
-
-template <std::size_t MaxPeers, std::size_t MaxKeys>
-    requires ScuttlebuttShape<MaxPeers, MaxKeys>
-using ScuttlebuttEntryCount = ::fixy::Refined<scuttlebutt_entry_bound<MaxPeers, MaxKeys>, std::uint16_t>;
-
-// The live count of a dense, append-only slot table.
-//
-// A bare public count beside the slot array lets any caller store a
-// value past `capacity`, and every loop over [0, count) then reads and
-// writes past the array.  The value is private here and reserve_next()
-// is the only thing that moves it, so `value_ <= Capacity` is an
-// invariant of the type, and a count past the bound is unrepresentable
-// rather than merely unchecked.  It refuses the bad value at the
-// assignment instead of one call later at the subscript, and no build
-// flag switches it off.
-template <std::size_t Capacity>
-    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
-class ScuttlebuttSlotCount {
-public:
-    // The proof token reserve_next() returns is the index type of the
-    // table it counts, so FixedArray::at() accepts it with no conversion.
-    using index_type = typename ::fixy::FixedArray<std::byte, Capacity>::index_type;
-
-    constexpr ScuttlebuttSlotCount() noexcept = default;
-
-    // Implicit and lossless on purpose.  Readers spell `i < digest.count`,
-    // and widening a bounded count to its own underlying type cannot lose
-    // information.  The conversion is one-way: nothing converts back in,
-    // so the bound cannot be re-entered from outside.
-    [[nodiscard]] constexpr operator std::uint16_t() const noexcept { return value_; }
-
-    [[nodiscard]] constexpr std::uint16_t value() const noexcept { return value_; }
-
-    [[nodiscard]] constexpr bool full() const noexcept { return value_ >= Capacity; }
-
-    // Reserves the slot one past the last live entry and hands back a
-    // proof-token index for it.  This is the sole mutator, and it refuses
-    // at the bound, so every index it returns is in range by construction.
-    [[nodiscard]] constexpr std::optional<index_type> reserve_next() noexcept {
-        if (full()) {
-            return std::nullopt;
-        }
-        const auto slot = static_cast<std::size_t>(value_);
-        ++value_;
-        return ::fixy::mint_refined<::fixy::bounded_above<Capacity - 1>>(slot);
-    }
-
-private:
-    std::uint16_t value_ = 0;
-};
-
-static_assert(sizeof(ScuttlebuttSlotCount<4>) == sizeof(std::uint16_t));
-static_assert(!std::is_assignable_v<ScuttlebuttSlotCount<4>&, std::uint16_t>,
-              "a count past the bound must stay unrepresentable");
 
 using ScuttlebuttDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 using ScuttlebuttPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
@@ -203,13 +145,9 @@ struct ScuttlebuttEntryTable {
     static constexpr std::size_t capacity = scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
 
     ::fixy::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
-    ScuttlebuttSlotCount<capacity> count{};
+    SlotCount<capacity> count{};
 
-    // The slot counter cannot hold a value above capacity, so the checked
-    // mint never refuses.
-    [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys> size() const noexcept {
-        return ::fixy::mint_refined<scuttlebutt_entry_bound<MaxPeers, MaxKeys>>(count.value());
-    }
+    [[nodiscard]] constexpr BoundedSlotCount<capacity> size() const noexcept { return count.bounded(); }
 
 protected:
     // Raises the version of an existing (origin, key) entry, or appends a
@@ -581,8 +519,8 @@ private:
     ::fixy::FixedArray<cog::Uuid, MaxPeers> peers_{};
     ::fixy::FixedArray<KeySlot, MaxKeys> keys_{};
     ::fixy::FixedArray<::fixy::FixedArray<std::uint64_t, MaxKeys>, MaxPeers> versions_{};
-    ScuttlebuttSlotCount<MaxPeers> peer_count_{};
-    ScuttlebuttSlotCount<MaxKeys> key_count_{};
+    SlotCount<MaxPeers> peer_count_{};
+    SlotCount<MaxKeys> key_count_{};
     std::uint64_t publish_count_ = 0;
     std::uint64_t merge_count_ = 0;
 };

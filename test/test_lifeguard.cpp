@@ -73,8 +73,8 @@ int main() {
     assert(timeout->value() == 200000000ULL);
     auto witnesses = lifeguard.indirect_witnesses(peer(1).uuid);
     assert(witnesses.size().value() == 2);
-    assert(witnesses.peers[0] == peer(2).uuid);
-    assert(witnesses.peers[1] == peer(3).uuid);
+    assert(witnesses.slots[0] == peer(2).uuid);
+    assert(witnesses.slots[1] == peer(3).uuid);
 
     assert(lifeguard.on_ping_timeout(peer(1).uuid).has_value());
     assert(lifeguard.on_ping_timeout(peer(1).uuid).has_value());
@@ -93,9 +93,9 @@ int main() {
 
     auto events = lifeguard.event_batch();
     assert(events.size().value() >= 5);
-    assert(events.events[0].outcome == cc::LifeguardOutcome::Timeout);
-    assert(events.events[0].prior_lhm == 1);
-    assert(events.events[0].next_lhm == 2);
+    assert(events.slots[0].outcome == cc::LifeguardOutcome::Timeout);
+    assert(events.slots[0].prior_lhm == 1);
+    assert(events.slots[0].next_lhm == 2);
     lifeguard.acknowledge_events(2);
     assert(lifeguard.event_batch().size().value() == static_cast<std::uint16_t>(events.size().value() - 2u));
 

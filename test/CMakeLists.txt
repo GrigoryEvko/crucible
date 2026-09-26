@@ -6615,6 +6615,11 @@ crucible_neg_compile_multi_test(neg_crdt_counter_update_raw_fields
 #   * neg_swim_external_peer_add: source::External cannot substitute
 #     for source::SwimMember.
 #   * neg_swim_mint_test_context: Init-only mint factory rejects Test.
+#   * neg_swim_witness_count_assign: the count of a witness set is a slot
+#     count, so it cannot be set past the capacity.
+crucible_neg_compile_multi_test(neg_swim_witness_count_assign
+  "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
+  "and .uint16_t.")
 crucible_neg_compile_test(neg_swim_zero_max_peers
   "constraints not satisfied|SwimCapacity|MaxPeers")
 crucible_neg_compile_test(neg_swim_raw_peer_add
@@ -6665,6 +6670,11 @@ crucible_neg_compile_effects_test(neg_plumtree_mint_test_context
 #   * neg_lifeguard_zero_peers: MaxPeers=0 is rejected structurally.
 #   * neg_lifeguard_raw_local_peer: local identity requires SwimPeer.
 #   * neg_lifeguard_mint_test_context: Init-only mint rejects Test.
+#   * neg_lifeguard_event_count_advance: the count of an event batch is a
+#     slot count, so it cannot be advanced past the capacity.
+crucible_neg_compile_multi_test(neg_lifeguard_event_count_advance
+  "no match for .operator\\+\\+."
+  "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
 crucible_neg_compile_test(neg_lifeguard_zero_peers
   "constraints not satisfied|LifeguardShape|SwimCapacity|MaxPeers")
 crucible_neg_compile_test(neg_lifeguard_raw_local_peer
@@ -6714,11 +6724,11 @@ crucible_neg_compile_effects_test(neg_scuttlebutt_mint_background_context
   "could not convert .foundation::effects::testing::bg\\(\\)."
   "from .foundation::effects::Bg. to .foundation::effects::Init.")
 crucible_neg_compile_multi_test(neg_scuttlebutt_digest_count_assign
-  "no match for .operator=. \\(operand types are .crucible::canopy::ScuttlebuttSlotCount<4>."
+  "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
   "and .uint16_t.")
 crucible_neg_compile_multi_test(neg_scuttlebutt_request_count_advance
   "no match for .operator\\+\\+."
-  "\\(operand type is .crucible::canopy::ScuttlebuttSlotCount<4>.\\)")
+  "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
 
 # fixed_json_buffer's size is private, so a caller cannot set it past the
 # buffer.  The same refusal closes the wrap in the bounds computation of
