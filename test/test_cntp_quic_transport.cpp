@@ -1,4 +1,5 @@
 #include <crucible/cntp/_wip/QuicTransport.h>
+#include <fixy/Ctx.h>
 
 #include <array>
 #include <cassert>
@@ -9,8 +10,7 @@
 #include <type_traits>
 
 namespace cntp = crucible::cntp::_wip;
-namespace effects = crucible::effects;
-namespace saf = crucible::safety;
+namespace fe = ::foundation::effects;
 
 namespace {
 
@@ -80,10 +80,12 @@ namespace {
 }
 
 void test_name_surfaces() {
-    assert(cntp::quic_error_name(cntp::QuicError::BackendUnavailable) == std::string_view{"BackendUnavailable"});
-    assert(cntp::quic_backend_name(cntp::QuicBackend::Ngtcp2) == std::string_view{"ngtcp2"});
-    assert(cntp::quic_feature_name(cntp::QuicFeature::Migration) == std::string_view{"Migration"});
-    assert(cntp::quic_stream_kind_name(cntp::QuicStreamKind::Unidirectional) == std::string_view{"Unidirectional"});
+    static_assert(cntp::quic_error_name(cntp::QuicError::BackendUnavailable) == std::string_view{"BackendUnavailable"});
+    static_assert(cntp::quic_backend_name(cntp::QuicBackend::Ngtcp2) == std::string_view{"ngtcp2"});
+    static_assert(cntp::quic_backend_name(cntp::QuicBackend::KernelMsQuic) == std::string_view{"kernel-msquic"});
+    static_assert(cntp::quic_feature_name(cntp::QuicFeature::Migration) == std::string_view{"Migration"});
+    static_assert(cntp::quic_stream_kind_name(cntp::QuicStreamKind::Unidirectional) == std::string_view{"Unidirectional"});
+    assert(cntp::quic_error_name(static_cast<cntp::QuicError>(250)) == std::string_view{"<unknown QuicError>"});
     std::printf("  test_name_surfaces: PASSED\n");
 }
 
@@ -92,10 +94,27 @@ void test_admission_and_backend_boundary() {
     assert(!zero_streams.has_value());
     assert(zero_streams.error() == cntp::QuicError::InvalidStreamLimit);
 
+    auto zero_datagram = cntp::admit_quic_datagram_bytes(0);
+    assert(!zero_datagram.has_value());
+    assert(zero_datagram.error() == cntp::QuicError::DatagramEmpty);
+
     std::array<std::byte, 0> empty{};
     auto empty_token = cntp::admit_quic_resumption_token(empty);
     assert(!empty_token.has_value());
     assert(empty_token.error() == cntp::QuicError::EmptyResumptionToken);
+
+    std::array<std::byte, cntp::QuicResumptionToken::max_bytes + 1> oversized{};
+    auto large_token = cntp::admit_quic_resumption_token(oversized);
+    assert(!large_token.has_value());
+    assert(large_token.error() == cntp::QuicError::ResumptionTokenTooLarge);
+
+    std::array<std::byte, cntp::QuicResumptionToken::max_bytes> full{};
+    full[0] = std::byte{0x5A};
+    auto full_token = cntp::admit_quic_resumption_token(full);
+    assert(full_token.has_value());
+    assert(full_token->value().size() == cntp::QuicResumptionToken::max_bytes);
+    assert(full_token->value().view().size() == cntp::QuicResumptionToken::max_bytes);
+    assert(full_token->value().view()[0] == std::byte{0x5A});
 
     auto peer = cntp::MtlsDnsName::from("peer-a.example.org");
     assert(peer.has_value());
@@ -117,8 +136,8 @@ void test_admission_and_backend_boundary() {
 }
 
 void test_stream_budgeting() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto peer_name = cntp::MtlsDnsName::from("peer-stream.example.org");
     assert(peer_name.has_value());
     auto mtls = mtls_config(*peer_name);
@@ -150,8 +169,8 @@ void test_stream_budgeting() {
 }
 
 void test_datagram_zero_rtt_and_migration_plans() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto peer_name = cntp::MtlsDnsName::from("peer-data.example.org");
     assert(peer_name.has_value());
     auto mtls = mtls_config(*peer_name);
@@ -179,7 +198,9 @@ void test_datagram_zero_rtt_and_migration_plans() {
     auto migration = connection.plan_migration(bg, path_plan());
     assert(migration.has_value());
     assert(migration->value().migration_sequence == 1);
+    assert(migration->value().path_swap.new_path().value() == 30);
     assert(connection.migration_sequence() == 1);
+    assert(connection.socket().value() == 5);
 
     auto disabled_config = quic_config(2, {cntp::QuicFeature::UserspaceBackend});
     auto disabled = cntp::mint_quic_connection<2>(init, fd, *peer, disabled_config);
@@ -196,10 +217,12 @@ int main() {
     static_assert(sizeof(cntp::DeclaredQuicConfig) == sizeof(cntp::QuicConfig));
     static_assert(sizeof(cntp::DeclaredQuicStream) == sizeof(cntp::QuicStreamDescriptor));
     static_assert(std::same_as<cntp::DeclaredQuicConfig::tag_type, crucible::cntp::_wip::wip_source::Quic>);
-    static_assert(cntp::CtxFitsQuicMint<effects::ColdInitCtx>);
-    static_assert(!cntp::CtxFitsQuicMint<effects::BgDrainCtx>);
-    static_assert(cntp::CtxFitsQuicRuntime<effects::BgDrainCtx>);
-    static_assert(!cntp::CtxFitsQuicRuntime<effects::HotFgCtx>);
+    static_assert(cntp::CtxFitsQuicMint<::fixy::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsQuicMint<::fixy::BgDrainCtx>);
+    static_assert(cntp::CtxFitsQuicRuntime<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsQuicRuntime<::fixy::HotFgCtx>);
+    static_assert(!std::is_default_constructible_v<cntp::QuicResumptionToken>);
+    static_assert(!std::is_default_constructible_v<cntp::QuicConnection<4>>);
 
     std::printf("test_cntp_quic_transport:\n");
     test_name_surfaces();

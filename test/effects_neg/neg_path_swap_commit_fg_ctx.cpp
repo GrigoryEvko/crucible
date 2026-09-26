@@ -1,8 +1,12 @@
 #include <crucible/cntp/PathSwap.h>
+#include <fixy/Ctx.h>
 
-// GAPS-122 fixture #2: committing a path swap is a runtime background
-// transition. Foreground hot-path code may not rewrite the transport
-// resource under a live session handle.
+// A commit is a background transition.  The foreground context owns no Bg,
+// so it cannot move a live session handle to a new transport resource.
+// commit_sender is deprecated as a stub, and the pragma keeps that warning
+// out, so the context is the one reason this file does not compile.
+
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 struct Wire {
     int id = 0;
@@ -10,12 +14,13 @@ struct Wire {
 
 int main() {
     namespace cntp = crucible::cntp;
-    namespace proto = crucible::safety::proto;
+    namespace fe = ::foundation::effects;
+    namespace sess = ::fixy::session;
 
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    crucible::effects::HotFgCtx fg{};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::HotFgCtx fg{fe::testing::foreground()};
     auto swapper = cntp::mint_path_swapper(init);
-    auto handle = proto::mint_session_handle<proto::Send<int, proto::End>>(Wire{.id = 1});
+    auto handle = sess::mint_session_handle<sess::Send<int, sess::End>>(Wire{.id = 1});
     auto result = swapper.commit_sender(fg, std::move(handle), Wire{.id = 2}, 0);
     (void)result;
     return 0;

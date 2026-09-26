@@ -1,8 +1,11 @@
 #include <crucible/cntp/PathSwap.h>
+#include <fixy/Ctx.h>
 
 #include <atomic>
 #include <cassert>
 #include <cstdio>
+#include <limits>
+#include <optional>
 #include <string_view>
 #include <thread>
 #include <type_traits>
@@ -14,7 +17,8 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace cntp = crucible::cntp;
-namespace proto = crucible::safety::proto;
+namespace fe = ::foundation::effects;
+namespace sess = ::fixy::session;
 
 namespace {
 
@@ -23,9 +27,13 @@ struct Wire {
     int last = 0;
 };
 
-using Proto = proto::Send<int, proto::End>;
+using Proto = sess::Send<int, sess::End>;
 
-void send_int(Wire& wire, int value) noexcept { wire.last = value; }
+// A trying write: it always has room.
+bool send_int(Wire& wire, int& value) noexcept {
+    wire.last = value;
+    return true;
+}
 
 cntp::DeclaredPathSwapPlan make_plan() {
     auto flow = cntp::admit_path_id(10).value();
@@ -38,8 +46,9 @@ cntp::DeclaredPathSwapPlan make_plan() {
 }
 
 void test_admission() {
-    assert(cntp::swap_state_name(cntp::SwapState::Draining) == std::string_view{"Draining"});
-    assert(cntp::swap_error_name(cntp::SwapError::SamePath) == std::string_view{"SamePath"});
+    static_assert(cntp::swap_state_name(cntp::SwapState::Draining) == std::string_view{"Draining"});
+    static_assert(cntp::swap_error_name(cntp::SwapError::SamePath) == std::string_view{"SamePath"});
+    assert(cntp::swap_state_name(static_cast<cntp::SwapState>(200)) == std::string_view{"<unknown SwapState>"});
 
     auto zero_path = cntp::admit_path_id(0);
     assert(!zero_path.has_value());
@@ -55,22 +64,31 @@ void test_admission() {
     assert(!same.has_value());
     assert(same.error() == cntp::SwapError::SamePath);
 
+    auto plan = make_plan();
+    assert(plan.value().flow_id().value() == 10);
+    assert(plan.value().old_path().value() == 20);
+    assert(plan.value().new_path().value() == 30);
+    assert(plan.value().timeout_ns().value() == 1000);
+
     std::printf("  test_admission: PASSED\n");
 }
 
 void test_state_machine_and_session_resource_transition() {
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<8>(init);
     static_assert(std::is_same_v<decltype(swapper), cntp::PathSwapper<8>>);
     assert(swapper.state() == cntp::SwapState::Stable);
+    assert(!swapper.plan().has_value());
 
     auto plan = make_plan();
     auto begin = swapper.begin_swap(bg, plan, 100);
     assert(begin.has_value());
     assert(swapper.state() == cntp::SwapState::Draining);
     assert(swapper.deadline_ns() == 1100);
+    assert(swapper.plan().has_value());
+    assert(swapper.plan()->old_path().value() == 20);
 
     auto bidir = swapper.receiver_accepts_bidir(bg, 200);
     assert(bidir.has_value());
@@ -80,12 +98,13 @@ void test_state_machine_and_session_resource_transition() {
     assert(ack.has_value());
     assert(swapper.state() == cntp::SwapState::NewPathFlushing);
 
-    auto old_handle = proto::mint_session_handle<Proto>(Wire{.id = 1});
+    auto old_handle = sess::mint_session_handle<Proto>(Wire{.id = 1});
     auto swapped = swapper.commit_sender(bg, std::move(old_handle), Wire{.id = 2}, 400);
     assert(swapped.has_value());
     assert(swapper.state() == cntp::SwapState::Complete);
     assert(swapper.event_count() == 4);
     assert(swapper.event_at(3).to == cntp::SwapState::Complete);
+    assert(swapper.event_at(0).flow_id == 10);
     assert(swapped->resource().id == 2);
 
     auto end = std::move(*swapped).send(42, send_int);
@@ -101,8 +120,8 @@ void test_state_machine_and_session_resource_transition() {
 // thread is writing it.  A plain enum field would be torn by that, and
 // the observer would see a value that is not any of the states.
 void test_concurrent_observer_sees_only_valid_states() {
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<16>(init);
 
@@ -156,8 +175,8 @@ void test_concurrent_observer_sees_only_valid_states() {
 // new one is the whole proof: there is no path by which it could
 // arrive.
 void test_commit_sender_loses_in_flight_bytes() {
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<8>(init);
     auto plan = make_plan();
@@ -166,7 +185,7 @@ void test_commit_sender_loses_in_flight_bytes() {
     assert(swapper.sender_observed_drain_ack(bg, 300).has_value());
 
     Wire old_wire{.id = 7, .last = 0xBEEF};  // stands in for buffered data
-    auto old_handle = proto::mint_session_handle<Proto>(std::move(old_wire));
+    auto old_handle = sess::mint_session_handle<Proto>(std::move(old_wire));
 
     Wire new_wire{.id = 9, .last = 0};
     auto swapped = swapper.commit_sender(bg, std::move(old_handle), std::move(new_wire), 400);
@@ -199,8 +218,8 @@ void test_commit_sender_loses_in_flight_bytes() {
 // from is no longer the state that is there.
 void test_concurrent_complete_receiver_exactly_one_wins() {
     constexpr int kRacers = 16;
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<32>(init);
     auto plan = make_plan();
@@ -241,8 +260,8 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     }
 
     start.store(true, std::memory_order_release);
-    for (auto& t : racers)
-        t.join();
+    for (auto& racer : racers)
+        racer.join();
 
     assert(winners.load() == 1);
     assert(losers.load() == kRacers - 1);
@@ -258,13 +277,14 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
 }
 
 void test_invalid_transition_and_timeout() {
-    crucible::effects::ColdInitCtx init{::crucible::effects::testing::init()};
-    crucible::effects::BgDrainCtx bg{::crucible::effects::testing::bg()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<4>(init);
     auto bad_ack = swapper.sender_observed_drain_ack(bg, 1);
     assert(!bad_ack.has_value());
     assert(bad_ack.error() == cntp::SwapError::InvalidTransition);
+    assert(swapper.event_count() == 0);
 
     auto plan = make_plan();
     auto begin = swapper.begin_swap(bg, plan, 10);
@@ -281,16 +301,35 @@ void test_invalid_transition_and_timeout() {
     std::printf("  test_invalid_transition_and_timeout: PASSED\n");
 }
 
+void test_deadline_overflow() {
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgDrainCtx bg{fe::testing::bg()};
+
+    auto swapper = cntp::mint_path_swapper<4>(init);
+    auto plan = make_plan();
+    auto overflow = swapper.begin_swap(bg, plan, std::numeric_limits<std::uint64_t>::max() - 10);
+    assert(!overflow.has_value());
+    assert(overflow.error() == cntp::SwapError::DeadlineOverflow);
+    assert(swapper.state() == cntp::SwapState::Stable);
+    assert(!swapper.plan().has_value());
+
+    std::printf("  test_deadline_overflow: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
     static_assert(sizeof(cntp::PositivePathId) == sizeof(std::uint64_t));
     static_assert(sizeof(cntp::DeclaredPathSwapPlan) == sizeof(cntp::PathSwapPlan));
-    static_assert(cntp::CtxFitsPathSwapMint<crucible::effects::ColdInitCtx>);
-    static_assert(cntp::CtxFitsPathSwapTransition<crucible::effects::BgDrainCtx>);
-    static_assert(!cntp::CtxFitsPathSwapTransition<crucible::effects::HotFgCtx>);
+    static_assert(cntp::CtxFitsPathSwapMint<::fixy::ColdInitCtx>);
+    static_assert(!cntp::CtxFitsPathSwapMint<::fixy::BgDrainCtx>);
+    static_assert(cntp::CtxFitsPathSwapTransition<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsPathSwapTransition<::fixy::HotFgCtx>);
     static_assert(cntp::PathSwapSessionResource<Wire>);
     static_assert(!cntp::PathSwapSessionResource<Wire&>);
+    static_assert(!std::is_default_constructible_v<cntp::PathSwapPlan>);
+    static_assert(!std::is_default_constructible_v<cntp::DeclaredPathSwapPlan>);
+    static_assert(!std::is_default_constructible_v<cntp::PathSwapper<8>>);
 
     // The marker is readable at every arity, so a caller can branch on
     // the gap at compile time rather than discovering it at runtime.
@@ -306,6 +345,7 @@ int main() {
     test_concurrent_observer_sees_only_valid_states();
     test_concurrent_complete_receiver_exactly_one_wins();
     test_invalid_transition_and_timeout();
+    test_deadline_overflow();
     std::printf("test_cntp_path_swap: all PASSED\n");
     return 0;
 }

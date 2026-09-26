@@ -7,13 +7,14 @@
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cntp/MtlsTransport.h>
 #include <crucible/cntp/PathSwap.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Bits.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Bits.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cstddef>
@@ -67,7 +68,6 @@ enum class QuicError : std::uint8_t {
     EmptyResumptionToken,
     ResumptionTokenTooLarge,
     MigrationDisabled,
-    InvalidMigrationPlan,
     MtlsRejected,
     BackendUnavailable,
 };
@@ -92,18 +92,43 @@ enum class QuicStreamKind : std::uint8_t {
     Unidirectional,
 };
 
-[[nodiscard]] std::string_view quic_error_name(QuicError error) noexcept;
-[[nodiscard]] std::string_view quic_backend_name(QuicBackend backend) noexcept;
-[[nodiscard]] std::string_view quic_feature_name(QuicFeature feature) noexcept;
-[[nodiscard]] std::string_view quic_stream_kind_name(QuicStreamKind kind) noexcept;
+// The name of an error, a feature or a stream kind is the identifier of its
+// enumerator.
+[[nodiscard]] constexpr std::string_view quic_error_name(QuicError error) noexcept {
+    return ::foundation::reflect::enum_name(error);
+}
 
-using QuicFeatureMask = safety::Bits<QuicFeature>;
-using PositiveQuicStreamLimit = safety::Positive<std::uint16_t>;
-using PositiveQuicDatagramBytes = safety::Positive<std::uint32_t>;
+[[nodiscard]] constexpr std::string_view quic_feature_name(QuicFeature feature) noexcept {
+    return ::foundation::reflect::enum_name(feature);
+}
+
+[[nodiscard]] constexpr std::string_view quic_stream_kind_name(QuicStreamKind kind) noexcept {
+    return ::foundation::reflect::enum_name(kind);
+}
+
+// The spelling of each backend that a package and a log line use.
+[[nodiscard]] constexpr std::string_view quic_backend_name(QuicBackend backend) noexcept {
+    switch (backend) {
+        case QuicBackend::KernelMsQuic:
+            return "kernel-msquic";
+        case QuicBackend::MsQuicUser:
+            return "msquic-user";
+        case QuicBackend::Quiche:
+            return "quiche";
+        case QuicBackend::Ngtcp2:
+            return "ngtcp2";
+        default:
+            return "<unknown QuicBackend>";
+    }
+}
+
+using QuicFeatureMask = ::fixy::Bits<QuicFeature>;
+using PositiveQuicStreamLimit = ::fixy::Positive<std::uint16_t>;
+using PositiveQuicDatagramBytes = ::fixy::Positive<std::uint32_t>;
 
 struct QuicConfig {
-    PositiveQuicStreamLimit max_streams{100};
-    PositiveQuicDatagramBytes max_datagram_bytes{1200};
+    PositiveQuicStreamLimit max_streams = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{100});
+    PositiveQuicDatagramBytes max_datagram_bytes = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1200});
     DeclaredCcChoice congestion_control = mint_cc_choice<CcAlgorithm::Bbr3, LinkClass::CrossDatacenter>();
     QuicFeatureMask features{
         QuicFeature::Datagrams,
@@ -113,69 +138,82 @@ struct QuicConfig {
     QuicBackend preferred_backend = QuicBackend::KernelMsQuic;
 };
 
-using DeclaredQuicConfig = safety::Tagged<QuicConfig, wip_source::Quic>;
+using DeclaredQuicConfig = ::fixy::Tagged<QuicConfig, wip_source::Quic>;
 
-struct QuicResumptionToken {
+// The length is private and from() is its only writer, so every token has
+// at least one byte and at most max_bytes, and view() never reads past the
+// array.  There is no empty token: from() refuses an empty span.
+class QuicResumptionToken {
+public:
     static constexpr std::size_t max_bytes = 512;
 
-    std::array<std::byte, max_bytes> bytes{};
-    std::uint16_t size = 0;
+    [[nodiscard]] constexpr std::span<const std::byte> view() const noexcept { return {bytes_.data(), size_}; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
 
-    [[nodiscard]] constexpr std::span<const std::byte> view() const noexcept { return {bytes.data(), size}; }
+    [[nodiscard]] static constexpr std::expected<QuicResumptionToken, QuicError>
+    from(std::span<const std::byte> bytes) noexcept {
+        if (bytes.empty()) {
+            return std::unexpected(QuicError::EmptyResumptionToken);
+        }
+        if (bytes.size() > max_bytes) {
+            return std::unexpected(QuicError::ResumptionTokenTooLarge);
+        }
+        QuicResumptionToken token{};
+        for (std::size_t i = 0; i < bytes.size(); ++i) {
+            token.bytes_[i] = bytes[i];
+        }
+        token.size_ = static_cast<std::uint16_t>(bytes.size());
+        return token;
+    }
+
+private:
+    constexpr QuicResumptionToken() noexcept = default;
+
+    std::array<std::byte, max_bytes> bytes_{};
+    std::uint16_t size_ = 0;
 };
 
-using DeclaredQuicResumptionToken = safety::Tagged<QuicResumptionToken, wip_source::Quic>;
+using DeclaredQuicResumptionToken = ::fixy::Tagged<QuicResumptionToken, wip_source::Quic>;
 
 struct QuicStreamDescriptor {
     std::uint64_t id = 0;
     QuicStreamKind kind = QuicStreamKind::Bidirectional;
 };
 
-using DeclaredQuicStream = safety::Tagged<QuicStreamDescriptor, wip_source::Quic>;
+using DeclaredQuicStream = ::fixy::Tagged<QuicStreamDescriptor, wip_source::Quic>;
 
 struct QuicMigrationPlan {
-    PathSwapPlan path_swap{};
+    PathSwapPlan path_swap;
     std::uint64_t migration_sequence = 0;
 };
 
-using DeclaredQuicMigration = safety::Tagged<QuicMigrationPlan, wip_source::Quic>;
+using DeclaredQuicMigration = ::fixy::Tagged<QuicMigrationPlan, wip_source::Quic>;
 
+// A connection is built at startup.
 template <class Ctx>
-concept CtxFitsQuicMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsQuicMint = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
+// A stream, a datagram and a migration are background work.
 template <class Ctx>
-concept CtxFitsQuicRuntime = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+concept CtxFitsQuicRuntime = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
 
 [[nodiscard]] constexpr std::expected<PositiveQuicStreamLimit, QuicError>
 admit_quic_stream_limit(std::uint16_t limit) noexcept {
-    if (limit == 0) {
-        return std::unexpected(QuicError::InvalidStreamLimit);
-    }
-    return PositiveQuicStreamLimit{limit, typename PositiveQuicStreamLimit::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(limit, QuicError::InvalidStreamLimit);
 }
 
 [[nodiscard]] constexpr std::expected<PositiveQuicDatagramBytes, QuicError>
 admit_quic_datagram_bytes(std::uint32_t bytes) noexcept {
-    if (bytes == 0) {
-        return std::unexpected(QuicError::DatagramEmpty);
-    }
-    return PositiveQuicDatagramBytes{bytes, typename PositiveQuicDatagramBytes::Trusted{}};
+    return ::fixy::admit_refined<::fixy::positive>(bytes, QuicError::DatagramEmpty);
 }
 
 [[nodiscard]] constexpr std::expected<DeclaredQuicResumptionToken, QuicError>
 admit_quic_resumption_token(std::span<const std::byte> bytes) noexcept {
-    if (bytes.empty()) {
-        return std::unexpected(QuicError::EmptyResumptionToken);
+    auto token = QuicResumptionToken::from(bytes);
+    if (!token.has_value()) {
+        return std::unexpected(token.error());
     }
-    if (bytes.size() > QuicResumptionToken::max_bytes) {
-        return std::unexpected(QuicError::ResumptionTokenTooLarge);
-    }
-    QuicResumptionToken token{};
-    for (std::size_t i = 0; i < bytes.size(); ++i) {
-        token.bytes[i] = bytes[i];
-    }
-    token.size = static_cast<std::uint16_t>(bytes.size());
-    return DeclaredQuicResumptionToken{token};
+    return ::fixy::mint_tagged<wip_source::Quic>(*token);
 }
 
 [[nodiscard]] constexpr DeclaredQuicConfig
@@ -188,28 +226,26 @@ mint_quic_config(PositiveQuicStreamLimit max_streams, PositiveQuicDatagramBytes 
                          QuicFeature::UserspaceBackend,
                      },
                  QuicBackend preferred_backend = QuicBackend::KernelMsQuic) noexcept {
-    return DeclaredQuicConfig{QuicConfig{
+    return ::fixy::mint_tagged<wip_source::Quic>(QuicConfig{
         .max_streams = max_streams,
         .max_datagram_bytes = max_datagram_bytes,
         .congestion_control = congestion_control,
         .features = features,
         .preferred_backend = preferred_backend,
-    }};
-}
-
-[[nodiscard]] constexpr std::expected<void, QuicError> validate_quic_config(DeclaredQuicConfig config) noexcept {
-    auto const& raw = config.value();
-    if (raw.max_streams.value() == 0) {
-        return std::unexpected(QuicError::InvalidStreamLimit);
-    }
-    if (raw.max_datagram_bytes.value() == 0) {
-        return std::unexpected(QuicError::DatagramEmpty);
-    }
-    return {};
+    });
 }
 
 template <std::size_t MaxStreams = 256>
-class QuicConnection : public safety::Pinned<QuicConnection<MaxStreams>> {
+class QuicConnection;
+
+template <std::size_t MaxStreams = 256, class Ctx>
+    requires CtxFitsQuicMint<Ctx>
+[[nodiscard]] constexpr QuicConnection<MaxStreams> mint_quic_connection(Ctx const& ctx, SocketFd socket,
+                                                                        AuthenticatedMtlsPeer peer,
+                                                                        DeclaredQuicConfig const& quic_config) noexcept;
+
+template <std::size_t MaxStreams>
+class QuicConnection : public ::foundation::Pinned<QuicConnection<MaxStreams>> {
     static_assert(MaxStreams > 0, "QuicConnection requires stream storage");
     static_assert(MaxStreams <= UINT16_MAX, "QuicConnection stream counters are uint16_t bounded");
 
@@ -222,6 +258,16 @@ class QuicConnection : public safety::Pinned<QuicConnection<MaxStreams>> {
     std::uint64_t next_bidi_stream_id_ = 0;
     std::uint64_t next_uni_stream_id_ = 2;
     std::uint64_t migration_sequence_ = 0;
+
+    // The mint is the only door, so a connection exists only where a context
+    // that owns Init built it.
+    constexpr QuicConnection(SocketFd socket, AuthenticatedMtlsPeer peer, DeclaredQuicConfig const& config) noexcept
+        : socket_{socket}, peer_{peer}, config_{config.value()} {}
+
+    template <std::size_t N, class Ctx>
+        requires CtxFitsQuicMint<Ctx>
+    friend constexpr QuicConnection<N> mint_quic_connection(Ctx const& ctx, SocketFd socket, AuthenticatedMtlsPeer peer,
+                                                            DeclaredQuicConfig const& quic_config) noexcept;
 
     [[nodiscard]] constexpr std::uint16_t stream_index(std::uint64_t id) const noexcept {
         for (std::uint16_t i = 0; i < MaxStreams; ++i) {
@@ -245,9 +291,6 @@ class QuicConnection : public safety::Pinned<QuicConnection<MaxStreams>> {
     }
 
 public:
-    constexpr QuicConnection(SocketFd socket, AuthenticatedMtlsPeer peer, DeclaredQuicConfig config) noexcept
-        : socket_{socket}, peer_{peer}, config_{config.value()} {}
-
     [[nodiscard]] constexpr SocketFd socket() const noexcept { return socket_; }
     [[nodiscard]] constexpr AuthenticatedMtlsPeer const& peer() const noexcept { return peer_; }
     [[nodiscard]] constexpr QuicConfig const& config() const noexcept { return config_; }
@@ -271,13 +314,13 @@ public:
         streams_[*idx] = QuicStreamDescriptor{.id = id, .kind = kind};
         stream_open_[*idx] = true;
         ++open_streams_;
-        return DeclaredQuicStream{streams_[*idx]};
+        return ::fixy::mint_tagged<wip_source::Quic>(streams_[*idx]);
     }
 
     template <class Ctx>
         requires CtxFitsQuicRuntime<Ctx>
     [[nodiscard]] constexpr std::expected<void, QuicError> close_stream(Ctx const&,
-                                                                        DeclaredQuicStream stream) noexcept {
+                                                                        DeclaredQuicStream const& stream) noexcept {
         const std::uint16_t idx = stream_index(stream.value().id);
         if (idx == UINT16_MAX) {
             return std::unexpected(QuicError::UnknownStream);
@@ -303,47 +346,45 @@ public:
         return std::unexpected(QuicError::BackendUnavailable);
     }
 
+    // A token always holds at least one byte, so the missing backend is the
+    // only refusal left after the feature check.
     template <class Ctx>
         requires CtxFitsQuicRuntime<Ctx>
     [[nodiscard]] constexpr std::expected<void, QuicError> enable_0rtt(Ctx const&,
-                                                                       DeclaredQuicResumptionToken token) noexcept {
+                                                                       DeclaredQuicResumptionToken const&) noexcept {
         if (!config_.features.test(QuicFeature::ZeroRtt)) {
             return std::unexpected(QuicError::ZeroRttDisabled);
-        }
-        if (token.value().size == 0) {
-            return std::unexpected(QuicError::EmptyResumptionToken);
         }
         return std::unexpected(QuicError::BackendUnavailable);
     }
 
+    // A plan always names two different paths, so the plan needs no second
+    // check here.
     template <class Ctx>
         requires CtxFitsQuicRuntime<Ctx>
     [[nodiscard]] constexpr std::expected<DeclaredQuicMigration, QuicError>
-    plan_migration(Ctx const&, DeclaredPathSwapPlan plan) noexcept {
+    plan_migration(Ctx const&, DeclaredPathSwapPlan const& plan) noexcept {
         if (!config_.features.test(QuicFeature::Migration)) {
             return std::unexpected(QuicError::MigrationDisabled);
         }
-        if (plan.value().old_path.value() == plan.value().new_path.value()) {
-            return std::unexpected(QuicError::InvalidMigrationPlan);
-        }
         ++migration_sequence_;
-        return DeclaredQuicMigration{QuicMigrationPlan{
+        return ::fixy::mint_tagged<wip_source::Quic>(QuicMigrationPlan{
             .path_swap = plan.value(),
             .migration_sequence = migration_sequence_,
-        }};
+        });
     }
 };
 
-template <std::size_t MaxStreams = 256, class Ctx>
+template <std::size_t MaxStreams, class Ctx>
     requires CtxFitsQuicMint<Ctx>
-[[nodiscard]] constexpr QuicConnection<MaxStreams>
-mint_quic_connection(Ctx const&, SocketFd socket, AuthenticatedMtlsPeer peer, DeclaredQuicConfig quic_config) noexcept {
-    static_cast<void>(validate_quic_config(quic_config));
+[[nodiscard]] constexpr QuicConnection<MaxStreams> mint_quic_connection(Ctx const&, SocketFd socket,
+                                                                        AuthenticatedMtlsPeer peer,
+                                                                        DeclaredQuicConfig const& quic_config) noexcept {
     return QuicConnection<MaxStreams>{socket, peer, quic_config};
 }
 
 [[nodiscard]] std::expected<void, QuicError> connect_quic(SocketFd socket, DeclaredMtlsConfig const& mtls_config,
-                                                          DeclaredQuicConfig quic_config, MtlsDnsName peer_dns,
+                                                          DeclaredQuicConfig const& quic_config, MtlsDnsName peer_dns,
                                                           MtlsCertificateFingerprint peer_fingerprint) noexcept;
 
 [[nodiscard]] std::expected<AuthenticatedMtlsPeer, QuicError>
@@ -353,10 +394,21 @@ admit_quic_peer(DeclaredMtlsConfig const& mtls_config, MtlsDnsName peer_dns,
 static_assert(sizeof(DeclaredQuicConfig) == sizeof(QuicConfig));
 static_assert(sizeof(DeclaredQuicStream) == sizeof(QuicStreamDescriptor));
 static_assert(sizeof(DeclaredQuicMigration) == sizeof(QuicMigrationPlan));
-static_assert(std::is_trivially_copyable_v<QuicConfig>);
+// A refined member makes a config or a plan not trivially copyable, because
+// no byte route may build a refined value.  A copy still costs what a copy of
+// the bytes costs.
+static_assert(std::is_trivially_copy_constructible_v<QuicConfig> && std::is_trivially_destructible_v<QuicConfig>);
 static_assert(std::is_trivially_copyable_v<QuicStreamDescriptor>);
-static_assert(std::is_trivially_copyable_v<QuicMigrationPlan>);
-static_assert(CtxFitsQuicMint<effects::ColdInitCtx>);
-static_assert(CtxFitsQuicRuntime<effects::BgDrainCtx>);
+static_assert(std::is_trivially_copy_constructible_v<QuicMigrationPlan>
+              && std::is_trivially_destructible_v<QuicMigrationPlan>);
+static_assert(!std::is_default_constructible_v<QuicResumptionToken> && !std::is_aggregate_v<QuicResumptionToken>,
+              "QuicResumptionToken::from must be the only writer of a token length");
+static_assert(!std::is_default_constructible_v<QuicConnection<>>,
+              "mint_quic_connection must be the only door to a connection");
+static_assert(CtxFitsQuicMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsQuicMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsQuicRuntime<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsQuicRuntime<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsQuicRuntime<::fixy::HotFgCtx>);
 
 }  // namespace crucible::cntp::_wip

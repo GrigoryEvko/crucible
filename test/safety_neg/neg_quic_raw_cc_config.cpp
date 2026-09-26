@@ -1,7 +1,7 @@
 #include <crucible/cntp/_wip/QuicTransport.h>
 
-// GAPS-128 fixture #2: QUIC config minting requires a declared
-// congestion-control choice. Raw CcSelection cannot enter policy.
+// mint_quic_config takes a congestion-control choice under the CcAlgorithm
+// tag.  A bare CcSelection has no conversion to the tagged choice.
 
 int main() {
     namespace cntp = crucible::cntp::_wip;

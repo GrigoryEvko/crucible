@@ -1,89 +1,116 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/cntp/ConnectionPool.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/concurrent/_SpinLock.h>
-#include <crucible/permissions/_Permission.h>
-#include <crucible/safety/_Pinned.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/SpinLock.h>
+#include <foundation/Pinned.h>
+#include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <optional>
 #include <type_traits>
 
 namespace crucible::cntp {
 
+// A pool is built at startup.
 template <class Ctx>
-concept CtxFitsConnectionPoolMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsConnectionPoolMint = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
+// Every other operation takes the blocking gate of the pool, and a wait on
+// that gate is a block.  So the operation is background or test work in a
+// context that owns Block.
 template <class Ctx>
 concept CtxFitsConnectionPoolRuntime =
-    effects::IsExecCtx<Ctx> && effects::CtxOwnsAnyOf<Ctx, effects::Effect::Bg, effects::Effect::Test>;
+    ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Test>
+    && ::fixy::spin::CtxMayBlock<Ctx>;
 
-template <cntp::TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote,
+template <TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote,
           std::size_t MaxEvents = MaxRemotes * MaxPerRemote * 2u>
-    requires cntp::PoolTransportClass<T>
-class ConnectionPool : public safety::Pinned<ConnectionPool<T, MaxRemotes, MaxPerRemote, MaxEvents>> {
+    requires PoolTransportClass<T>
+class ConnectionPool;
+
+template <TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote, class Ctx>
+    requires PoolTransportClass<T> && CtxFitsConnectionPoolMint<Ctx>
+[[nodiscard]] constexpr ConnectionPool<T, MaxRemotes, MaxPerRemote> mint_connection_pool(Ctx const& ctx,
+                                                                                      PoolConfig config = {}) noexcept;
+
+template <TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote, std::size_t MaxEvents>
+    requires PoolTransportClass<T>
+class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes, MaxPerRemote, MaxEvents>> {
     static_assert(MaxRemotes > 0, "ConnectionPool requires remote slots");
     static_assert(MaxPerRemote > 0, "ConnectionPool requires per-remote slots");
     static_assert(MaxEvents > 0, "ConnectionPool requires event slots");
     static_assert(MaxPerRemote <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()),
                   "ConnectionPool per-remote count is uint16-backed");
 
+    // A slot is occupied exactly when it holds a connection.
     struct Slot {
-        bool occupied = false;
+        std::optional<Connection<T>> connection{};
         bool leased = false;
         bool quarantined = false;
-        cntp::Connection<T> connection{};
+        bool healthy = true;
         std::uint64_t last_used_ns = 0;
     };
 
-public:
-    // Nested in the class template so every instantiation gets a distinct
-    // tag.  Two pools cannot then share spin-gate authority.
-    struct GateTag {};
+    // Each acquisition mints a token of this tag.  The tag is private and
+    // nested in the class template, so only this instantiation can mint one:
+    // the token witnesses that the acquisition comes from inside the pool.
+    struct GateTag {
+        using permission_row = ::foundation::effects::Row<>;
+    };
 
-private:
     std::array<Slot, MaxRemotes * MaxPerRemote> slots_{};
-    std::array<cntp::PoolEvent, MaxEvents> events_{};
-    mutable ::crucible::fixy::concurrent::SpinLock<GateTag> gate_{};
-    // The const accessors still take the gate to serialize against writers,
-    // and the guard constructor binds a non-const Permission&, so this is
-    // mutable.  The permission is an empty phantom type with no observable
-    // state, so logical const-ness holds.
-    [[no_unique_address]] mutable ::crucible::safety::Permission<GateTag> gate_perm_{
-        ::crucible::safety::mint_permission_root<GateTag>()};
-    // A fresh cache line, so a counter store does not invalidate the line the
-    // spin gate spinners are polling.
+    std::array<PoolEvent, MaxEvents> events_{};
+    // The const readers take the gate too, to serialize against writers.
+    mutable ::fixy::spin::BlockingLock<GateTag> gate_{};
+    // A fresh cache line, so a counter store does not invalidate the line
+    // that the gate waiters poll.
     alignas(64) std::size_t next_event_ = 0;
     std::size_t event_count_ = 0;
     std::uint64_t sequence_ = 0;
     // Cached rather than recomputed.  add_connection increments it on the
     // first slot for a remote and every drain path decrements it on the last.
     std::uint16_t distinct_remotes_ = 0;
-    cntp::PoolConfig config_{};
+    PoolConfig config_{};
+
+    // The mint is the only door, so a pool exists only where a context that
+    // owns Init built it.
+    constexpr explicit ConnectionPool(PoolConfig config) noexcept : config_{config} {}
+
+    template <TransportClass U, std::size_t R, std::size_t P, class Ctx>
+        requires PoolTransportClass<U> && CtxFitsConnectionPoolMint<Ctx>
+    friend constexpr ConnectionPool<U, R, P> mint_connection_pool(Ctx const& ctx, PoolConfig config) noexcept;
 
     [[nodiscard]] static constexpr bool same_uuid(cog::Uuid lhs, cog::Uuid rhs) noexcept {
         return lhs.hi == rhs.hi && lhs.lo == rhs.lo;
     }
 
-    [[nodiscard]] static constexpr bool same_socket(cntp::SocketFd lhs, cntp::SocketFd rhs) noexcept {
+    [[nodiscard]] static constexpr bool same_socket(SocketFd lhs, SocketFd rhs) noexcept {
         return lhs.value() == rhs.value();
+    }
+
+    [[nodiscard]] static constexpr bool holds_remote(Slot const& slot, cog::Uuid remote) noexcept {
+        return slot.connection.has_value() && same_uuid(slot.connection->remote_uuid(), remote);
     }
 
     [[nodiscard]] static constexpr std::uint16_t max_per_remote() noexcept {
         return static_cast<std::uint16_t>(MaxPerRemote);
     }
 
+    // The two scans below are O(MaxRemotes * MaxPerRemote).  Each caller
+    // holds the gate.
     [[nodiscard]] std::uint16_t remote_occupied_count(cog::Uuid remote) const noexcept {
         std::uint16_t count = 0;
         for (auto const& slot : slots_) {
-            if (slot.occupied && same_uuid(slot.connection.remote_uuid, remote)) {
+            if (holds_remote(slot, remote)) {
                 ++count;
             }
         }
@@ -92,7 +119,7 @@ private:
 
     [[nodiscard]] bool has_remote(cog::Uuid remote) const noexcept {
         for (auto const& slot : slots_) {
-            if (slot.occupied && same_uuid(slot.connection.remote_uuid, remote)) {
+            if (holds_remote(slot, remote)) {
                 return true;
             }
         }
@@ -103,13 +130,13 @@ private:
         return config_.max_per_remote.value() < max_per_remote() ? config_.max_per_remote.value() : max_per_remote();
     }
 
-    void append_event(cntp::PoolEventKind kind, cntp::Connection<T> const& connection) noexcept {
-        events_[next_event_] = cntp::PoolEvent{
+    void append_event(PoolEventKind kind, Connection<T> const& connection) noexcept {
+        events_[next_event_] = PoolEvent{
             .kind = kind,
             .transport = T,
-            .remote_uuid = connection.remote_uuid,
-            .socket = connection.socket,
-            .connection_id = connection.connection_id.value(),
+            .remote_uuid = connection.remote_uuid(),
+            .socket = connection.socket(),
+            .connection_id = connection.connection_id().value(),
             .sequence = ++sequence_,
         };
         next_event_ = (next_event_ + 1u) % events_.size();
@@ -118,49 +145,60 @@ private:
         }
     }
 
-    [[nodiscard]] Slot* slot_at(std::size_t index) noexcept { return index < slots_.size() ? &slots_[index] : nullptr; }
-
-    [[nodiscard]] Slot const* slot_at(std::size_t index) const noexcept {
-        return index < slots_.size() ? &slots_[index] : nullptr;
+    // Records the event and empties the slot.  The caller holds the gate.
+    void drain_slot(Slot& slot, PoolEventKind kind) noexcept {
+        append_event(kind, *slot.connection);
+        slot = Slot{};
     }
 
-    void return_index(std::size_t index) noexcept {
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
-        Slot* slot = slot_at(index);
-        if (slot == nullptr || !slot->occupied || !slot->leased) {
+    template <class Ctx>
+    void return_index(Ctx const& ctx, std::size_t index) noexcept {
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
+        if (index >= slots_.size()) {
             return;
         }
-        slot->leased = false;
-        if (slot->quarantined || !slot->connection.healthy) {
-            const cog::Uuid drained_uuid = slot->connection.remote_uuid;
-            append_event(slot->quarantined ? cntp::PoolEventKind::DrainedQuarantined
-                                           : cntp::PoolEventKind::EvictedUnhealthy,
-                         slot->connection);
-            *slot = Slot{};
+        Slot& slot = slots_[index];
+        if (!slot.connection.has_value() || !slot.leased) {
+            return;
+        }
+        slot.leased = false;
+        if (slot.quarantined || !slot.healthy) {
+            const cog::Uuid drained_uuid = slot.connection->remote_uuid();
+            drain_slot(slot, slot.quarantined ? PoolEventKind::DrainedQuarantined : PoolEventKind::EvictedUnhealthy);
             if (!has_remote(drained_uuid)) {
                 --distinct_remotes_;
             }
             return;
         }
-        append_event(cntp::PoolEventKind::Returned, slot->connection);
+        append_event(PoolEventKind::Returned, *slot.connection);
     }
 
 public:
+    // A lease holds one slot until reset() or the destructor gives the slot
+    // back.  It carries the context of the lease call, because the return
+    // takes the gate again and a destructor has no context of its own.  The
+    // access is read-only: the identity of a leased connection is pool
+    // bookkeeping, and a holder that could rewrite it would break the remote
+    // count.
+    template <class Ctx>
     class [[nodiscard]] LeaseGuard {
         ConnectionPool* pool_ = nullptr;
         std::size_t slot_index_ = 0;
+        [[no_unique_address]] Ctx ctx_;
 
         friend class ConnectionPool;
 
-        constexpr LeaseGuard(ConnectionPool& pool, std::size_t slot_index) noexcept
-            : pool_{&pool}, slot_index_{slot_index} {}
+        constexpr LeaseGuard(ConnectionPool& pool, std::size_t slot_index, Ctx const& ctx) noexcept
+            : pool_{&pool}, slot_index_{slot_index}, ctx_{ctx} {}
 
     public:
-        constexpr LeaseGuard() noexcept = default;
-        LeaseGuard(LeaseGuard const&) = delete;
-        LeaseGuard& operator=(LeaseGuard const&) = delete;
+        LeaseGuard(LeaseGuard const&) = delete("a lease names one holder of a slot; a copy would return it twice");
+        LeaseGuard& operator=(LeaseGuard const&) =
+            delete("a lease names one holder of a slot; a copy would return it twice");
 
-        constexpr LeaseGuard(LeaseGuard&& other) noexcept : pool_{other.pool_}, slot_index_{other.slot_index_} {
+        constexpr LeaseGuard(LeaseGuard&& other) noexcept
+            : pool_{other.pool_}, slot_index_{other.slot_index_}, ctx_{other.ctx_} {
             other.pool_ = nullptr;
         }
 
@@ -169,6 +207,7 @@ public:
                 reset();
                 pool_ = other.pool_;
                 slot_index_ = other.slot_index_;
+                ctx_ = other.ctx_;
                 other.pool_ = nullptr;
             }
             return *this;
@@ -178,107 +217,100 @@ public:
 
         void reset() noexcept {
             if (pool_ != nullptr) {
-                pool_->return_index(slot_index_);
+                pool_->return_index(ctx_, slot_index_);
                 pool_ = nullptr;
             }
         }
 
-        [[nodiscard]] cntp::Connection<T>& operator*() noexcept { return pool_->slots_[slot_index_].connection; }
+        [[nodiscard]] Connection<T> const& operator*() const noexcept { return *pool_->slots_[slot_index_].connection; }
 
-        [[nodiscard]] cntp::Connection<T> const& operator*() const noexcept {
-            return pool_->slots_[slot_index_].connection;
-        }
-
-        [[nodiscard]] cntp::Connection<T>* operator->() noexcept { return &pool_->slots_[slot_index_].connection; }
-
-        [[nodiscard]] cntp::Connection<T> const* operator->() const noexcept {
-            return &pool_->slots_[slot_index_].connection;
+        [[nodiscard]] Connection<T> const* operator->() const noexcept {
+            return &*pool_->slots_[slot_index_].connection;
         }
 
         [[nodiscard]] explicit constexpr operator bool() const noexcept { return pool_ != nullptr; }
     };
 
-    constexpr explicit ConnectionPool(cntp::PoolConfig config = {}) noexcept : config_{config} {}
-
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    [[nodiscard]] std::expected<void, cntp::PoolError>
-    add_connection(Ctx const&, cntp::LinearConnection<T>&& connection, std::uint64_t now_ns = 0) noexcept {
-        cntp::Connection<T> raw = std::move(connection).consume();
-        if (raw.remote_uuid.is_zero()) {
-            return std::unexpected(cntp::PoolError::InvalidRemoteCog);
-        }
+    [[nodiscard]] std::expected<void, PoolError> add_connection(Ctx const& ctx, LinearConnection<T>&& connection,
+                                                                std::uint64_t now_ns = 0) noexcept {
+        Connection<T> raw = std::move(connection).consume();
 
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
-        const bool is_new_remote = !has_remote(raw.remote_uuid);
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
+        const bool is_new_remote = !has_remote(raw.remote_uuid());
         if (is_new_remote && distinct_remotes_ >= static_cast<std::uint16_t>(MaxRemotes)) {
-            return std::unexpected(cntp::PoolError::PoolFull);
+            return std::unexpected(PoolError::PoolFull);
         }
-        if (remote_occupied_count(raw.remote_uuid) >= per_remote_limit()) {
-            return std::unexpected(cntp::PoolError::PoolFull);
+        if (remote_occupied_count(raw.remote_uuid()) >= per_remote_limit()) {
+            return std::unexpected(PoolError::PoolFull);
         }
         for (auto& slot : slots_) {
-            if (!slot.occupied) {
-                slot.occupied = true;
+            if (!slot.connection.has_value()) {
+                slot.connection = raw;
                 slot.leased = false;
                 slot.quarantined = false;
-                slot.connection = raw;
+                slot.healthy = true;
                 slot.last_used_ns = now_ns;
                 if (is_new_remote) {
                     ++distinct_remotes_;
                 }
-                append_event(cntp::PoolEventKind::Added, slot.connection);
+                append_event(PoolEventKind::Added, *slot.connection);
                 return {};
             }
         }
-        return std::unexpected(cntp::PoolError::PoolFull);
+        return std::unexpected(PoolError::PoolFull);
     }
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    CRUCIBLE_HOT std::expected<LeaseGuard, cntp::PoolError> lease(Ctx const&, cog::CogIdentity const& remote,
-                                                                  std::uint64_t now_ns = 0) noexcept {
-        if (!cntp::valid_remote(remote)) {
-            return std::unexpected(cntp::PoolError::InvalidRemoteCog);
+    [[nodiscard]] CRUCIBLE_HOT std::expected<LeaseGuard<Ctx>, PoolError>
+    lease(Ctx const& ctx, cog::CogIdentity const& remote, std::uint64_t now_ns = 0) noexcept {
+        if (!is_valid_remote(remote)) {
+            return std::unexpected(PoolError::InvalidRemoteCog);
         }
 
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         for (std::size_t i = 0; i < slots_.size(); ++i) {
             auto& slot = slots_[i];
-            if (!slot.occupied || !same_uuid(slot.connection.remote_uuid, remote.uuid)) {
+            if (!holds_remote(slot, remote.uuid)) {
                 continue;
             }
             if (slot.quarantined) {
-                return std::unexpected(cntp::PoolError::RemoteQuarantined);
+                return std::unexpected(PoolError::RemoteQuarantined);
             }
-            if (!slot.connection.healthy) {
+            if (!slot.healthy) {
                 continue;
             }
             if (!slot.leased) {
                 slot.leased = true;
                 slot.last_used_ns = now_ns;
-                append_event(cntp::PoolEventKind::Leased, slot.connection);
-                return LeaseGuard{*this, i};
+                append_event(PoolEventKind::Leased, *slot.connection);
+                return LeaseGuard<Ctx>{*this, i, ctx};
             }
         }
-        return std::unexpected(cntp::PoolError::PoolEmpty);
+        return std::unexpected(PoolError::PoolEmpty);
+    }
+
+    template <class Ctx, class LeaseCtx>
+        requires CtxFitsConnectionPoolRuntime<Ctx>
+    CRUCIBLE_HOT void return_lease(Ctx const&, LeaseGuard<LeaseCtx>&& lease) noexcept {
+        lease.reset();
     }
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    CRUCIBLE_HOT void return_lease(Ctx const&, LeaseGuard&& lease) noexcept {
-        lease.reset();
-    }
-
-    [[nodiscard]] std::uint16_t available_count(cog::CogIdentity const& remote) const noexcept {
-        if (!cntp::valid_remote(remote)) {
+    [[nodiscard]] std::uint16_t available_count(Ctx const& ctx, cog::CogIdentity const& remote) const noexcept {
+        if (!is_valid_remote(remote)) {
             return 0;
         }
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         std::uint16_t count = 0;
         for (auto const& slot : slots_) {
-            if (slot.occupied && same_uuid(slot.connection.remote_uuid, remote.uuid) && !slot.leased
-                && !slot.quarantined && slot.connection.healthy) {
+            if (holds_remote(slot, remote.uuid) && !slot.leased && !slot.quarantined && slot.healthy) {
                 ++count;
             }
         }
@@ -287,17 +319,16 @@ public:
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    void evict_unhealthy(Ctx const&, cog::CogIdentity const& remote) noexcept {
-        if (!cntp::valid_remote(remote)) {
+    void evict_unhealthy(Ctx const& ctx, cog::CogIdentity const& remote) noexcept {
+        if (!is_valid_remote(remote)) {
             return;
         }
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
-            if (slot.occupied && same_uuid(slot.connection.remote_uuid, remote.uuid) && !slot.leased
-                && !slot.connection.healthy) {
-                append_event(cntp::PoolEventKind::EvictedUnhealthy, slot.connection);
-                slot = Slot{};
+            if (holds_remote(slot, remote.uuid) && !slot.leased && !slot.healthy) {
+                drain_slot(slot, PoolEventKind::EvictedUnhealthy);
             }
         }
         if (was_present && !has_remote(remote.uuid)) {
@@ -307,34 +338,34 @@ public:
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    void mark_unhealthy(Ctx const&, cog::CogIdentity const& remote, cntp::SocketFd socket) noexcept {
-        if (!cntp::valid_remote(remote)) {
+    void mark_unhealthy(Ctx const& ctx, cog::CogIdentity const& remote, SocketFd socket) noexcept {
+        if (!is_valid_remote(remote)) {
             return;
         }
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         for (auto& slot : slots_) {
-            if (slot.occupied && same_uuid(slot.connection.remote_uuid, remote.uuid)
-                && same_socket(slot.connection.socket, socket)) {
-                slot.connection.healthy = false;
+            if (holds_remote(slot, remote.uuid) && same_socket(slot.connection->socket(), socket)) {
+                slot.healthy = false;
             }
         }
     }
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    void evict_idle(Ctx const&, cog::CogIdentity const& remote, std::uint64_t now_ns) noexcept {
-        if (!cntp::valid_remote(remote)) {
+    void evict_idle(Ctx const& ctx, cog::CogIdentity const& remote, std::uint64_t now_ns) noexcept {
+        if (!is_valid_remote(remote)) {
             return;
         }
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
-            if (!slot.occupied || slot.leased || !same_uuid(slot.connection.remote_uuid, remote.uuid)) {
+            if (slot.leased || !holds_remote(slot, remote.uuid)) {
                 continue;
             }
             if (now_ns >= slot.last_used_ns && now_ns - slot.last_used_ns >= config_.max_idle_ns.value()) {
-                append_event(cntp::PoolEventKind::EvictedIdle, slot.connection);
-                slot = Slot{};
+                drain_slot(slot, PoolEventKind::EvictedIdle);
             }
         }
         if (was_present && !has_remote(remote.uuid)) {
@@ -344,22 +375,22 @@ public:
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    void drain_quarantined(Ctx const&, cog::CogIdentity const& remote) noexcept {
-        if (!cntp::valid_remote(remote)) {
+    void drain_quarantined(Ctx const& ctx, cog::CogIdentity const& remote) noexcept {
+        if (!is_valid_remote(remote)) {
             return;
         }
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         // A quarantined slot that is still leased keeps its slot, so the
         // remote can survive this call and distinct_remotes_ must not drop.
         const bool was_present = has_remote(remote.uuid);
         for (auto& slot : slots_) {
-            if (!slot.occupied || !same_uuid(slot.connection.remote_uuid, remote.uuid)) {
+            if (!holds_remote(slot, remote.uuid)) {
                 continue;
             }
             slot.quarantined = true;
             if (!slot.leased) {
-                append_event(cntp::PoolEventKind::DrainedQuarantined, slot.connection);
-                slot = Slot{};
+                drain_slot(slot, PoolEventKind::DrainedQuarantined);
             }
         }
         if (was_present && !has_remote(remote.uuid)) {
@@ -367,20 +398,29 @@ public:
         }
     }
 
-    [[nodiscard]] std::size_t event_count() const noexcept {
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+    template <class Ctx>
+        requires CtxFitsConnectionPoolRuntime<Ctx>
+    [[nodiscard]] std::size_t event_count(Ctx const& ctx) const noexcept {
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         return event_count_;
     }
 
-    [[nodiscard]] std::uint16_t distinct_remote_count() const noexcept {
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+    template <class Ctx>
+        requires CtxFitsConnectionPoolRuntime<Ctx>
+    [[nodiscard]] std::uint16_t distinct_remote_count(Ctx const& ctx) const noexcept {
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         return distinct_remotes_;
     }
 
-    [[nodiscard]] std::expected<cntp::DeclaredPoolEvent, cntp::PoolError> event_at(std::size_t index) const noexcept {
-        ::crucible::fixy::concurrent::SpinGuard<GateTag> guard{gate_, gate_perm_};
+    template <class Ctx>
+        requires CtxFitsConnectionPoolRuntime<Ctx>
+    [[nodiscard]] std::expected<DeclaredPoolEvent, PoolError> event_at(Ctx const& ctx, std::size_t index) const noexcept {
+        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
+        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         if (index >= event_count_) {
-            return std::unexpected(cntp::PoolError::InvalidConnectionId);
+            return std::unexpected(PoolError::InvalidConnectionId);
         }
         // index is chronological, events_ is physical.  After a wrap the
         // oldest event lives at events_[next_event_], the slot about to be
@@ -390,21 +430,26 @@ public:
         const std::size_t size = events_.size();
         const std::size_t base = (next_event_ + size - event_count_) % size;
         const std::size_t physical = (base + index) % size;
-        return cntp::mint_pool_event(events_[physical]);
+        return ::fixy::mint_tagged<::fixy::tags::source::ConnectionPool>(events_[physical]);
     }
 };
 
-template <cntp::TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote, class Ctx>
-    requires cntp::PoolTransportClass<T> && CtxFitsConnectionPoolMint<Ctx>
-[[nodiscard]] constexpr ConnectionPool<T, MaxRemotes, MaxPerRemote>
-mint_connection_pool(Ctx const&, cntp::PoolConfig config = {}) noexcept {
+template <TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote, class Ctx>
+    requires PoolTransportClass<T> && CtxFitsConnectionPoolMint<Ctx>
+[[nodiscard]] constexpr ConnectionPool<T, MaxRemotes, MaxPerRemote> mint_connection_pool(Ctx const&,
+                                                                                      PoolConfig config) noexcept {
     return ConnectionPool<T, MaxRemotes, MaxPerRemote>{config};
 }
 
-static_assert(CtxFitsConnectionPoolMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsConnectionPoolMint<effects::BgDrainCtx>);
-static_assert(CtxFitsConnectionPoolRuntime<effects::BgDrainCtx>);
-static_assert(CtxFitsConnectionPoolRuntime<effects::TestRunnerCtx>);
-static_assert(!CtxFitsConnectionPoolRuntime<effects::HotFgCtx>);
+static_assert(CtxFitsConnectionPoolMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsConnectionPoolMint<::fixy::BgDrainCtx>);
+static_assert(CtxFitsConnectionPoolRuntime<::fixy::BgLoadCtx>);
+static_assert(CtxFitsConnectionPoolRuntime<::fixy::TestRunnerCtx>);
+static_assert(!CtxFitsConnectionPoolRuntime<::fixy::BgDrainCtx>,
+              "a context that owns no Block cannot wait on the gate of the pool");
+static_assert(!CtxFitsConnectionPoolRuntime<::fixy::InitLoadCtx>);
+static_assert(!CtxFitsConnectionPoolRuntime<::fixy::HotFgCtx>);
+static_assert(!std::is_default_constructible_v<ConnectionPool<TransportClass::Tcp, 1, 1>>,
+              "mint_connection_pool must be the only door to a pool");
 
 }  // namespace crucible::cntp

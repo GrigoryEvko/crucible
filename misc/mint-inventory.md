@@ -89,9 +89,9 @@ apply to the row.
 | `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 | `mint_bbr_qdisc_config` | `include/crucible/cntp/Pacing.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_bpf_map_spec` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
-| `mint_connection` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_connection_pool` | `include/crucible/cntp/ConnectionPoolRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 8 |
+| `mint_connection` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
+| `mint_connection_pool` | `include/crucible/cntp/ConnectionPoolRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_credit_flow_control` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
 | `mint_custom_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_dctcp_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
@@ -106,14 +106,13 @@ apply to the row.
 | `mint_ktls_crypto_info` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_ktls_offload_for_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_ktls_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
+| `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
 | `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
 | `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_pool_event` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 3 |
-| `mint_quic_connection` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 5 |
+| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 7 |
+| `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 7 |
+| `mint_quic_connection` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
 | `mint_reed_solomon` | `include/crucible/cntp/Fec.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_resource_limit` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
 | `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
@@ -363,5 +362,5 @@ apply to the row.
 
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 100 | 50 | 41 | 9 | 0 | 91 | 29 |
+| old (`include/crucible/`) | 99 | 50 | 40 | 9 | 0 | 90 | 25 |
 | new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |

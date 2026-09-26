@@ -343,7 +343,6 @@ add_library(crucible STATIC
   src/cog/NicConfig.cpp
   src/cog/NicOffloadAudit.cpp
   src/cog/SrIov.cpp
-  src/cntp/ConnectionPool.cpp
   src/cntp/CongestionControl.cpp
   src/cntp/_wip/Doca.cpp
   src/cntp/_wip/GpuDirect.cpp
@@ -351,7 +350,6 @@ add_library(crucible STATIC
   src/cntp/_wip/KtlsOffload.cpp
   src/cntp/MtlsTransport.cpp
   src/cntp/_wip/P4.cpp
-  src/cntp/PathSwap.cpp
   src/cntp/Pacing.cpp
   src/cntp/_wip/QuicTransport.cpp
   src/cntp/_wip/Sharp.cpp

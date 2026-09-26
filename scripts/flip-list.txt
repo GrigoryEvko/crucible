@@ -54,16 +54,12 @@ include/crucible/Vigil.h
 include/crucible/_Saturate.h
 include/crucible/cipher/CipherTierPromotion.h
 include/crucible/cipher/SessionPersistenceSurface.h
-include/crucible/cntp/ConnectionPool.h
-include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fountain.h
-include/crucible/cntp/PathSwap.h
 include/crucible/cntp/Tcam.h
 include/crucible/cntp/_wip/Doca.h
 include/crucible/cntp/_wip/GpuDirect.h
 include/crucible/cntp/_wip/KtlsOffload.h
 include/crucible/cntp/_wip/P4.h
-include/crucible/cntp/_wip/QuicTransport.h
 include/crucible/cntp/_wip/Sharp.h
 include/crucible/cntp/_wip/Wireguard.h
 include/crucible/cntp/dataplane/TcEbpf.h

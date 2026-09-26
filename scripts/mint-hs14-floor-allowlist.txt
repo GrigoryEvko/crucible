@@ -27,13 +27,9 @@
 # ── cntp ─────────────────────────────────────────────────────────────
 mint_admission_decision|include/crucible/cntp/Backpressure.h
 mint_bbr_qdisc_config|include/crucible/cntp/Pacing.h
-mint_connection|include/crucible/cntp/ConnectionPool.h
-mint_connection_pool|include/crucible/cntp/ConnectionPoolRuntime.h
 mint_dctcp_incast_config|include/crucible/cntp/IncastControl.h
 mint_fountain_decoder|include/crucible/cntp/Fountain.h
 mint_incast_config|include/crucible/cntp/IncastControl.h
-mint_path_swap_plan|include/crucible/cntp/PathSwap.h
-mint_pool_event|include/crucible/cntp/ConnectionPool.h
 mint_resource_limit|include/crucible/cntp/Backpressure.h
 mint_resource_pressure|include/crucible/cntp/Backpressure.h
 mint_tcam_table|include/crucible/cntp/Tcam.h

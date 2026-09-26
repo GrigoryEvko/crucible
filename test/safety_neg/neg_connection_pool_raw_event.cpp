@@ -1,11 +1,13 @@
-// GAPS-136 fixture #1: pool lease/reuse audit events must be minted as
-// source::ConnectionPool. Raw PoolEvent cannot cross the runtime boundary.
+// A pool event crosses the runtime boundary under the ConnectionPool tag.  A
+// bare PoolEvent has no conversion to the tagged event.
 
 #include <crucible/cntp/ConnectionPool.h>
 
 namespace cntp = crucible::cntp;
 
+namespace {
 void requires_declared(cntp::DeclaredPoolEvent) {}
+}  // namespace
 
 int main() {
     cntp::PoolEvent raw{};

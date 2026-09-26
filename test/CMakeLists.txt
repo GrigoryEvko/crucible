@@ -7000,18 +7000,44 @@ crucible_neg_compile_multi_test(neg_pacing_raw_rate
 crucible_neg_compile_test(neg_pacing_raw_config_ensure
   "could not convert|no matching function|DeclaredQdiscConfig|Tagged")
 
-# GAPS-122 — cntp/PathSwap.h application-level resource transition.
-#   * neg_path_swap_raw_plan_begin: state-machine entry requires a tagged plan.
-#   * neg_path_swap_commit_fg_ctx: commit is a Bg-row runtime transition.
-#   * neg_path_swap_commit_non_session_resource: new path resource must satisfy
-#     SessionResource pin discipline.
-crucible_neg_compile_test(neg_path_swap_raw_plan_begin
-  "could not convert|no matching function|DeclaredPathSwapPlan|Tagged")
+# cntp/PathSwap.h: the application-level move of a flow to a new path.
+#   * neg_path_swap_raw_plan_begin: a swap starts only from a tagged plan.
+#   * neg_path_swap_plan_raw_path_id: the plan mint takes admitted path ids.
+#   * neg_path_swap_plan_direct: the plan mint is the only door to a plan.
+#   * neg_path_swap_mint_bg_ctx: the swapper mint needs a context that owns Init.
+#   * neg_path_swapper_direct: the swapper mint is the only door to a swapper.
+#   * neg_path_swap_commit_fg_ctx, neg_path_swap_begin_init_ctx: a transition
+#     needs a context that owns Bg.
+#   * neg_path_swap_commit_non_session_resource,
+#     neg_path_swap_commit_pointer_resource: the new resource is a
+#     SessionResource.
+crucible_neg_compile_multi_test(neg_path_swap_raw_plan_begin
+  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::BgDrainCtx&, crucible::cntp::PathSwapPlan&, int.."
+  "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
+crucible_neg_compile_multi_test(neg_path_swap_plan_raw_path_id
+  "could not convert .0. from .uint64_t."
+  "to .crucible::cntp::PositivePathId. .aka .fixy::Refinement<fixy::IsPositive.., long unsigned int, false>..")
+crucible_neg_compile_multi_test(neg_path_swap_plan_direct
+  ".constexpr crucible::cntp::PathSwapPlan::PathSwapPlan.crucible::cntp::PositivePathId, crucible::cntp::PositivePathId, crucible::cntp::PositivePathId, crucible::cntp::PositiveNanoseconds.. is private within this context"
+  "PathSwap.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_effects_test(neg_path_swap_mint_bg_ctx
+  "no matching function for call to .mint_path_swapper.fixy::BgDrainCtx&.."
+  "required for the satisfaction of .CtxFitsPathSwapMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
+crucible_neg_compile_multi_test(neg_path_swapper_direct
+  ".constexpr crucible::cntp::PathSwapper<MaxEvents>::PathSwapper.. .with long unsigned int MaxEvents = 8.. is private within this context"
+  "PathSwap.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_effects_test(neg_path_swap_commit_fg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsPathSwapTransition|Bg")
-crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
-  "constraints not satisfied|SessionResource|PathSwapSessionResource")
+  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::HotFgCtx&"
+  "required for the satisfaction of .CtxFitsPathSwapTransition<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+crucible_neg_compile_effects_test(neg_path_swap_begin_init_ctx
+  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::ColdInitCtx&"
+  "required for the satisfaction of .CtxFitsPathSwapTransition<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
+crucible_neg_compile_multi_test(neg_path_swap_commit_non_session_resource
+  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgDrainCtx&"
+  "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = Wire&.")
+crucible_neg_compile_multi_test(neg_path_swap_commit_pointer_resource
+  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgDrainCtx&"
+  "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = PointerWire.")
 
 # ─── topology::CongestionTelemetry and its worker ────────────────────
 #
@@ -7215,20 +7241,45 @@ crucible_neg_compile_test(neg_mtls_legacy_cipher_config
 crucible_neg_compile_test(neg_mtls_raw_config_connect
   "invalid initialization of reference|no matching function|DeclaredMtlsConfig|Tagged")
 
-# GAPS-128 — cntp/_wip/QuicTransport.h QUIC + TLS 1.3 substrate.
-#   * neg_quic_raw_config_connect: runtime connect requires tagged QUIC policy.
-#   * neg_quic_raw_cc_config: QUIC config minting requires tagged CC policy.
-#   * neg_quic_open_stream_fg_ctx: foreground contexts cannot mutate streams.
-#   * neg_quic_raw_migration_plan: migration requires a tagged path-swap plan.
-crucible_neg_compile_test(neg_quic_raw_config_connect
-  "could not convert|no matching function|DeclaredQuicConfig|Tagged")
-crucible_neg_compile_test(neg_quic_raw_cc_config
-  "could not convert|no matching function|DeclaredCcChoice|Tagged")
+# cntp/_wip/QuicTransport.h: the QUIC and TLS 1.3 substrate with no backend.
+#   * neg_quic_raw_config_connect: a connect takes a tagged QUIC config.
+#   * neg_quic_raw_cc_config, neg_quic_config_raw_stream_limit: the config
+#     mint takes a tagged congestion-control choice and admitted limits.
+#   * neg_quic_connection_mint_bg_ctx: the connection mint needs a context
+#     that owns Init.
+#   * neg_quic_connection_direct: the connection mint is the only door.
+#   * neg_quic_open_stream_fg_ctx, neg_quic_datagram_init_ctx: stream and
+#     datagram work needs a context that owns Bg.
+#   * neg_quic_raw_migration_plan: a migration takes a tagged path-swap plan.
+#   * neg_quic_resumption_token_raw_length: from() is the only writer of a
+#     token length.
+crucible_neg_compile_multi_test(neg_quic_raw_config_connect
+  "invalid initialization of reference of type .const crucible::cntp::_wip::DeclaredQuicConfig&. .aka .const fixy::Tagged<crucible::cntp::_wip::QuicConfig, crucible::cntp::_wip::wip_source::Quic>&.. from expression of type .crucible::cntp::_wip::QuicConfig."
+  "in passing argument 3 of .std::expected<void, crucible::cntp::_wip::QuicError> crucible::cntp::_wip::connect_quic")
+crucible_neg_compile_multi_test(neg_quic_raw_cc_config
+  "could not convert .raw_cc. from .crucible::cntp::CcSelection. to .crucible::cntp::DeclaredCcChoice. .aka .fixy::Tagged<crucible::cntp::CcSelection, fixy::tags::source::CcAlgorithm>.."
+  "Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
+crucible_neg_compile_multi_test(neg_quic_config_raw_stream_limit
+  "could not convert .0. from .uint16_t."
+  "to .crucible::cntp::_wip::PositiveQuicStreamLimit. .aka .fixy::Refinement<fixy::IsPositive.., short unsigned int, false>..")
+crucible_neg_compile_effects_test(neg_quic_connection_mint_bg_ctx
+  "no matching function for call to .mint_quic_connection.fixy::BgDrainCtx&"
+  "required for the satisfaction of .CtxFitsQuicMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
+crucible_neg_compile_multi_test(neg_quic_connection_direct
+  ".constexpr crucible::cntp::_wip::QuicConnection<MaxStreams>::QuicConnection.crucible::cntp::SocketFd, crucible::cntp::AuthenticatedMtlsPeer, const crucible::cntp::_wip::DeclaredQuicConfig&. .with long unsigned int MaxStreams = 4.* is private within this context"
+  "QuicTransport.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_effects_test(neg_quic_open_stream_fg_ctx
-  "constraints.*not satisfied"
-    "CtxFitsQuicRuntime|Bg")
-crucible_neg_compile_test(neg_quic_raw_migration_plan
-  "could not convert|no matching function|DeclaredPathSwapPlan|Tagged")
+  "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::open_stream.fixy::HotFgCtx&.."
+  "required for the satisfaction of .CtxFitsQuicRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+crucible_neg_compile_effects_test(neg_quic_datagram_init_ctx
+  "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::send_datagram.fixy::ColdInitCtx&"
+  "required for the satisfaction of .CtxFitsQuicRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
+crucible_neg_compile_multi_test(neg_quic_raw_migration_plan
+  "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::plan_migration.fixy::BgDrainCtx&, crucible::cntp::PathSwapPlan&.."
+  "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
+crucible_neg_compile_multi_test(neg_quic_resumption_token_raw_length
+  ".uint16_t crucible::cntp::_wip::QuicResumptionToken::size_. is private within this context"
+  "QuicTransport.h:[0-9]+:[0-9]+: note: declared private here")
 
 # GAPS-146 — cntp/_wip/KtlsOffload.h kernel-TLS offload substrate.
 #   * neg_ktls_tls12_crypto: TLS 1.2 record secrets cannot be admitted.
@@ -7311,17 +7362,42 @@ crucible_neg_compile_multi_test(neg_af_xdp_config_weaker_refinement
   "could not convert .tiny. from .Refinement<fixy::IsPowerOfTwo..,"
   "to .Refinement<fixy::refined_algebra::AllOf<fixy::IsPowerOfTwo.., fixy::InRange<1024, 16384>..>..,")
 
-# GAPS-136 — cntp/ConnectionPool.h + cntp/ConnectionPoolRuntime.h substrate.
-#   * neg_connection_pool_raw_event: pool events must carry source::ConnectionPool.
-#   * neg_connection_pool_invalid_transport: only enumerated transport classes
-#     may mint connections/pools.
-#   * neg_connection_pool_hot_ctx_lease: hot replay contexts cannot mutate pool state.
-crucible_neg_compile_test(neg_connection_pool_raw_event
-  "conversion from|could not convert|DeclaredPoolEvent|Tagged")
-crucible_neg_compile_test(neg_connection_pool_invalid_transport
-  "constraints not satisfied|PoolTransportClass|TransportClass")
-crucible_neg_compile_test(neg_connection_pool_hot_ctx_lease
-  "constraints not satisfied|CtxFitsConnectionPoolRuntime|HotFgCtx")
+# cntp/ConnectionPool.h and cntp/ConnectionPoolRuntime.h: the pool of
+# established connections.
+#   * neg_connection_pool_raw_event: a pool event carries the ConnectionPool tag.
+#   * neg_connection_pool_invalid_transport: the connection mint takes an
+#     enumerated transport class.
+#   * neg_connection_direct: the connection mint is the only door.
+#   * neg_connection_pool_mint_bg_ctx: the pool mint needs a context that owns
+#     Init.
+#   * neg_connection_pool_direct: the pool mint is the only door.
+#   * neg_connection_pool_hot_ctx_lease, neg_connection_pool_drain_ctx_lease:
+#     a lease needs a context that owns Bg or Test, and Block for the gate.
+#   * neg_connection_pool_lease_rewrite: a lease cannot rewrite its connection.
+crucible_neg_compile_multi_test(neg_connection_pool_raw_event
+  "could not convert .raw. from .crucible::cntp::PoolEvent. to .crucible::cntp::DeclaredPoolEvent. .aka .fixy::Tagged<crucible::cntp::PoolEvent, fixy::tags::source::ConnectionPool>.."
+  "Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
+crucible_neg_compile_multi_test(neg_connection_pool_invalid_transport
+  "no matching function for call to .mint_connection<.crucible::cntp::TransportClass.255>"
+  "required for the satisfaction of .PoolTransportClass<T>. .with T = .crucible::cntp::TransportClass.255.")
+crucible_neg_compile_multi_test(neg_connection_direct
+  "no matching function for call to .mint_linear<crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp> >"
+  ".constexpr crucible::cntp::Connection<T>::Connection.crucible::cntp::SocketFd, crucible::cog::Uuid, crucible::cntp::PositiveConnectionId. .with crucible::cntp::TransportClass T = crucible::cntp::TransportClass::Tcp.* is private within this context")
+crucible_neg_compile_multi_test(neg_connection_pool_mint_bg_ctx
+  "no matching function for call to .mint_connection_pool<crucible::cntp::TransportClass::Tcp, 1, 1>.fixy::BgLoadCtx&.."
+  "required for the satisfaction of .CtxFitsConnectionPoolMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >.")
+crucible_neg_compile_multi_test(neg_connection_pool_direct
+  ".constexpr crucible::cntp::ConnectionPool<T, MaxRemotes, MaxPerRemote, MaxEvents>::ConnectionPool.crucible::cntp::PoolConfig. .with crucible::cntp::TransportClass T = crucible::cntp::TransportClass::Tcp.* is private within this context"
+  "ConnectionPoolRuntime.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_multi_test(neg_connection_pool_hot_ctx_lease
+  "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1>::lease.fixy::HotFgCtx&"
+  "required for the satisfaction of .CtxFitsConnectionPoolRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
+crucible_neg_compile_multi_test(neg_connection_pool_drain_ctx_lease
+  "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1>::lease.fixy::BgDrainCtx&"
+  "required for the satisfaction of .CtxMayBlock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
+crucible_neg_compile_multi_test(neg_connection_pool_lease_rewrite
+  "passing .const crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>. as .this. argument discards qualifiers"
+  "in call to .constexpr crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>& crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>::operator=.const crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>&..")
 
 # GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the
