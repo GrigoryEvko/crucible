@@ -5,7 +5,9 @@
 #include <fixy/Tags.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/reflect/EnumPins.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -52,10 +54,11 @@ static_assert(std::is_standard_layout_v<Uuid>);
 // unit that can fail, throttle or be scheduled on its own. Each level
 // above contains the one below.
 //
-// This enum, CogKind and CogFamily are all frozen by underlying value.
-// A serialized snapshot outlives the process that wrote it, so
-// renumbering an atom silently reinterprets every snapshot that
-// carries it. A new atom takes the next free value.
+// This enum, CogKind and CogFamily are all frozen by underlying value,
+// and the pin tables at the end of this file hold each value. A stored
+// snapshot is meant to outlive the process that wrote it, so a renumber
+// would reinterpret a stored atom. A new atom takes the next free value
+// and extends its pin table in the same change.
 enum class CogLevel : std::uint8_t {
     L0_Atomic = 0,
     L1_Component = 1,
@@ -357,8 +360,10 @@ struct CogIdentity {
 
 static_assert(std::is_trivially_destructible_v<CogIdentity>,
               "CogIdentity owns no resource, so it must stay trivially destructible.");
-static_assert(std::is_standard_layout_v<CogIdentity>,
-              "CogIdentity must stay standard-layout so it can be serialized as raw bytes.");
+// An identity points at its parent and borrows its children and
+// neighbours through spans, so it never travels as raw bytes.
+static_assert(std::is_standard_layout_v<CogIdentity>, "CogIdentity must stay standard-layout, so that offsetof "
+                                                      "stays valid on every field.");
 
 // The key a compiled-kernel cache looks up. The same physical Cog on
 // new firmware hashes differently, so kernels compiled against the old
@@ -396,14 +401,6 @@ static_assert(std::is_standard_layout_v<CogIdentity>,
 }
 
 namespace detail::cog_identity_self_test {
-
-// Each count comes from the enum. The number here is the count that the
-// frozen-value pins below cover, so a new atom fails here until its own
-// value is pinned.
-static_assert(cog_level_count == 8, "CogLevel has an atom with no frozen-value pin. Pin its value below, "
-                                    "then set this count.");
-static_assert(cog_kind_count == 21, "CogKind has an atom with no frozen-value pin. Pin its value below, "
-                                    "then set this count.");
 
 [[nodiscard]] consteval bool every_cog_level_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogLevel));
@@ -486,9 +483,6 @@ static_assert(!IsMimicSubstrate<CogKind::Row>);
 static_assert(!IsMimicSubstrate<CogKind::Hall>);
 static_assert(!IsMimicSubstrate<CogKind::Datacenter>);
 
-static_assert(cog_family_count == 7, "CogFamily has an atom with no frozen-value pin. Pin its value "
-                                     "below, then set this count.");
-
 [[nodiscard]] consteval bool every_cog_family_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogFamily));
 #pragma GCC diagnostic push
@@ -541,51 +535,46 @@ static_assert(
     "content_hash ignores the identifier, so two different Cogs share "
     "one cache slot.");
 
-static_assert(static_cast<std::uint8_t>(CogLevel::L0_Atomic) == 0,
-              "CogLevel::L0_Atomic has moved off its frozen value. Every stored "
-              "snapshot that carries a level now decodes to the wrong one.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L1_Component) == 1,
-              "CogLevel::L1_Component has moved off its frozen value.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L2_Board) == 2, "CogLevel::L2_Board has moved off its frozen value.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L3_Chassis) == 3,
-              "CogLevel::L3_Chassis has moved off its frozen value.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L4_Rack) == 4, "CogLevel::L4_Rack has moved off its frozen value.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L5_Row) == 5, "CogLevel::L5_Row has moved off its frozen value.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L6_Hall) == 6, "CogLevel::L6_Hall has moved off its frozen value.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L7_Datacenter) == 7,
-              "CogLevel::L7_Datacenter has moved off its frozen value.");
+using ::foundation::reflect::enum_pin;
+using ::foundation::reflect::pin_enum;
 
-static_assert(static_cast<std::uint8_t>(CogKind::Gpu) == 0);
-static_assert(static_cast<std::uint8_t>(CogKind::NicPort) == 1);
-static_assert(static_cast<std::uint8_t>(CogKind::CpuCore) == 2);
-static_assert(static_cast<std::uint8_t>(CogKind::DramChannel) == 3);
-static_assert(static_cast<std::uint8_t>(CogKind::NvmeNamespace) == 4);
-static_assert(static_cast<std::uint8_t>(CogKind::NvSwitch) == 5);
-static_assert(static_cast<std::uint8_t>(CogKind::OpticalTransceiver) == 6);
-static_assert(static_cast<std::uint8_t>(CogKind::PsuRail) == 7);
-static_assert(static_cast<std::uint8_t>(CogKind::PcieLaneGroup) == 8);
-static_assert(static_cast<std::uint8_t>(CogKind::BmcSensor) == 9);
-static_assert(static_cast<std::uint8_t>(CogKind::GpuPackage) == 10);
-static_assert(static_cast<std::uint8_t>(CogKind::CpuSocket) == 11);
-static_assert(static_cast<std::uint8_t>(CogKind::NicCard) == 12);
-static_assert(static_cast<std::uint8_t>(CogKind::NvmeDrive) == 13);
-static_assert(static_cast<std::uint8_t>(CogKind::RackPsu) == 14);
-static_assert(static_cast<std::uint8_t>(CogKind::PcieRoot) == 15);
-static_assert(static_cast<std::uint8_t>(CogKind::Server) == 16);
-static_assert(static_cast<std::uint8_t>(CogKind::Rack) == 17);
-static_assert(static_cast<std::uint8_t>(CogKind::Row) == 18);
-static_assert(static_cast<std::uint8_t>(CogKind::Hall) == 19);
-static_assert(static_cast<std::uint8_t>(CogKind::Datacenter) == 20);
+// A new atom fails the pin until its table names it.
+inline constexpr std::array<enum_pin<CogLevel>, 8> cog_level_pins{{{"L0_Atomic", 0},
+                                                                   {"L1_Component", 1},
+                                                                   {"L2_Board", 2},
+                                                                   {"L3_Chassis", 3},
+                                                                   {"L4_Rack", 4},
+                                                                   {"L5_Row", 5},
+                                                                   {"L6_Hall", 6},
+                                                                   {"L7_Datacenter", 7}}};
+static_assert(pin_enum(cog_level_pins), "CogLevel drifted from cog_level_pins.");
 
-static_assert(static_cast<std::uint8_t>(CogFamily::Compute) == 0,
-              "CogFamily::Compute has moved off its frozen value. Every stored "
-              "snapshot that carries a family now decodes to the wrong one.");
-static_assert(static_cast<std::uint8_t>(CogFamily::Network) == 1);
-static_assert(static_cast<std::uint8_t>(CogFamily::Memory) == 2);
-static_assert(static_cast<std::uint8_t>(CogFamily::Bus) == 3);
-static_assert(static_cast<std::uint8_t>(CogFamily::Power) == 4);
-static_assert(static_cast<std::uint8_t>(CogFamily::Sensor) == 5);
-static_assert(static_cast<std::uint8_t>(CogFamily::Container) == 6);
+inline constexpr std::array<enum_pin<CogKind>, 21> cog_kind_pins{{{"Gpu", 0},
+                                                                  {"NicPort", 1},
+                                                                  {"CpuCore", 2},
+                                                                  {"DramChannel", 3},
+                                                                  {"NvmeNamespace", 4},
+                                                                  {"NvSwitch", 5},
+                                                                  {"OpticalTransceiver", 6},
+                                                                  {"PsuRail", 7},
+                                                                  {"PcieLaneGroup", 8},
+                                                                  {"BmcSensor", 9},
+                                                                  {"GpuPackage", 10},
+                                                                  {"CpuSocket", 11},
+                                                                  {"NicCard", 12},
+                                                                  {"NvmeDrive", 13},
+                                                                  {"RackPsu", 14},
+                                                                  {"PcieRoot", 15},
+                                                                  {"Server", 16},
+                                                                  {"Rack", 17},
+                                                                  {"Row", 18},
+                                                                  {"Hall", 19},
+                                                                  {"Datacenter", 20}}};
+static_assert(pin_enum(cog_kind_pins), "CogKind drifted from cog_kind_pins.");
+
+inline constexpr std::array<enum_pin<CogFamily>, 7> cog_family_pins{
+    {{"Compute", 0}, {"Network", 1}, {"Memory", 2}, {"Bus", 3}, {"Power", 4}, {"Sensor", 5}, {"Container", 6}}};
+static_assert(pin_enum(cog_family_pins), "CogFamily drifted from cog_family_pins.");
 
 static_assert(std::is_same_v<std::underlying_type_t<CogFamily>, std::uint8_t>,
               "CogFamily must stay one byte wide. Widening it changes the layout of "

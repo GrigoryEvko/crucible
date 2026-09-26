@@ -2,17 +2,19 @@
 //
 // Sentinel TU for foundation/reflect.  Enumerate.h and Hash.h carry their
 // own static_asserts and inline smoke tests.  This file includes both and
-// calls the smoke tests.  It drives the enumerate helpers over a local
-// enum and pins the two id properties that a cache key rests on.  It also
-// holds the cells of test/test_decide.cpp that feed the real Murmur3
-// finalizer through fmix_preserves_non_zero.
+// calls the smoke tests.  It drives the enumerate helpers and pin_enum
+// over a local enum and pins the two id properties that a cache key rests
+// on.  It also holds the cells of test/test_decide.cpp that feed the real
+// Murmur3 finalizer through fmix_preserves_non_zero.
 
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/EnumPins.h>
 #include <foundation/reflect/Enumerate.h>
 #include <foundation/reflect/Hash.h>
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -63,6 +65,34 @@ static_assert(fr::enum_name(Lamp::Off) == "Off");
 static_assert(fr::enum_name(Lamp::Magenta) == "Magenta");
 static_assert(fr::enum_name(static_cast<Lamp>(0x06)) == "<unknown Lamp>");
 static_assert(fr::enum_name(static_cast<Lamp>(0x06)) == fr::unknown_enum_sentinel<Lamp>);
+
+// A pin table deduces its enum and holds the full underlying width.  The
+// table for Lamp pins every value, and each table below drifts from it
+// in one way.
+inline constexpr std::array<fr::enum_pin<Lamp>, 5> lamp_pins{
+    {{"Off", 0x00}, {"Red", 0x01}, {"Green", 0x02}, {"Blue", 0x04}, {"Magenta", 0x05}}};
+static_assert(fr::pin_enum(lamp_pins));
+
+inline constexpr std::array<fr::enum_pin<Lamp>, 5> lamp_pins_blue_moved{
+    {{"Off", 0x00}, {"Red", 0x01}, {"Green", 0x02}, {"Blue", 0x08}, {"Magenta", 0x05}}};
+static_assert(!fr::pin_enum(lamp_pins_blue_moved));
+
+inline constexpr std::array<fr::enum_pin<Lamp>, 4> lamp_pins_magenta_missing{
+    {{"Off", 0x00}, {"Red", 0x01}, {"Green", 0x02}, {"Blue", 0x04}}};
+static_assert(!fr::pin_enum(lamp_pins_magenta_missing));
+
+// A counter wider than a byte: a value that differs only above the low
+// byte is caught.
+enum class Stride : std::uint16_t {
+    Short = 0x0010,
+    Long = 0x1010,
+};
+
+inline constexpr std::array<fr::enum_pin<Stride>, 2> stride_pins{{{"Short", 0x0010}, {"Long", 0x1010}}};
+static_assert(fr::pin_enum(stride_pins));
+
+inline constexpr std::array<fr::enum_pin<Stride>, 2> stride_pins_low_byte_only{{{"Short", 0x0010}, {"Long", 0x0010}}};
+static_assert(!fr::pin_enum(stride_pins_low_byte_only));
 
 [[nodiscard]] consteval int count_lamp_enumerators() noexcept {
     int n = 0;

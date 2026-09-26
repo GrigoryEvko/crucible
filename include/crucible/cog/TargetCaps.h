@@ -5,7 +5,9 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/reflect/EnumPins.h>
 
+#include <array>
 #include <cstdint>
 #include <meta>
 #include <span>
@@ -14,10 +16,11 @@
 
 namespace crucible::cog {
 
-// Every enumerator below is frozen by underlying value. A schema is
-// serialized into cached snapshots that outlive the process, so
-// renumbering an atom silently reinterprets every snapshot that carries
-// it. New atoms take the next free value or bit position.
+// Every enumerator below is frozen by underlying value, and the pin
+// tables at the end of this file hold each value. The values describe
+// hardware facts that are meant to outlive the process, so a renumber
+// would reinterpret a stored schema. New atoms take the next free value
+// or bit position and extend their pin table in the same change.
 enum class LinkLayer : std::uint8_t {
     Ethernet = 0,
     Infiniband = 1,
@@ -620,85 +623,82 @@ static_assert(every_cpu_feature_has_name());
 }
 static_assert(every_dram_feature_has_name());
 
-static_assert(static_cast<std::uint8_t>(LinkLayer::Ethernet) == 0,
-              "LinkLayer::Ethernet has moved off its frozen value. Every cached "
-              "snapshot that carries this atom now decodes to the wrong link layer.");
-static_assert(static_cast<std::uint8_t>(LinkLayer::Infiniband) == 1);
-static_assert(static_cast<std::uint8_t>(LinkLayer::Roce) == 2);
-static_assert(static_cast<std::uint8_t>(LinkLayer::NVLink) == 3);
-static_assert(static_cast<std::uint8_t>(LinkLayer::Pcie) == 4);
-static_assert(static_cast<std::uint8_t>(LinkLayer::Cxl) == 5);
+using ::foundation::reflect::enum_pin;
+using ::foundation::reflect::pin_enum;
 
-static_assert(static_cast<std::uint8_t>(PcieGen::None) == 0);
-static_assert(static_cast<std::uint8_t>(PcieGen::Gen1) == 1);
-static_assert(static_cast<std::uint8_t>(PcieGen::Gen2) == 2);
-static_assert(static_cast<std::uint8_t>(PcieGen::Gen3) == 3);
-static_assert(static_cast<std::uint8_t>(PcieGen::Gen4) == 4);
-static_assert(static_cast<std::uint8_t>(PcieGen::Gen5) == 5);
-static_assert(static_cast<std::uint8_t>(PcieGen::Gen6) == 6);
+inline constexpr std::array<enum_pin<LinkLayer>, 6> link_layer_pins{
+    {{"Ethernet", 0}, {"Infiniband", 1}, {"Roce", 2}, {"NVLink", 3}, {"Pcie", 4}, {"Cxl", 5}}};
+static_assert(pin_enum(link_layer_pins), "LinkLayer drifted from link_layer_pins.");
 
-static_assert(static_cast<std::uint32_t>(GpuFeature::Tma) == (1u << 0));
-static_assert(static_cast<std::uint32_t>(GpuFeature::ClusterLaunch) == (1u << 1));
-static_assert(static_cast<std::uint32_t>(GpuFeature::Fp8) == (1u << 2));
-static_assert(static_cast<std::uint32_t>(GpuFeature::Bf16) == (1u << 3));
-static_assert(static_cast<std::uint32_t>(GpuFeature::Tf32) == (1u << 4));
-static_assert(static_cast<std::uint32_t>(GpuFeature::NvlinkSharp) == (1u << 5));
-static_assert(static_cast<std::uint32_t>(GpuFeature::GpuDirectRdma) == (1u << 6));
-static_assert(static_cast<std::uint32_t>(GpuFeature::GpuDirectStorage) == (1u << 7));
-static_assert(static_cast<std::uint32_t>(GpuFeature::Mig) == (1u << 8));
+inline constexpr std::array<enum_pin<PcieGen>, 7> pcie_gen_pins{
+    {{"None", 0}, {"Gen1", 1}, {"Gen2", 2}, {"Gen3", 3}, {"Gen4", 4}, {"Gen5", 5}, {"Gen6", 6}}};
+static_assert(pin_enum(pcie_gen_pins), "PcieGen drifted from pcie_gen_pins.");
 
-static_assert(static_cast<std::uint32_t>(NicFeature::Tso) == (1u << 0));
-static_assert(static_cast<std::uint32_t>(NicFeature::Gso) == (1u << 1));
-static_assert(static_cast<std::uint32_t>(NicFeature::Gro) == (1u << 2));
-static_assert(static_cast<std::uint32_t>(NicFeature::Lro) == (1u << 3));
-static_assert(static_cast<std::uint32_t>(NicFeature::Rss) == (1u << 4));
-static_assert(static_cast<std::uint32_t>(NicFeature::Roce) == (1u << 5));
-static_assert(static_cast<std::uint32_t>(NicFeature::Iwarp) == (1u << 6));
-static_assert(static_cast<std::uint32_t>(NicFeature::KtlsOffload) == (1u << 7));
-static_assert(static_cast<std::uint32_t>(NicFeature::GpuDirectRdma) == (1u << 8));
-static_assert(static_cast<std::uint32_t>(NicFeature::XdpNative) == (1u << 9));
-static_assert(static_cast<std::uint32_t>(NicFeature::XdpOffload) == (1u << 10));
-static_assert(static_cast<std::uint32_t>(NicFeature::AfXdp) == (1u << 11));
-static_assert(static_cast<std::uint32_t>(NicFeature::SrIov) == (1u << 12));
-static_assert(static_cast<std::uint32_t>(NicFeature::Macsec) == (1u << 13));
-static_assert(static_cast<std::uint32_t>(NicFeature::Ipsec) == (1u << 14));
-static_assert(static_cast<std::uint32_t>(NicFeature::TimestampingHw) == (1u << 15));
-static_assert(static_cast<std::uint32_t>(NicFeature::TcEbpf) == (1u << 16));
-static_assert(static_cast<std::uint32_t>(NicFeature::Tcam) == (1u << 17));
+inline constexpr std::array<enum_pin<GpuFeature>, 9> gpu_feature_pins{{{"Tma", 1u << 0},
+                                                                       {"ClusterLaunch", 1u << 1},
+                                                                       {"Fp8", 1u << 2},
+                                                                       {"Bf16", 1u << 3},
+                                                                       {"Tf32", 1u << 4},
+                                                                       {"NvlinkSharp", 1u << 5},
+                                                                       {"GpuDirectRdma", 1u << 6},
+                                                                       {"GpuDirectStorage", 1u << 7},
+                                                                       {"Mig", 1u << 8}}};
+static_assert(pin_enum(gpu_feature_pins), "GpuFeature drifted from gpu_feature_pins.");
 
-static_assert(static_cast<std::uint16_t>(SwitchFeature::Sharp) == (1u << 0));
-static_assert(static_cast<std::uint16_t>(SwitchFeature::P4) == (1u << 1));
-static_assert(static_cast<std::uint16_t>(SwitchFeature::AdaptiveRouting) == (1u << 2));
-static_assert(static_cast<std::uint16_t>(SwitchFeature::Ecn) == (1u << 3));
-static_assert(static_cast<std::uint16_t>(SwitchFeature::Pfc) == (1u << 4));
-static_assert(static_cast<std::uint16_t>(SwitchFeature::Tcam) == (1u << 5));
-static_assert(static_cast<std::uint16_t>(SwitchFeature::PortMirror) == (1u << 6));
-static_assert(static_cast<std::uint16_t>(SwitchFeature::Doca) == (1u << 7));
+inline constexpr std::array<enum_pin<NicFeature>, 18> nic_feature_pins{{{"Tso", 1u << 0},
+                                                                        {"Gso", 1u << 1},
+                                                                        {"Gro", 1u << 2},
+                                                                        {"Lro", 1u << 3},
+                                                                        {"Rss", 1u << 4},
+                                                                        {"Roce", 1u << 5},
+                                                                        {"Iwarp", 1u << 6},
+                                                                        {"KtlsOffload", 1u << 7},
+                                                                        {"GpuDirectRdma", 1u << 8},
+                                                                        {"XdpNative", 1u << 9},
+                                                                        {"XdpOffload", 1u << 10},
+                                                                        {"AfXdp", 1u << 11},
+                                                                        {"SrIov", 1u << 12},
+                                                                        {"Macsec", 1u << 13},
+                                                                        {"Ipsec", 1u << 14},
+                                                                        {"TimestampingHw", 1u << 15},
+                                                                        {"TcEbpf", 1u << 16},
+                                                                        {"Tcam", 1u << 17}}};
+static_assert(pin_enum(nic_feature_pins), "NicFeature drifted from nic_feature_pins.");
 
-static_assert(static_cast<std::uint32_t>(CpuFeature::Avx2) == (1u << 0));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Avx512) == (1u << 1));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Amx) == (1u << 2));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Vnni) == (1u << 3));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Bf16Cpu) == (1u << 4));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Fp16Cpu) == (1u << 5));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Aes) == (1u << 6));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Sha) == (1u << 7));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Neon) == (1u << 8));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Sve) == (1u << 9));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Sve2) == (1u << 10));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Sme) == (1u << 11));
-static_assert(static_cast<std::uint32_t>(CpuFeature::AmxBf16Arm) == (1u << 12));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Mte) == (1u << 13));
-static_assert(static_cast<std::uint32_t>(CpuFeature::PauthArm) == (1u << 14));
-static_assert(static_cast<std::uint32_t>(CpuFeature::Cet) == (1u << 15));
+inline constexpr std::array<enum_pin<SwitchFeature>, 8> switch_feature_pins{{{"Sharp", 1u << 0},
+                                                                             {"P4", 1u << 1},
+                                                                             {"AdaptiveRouting", 1u << 2},
+                                                                             {"Ecn", 1u << 3},
+                                                                             {"Pfc", 1u << 4},
+                                                                             {"Tcam", 1u << 5},
+                                                                             {"PortMirror", 1u << 6},
+                                                                             {"Doca", 1u << 7}}};
+static_assert(pin_enum(switch_feature_pins), "SwitchFeature drifted from switch_feature_pins.");
 
-static_assert(static_cast<std::uint8_t>(DramFeature::Ecc) == (1u << 0));
-static_assert(static_cast<std::uint8_t>(DramFeature::OnDieEcc) == (1u << 1));
-static_assert(static_cast<std::uint8_t>(DramFeature::PowerDownIdle) == (1u << 2));
-static_assert(static_cast<std::uint8_t>(DramFeature::Hbm) == (1u << 3));
+inline constexpr std::array<enum_pin<CpuFeature>, 16> cpu_feature_pins{{{"Avx2", 1u << 0},
+                                                                        {"Avx512", 1u << 1},
+                                                                        {"Amx", 1u << 2},
+                                                                        {"Vnni", 1u << 3},
+                                                                        {"Bf16Cpu", 1u << 4},
+                                                                        {"Fp16Cpu", 1u << 5},
+                                                                        {"Aes", 1u << 6},
+                                                                        {"Sha", 1u << 7},
+                                                                        {"Neon", 1u << 8},
+                                                                        {"Sve", 1u << 9},
+                                                                        {"Sve2", 1u << 10},
+                                                                        {"Sme", 1u << 11},
+                                                                        {"AmxBf16Arm", 1u << 12},
+                                                                        {"Mte", 1u << 13},
+                                                                        {"PauthArm", 1u << 14},
+                                                                        {"Cet", 1u << 15}}};
+static_assert(pin_enum(cpu_feature_pins), "CpuFeature drifted from cpu_feature_pins.");
 
-// Widening an underlying type re-shapes every schema that holds the
-// flags by value, and with it the serialized byte image.
+inline constexpr std::array<enum_pin<DramFeature>, 4> dram_feature_pins{
+    {{"Ecc", 1u << 0}, {"OnDieEcc", 1u << 1}, {"PowerDownIdle", 1u << 2}, {"Hbm", 1u << 3}}};
+static_assert(pin_enum(dram_feature_pins), "DramFeature drifted from dram_feature_pins.");
+
+// A pin table holds a value, not a width. Widening an underlying type
+// changes the size of every schema that holds the flags by value.
 static_assert(std::is_same_v<std::underlying_type_t<LinkLayer>, std::uint8_t>);
 static_assert(std::is_same_v<std::underlying_type_t<PcieGen>, std::uint8_t>);
 static_assert(std::is_same_v<std::underlying_type_t<GpuFeature>, std::uint32_t>);
@@ -724,9 +724,13 @@ static_assert(!HasCaps<CogKind::PsuRail>);
 static_assert(!HasCaps<CogKind::BmcSensor>);
 static_assert(!HasCaps<CogKind::Datacenter>);
 
-// A schema is written to disk and shipped over the wire as raw bytes.
-// Standard layout is what keeps that byte image stable, so a schema may
-// not grow a virtual function, a non-public member or a second base.
+// A schema with a refined field is not trivially copyable, because the
+// refinement refuses a byte copy, and the NIC schema also holds a span
+// into memory it does not own. So no schema travels as raw bytes, and no
+// code writes one out. Standard layout keeps offsetof valid on every
+// field, so a schema may not grow a virtual function, a non-public
+// member or a second base.
+static_assert(!std::is_trivially_copyable_v<GpuTargetCaps> && !std::is_trivially_copyable_v<NicPortTargetCaps>);
 static_assert(std::is_standard_layout_v<GpuTargetCaps>);
 static_assert(std::is_standard_layout_v<NicPortTargetCaps>);
 static_assert(std::is_standard_layout_v<NvSwitchTargetCaps>);
