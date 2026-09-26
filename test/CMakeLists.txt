@@ -578,24 +578,18 @@ add_test(NAME refined_pre_subsumption
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
-# FIXY-U-001 Phase F discipline gate (misc/16_05_2026_fixy.md §4
-# Phase F).  scripts/check-fixy-discipline.sh enforces the
-# greenfield rule: directories opted into CRUCIBLE_FIXY_ONLY must
-# spell fixy::fn<Type, Grants...> at consumer call sites rather
-# than reaching past the umbrella to safety::fn::Fn<...> directly.
-# Mirrors the discipline of check-trait-injection.py +
-# check-refined-pre-subsumption.sh — self-test mode is wired
-# separately so a regex regression (rg upgrade, anchor drift)
-# fails CI on its own diagnostic rather than silently letting the
-# production scan pass.  Initial opt-ins: examples/fn/ +
-# test/fixy_neg/.
+# The fixy discipline.  scripts/check-fixy-discipline.py reads the parse tree
+# of each file under the directories of scripts/fixy-only-paths.txt, and fails
+# when one names crucible::safety::fn::Fn or a Tier-1 crucible::safety wrapper
+# by any route: a qualified name, a namespace alias, a using-declaration or a
+# using-directive.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME fixy_discipline_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh
-          --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.py --self-test)
 add_test(NAME fixy_discipline
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.py)
 set_tests_properties(fixy_discipline fixy_discipline_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard;ast"
+  SKIP_RETURN_CODE 3)
 # FIXY-U-003 §XXI Universal Mint Pattern compliance scanner.  Today's
 # Phase 1 check: every mint_<noun>( factory definition MUST carry the
 # [[nodiscard]] attribute on the same line or the immediately

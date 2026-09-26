@@ -1,11 +1,12 @@
 # scripts/fixy-discipline-allowlist.txt — grandfather list.
 #
-# One repo-relative path per line.  Files listed here are exempted
-# from the check-fixy-discipline.sh "no raw safety:: substrate
-# spellings in fixy-only zones" rule.  Lines beginning with '#' are
-# comments.
+# One repo-relative path per line.  scripts/check-fixy-discipline.py
+# exempts each file listed here from its rule: a file under a fixy-only
+# directory names no substrate type below, by a qualified name, a
+# namespace alias, a using-declaration or a using-directive.  A '#'
+# starts a comment.
 #
-# Banned spellings:
+# Banned names:
 #   safety::fn::Fn<...>                              the 19-axis aggregator
 #   safety::Refined<...>                             refinement-by-predicate
 #   safety::Tagged<...>                              provenance / trust phantom

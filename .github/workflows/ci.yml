@@ -171,8 +171,8 @@ jobs:
 
       - name: fixy discipline (self-test + scan)
         run: |
-          bash scripts/check-fixy-discipline.sh --self-test
-          bash scripts/check-fixy-discipline.sh
+          python3 scripts/check-fixy-discipline.py --self-test
+          python3 scripts/check-fixy-discipline.py
 
       - name: mint pattern (self-test + scan)
         run: |
