@@ -31,7 +31,6 @@ mint_swim_membership|include/crucible/canopy/Swim.h
 # ── cntp ─────────────────────────────────────────────────────────────
 mint_admission_controller|include/crucible/cntp/BackpressureRuntime.h
 mint_admission_decision|include/crucible/cntp/Backpressure.h
-mint_af_xdp_config|include/crucible/cntp/AfXdp.h
 mint_bbr_qdisc_config|include/crucible/cntp/Pacing.h
 mint_connection|include/crucible/cntp/ConnectionPool.h
 mint_connection_pool|include/crucible/cntp/ConnectionPoolRuntime.h

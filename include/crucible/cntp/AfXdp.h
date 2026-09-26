@@ -2,27 +2,27 @@
 
 #include <crucible/Platform.h>
 #include <crucible/cntp/Pacing.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/safety/_Borrowed.h>
-#include <crucible/safety/_Linear.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Pre.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Ctx.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
 #include <foundation/AlignedBuffer.h>
+#include <foundation/Pinned.h>
+#include <foundation/contracts/Pre.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::cntp {
 
@@ -55,79 +55,102 @@ enum class AfXdpError : std::uint8_t {
     XdpRedirectMissing,
 };
 
-[[nodiscard]] std::string_view af_xdp_mode_name(AfXdpMode mode) noexcept;
-[[nodiscard]] std::string_view af_xdp_error_name(AfXdpError error) noexcept;
+// The kernel spelling of each mode, which is what a log line and an ethtool
+// reading name.  An error has no such spelling, so its name is its
+// enumerator's identifier, read by foundation::reflect::enum_name.
+[[nodiscard]] constexpr std::string_view af_xdp_mode_name(AfXdpMode mode) noexcept {
+    switch (mode) {
+        case AfXdpMode::Copy:
+            return "copy";
+        case AfXdpMode::ZeroCopy:
+            return "zero_copy";
+        default:
+            return "unknown";
+    }
+}
 
-using AfXdpIfIndex = safety::Positive<std::uint32_t>;
-using AfXdpQueueId = safety::Bounded<std::uint32_t{0}, std::uint32_t{65535}, std::uint32_t>;
-using AfXdpFrameSize = safety::PowerOfTwo<std::uint32_t>;
-using AfXdpFrameCount = safety::PowerOfTwo<std::uint32_t>;
-using AfXdpRingEntries = safety::PowerOfTwo<std::uint32_t>;
+// The shapes the kernel accepts, stated once.  The refined types below,
+// the admission doors and the static shape of a socket all read these
+// three predicates, so a bound cannot change in one place and not the
+// others.
+inline constexpr auto af_xdp_queue_id_range = ::fixy::in_range<std::uint32_t{0}, std::uint32_t{65535}>;
+inline constexpr auto af_xdp_frame_bytes = ::fixy::all_of<::fixy::power_of_two, ::fixy::in_range<1024u, 16384u>>;
+inline constexpr auto af_xdp_ring_depth = ::fixy::all_of<::fixy::power_of_two, ::fixy::bounded_below<64u>>;
+
+using AfXdpIfIndex = ::fixy::Positive<std::uint32_t>;
+using AfXdpQueueId = ::fixy::Refined<af_xdp_queue_id_range, std::uint32_t>;
+using AfXdpFrameSize = ::fixy::Refined<af_xdp_frame_bytes, std::uint32_t>;
+using AfXdpFrameCount = ::fixy::Refined<af_xdp_ring_depth, std::uint32_t>;
+using AfXdpRingEntries = ::fixy::Refined<af_xdp_ring_depth, std::uint32_t>;
 
 struct AfXdpConfig {
     NicInterfaceName interface{};
-    AfXdpIfIndex ifindex{std::uint32_t{1}};
-    AfXdpQueueId queue_id{std::uint32_t{0}, typename AfXdpQueueId::Trusted{}};
-    AfXdpFrameSize frame_size{std::uint32_t{2048}};
-    AfXdpFrameCount frame_count{std::uint32_t{2048}};
-    AfXdpRingEntries fill_ring_size{std::uint32_t{2048}};
-    AfXdpRingEntries completion_ring_size{std::uint32_t{2048}};
-    AfXdpRingEntries rx_ring_size{std::uint32_t{2048}};
-    AfXdpRingEntries tx_ring_size{std::uint32_t{2048}};
+    AfXdpIfIndex ifindex = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
+    AfXdpQueueId queue_id = ::fixy::mint_refined<af_xdp_queue_id_range>(std::uint32_t{0});
+    AfXdpFrameSize frame_size = ::fixy::mint_refined<af_xdp_frame_bytes>(std::uint32_t{2048});
+    AfXdpFrameCount frame_count = ::fixy::mint_refined<af_xdp_ring_depth>(std::uint32_t{2048});
+    AfXdpRingEntries fill_ring_size = ::fixy::mint_refined<af_xdp_ring_depth>(std::uint32_t{2048});
+    AfXdpRingEntries completion_ring_size = ::fixy::mint_refined<af_xdp_ring_depth>(std::uint32_t{2048});
+    AfXdpRingEntries rx_ring_size = ::fixy::mint_refined<af_xdp_ring_depth>(std::uint32_t{2048});
+    AfXdpRingEntries tx_ring_size = ::fixy::mint_refined<af_xdp_ring_depth>(std::uint32_t{2048});
     AfXdpMode mode = AfXdpMode::ZeroCopy;
     bool require_xdp_redirect = true;
 };
 
-using DeclaredAfXdpConfig = safety::Tagged<AfXdpConfig, safety::source::AfXdp>;
+using DeclaredAfXdpConfig = ::fixy::Tagged<AfXdpConfig, ::fixy::tags::source::AfXdp>;
+
+namespace detail::af_xdp {
+
+// The one admission shape: refuse a value the predicate rejects with the
+// error the caller names, and mint the refined value for one it admits.
+template <auto Pred>
+[[nodiscard]] constexpr std::expected<::fixy::Refined<Pred, std::uint32_t>, AfXdpError>
+admit(std::uint32_t value, AfXdpError refusal) noexcept {
+    if (!Pred(value)) {
+        return std::unexpected(refusal);
+    }
+    return ::fixy::mint_refined<Pred>(value);
+}
+
+}  // namespace detail::af_xdp
 
 [[nodiscard]] constexpr std::expected<AfXdpIfIndex, AfXdpError> admit_af_xdp_ifindex(std::uint32_t ifindex) noexcept {
-    if (ifindex == 0) {
-        return std::unexpected(AfXdpError::InvalidIfIndex);
-    }
-    return AfXdpIfIndex{ifindex, typename AfXdpIfIndex::Trusted{}};
+    return detail::af_xdp::admit<::fixy::positive>(ifindex, AfXdpError::InvalidIfIndex);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpQueueId, AfXdpError> admit_af_xdp_queue_id(std::uint32_t queue_id) noexcept {
-    if (queue_id > 65535u) {
-        return std::unexpected(AfXdpError::InvalidQueueId);
-    }
-    return AfXdpQueueId{queue_id, typename AfXdpQueueId::Trusted{}};
+    return detail::af_xdp::admit<af_xdp_queue_id_range>(queue_id, AfXdpError::InvalidQueueId);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpFrameSize, AfXdpError>
 admit_af_xdp_frame_size(std::uint32_t bytes) noexcept {
-    if (!safety::power_of_two(bytes) || bytes < 1024u || bytes > 16384u) {
-        return std::unexpected(AfXdpError::InvalidFrameSize);
-    }
-    return AfXdpFrameSize{bytes, typename AfXdpFrameSize::Trusted{}};
+    return detail::af_xdp::admit<af_xdp_frame_bytes>(bytes, AfXdpError::InvalidFrameSize);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpFrameCount, AfXdpError>
 admit_af_xdp_frame_count(std::uint32_t frames) noexcept {
-    if (!safety::power_of_two(frames) || frames < 64u) {
-        return std::unexpected(AfXdpError::InvalidFrameCount);
-    }
-    return AfXdpFrameCount{frames, typename AfXdpFrameCount::Trusted{}};
+    return detail::af_xdp::admit<af_xdp_ring_depth>(frames, AfXdpError::InvalidFrameCount);
 }
 
 [[nodiscard]] constexpr std::expected<AfXdpRingEntries, AfXdpError>
 admit_af_xdp_ring_entries(std::uint32_t entries) noexcept {
-    if (!safety::power_of_two(entries) || entries < 64u) {
-        return std::unexpected(AfXdpError::InvalidRingSize);
-    }
-    return AfXdpRingEntries{entries, typename AfXdpRingEntries::Trusted{}};
+    return detail::af_xdp::admit<af_xdp_ring_depth>(entries, AfXdpError::InvalidRingSize);
 }
 
+// Two powers of two multiply to a power of two, so the product needs no
+// check of its own.  What can fail is its width: a socket names its UMEM
+// size as a 32-bit template argument, so a config whose UMEM does not fit
+// in 32 bits could never match a socket.
 [[nodiscard]] constexpr std::expected<DeclaredAfXdpConfig, AfXdpError>
 mint_af_xdp_config(NicInterfaceName interface, AfXdpIfIndex ifindex, AfXdpQueueId queue_id, AfXdpFrameSize frame_size,
                    AfXdpFrameCount frame_count, AfXdpRingEntries fill_ring_size, AfXdpRingEntries completion_ring_size,
                    AfXdpRingEntries rx_ring_size, AfXdpRingEntries tx_ring_size, AfXdpMode mode = AfXdpMode::ZeroCopy,
                    bool require_xdp_redirect = true) noexcept {
     const std::uint64_t umem_bytes = static_cast<std::uint64_t>(frame_size.value()) * frame_count.value();
-    if (!safety::power_of_two(umem_bytes)) {
+    if (umem_bytes > std::numeric_limits<std::uint32_t>::max()) {
         return std::unexpected(AfXdpError::InvalidUmemShape);
     }
-    return DeclaredAfXdpConfig{AfXdpConfig{
+    return ::fixy::mint_tagged<::fixy::tags::source::AfXdp>(AfXdpConfig{
         .interface = interface,
         .ifindex = ifindex,
         .queue_id = queue_id,
@@ -139,23 +162,25 @@ mint_af_xdp_config(NicInterfaceName interface, AfXdpIfIndex ifindex, AfXdpQueueI
         .tx_ring_size = tx_ring_size,
         .mode = mode,
         .require_xdp_redirect = require_xdp_redirect,
-    }};
+    });
 }
 
 template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRing, std::uint32_t CompletionRing,
           std::uint32_t RxRing, std::uint32_t TxRing>
-concept AfXdpStaticShape =
-    safety::power_of_two(UmemBytes) && safety::power_of_two(FrameSize) && safety::power_of_two(FillRing)
-    && safety::power_of_two(CompletionRing) && safety::power_of_two(RxRing) && safety::power_of_two(TxRing)
-    && FrameSize >= 1024u && FrameSize <= 16384u && (UmemBytes % FrameSize) == 0u && (UmemBytes / FrameSize) >= 64u
-    && FillRing >= 64u && CompletionRing >= 64u && RxRing >= 64u && TxRing >= 64u;
+concept AfXdpStaticShape = ::fixy::power_of_two(UmemBytes) && af_xdp_frame_bytes(FrameSize)
+                        && (UmemBytes % FrameSize) == 0u && af_xdp_ring_depth(UmemBytes / FrameSize)
+                        && af_xdp_ring_depth(FillRing) && af_xdp_ring_depth(CompletionRing)
+                        && af_xdp_ring_depth(RxRing) && af_xdp_ring_depth(TxRing);
 
+// Minting a socket allocates its UMEM, so the context must own Alloc as
+// well as the startup capability.
 template <class Ctx>
-concept CtxFitsAfXdpMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsAfXdpMint =
+    ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::Init, ::foundation::effects::Effect::Alloc>;
 
 template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRing, std::uint32_t CompletionRing,
           std::uint32_t RxRing, std::uint32_t TxRing>
-[[nodiscard]] constexpr bool af_xdp_config_matches_static_shape(DeclaredAfXdpConfig config) noexcept {
+[[nodiscard]] constexpr bool af_xdp_config_matches_static_shape(DeclaredAfXdpConfig const& config) noexcept {
     AfXdpConfig const& raw = config.value();
     return raw.frame_size.value() == FrameSize && raw.frame_count.value() == (UmemBytes / FrameSize)
         && raw.fill_ring_size.value() == FillRing && raw.completion_ring_size.value() == CompletionRing
@@ -165,19 +190,19 @@ template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRi
 template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRing = 2048,
           std::uint32_t CompletionRing = 2048, std::uint32_t RxRing = 2048, std::uint32_t TxRing = 2048>
     requires AfXdpStaticShape<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>
-class AfXdpSocket : public safety::Pinned<AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>> {
+class AfXdpSocket
+    : public ::foundation::Pinned<AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>> {
 public:
     using byte_type = std::byte;
     using umem_type = ::foundation::AlignedBuffer<byte_type, 4096>;
-    using linear_umem_type = safety::Linear<umem_type>;
-    using packet_view = safety::Borrowed<byte_type, AfXdpSocket>;
+    using packet_view = ::fixy::Borrowed<byte_type, AfXdpSocket>;
 
     // An RX frame carries bytes that originate off the wire, so it is handed
     // out External-tagged and cannot reach a sanitized-only consumer without
     // passing sanitize_rx_frame.  A TX frame is minted here rather than
     // received, so it stays an untagged packet_view.
-    using rx_frame = safety::Tagged<packet_view, safety::source::External>;
-    using sanitized_frame = safety::Tagged<packet_view, safety::source::Sanitized>;
+    using rx_frame = ::fixy::Tagged<packet_view, ::fixy::tags::source::External>;
+    using sanitized_frame = ::fixy::Tagged<packet_view, ::fixy::tags::source::Sanitized>;
 
     struct Descriptor {
         std::uint32_t frame_id = 0;
@@ -195,7 +220,7 @@ public:
 private:
     template <std::uint32_t Capacity>
     class Ring {
-        static_assert(safety::power_of_two(Capacity));
+        static_assert(::fixy::power_of_two(Capacity));
 
         std::array<Descriptor, Capacity> slots_{};
         std::uint32_t head_ = 0;
@@ -230,18 +255,21 @@ private:
         }
     };
 
+    // The UMEM is private and the socket is pinned, so the buffer has one
+    // owner for the socket's whole life and dies with it.
     DeclaredAfXdpConfig config_;
-    linear_umem_type umem_;
+    umem_type umem_;
     Ring<FillRing> fill_{};
     Ring<CompletionRing> completion_{};
     Ring<RxRing> rx_{};
     Ring<TxRing> tx_{};
     std::uint32_t next_frame_ = 0;
 
-    explicit AfXdpSocket(DeclaredAfXdpConfig config) : config_{config}, umem_{umem_type::allocate(UmemBytes)} {}
+    explicit AfXdpSocket(DeclaredAfXdpConfig config)
+        : config_{std::move(config)}, umem_{umem_type::allocate(UmemBytes)} {}
 
     [[nodiscard]] CRUCIBLE_HOT packet_view view(Descriptor desc) noexcept {
-        byte_type* base = umem_.peek_mut().data();
+        byte_type* base = umem_.data();
         return packet_view{base + static_cast<std::size_t>(desc.frame_id) * FrameSize, desc.length};
     }
 
@@ -252,7 +280,7 @@ public:
         CRUCIBLE_PRE(
             (af_xdp_config_matches_static_shape<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>(
                 config)));
-        return AfXdpSocket{config};
+        return AfXdpSocket{std::move(config)};
     }
 
     [[nodiscard]] constexpr AfXdpConfig const& config() const noexcept { return config_.value(); }
@@ -276,7 +304,7 @@ public:
         if (packet.empty() || packet.size() > FrameSize) {
             return std::unexpected(AfXdpError::PacketTooLarge);
         }
-        byte_type* base = umem_.peek_mut().data();
+        byte_type* base = umem_.data();
         const auto base_addr = std::bit_cast<std::uintptr_t>(base);
         const auto packet_addr = std::bit_cast<std::uintptr_t>(packet.data());
         if (packet_addr < base_addr) {
@@ -301,7 +329,7 @@ public:
         if (!desc.has_value()) {
             return std::nullopt;
         }
-        return rx_frame{view(*desc)};
+        return ::fixy::mint_tagged<::fixy::tags::source::External>(view(*desc));
     }
 
     // The one place an RX frame goes from External to Sanitized.  A frame
@@ -312,7 +340,7 @@ public:
         if (view_ref.empty() || view_ref.size() > FrameSize) {
             return std::nullopt;
         }
-        return std::move(frame).template retag<safety::source::Sanitized>();
+        return std::move(frame).template retag<::fixy::tags::source::Sanitized>();
     }
 
     [[nodiscard]] CRUCIBLE_HOT std::uint32_t poll() noexcept { return rx_.size() + completion_.size(); }
@@ -334,7 +362,7 @@ template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRi
 // whole-artifact check that scripts/check-no-throw-no-rtti.sh does.
 [[nodiscard]] AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>
 mint_af_xdp_socket(Ctx const& ctx, DeclaredAfXdpConfig config) noexcept {
-    return AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>::mint(ctx, config);
+    return AfXdpSocket<UmemBytes, FrameSize, FillRing, CompletionRing, RxRing, TxRing>::mint(ctx, std::move(config));
 }
 
 static_assert(sizeof(AfXdpIfIndex) == sizeof(std::uint32_t));
@@ -343,8 +371,14 @@ static_assert(sizeof(AfXdpFrameSize) == sizeof(std::uint32_t));
 static_assert(sizeof(AfXdpFrameCount) == sizeof(std::uint32_t));
 static_assert(sizeof(AfXdpRingEntries) == sizeof(std::uint32_t));
 static_assert(sizeof(DeclaredAfXdpConfig) == sizeof(AfXdpConfig));
-static_assert(std::is_trivially_copyable_v<AfXdpConfig>);
+// A refined member makes the config not trivially copyable, because no byte
+// route may build a refined value.  A copy still costs what copying the
+// bytes costs.
+static_assert(std::is_trivially_copy_constructible_v<AfXdpConfig> && std::is_trivially_destructible_v<AfXdpConfig>);
 static_assert(AfXdpStaticShape<131072, 2048, 64, 64, 64, 64>);
 static_assert(!AfXdpStaticShape<131072, 1500, 64, 64, 64, 64>);
+static_assert(CtxFitsAfXdpMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsAfXdpMint<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsAfXdpMint<::fixy::HotFgCtx>);
 
 }  // namespace crucible::cntp

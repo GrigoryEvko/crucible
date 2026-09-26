@@ -42,7 +42,6 @@ include/crucible/canopy/Plumtree.h
 include/crucible/canopy/Scuttlebutt.h
 
 # ── cntp/ ──────────────────────────────────────────────────────
-include/crucible/cntp/AfXdp.h
 include/crucible/cntp/Backpressure.h
 include/crucible/cntp/ConnectionPool.h
 include/crucible/cntp/ConnectionPoolRuntime.h

@@ -1,14 +1,17 @@
 #include <crucible/cntp/AfXdp.h>
+#include <fixy/Ctx.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
 namespace cntp = crucible::cntp;
-namespace effects = crucible::effects;
-namespace saf = crucible::safety;
+namespace fe = ::foundation::effects;
+namespace src = ::fixy::tags::source;
 
 namespace {
 
@@ -33,8 +36,9 @@ namespace {
 }
 
 void test_admission() {
-    assert(cntp::af_xdp_mode_name(cntp::AfXdpMode::ZeroCopy) == std::string_view{"zero_copy"});
-    assert(cntp::af_xdp_error_name(cntp::AfXdpError::TxRingFull) == std::string_view{"TxRingFull"});
+    static_assert(cntp::af_xdp_mode_name(cntp::AfXdpMode::ZeroCopy) == std::string_view{"zero_copy"});
+    static_assert(cntp::af_xdp_mode_name(cntp::AfXdpMode::Copy) == std::string_view{"copy"});
+    static_assert(::foundation::reflect::enum_name(cntp::AfXdpError::TxRingFull) == std::string_view{"TxRingFull"});
 
     assert(!cntp::admit_af_xdp_ifindex(0).has_value());
     assert(!cntp::admit_af_xdp_queue_id(70000).has_value());
@@ -42,11 +46,36 @@ void test_admission() {
     assert(!cntp::admit_af_xdp_frame_count(63).has_value());
     assert(!cntp::admit_af_xdp_ring_entries(0).has_value());
 
+    // The refined types carry the whole kernel bound, not only the power of
+    // two: a frame of 512 bytes and a frame of 32 KiB are powers of two
+    // that the kernel still refuses, and a ring of 32 entries is too short.
+    assert(!cntp::admit_af_xdp_frame_size(512).has_value());
+    assert(!cntp::admit_af_xdp_frame_size(32768).has_value());
+    assert(!cntp::admit_af_xdp_ring_entries(32).has_value());
+    assert(cntp::admit_af_xdp_frame_size(1024).has_value());
+    assert(cntp::admit_af_xdp_frame_size(16384).has_value());
+    assert(cntp::admit_af_xdp_queue_id(65535).has_value());
+
+    // A UMEM of 16 KiB frames times 2^19 frames is 2^33 bytes, which no
+    // socket's 32-bit UMEM size can name.
+    auto iface = cntp::NicInterfaceName::from("eth0");
+    auto ifindex = cntp::admit_af_xdp_ifindex(7);
+    auto queue = cntp::admit_af_xdp_queue_id(3);
+    auto big_frame = cntp::admit_af_xdp_frame_size(16384);
+    auto many_frames = cntp::admit_af_xdp_frame_count(std::uint32_t{1} << 19);
+    auto ring = cntp::admit_af_xdp_ring_entries(64);
+    assert(iface.has_value() && ifindex.has_value() && queue.has_value() && big_frame.has_value()
+           && many_frames.has_value() && ring.has_value());
+    auto too_wide =
+        cntp::mint_af_xdp_config(*iface, *ifindex, *queue, *big_frame, *many_frames, *ring, *ring, *ring, *ring);
+    assert(!too_wide.has_value());
+    assert(too_wide.error() == cntp::AfXdpError::InvalidUmemShape);
+
     std::printf("  test_admission: PASSED\n");
 }
 
 void test_socket_substrate_rings() {
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto socket = cntp::mint_af_xdp_socket<131072, 2048, 64, 64, 64, 64>(init, config());
 
     static_assert(decltype(socket)::umem_bytes == 131072);
@@ -58,9 +87,9 @@ void test_socket_substrate_rings() {
     // wire data.  The laundering boundary is the only thing that yields
     // a Sanitized one.  Both tags are zero-cost phantom newtypes.
     static_assert(
-        std::is_same_v<decltype(socket)::rx_frame, saf::Tagged<decltype(socket)::packet_view, saf::source::External>>);
+        std::is_same_v<decltype(socket)::rx_frame, ::fixy::Tagged<decltype(socket)::packet_view, src::External>>);
     static_assert(std::is_same_v<decltype(socket)::sanitized_frame,
-                                 saf::Tagged<decltype(socket)::packet_view, saf::source::Sanitized>>);
+                                 ::fixy::Tagged<decltype(socket)::packet_view, src::Sanitized>>);
     static_assert(sizeof(decltype(socket)::rx_frame) == sizeof(decltype(socket)::packet_view));
 
     auto oversized = socket.alloc_tx_buffer(4096);
@@ -102,7 +131,7 @@ void test_rings_are_in_process_only() {
     // The trait stays false for as long as the façade stands.
     assert(cntp::kernel_rings_shared == false);
 
-    effects::ColdInitCtx init{::crucible::effects::testing::init()};
+    ::fixy::ColdInitCtx init{fe::testing::init()};
     auto socket = cntp::mint_af_xdp_socket<131072, 2048, 64, 64, 64, 64>(init, config());
 
     // A freshly minted socket carries nothing, because nothing in kernel
@@ -150,12 +179,16 @@ void test_rings_are_in_process_only() {
 }  // namespace
 
 int main() {
-    static_assert(std::same_as<cntp::DeclaredAfXdpConfig::tag_type, saf::source::AfXdp>);
+    static_assert(std::same_as<cntp::DeclaredAfXdpConfig::tag_type, src::AfXdp>);
     static_assert(sizeof(cntp::DeclaredAfXdpConfig) == sizeof(cntp::AfXdpConfig));
     static_assert(cntp::AfXdpStaticShape<131072, 2048, 64, 64, 64, 64>);
     static_assert(!cntp::AfXdpStaticShape<131072, 1500, 64, 64, 64, 64>);
-    static_assert(cntp::CtxFitsAfXdpMint<effects::ColdInitCtx>);
-    static_assert(!cntp::CtxFitsAfXdpMint<effects::BgDrainCtx>);
+    static_assert(!cntp::AfXdpStaticShape<131072, 2048, 32, 64, 64, 64>);
+    static_assert(!cntp::AfXdpStaticShape<65536, 2048, 64, 64, 64, 64>);
+    static_assert(cntp::CtxFitsAfXdpMint<::fixy::ColdInitCtx>);
+    static_assert(cntp::CtxFitsAfXdpMint<::fixy::InitLoadCtx>);
+    static_assert(!cntp::CtxFitsAfXdpMint<::fixy::BgDrainCtx>);
+    static_assert(!cntp::CtxFitsAfXdpMint<::fixy::TestRunnerCtx>);
 
     // These fire at translation time if the trait is flipped without the
     // runtime sentinel above being rewritten to match.

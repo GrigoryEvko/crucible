@@ -6983,21 +6983,32 @@ crucible_neg_compile_test(neg_backpressure_invalid_resource_kind
 crucible_neg_compile_test(neg_backpressure_hot_ctx_credit
   "constraints not satisfied|CtxFitsBackpressureRuntime|HotFgCtx")
 
-# GAPS-131 — cntp/AfXdp.h typed AF_XDP substrate.
-#   * neg_af_xdp_raw_config: socket minting requires source::AfXdp config.
-#   * neg_af_xdp_non_power_of_two_frame: static shape rejects invalid frame size.
-#   * neg_af_xdp_cross_source_packet: TX enqueue accepts socket-borrowed packets.
-crucible_neg_compile_test(neg_af_xdp_raw_config
-  "could not convert|no matching function|DeclaredAfXdpConfig|Tagged")
-crucible_neg_compile_test(neg_af_xdp_non_power_of_two_frame
-  "constraints not satisfied|AfXdpStaticShape|1500")
-crucible_neg_compile_test(neg_af_xdp_cross_source_packet
-  "cannot convert|no matching function|Borrowed|OtherOwner|AfXdpSocket")
-# FIXY-V-172 — the External → Sanitized RX laundering boundary has teeth:
-#   * neg_af_xdp_unsanitized_rx: an External-tagged rx_frame cannot reach a
-#     sanitized-only consumer without passing through sanitize_rx_frame.
-crucible_neg_compile_test(neg_af_xdp_unsanitized_rx
-  "could not convert|no matching function|Tagged|Sanitized|External")
+# cntp/AfXdp.h.  Each fixture names the call that fails and the reason, so
+# a fixture that fails for another reason does not pass.
+#   * neg_af_xdp_raw_config: a socket mint takes only a config from the door.
+#   * neg_af_xdp_non_power_of_two_frame: the static shape refuses 1500 bytes.
+#   * neg_af_xdp_cross_source_packet: TX takes only a view of this socket.
+#   * neg_af_xdp_unsanitized_rx: an External frame is not a Sanitized one.
+#   * neg_af_xdp_config_raw_frame_size: the config door takes refined shapes.
+#   * neg_af_xdp_config_weaker_refinement: a bare power of two is too weak.
+crucible_neg_compile_multi_test(neg_af_xdp_raw_config
+  "no matching function for call to .mint_af_xdp_socket<131072, 2048"
+  "cannot convert .raw. .type .crucible::cntp::AfXdpConfig.. to type .crucible::cntp::DeclaredAfXdpConfig.")
+crucible_neg_compile_multi_test(neg_af_xdp_non_power_of_two_frame
+  "no matching function for call to .mint_af_xdp_socket<131072, 1500"
+  "template constraint failure for .template<.*requires  AfXdpStaticShape<UmemBytes, FrameSize")
+crucible_neg_compile_multi_test(neg_af_xdp_cross_source_packet
+  "cannot convert .Borrowed<.*,OtherOwner,.*>. to .Borrowed<.*,crucible::cntp::AfXdpSocket<131072, 2048"
+  "initializing argument 1 of .*enqueue_tx.packet_view.")
+crucible_neg_compile_multi_test(neg_af_xdp_unsanitized_rx
+  "could not convert .untrusted. from .Tagged<.*,fixy::tags::source::External>."
+  "to .Tagged<.*,fixy::tags::source::Sanitized>.")
+crucible_neg_compile_multi_test(neg_af_xdp_config_raw_frame_size
+  "could not convert .2048. from .uint32_t."
+  "to .crucible::cntp::AfXdpFrameSize.")
+crucible_neg_compile_multi_test(neg_af_xdp_config_weaker_refinement
+  "could not convert .tiny. from .Refinement<fixy::IsPowerOfTwo..,"
+  "to .Refinement<fixy::refined_algebra::AllOf<fixy::IsPowerOfTwo.., fixy::InRange<1024, 16384>..>..,")
 
 # GAPS-136 — cntp/ConnectionPool.h + cntp/ConnectionPoolRuntime.h substrate.
 #   * neg_connection_pool_raw_event: pool events must carry source::ConnectionPool.
