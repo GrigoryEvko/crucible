@@ -9,10 +9,10 @@
 #include "Registry.h"
 #include "CpuTopology.h"
 
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
+#include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cerrno>
@@ -446,7 +446,9 @@ public:
 // system calls, which belongs to start-up only. A hot foreground or
 // background context must not reach this surface.
 template <class Ctx>
-concept CtxFitsHardeningMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsHardeningMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
 // The privileged system calls this surface issues, named once at the
 // type level so the set is discoverable and auditable. This is a
@@ -497,14 +499,14 @@ static_assert(std::tuple_size_v<hardening_syscall_atoms> == 9,
               "hand-written count is a claim about the code that nothing reads the code to confirm.");
 }  // namespace detail::hardening_syscall_check
 
-template <effects::IsExecCtx Ctx>
+template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>
 [[nodiscard]] inline AppliedPolicy mint_hardening(Ctx const&, const Policy& policy) noexcept {
     return Hardening::apply(policy);
 }
 
-static_assert(CtxFitsHardeningMint<effects::ColdInitCtx>);
-static_assert(!CtxFitsHardeningMint<effects::BgDrainCtx>);
-static_assert(!CtxFitsHardeningMint<effects::HotFgCtx>);
+static_assert(CtxFitsHardeningMint<::fixy::ColdInitCtx>);
+static_assert(!CtxFitsHardeningMint<::fixy::BgDrainCtx>);
+static_assert(!CtxFitsHardeningMint<::fixy::HotFgCtx>);
 
 }  // namespace crucible::warden

@@ -3,6 +3,7 @@
 // anything while it still matches the syscalls actually made.
 
 #include <crucible/warden/Hardening.h>
+#include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
 
 #include <foundation/effects/Lift.h>
@@ -17,7 +18,6 @@ namespace {
 
 namespace sc = ::fixy::atom::syscall;
 namespace fe = ::foundation::effects;
-namespace eff = ::crucible::effects;
 
 // The ordinals are append-only: an existing one keeps its value forever,
 // so a federation cache key that hashed a syscall id never drifts.  Adding
@@ -70,9 +70,9 @@ static_assert(std::is_same_v<fe::lift_row_t<sc::per<sc::SyscallId::sched_getattr
 
 // The gate is the Init row.  The syscall list is a classification that
 // sits beside that gate.  It does not tighten the row.
-static_assert(::crucible::warden::CtxFitsHardeningMint<eff::ColdInitCtx>);
-static_assert(!::crucible::warden::CtxFitsHardeningMint<eff::HotFgCtx>);
-static_assert(!::crucible::warden::CtxFitsHardeningMint<eff::BgDrainCtx>);
+static_assert(::crucible::warden::CtxFitsHardeningMint<::fixy::ColdInitCtx>);
+static_assert(!::crucible::warden::CtxFitsHardeningMint<::fixy::HotFgCtx>);
+static_assert(!::crucible::warden::CtxFitsHardeningMint<::fixy::BgDrainCtx>);
 
 // Two syscalls in the same family still need separate types, because each
 // gets its own federation cache slot.

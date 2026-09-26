@@ -1,12 +1,9 @@
-// FIXY-U-084 HS14 strengthening fixture (7 of 9).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Demonstrates the SECOND mismatch class for mint_hardening: the
-// CtxFitsHardeningMint concept is `IsExecCtx<Ctx> ∧ row_contains_v<…,
-// Init>`.  fixtures 1-2 (Bg, HotFg) exercise the row-membership half;
-// THIS fixture exercises the IsExecCtx half by passing a raw struct
-// that does not satisfy IsExecCtx<>.  Short-circuit semantics make
-// the diagnostic name `IsExecCtx` directly, distinguishing this
-// rejection path from the row-mismatch path.
+// mint_hardening refuses a type that is not an execution context.  The
+// gate is IsExecCtx<Ctx> and a row that holds Init.  The two fixtures for
+// the background and foreground contexts reach the row half.  This one
+// reaches the IsExecCtx half with a plain struct.
 
 #include <crucible/warden/Hardening.h>
 

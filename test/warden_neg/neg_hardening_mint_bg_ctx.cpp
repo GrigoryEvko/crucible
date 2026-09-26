@@ -1,16 +1,16 @@
-// FIXY-U-084 HS14 neg-compile fixture (1 of 6).
+// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_hardening rejects a context whose effect row lacks Init.
-// BgDrainCtx::row = Row<Bg, Alloc> — no Init grant.  Hardening syscalls
-// (sched_setaffinity, mlock2, madvise, prctl) are process-wide state
-// mutations belonging to the startup-only Init row; the Bg drain
-// context must NOT engage this surface.
+// mint_hardening refuses a context whose effect row lacks Init.  The row
+// of the background drain context is Bg and Alloc.  The hardening system
+// calls (sched_setaffinity, mlock2, madvise, prctl) change process-wide
+// state, which is start-up work, so a drain context must not reach them.
 
 #include <crucible/warden/Hardening.h>
 
 int main() {
     crucible::warden::Policy p{};
-    auto applied = crucible::warden::mint_hardening(crucible::effects::BgDrainCtx{::crucible::effects::testing::bg()}, p);
+    ::fixy::BgDrainCtx const bg{::foundation::effects::testing::bg()};
+    auto applied = crucible::warden::mint_hardening(bg, p);
     (void)applied;
     return 0;
 }
