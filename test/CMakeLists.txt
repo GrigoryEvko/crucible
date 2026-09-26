@@ -857,23 +857,19 @@ add_test(NAME no_ffast_math
           --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
-# FIXY-U-096z migration lock-in.  The FIXY-U-096* sweep brought 14
-# top-level include/crucible/*.h headers to literal-zero `safety::`
-# (reaching the substrate only through the fixy:: umbrella).
-# scripts/check-fixy-clean-headers.sh asserts every header in the
-# positive registry scripts/fixy-clean-headers.txt stays safety::-free
-# in code AND comments — a regression (a re-added safety::Tagged, or
-# doc prose that writes safety::) reds CI at exit 1.  Self-test plants
-# one dirty + one clean registered header to prove the pattern catches
-# drift and spares umbrella spellings.  Positive registry, not an
-# exemption allowlist: the list only grows as more headers migrate.
+# The certified-clean headers.  scripts/check-fixy-clean-headers.py reads the
+# parse tree of each header on the positive registry
+# scripts/fixy-clean-headers.txt, and fails when one names the `safety`
+# namespace in code, in a namespace alias or a using-directive, or spells
+# `safety::` in prose.  The registry only grows.  Exit 3 when the kit is
+# absent reports a skip.
 add_test(NAME fixy_clean_headers_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.sh
-          --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.py --self-test)
 add_test(NAME fixy_clean_headers
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.sh)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.py)
 set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
-    LABELS "ci_guard")
+    LABELS "ci_guard;ast"
+    SKIP_RETURN_CODE 3)
 # The fixy doc-blocks name an axis by the enum spelling
 # "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
 # longer matches the enum ordinals.  scripts/check-fixy-dim-prose.py reads the
