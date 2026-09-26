@@ -551,24 +551,20 @@ add_test(NAME contract_cite_regression
           --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
 set_tests_properties(contract_cite_regression contract_cite_regression_self_test PROPERTIES
   LABELS "ci_guard")
-# CONTRACT-125: per-procedure cite-ratio policy enforcer.  For every
-# decide::* procedure in the catalog, asks "≥ 2 production cites
-# within 180 days of introduction?".  Recently-introduced procedures
-# in the GRACE bucket are informational; only procedures past the
-# grace window with < 2 cites count as VIOLATIONs and fail CI.
-# The audit runs the sibling --json producer and joins per-procedure
-# cite counts with `git log -S` introduction dates.
-# Catalog grows bottom-up (citing site first, name second per
-# feedback_decide_catalog.md); this test enforces the bottom-up
-# discipline doesn't decay over time.  CONTRACT-126 trims procedures
-# this audit flags.
+# The cite-ratio policy of the decide:: catalog.  Each procedure needs at
+# least 2 production cites within 180 days of the day its definition
+# entered Decide.h.  The day comes from the parse of every committed
+# version of Decide.h, so a comment that names a procedure dates nothing.
+# A procedure inside the window is informational.  A procedure past it
+# with too few cites fails the test.
 add_test(NAME contract_decide_cite_ratio_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.sh
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.py
           --self-test)
 add_test(NAME contract_decide_cite_ratio
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.sh)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.py)
 set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
-  LABELS "ci_guard")
+  LABELS "ci_guard;ast"
+  SKIP_RETURN_CODE 3)
 # CONTRACT-120: Layer-C subsumption guard.  Catches double-enforcement
 # of a Refined<Pred, T> parameter via in-body CRUCIBLE_PRE that re-tests
 # the same predicate on the same parameter — the type-level proof

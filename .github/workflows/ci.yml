@@ -80,8 +80,13 @@ jobs:
     name: discipline guards (toolchain-free)
     runs-on: ubuntu-latest
     steps:
+      # The cite-ratio audit dates each decide:: procedure from the history of
+      # Decide.h, so this job needs the whole history.  The audit refuses a
+      # shallow clone.
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Install ripgrep, fd and clang-format
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep fd-find clang-format
@@ -147,8 +152,8 @@ jobs:
 
       - name: contract decide-cite ratio (self-test + scan)
         run: |
-          bash scripts/audit-decide-cite-ratio.sh --self-test
-          bash scripts/audit-decide-cite-ratio.sh
+          python3 scripts/audit-decide-cite-ratio.py --self-test
+          python3 scripts/audit-decide-cite-ratio.py
 
       - name: refined/pre subsumption (self-test + scan)
         run: |
