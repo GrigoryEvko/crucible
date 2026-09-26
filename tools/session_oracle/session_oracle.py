@@ -2672,8 +2672,9 @@ RUNTIME_TESTS = frozenset({"generated_fixy_wire.cpp"})
 
 def _self_test(cxx: str, include: Path) -> int:
     from concurrent.futures import ThreadPoolExecutor
+    from emit import emit_self_check
     _, rows = read_golden(GOLDEN)
-    failures: list[str] = []
+    failures: list[str] = emit_self_check()
 
     def verify(name: str, path: Path) -> subprocess.CompletedProcess[str]:
         if name in RUNTIME_TESTS:

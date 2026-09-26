@@ -41,7 +41,6 @@ import io
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
 
 import labelled
 from model import (Local, cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_old_global,
@@ -234,6 +233,202 @@ def _pin(spelling: str) -> str:
     return "::" + spelling
 
 
+# ── Type terms and the nest budget ───────────────────────────────────
+#
+# Every type that an emitted test names comes from one of two sources: a
+# printer of model.py or labelled.py, or a canonical spelling that the
+# golden file stores (the compiler's print of our relation's answer).  Both
+# are type-ids of one small grammar:
+#
+#     type  := integer | name [ '<' [ type { ',' type } ] '>' ]
+#     name  := [ '::' ] identifier { '::' identifier }
+#
+# cpp_type reads a spelling of that grammar into a CppType, and refuses any
+# other text.  The emitters build each statement from literal text and
+# CppType terms, and the renderer writes every term in one canonical form.
+# So no emitted line is ever read back as text.
+
+# The deepest template nest that one emitted line may hold.  The pinned
+# tree-sitter grammar of the AST gates cannot tell a template from a
+# less-than inside a nest of about twenty levels, and a file with one such
+# line fails parse_clean as a whole.
+NEST_LIMIT = 6
+
+_TYPE_TOKEN = re.compile(r"\s*(?:(?P<scope>::)|(?P<open><)|(?P<close>>)|(?P<comma>,)"
+                         r"|(?P<ident>[A-Za-z_][A-Za-z_0-9]*)|(?P<integer>[0-9]+[uUlL]*))")
+
+
+@dataclass(frozen=True, slots=True)
+class CppType:
+    """One type-id or template argument of an emitted test.
+
+    ``name`` is a qualified name, which can start with ``::``, or an integer
+    literal.  ``args`` is None for a name with no template argument list,
+    and a tuple (empty for ``X<>``) for a template-id.
+    """
+
+    name: str
+    args: tuple["CppType", ...] | None = None
+
+    @property
+    def depth(self) -> int:
+        """Return the template nest depth: 0 for a plain name, 1 + the deepest argument otherwise.  O(size)."""
+        if self.args is None:
+            return 0
+        return 1 + max((arg.depth for arg in self.args), default=0)
+
+    def render(self) -> str:
+        """Return the canonical spelling.
+
+        Arguments are divided by ", ".  A closing bracket that follows
+        another closing bracket gets a space before it, so that the pinned
+        grammar never reads a run of closers as a shift operator.  O(size).
+        """
+        if self.args is None:
+            return self.name
+        inner = ", ".join(arg.render() for arg in self.args)
+        closer = " >" if inner.endswith(">") else ">"
+        return f"{self.name}<{inner}{closer}"
+
+
+def cpp_type(spelling: str) -> CppType:
+    """Read one type-id of the grammar above.  Refuse any other text with GoldenError.  O(length)."""
+    tokens: list[tuple[str, str]] = []
+    pos = 0
+    while pos < len(spelling):
+        match = _TYPE_TOKEN.match(spelling, pos)
+        if match is None or match.end() == pos:
+            if spelling[pos:].strip() == "":
+                break
+            raise GoldenError(f"a C++ spelling holds text outside the type grammar at column {pos}: "
+                              f"{spelling[:120]!r}")
+        kind = match.lastgroup
+        assert kind is not None
+        tokens.append((kind, match.group(kind)))
+        pos = match.end()
+
+    def parse(at: int) -> tuple[CppType, int]:
+        if at < len(tokens) and tokens[at][0] == "integer":
+            return CppType(tokens[at][1]), at + 1
+        parts: list[str] = []
+        if at < len(tokens) and tokens[at][0] == "scope":
+            parts.append("::")
+            at += 1
+        while True:
+            if at >= len(tokens) or tokens[at][0] != "ident":
+                raise GoldenError(f"a C++ spelling has no name where the grammar needs one: {spelling[:120]!r}")
+            parts.append(tokens[at][1])
+            at += 1
+            if at < len(tokens) and tokens[at][0] == "scope":
+                parts.append("::")
+                at += 1
+                continue
+            break
+        name = "".join(parts)
+        if at >= len(tokens) or tokens[at][0] != "open":
+            return CppType(name), at
+        at += 1
+        args: list[CppType] = []
+        if at < len(tokens) and tokens[at][0] == "close":
+            return CppType(name, ()), at + 1
+        while True:
+            arg, at = parse(at)
+            args.append(arg)
+            if at >= len(tokens):
+                raise GoldenError(f"a C++ spelling opens a template argument list that it never closes: "
+                                  f"{spelling[:120]!r}")
+            if tokens[at][0] == "comma":
+                at += 1
+                continue
+            if tokens[at][0] == "close":
+                return CppType(name, tuple(args)), at + 1
+            raise GoldenError(f"a C++ spelling has {tokens[at][1]!r} inside a template argument list: "
+                              f"{spelling[:120]!r}")
+
+    term, end = parse(0)
+    if end != len(tokens):
+        raise GoldenError(f"a C++ spelling holds text after its type-id: {spelling[:120]!r}")
+    return term
+
+
+class _Hoister:
+    """Give each deep template argument of one emitted file an alias before its statement.
+
+    A statement is literal text and CppType terms.  A term is written at the
+    top level of its statement, so every template that holds a term is part
+    of the term.  Each template argument that nests NEST_LIMIT deep or more
+    gets a using-declaration on the lines before the statement, built bottom
+    up, so no line nests deeper than NEST_LIMIT.  The aliases are named
+    session_oracle_nest<k>, unique in the file, and each one is in scope
+    where its statement is, because it sits in the same scope just before it.
+    """
+
+    __slots__ = ("_count", "deepest")
+
+    def __init__(self) -> None:
+        self._count = 0
+        # The deepest nest of any term that this hoister wrote, for the self-check.
+        self.deepest = 0
+
+    def line(self, *parts: str | CppType) -> str:
+        """Return the aliases that the terms of one statement need, then the statement.  O(size)."""
+        aliases: list[str] = []
+        rendered: list[str] = []
+        for part in parts:
+            if isinstance(part, str):
+                rendered.append(part)
+                continue
+            lifted = self._lift(part, aliases, top=True)
+            self.deepest = max(self.deepest, lifted.depth)
+            rendered.append(lifted.render())
+        return "".join(aliases) + "".join(rendered)
+
+    def _lift(self, term: CppType, aliases: list[str], top: bool) -> CppType:
+        if term.args is None:
+            return term
+        lifted = CppType(term.name, tuple(self._lift(arg, aliases, top=False) for arg in term.args))
+        if top or lifted.depth < NEST_LIMIT:
+            return lifted
+        name = f"session_oracle_nest{self._count}"
+        self._count += 1
+        self.deepest = max(self.deepest, lifted.depth)
+        aliases.append(f"using {name} = {lifted.render()};\n")
+        return CppType(name)
+
+
+def emit_self_check() -> list[str]:
+    """Return the failures of the type grammar and of the nest budget on planted input.
+
+    Each case holds a spelling that the grammar must refuse, or a nest that
+    the hoister must cut to NEST_LIMIT.  The text tokenizer that the hoister
+    replaced read every '<' and '>' as a bracket, so it accepted the refused
+    spellings below and miscounted their nest.
+    """
+    failures: list[str] = []
+    canonical = cpp_type("a::B<c::D<e::F<1>>, ::g::H<>>").render()
+    if canonical != "a::B<c::D<e::F<1> >, ::g::H<> >":
+        failures.append(f"the renderer writes {canonical!r}")
+    for refused in ("a::X<1> == 2", "a::X<(1 > 0)>", "a::X<b::Y", "a::X<b>::type", "a::X<b,>", "a::X<b> c"):
+        try:
+            cpp_type(refused)
+        except GoldenError:
+            continue
+        failures.append(f"the type grammar admits {refused!r}")
+    hoister = _Hoister()
+    deep = "fs::Loop<" * 30 + "fs::End" + ">" * 30
+    text = hoister.line("using T = ", cpp_type(deep), ";\n")
+    # The aliases cut the chain at depth 6, 12, 18 and 24, and the statement keeps the top 6 levels.
+    if hoister.deepest > NEST_LIMIT or text.count("using session_oracle_nest") != 4:
+        failures.append(f"a nest of 30 comes out {hoister.deepest} deep with "
+                        f"{text.count('using session_oracle_nest')} aliases")
+    seven = _Hoister().line("using T = ", cpp_type("a::A<" * 7 + "x" + ">" * 7), ";\n")
+    expected = ("using session_oracle_nest0 = a::A<a::A<a::A<a::A<a::A<a::A<x> > > > > >;\n"
+                "using T = a::A<session_oracle_nest0>;\n")
+    if seven != expected:
+        failures.append(f"a nest of 7 comes out as {seven!r}")
+    return failures
+
+
 def _message(row: Row) -> str:
     role = f" role {row.role}" if row.role != "-" else ""
     return f"session_oracle {row.family} case {row.case}{role}: {row.status}"
@@ -249,8 +444,8 @@ def _fixy_pair(row: Row) -> tuple[str, str]:
 
 _FIXY_BOOL = {
     "fixy.is_dual": "fs::is_dual_v<T0, T1>",
-    "fixy.involution": "std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0>>, T0>",
-    "fixy.involutive_flag": "std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0>>, T0>",
+    "fixy.involution": "std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0>",
+    "fixy.involutive_flag": "std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0>",
     "fixy.well_formed": "(fs::is_well_formed_v<T0> && fs::is_well_formed_v<T1>)",
     "fixy.accepts": ("(fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && "
                      "fs::is_dual_v<N0, N1>)"),
@@ -267,13 +462,14 @@ def _hard_error(row: Row) -> bool:
     return row.ours.startswith("reject:") and row.family not in ("old.projection",)
 
 
-def _fixy_assert(row: Row) -> str:
+def _fixy_assert(row: Row, hoister: _Hoister) -> str:
     msg = _message(row)
     if _hard_error(row):
         return f"// {row.family}: the relation stops the build ({row.ours[7:]})\n"
     if row.family == "fixy.dual":
         target = "T1" if row.ours == "=" else _pin(row.ours)
-        return f"static_assert(std::is_same_v<fs::dual_of_t<T0>, {target}>, \"{msg}\");\n"
+        return hoister.line("static_assert(", cpp_type(f"std::is_same_v<fs::dual_of_t<T0>, {target}>"),
+                            f", \"{msg}\");\n")
     if row.ours not in ("true", "false"):
         raise GoldenError(f"{row.family} case {row.case}: ours must be true or false")
     return f"static_assert({_FIXY_BOOL[row.family]} == {row.ours}, \"{msg}\");\n"
@@ -297,19 +493,21 @@ def emit_fixy(rows: list[Row]) -> str:
            "#include <fixy/session/Protocol.h>\n\n#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n",
            "namespace session_oracle::fixy_duality {\n\n"]
+    hoister = _Hoister()
     for case in sorted(cases, key=case_key):
         group = sorted(cases[case], key=lambda r: FIXY_FAMILIES.index(r.family))
         out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
         pair_rows = [r for r in group if r.family != "fixy.accepts"]
         if pair_rows:
             t0, t1 = _fixy_pair(pair_rows[0])
-            out.append(f"using T0 = {t0};\nusing T1 = {t1};\n")
+            out.append(hoister.line("using T0 = ", cpp_type(t0), ";\n"))
+            out.append(hoister.line("using T1 = ", cpp_type(t1), ";\n"))
         if any(r.family == "fixy.accepts" for r in group):
             g = read_global(group[0].global_text)
-            out.append(f"using N0 = {cpp_fixy_local(local_of(g, 0))};\n"
-                       f"using N1 = {cpp_fixy_local(local_of(g, 1))};\n")
+            out.append(hoister.line("using N0 = ", cpp_type(cpp_fixy_local(local_of(g, 0))), ";\n"))
+            out.append(hoister.line("using N1 = ", cpp_type(cpp_fixy_local(local_of(g, 1))), ";\n"))
         for row in group:
-            out.append(_fixy_assert(row))
+            out.append(_fixy_assert(row, hoister))
         out.append(f"}}  // namespace {_namespace(case)}\n\n")
     out.append("}  // namespace session_oracle::fixy_duality\n\nint main() { return 0; }\n")
     return "".join(out)
@@ -328,11 +526,12 @@ def emit_old(rows: list[Row]) -> str:
            "#include <crucible/sessions/_SessionGlobal.h>\n\n#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace pr = ::crucible::safety::proto;\n\n",
            "namespace session_oracle::old_projection {\n\n"]
+    hoister = _Hoister()
     for case in sorted(cases, key=case_key):
         group = sorted(cases[case], key=lambda r: (OLD_FAMILIES.index(r.family), r.role))
         g = read_global(group[0].global_text)
         out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
-        out.append(f"using G = {cpp_old_global(g)};\n")
+        out.append(hoister.line("using G = ", cpp_type(cpp_old_global(g)), ";\n"))
         for row in group:
             msg = _message(row)
             if row.family == "old.well_formed":
@@ -349,8 +548,10 @@ def emit_old(rows: list[Row]) -> str:
                 target = cpp_old_local(expected)
             else:
                 target = _pin(row.ours)
-            out.append(f"static_assert(std::is_same_v<pr::project_t<G, {cpp_role(int(row.role))}>, "
-                       f"{target}>, \"{msg}\");\n")
+            out.append(hoister.line(
+                "static_assert(",
+                cpp_type(f"std::is_same_v<pr::project_t<G, {cpp_role(int(row.role))}>, {target}>"),
+                f", \"{msg}\");\n"))
         out.append(f"}}  // namespace {_namespace(case)}\n\n")
     out.append("}  // namespace session_oracle::old_projection\n\nint main() { return 0; }\n")
     return "".join(out)
@@ -371,11 +572,12 @@ def emit_multi(rows: list[Row]) -> str:
            "#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
            "namespace session_oracle::fixy_projection {\n\n"]
+    hoister = _Hoister()
     for case in sorted(cases, key=case_key):
         group = sorted(cases[case], key=lambda r: (MULTI_FAMILIES.index(r.family), r.role))
         g = read_global(group[0].global_text)
         out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
-        out.append(f"using G = {cpp_fixy_global(g)};\n")
+        out.append(hoister.line("using G = ", cpp_type(cpp_fixy_global(g)), ";\n"))
         for row in group:
             msg = _message(row)
             if _hard_error(row):
@@ -401,8 +603,10 @@ def emit_multi(rows: list[Row]) -> str:
                     target = f"fs::Projected<fs::OutQueue<>, {cpp_fixy_peer_local(expected)}>"
                 else:
                     target = _pin(row.ours)
-                out.append(f"static_assert(std::is_same_v<fs::project_t<G, {cpp_role(int(row.role))}>, "
-                           f"{target}>, \"{msg}\");\n")
+                out.append(hoister.line(
+                    "static_assert(",
+                    cpp_type(f"std::is_same_v<fs::project_t<G, {cpp_role(int(row.role))}>, {target}>"),
+                    f", \"{msg}\");\n"))
         out.append(f"}}  // namespace {_namespace(case)}\n\n")
     out.append("}  // namespace session_oracle::fixy_projection\n\nint main() { return 0; }\n")
     return "".join(out)
@@ -440,6 +644,7 @@ def emit_subtype(rows: list[Row]) -> str:
            "#include <fixy/session/Subtype.h>\n\n#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n", subtype_channel_decl(), "\n",
            "namespace session_oracle::fixy_subtype {\n\n"]
+    hoister = _Hoister()
     for case in sorted(cases, key=case_key):
         group = sorted(cases[case], key=lambda r: (r.role, SUBTYPE_FAMILIES.index(r.family)))
         out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
@@ -451,7 +656,9 @@ def emit_subtype(rows: list[Row]) -> str:
                     out.append(f"}}  // namespace {sorted(seen)[-1]}\n")
                 seen = {ns}
                 t, u = subtype_pair(row.global_text, row.role)
-                out.append(f"namespace {ns} {{\n// {row.role}\nusing T = {t};\nusing U = {u};\n")
+                out.append(f"namespace {ns} {{\n// {row.role}\n")
+                out.append(hoister.line("using T = ", cpp_type(t), ";\n"))
+                out.append(hoister.line("using U = ", cpp_type(u), ";\n"))
             expr = ("fs::is_subtype_sync_v<T, U>" if row.family == "fixy.subtype_sync"
                     else f"fs::is_subtype_async_v<T, U, ::{SUBTYPE_CHANNEL}>")
             out.append(f"static_assert({expr} == {row.ours}, \"{_message(row)}\");\n")
@@ -524,6 +731,7 @@ def emit_keyed_subtype(rows: list[Row]) -> str:
            "#include <fixy/session/Projection.h>\n#include <fixy/session/Subtype.h>\n\n#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n", subtype_channel_decl(), "\n",
            "namespace session_oracle::fixy_keyed_subtype {\n\n"]
+    hoister = _Hoister()
     for case in sorted(cases, key=case_key):
         group = sorted(cases[case], key=lambda r: (r.role, KEYED_SUBTYPE_FAMILIES.index(r.family)))
         out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
@@ -536,7 +744,9 @@ def emit_keyed_subtype(rows: list[Row]) -> str:
                     out.append(f"}}  // namespace {current}\n")
                 current = ns
                 t, u = keyed_subtype_pair(row.global_text, row.role)
-                out.append(f"namespace {ns} {{\n// {row.role}\nusing T = {t};\nusing U = {u};\n")
+                out.append(f"namespace {ns} {{\n// {row.role}\n")
+                out.append(hoister.line("using T = ", cpp_type(t), ";\n"))
+                out.append(hoister.line("using U = ", cpp_type(u), ";\n"))
             expr = ("fs::is_subtype_sync_v<T, U>" if row.family == "fixy.keyed_subtype_sync"
                     else f"fs::is_subtype_async_v<T, U, ::{SUBTYPE_CHANNEL}>")
             out.append(f"static_assert({expr} == {row.ours}, \"{_message(row)}\");\n")
@@ -562,11 +772,12 @@ def emit_keyed_multi(rows: list[Row]) -> str:
            "#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
            "namespace session_oracle::fixy_keyed_projection {\n\n"]
+    hoister = _Hoister()
     for case in sorted(cases, key=case_key):
         group = sorted(cases[case], key=lambda r: (KEYED_MULTI_FAMILIES.index(r.family), r.role))
         g = labelled.read(group[0].global_text)
         out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
-        out.append(f"using G = {labelled.cpp_fixy_global(g)};\n")
+        out.append(hoister.line("using G = ", cpp_type(labelled.cpp_fixy_global(g)), ";\n"))
         for row in group:
             msg = _message(row)
             if row.family == "fixy.keyed_live" and row.ours.startswith("well_formed "):
@@ -574,8 +785,10 @@ def emit_keyed_multi(rows: list[Row]) -> str:
             elif row.family == "fixy.keyed_live":
                 out.append(f"static_assert(fs::is_live_by_construction_v<G> == {row.ours}, \"{msg}\");\n")
             else:
-                out.append(f"static_assert(std::is_same_v<fs::project_t<G, {cpp_role(int(row.role))}>, "
-                           f"{_pin(row.ours)}>, \"{msg}\");\n")
+                out.append(hoister.line(
+                    "static_assert(",
+                    cpp_type(f"std::is_same_v<fs::project_t<G, {cpp_role(int(row.role))}>, {_pin(row.ours)}>"),
+                    f", \"{msg}\");\n"))
         out.append(f"}}  // namespace {_namespace(case)}\n\n")
     out.append("}  // namespace session_oracle::fixy_keyed_projection\n\nint main() { return 0; }\n")
     return "".join(out)
@@ -602,21 +815,25 @@ def emit_crash(rows: list[Row]) -> str:
            "#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
            "namespace session_oracle::fixy_crash {\n\n"]
+    hoister = _Hoister()
     for (case, prefix) in sorted(groups, key=lambda k: (case_key(k[0]), k[1])):
         group = sorted(groups[(case, prefix)], key=lambda r: (CRASH_FAMILIES.index(r.family), r.role))
         g = labelled.read(group[0].global_text)
         roles = multiparty_roles(labelled.roles_of(g))
         ns = f"{_namespace(case)}_{prefix.replace('.', '_')}"
         out.append(f"// {group[0].global_text}\nnamespace {ns} {{\n")
-        out.append(f"using G = {labelled.cpp_fixy_global(g)};\nusing RS = {crash_reliable_set(roles, prefix)};\n")
+        out.append(hoister.line("using G = ", cpp_type(labelled.cpp_fixy_global(g)), ";\n"))
+        out.append(hoister.line("using RS = ", cpp_type(crash_reliable_set(roles, prefix)), ";\n"))
         for row in group:
             msg = _message(row)
             if row.family == "fixy.crash_live":
                 out.append(f"static_assert(fs::crash_live_by_construction_v<G, RS> == {row.ours}, \"{msg}\");\n")
             else:
                 role = int(row.role.split("/")[1])
-                out.append(f"static_assert(std::is_same_v<fs::project_crash_t<G, {cpp_role(role)}, RS>, "
-                           f"{_pin(row.ours)}>, \"{msg}\");\n")
+                out.append(hoister.line(
+                    "static_assert(",
+                    cpp_type(f"std::is_same_v<fs::project_crash_t<G, {cpp_role(role)}, RS>, {_pin(row.ours)}>"),
+                    f", \"{msg}\");\n"))
         out.append(f"}}  // namespace {ns}\n\n")
     out.append("}  // namespace session_oracle::fixy_crash\n\nint main() { return 0; }\n")
     return "".join(out)
@@ -638,21 +855,26 @@ def emit_enroute(rows: list[Row]) -> str:
            "#include <type_traits>\n\n",
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
            "namespace session_oracle::fixy_enroute {\n\n"]
+    hoister = _Hoister()
     for (case, tag) in sorted(groups, key=lambda k: (case_key(k[0]), k[1])):
         group = sorted(groups[(case, tag)], key=lambda r: (ENROUTE_FAMILIES.index(r.family), r.role))
         g = labelled.read(group[0].global_text)
         ns = f"{_namespace(case)}_{tag}"
-        out.append(f"// {group[0].global_text}\nnamespace {ns} {{\nusing G = {labelled.cpp_fixy_global(g)};\n")
+        out.append(f"// {group[0].global_text}\nnamespace {ns} {{\n")
+        out.append(hoister.line("using G = ", cpp_type(labelled.cpp_fixy_global(g)), ";\n"))
         for row in group:
             msg = _message(row)
             if row.family == "fixy.enroute_live":
                 out.append(f"static_assert(fs::is_live_by_construction_v<G> == {row.ours}, \"{msg}\");\n")
             elif row.family == "fixy.enroute_association":
-                out.append(f"static_assert(fs::association_holds_v<{row.oracle}, G> == {row.ours}, \"{msg}\");\n")
+                out.append(hoister.line("static_assert(", cpp_type(f"fs::association_holds_v<{row.oracle}, G>"),
+                                        f" == {row.ours}, \"{msg}\");\n"))
             else:
                 role = int(row.role.split("/")[1])
-                out.append(f"static_assert(std::is_same_v<fs::project_t<G, {cpp_role(role)}>, {_pin(row.ours)}>, "
-                           f"\"{msg}\");\n")
+                out.append(hoister.line(
+                    "static_assert(",
+                    cpp_type(f"std::is_same_v<fs::project_t<G, {cpp_role(role)}>, {_pin(row.ours)}>"),
+                    f", \"{msg}\");\n"))
         out.append(f"}}  // namespace {ns}\n\n")
     out.append("}  // namespace session_oracle::fixy_enroute\n\nint main() { return 0; }\n")
     return "".join(out)
@@ -677,8 +899,12 @@ def wire_source(entries: list[tuple[str, str, str, int, str]]) -> str:
            cpp_prelude(), "\nnamespace fs = ::fixy::session;\n\n",
            "namespace session_oracle::fixy_wire {\n\n"]
     rows = []
+    hoister = _Hoister()
     for n, (label, a, b, seed, pinned) in enumerate(entries):
-        out.append(f"// {label}\nnamespace r{n} {{\nusing A = {a};\nusing B = {b};\n}}  // namespace r{n}\n")
+        out.append(f"// {label}\nnamespace r{n} {{\n")
+        out.append(hoister.line("using A = ", cpp_type(a), ";\n"))
+        out.append(hoister.line("using B = ", cpp_type(b), ";\n"))
+        out.append(f"}}  // namespace r{n}\n")
         rows.append(f"    {{\"{label}\", &::session_oracle::wire::run_pair<r{n}::A, r{n}::B, {seed}>, \"{pinned}\"}},\n")
     out.append("\ninline constexpr ::session_oracle::wire::Row rows[] = {\n")
     out.extend(rows or ["    {\"\", nullptr, \"\"},\n"])
@@ -702,158 +928,9 @@ def emit_wire(rows: list[Row]) -> str:
     return wire_source(entries)
 
 
-def _split_closers(text: str) -> str:
-    """Write each run of closing angle brackets as separate tokens.
-
-    The pinned tree-sitter grammar that the AST gates use reads a long
-    run such as >>>> inside a static_assert argument as shift operators.
-    The emitted tests hold no shift operator, so every >> becomes > >.
-    O(length).
-    """
-    while ">>" in text:
-        text = text.replace(">>", "> >")
-    return text
-
-
-# The deepest template nest that one emitted line may hold.  The pinned
-# tree-sitter grammar of the AST gates cannot tell a template from a
-# less-than inside a nest of about twenty levels, and a file with one such
-# line fails parse_clean as a whole.
-NEST_LIMIT = 6
-_QUALIFIED = re.compile(r"\s*(::)?[A-Za-z_][A-Za-z_0-9]*(::[A-Za-z_][A-Za-z_0-9]*)*\s*")
-
-
-class _Nest:
-    """The template argument list of one template-id: each argument is a list of pieces."""
-
-    __slots__ = ("args",)
-
-    def __init__(self, args: list[list["_Piece"]]) -> None:
-        self.args = args
-
-
-_Piece = Union[str, _Nest]
-
-
-def _tokens(line: str) -> list[str]:
-    """Split one line into string literals, the three bracket tokens and runs of other text."""
-    out: list[str] = []
-    i = 0
-    while i < len(line):
-        ch = line[i]
-        if ch == '"':
-            j = i + 1
-            while j < len(line) and line[j] != '"':
-                j += 2 if line[j] == "\\" else 1
-            out.append(line[i:j + 1])
-            i = j + 1
-        elif ch in "<>,":
-            out.append(ch)
-            i += 1
-        else:
-            j = i
-            while j < len(line) and line[j] not in '"<>,':
-                j += 1
-            out.append(line[i:j])
-            i = j
-    return out
-
-
-def _parse_nest(tokens: list[str], pos: int, inside: bool) -> tuple[list[_Piece], int]:
-    """Read pieces up to the end of one template argument.  Returns the pieces and the next position."""
-    pieces: list[_Piece] = []
-    while pos < len(tokens):
-        tok = tokens[pos]
-        if tok == "<":
-            args: list[list[_Piece]] = []
-            pos += 1
-            while True:
-                arg, pos = _parse_nest(tokens, pos, True)
-                args.append(arg)
-                if pos >= len(tokens):
-                    raise GoldenError("an emitted line opens a template argument list that it never closes")
-                closer = tokens[pos]
-                pos += 1
-                if closer == ">":
-                    break
-            pieces.append(_Nest(args))
-        elif inside and tok in ",>":
-            return pieces, pos
-        else:
-            pieces.append(tok)
-            pos += 1
-    return pieces, pos
-
-
-def _depth(pieces: list[_Piece]) -> int:
-    return max((1 + max((_depth(a) for a in p.args), default=0) for p in pieces if isinstance(p, _Nest)),
-               default=0)
-
-
-def _render(pieces: list[_Piece]) -> str:
-    return "".join(p if isinstance(p, str) else "<" + ",".join(_render(a) for a in p.args) + ">"
-                   for p in pieces)
-
-
-def _hoist(pieces: list[_Piece], aliases: list[str], counter: list[int]) -> None:
-    """Replace each deep template argument that is one template-id by an alias, bottom up."""
-    for piece in pieces:
-        if not isinstance(piece, _Nest):
-            continue
-        for k, arg in enumerate(piece.args):
-            _hoist(arg, aliases, counter)
-            core = list(arg)
-            trail = ""
-            while core and isinstance(core[-1], str) and not core[-1].strip():
-                trail = core.pop() + trail
-            is_template_id = (len(core) == 2 and isinstance(core[0], str) and isinstance(core[1], _Nest)
-                              and _QUALIFIED.fullmatch(core[0]) is not None)
-            if is_template_id and _depth(core) > NEST_LIMIT - 1:
-                name = f"session_oracle_nest{counter[0]}"
-                counter[0] += 1
-                lead = core[0][:len(core[0]) - len(core[0].lstrip())]
-                aliases.append(f"using {name} = {_render(core).strip()};\n")
-                piece.args[k] = [lead + name + trail]
-
-
-def _hoist_nests(text: str) -> str:
-    """Give each template nest deeper than NEST_LIMIT an alias on the lines before its statement.
-
-    Every emitted statement that nests deeper gets one using-declaration for
-    each deep template argument, built bottom up, so no line nests deeper
-    than NEST_LIMIT.  The aliases are named session_oracle_nest<k>, unique in
-    the file, and each one is in scope where its statement is, because it
-    sits in the same scope just before it.  O(length of the text).
-    """
-    out: list[str] = []
-    counter = [0]
-    for line in text.splitlines(keepends=True):
-        stripped = line.lstrip()
-        if stripped.startswith(("#", "//")):
-            out.append(line)
-            continue
-        tokens = _tokens(line)
-        pieces, _ = _parse_nest(tokens, 0, False)
-        if _depth(pieces) <= NEST_LIMIT:
-            out.append(line)
-            continue
-        if not stripped.rstrip().endswith(";"):
-            raise GoldenError(f"an emitted line nests deeper than {NEST_LIMIT} and is not one statement: "
-                              f"{stripped[:120]}")
-        aliases: list[str] = []
-        _hoist(pieces, aliases, counter)
-        indent = line[:len(line) - len(stripped)]
-        out.extend(indent + a for a in aliases)
-        rendered = _render(pieces)
-        if _depth(_parse_nest(_tokens(rendered), 0, False)[0]) > NEST_LIMIT:
-            raise GoldenError(f"an emitted line still nests deeper than {NEST_LIMIT}: {stripped[:120]}")
-        out.append(rendered)
-    return "".join(out)
-
-
 def emit_all(rows: list[Row]) -> dict[str, str]:
     """Return the file name and text of every emitted test."""
-    return {name: _hoist_nests(_split_closers(text)) for name, text in (
+    return dict((
         ("generated_fixy_duality.cpp", emit_fixy(rows)),
         ("generated_fixy_projection.cpp", emit_multi(rows)),
         ("generated_fixy_subtype.cpp", emit_subtype(rows)),
@@ -862,4 +939,4 @@ def emit_all(rows: list[Row]) -> dict[str, str]:
         ("generated_fixy_crash.cpp", emit_crash(rows)),
         ("generated_fixy_enroute.cpp", emit_enroute(rows)),
         ("generated_fixy_wire.cpp", emit_wire(rows)),
-        ("generated_old_projection.cpp", emit_old(rows)))}
+        ("generated_old_projection.cpp", emit_old(rows))))

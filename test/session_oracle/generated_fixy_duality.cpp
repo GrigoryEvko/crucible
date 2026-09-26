@@ -115,13 +115,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(0,1,[msg(1,0,nat,msg(1,0,nat,msg(0,1,bool,msg(1,0,bool,msg(0,1,nat,end))))),branch(0,1,[msg(0,1,nat,msg(0,1,nat,msg(0,1,bool,rec(msg(1,0,bool,var))))),msg(1,0,nat,branch(1,0,[msg(1,0,bool,rec(msg(1,0,nat,var))),branch(1,0,[end,end,end]),rec(msg(1,0,bool,end))])),branch(0,1,[msg(1,0,nat,branch(1,0,[msg(0,1,bool,end),end])),rec(branch(0,1,[var,msg(1,0,nat,var)])),msg(0,1,nat,msg(1,0,nat,msg(0,1,nat,end)))])])])
 namespace c_fr5 {
 using session_oracle_nest0 = fs::Select<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > > > >, fs::Recv<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > >, fs::Offer<fs::End, fs::End, fs::End>, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > > >, fs::Select<fs::Recv<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::End> >, fs::Loop<fs::Select<fs::Continue, fs::Recv<session_oracle::Nat, fs::Continue> > >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >;
-using T0 = fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest0 >;
+using T0 = fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest0>;
 using session_oracle_nest1 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > > > >, fs::Send<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > >, fs::Select<fs::End, fs::End, fs::End>, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > > >, fs::Offer<fs::Send<session_oracle::Nat, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::End> >, fs::Loop<fs::Offer<fs::Continue, fs::Send<session_oracle::Nat, fs::Continue> > >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >;
-using T1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest1 >;
+using T1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest1>;
 using session_oracle_nest2 = fs::Select<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > > > >, fs::Recv<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > >, fs::Offer<fs::End, fs::End, fs::End>, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > > >, fs::Select<fs::Recv<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::End> >, fs::Loop<fs::Select<fs::Continue, fs::Recv<session_oracle::Nat, fs::Continue> > >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >;
-using N0 = fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest2 >;
+using N0 = fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest2>;
 using session_oracle_nest3 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > > > >, fs::Send<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > >, fs::Select<fs::End, fs::End, fs::End>, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > > >, fs::Offer<fs::Send<session_oracle::Nat, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::End> >, fs::Loop<fs::Offer<fs::Continue, fs::Send<session_oracle::Nat, fs::Continue> > >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >;
-using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest3 >;
+using N1 = fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest3>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr5: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr5: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr5: agree");
@@ -133,13 +133,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(1,0,nat,branch(1,0,[msg(0,1,nat,rec(branch(0,1,[var,rec(msg(0,1,nat,end))]))),msg(1,0,nat,msg(1,0,nat,msg(0,1,nat,msg(1,0,bool,end))))]))
 namespace c_fr6 {
 using session_oracle_nest4 = fs::Offer<fs::Send<session_oracle::Nat, fs::Loop<fs::Select<fs::Continue, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > > > >, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using T0 = fs::Recv<session_oracle::Nat, session_oracle_nest4 >;
+using T0 = fs::Recv<session_oracle::Nat, session_oracle_nest4>;
 using session_oracle_nest5 = fs::Select<fs::Recv<session_oracle::Nat, fs::Loop<fs::Offer<fs::Continue, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > > > >, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > > >;
-using T1 = fs::Send<session_oracle::Nat, session_oracle_nest5 >;
+using T1 = fs::Send<session_oracle::Nat, session_oracle_nest5>;
 using session_oracle_nest6 = fs::Offer<fs::Send<session_oracle::Nat, fs::Loop<fs::Select<fs::Continue, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > > > >, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest6 >;
+using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest6>;
 using session_oracle_nest7 = fs::Select<fs::Recv<session_oracle::Nat, fs::Loop<fs::Offer<fs::Continue, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > > > >, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > > >;
-using N1 = fs::Send<session_oracle::Nat, session_oracle_nest7 >;
+using N1 = fs::Send<session_oracle::Nat, session_oracle_nest7>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr6: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr6: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr6: agree");
@@ -207,13 +207,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(1,0,bool,branch(1,0,[msg(1,0,bool,msg(0,1,nat,msg(0,1,nat,rec(msg(0,1,nat,var))))),end,branch(1,0,[msg(1,0,nat,branch(0,1,[msg(0,1,nat,end),msg(1,0,nat,end)])),msg(1,0,nat,msg(0,1,bool,rec(msg(1,0,nat,end))))])]))
 namespace c_fr11 {
 using session_oracle_nest8 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > > >, fs::End, fs::Offer<fs::Recv<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > > > > >;
-using T0 = fs::Recv<session_oracle::Bool, session_oracle_nest8 >;
+using T0 = fs::Recv<session_oracle::Bool, session_oracle_nest8>;
 using session_oracle_nest9 = fs::Select<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > > >, fs::End, fs::Select<fs::Send<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > > > > >;
-using T1 = fs::Send<session_oracle::Bool, session_oracle_nest9 >;
+using T1 = fs::Send<session_oracle::Bool, session_oracle_nest9>;
 using session_oracle_nest10 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > > >, fs::End, fs::Offer<fs::Recv<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > > > > >;
-using N0 = fs::Recv<session_oracle::Bool, session_oracle_nest10 >;
+using N0 = fs::Recv<session_oracle::Bool, session_oracle_nest10>;
 using session_oracle_nest11 = fs::Select<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > > >, fs::End, fs::Select<fs::Send<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > > > > >;
-using N1 = fs::Send<session_oracle::Bool, session_oracle_nest11 >;
+using N1 = fs::Send<session_oracle::Bool, session_oracle_nest11>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr11: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr11: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr11: agree");
@@ -435,13 +435,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(1,0,[rec(msg(1,0,nat,msg(1,0,bool,branch(0,1,[var,var])))),msg(0,1,nat,branch(1,0,[branch(0,1,[msg(1,0,nat,msg(1,0,bool,end)),msg(1,0,nat,rec(msg(1,0,nat,var)))]),branch(1,0,[msg(1,0,bool,rec(msg(0,1,nat,end))),msg(0,1,nat,end)]),msg(0,1,bool,branch(1,0,[msg(0,1,bool,end),msg(1,0,bool,end),msg(1,0,nat,end)]))]))])
 namespace c_fr27 {
 using session_oracle_nest12 = fs::Send<session_oracle::Nat, fs::Offer<fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > >, fs::Offer<fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > > > >;
-using T0 = fs::Offer<fs::Loop<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Select<fs::Continue, fs::Continue> > > >, session_oracle_nest12 >;
+using T0 = fs::Offer<fs::Loop<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Select<fs::Continue, fs::Continue> > > >, session_oracle_nest12>;
 using session_oracle_nest13 = fs::Recv<session_oracle::Nat, fs::Select<fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > >, fs::Select<fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Nat, fs::End> > > > >;
-using T1 = fs::Select<fs::Loop<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Offer<fs::Continue, fs::Continue> > > >, session_oracle_nest13 >;
+using T1 = fs::Select<fs::Loop<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Offer<fs::Continue, fs::Continue> > > >, session_oracle_nest13>;
 using session_oracle_nest14 = fs::Send<session_oracle::Nat, fs::Offer<fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > >, fs::Offer<fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > > > >;
-using N0 = fs::Offer<fs::Loop<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Select<fs::Continue, fs::Continue> > > >, session_oracle_nest14 >;
+using N0 = fs::Offer<fs::Loop<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Select<fs::Continue, fs::Continue> > > >, session_oracle_nest14>;
 using session_oracle_nest15 = fs::Recv<session_oracle::Nat, fs::Select<fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > >, fs::Select<fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Nat, fs::End> > > > >;
-using N1 = fs::Select<fs::Loop<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Offer<fs::Continue, fs::Continue> > > >, session_oracle_nest15 >;
+using N1 = fs::Select<fs::Loop<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Offer<fs::Continue, fs::Continue> > > >, session_oracle_nest15>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr27: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr27: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr27: agree");
@@ -705,13 +705,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(1,0,nat,msg(1,0,nat,branch(1,0,[msg(0,1,bool,branch(1,0,[rec(msg(0,1,bool,end)),msg(1,0,bool,end),rec(msg(0,1,nat,var))])),rec(msg(0,1,nat,end)),branch(0,1,[end,branch(1,0,[rec(msg(1,0,bool,var)),msg(0,1,bool,end),msg(0,1,bool,end)]),msg(1,0,nat,msg(0,1,nat,end))])])))
 namespace c_fr47 {
 using session_oracle_nest16 = fs::Recv<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool, fs::Offer<fs::Loop<fs::Send<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Bool, fs::End>, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > >, fs::Loop<fs::Send<session_oracle::Nat, fs::End> >, fs::Select<fs::End, fs::Offer<fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> >, fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >;
-using T0 = fs::Recv<session_oracle::Nat, session_oracle_nest16 >;
+using T0 = fs::Recv<session_oracle::Nat, session_oracle_nest16>;
 using session_oracle_nest17 = fs::Send<session_oracle::Nat, fs::Select<fs::Recv<session_oracle::Bool, fs::Select<fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Bool, fs::End>, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > >, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> >, fs::Offer<fs::End, fs::Select<fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> >, fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >;
-using T1 = fs::Send<session_oracle::Nat, session_oracle_nest17 >;
+using T1 = fs::Send<session_oracle::Nat, session_oracle_nest17>;
 using session_oracle_nest18 = fs::Recv<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool, fs::Offer<fs::Loop<fs::Send<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Bool, fs::End>, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > >, fs::Loop<fs::Send<session_oracle::Nat, fs::End> >, fs::Select<fs::End, fs::Offer<fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> >, fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >;
-using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest18 >;
+using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest18>;
 using session_oracle_nest19 = fs::Send<session_oracle::Nat, fs::Select<fs::Recv<session_oracle::Bool, fs::Select<fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Bool, fs::End>, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > >, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> >, fs::Offer<fs::End, fs::Select<fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> >, fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >;
-using N1 = fs::Send<session_oracle::Nat, session_oracle_nest19 >;
+using N1 = fs::Send<session_oracle::Nat, session_oracle_nest19>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr47: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr47: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr47: agree");
@@ -723,13 +723,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(1,0,bool,branch(1,0,[msg(1,0,nat,rec(branch(1,0,[msg(0,1,bool,end),msg(0,1,bool,var)]))),branch(1,0,[msg(1,0,bool,msg(0,1,bool,msg(1,0,nat,end))),msg(1,0,nat,end),msg(1,0,bool,msg(0,1,nat,rec(msg(1,0,nat,var))))])]))
 namespace c_fr48 {
 using session_oracle_nest20 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Loop<fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Bool, fs::Continue> > > >, fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > > > >;
-using T0 = fs::Recv<session_oracle::Bool, session_oracle_nest20 >;
+using T0 = fs::Recv<session_oracle::Bool, session_oracle_nest20>;
 using session_oracle_nest21 = fs::Select<fs::Send<session_oracle::Nat, fs::Loop<fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Bool, fs::Continue> > > >, fs::Select<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > > > >;
-using T1 = fs::Send<session_oracle::Bool, session_oracle_nest21 >;
+using T1 = fs::Send<session_oracle::Bool, session_oracle_nest21>;
 using session_oracle_nest22 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Loop<fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Bool, fs::Continue> > > >, fs::Offer<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > > > >;
-using N0 = fs::Recv<session_oracle::Bool, session_oracle_nest22 >;
+using N0 = fs::Recv<session_oracle::Bool, session_oracle_nest22>;
 using session_oracle_nest23 = fs::Select<fs::Send<session_oracle::Nat, fs::Loop<fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Bool, fs::Continue> > > >, fs::Select<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > > > >;
-using N1 = fs::Send<session_oracle::Bool, session_oracle_nest23 >;
+using N1 = fs::Send<session_oracle::Bool, session_oracle_nest23>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr48: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr48: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr48: agree");
@@ -1473,13 +1473,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(0,1,bool,branch(1,0,[msg(1,0,bool,msg(1,0,bool,branch(0,1,[rec(msg(1,0,bool,var)),rec(msg(0,1,nat,end)),msg(0,1,nat,end)]))),end,msg(0,1,nat,rec(msg(0,1,nat,end)))]))
 namespace c_fr102 {
 using session_oracle_nest28 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Select<fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> >, fs::Loop<fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Nat, fs::End> > > >, fs::End, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > > >;
-using T0 = fs::Send<session_oracle::Bool, session_oracle_nest28 >;
+using T0 = fs::Send<session_oracle::Bool, session_oracle_nest28>;
 using session_oracle_nest29 = fs::Select<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Offer<fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> >, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::End, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > > >;
-using T1 = fs::Recv<session_oracle::Bool, session_oracle_nest29 >;
+using T1 = fs::Recv<session_oracle::Bool, session_oracle_nest29>;
 using session_oracle_nest30 = fs::Offer<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Select<fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> >, fs::Loop<fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Nat, fs::End> > > >, fs::End, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::End> > > >;
-using N0 = fs::Send<session_oracle::Bool, session_oracle_nest30 >;
+using N0 = fs::Send<session_oracle::Bool, session_oracle_nest30>;
 using session_oracle_nest31 = fs::Select<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Offer<fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> >, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::End, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::End> > > >;
-using N1 = fs::Recv<session_oracle::Bool, session_oracle_nest31 >;
+using N1 = fs::Recv<session_oracle::Bool, session_oracle_nest31>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr102: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr102: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr102: agree");
@@ -1631,13 +1631,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(1,0,nat,branch(0,1,[branch(0,1,[rec(msg(1,0,bool,end)),branch(0,1,[msg(0,1,nat,end),msg(1,0,bool,msg(0,1,nat,end))])]),msg(1,0,bool,branch(1,0,[branch(0,1,[rec(msg(1,0,nat,end)),rec(msg(1,0,bool,var))]),msg(0,1,nat,msg(1,0,bool,end))]))]))
 namespace c_fr113 {
 using session_oracle_nest32 = fs::Select<fs::Select<fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > >, fs::Recv<session_oracle::Bool, fs::Offer<fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::End> >, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using T0 = fs::Recv<session_oracle::Nat, session_oracle_nest32 >;
+using T0 = fs::Recv<session_oracle::Nat, session_oracle_nest32>;
 using session_oracle_nest33 = fs::Offer<fs::Offer<fs::Loop<fs::Send<session_oracle::Bool, fs::End> >, fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::Send<session_oracle::Bool, fs::Select<fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::End> >, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > > >;
-using T1 = fs::Send<session_oracle::Nat, session_oracle_nest33 >;
+using T1 = fs::Send<session_oracle::Nat, session_oracle_nest33>;
 using session_oracle_nest34 = fs::Select<fs::Select<fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > >, fs::Recv<session_oracle::Bool, fs::Offer<fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::End> >, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest34 >;
+using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest34>;
 using session_oracle_nest35 = fs::Offer<fs::Offer<fs::Loop<fs::Send<session_oracle::Bool, fs::End> >, fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::Send<session_oracle::Bool, fs::Select<fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::End> >, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > > >;
-using N1 = fs::Send<session_oracle::Nat, session_oracle_nest35 >;
+using N1 = fs::Send<session_oracle::Nat, session_oracle_nest35>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr113: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr113: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr113: agree");
@@ -1943,13 +1943,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(1,0,[msg(1,0,nat,msg(0,1,nat,msg(1,0,nat,msg(0,1,bool,end)))),branch(1,0,[msg(1,0,nat,msg(1,0,nat,msg(0,1,nat,msg(0,1,nat,end)))),end,msg(1,0,bool,branch(1,0,[msg(0,1,nat,rec(msg(0,1,bool,end))),rec(msg(0,1,bool,end))]))])])
 namespace c_fr135 {
 using session_oracle_nest36 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > >, fs::End, fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > >, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > > > >;
-using T0 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > >, session_oracle_nest36 >;
+using T0 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > >, session_oracle_nest36>;
 using session_oracle_nest37 = fs::Select<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::End, fs::Send<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > >, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using T1 = fs::Select<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > >, session_oracle_nest37 >;
+using T1 = fs::Select<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > >, session_oracle_nest37>;
 using session_oracle_nest38 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > >, fs::End, fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > >, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > > > >;
-using N0 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > >, session_oracle_nest38 >;
+using N0 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > >, session_oracle_nest38>;
 using session_oracle_nest39 = fs::Select<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::End, fs::Send<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > >, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using N1 = fs::Select<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > >, session_oracle_nest39 >;
+using N1 = fs::Select<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > >, session_oracle_nest39>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr135: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr135: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr135: agree");
@@ -1975,13 +1975,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(1,0,[end,msg(0,1,bool,msg(0,1,nat,msg(0,1,nat,msg(0,1,nat,msg(1,0,nat,end))))),msg(0,1,nat,msg(1,0,bool,msg(1,0,nat,msg(0,1,bool,rec(msg(0,1,bool,var))))))])
 namespace c_fr137 {
 using session_oracle_nest40 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > > > > >;
-using T0 = fs::Offer<fs::End, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest40 >;
+using T0 = fs::Offer<fs::End, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest40>;
 using session_oracle_nest41 = fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > > > > >;
-using T1 = fs::Select<fs::End, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest41 >;
+using T1 = fs::Select<fs::End, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest41>;
 using session_oracle_nest42 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > > > > >;
-using N0 = fs::Offer<fs::End, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest42 >;
+using N0 = fs::Offer<fs::End, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest42>;
 using session_oracle_nest43 = fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > > > > >;
-using N1 = fs::Select<fs::End, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest43 >;
+using N1 = fs::Select<fs::End, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest43>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr137: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr137: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr137: agree");
@@ -2064,16 +2064,16 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 namespace c_fr143 {
 using session_oracle_nest44 = fs::Recv<session_oracle::Nat, fs::Select<fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > >, fs::Offer<fs::End, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Offer<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > > >;
 using session_oracle_nest45 = fs::Recv<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Nat, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Bool, fs::End> > >, fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > > >;
-using T0 = fs::Select<fs::Select<fs::End, fs::Recv<session_oracle::Nat, fs::End> >, session_oracle_nest44, session_oracle_nest45 >;
+using T0 = fs::Select<fs::Select<fs::End, fs::Recv<session_oracle::Nat, fs::End> >, session_oracle_nest44, session_oracle_nest45>;
 using session_oracle_nest46 = fs::Send<session_oracle::Nat, fs::Offer<fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > >, fs::Select<fs::End, fs::Send<session_oracle::Nat, fs::End> > >, fs::Select<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > > >;
 using session_oracle_nest47 = fs::Send<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Loop<fs::Send<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Bool, fs::End> > >, fs::Send<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > > >;
-using T1 = fs::Offer<fs::Offer<fs::End, fs::Send<session_oracle::Nat, fs::End> >, session_oracle_nest46, session_oracle_nest47 >;
+using T1 = fs::Offer<fs::Offer<fs::End, fs::Send<session_oracle::Nat, fs::End> >, session_oracle_nest46, session_oracle_nest47>;
 using session_oracle_nest48 = fs::Recv<session_oracle::Nat, fs::Select<fs::Select<fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Bool, fs::End> > >, fs::Offer<fs::End, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Offer<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> > > > >;
 using session_oracle_nest49 = fs::Recv<session_oracle::Nat, fs::Select<fs::Send<session_oracle::Nat, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Bool, fs::End> > >, fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Nat, fs::End> > >, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> > > > >;
-using N0 = fs::Select<fs::Select<fs::End, fs::Recv<session_oracle::Nat, fs::End> >, session_oracle_nest48, session_oracle_nest49 >;
+using N0 = fs::Select<fs::Select<fs::End, fs::Recv<session_oracle::Nat, fs::End> >, session_oracle_nest48, session_oracle_nest49>;
 using session_oracle_nest50 = fs::Send<session_oracle::Nat, fs::Offer<fs::Offer<fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::End> >, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Bool, fs::End> > >, fs::Select<fs::End, fs::Send<session_oracle::Nat, fs::End> > >, fs::Select<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::End> > > > >;
 using session_oracle_nest51 = fs::Send<session_oracle::Nat, fs::Offer<fs::Recv<session_oracle::Nat, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Loop<fs::Send<session_oracle::Bool, fs::End> >, fs::Send<session_oracle::Bool, fs::End> > >, fs::Send<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > >, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> > > > >;
-using N1 = fs::Offer<fs::Offer<fs::End, fs::Send<session_oracle::Nat, fs::End> >, session_oracle_nest50, session_oracle_nest51 >;
+using N1 = fs::Offer<fs::Offer<fs::End, fs::Send<session_oracle::Nat, fs::End> >, session_oracle_nest50, session_oracle_nest51>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr143: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr143: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr143: agree");
@@ -2099,13 +2099,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(1,0,[msg(0,1,bool,msg(0,1,nat,msg(0,1,bool,msg(1,0,bool,msg(1,0,nat,end))))),branch(0,1,[msg(0,1,nat,rec(branch(1,0,[var,var,msg(0,1,nat,end)]))),branch(0,1,[end,msg(0,1,nat,end)]),msg(1,0,nat,msg(0,1,nat,branch(0,1,[rec(msg(1,0,nat,var)),msg(0,1,bool,end)])))])])
 namespace c_fr145 {
 using session_oracle_nest52 = fs::Select<fs::Send<session_oracle::Nat, fs::Loop<fs::Offer<fs::Continue, fs::Continue, fs::Send<session_oracle::Nat, fs::End> > > >, fs::Select<fs::End, fs::Send<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> >, fs::Send<session_oracle::Bool, fs::End> > > > >;
-using T0 = fs::Offer<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest52 >;
+using T0 = fs::Offer<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest52>;
 using session_oracle_nest53 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Loop<fs::Select<fs::Continue, fs::Continue, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::Offer<fs::End, fs::Recv<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> >, fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using T1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest53 >;
+using T1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest53>;
 using session_oracle_nest54 = fs::Select<fs::Send<session_oracle::Nat, fs::Loop<fs::Offer<fs::Continue, fs::Continue, fs::Send<session_oracle::Nat, fs::End> > > >, fs::Select<fs::End, fs::Send<session_oracle::Nat, fs::End> >, fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Select<fs::Loop<fs::Recv<session_oracle::Nat, fs::Continue> >, fs::Send<session_oracle::Bool, fs::End> > > > >;
-using N0 = fs::Offer<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest54 >;
+using N0 = fs::Offer<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::End> > > > >, session_oracle_nest54>;
 using session_oracle_nest55 = fs::Offer<fs::Recv<session_oracle::Nat, fs::Loop<fs::Select<fs::Continue, fs::Continue, fs::Recv<session_oracle::Nat, fs::End> > > >, fs::Offer<fs::End, fs::Recv<session_oracle::Nat, fs::End> >, fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Offer<fs::Loop<fs::Send<session_oracle::Nat, fs::Continue> >, fs::Recv<session_oracle::Bool, fs::End> > > > >;
-using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest55 >;
+using N1 = fs::Select<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::End> > > > >, session_oracle_nest55>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fr145: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fr145: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fr145: agree");
@@ -2698,9 +2698,9 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(1,0,[rec(var),rec(branch(1,0,[branch(1,0,[branch(0,1,[var,branch(0,1,[msg(0,1,nat,end)])])])]))])
 namespace c_fa34 {
 using session_oracle_nest56 = fs::Loop<fs::Offer<fs::Offer<fs::Select<fs::Continue, fs::Select<fs::Send<session_oracle::Nat, fs::End> > > > > >;
-using N0 = fs::Offer<fs::Loop<fs::Continue>, session_oracle_nest56 >;
+using N0 = fs::Offer<fs::Loop<fs::Continue>, session_oracle_nest56>;
 using session_oracle_nest57 = fs::Loop<fs::Select<fs::Select<fs::Offer<fs::Continue, fs::Offer<fs::Recv<session_oracle::Nat, fs::End> > > > > >;
-using N1 = fs::Select<fs::Loop<fs::Continue>, session_oracle_nest57 >;
+using N1 = fs::Select<fs::Loop<fs::Continue>, session_oracle_nest57>;
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa34: agree");
 }  // namespace c_fa34
 
@@ -2756,9 +2756,9 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(0,1,bool,branch(0,1,[msg(0,1,nat,msg(1,0,bool,branch(0,1,[rec(msg(0,1,bool,rec(var))),msg(0,1,bool,rec(branch(0,1,[var,end])))])))]))
 namespace c_fa40 {
 using session_oracle_nest58 = fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Select<fs::Loop<fs::Send<session_oracle::Bool, fs::Loop<fs::Continue> > >, fs::Send<session_oracle::Bool, fs::Loop<fs::Select<fs::Continue, fs::End> > > > > >;
-using N0 = fs::Send<session_oracle::Bool, fs::Select<session_oracle_nest58 > >;
+using N0 = fs::Send<session_oracle::Bool, fs::Select<session_oracle_nest58> >;
 using session_oracle_nest59 = fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Offer<fs::Loop<fs::Recv<session_oracle::Bool, fs::Loop<fs::Continue> > >, fs::Recv<session_oracle::Bool, fs::Loop<fs::Offer<fs::Continue, fs::End> > > > > >;
-using N1 = fs::Recv<session_oracle::Bool, fs::Offer<session_oracle_nest59 > >;
+using N1 = fs::Recv<session_oracle::Bool, fs::Offer<session_oracle_nest59> >;
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa40: agree");
 }  // namespace c_fa40
 
@@ -2978,16 +2978,16 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 namespace c_fa57 {
 using session_oracle_nest62 = fs::Offer<fs::Continue, fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Continue> > > > > >;
 using session_oracle_nest63 = fs::Loop<fs::Select<fs::Offer<fs::Loop<fs::Offer<fs::Recv<session_oracle::Bool, fs::End>, fs::Select<fs::End, fs::Continue, fs::Continue> > > > > >;
-using T0 = fs::Select<fs::Loop<session_oracle_nest62 >, fs::Recv<session_oracle::Nat, session_oracle_nest63 > >;
+using T0 = fs::Select<fs::Loop<session_oracle_nest62>, fs::Recv<session_oracle::Nat, session_oracle_nest63> >;
 using session_oracle_nest64 = fs::Select<fs::Continue, fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Continue> > > > > >;
 using session_oracle_nest65 = fs::Loop<fs::Offer<fs::Select<fs::Loop<fs::Select<fs::Send<session_oracle::Bool, fs::End>, fs::Offer<fs::End, fs::Continue, fs::Continue> > > > > >;
-using T1 = fs::Offer<fs::Loop<session_oracle_nest64 >, fs::Send<session_oracle::Nat, session_oracle_nest65 > >;
+using T1 = fs::Offer<fs::Loop<session_oracle_nest64>, fs::Send<session_oracle::Nat, session_oracle_nest65> >;
 using session_oracle_nest66 = fs::Offer<fs::Continue, fs::Recv<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Send<session_oracle::Nat, fs::Continue> > > > > >;
 using session_oracle_nest67 = fs::Loop<fs::Select<fs::Offer<fs::Loop<fs::Offer<fs::Recv<session_oracle::Bool, fs::End>, fs::Select<fs::End, fs::Continue, fs::Continue> > > > > >;
-using N0 = fs::Select<fs::Loop<session_oracle_nest66 >, fs::Recv<session_oracle::Nat, session_oracle_nest67 > >;
+using N0 = fs::Select<fs::Loop<session_oracle_nest66>, fs::Recv<session_oracle::Nat, session_oracle_nest67> >;
 using session_oracle_nest68 = fs::Select<fs::Continue, fs::Send<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Nat, fs::Continue> > > > > >;
 using session_oracle_nest69 = fs::Loop<fs::Offer<fs::Select<fs::Loop<fs::Select<fs::Send<session_oracle::Bool, fs::End>, fs::Offer<fs::End, fs::Continue, fs::Continue> > > > > >;
-using N1 = fs::Offer<fs::Loop<session_oracle_nest68 >, fs::Send<session_oracle::Nat, session_oracle_nest69 > >;
+using N1 = fs::Offer<fs::Loop<session_oracle_nest68>, fs::Send<session_oracle::Nat, session_oracle_nest69> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa57: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa57: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa57: agree");
@@ -3175,9 +3175,9 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(0,1,[rec(var),msg(0,1,nat,msg(1,0,bool,msg(1,0,bool,branch(0,1,[end,msg(0,1,bool,branch(1,0,[branch(1,0,[end])]))]))))])
 namespace c_fa70 {
 using session_oracle_nest78 = fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Select<fs::End, fs::Send<session_oracle::Bool, fs::Offer<fs::Offer<fs::End> > > > > >;
-using N0 = fs::Select<fs::Loop<fs::Continue>, fs::Send<session_oracle::Nat, session_oracle_nest78 > >;
+using N0 = fs::Select<fs::Loop<fs::Continue>, fs::Send<session_oracle::Nat, session_oracle_nest78> >;
 using session_oracle_nest79 = fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Offer<fs::End, fs::Recv<session_oracle::Bool, fs::Select<fs::Select<fs::End> > > > > >;
-using N1 = fs::Offer<fs::Loop<fs::Continue>, fs::Recv<session_oracle::Nat, session_oracle_nest79 > >;
+using N1 = fs::Offer<fs::Loop<fs::Continue>, fs::Recv<session_oracle::Nat, session_oracle_nest79> >;
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa70: agree");
 }  // namespace c_fa70
 
@@ -3282,9 +3282,9 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(1,0,nat,msg(0,1,nat,msg(0,1,nat,rec(msg(0,1,nat,rec(rec(var)))))))
 namespace c_fa78 {
 using session_oracle_nest80 = fs::Send<session_oracle::Nat, fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Loop<fs::Loop<fs::Continue> > > > > >;
-using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest80 >;
+using N0 = fs::Recv<session_oracle::Nat, session_oracle_nest80>;
 using session_oracle_nest81 = fs::Recv<session_oracle::Nat, fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Loop<fs::Loop<fs::Continue> > > > > >;
-using N1 = fs::Send<session_oracle::Nat, session_oracle_nest81 >;
+using N1 = fs::Send<session_oracle::Nat, session_oracle_nest81>;
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa78: agree");
 }  // namespace c_fa78
 
@@ -3519,13 +3519,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(0,1,nat,rec(msg(0,1,nat,rec(msg(0,1,nat,msg(1,0,bool,rec(msg(1,0,bool,var))))))))
 namespace c_fa96 {
 using session_oracle_nest86 = fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > > > > >;
-using T0 = fs::Send<session_oracle::Nat, fs::Loop<session_oracle_nest86 > >;
+using T0 = fs::Send<session_oracle::Nat, fs::Loop<session_oracle_nest86> >;
 using session_oracle_nest87 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > > > > >;
-using T1 = fs::Recv<session_oracle::Nat, fs::Loop<session_oracle_nest87 > >;
+using T1 = fs::Recv<session_oracle::Nat, fs::Loop<session_oracle_nest87> >;
 using session_oracle_nest88 = fs::Send<session_oracle::Nat, fs::Loop<fs::Send<session_oracle::Nat, fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> > > > > >;
-using N0 = fs::Send<session_oracle::Nat, fs::Loop<session_oracle_nest88 > >;
+using N0 = fs::Send<session_oracle::Nat, fs::Loop<session_oracle_nest88> >;
 using session_oracle_nest89 = fs::Recv<session_oracle::Nat, fs::Loop<fs::Recv<session_oracle::Nat, fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> > > > > >;
-using N1 = fs::Recv<session_oracle::Nat, fs::Loop<session_oracle_nest89 > >;
+using N1 = fs::Recv<session_oracle::Nat, fs::Loop<session_oracle_nest89> >;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa96: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa96: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa96: agree");
@@ -3607,13 +3607,13 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(1,0,[branch(0,1,[rec(msg(0,1,bool,msg(1,0,bool,branch(0,1,[msg(0,1,nat,end),msg(1,0,nat,end)])))),msg(1,0,bool,rec(msg(1,0,nat,rec(rec(end)))))])])
 namespace c_fa103 {
 using session_oracle_nest90 = fs::Select<fs::Loop<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > > > >, fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::Loop<fs::Loop<fs::End> > > > > >;
-using T0 = fs::Offer<session_oracle_nest90 >;
+using T0 = fs::Offer<session_oracle_nest90>;
 using session_oracle_nest91 = fs::Offer<fs::Loop<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Nat, fs::End> > > > >, fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::Loop<fs::Loop<fs::End> > > > > >;
-using T1 = fs::Select<session_oracle_nest91 >;
+using T1 = fs::Select<session_oracle_nest91>;
 using session_oracle_nest92 = fs::Select<fs::Loop<fs::Send<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Select<fs::Send<session_oracle::Nat, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > > > >, fs::Recv<session_oracle::Bool, fs::Loop<fs::Recv<session_oracle::Nat, fs::Loop<fs::Loop<fs::End> > > > > >;
-using N0 = fs::Offer<session_oracle_nest92 >;
+using N0 = fs::Offer<session_oracle_nest92>;
 using session_oracle_nest93 = fs::Offer<fs::Loop<fs::Recv<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Offer<fs::Recv<session_oracle::Nat, fs::End>, fs::Send<session_oracle::Nat, fs::End> > > > >, fs::Send<session_oracle::Bool, fs::Loop<fs::Send<session_oracle::Nat, fs::Loop<fs::Loop<fs::End> > > > > >;
-using N1 = fs::Select<session_oracle_nest93 >;
+using N1 = fs::Select<session_oracle_nest93>;
 static_assert(std::is_same_v<fs::dual_of_t<T0>, T1>, "session_oracle fixy.dual case fa103: agree");
 static_assert(fs::is_dual_v<T0, T1> == true, "session_oracle fixy.is_dual case fa103: agree");
 static_assert(std::is_same_v<fs::dual_of_t<fs::dual_of_t<T0> >, T0> == true, "session_oracle fixy.involution case fa103: agree");
@@ -3702,9 +3702,9 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // msg(0,1,nat,rec(branch(0,1,[msg(1,0,nat,rec(branch(0,1,[msg(0,1,nat,branch(1,0,[])),rec(msg(0,1,bool,var)),var]))),rec(var)])))
 namespace c_fa110 {
 using session_oracle_nest94 = fs::Select<fs::Recv<session_oracle::Nat, fs::Loop<fs::Select<fs::Send<session_oracle::Nat, fs::Offer<> >, fs::Loop<fs::Send<session_oracle::Bool, fs::Continue> >, fs::Continue> > >, fs::Loop<fs::Continue> >;
-using N0 = fs::Send<session_oracle::Nat, fs::Loop<session_oracle_nest94 > >;
+using N0 = fs::Send<session_oracle::Nat, fs::Loop<session_oracle_nest94> >;
 using session_oracle_nest95 = fs::Offer<fs::Send<session_oracle::Nat, fs::Loop<fs::Offer<fs::Recv<session_oracle::Nat, fs::Select<> >, fs::Loop<fs::Recv<session_oracle::Bool, fs::Continue> >, fs::Continue> > >, fs::Loop<fs::Continue> >;
-using N1 = fs::Recv<session_oracle::Nat, fs::Loop<session_oracle_nest95 > >;
+using N1 = fs::Recv<session_oracle::Nat, fs::Loop<session_oracle_nest95> >;
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa110: agree");
 }  // namespace c_fa110
 
@@ -3781,9 +3781,9 @@ static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_du
 // branch(1,0,[rec(var),msg(1,0,bool,msg(0,1,bool,branch(1,0,[msg(0,1,bool,msg(0,1,bool,branch(1,0,[end,rec(var)]))),branch(0,1,[msg(1,0,bool,branch(1,0,[msg(0,1,bool,end),msg(0,1,nat,end)]))])])))])
 namespace c_fa116 {
 using session_oracle_nest96 = fs::Send<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Bool, fs::Send<session_oracle::Bool, fs::Offer<fs::End, fs::Loop<fs::Continue> > > >, fs::Select<fs::Recv<session_oracle::Bool, fs::Offer<fs::Send<session_oracle::Bool, fs::End>, fs::Send<session_oracle::Nat, fs::End> > > > > >;
-using N0 = fs::Offer<fs::Loop<fs::Continue>, fs::Recv<session_oracle::Bool, session_oracle_nest96 > >;
+using N0 = fs::Offer<fs::Loop<fs::Continue>, fs::Recv<session_oracle::Bool, session_oracle_nest96> >;
 using session_oracle_nest97 = fs::Recv<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Bool, fs::Recv<session_oracle::Bool, fs::Select<fs::End, fs::Loop<fs::Continue> > > >, fs::Offer<fs::Send<session_oracle::Bool, fs::Select<fs::Recv<session_oracle::Bool, fs::End>, fs::Recv<session_oracle::Nat, fs::End> > > > > >;
-using N1 = fs::Select<fs::Loop<fs::Continue>, fs::Send<session_oracle::Bool, session_oracle_nest97 > >;
+using N1 = fs::Select<fs::Loop<fs::Continue>, fs::Send<session_oracle::Bool, session_oracle_nest97> >;
 static_assert((fs::is_well_formed_v<N0> && fs::is_well_formed_v<N1> && fs::is_dual_v<N0, N1>) == false, "session_oracle fixy.accepts case fa116: agree");
 }  // namespace c_fa116
 
