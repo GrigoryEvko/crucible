@@ -630,6 +630,9 @@ struct CheckpointFrame {
     using saved_loop = SavedLoop;
 };
 
+// The door of the checkpoint mint, which stands after the mint.
+class CheckpointDoor;
+
 // A plain handle over the erased protocol, with the original protocol
 // and the checkpoint state in the type.  Commit, Roll and Abort take
 // effect in the same call that exchanges their label, so no handle is
@@ -655,27 +658,20 @@ class [[nodiscard]] CheckpointHandle {
         return CheckpointHandle<Next, typename Resolved::head, typename Resolved::loop, NewFrame>{std::move(next)};
     }
 
-    // The plain handle at the erased protocol of R, with the erased loop
-    // context of the position.  The compliance check proved each position
-    // that this class gets to, and the checkpoint door builds the handle.
-    // The door is after the mint, and this member names it through
-    // detail::late_door_t.
-    template <typename R, typename Loop>
-    [[nodiscard]] static constexpr auto step_plain_(resource_t resource) noexcept {
-        return detail::late_door_t<CheckpointDoor, R>::template step_<
-            checkpoint_erase_t<R>, resource_t, detail::checkpoint::erase_loop_t<Loop>, policy_t>(
-            std::forward<resource_t>(resource));
-    }
-
     // The plain handle that a branch reaches: Commit<K> reaches K, and
-    // Roll and Abort reach End.
+    // Roll and Abort reach End.  It is the handle at the erased protocol
+    // of the branch, with the erased loop context of the position.
     template <typename Branch>
-    using inner_branch_t = decltype(step_plain_<Branch, HeadLoop>(std::declval<resource_t>()));
+    using inner_branch_t = HandleFactory::handle_at<checkpoint_erase_t<Branch>, resource_t,
+                                                    detail::checkpoint::erase_loop_t<HeadLoop>, policy_t>;
 
-    // Rebuilds the plain handle at the checkpoint, or at the start.
-    template <typename Saved, typename SavedLoop>
-    [[nodiscard]] static constexpr auto rebuild_(resource_t resource) noexcept {
-        return step_plain_<Saved, SavedLoop>(std::forward<resource_t>(resource));
+    // Rebuilds the plain handle at the checkpoint, or at the start, from
+    // the handle at End that the Roll or the Abort reached.  The rewind of
+    // fixy/session/Handle.h opens a new session at that position.
+    template <typename Saved, typename SavedLoop, typename AtEnd>
+    [[nodiscard]] static constexpr auto rebuild_(AtEnd at_end) noexcept {
+        return HandleFactory::rewind<checkpoint_erase_t<Saved>, detail::checkpoint::erase_loop_t<SavedLoop>>(
+            std::move(at_end));
     }
 
     // The effect of branch B, given the plain handle it reached.
@@ -684,11 +680,11 @@ class [[nodiscard]] CheckpointHandle {
         if constexpr (std::is_same_v<Branch, Roll>) {
             using Saved = typename Frame::saved;
             using SavedLoop = typename Frame::saved_loop;
-            return wrap_<Saved, SavedLoop, Frame>(rebuild_<Saved, SavedLoop>(std::move(next).close()));
+            return wrap_<Saved, SavedLoop, Frame>(rebuild_<Saved, SavedLoop>(std::move(next)));
         } else if constexpr (std::is_same_v<Branch, Abort>) {
             using Initial = typename Frame::initial;
             using Restart = CheckpointFrame<Initial, Initial, void>;
-            return wrap_<Initial, void, Restart>(rebuild_<Initial, void>(std::move(next).close()));
+            return wrap_<Initial, void, Restart>(rebuild_<Initial, void>(std::move(next)));
         } else if constexpr (is_checkpoint_primitive<Branch>::value) {
             using K = typename Branch::next;
             using Saved = CheckpointFrame<typename Frame::initial, K, HeadLoop>;
@@ -858,20 +854,15 @@ template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = Default
 
 // ── The checkpoint door ──────────────────────────────────────────────
 //
-// The door of the checkpoint mint, and of a checkpoint handle to the
-// handle factory of fixy/session/Handle.h.  Its members are private and
-// static.  The class has two friends:
-//
-//   - mint_checkpoint_session, which does the compliance check of the
-//     pair before it opens the first checkpoint handle,
-//   - CheckpointHandle, which builds a plain handle only at a position
-//     that the compliance check of its session proved.
+// The door of the checkpoint mint.  Its member is private and static.
+// Its friend is mint_checkpoint_session, which does the compliance check
+// of the pair before it opens the first checkpoint handle.  A rollback
+// rebuilds the plain handle through the rewind of fixy/session/Handle.h.
 //
 // The class is final, and no object of it exists.  A friend declaration
 // of a constrained function template must give the same constraint, and
 // it cannot have a default argument.  For this reason, the class is after
-// the mint.  The mint and CheckpointHandle name the class through
-// detail::late_door_t.
+// the mint.  The mint names the class through detail::late_door_t.
 class CheckpointDoor final {
     CheckpointDoor() = delete("the checkpoint door holds static members only, and no object of it exists");
     CheckpointDoor(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
@@ -879,9 +870,6 @@ class CheckpointDoor final {
     CheckpointDoor(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
     CheckpointDoor& operator=(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
     constexpr ~CheckpointDoor() noexcept {}
-
-    template <typename, typename, typename, typename>
-    friend class CheckpointHandle;
 
     template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Resource>
         requires CheckpointSessionAdmissible<Proto, PeerProto> && SessionResource<Resource>
@@ -900,15 +888,6 @@ class CheckpointDoor final {
             mint_session_handle<checkpoint_erase_t<Proto>, Resource, Policy>(std::forward<Resource>(resource), loc);
         return CheckpointHandle<decltype(inner), typename Start::head, typename Start::loop,
                                 CheckpointFrame<Proto, Proto, void>>{std::move(inner)};
-    }
-
-    // The plain handle at protocol R, with the loop context of the
-    // position.  A checkpoint session moves no permission, and the set is
-    // empty.
-    template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy>
-    [[nodiscard]] static constexpr auto step_(Resource resource) noexcept {
-        return HandleFactory::step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
-            std::forward<Resource>(resource));
     }
 };
 

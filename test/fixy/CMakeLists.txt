@@ -1644,50 +1644,79 @@ fixy_test(test_session_projected_value)
 # that can only shrink.
 fixy_test(test_session_handle_attacks)
 
-# Delegation's door moves a live endpoint out of its handle and keeps its
-# watch record live.  The door is defined beside the handle, so a second
-# definition is refused, and only the door builds the value it returns.
+# Delegation moves a live handle into a message and keeps its watch
+# record live.  The keys of the private surfaces have the sealed shape of
+# a passkey.
 fixy_test(test_session_endpoint_transfer)
-fixy_neg_compile_test(neg_sess_endpoint_transfer_redefined
-  "redefinition of .struct fixy::session::detail::endpoint_transfer."
-  "previous definition of .struct fixy::session::detail::endpoint_transfer.")
-fixy_neg_compile_test(neg_sess_transferred_endpoint_forged
-  "is private within this context"
-  "detail::transferred_endpoint<Resource>::transferred_endpoint.Resource, fixy::session::watch::session_ref.")
-fixy_neg_compile_test(neg_sess_endpoint_transfer_take_outside
-  "is private within this context"
-  "fixy::session::detail::endpoint_transfer::take")
 
 # The handle factory builds a handle at a position that its caller names,
-# and the door of the mints opens a session on it.  Their members are
-# private, and each class is final: no scope but a friend calls a member,
-# and no class derives from one to reach a member.
+# and the door of the mints opens a session on it.  The builders are
+# private, each class is final, and the keys befriend only classes that
+# fixy/session/Handle.h defines.  A specialization of a template that
+# stands beside the factory gets no access, and neither does a class that
+# another translation unit defines under the name of a door.  A second
+# definition of a befriended class is a redefinition error.  Each public
+# member of the door of the mints states the whole gate of its mint.
 fixy_neg_compile_test(neg_sess_handle_factory_called_outside
   "is private within this context"
   "fixy::session::HandleFactory::make_")
 fixy_neg_compile_test(neg_sess_handle_factory_derived_look_alike
   "cannot derive from .final. base"
   "HandleFactory")
-fixy_neg_compile_test(neg_sess_mint_door_called_outside
+fixy_neg_compile_test(neg_sess_handle_factory_friend_specialized
   "is private within this context"
-  "fixy::session::SessionMintDoor::open_")
+  "fixy::session::HandleFactory::make_.Resource, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::End>. Resource = neg_sess_handle_factory_friend_specialized_types::Wire")
+fixy_neg_compile_test(neg_sess_handle_base_sibling_specialized
+  "is protected within this context"
+  "fixy::session::SessionHandleBase<Proto, Derived, Policy>::mark_consumed_.. .with Proto = fixy::session::Send<int, fixy::session::End>")
+fixy_neg_compile_test(neg_sess_handle_factory_door_defined_elsewhere
+  "is private within this context"
+  "fixy::session::HandleFactory::make_.Resource, fixy::session::watch::session_ref, std::source_location. .with Proto = fixy::session::Recv<int, fixy::session::Continue>. Resource = neg_sess_handle_factory_door_defined_elsewhere_types::Wire")
+fixy_neg_compile_test(neg_sess_session_open_key_door_defined_elsewhere
+  "is private within this context"
+  "constexpr fixy::session::SessionOpenKey::SessionOpenKey..")
+fixy_neg_compile_test(neg_sess_handle_factory_redefined
+  "redefinition of .class fixy::session::HandleFactory."
+  "previous definition of .class fixy::session::HandleFactory.")
+fixy_neg_compile_test(neg_sess_mint_door_states_the_gate
+  "no matching function for call to .fixy::session::SessionMintDoor::open<fixy::session::Send<int, fixy::session::Continue>, neg_sess_mint_door_states_the_gate_types::Wire"
+  "the expression .is_well_formed_v<Proto> .with Proto = fixy::session::Send<int, fixy::session::Continue>.. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_door_derived_look_alike
   "cannot derive from .final. base"
   "SessionMintDoor")
 
+# A rewind opens a session at a position inside a protocol, for the
+# rollback of fixy/session/Checkpoint.h.  It refuses a position that no
+# mint admits from its start, and a handle at End that a callback entry
+# owns.
+fixy_neg_compile_test(neg_sess_rewind_unresumable
+  "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::Continue, void>"
+  "the expression ..is_resumable_position<R, LoopCtx>... .with R = fixy::session::Continue. LoopCtx = void.. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_rewind_branded
+  "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::End, void>"
+  "the expression .is_void_v<typename fixy::session::detail::session_brand_of<EndLoopCtx>::type> .with EndLoopCtx = fixy::session::detail::session_brand<neg_sess_rewind_branded_types::Body, void>.. evaluated to .false.")
+
 # Delegate.h: a message that carries a live endpoint.  The test hands an
-# endpoint over a channel and checks the contravariant payload order and
-# the refusal of a hand-off to a peer of the inner session.  Two fixtures
-# for each refusal: no code but the mint builds a DelegatedSession, no
-# protocol hands an endpoint to a peer of its session, and no handle
-# inside a Loop or under a brand delegates.
+# endpoint over a channel, hands an endpoint with the token of its set,
+# and checks the contravariant payload order and the refusal of a
+# hand-off to a peer of the inner session.  Two fixtures for each
+# refusal: no code but the delegation door builds a DelegatedSession, the
+# door states the gate of the mint, the tokens of the set travel with the
+# endpoint, no protocol hands an endpoint to a peer of its session, and no
+# handle inside a Loop or under a brand delegates.
 fixy_test(test_session_delegation)
-fixy_neg_compile_test(neg_sess_delegation_door_called_outside
-  "is private within this context"
-  "fixy::session::DelegationDoor::give_")
+fixy_neg_compile_test(neg_sess_delegation_door_states_the_gate
+  "no matching function for call to .fixy::session::DelegationDoor::give"
+  "mismatched types .void. and .fixy::session::Loop<fixy::session::Send<int, fixy::session::Continue> >.")
 fixy_neg_compile_test(neg_sess_delegated_session_forged
-  "is private within this context"
-  "DelegatedSession<InnerProto, Resource, Policy, InnerPS>::DelegatedSession.endpoint_type&&. .with InnerProto = fixy::session::Send<int, fixy::session::End>. Resource = neg_sess_delegated_session_forged_types::Wire")
+  "no matching function for call to .fixy::session::DelegatedSession<fixy::session::Send<int, fixy::session::End>, neg_sess_delegated_session_forged_types::Wire"
+  "DelegatedSession.const fixy::session::DelegationKey&, handle_type&&, hold_type&&.")
+fixy_neg_compile_test(neg_sess_delegation_without_hold
+  "no matching function for call to .mint_delegated_session"
+  "the expression .perm_set_is_empty_v<typename H::perm_set> .with H = fixy::session::SessionHandle<fixy::session::Send<fixy::session::Transferable<int, neg_sess_delegation_without_hold_types::Region>")
+fixy_neg_compile_test(neg_sess_delegation_foreign_hold
+  "no matching function for call to .mint_delegated_session"
+  "required for the satisfaction of .HoldsTokensOf<Hold, H>. .with Hold = fixy::session::PermHold<foundation::permissions::PermSet<neg_sess_delegation_foreign_hold_types::Other> >")
 fixy_neg_compile_test(neg_sess_delegated_session_forged_by_bit_cast
   "no matching function for call to .bit_cast<neg_sess_delegated_session_forged_by_bit_cast_types::Carried>"
   "is_trivially_copyable_v<_To>")
@@ -2457,17 +2486,14 @@ fixy_neg_compile_test(neg_sess_checkpoint_delegation_owned_handle
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<std::unique_ptr<fixy::session::SessionHandle<")
 
-# The checkpoint door opens the first checkpoint handle, and it builds a
-# plain handle at a position that a checkpoint handle names.  Its members
-# are private, and the class is final.  Only the mint and a checkpoint
-# handle call a member, and no class can use the door as a base to get
-# access to one.
+# The checkpoint door opens the first checkpoint handle.  Its member is
+# private, and the class is final.  Only the mint calls the member, and no
+# class can use the door as a base to get access to it.  A rollback
+# rebuilds the plain handle through the rewind of fixy/session/Handle.h,
+# and the fixtures of the rewind stand beside the handle factory.
 fixy_neg_compile_test(neg_sess_checkpoint_door_called_outside
   "is private within this context"
   "fixy::session::CheckpointDoor::open_")
-fixy_neg_compile_test(neg_sess_checkpoint_door_step_outside
-  "is private within this context"
-  "fixy::session::CheckpointDoor::step_")
 fixy_neg_compile_test(neg_sess_checkpoint_door_derived_look_alike
   "cannot derive from .final. base"
   "CheckpointDoor")

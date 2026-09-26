@@ -4,7 +4,7 @@
 // fixy::session::SessionHandle<fixy::session::End, int*> attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
-// refusal must read "is private within this context".
+// refusal must read "no matching function for call".
 //
 // The second required diagnostic is the constructor as the compiler
 // renders it, with parentheses.  The source spells it with braces, so
@@ -25,6 +25,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::SessionHandle<fixy::session::End, int*>{forge::rvalue<int*>()};
+    [[maybe_unused]] auto forged = fixy::session::SessionHandle<fixy::session::End, int*>{forge::rvalue<int*>(), forge::lvalue<fixy::session::watch::session_ref>(), forge::lvalue<std::source_location>()};
     return 0;
 }

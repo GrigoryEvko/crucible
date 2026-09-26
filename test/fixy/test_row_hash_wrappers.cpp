@@ -1148,12 +1148,17 @@ inline constexpr StatedZero kZeros[] = {
      "and it is never a value"},
     {^^::fixy::session::DelegationDoor,
      "the door of the delegation mint: it has static members only, no object of it exists, and it is never a value"},
-    {^^::fixy::session::AsyncChannelDoor,
-     "the door of the asynchronous channel mint: it has static members only, no object of it exists, and it is "
-     "never a value"},
     {^^::fixy::session::CheckpointDoor,
-     "the door of the checkpoint mint, and of a checkpoint handle to the handle factory: it has static members "
-     "only, no object of it exists, and it is never a value"},
+     "the door of the checkpoint mint: it has static members only, no object of it exists, and it is never a value"},
+    {^^::fixy::session::HandleKey,
+     "the passkey of every handle constructor: only the handle factory makes one, for one call, and it is never "
+     "stored or a template argument of a kernel signature"},
+    {^^::fixy::session::SessionOpenKey,
+     "the passkey of the builders that open a session: only the door of the mints makes one, for one call, and it "
+     "is never stored or a template argument of a kernel signature"},
+    {^^::fixy::session::DelegationKey,
+     "the passkey of the DelegatedSession constructor: only the delegation door makes one, for one call, and it is "
+     "never stored or a template argument of a kernel signature"},
     {^^::fixy::session::SharedReader,
      "a reader's share of a pool that a message carries: it is the payload of a Send or a Recv, and the handle "
      "that steps through the protocol folds it"},

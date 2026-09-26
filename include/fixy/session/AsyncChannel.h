@@ -28,7 +28,9 @@
 //
 // The rest of the mint is the fork shape of mint_forked_channel: each
 // side runs on its own thread with its own endpoint, and each body
-// returns its endpoint at End.
+// returns its endpoint at End.  The mint reaches the fork through
+// SessionMintDoor::fork_channel of fixy/session/Handle.h, whose gate
+// admits the relation of this mint (ForkedSidesAgree).
 
 #include <fixy/session/Handle.h>
 #include <fixy/session/Subtype.h>
@@ -89,50 +91,9 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
 mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                           ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,
                           PeerBody peer_body, std::source_location loc = std::source_location::current()) noexcept {
-    return detail::late_door_t<AsyncChannelDoor, SelfProto>::template fork_<SelfProto, PeerProto, SelfTag, PeerTag,
-                                                                            Policy>(
+    return SessionMintDoor::fork_channel<SelfProto, PeerProto, SelfTag, PeerTag, Policy>(
         ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
         std::move(self_body), std::move(peer_body), loc);
 }
-
-// The door of mint_forked_async_channel to the fork of fixy/session/
-// Handle.h.  Its member is private and static, its only friend is the
-// mint, and the member states the gate of the mint again.  The class is
-// final, and no object of it exists.
-class AsyncChannelDoor final {
-    AsyncChannelDoor() = delete("the channel door holds static members only; no object of it exists");
-    AsyncChannelDoor(const AsyncChannelDoor&) = delete("the channel door holds static members only");
-    AsyncChannelDoor& operator=(const AsyncChannelDoor&) = delete("the channel door holds static members only");
-    AsyncChannelDoor(AsyncChannelDoor&&) = delete("the channel door holds static members only");
-    AsyncChannelDoor& operator=(AsyncChannelDoor&&) = delete("the channel door holds static members only");
-    constexpr ~AsyncChannelDoor() noexcept {}
-
-    template <typename SelfProto, typename PeerProto, typename SelfTag, typename PeerTag, AbandonmentPolicy Policy,
-              typename Ctx, typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer,
-              typename SelfBody, typename PeerBody>
-        requires CtxFitsAsyncForkedChannel<Ctx, SelfProto, PeerProto, Parent, SelfTag, PeerTag, ResourceSelf,
-                                           ResourcePeer>
-              && SessionResource<ResourceSelf> && SessionResource<ResourcePeer>
-              && ChannelEndsShareAPriority<ResourceSelf, ResourcePeer>
-              && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
-              && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>
-    friend ::foundation::permissions::Permission<Parent, Brand>
-    mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
-                              ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,
-                              PeerBody peer_body, std::source_location loc) noexcept;
-
-    template <typename SelfProto, typename PeerProto, typename SelfTag, typename PeerTag, AbandonmentPolicy Policy,
-              typename Ctx, typename Parent, typename Brand, typename ResourceSelf, typename ResourcePeer,
-              typename SelfBody, typename PeerBody>
-        requires CtxFitsAsyncForkedChannel<Ctx, SelfProto, PeerProto, Parent, SelfTag, PeerTag, ResourceSelf,
-                                           ResourcePeer>
-    [[nodiscard]] static ::foundation::permissions::Permission<Parent, Brand>
-    fork_(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent, ResourceSelf self_resource,
-          ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body, std::source_location loc) noexcept {
-        return SessionMintDoor::fork_channel_<SelfProto, PeerProto, SelfTag, PeerTag, Policy>(
-            ctx, std::move(parent), std::forward<ResourceSelf>(self_resource),
-            std::forward<ResourcePeer>(peer_resource), std::move(self_body), std::move(peer_body), loc);
-    }
-};
 
 }  // namespace fixy::session

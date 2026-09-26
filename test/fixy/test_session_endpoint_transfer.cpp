@@ -1,13 +1,14 @@
-// The door that delegation uses to move a live endpoint into a message.
+// The move of a live endpoint into a message.
 //
-// mint_delegated_session moves the Resource and the watch record out of a
-// live handle through endpoint_transfer.  The handle is then consumed, so
-// its destructor reports no dropped protocol.  The record stays live,
-// because the session continues at the receiver.  The test accepts the
-// delegated endpoint, walks the handle to End, and checks that End
-// releases the record.  A consumed handle aborts at the door, as at every
-// operation, and a child process proves it.  No scope other than the door
-// of the mint reaches endpoint_transfer or the handle factory.
+// mint_delegated_session moves a live handle into a DelegatedSession,
+// with the hold of the tokens that back its permission set.  The handle
+// that the sender held is moved from, so its destructor reports no
+// dropped protocol.  The record of the session stays live, because the
+// session continues at the receiver.  The test accepts the delegated
+// endpoint, walks the handle to End, and checks that End releases the
+// record.  A consumed handle aborts at the door, as at every operation,
+// and a child process proves it.  Each key of a private surface has the
+// sealed shape of a passkey, so only its one door makes it.
 
 #include <fixy/session/Delegate.h>
 
@@ -22,7 +23,6 @@
 namespace {
 
 namespace s = ::fixy::session;
-namespace sd = ::fixy::session::detail;
 
 struct Ping {
     int value = 0;
@@ -40,30 +40,30 @@ using Handle = decltype(s::mint_session_handle<Proto, Wire>(Wire{}));
     return 1;
 }
 
-// The door returns a value that moves only, and only the door builds it.
-static_assert(!std::is_copy_constructible_v<sd::transferred_endpoint<Wire>>);
-static_assert(std::is_move_constructible_v<sd::transferred_endpoint<Wire>>);
-static_assert(!std::is_constructible_v<sd::transferred_endpoint<Wire>, Wire, s::watch::session_ref>);
+// Each key is final, has no public constructor, no copy and no move, and
+// is neither trivially copyable nor an implicit-lifetime type.
+template <typename Key>
+constexpr bool is_sealed_key = std::is_final_v<Key> && !std::is_default_constructible_v<Key>
+                            && !std::is_copy_constructible_v<Key> && !std::is_move_constructible_v<Key>
+                            && !std::is_trivially_copyable_v<Key> && !std::is_implicit_lifetime_v<Key>;
+static_assert(is_sealed_key<s::HandleKey> && is_sealed_key<s::SessionOpenKey> && is_sealed_key<s::DelegationKey>);
 
-// The door and the factory are private to their friends.
-template <typename H>
-concept TakesAnEndpoint = requires(H&& handle) { sd::endpoint_transfer::take(std::move(handle)); };
+// A handle, its core and a DelegatedSession take a key, so no expression
+// without one builds them.
+static_assert(!std::is_constructible_v<Handle, Wire, s::watch::session_ref, std::source_location>);
+static_assert(!std::is_constructible_v<s::DelegatedSession<Proto, Wire, s::DefaultAbandonmentPolicy,
+                                                           ::foundation::permissions::EmptyPermSet>,
+                                       Handle, s::PermHold<::foundation::permissions::EmptyPermSet>>);
+
+// The builders of the factory are private.
 template <typename R>
 concept BuildsAHandle = requires(R&& resource) {
     s::HandleFactory::make_<Proto, R, void, s::DefaultAbandonmentPolicy>(std::move(resource));
 };
-template <typename R>
-concept OpensASession = requires(R&& resource) {
-    s::SessionMintDoor::open_<Proto, R, s::DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>(
-        std::move(resource), std::source_location{});
-};
-static_assert(!TakesAnEndpoint<Handle>);
 static_assert(!BuildsAHandle<Wire>);
-static_assert(!OpensASession<Wire>);
 static_assert(!std::is_default_constructible_v<s::HandleFactory> && !std::is_trivially_copyable_v<s::HandleFactory>);
 static_assert(!std::is_default_constructible_v<s::SessionMintDoor> && std::is_final_v<s::SessionMintDoor>);
 static_assert(!std::is_default_constructible_v<s::DelegationDoor> && std::is_final_v<s::DelegationDoor>);
-static_assert(!std::is_default_constructible_v<sd::endpoint_transfer> && std::is_final_v<sd::endpoint_transfer>);
 
 int transfer_keeps_the_record_live() {
     const std::uint32_t live_before = s::watch::live_count();

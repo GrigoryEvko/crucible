@@ -194,9 +194,49 @@ static_assert(s::payload_conveys_delegation_v<Carried>);
     return 0;
 }
 
+// ── The tokens travel with the endpoint ──────────────────────────────
+//
+// An endpoint whose permission set holds a tag is delegated with the hold
+// of the token of that tag.  The sender keeps no token, and the recipient
+// gets the token with the handle that claims its region.
+struct Region {
+    using permission_row = eff::Row<>;
+};
+using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
+
+template <typename H>
+concept DelegatesWithoutItsHold = requires(H handle) { s::mint_delegated_session(std::move(handle)); };
+template <typename H, typename Hold>
+concept DelegatesWithHold = requires(H handle, Hold hold) { s::mint_delegated_session(std::move(handle), std::move(hold)); };
+
+[[nodiscard]] static int tokens_travel_with_the_endpoint() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto [handle, hold] = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
+    using H = decltype(handle);
+    static_assert(!DelegatesWithoutItsHold<H>, "a handle whose set holds a tag travels with the hold of its token");
+    static_assert(!DelegatesWithHold<H, s::PermHold<fp::EmptyPermSet>>, "a hold of another set backs no tag of the handle");
+    static_assert(DelegatesWithHold<H, decltype(hold)>);
+
+    auto parcel = s::mint_delegated_session(std::move(handle), std::move(hold));
+    static_assert(std::is_same_v<typename decltype(parcel)::inner_perm_set, fp::PermSet<Region>>);
+    auto [received, received_hold] = std::move(parcel).accept();
+    static_assert(std::is_same_v<typename decltype(received)::perm_set, fp::PermSet<Region>>);
+    auto [message, rest] = std::move(received_hold).template pack<Region>(9);
+    static_assert(std::is_same_v<decltype(rest), s::PermHold<fp::EmptyPermSet>>);
+    auto at_end = std::move(received).send(std::move(message),
+                                           [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
+                                               wire.sent = sent.value;
+                                               return true;
+                                           });
+    const Wire back = std::move(at_end).close();
+    if (back.sent != 9) return fail("the recipient did not send with the token that came with the endpoint");
+    return 0;
+}
+
 }  // namespace test_session_delegation_types
 
 int main() {
     if (const int rc = test_session_delegation_types::delegate_over_a_channel(); rc != 0) return rc;
+    if (const int rc = test_session_delegation_types::tokens_travel_with_the_endpoint(); rc != 0) return rc;
     return 0;
 }

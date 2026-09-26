@@ -4,7 +4,7 @@
 // fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet> attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
-// refusal must read "is private within this context".
+// refusal must read "no matching function for call".
 //
 // The second required diagnostic is the constructor as the compiler
 // renders it, with parentheses.  The source spells it with braces, so
@@ -25,6 +25,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>{forge::rvalue<fixy::session::detail::transferred_endpoint<int>>()};
+    [[maybe_unused]] auto forged = fixy::session::DelegatedSession<fixy::session::End, int, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int, void, fixy::session::check::Enforced, foundation::permissions::EmptyPermSet>>(), forge::rvalue<fixy::session::PermHold<foundation::permissions::EmptyPermSet>>()};
     return 0;
 }
