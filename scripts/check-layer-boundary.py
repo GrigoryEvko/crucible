@@ -28,14 +28,17 @@ WHAT COUNTS AS NAMING A ROOT
         the root.
       * A using-directive and a namespace alias whose target is a root,
         because after them a name reaches the root with no qualifier.
-    A comment and a string literal name nothing.
+    Each name comes from the name nodes of the parse, so a comment inside
+    a qualified name does not hide its first segment.  A comment and a
+    string literal name nothing.
 
 WHAT THE PARSER CANNOT READ
-    A macro body is raw text.  The guard blanks its comments and literals
-    with scripts/cxx_lex.py and reports each whole word that is a root
-    above the layer, because a macro can paste that word into a name.  A
-    file in tsast.UNPARSEABLE gets the same scan over its whole text.  A
-    parse error in any other file is a violation.
+    A macro can paste a word into a name, so the guard reads the
+    preprocessing tokens of each macro body and reports each identifier that
+    is a root above the layer.  A parameter of the macro names nothing of
+    the program, so it does not count.  A lower layer must parse clean: a
+    parse error in a file of the two lower layers is a violation, and the
+    UNPARSEABLE roster admits no file there.
 
 There is no allowlist.  A file that needs a name from a higher layer is in
 the wrong layer.
@@ -50,16 +53,14 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 # The layer of each lower-layer directory, and the roots that layer may name.
 LAYERS: tuple[tuple[str, str], ...] = (
@@ -71,7 +72,6 @@ ALLOWED: dict[str, frozenset[str]] = {
     "fixy": frozenset({"foundation", "fixy"}),
     "crucible": frozenset(),
 }
-CPP_SUFFIXES = (".h", ".hpp", ".cpp", ".cc", ".inl", ".ipp", ".tpp", ".cxx", ".hxx")
 PROSE_SUFFIXES = (".md", ".txt")
 
 
@@ -97,7 +97,11 @@ def layer_of(rel: str) -> str:
 
 
 def scope_files(root: Path) -> tuple[list[Path], list[str]]:
-    """Return the C++ files of the two lower layers, sorted, and each file of an unknown kind there."""
+    """Return the C++ files of the two lower layers, sorted, and each file of an unknown kind there.
+
+    A C++ file is one whose suffix is in tsast.CPP_SUFFIXES, the one suffix
+    policy of every C++ scan.
+    """
     found: list[Path] = []
     unknown: list[str] = []
     for prefix, _ in LAYERS:
@@ -107,7 +111,7 @@ def scope_files(root: Path) -> tuple[list[Path], list[str]]:
         for path in base.rglob("*"):
             if not path.is_file():
                 continue
-            if path.suffix in CPP_SUFFIXES:
+            if path.name.endswith(tsast.CPP_SUFFIXES):
                 found.append(path)
             elif path.suffix not in PROSE_SUFFIXES:
                 unknown.append(path.relative_to(root).as_posix())
@@ -129,31 +133,31 @@ def include_target(root: Path, rel: str, spelled: str) -> str | None:
     if spelled.startswith('"'):
         beside = (root / rel).parent / body
         if beside.is_file():
-            target = os.path.relpath(beside.resolve(), root.resolve())
-            if target.startswith("include/"):
-                return target.split("/")[1]
-            return layer_of(target)
-    return body.split("/")[0] if "/" in body else None
+            target = PurePosixPath(os.path.relpath(beside.resolve(), root.resolve()))
+            if target.parts[:1] == ("include",) and len(target.parts) > 1:
+                return target.parts[1]
+            return layer_of(target.as_posix())
+    parts = PurePosixPath(body).parts
+    return parts[0] if len(parts) > 1 else None
 
 
 def chain_head(node: tsast.Node) -> str | None:
     """Return the first segment of a qualified name, through a leading `::`.
 
+    The walk follows the leftmost scope, so `::crucible` gives `crucible`
+    and `crucible::safety::Linear<int>::type` gives `crucible` too.
+
     Args:
         node: A qualified_identifier that no other qualified_identifier holds as its name
 
     Returns:
-        The text of the first scope, or None for a bare `::name`
+        The first segment, or None for a scope that is not a name, such as a decltype
     """
     current: tsast.Node | None = node
     while current is not None and current.type == "qualified_identifier":
         scope = current.child_by_field("scope")
-        if scope is not None:
-            if scope.type == "template_type":
-                scope = scope.child_by_field("name")
-            return scope.text if scope is not None else None
-        current = current.child_by_field("name")
-    return None
+        current = scope if scope is not None else current.child_by_field("name")
+    return tsast.leaf_name(current) if current is not None else None
 
 
 def is_chain_root(node: tsast.Node) -> bool:
@@ -162,12 +166,12 @@ def is_chain_root(node: tsast.Node) -> bool:
     return not (parent is not None and parent.type == "qualified_identifier" and node.field == "name")
 
 
-def first_segment(text: str) -> str:
-    """Return the first segment of a namespace path written as text."""
-    return text.replace(" ", "").removeprefix("::").split("::")[0]
+USING_FORMS = {"namespace": "a using-directive", "enum": "a using-enum declaration",
+               "declaration": "a using-declaration"}
 
 
-def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str]) -> Iterator[tuple[int, str, str]]:
+def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str],
+                macros: dict[str, str]) -> Iterator[tuple[int, str, str]]:
     """Yield each root that a parsed file names, as (row, root, how).
 
     Complexity: linear in the number of nodes of the file.
@@ -177,13 +181,11 @@ def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str]) -
         rel: The file, relative to the scan root
         tree: The parse tree of the file
         roots: The project roots
+        macros: The body of each object-like macro of the file, by name
 
     Yields:
         The zero-based row, the root, and a short description of the form
     """
-    macros = {node.child_by_field("name").text: node.child_by_field("value").text.strip()
-              for node in tree.find("preproc_def")
-              if node.child_by_field("name") is not None and node.child_by_field("value") is not None}
     for node in tree.find("preproc_include"):
         path = node.child_by_field("path")
         spelled = path.text.strip() if path is not None else ""
@@ -195,38 +197,46 @@ def named_roots(root: Path, rel: str, tree: tsast.Tree, roots: frozenset[str]) -
         target = include_target(root, rel, spelled)
         if target in roots:
             yield node.start[0], target, "an include"
+    usings = tsast.using_names(tree)
+    for using in usings:
+        if using.target:
+            yield using.node.start[0], using.target[0], USING_FORMS[using.kind]
+    read_usings = {using.node.index for using in usings}
     for node in tree.find("qualified_identifier"):
+        parent = node.parent
+        if parent is not None and parent.type == "using_declaration" and parent.index in read_usings:
+            continue
         if is_chain_root(node):
             head = chain_head(node)
-            if head in roots:
+            if head is not None:
                 yield node.start[0], head, "a qualified name"
     for node in tree.find("namespace_definition"):
         named = node.child_by_field("name")
         if named is not None and node.ancestor_of_type("namespace_definition") is None:
-            head = first_segment(named.text)
-            if head in roots:
-                yield node.start[0], head, "a namespace definition at global scope"
-    for node in tree.find("using_declaration"):
-        for child in node.children:
-            if child.type in ("identifier", "namespace_identifier") and child.text in roots:
-                yield node.start[0], child.text, "a using-directive"
+            parts = tsast.qualified_parts(named)
+            if parts is None:
+                yield node.start[0], "?", "a namespace definition whose name the guard cannot read"
+            elif parts[1]:
+                yield node.start[0], parts[1][0], "a namespace definition at global scope"
+    aliases = tsast.namespace_aliases(tree)
+    for alias in aliases:
+        if alias.target:
+            yield alias.node.start[0], alias.target[0], "a namespace alias"
+    read_aliases = {alias.node.index for alias in aliases}
     for node in tree.find("namespace_alias_definition"):
-        for child in node.children:
-            if child.field != "name" and child.type != "comment":
-                head = first_segment(child.text)
-                if head in roots:
-                    yield node.start[0], head, "a namespace alias"
+        if node.index not in read_aliases:
+            yield node.start[0], "?", "a namespace alias whose target the guard cannot read"
 
 
-def lexical_roots(text: str, roots: frozenset[str]) -> Iterator[tuple[int, str]]:
-    """Yield each whole word of raw text that is a root, as (row, root), after the lexer blanks it."""
-    joined, joins = splice(text)
-    code, _ = blank(joined, blank_literals=True)
-    pattern = re.compile(r"\b(" + "|".join(sorted(roots)) + r")\b") if roots else None
-    if pattern is None:
-        return
-    for match in pattern.finditer(code):
-        yield line_of(joined, joins, match.start()) - 1, match.group(1)
+def macro_roots(body: tsast.MacroBody, roots: frozenset[str]) -> Iterator[tuple[int, str]]:
+    """Yield each root that a macro body can paste into a name, as (row, root).
+
+    A parameter of the macro names nothing of the program, so a parameter
+    spelled like a root does not count.
+    """
+    for token in tsast.pp_tokens(body.text, body.first_row):
+        if token.kind == "identifier" and token.text in roots and token.text not in body.params:
+            yield token.row, token.text
 
 
 def scan(root: Path) -> tuple[list[str], list[str]]:
@@ -243,24 +253,27 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
     roots = project_roots(root)
     files, unknown = scope_files(root)
     violations: list[str] = []
+    trees: list[tuple[str, tsast.Tree]] = []
     for tree in tsast.parse(files, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
-        layer = layer_of(rel)
-        above = roots - ALLOWED[layer]
-        source = tree.source.decode("utf-8", "replace")
-        if tree.diagnostic is not None and rel not in tsast.UNPARSEABLE:
+        if tree.diagnostic is not None:
             violations.append(f"{rel}: the parser cannot read this file, so the rule cannot see it. "
                               f"{tree.diagnostic.strip()}")
             continue
+        trees.append((rel, tree))
+    bodies: dict[int, list[tsast.MacroBody]] = {}
+    for body in tsast.macro_bodies([tree for _, tree in trees]):
+        bodies.setdefault(id(body.define.tree), []).append(body)
+    for rel, tree in trees:
+        layer = layer_of(rel)
+        above = roots - ALLOWED[layer]
+        own = bodies.get(id(tree), [])
+        macros = {body.name: body.text.strip() for body in own if not body.params
+                  and body.define.type == "preproc_def"}
         hits: set[tuple[int, str, str]] = set()
-        if tree.diagnostic is not None:
-            hits.update((row, name, "a word in a file the parser cannot read")
-                        for row, name in lexical_roots(source, above))
-        else:
-            hits.update(hit for hit in named_roots(root, rel, tree, roots) if hit[1] in above or hit[1] == "?")
-            for body in tree.find("preproc_arg"):
-                hits.update((body.start[0] + row, name, "a word in a macro body")
-                            for row, name in lexical_roots(body.text, above))
+        hits.update(hit for hit in named_roots(root, rel, tree, roots, macros) if hit[1] in above or hit[1] == "?")
+        for body in own:
+            hits.update((row, name, "a word in a macro body") for row, name in macro_roots(body, above))
         for row, name, how in sorted(hits):
             if name == "?":
                 violations.append(f"{rel}:{row + 1} — {how}, so the rule cannot see where it goes.")
@@ -345,9 +358,13 @@ def self_test() -> int:
         ("inline my_fixy::X lookalike;", False, "an identifier that ends in a root name"),
         ("namespace crucible { struct Nested {}; }", False, "a nested namespace with the name of a root"),
         ("inline foundation::algebra::Bad own{};", False, "a name of the own layer"),
+        ("using namespace ::crucible;", True, "a using-directive from ::"),
         ("}", None, ""),
         ("namespace crucible { struct Opened {}; }", True, "a namespace definition at global scope"),
         ("namespace crucible::safety { struct Deeper {}; }", True, "a nested namespace definition at global scope"),
+        ("namespace crucible /*x*/ ::safety { struct Commented {}; }", True,
+         "a namespace definition with a comment inside its name"),
+        ("#define WRAP(fixy) (fixy + 1)", False, "a macro parameter named like a root"),
     ]
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -362,6 +379,7 @@ def self_test() -> int:
             ("include/crucible/Top.h", "#pragma once\n#include <fixy/Good.h>\n"
                                        "namespace crucible { using A = ::fixy::Ok; }\n"),
             ("src/foundation/Planted.cpp", "static int planted_bad = fixy::value;\n"),
+            ("src/foundation/Alias.cpp", "namespace up = crucible /* a comment */ ::safety;\n"),
             ("src/fixy/os/Os.cpp", "#include <crucible/Arena.h>\n"),
             ("src/fixy/Old.cpp", "#include <crucible/Arena.h>\n"),
             ("include/newroot/Thing.h", "#pragma once\n"),
@@ -382,6 +400,7 @@ def self_test() -> int:
         reported = {violation.split(":", 1)[0] for violation in violations}
         expect("caught: a fixy file that names crucible", "include/fixy/Up.h" in reported)
         expect("caught: a foundation source that names fixy", "src/foundation/Planted.cpp" in reported)
+        expect("caught: a namespace alias with a comment inside its target", "src/foundation/Alias.cpp" in reported)
         expect("caught: an include of a higher root in src/fixy/os", "src/fixy/os/Os.cpp" in reported)
         expect("caught: a fourth root that the table does not admit", "include/fixy/Fourth.h" in reported)
         expect("not caught: a fixy file that names foundation", "include/fixy/Good.h" not in reported, True)
@@ -407,8 +426,15 @@ def self_test() -> int:
         (root / "include/fixy/Broken.h").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         expect("a file the parser cannot read is a violation",
                any(violation.startswith("include/fixy/Broken.h") for violation in scan(root)[0]))
+        tsast.UNPARSEABLE["include/fixy/Broken.h"] = "a planted roster entry"
+        try:
+            rostered = any(violation.startswith("include/fixy/Broken.h") for violation in scan(root)[0])
+        finally:
+            del tsast.UNPARSEABLE["include/fixy/Broken.h"]
+        expect("the roster admits no file of a lower layer", rostered)
         for rel in ("include/fixy/Up.h", "include/foundation/algebra/Planted.h", "src/foundation/Planted.cpp",
-                    "src/fixy/os/Os.cpp", "include/fixy/Fourth.h", "include/fixy/Broken.h"):
+                    "src/foundation/Alias.cpp", "src/fixy/os/Os.cpp", "include/fixy/Fourth.h",
+                    "include/fixy/Broken.h"):
             (root / rel).unlink()
         (root / "include/fixy/Table.def").write_text("X(one)\n", encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
