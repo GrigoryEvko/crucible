@@ -1,4 +1,4 @@
-// concurrent/* primitives — head-to-head ns-precision bench against
+// fixy/concurrent primitives — head-to-head ns-precision bench against
 // TraceRing (the canonical reference SPSC primitive at ~5-8ns/op).
 //
 // What this validates:
@@ -14,8 +14,9 @@
 //   3. AtomicSnapshot publish (~15 ns) and load (~5-10 ns) match
 //      THREADING.md §10.1 published targets after the seqlock
 //      AtomicMonotonic migration.
-//   4. MpmcRing push (~15-25 ns uncontended; ~30-60 ns at 16-way
-//      contention per Nikolaev SCQ) matches THREADING.md §10.1.
+//
+// The new tree carries the SPSC and the MPSC ring only, so this bench
+// has no MPMC arm.  bench_mpsc_contention.cpp measures the MPSC ring.
 //
 // Pinning + measurement: bench_harness.h handles isolcpu pinning,
 // rdtsc-derived ns timing (calibrated against steady_clock at process
@@ -31,27 +32,21 @@
 #include <cstdint>
 
 #include <crucible/TraceRing.h>
-#include <crucible/concurrent/_AtomicSnapshot.h>
-#include <crucible/concurrent/_MpmcRing.h>
-#include <crucible/concurrent/_SpscRing.h>
+#include <fixy/concurrent/AtomicSnapshot.h>
+#include <fixy/concurrent/SpscRing.h>
 
 #include "bench_harness.h"
 
 namespace {
 
-using crucible::concurrent::AtomicSnapshot;
-using crucible::concurrent::MpmcRing;
-using crucible::concurrent::SpscRing;
+using ::fixy::concurrent::AtomicSnapshot;
+using ::fixy::concurrent::SpscRing;
 
 // 1M-slot SPSC ring: 1M × 8B = 8 MB.  Default 100k samples ≪ 1M ⇒ no
 // fill across a sample run; pure try_push cost without drain noise.
 using HugeSpsc = SpscRing<std::uint64_t, (1U << 20)>;
 // 1024-slot for the round-trip (push then pop) bench — depth stays 0/1.
 using SmallSpsc = SpscRing<std::uint64_t, 1024>;
-
-// MpmcRing: 1M Capacity = 2M cells = ~16 MB inline.
-using HugeMpmc = MpmcRing<std::uint64_t, (1U << 20)>;
-using SmallMpmc = MpmcRing<std::uint64_t, 1024>;
 
 // AtomicSnapshot payload — 8B uint64_t for the simplest-possible
 // publish/load measurement (single cache line for storage_).
@@ -67,7 +62,6 @@ int main() {
 
     std::printf("=== concurrent_queues ===\n");
     std::printf("  SpscRing<uint64,1M> sizeof: %zu bytes\n", sizeof(HugeSpsc));
-    std::printf("  MpmcRing<uint64,1M> sizeof: %zu bytes\n", sizeof(HugeMpmc));
     std::printf("  AtomicSnapshot<uint64> sizeof: %zu bytes\n", sizeof(Snap));
     std::printf("\n");
 
@@ -159,28 +153,6 @@ int main() {
             });
         }(),
 
-        // ── MpmcRing: pure push, single-thread (no contention) ────────
-        [&] {
-            auto ring = std::make_unique<HugeMpmc>();
-            std::uint64_t i = 0;
-            return bench::run("mpmc_ring.try_push (1T, huge cap)", [&] {
-                const bool ok = ring->try_push(++i);
-                bench::do_not_optimize(ok);
-            });
-        }(),
-
-        // ── MpmcRing: pure pop, single-thread ─────────────────────────
-        [&] {
-            auto ring = std::make_unique<HugeMpmc>();
-            for (std::uint64_t i = 0; i < 200000; ++i) {
-                (void)ring->try_push(i);
-            }
-            return bench::run("mpmc_ring.try_pop (1T, pre-filled)", [&] {
-                auto v = ring->try_pop();
-                bench::do_not_optimize(v);
-            });
-        }(),
-
         // ── AtomicSnapshot: publish (writer-only) ─────────────────────
         [&] {
             auto snap = std::make_unique<Snap>();
@@ -227,19 +199,17 @@ int main() {
     // ── Comparisons (the headline result) ─────────────────────────────
     std::printf("\n=== compare ===\n");
 
-    // Index map (after PERF-1 additions):
+    // Index map:
     //   [0] HARNESS BASELINE: do_not_optimize(++i)      ← bench overhead
     //   [1] HARNESS BASELINE: clobber + ++i             ← pure compiler-fence
     //   [2] spsc_ring.try_push (single, huge cap)
     //   [3] spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip
     //   [4] spsc_ring.try_pop (pre-filled)
     //   [5] spsc_ring round-trip (push+pop)
-    //   [6] mpmc_ring.try_push (1T, huge cap)
-    //   [7] mpmc_ring.try_pop (1T, pre-filled)
-    //   [8] atomic_snapshot.publish
-    //   [9] atomic_snapshot.load (uncontended)
-    //   [10] atomic_snapshot.try_load (uncontended)
-    //   [11] trace_ring.try_append (reference, +reset-on-full)
+    //   [6] atomic_snapshot.publish
+    //   [7] atomic_snapshot.load (uncontended)
+    //   [8] atomic_snapshot.try_load (uncontended)
+    //   [9] trace_ring.try_append (reference, +reset-on-full)
 
     // Headline #1: actual ring cost = single-push p50 - harness overhead p50.
     // (do_not_optimize is a [[gnu::noipa]] real CALL+RET ≈ 3-4 cycles ≈
@@ -250,7 +220,7 @@ int main() {
     // Headline #2: SpscRing vs TraceRing — SpscRing is FASTER (no
     // parallel-array writes, no prefetches, no slot-mask compute).
     std::printf("\n[spsc_ring.try_push] vs [trace_ring.try_append]:\n");
-    bench::compare(reports[2], reports[11]).print_text(stdout);
+    bench::compare(reports[2], reports[9]).print_text(stdout);
 
     // Headline #3: per-item batched cost vs per-item single-call cost.
     // batch[3] reports WHOLE-BATCH-PUSH-AND-POP time for 64 items each
@@ -258,13 +228,9 @@ int main() {
     std::printf("\n[spsc_ring batch<64> push+pop round-trip] vs [single try_push]:\n");
     bench::compare(reports[3], reports[2]).print_text(stdout);
 
-    // Headline #4: MpmcRing vs SpscRing under no contention.
-    std::printf("\n[mpmc_ring.try_push (1T)] vs [spsc_ring.try_push]:\n");
-    bench::compare(reports[6], reports[2]).print_text(stdout);
-
-    // Headline #5: AtomicSnapshot.load vs publish.
+    // Headline #4: AtomicSnapshot.load vs publish.
     std::printf("\n[atomic_snapshot.load] vs [atomic_snapshot.publish]:\n");
-    bench::compare(reports[9], reports[8]).print_text(stdout);
+    bench::compare(reports[7], reports[6]).print_text(stdout);
 
     // Bootstrap CIs on the headline percentiles + batched per-item.
     std::printf("\n=== confidence intervals (95%%) ===\n");
@@ -288,7 +254,7 @@ int main() {
                     ci.lo, ci.hi, ci.lo / 128.0);
     }
     {
-        const auto ci = reports[11].ci(0.50);
+        const auto ci = reports[9].ci(0.50);
         std::printf("  trace_ring.try_append p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
 

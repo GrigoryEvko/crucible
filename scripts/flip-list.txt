@@ -42,7 +42,6 @@
 #     examples/fn.
 
 bench/bench_cipher.cpp
-bench/bench_concurrent_queues.cpp
 bench/bench_content_hash.cpp
 bench/bench_dispatch.cpp
 bench/bench_merkle_dag.cpp
