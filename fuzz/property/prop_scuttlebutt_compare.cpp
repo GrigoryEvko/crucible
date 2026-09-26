@@ -57,14 +57,12 @@ inline constexpr std::uint32_t kPeers = 3;
 inline constexpr std::uint32_t kKeys = 3;
 inline constexpr std::uint32_t kCells = kPeers * kKeys;
 
-using Sync = cc::ScuttlebuttSync<kPeers, kKeys>;
 using GC = cc::GCounter<2>;
 using GCState = GC::state_type;
 using Key = cc::ScuttlebuttKey;
 using Entry = cc::ScuttlebuttVersionEntry;
 using Digest = cc::ScuttlebuttDigest<kPeers, kKeys>;
 using GDelta = cc::GossipedScuttlebuttDelta<GCState>;
-using GDigest = cc::GossipedScuttlebuttDigest<kPeers, kKeys>;
 using Peer = cc::SwimPeer;
 
 [[nodiscard]] Uuid peer_uuid(std::uint32_t p) noexcept {
@@ -113,7 +111,8 @@ int main(int argc, char** argv) {
         [](const Spec& spec) noexcept -> bool {
             // Build the sync with 3 peers (index 0 = local).
             std::array<Peer, 2> initial{make_peer(1), make_peer(2)};
-            Sync sync{make_peer(0), std::span<const Peer>{initial}};
+            auto sync = cc::mint_scuttlebutt<kPeers, kKeys>(::foundation::effects::testing::init(), make_peer(0),
+                                                            std::span<const Peer>{initial});
 
             GC gc{};
             for (std::uint32_t k = 0; k < kKeys; ++k) {
@@ -133,12 +132,12 @@ int main(int argc, char** argv) {
                     const CellSpec& c = spec.cells[p * kKeys + k];
                     if (c.mat_present != 0u) {
                         const std::uint64_t version = c.mat_version;
-                        GDelta delta{cc::ScuttlebuttDelta<GCState>{
+                        GDelta delta = cc::admit_gossiped(cc::ScuttlebuttDelta<GCState>{
                             .origin = peer_uuid(p),
                             .key = make_key(k),
                             .version = version,
                             .state = gc.state(),
-                        }};
+                        });
                         // Fresh cell (current 0) + version>0 → must set.
                         const auto applied = sync.apply_delta<GC>(delta, gc);
                         if (!applied.has_value() || !*applied) return false;
@@ -156,7 +155,7 @@ int main(int argc, char** argv) {
                 }
             }
 
-            const auto diff = sync.compare_digest(GDigest{remote});
+            const auto diff = sync.compare_digest(cc::admit_gossiped(remote));
             if (!diff.has_value()) return false;  // no error path is reachable here
 
             // Reconstruct (p,k) from a result entry and verify it is an

@@ -3,13 +3,14 @@
 #include <crucible/Platform.h>
 #include <crucible/canopy/Crdt.h>
 #include <crucible/canopy/Swim.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_FixedArray.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Effect.h>
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -32,48 +33,37 @@ inline constexpr std::size_t scuttlebutt_entry_capacity = MaxPeers * MaxKeys;
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-using ScuttlebuttEntryCount =
-    safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(scuttlebutt_entry_capacity<MaxPeers, MaxKeys>)>,
-                    std::uint16_t>;
+inline constexpr auto scuttlebutt_entry_bound =
+    ::fixy::bounded_above<static_cast<std::uint16_t>(scuttlebutt_entry_capacity<MaxPeers, MaxKeys>)>;
 
-// The live-entry count of a bounded entry table.
+template <std::size_t MaxPeers, std::size_t MaxKeys>
+    requires ScuttlebuttShape<MaxPeers, MaxKeys>
+using ScuttlebuttEntryCount = ::fixy::Refined<scuttlebutt_entry_bound<MaxPeers, MaxKeys>, std::uint16_t>;
+
+// The live count of a dense, append-only slot table.
 //
-// It used to be a bare public std::uint16_t sitting beside the entries
-// array on an aggregate, so any caller could store a value past
-// `capacity` and no path anywhere looked.  push() then read
-// entries[capacity, count) during its dedup scan and wrote
-// entries[count], both out of bounds.  The `count == capacity` fullness
-// test could not see it, because a count already past the bound
-// compares unequal against it: 41 == 4 is false.
-//
-// The value is private here and reserve_next() is the only thing that
-// moves it, so `value_ <= Capacity` is an invariant of the type rather
-// than a habit of its callers, and a count past the bound is
-// unrepresentable rather than merely unchecked.
-//
-// Every Debug-only backstop that masked this is absent from Release:
-// _GLIBCXX_ASSERTIONS is not defined there, CRUCIBLE_PRE degrades to
-// [[assume]], and safety::FixedArray::operator[] carries no
-// precondition by design.  A P2900 contract_assert would have survived
-// -- Release compiles contracts as `observe` onto a handler that aborts
-// -- but the type is the better answer.  It costs nothing, no build
-// flag can switch it off, and it refuses the bad value at the
-// assignment instead of one call later at the subscript.
+// A bare public count beside the slot array lets any caller store a
+// value past `capacity`, and every loop over [0, count) then reads and
+// writes past the array.  The value is private here and reserve_next()
+// is the only thing that moves it, so `value_ <= Capacity` is an
+// invariant of the type, and a count past the bound is unrepresentable
+// rather than merely unchecked.  It refuses the bad value at the
+// assignment instead of one call later at the subscript, and no build
+// flag switches it off.
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
 class ScuttlebuttSlotCount {
 public:
-    // Exactly safety::FixedArray<T, Capacity>::index_type, so the proof
-    // token reserve_next() returns is accepted by FixedArray::at().
-    using index_type = safety::Refined<safety::bounded_above<Capacity - 1>, std::size_t>;
+    // The proof token reserve_next() returns is the index type of the
+    // table it counts, so FixedArray::at() accepts it with no conversion.
+    using index_type = typename ::fixy::FixedArray<std::byte, Capacity>::index_type;
 
     constexpr ScuttlebuttSlotCount() noexcept = default;
 
-    // Implicit and lossless on purpose.  Readers spell `i < digest.count`
-    // and `static_cast<std::size_t>(set.count)`, and widening a bounded
-    // count to its own underlying type cannot lose information.  The
-    // conversion is one-way -- nothing converts back in -- so the bound
-    // cannot be re-entered from outside.
+    // Implicit and lossless on purpose.  Readers spell `i < digest.count`,
+    // and widening a bounded count to its own underlying type cannot lose
+    // information.  The conversion is one-way: nothing converts back in,
+    // so the bound cannot be re-entered from outside.
     [[nodiscard]] constexpr operator std::uint16_t() const noexcept { return value_; }
 
     [[nodiscard]] constexpr std::uint16_t value() const noexcept { return value_; }
@@ -81,16 +71,15 @@ public:
     [[nodiscard]] constexpr bool full() const noexcept { return value_ >= Capacity; }
 
     // Reserves the slot one past the last live entry and hands back a
-    // proof-token index for it.  This is the sole mutator, and it
-    // refuses at the bound, so every index it returns is in range by
-    // construction and no caller needs a comparison of its own.
+    // proof-token index for it.  This is the sole mutator, and it refuses
+    // at the bound, so every index it returns is in range by construction.
     [[nodiscard]] constexpr std::optional<index_type> reserve_next() noexcept {
         if (full()) {
             return std::nullopt;
         }
         const auto slot = static_cast<std::size_t>(value_);
         ++value_;
-        return index_type{slot};
+        return ::fixy::mint_refined<::fixy::bounded_above<Capacity - 1>>(slot);
     }
 
 private:
@@ -101,17 +90,21 @@ static_assert(sizeof(ScuttlebuttSlotCount<4>) == sizeof(std::uint16_t));
 static_assert(!std::is_assignable_v<ScuttlebuttSlotCount<4>&, std::uint16_t>,
               "a count past the bound must stay unrepresentable");
 
-using ScuttlebuttDurationNs = safety::Refined<safety::positive, std::uint64_t>;
-using ScuttlebuttPositiveCount = safety::Refined<safety::positive, std::uint16_t>;
+using ScuttlebuttDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
+using ScuttlebuttPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
 
 struct ScuttlebuttConfig {
-    ScuttlebuttDurationNs period_ns{5000000000ULL};
-    ScuttlebuttPositiveCount max_stale_rounds{64};
+    ScuttlebuttDurationNs period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{5'000'000'000});
+    ScuttlebuttPositiveCount max_stale_rounds = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{64});
 };
 
 struct ScuttlebuttKey {
     std::uint64_t hash = 0;
     std::uint16_t length = 0;
+
+    // A key names something only when admit_scuttlebutt_key built it: the
+    // hash of an admitted key is never zero and its length is at least one.
+    [[nodiscard]] constexpr bool is_empty() const noexcept { return hash == 0 || length == 0; }
 
     [[nodiscard]] friend constexpr bool operator==(ScuttlebuttKey const&, ScuttlebuttKey const&) = default;
 };
@@ -170,17 +163,19 @@ admit_scuttlebutt_key(std::string_view key) noexcept {
     });
 }
 
+// A replicated value that the anti-entropy layer can carry: a state-based
+// CRDT with a state that the layer can copy into a delta.
 template <typename C>
-concept ScuttlebuttCrdt = requires(C& crdt, C const& const_crdt, typename C::state_type state) {
-    typename C::state_type;
-    { const_crdt.state() } -> std::same_as<typename C::state_type>;
-    { crdt.merge(admit_gossiped(state)) } -> std::same_as<bool>;
-} && std::copyable<typename C::state_type>;
+concept ScuttlebuttCrdt = Crdt<C> && std::copyable<typename C::state_type>;
 
 struct ScuttlebuttVersionEntry {
     cog::Uuid origin{};
     ScuttlebuttKey key{};
     std::uint64_t version = 0;
+
+    // An entry that names no origin or no key.  A version of zero is a
+    // separate matter: it means "never written", which a digest skips.
+    [[nodiscard]] constexpr bool names_nothing() const noexcept { return origin.is_zero() || key.is_empty(); }
 };
 
 template <typename State>
@@ -192,37 +187,34 @@ struct ScuttlebuttDelta {
 };
 
 template <typename State>
-using LocalScuttlebuttDelta = safety::Tagged<ScuttlebuttDelta<State>, safety::source::Local>;
+using LocalScuttlebuttDelta = LocalWrite<ScuttlebuttDelta<State>>;
 
 template <typename State>
-using GossipedScuttlebuttDelta = safety::Tagged<ScuttlebuttDelta<State>, safety::source::Gossiped>;
+using GossipedScuttlebuttDelta = GossipedState<ScuttlebuttDelta<State>>;
 
+namespace detail {
+
+// The digest and the request set share one table shape: a dense run of
+// version entries, one for each (origin, key), with a slot count.  Only
+// entries[0, count) are live.  The tail keeps the FixedArray default.
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-struct ScuttlebuttDigest {
+struct ScuttlebuttEntryTable {
     static constexpr std::size_t capacity = scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
 
-    // Only entries[0, count) are live.  The tail keeps whatever the
-    // FixedArray default gave it and no reader looks at it.
-    safety::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
+    ::fixy::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
     ScuttlebuttSlotCount<capacity> count{};
 
+    // The slot counter cannot hold a value above capacity, so the checked
+    // mint never refuses.
     [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys> size() const noexcept {
-        // Trusted is sound here because ScuttlebuttSlotCount cannot hold
-        // a value above capacity.  It was not sound while count was a
-        // bare public member: that path minted a Refined whose predicate
-        // its own value did not satisfy.
-        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count.value(),
-                                                        typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
+        return ::fixy::mint_refined<scuttlebutt_entry_bound<MaxPeers, MaxKeys>>(count.value());
     }
 
-    [[nodiscard]] bool push(ScuttlebuttVersionEntry entry) noexcept {
-        if (entry.version == 0) {
-            return true;
-        }
-        if (entry.origin.is_zero() || entry.key.hash == 0 || entry.key.length == 0) {
-            return false;
-        }
+protected:
+    // Raises the version of an existing (origin, key) entry, or appends a
+    // new one.  Refuses only when the table is full.
+    [[nodiscard]] constexpr bool upsert_(ScuttlebuttVersionEntry entry) noexcept {
         for (std::uint16_t i = 0; i < count; ++i) {
             auto& existing = entries[static_cast<std::size_t>(i)];
             if (existing.origin == entry.origin && existing.key == entry.key) {
@@ -232,8 +224,8 @@ struct ScuttlebuttDigest {
                 return true;
             }
         }
-        // The count enforces the bound and yields the slot, so the
-        // fullness test and the subscript cannot disagree.
+        // The count enforces the bound and yields the slot, so the fullness
+        // test and the subscript cannot disagree.
         const auto slot = count.reserve_next();
         if (!slot) {
             return false;
@@ -241,21 +233,34 @@ struct ScuttlebuttDigest {
         entries.at(*slot) = entry;
         return true;
     }
+};
 
-    // No count-versus-capacity arm: ScuttlebuttSlotCount cannot carry a
-    // count above capacity, so the loop below indexes in range for every
-    // value the type admits.  What stays representable is entry content,
-    // because `entries` is public -- a caller can overwrite a live slot
-    // after push() validated it -- and that is what this checks.
-    [[nodiscard]] bool well_formed() const noexcept {
-        for (std::uint16_t i = 0; i < count; ++i) {
-            auto const& a = entries[static_cast<std::size_t>(i)];
-            if (a.version == 0 || a.origin.is_zero() || a.key.hash == 0 || a.key.length == 0) {
+}  // namespace detail
+
+template <std::size_t MaxPeers, std::size_t MaxKeys>
+    requires ScuttlebuttShape<MaxPeers, MaxKeys>
+struct ScuttlebuttDigest : detail::ScuttlebuttEntryTable<MaxPeers, MaxKeys> {
+    // A version of zero is "never written" and is skipped, not refused.
+    [[nodiscard]] constexpr bool push(ScuttlebuttVersionEntry entry) noexcept {
+        if (entry.version == 0) {
+            return true;
+        }
+        return !entry.names_nothing() && this->upsert_(entry);
+    }
+
+    // The count cannot be more than the capacity, so the loop stays in range
+    // for every value that the type admits.  The content of an entry is
+    // different, because `entries` is public.  A caller can write a live
+    // slot after push() did a check of it.  This function does a check of
+    // that content.
+    [[nodiscard]] constexpr bool well_formed() const noexcept {
+        for (std::uint16_t i = 0; i < this->count; ++i) {
+            auto const& a = this->entries[static_cast<std::size_t>(i)];
+            if (a.version == 0 || a.names_nothing()) {
                 return false;
             }
-            const std::uint16_t j0 = static_cast<std::uint16_t>(i + std::uint16_t{1});
-            for (std::uint16_t j = j0; j < count; ++j) {
-                auto const& b = entries[static_cast<std::size_t>(j)];
+            for (std::uint16_t j = static_cast<std::uint16_t>(i + std::uint16_t{1}); j < this->count; ++j) {
+                auto const& b = this->entries[static_cast<std::size_t>(j)];
                 if (a.origin == b.origin && a.key == b.key) {
                     return false;
                 }
@@ -267,49 +272,18 @@ struct ScuttlebuttDigest {
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-using GossipedScuttlebuttDigest = safety::Tagged<ScuttlebuttDigest<MaxPeers, MaxKeys>, safety::source::Gossiped>;
+using GossipedScuttlebuttDigest = GossipedState<ScuttlebuttDigest<MaxPeers, MaxKeys>>;
 
-// This one carries no well_formed(), and unlike the digest it does not
-// need one.  It is an output-only local aggregate: compare_digest is its
-// only producer and it pushes entries drawn from an already-validated
-// digest and from the local peer/key tables.  Its bound is now a
-// property of ScuttlebuttSlotCount rather than of a comparison, and its
-// only consumer -- delta_for_request -- resolves origin and key through
-// find_peer_ and require_key_ before it indexes anything.  A validator
-// with no caller would be weight, not safety.
+// An output-only local aggregate.  compare_digest is its only producer and
+// pushes entries drawn from an already-validated digest and from the local
+// tables, and its only consumer, delta_for_request, resolves origin and key
+// before it indexes anything.  A validator with no caller would be weight,
+// so it carries none.
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-struct ScuttlebuttRequestSet {
-    static constexpr std::size_t capacity = scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
-
-    // Only entries[0, count) are live.
-    safety::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
-    ScuttlebuttSlotCount<capacity> count{};
-
-    [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys> size() const noexcept {
-        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count.value(),
-                                                        typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
-    }
-
-    [[nodiscard]] bool push(ScuttlebuttVersionEntry entry) noexcept {
-        if (entry.version == 0 || entry.origin.is_zero() || entry.key.hash == 0 || entry.key.length == 0) {
-            return false;
-        }
-        for (std::uint16_t i = 0; i < count; ++i) {
-            auto& existing = entries[static_cast<std::size_t>(i)];
-            if (existing.origin == entry.origin && existing.key == entry.key) {
-                if (existing.version < entry.version) {
-                    existing.version = entry.version;
-                }
-                return true;
-            }
-        }
-        const auto slot = count.reserve_next();
-        if (!slot) {
-            return false;
-        }
-        entries.at(*slot) = entry;
-        return true;
+struct ScuttlebuttRequestSet : detail::ScuttlebuttEntryTable<MaxPeers, MaxKeys> {
+    [[nodiscard]] constexpr bool push(ScuttlebuttVersionEntry entry) noexcept {
+        return entry.version != 0 && !entry.names_nothing() && this->upsert_(entry);
     }
 };
 
@@ -320,9 +294,21 @@ struct ScuttlebuttDiff {
     ScuttlebuttRequestSet<MaxPeers, MaxKeys> offers{};
 };
 
+template <std::size_t MaxPeers, std::size_t MaxKeys>
+    requires ScuttlebuttShape<MaxPeers, MaxKeys>
+class ScuttlebuttSync;
+
+// The one door: a sync holds the anti-entropy state of a process, so only a
+// context that owns Init builds one.
 template <std::size_t MaxPeers = 128, std::size_t MaxKeys = 128>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-class alignas(64) ScuttlebuttSync : public safety::Pinned<ScuttlebuttSync<MaxPeers, MaxKeys>> {
+[[nodiscard]] constexpr ScuttlebuttSync<MaxPeers, MaxKeys>
+mint_scuttlebutt(::foundation::effects::Init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
+                 ScuttlebuttConfig config = {}) noexcept;
+
+template <std::size_t MaxPeers = 128, std::size_t MaxKeys = 128>
+    requires ScuttlebuttShape<MaxPeers, MaxKeys>
+class alignas(64) ScuttlebuttSync : public ::foundation::Pinned<ScuttlebuttSync<MaxPeers, MaxKeys>> {
 public:
     using peer_type = SwimPeer;
     using digest_type = ScuttlebuttDigest<MaxPeers, MaxKeys>;
@@ -330,17 +316,7 @@ public:
     using request_set_type = ScuttlebuttRequestSet<MaxPeers, MaxKeys>;
     using diff_type = ScuttlebuttDiff<MaxPeers, MaxKeys>;
 
-    explicit ScuttlebuttSync(peer_type local_peer, std::span<const peer_type> initial_peers = {},
-                             ScuttlebuttConfig config = {}) noexcept
-        : config_{config} {
-        CRUCIBLE_FATAL_INVARIANT(add_peer(local_peer).has_value());
-        local_index_ = std::uint16_t{0};
-        for (peer_type const& peer : initial_peers) {
-            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
-        }
-    }
-
-    [[nodiscard]] std::expected<void, ScuttlebuttError> add_peer(peer_type peer) noexcept {
+    [[nodiscard]] constexpr std::expected<void, ScuttlebuttError> add_peer(peer_type peer) noexcept {
         cog::CogIdentity const& id = peer.value();
         if (id.uuid.is_zero()) {
             return std::unexpected(ScuttlebuttError::ZeroUuid);
@@ -348,14 +324,11 @@ public:
         if (find_peer_(id.uuid).has_value()) {
             return std::unexpected(ScuttlebuttError::DuplicatePeer);
         }
-        if (peer_count_ == MaxPeers) {
+        const auto slot = peer_count_.reserve_next();
+        if (!slot) {
             return std::unexpected(ScuttlebuttError::CapacityExceeded);
         }
-        peers_[static_cast<std::size_t>(peer_count_)] = PeerSlot{
-            .occupied = true,
-            .id = id.uuid,
-        };
-        ++peer_count_;
+        peers_.at(*slot) = id.uuid;
         return {};
     }
 
@@ -363,24 +336,23 @@ public:
     [[nodiscard]] std::expected<void, ScuttlebuttError> register_state(LocalScuttlebuttKey key, C& state) noexcept {
         (void)state;
         ScuttlebuttKey const& raw_key = key.value();
-        auto existing = find_key_(raw_key);
+        // admit_local_write is generic, so a local key can still name
+        // nothing.  Such a key would be registered and never gossiped.
+        if (raw_key.is_empty()) {
+            return std::unexpected(ScuttlebuttError::EmptyKey);
+        }
         void const* cookie = detail::crdt_type_cookie<C>();
-        if (existing.has_value()) {
-            KeySlot& slot = keys_[*existing];
-            if (slot.type_cookie != cookie) {
+        if (auto existing = find_key_(raw_key)) {
+            if (keys_[*existing].type_cookie != cookie) {
                 return std::unexpected(ScuttlebuttError::TypeMismatch);
             }
             return {};
         }
-        if (key_count_ == MaxKeys) {
+        const auto slot = key_count_.reserve_next();
+        if (!slot) {
             return std::unexpected(ScuttlebuttError::CapacityExceeded);
         }
-        keys_[static_cast<std::size_t>(key_count_)] = KeySlot{
-            .occupied = true,
-            .key = raw_key,
-            .type_cookie = cookie,
-        };
-        ++key_count_;
+        keys_.at(*slot) = KeySlot{.key = raw_key, .type_cookie = cookie};
         return {};
     }
 
@@ -391,32 +363,28 @@ public:
         if (!key_idx) {
             return std::unexpected(key_idx.error());
         }
-        std::uint64_t& version = versions_[local_index_][static_cast<std::size_t>(*key_idx)];
+        std::uint64_t& version = versions_[kLocalIndex][*key_idx];
         if (version == std::numeric_limits<std::uint64_t>::max()) {
             return std::unexpected(ScuttlebuttError::VersionOverflow);
         }
         ++version;
         ++publish_count_;
-        return LocalScuttlebuttDelta<typename C::state_type>{ScuttlebuttDelta<typename C::state_type>{
-            .origin = peers_[local_index_].id,
+        return admit_local_write(ScuttlebuttDelta<typename C::state_type>{
+            .origin = peers_[kLocalIndex],
             .key = key.value(),
             .version = version,
             .state = state.state(),
-        }};
+        });
     }
 
     [[nodiscard]] digest_type digest() const noexcept {
         digest_type out{};
         for (std::uint16_t p = 0; p < peer_count_; ++p) {
             for (std::uint16_t k = 0; k < key_count_; ++k) {
-                const std::uint64_t version = versions_[static_cast<std::size_t>(p)][static_cast<std::size_t>(k)];
-                if (version == 0) {
-                    continue;
-                }
                 (void)out.push(ScuttlebuttVersionEntry{
-                    .origin = peers_[static_cast<std::size_t>(p)].id,
-                    .key = keys_[static_cast<std::size_t>(k)].key,
-                    .version = version,
+                    .origin = peers_[p],
+                    .key = keys_[k].key,
+                    .version = versions_[p][k],
                 });
             }
         }
@@ -432,7 +400,7 @@ public:
 
         diff_type out{};
         for (std::uint16_t i = 0; i < incoming.count; ++i) {
-            auto const& entry = incoming.entries[static_cast<std::size_t>(i)];
+            auto const& entry = incoming.entries[i];
             auto peer_idx = find_peer_(entry.origin);
             if (!peer_idx) {
                 return std::unexpected(ScuttlebuttError::UnknownPeer);
@@ -441,28 +409,25 @@ public:
             if (!key_idx) {
                 return std::unexpected(ScuttlebuttError::UnknownKey);
             }
-            const std::uint64_t local_version =
-                versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(*key_idx)];
-            if (entry.version > local_version && !out.requests.push(entry)) {
+            if (entry.version > versions_[*peer_idx][*key_idx] && !out.requests.push(entry)) {
                 return std::unexpected(ScuttlebuttError::CapacityExceeded);
             }
         }
 
         for (std::uint16_t p = 0; p < peer_count_; ++p) {
             for (std::uint16_t k = 0; k < key_count_; ++k) {
-                const std::uint64_t local_version = versions_[static_cast<std::size_t>(p)][static_cast<std::size_t>(k)];
+                const std::uint64_t local_version = versions_[p][k];
                 if (local_version == 0) {
                     continue;
                 }
-                ScuttlebuttVersionEntry entry{
-                    .origin = peers_[static_cast<std::size_t>(p)].id,
-                    .key = keys_[static_cast<std::size_t>(k)].key,
+                const ScuttlebuttVersionEntry entry{
+                    .origin = peers_[p],
+                    .key = keys_[k].key,
                     .version = local_version,
                 };
-                if (version_in_digest_(incoming, entry.origin, entry.key) < local_version) {
-                    if (!out.offers.push(entry)) {
-                        return std::unexpected(ScuttlebuttError::CapacityExceeded);
-                    }
+                if (version_in_digest_(incoming, entry.origin, entry.key) < local_version
+                    && !out.offers.push(entry)) {
+                    return std::unexpected(ScuttlebuttError::CapacityExceeded);
                 }
             }
         }
@@ -480,24 +445,23 @@ public:
         if (!key_idx) {
             return std::unexpected(key_idx.error());
         }
-        const std::uint64_t local_version =
-            versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(*key_idx)];
+        const std::uint64_t local_version = versions_[*peer_idx][*key_idx];
         if (local_version < request.version || local_version == 0) {
             return std::unexpected(ScuttlebuttError::NotAvailable);
         }
-        return LocalScuttlebuttDelta<typename C::state_type>{ScuttlebuttDelta<typename C::state_type>{
+        return admit_local_write(ScuttlebuttDelta<typename C::state_type>{
             .origin = request.origin,
             .key = request.key,
             .version = local_version,
             .state = state.state(),
-        }};
+        });
     }
 
     template <ScuttlebuttCrdt C>
     [[nodiscard]] std::expected<bool, ScuttlebuttError>
     apply_delta(GossipedScuttlebuttDelta<typename C::state_type> delta, C& state) noexcept {
         auto const& incoming = delta.value();
-        if (incoming.origin.is_zero() || incoming.key.hash == 0 || incoming.key.length == 0 || incoming.version == 0) {
+        if (incoming.origin.is_zero() || incoming.key.is_empty() || incoming.version == 0) {
             return std::unexpected(ScuttlebuttError::MalformedDelta);
         }
         auto peer_idx = find_peer_(incoming.origin);
@@ -509,8 +473,7 @@ public:
             return std::unexpected(key_idx.error());
         }
 
-        std::uint64_t& local_version =
-            versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(*key_idx)];
+        std::uint64_t& local_version = versions_[*peer_idx][*key_idx];
         if (incoming.version <= local_version) {
             return false;
         }
@@ -530,7 +493,7 @@ public:
         }
         std::uint16_t dropped = 0;
         for (std::uint16_t k = 0; k < key_count_; ++k) {
-            std::uint64_t& version = versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(k)];
+            std::uint64_t& version = versions_[*peer_idx][k];
             if (version != 0 && version < version_floor) {
                 version = 0;
                 ++dropped;
@@ -539,42 +502,52 @@ public:
         return dropped;
     }
 
-    [[nodiscard]] ScuttlebuttConfig config() const noexcept { return config_; }
+    [[nodiscard]] constexpr ScuttlebuttConfig config() const noexcept { return config_; }
 
-    [[nodiscard]] std::uint16_t peer_count() const noexcept { return peer_count_; }
+    [[nodiscard]] constexpr std::uint16_t peer_count() const noexcept { return peer_count_; }
 
-    [[nodiscard]] std::uint16_t key_count() const noexcept { return key_count_; }
+    [[nodiscard]] constexpr std::uint16_t key_count() const noexcept { return key_count_; }
 
-    [[nodiscard]] std::uint64_t publish_count() const noexcept { return publish_count_; }
+    [[nodiscard]] constexpr std::uint64_t publish_count() const noexcept { return publish_count_; }
 
-    [[nodiscard]] std::uint64_t merge_count() const noexcept { return merge_count_; }
+    [[nodiscard]] constexpr std::uint64_t merge_count() const noexcept { return merge_count_; }
 
 private:
-    struct PeerSlot {
-        bool occupied = false;
-        cog::Uuid id{};
-    };
+    // The local peer is added first, so it always owns slot zero.
+    static constexpr std::size_t kLocalIndex = 0;
 
     struct KeySlot {
-        bool occupied = false;
         ScuttlebuttKey key{};
         void const* type_cookie = nullptr;
     };
 
-    [[nodiscard]] std::optional<std::uint16_t> find_peer_(cog::Uuid peer) const noexcept {
+    constexpr ScuttlebuttSync(peer_type local_peer, std::span<const peer_type> initial_peers,
+                              ScuttlebuttConfig config) noexcept
+        : config_{config} {
+        CRUCIBLE_FATAL_INVARIANT(add_peer(local_peer).has_value());
+        for (peer_type const& peer : initial_peers) {
+            CRUCIBLE_FATAL_INVARIANT(add_peer(peer).has_value());
+        }
+    }
+
+    template <std::size_t P, std::size_t K>
+        requires ScuttlebuttShape<P, K>
+    friend constexpr ScuttlebuttSync<P, K> mint_scuttlebutt(::foundation::effects::Init, SwimPeer,
+                                                            std::span<const SwimPeer>, ScuttlebuttConfig) noexcept;
+
+    // Slots are dense and never removed, so the live ones are [0, count).
+    [[nodiscard]] constexpr std::optional<std::size_t> find_peer_(cog::Uuid peer) const noexcept {
         for (std::uint16_t i = 0; i < peer_count_; ++i) {
-            auto const& slot = peers_[static_cast<std::size_t>(i)];
-            if (slot.occupied && slot.id == peer) {
+            if (peers_[i] == peer) {
                 return i;
             }
         }
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<std::uint16_t> find_key_(ScuttlebuttKey key) const noexcept {
+    [[nodiscard]] constexpr std::optional<std::size_t> find_key_(ScuttlebuttKey key) const noexcept {
         for (std::uint16_t i = 0; i < key_count_; ++i) {
-            auto const& slot = keys_[static_cast<std::size_t>(i)];
-            if (slot.occupied && slot.key == key) {
+            if (keys_[i].key == key) {
                 return i;
             }
         }
@@ -582,21 +555,21 @@ private:
     }
 
     template <ScuttlebuttCrdt C>
-    [[nodiscard]] std::expected<std::uint16_t, ScuttlebuttError> require_key_(ScuttlebuttKey key) const noexcept {
+    [[nodiscard]] std::expected<std::size_t, ScuttlebuttError> require_key_(ScuttlebuttKey key) const noexcept {
         auto idx = find_key_(key);
         if (!idx) {
             return std::unexpected(ScuttlebuttError::UnknownKey);
         }
-        if (keys_[static_cast<std::size_t>(*idx)].type_cookie != detail::crdt_type_cookie<C>()) {
+        if (keys_[*idx].type_cookie != detail::crdt_type_cookie<C>()) {
             return std::unexpected(ScuttlebuttError::TypeMismatch);
         }
         return *idx;
     }
 
-    [[nodiscard]] static std::uint64_t version_in_digest_(digest_type const& digest, cog::Uuid origin,
-                                                          ScuttlebuttKey key) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t version_in_digest_(digest_type const& digest, cog::Uuid origin,
+                                                                    ScuttlebuttKey key) noexcept {
         for (std::uint16_t i = 0; i < digest.count; ++i) {
-            auto const& entry = digest.entries[static_cast<std::size_t>(i)];
+            auto const& entry = digest.entries[i];
             if (entry.origin == origin && entry.key == key) {
                 return entry.version;
             }
@@ -605,12 +578,11 @@ private:
     }
 
     ScuttlebuttConfig config_{};
-    safety::FixedArray<PeerSlot, MaxPeers> peers_{};
-    safety::FixedArray<KeySlot, MaxKeys> keys_{};
-    safety::FixedArray<safety::FixedArray<std::uint64_t, MaxKeys>, MaxPeers> versions_{};
-    std::uint16_t peer_count_ = 0;
-    std::uint16_t key_count_ = 0;
-    std::uint16_t local_index_ = 0;
+    ::fixy::FixedArray<cog::Uuid, MaxPeers> peers_{};
+    ::fixy::FixedArray<KeySlot, MaxKeys> keys_{};
+    ::fixy::FixedArray<::fixy::FixedArray<std::uint64_t, MaxKeys>, MaxPeers> versions_{};
+    ScuttlebuttSlotCount<MaxPeers> peer_count_{};
+    ScuttlebuttSlotCount<MaxKeys> key_count_{};
     std::uint64_t publish_count_ = 0;
     std::uint64_t merge_count_ = 0;
 };
@@ -618,11 +590,11 @@ private:
 static_assert(!std::is_copy_constructible_v<ScuttlebuttSync<4, 4>>);
 static_assert(!std::is_move_constructible_v<ScuttlebuttSync<4, 4>>);
 
-template <std::size_t MaxPeers = 128, std::size_t MaxKeys = 128>
+template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-[[nodiscard]] ScuttlebuttSync<MaxPeers, MaxKeys> mint_scuttlebutt(effects::Init, SwimPeer local_peer,
-                                                                  std::span<const SwimPeer> initial_peers = {},
-                                                                  ScuttlebuttConfig config = {}) noexcept {
+[[nodiscard]] constexpr ScuttlebuttSync<MaxPeers, MaxKeys>
+mint_scuttlebutt(::foundation::effects::Init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers,
+                 ScuttlebuttConfig config) noexcept {
     return ScuttlebuttSync<MaxPeers, MaxKeys>{local_peer, initial_peers, config};
 }
 

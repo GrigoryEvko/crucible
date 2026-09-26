@@ -67,7 +67,7 @@ apply to the row.
 | `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 5 |
 | `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 | `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
+| `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 6 |
 | `mint_swim_membership` | `include/crucible/canopy/Swim.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
 | `mint_vector_clock` | `include/crucible/canopy/VectorClock.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
 

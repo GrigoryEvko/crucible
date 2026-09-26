@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-115 fixture #1: Scuttlebutt peer/key matrices are statically
-// bounded and the peer bound must be non-zero.
+// The peer and key tables of a sync have static bounds, and the peer bound
+// must not be zero.
 
 #include <crucible/canopy/Scuttlebutt.h>
 

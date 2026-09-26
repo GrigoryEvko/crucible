@@ -1,14 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// oob-62 fixture: ScuttlebuttDigest::count cannot be set from outside.
-//
-// It used to be a bare public std::uint16_t, so this assignment compiled
-// and the next push() scanned and wrote past `entries`.  Reproduced
-// under ASan as a `WRITE of size 40` at the push's entries[count] store.
-// ScuttlebuttSlotCount has no caller-facing mutator, so the state is
-// gone rather than checked for.  Release defines no _GLIBCXX_ASSERTIONS
-// and FixedArray::operator[] carries no precondition, so the type is
-// what holds the bound there.
+// ScuttlebuttDigest::count cannot be set from outside.  A count past the
+// capacity would make the next push() scan and write past `entries`.
+// ScuttlebuttSlotCount has no caller-facing mutator, so that state cannot
+// be represented.  FixedArray::operator[] carries no precondition, so in
+// Release the type is what holds the bound.
 
 #include <crucible/canopy/Scuttlebutt.h>
 

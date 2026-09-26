@@ -1,13 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// oob-62 fixture: ScuttlebuttRequestSet::count cannot be advanced from
-// outside.
-//
-// This struct is the worse of the pair, because unlike the digest it has
-// no well_formed() and no path anywhere validated it.  Incrementing the
-// count past the bound used to be a bare `++set.count`, after which
-// push() wrote outside `entries`.  reserve_next() is the only thing that
-// moves the count now, and it refuses at the bound.
+// ScuttlebuttRequestSet::count cannot be advanced from outside.  The
+// request set has no well_formed(), so the type is its only bound.
+// reserve_next() is the only thing that moves the count, and it refuses
+// at the capacity.
 
 #include <crucible/canopy/Scuttlebutt.h>
 

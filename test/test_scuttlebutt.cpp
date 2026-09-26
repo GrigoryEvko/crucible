@@ -26,6 +26,13 @@ int main() {
     static_assert(!std::is_copy_constructible_v<Sync>);
     static_assert(!std::is_move_constructible_v<Sync>);
     static_assert(alignof(Sync) >= 64);
+    static_assert(!std::is_constructible_v<Sync, cc::SwimPeer, std::span<const cc::SwimPeer>, cc::ScuttlebuttConfig>,
+                  "mint_scuttlebutt is the only door");
+    static_assert(!std::is_constructible_v<cc::GossipedScuttlebuttDigest<4, 4>, cc::ScuttlebuttDigest<4, 4>>,
+                  "a digest is gossiped only through admit_gossiped");
+    static_assert(!std::is_constructible_v<cc::GossipedScuttlebuttDelta<Set::state_type>,
+                                           cc::ScuttlebuttDelta<Set::state_type>>,
+                  "a delta is gossiped only through admit_gossiped");
 
     const auto p1 = cc::admit_swim_peer(peer(1));
     const auto p2 = cc::admit_swim_peer(peer(2));
@@ -34,8 +41,8 @@ int main() {
     std::array<cc::SwimPeer, 1> a_peers{p2};
     std::array<cc::SwimPeer, 1> b_peers{p1};
 
-    auto a = cc::mint_scuttlebutt<4, 4>(crucible::effects::testing::init(), p1, std::span<const cc::SwimPeer>{a_peers});
-    auto b = cc::mint_scuttlebutt<4, 4>(crucible::effects::testing::init(), p2, std::span<const cc::SwimPeer>{b_peers});
+    auto a = cc::mint_scuttlebutt<4, 4>(::foundation::effects::testing::init(), p1, std::span<const cc::SwimPeer>{a_peers});
+    auto b = cc::mint_scuttlebutt<4, 4>(::foundation::effects::testing::init(), p2, std::span<const cc::SwimPeer>{b_peers});
 
     assert(a.peer_count() == 2);
     assert(a.key_count() == 0);
@@ -50,6 +57,14 @@ int main() {
     const cc::LocalScuttlebuttKey key = raw_key.value();
     Set set_a{};
     Set set_b{};
+
+    // A key that did not come through admit_scuttlebutt_key names nothing,
+    // and the sync refuses to register it.
+    auto unnamed = a.register_state(cc::admit_local_write(cc::ScuttlebuttKey{}), set_a);
+    assert(!unnamed.has_value());
+    assert(unnamed.error() == cc::ScuttlebuttError::EmptyKey);
+    assert(a.key_count() == 0);
+
     assert(a.register_state(key, set_a).has_value());
     assert(b.register_state(key, set_b).has_value());
     assert(a.key_count() == 1);
@@ -61,7 +76,7 @@ int main() {
 
     auto digest_a = a.digest();
     assert(digest_a.size().value() == 1);
-    auto diff_b = b.compare_digest(cc::GossipedScuttlebuttDigest<4, 4>{digest_a});
+    auto diff_b = b.compare_digest(cc::admit_gossiped(digest_a));
     assert(diff_b.has_value());
     assert(diff_b->requests.size().value() == 1);
     assert(diff_b->offers.size().value() == 0);
@@ -69,17 +84,17 @@ int main() {
     auto offered = a.delta_for_request(diff_b->requests.entries[0], set_a);
     assert(offered.has_value());
 
-    auto changed = b.apply_delta(cc::GossipedScuttlebuttDelta<Set::state_type>{offered.value().value()}, set_b);
+    auto changed = b.apply_delta(cc::admit_gossiped(offered.value().value()), set_b);
     assert(changed.has_value());
     assert(changed.value());
     assert(set_b.contains(42));
     assert(b.merge_count() == 1);
 
-    auto repeated = b.apply_delta(cc::GossipedScuttlebuttDelta<Set::state_type>{offered.value().value()}, set_b);
+    auto repeated = b.apply_delta(cc::admit_gossiped(offered.value().value()), set_b);
     assert(repeated.has_value());
     assert(!repeated.value());
 
-    auto settled = a.compare_digest(cc::GossipedScuttlebuttDigest<4, 4>{b.digest()});
+    auto settled = a.compare_digest(cc::admit_gossiped(b.digest()));
     assert(settled.has_value());
     assert(settled->requests.size().value() == 0);
     assert(settled->offers.size().value() == 0);
@@ -102,12 +117,12 @@ int main() {
     auto reg_delta = a.publish_local_change(reg_key, reg_a);
     assert(reg_delta.has_value());
 
-    auto reg_diff = b.compare_digest(cc::GossipedScuttlebuttDigest<4, 4>{a.digest()});
+    auto reg_diff = b.compare_digest(cc::admit_gossiped(a.digest()));
     assert(reg_diff.has_value());
     assert(reg_diff->requests.size().value() == 1);
     auto reg_offer = a.delta_for_request(reg_diff->requests.entries[0], reg_a);
     assert(reg_offer.has_value());
-    auto reg_changed = b.apply_delta(cc::GossipedScuttlebuttDelta<Reg::state_type>{reg_offer.value().value()}, reg_b);
+    auto reg_changed = b.apply_delta(cc::admit_gossiped(reg_offer.value().value()), reg_b);
     assert(reg_changed.has_value());
     assert(reg_changed.value());
     assert(reg_b.value().has_value());
@@ -133,7 +148,7 @@ int main() {
     malformed.entries[1] = malformed.entries[0];
     static_assert(!std::is_assignable_v<decltype(malformed.count)&, std::uint16_t>,
                   "count must not be settable past its bound from outside");
-    auto malformed_diff = b.compare_digest(cc::GossipedScuttlebuttDigest<4, 4>{malformed});
+    auto malformed_diff = b.compare_digest(cc::admit_gossiped(malformed));
     assert(!malformed_diff.has_value());
     assert(malformed_diff.error() == cc::ScuttlebuttError::MalformedDigest);
 
@@ -147,7 +162,7 @@ int main() {
     assert(compacted.has_value());
     assert(compacted.value() == 2);
 
-    auto tiny = cc::mint_scuttlebutt<2, 1>(crucible::effects::testing::init(), p1);
+    auto tiny = cc::mint_scuttlebutt<2, 1>(::foundation::effects::testing::init(), p1);
     assert(tiny.add_peer(p2).has_value());
     auto overflow_peer = tiny.add_peer(p3);
     assert(!overflow_peer.has_value());

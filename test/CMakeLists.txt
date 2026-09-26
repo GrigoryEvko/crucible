@@ -6663,41 +6663,56 @@ crucible_neg_compile_effects_test(neg_lifeguard_mint_test_context
   "could not convert|no matching function|cannot convert"
     "effects::Test|effects::Init")
 
-# GAPS-115 — canopy/Scuttlebutt.h bounded anti-entropy substrate.
-#   * neg_scuttlebutt_zero_max_peers: MaxPeers=0 is rejected structurally.
-#   * neg_scuttlebutt_raw_key_register: raw ScuttlebuttKey cannot
-#     register a CRDT; LocalScuttlebuttKey is required.
-#   * neg_scuttlebutt_raw_delta_apply: raw deltas cannot cross the
-#     gossiped merge boundary.
-#   * neg_scuttlebutt_non_crdt_publish: publish requires the CRDT concept.
-#   * neg_scuttlebutt_mint_test_context: Init-only mint rejects Test.
-crucible_neg_compile_test(neg_scuttlebutt_zero_max_peers
-  "constraints not satisfied|ScuttlebuttShape|MaxPeers")
-crucible_neg_compile_test(neg_scuttlebutt_raw_key_register
-  "cannot convert|no matching function|could not convert|LocalScuttlebuttKey|Tagged")
-crucible_neg_compile_test(neg_scuttlebutt_raw_delta_apply
-  "cannot convert|no matching function|could not convert|GossipedScuttlebuttDelta|Tagged")
-crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
-  "constraints not satisfied|ScuttlebuttCrdt|state_type|merge")
+# canopy/Scuttlebutt.h, the bounded anti-entropy substrate.
+#   * neg_scuttlebutt_zero_max_peers: a zero peer bound fails the shape.
+#   * neg_scuttlebutt_raw_key_register: a raw key does not register a
+#     CRDT.  The key must be a local key.
+#   * neg_scuttlebutt_raw_delta_apply: a raw delta is not a gossiped delta.
+#   * neg_scuttlebutt_raw_digest_compare: a raw digest is not a gossiped
+#     digest.
+#   * neg_scuttlebutt_non_crdt_publish: publish requires a CRDT.
+#   * neg_scuttlebutt_direct_ctor: the constructor is private, and
+#     mint_scuttlebutt is the only door.
+#   * neg_scuttlebutt_mint_test_context and
+#     neg_scuttlebutt_mint_background_context: the mint takes Init, and
+#     neither a Test nor a background context converts to it.
+#   * neg_scuttlebutt_digest_count_assign and
+#     neg_scuttlebutt_request_count_advance: a table count has one mutator,
+#     which refuses at the capacity, so it cannot be assigned or advanced.
+crucible_neg_compile_multi_test(neg_scuttlebutt_zero_max_peers
+  "template constraint failure for .template<long unsigned int MaxPeers, long unsigned int MaxKeys>"
+  "ScuttlebuttShape<MaxPeers, MaxKeys>. \\[with MaxPeers = 0; MaxKeys = 4\\]")
+crucible_neg_compile_multi_test(neg_scuttlebutt_raw_key_register
+  "no matching function for call to .crucible::canopy::ScuttlebuttSync<4, 4>::register_state\\(crucible::canopy::ScuttlebuttKey&"
+  "cannot convert .key. \\(type .crucible::canopy::ScuttlebuttKey.\\) to type .crucible::canopy::LocalScuttlebuttKey.")
+crucible_neg_compile_multi_test(neg_scuttlebutt_raw_delta_apply
+  "cannot convert .crucible::canopy::ScuttlebuttDelta<crucible::canopy::detail::BoundedHashSetState<long unsigned int, 4> >. to"
+  "fixy::Tagged<crucible::canopy::ScuttlebuttDelta<crucible::canopy::detail::BoundedHashSetState<long unsigned int, 4> >, fixy::tags::source::Gossiped>")
+crucible_neg_compile_multi_test(neg_scuttlebutt_raw_digest_compare
+  "cannot convert .crucible::canopy::ScuttlebuttDigest<4, 4>. to"
+  "fixy::Tagged<crucible::canopy::ScuttlebuttDigest<4, 4>, fixy::tags::source::Gossiped>")
+crucible_neg_compile_multi_test(neg_scuttlebutt_non_crdt_publish
+  "no matching function for call to .crucible::canopy::ScuttlebuttSync<4, 4>::publish_local_change"
+  "required for the satisfaction of .ScuttlebuttCrdt<C>. \\[with C = NotCrdt\\]")
+crucible_neg_compile_multi_test(neg_scuttlebutt_direct_ctor
+  "ScuttlebuttSync<MaxPeers, MaxKeys>::ScuttlebuttSync\\(peer_type, std::span<"
+  "is private within this context")
 crucible_neg_compile_effects_test(neg_scuttlebutt_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
+  "could not convert .foundation::effects::testing::test\\(\\)."
+  "from .foundation::effects::Test. to .foundation::effects::Init.")
+crucible_neg_compile_effects_test(neg_scuttlebutt_mint_background_context
+  "could not convert .foundation::effects::testing::bg\\(\\)."
+  "from .foundation::effects::Bg. to .foundation::effects::Init.")
+crucible_neg_compile_multi_test(neg_scuttlebutt_digest_count_assign
+  "no match for .operator=. \\(operand types are .crucible::canopy::ScuttlebuttSlotCount<4>."
+  "and .uint16_t.")
+crucible_neg_compile_multi_test(neg_scuttlebutt_request_count_advance
+  "no match for .operator\\+\\+."
+  "\\(operand type is .crucible::canopy::ScuttlebuttSlotCount<4>.\\)")
 
-# oob-62 — the three counters whose `== Capacity` guard let a count already
-# past the bound through, so the next push wrote out of bounds.  All three
-# are now structural: the count is private behind a single mutator that
-# refuses at the bound and hands back a proof-token index, so the bad value
-# cannot be built rather than being tested for.  Each fixture compiles
-# against the pre-fix header and is rejected by the fixed one, so it targets
-# exactly the repair.
-#   * neg_scuttlebutt_digest_count_assign: the count cannot be assigned.
-#   * neg_scuttlebutt_request_count_advance: nor incremented past the bound.
-#   * neg_json_buffer_size_write: fixed_json_buffer's size is private, which
-#     also closes the companion wrap at its append() bounds computation.
-crucible_neg_compile_test(neg_scuttlebutt_digest_count_assign
-  "no match for .operator=.|ScuttlebuttSlotCount|count")
-crucible_neg_compile_test(neg_scuttlebutt_request_count_advance
-  "no match for .operator\\+\\+.|ScuttlebuttSlotCount|count")
+# fixed_json_buffer's size is private, so a caller cannot set it past the
+# buffer.  The same refusal closes the wrap in the bounds computation of
+# append().
 crucible_neg_compile_test(neg_json_buffer_size_write
   "has no member named .size.|not accessible|private")
 
