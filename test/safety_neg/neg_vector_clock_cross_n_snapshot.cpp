@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-215 fixture #3: snapshots for different MaxNodes values are
-// structurally distinct and must not cross a fixed-size API boundary.
+// Snapshots for different MaxNodes values are distinct types, so a
+// snapshot must not cross an API boundary sized for another count.
 
 #include <crucible/canopy/VectorClock.h>
 

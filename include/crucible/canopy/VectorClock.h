@@ -1,12 +1,13 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/_HappensBefore.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_FixedArray.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Refined.h>
+#include <foundation/Pinned.h>
+#include <foundation/algebra/lattices/HappensBefore.h>
+#include <foundation/effects/Effect.h>
 
+#include <array>
 #include <atomic>
 #include <compare>
 #include <concepts>
@@ -22,19 +23,27 @@ template <std::size_t MaxNodes>
 concept VectorClockNodeBound = MaxNodes > 0
                             && MaxNodes <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
+// The bound of a node id: at most MaxNodes - 1.
 template <std::size_t MaxNodes>
     requires VectorClockNodeBound<MaxNodes>
-using VectorClockNodeIndex =
-    safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(MaxNodes - 1)>, std::uint16_t>;
+inline constexpr auto vector_clock_node_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(MaxNodes - 1)>;
+
+// The bound of a delta entry count: at most MaxNodes.
+template <std::size_t MaxNodes>
+    requires VectorClockNodeBound<MaxNodes>
+inline constexpr auto vector_clock_delta_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(MaxNodes)>;
 
 template <std::size_t MaxNodes>
     requires VectorClockNodeBound<MaxNodes>
-using VectorClockEntryCount = safety::Refined<safety::positive, std::uint64_t>;
+using VectorClockNodeIndex = ::fixy::Refined<vector_clock_node_bound<MaxNodes>, std::uint16_t>;
 
 template <std::size_t MaxNodes>
     requires VectorClockNodeBound<MaxNodes>
-using VectorClockDeltaCount =
-    safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(MaxNodes)>, std::uint16_t>;
+using VectorClockEntryCount = ::fixy::Refined<::fixy::positive, std::uint64_t>;
+
+template <std::size_t MaxNodes>
+    requires VectorClockNodeBound<MaxNodes>
+using VectorClockDeltaCount = ::fixy::Refined<vector_clock_delta_bound<MaxNodes>, std::uint16_t>;
 
 template <std::size_t MaxNodes, typename Tag>
     requires VectorClockNodeBound<MaxNodes>
@@ -47,8 +56,8 @@ struct VectorClockDelta {
     using count_type = VectorClockDeltaCount<MaxNodes>;
 
 private:
-    safety::FixedArray<std::uint16_t, MaxNodes> node_ids{};
-    safety::FixedArray<std::uint64_t, MaxNodes> values{};
+    ::fixy::FixedArray<std::uint16_t, MaxNodes> node_ids{};
+    ::fixy::FixedArray<std::uint64_t, MaxNodes> values{};
     std::uint16_t count_ = 0;
 
     friend struct VectorClockSnapshot<MaxNodes, Tag>;
@@ -56,14 +65,16 @@ private:
 public:
     [[nodiscard]] constexpr std::uint16_t raw_count() const noexcept { return count_; }
 
+    // push() never lets the count pass MaxNodes.
     [[nodiscard]] constexpr count_type size() const noexcept {
-        return count_type{count_, typename count_type::Trusted{}};
+        return ::fixy::mint_refined_trusted<vector_clock_delta_bound<MaxNodes>>(count_);
     }
 
     [[nodiscard]] constexpr bool empty() const noexcept { return count_ == 0; }
 
+    // Every stored id came in through push() as a node index.
     [[nodiscard]] constexpr node_index_type node_at(node_index_type slot) const noexcept {
-        return node_index_type{node_ids[slot.value()], typename node_index_type::Trusted{}};
+        return ::fixy::mint_refined_trusted<vector_clock_node_bound<MaxNodes>>(node_ids[slot.value()]);
     }
 
     [[nodiscard]] constexpr std::uint64_t value_at(node_index_type slot) const noexcept { return values[slot.value()]; }
@@ -91,16 +102,21 @@ public:
     }
 };
 
+// A snapshot holds counts that crossed a wire or left a live clock, so it
+// states its own order over them.  The lattice builds a clock only from a
+// recorded history and has no door that takes counts, so no snapshot can
+// become a lattice clock.  The order below is the lattice's pointwise
+// order, and the check after the class pins the two against each other.
 template <std::size_t MaxNodes, typename Tag = void>
     requires VectorClockNodeBound<MaxNodes>
 struct VectorClockSnapshot {
-    using lattice_type = algebra::lattices::HappensBeforeLattice<MaxNodes, Tag>;
+    using lattice_type = ::foundation::algebra::lattices::HappensBeforeLattice<MaxNodes, Tag>;
     using lattice_clock_type = typename lattice_type::element_type;
     using node_index_type = VectorClockNodeIndex<MaxNodes>;
     using positive_entry_type = VectorClockEntryCount<MaxNodes>;
     using delta_type = VectorClockDelta<MaxNodes, Tag>;
 
-    safety::FixedArray<std::uint64_t, MaxNodes> entries{};
+    ::fixy::FixedArray<std::uint64_t, MaxNodes> entries{};
 
     constexpr VectorClockSnapshot() noexcept = default;
 
@@ -117,48 +133,46 @@ struct VectorClockSnapshot {
         if (value == 0) {
             return std::nullopt;
         }
-        return positive_entry_type{value, typename positive_entry_type::Trusted{}};
-    }
-
-    [[nodiscard]] constexpr lattice_clock_type as_lattice_clock() const noexcept {
-        lattice_clock_type out{};
-        for (std::size_t i = 0; i < MaxNodes; ++i) {
-            out.clock[i] = entries[i];
-        }
-        return out;
+        return ::fixy::mint_refined_trusted<::fixy::positive>(value);
     }
 
     [[nodiscard]] static constexpr VectorClockSnapshot from_lattice_clock(lattice_clock_type clock) noexcept {
         VectorClockSnapshot out{};
+        const std::array<std::uint64_t, MaxNodes> slots = clock.slots();
         for (std::size_t i = 0; i < MaxNodes; ++i) {
-            out.entries[i] = clock.clock[i];
+            out.entries[i] = slots[i];
         }
         return out;
     }
 
     [[nodiscard]] constexpr std::partial_ordering operator<=>(VectorClockSnapshot const& other) const noexcept {
-        return as_lattice_clock() <=> other.as_lattice_clock();
+        const bool self_leq_other = leq_(*this, other);
+        const bool other_leq_self = leq_(other, *this);
+        if (self_leq_other && other_leq_self) return std::partial_ordering::equivalent;
+        if (self_leq_other) return std::partial_ordering::less;
+        if (other_leq_self) return std::partial_ordering::greater;
+        return std::partial_ordering::unordered;
     }
 
     [[nodiscard]] constexpr bool operator==(VectorClockSnapshot const& other) const noexcept = default;
 
     [[nodiscard]] constexpr bool happens_before(VectorClockSnapshot const& other) const noexcept {
-        return lattice_type::happens_before(as_lattice_clock(), other.as_lattice_clock());
+        return leq_(*this, other) && !(*this == other);
     }
 
     [[nodiscard]] constexpr bool concurrent_with(VectorClockSnapshot const& other) const noexcept {
-        return lattice_type::is_concurrent(as_lattice_clock(), other.as_lattice_clock());
+        return !leq_(*this, other) && !leq_(other, *this);
     }
 
     [[nodiscard]] constexpr bool comparable_with(VectorClockSnapshot const& other) const noexcept {
-        return lattice_type::comparable(as_lattice_clock(), other.as_lattice_clock());
+        return leq_(*this, other) || leq_(other, *this);
     }
 
+    // Every index is below MaxNodes.
     [[nodiscard]] constexpr delta_type sparse_delta() const noexcept {
         delta_type delta{};
         for (std::uint16_t i = 0; i < MaxNodes; ++i) {
-            const auto node = node_index_type{i, typename node_index_type::Trusted{}};
-            (void)delta.push(node, entries[i]);
+            (void)delta.push(::fixy::mint_refined_trusted<vector_clock_node_bound<MaxNodes>>(i), entries[i]);
         }
         return delta;
     }
@@ -171,11 +185,49 @@ struct VectorClockSnapshot {
         }
         return out;
     }
+
+private:
+    // The pointwise order of the lattice.  Linear in MaxNodes.
+    [[nodiscard]] static constexpr bool leq_(VectorClockSnapshot const& lhs, VectorClockSnapshot const& rhs) noexcept {
+        for (std::size_t i = 0; i < MaxNodes; ++i) {
+            if (lhs.entries[i] > rhs.entries[i]) return false;
+        }
+        return true;
+    }
 };
+
+namespace detail::vector_clock_order_check {
+
+// The snapshot order agrees with the lattice on every pair of four clocks
+// that the lattice itself built: the empty history, one event at each of
+// two processes, and their join.
+[[nodiscard]] consteval bool snapshot_order_agrees_with_lattice() noexcept {
+    using HB = ::foundation::algebra::lattices::HappensBeforeLattice<3>;
+    using Snap = VectorClockSnapshot<3>;
+    const auto first = HB::successor_at(HB::bottom(), 0);
+    const auto second = HB::successor_at(HB::bottom(), 1);
+    const std::array<HB::element_type, 4> clocks{HB::bottom(), first, second, HB::join(first, second)};
+    for (const auto& lhs : clocks) {
+        for (const auto& rhs : clocks) {
+            const Snap left = Snap::from_lattice_clock(lhs);
+            const Snap right = Snap::from_lattice_clock(rhs);
+            if ((left <=> right) != (lhs <=> rhs)) return false;
+            if (left.happens_before(right) != HB::happens_before(lhs, rhs)) return false;
+            if (left.concurrent_with(right) != HB::is_concurrent(lhs, rhs)) return false;
+            if (left.comparable_with(right) != HB::comparable(lhs, rhs)) return false;
+        }
+    }
+    return true;
+}
+
+static_assert(snapshot_order_agrees_with_lattice(),
+              "VectorClockSnapshot must order its counts as HappensBeforeLattice orders clocks.");
+
+}  // namespace detail::vector_clock_order_check
 
 template <std::size_t MaxNodes, typename Tag = void>
     requires VectorClockNodeBound<MaxNodes>
-class alignas(64) VectorClock : public safety::Pinned<VectorClock<MaxNodes, Tag>> {
+class alignas(64) VectorClock : public ::foundation::Pinned<VectorClock<MaxNodes, Tag>> {
 public:
     using snapshot_type = VectorClockSnapshot<MaxNodes, Tag>;
     using delta_type = VectorClockDelta<MaxNodes, Tag>;
@@ -224,7 +276,7 @@ public:
         if (value == 0) {
             return std::nullopt;
         }
-        return positive_entry_type{value, typename positive_entry_type::Trusted{}};
+        return ::fixy::mint_refined_trusted<::fixy::positive>(value);
     }
 
     [[nodiscard]] std::partial_ordering operator<=>(VectorClock const& other) const noexcept {
@@ -279,7 +331,7 @@ private:
         }
     }
 
-    alignas(64) safety::FixedArray<std::atomic<std::uint64_t>, MaxNodes> entries_{};
+    alignas(64) ::fixy::FixedArray<std::atomic<std::uint64_t>, MaxNodes> entries_{};
     [[no_unique_address]] node_index_type self_id_;
 };
 
@@ -298,10 +350,12 @@ static_assert(std::is_trivially_copyable_v<VectorClockSnapshot<4>>);
 static_assert(std::is_trivially_destructible_v<VectorClockSnapshot<4>>);
 static_assert(sizeof(VectorClockSnapshot<4>) == 4 * sizeof(std::uint64_t));
 
+// The id is checked against MaxNodes when the clock is built.
 template <std::size_t MaxNodes, typename Tag = void>
     requires VectorClockNodeBound<MaxNodes>
-[[nodiscard]] inline VectorClock<MaxNodes, Tag> mint_vector_clock(effects::Init, std::uint16_t self_id) noexcept {
-    return VectorClock<MaxNodes, Tag>{VectorClockNodeIndex<MaxNodes>{self_id}};
+[[nodiscard]] inline VectorClock<MaxNodes, Tag> mint_vector_clock(::foundation::effects::Init,
+                                                                  std::uint16_t self_id) noexcept {
+    return VectorClock<MaxNodes, Tag>{::fixy::mint_refined<vector_clock_node_bound<MaxNodes>>(self_id)};
 }
 
 }  // namespace crucible::canopy

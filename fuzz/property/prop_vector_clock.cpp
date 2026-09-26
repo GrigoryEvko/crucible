@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_vector_clock.cpp — partial-order + round-trip fuzzer for the
-// canopy VectorClock snapshot (canopy/VectorClock.h, backed by
-// algebra::lattices::HappensBeforeLattice).
+// canopy VectorClock snapshot (canopy/VectorClock.h, whose order a
+// compile-time check pins to HappensBeforeLattice).
 //
 // VectorClockSnapshot is the comparison surface canopy uses to recover
 // causality across the fleet: happens_before / concurrent_with /
@@ -28,8 +28,7 @@
 //   * concurrency is symmetric; happens_before is anti-symmetric
 //   * reflexivity: a<=>a equivalent, ¬happens_before(a,a),
 //     ¬concurrent_with(a,a), comparable_with(a,a)
-//   * round-trips: from_sparse_delta(a.sparse_delta()) == a and
-//     from_lattice_clock(a.as_lattice_clock()) == a
+//   * round-trip: from_sparse_delta(a.sparse_delta()) == a
 //
 // All verified clean by hand-trace; the order is correct — this is the
 // full-domain dense-oracle regression net the spot test lacked.
@@ -156,9 +155,8 @@ int main(int argc, char** argv) {
             if (a.concurrent_with(a)) return false;
             if (!a.comparable_with(a)) return false;
 
-            // ── round-trips ──
+            // ── round-trip ──
             if (!(Snapshot::from_sparse_delta(a.sparse_delta()) == a)) return false;
-            if (!(Snapshot::from_lattice_clock(a.as_lattice_clock()) == a)) return false;
 
             return true;
         });

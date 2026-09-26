@@ -22,9 +22,10 @@ int main() {
     static_assert(!std::is_move_constructible_v<Clock>);
     static_assert(sizeof(Snapshot) == 4 * sizeof(std::uint64_t));
 
-    constexpr Node n0{0};
-    constexpr Node n1{1};
-    constexpr Node n2{2};
+    constexpr auto node_bound = crucible::canopy::vector_clock_node_bound<4>;
+    constexpr Node n0 = ::fixy::mint_refined<node_bound>(std::uint16_t{0});
+    constexpr Node n1 = ::fixy::mint_refined<node_bound>(std::uint16_t{1});
+    constexpr Node n2 = ::fixy::mint_refined<node_bound>(std::uint16_t{2});
 
     constexpr Snapshot origin{};
     static_assert(origin.at(n0) == 0);
@@ -52,8 +53,8 @@ int main() {
     assert(duplicate_delta.raw_count() == 1);
     assert(Snapshot::from_sparse_delta(duplicate_delta).at(n0) == 10);
 
-    auto c0 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(crucible::effects::testing::init(), 0);
-    auto c1 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(crucible::effects::testing::init(), 1);
+    auto c0 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(::foundation::effects::testing::init(),0);
+    auto c1 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(::foundation::effects::testing::init(),1);
 
     c0.on_local_event();
     c0.on_local_event();
@@ -72,7 +73,7 @@ int main() {
     c1.on_send(carrier);
     assert(c1.snapshot() == carrier.snapshot());
 
-    auto c2 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(crucible::effects::testing::init(), 2);
+    auto c2 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(::foundation::effects::testing::init(),2);
     c2.apply_delta(c1.sparse_delta());
     assert(c2.at(n0) == c1.at(n0));
     assert(c2.at(n1) == c1.at(n1));
@@ -80,14 +81,14 @@ int main() {
     c2.on_recv(c1.sparse_delta());
     assert(c2.at(n2) == 1);
 
-    auto left = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(crucible::effects::testing::init(), 0);
-    auto right = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(crucible::effects::testing::init(), 1);
+    auto left = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(::foundation::effects::testing::init(),0);
+    auto right = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(::foundation::effects::testing::init(),1);
     left.on_local_event();
     right.on_local_event();
     assert(left.concurrent_with(right));
     assert(!left.comparable_with(right));
 
-    auto shared = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(crucible::effects::testing::init(), 0);
+    auto shared = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(::foundation::effects::testing::init(),0);
     constexpr std::size_t per_thread = 256;
     std::jthread t0([&] {
         for (std::size_t i = 0; i < per_thread; ++i) {
