@@ -51,6 +51,9 @@ function(crucible_bench name)
   endif()
   # Opt out of -Werror: benches ignore nodiscard returns by design.
   set_target_properties(${name} PROPERTIES CRUCIBLE_NO_WERROR TRUE)
+  # The folder marks the target as a bench in the CMake file API.
+  # scripts/pgo-bootstrap.sh reads the bench list from there.
+  set_target_properties(${name} PROPERTIES FOLDER crucible_bench)
 
   # Asm dump (gitignored, opt-in via -DCRUCIBLE_DUMP_ASM=ON).
   crucible_dump_asm(${name})

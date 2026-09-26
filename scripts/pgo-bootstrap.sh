@@ -32,22 +32,57 @@ bench_timeout="${CRUCIBLE_PGO_BENCH_TIMEOUT:-900}"
 skip_regex="${CRUCIBLE_PGO_SKIP:-}"
 build_dir="$tree/build-pgo-generate"
 
-# 1. Configure.  CMake resolves the tier and the profile directory.
+# 1. Configure.  CMake resolves the tier and the profile directory.  The
+#    query files ask CMake to write its cache and its code model through the
+#    file API, so step 2 reads what CMake decided, not the text of a list file.
 configure_args=()
 if [[ -n "${CRUCIBLE_PGO_DIR:-}" ]]; then
     configure_args+=("-DCRUCIBLE_PGO_DIR=$CRUCIBLE_PGO_DIR")
 fi
+query_dir="$build_dir/.cmake/api/v1/query"
+mkdir -p "$query_dir"
+: >"$query_dir/cache-v2"
+: >"$query_dir/codemodel-v2"
 cmake --preset pgo-generate "${configure_args[@]}"
 
-profile_dir="$(grep -E '^CRUCIBLE_PGO_PROFILE_DIR:INTERNAL=' "$build_dir/CMakeCache.txt" | cut -d= -f2-)"
-tier="$(grep -E '^CRUCIBLE_PGO_TIER:INTERNAL=' "$build_dir/CMakeCache.txt" | cut -d= -f2-)"
-if [[ -z "$profile_dir" || -z "$tier" ]]; then
-    echo "pgo-bootstrap: $build_dir/CMakeCache.txt has no CRUCIBLE_PGO_PROFILE_DIR or CRUCIBLE_PGO_TIER." >&2
+# 2. The input set, enumerated before anything runs.  The first line is the
+#    profile directory, the second the tier, and each other line a bench: an
+#    executable whose FOLDER property is crucible_bench, which the
+#    crucible_bench() function in bench/CMakeLists.txt sets.
+if ! facts_text="$(python3 - "$build_dir" <<'PY'
+import json, sys
+from pathlib import Path
+reply = Path(sys.argv[1]) / ".cmake" / "api" / "v1" / "reply"
+# The index with the lexically greatest name is the newest one.
+index = json.loads(max(reply.glob("index-*.json")).read_text())
+objects = {entry["kind"]: entry for entry in index["objects"]}
+cache = json.loads((reply / objects["cache"]["jsonFile"]).read_text())
+values = {entry["name"]: entry["value"] for entry in cache["entries"]}
+print(values.get("CRUCIBLE_PGO_PROFILE_DIR", ""))
+print(values.get("CRUCIBLE_PGO_TIER", ""))
+model = json.loads((reply / objects["codemodel"]["jsonFile"]).read_text())
+benches = []
+for target in model["configurations"][0]["targets"]:
+    detail = json.loads((reply / target["jsonFile"]).read_text())
+    if detail.get("type") == "EXECUTABLE" and detail.get("folder", {}).get("name") == "crucible_bench":
+        benches.append(detail["name"])
+print("\n".join(sorted(benches)))
+PY
+)"; then
+    echo "pgo-bootstrap: the CMake file API reply in $build_dir could not be read." >&2
     exit 1
 fi
-
-# 2. The input set, enumerated before anything runs.
-mapfile -t registered < <(grep -oE '^crucible_bench\(bench_[a-z0-9_]+\)' bench/CMakeLists.txt | grep -oE 'bench_[a-z0-9_]+')
+mapfile -t facts <<<"$facts_text"
+profile_dir="${facts[0]:-}"
+tier="${facts[1]:-}"
+if [[ -z "$profile_dir" || -z "$tier" ]]; then
+    echo "pgo-bootstrap: the CMake cache of $build_dir has no CRUCIBLE_PGO_PROFILE_DIR or CRUCIBLE_PGO_TIER." >&2
+    exit 1
+fi
+registered=()
+for name in "${facts[@]:2}"; do
+    [[ -n "$name" ]] && registered+=("$name")
+done
 benches=()
 skipped=()
 for name in "${registered[@]}"; do
