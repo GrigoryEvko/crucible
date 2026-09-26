@@ -1,4 +1,4 @@
-// Zero-cost proof for the crucible::safety wrappers (§XVI).
+// Zero-cost proof for the fixy wrappers (§XVI).
 //
 // Each wrapper benched side-by-side with the bare primitive. Medians
 // should be statistically indistinguishable — if a wrapper costs any
@@ -6,22 +6,33 @@
 // safety layer is zero-cost after -O3. bench::compare() between every
 // adjacent bare/wrapped pair makes this a one-line pass/fail per
 // wrapper (look for [indistinguishable]; anything else is a regression).
+//
+// Each wrapped arm builds its value through the wrapper's mint door, so
+// the arm measures the door's cost too.  mint_refined runs the predicate,
+// as the checked constructor of the old wrapper did.
 
 #include <cstdint>
 #include <cstdio>
 #include <utility>
 
-#include <crucible/safety/_ConstantTime.h>
-#include <crucible/safety/_Linear.h>
-#include <crucible/safety/_Machine.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Secret.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/ConstantTime.h>
+#include <fixy/Machine.h>
+#include <fixy/Mutation.h>
+#include <fixy/Qtt.h>
+#include <fixy/Refined.h>
+#include <fixy/Secret.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
 
 #include "bench_harness.h"
 
-using namespace crucible::safety;
+using ::fixy::AtomicMonotonic;
+using ::fixy::Linear;
+using ::fixy::Machine;
+using ::fixy::MaxObserved;
+using ::fixy::Refined;
+using ::fixy::Secret;
+using ::fixy::Tagged;
 
 // ── Linear<T> ─────────────────────────────────────────────────────
 
@@ -40,12 +51,12 @@ Resource consume_bare(Resource r) {
 Linear<Resource> consume_linear(Linear<Resource>&& x) {
     Resource r = std::move(x).consume();
     r.payload = r.fd * 7 + 1;
-    return Linear<Resource>{std::move(r)};
+    return ::fixy::mint_linear<Resource>(std::move(r));
 }
 
 // ── Refined<Pred, T> ──────────────────────────────────────────────
 
-using PosInt = Refined<positive, int>;
+using PosInt = Refined<::fixy::positive, int>;
 
 int square_bare(int n) { return n * n; }
 int square_refined(PosInt n) { return n.value() * n.value(); }
@@ -54,13 +65,13 @@ int square_refined(PosInt n) { return n.value() * n.value(); }
 
 uint64_t leak_bare(uint64_t x) { return x ^ 0xDEADBEEFULL; }
 uint64_t leak_secret(Secret<uint64_t> s) {
-    uint64_t x = std::move(s).declassify<secret_policy::AuditedLogging>();
+    uint64_t x = std::move(s).declassify<::fixy::tags::secret_policy::AuditedLogging>();
     return x ^ 0xDEADBEEFULL;
 }
 
 // ── Tagged<T, Tag> ────────────────────────────────────────────────
 
-using UserInt = Tagged<int, source::FromUser>;
+using UserInt = Tagged<int, ::fixy::tags::source::FromUser>;
 int id_bare(int x) { return x + 1; }
 int id_tagged(UserInt x) { return x.value() + 1; }
 
@@ -79,7 +90,7 @@ ConnState transition_bare(ConnState s) {
 Machine<ConnState> transition_machine(Machine<ConnState>&& m) {
     ConnState s = std::move(m).extract();
     ++s.attempts;
-    return Machine<ConnState>{std::move(s)};
+    return ::fixy::mint_machine<ConnState>(std::move(s));
 }
 
 }  // namespace
@@ -114,7 +125,7 @@ int main() {
                    }),
         bench::run("Linear<Resource> round-trip",
                    [&] {
-                       Linear<Resource> l = consume_linear(Linear<Resource>{r0});
+                       Linear<Resource> l = consume_linear(::fixy::mint_linear<Resource>(r0));
                        Resource r = std::move(l).consume();
                        bench::do_not_optimize(r);
                    }),
@@ -126,7 +137,7 @@ int main() {
                    }),
         bench::run("Refined<positive,int> square",
                    [&] {
-                       int r = square_refined(PosInt{n0});
+                       int r = square_refined(::fixy::mint_refined<::fixy::positive>(int{n0}));
                        bench::do_not_optimize(r);
                    }),
         // Pair 2: Secret<uint64_t>
@@ -137,7 +148,7 @@ int main() {
                    }),
         bench::run("Secret<uint64> declassify+xor",
                    [&] {
-                       uint64_t r = leak_secret(Secret<uint64_t>{v0});
+                       uint64_t r = leak_secret(::fixy::mint_secret<uint64_t>(uint64_t{v0}));
                        bench::do_not_optimize(r);
                    }),
         // Pair 3: Tagged<int, source::FromUser>
@@ -148,7 +159,7 @@ int main() {
                    }),
         bench::run("Tagged<int,source> +1",
                    [&] {
-                       int r = id_tagged(UserInt{t0});
+                       int r = id_tagged(::fixy::mint_tagged<::fixy::tags::source::FromUser>(int{t0}));
                        bench::do_not_optimize(r);
                    }),
         // Pair 4: Machine<ConnState>
@@ -159,7 +170,7 @@ int main() {
                    }),
         bench::run("Machine<ConnState> transition",
                    [&] {
-                       Machine<ConnState> m = transition_machine(Machine<ConnState>{c0});
+                       Machine<ConnState> m = transition_machine(::fixy::mint_machine<ConnState>(c0));
                        ConnState s = std::move(m).extract();
                        bench::do_not_optimize(s);
                    }),
@@ -168,17 +179,17 @@ int main() {
         // the primitive. Just confirm they stay ~1-2 ns.
         bench::run("ct::select<u32>",
                    [&] {
-                       auto r = ct::select<uint32_t>(bit_, a, b);
+                       auto r = ::fixy::ct::select<uint32_t>(bit_, a, b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("ct::less<u32>",
                    [&] {
-                       auto r = ct::less<uint32_t>(a, b);
+                       auto r = ::fixy::ct::less<uint32_t>(a, b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("ct::is_zero<u64>",
                    [&] {
-                       auto r = ct::is_zero<uint64_t>(a);
+                       auto r = ::fixy::ct::is_zero<uint64_t>(a);
                        bench::do_not_optimize(r);
                    }),
 
@@ -186,7 +197,7 @@ int main() {
         // step counter. The state is inside the lambda so each auto-batch
         // invocation works from a fresh high-water mark (modular advance).
         [&] {
-            Monotonic<uint32_t> mon{0};
+            auto mon = ::fixy::mint_monotonic<uint32_t>(0u);
             uint32_t step = 1;
             return bench::run("Monotonic::try_advance", [&] {
                 bool ok = mon.try_advance(step++);
@@ -200,7 +211,7 @@ int main() {
         // Compares against scalar Monotonic above so the lock-prefix tax
         // is visible in the diff.
         [&] {
-            AtomicMonotonic<uint64_t> amon{0};
+            AtomicMonotonic<uint64_t> amon = ::fixy::mint_atomic_monotonic<uint64_t>(0);
             uint64_t step = 1;
             return bench::run("AtomicMonotonic::try_advance (fetch_max)", [&] {
                 bool ok = amon.try_advance(step++);
@@ -212,7 +223,7 @@ int main() {
         // implementation, but bench separately to confirm the alias does
         // not regress and to make any future divergence visible.
         [&] {
-            MaxObserved<uint32_t> high_water{0};
+            MaxObserved<uint32_t> high_water = ::fixy::mint_atomic_monotonic<uint32_t>(0u);
             uint32_t v = 1;
             return bench::run("MaxObserved::try_advance", [&] {
                 bool ok = high_water.try_advance(v++);

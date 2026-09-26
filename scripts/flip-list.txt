@@ -67,7 +67,6 @@ bench/bench_pipeline_dispatch.cpp
 bench/bench_pool_allocator.cpp
 bench/bench_record_leaf.cpp
 bench/bench_region_cache.cpp
-bench/bench_safety.cpp
 bench/bench_scheduler_policies.cpp
 bench/bench_serialize.cpp
 bench/bench_session_persistence.cpp
