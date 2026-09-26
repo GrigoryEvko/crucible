@@ -91,7 +91,6 @@ include/crucible/canopy/HyParView.h
 include/crucible/canopy/Lifeguard.h
 include/crucible/canopy/Plumtree.h
 include/crucible/canopy/Scuttlebutt.h
-include/crucible/canopy/Swim.h
 include/crucible/cipher/CipherTierPromotion.h
 include/crucible/cipher/ComputationCache.h
 include/crucible/cipher/ComputationCacheFederation.h

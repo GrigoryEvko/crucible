@@ -73,7 +73,7 @@ int main() {
     dead.peer = peer(2);
     dead.state = cc::SwimState::Dead;
     dead.incarnation = 2;
-    assert(membership.on_swim_event(cc::GossipedSwimEvent{dead}).has_value());
+    assert(membership.on_swim_event(cc::admit_gossiped_swim_event(dead)).has_value());
     assert(membership.active_size().value() == 3);
     active_view = membership.active_view();
     bool saw_promoted = false;

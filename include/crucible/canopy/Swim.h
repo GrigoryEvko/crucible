@@ -2,13 +2,14 @@
 
 #include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_Borrowed.h>
-#include <crucible/safety/_FixedArray.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Stale.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Borrowed.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Refined.h>
+#include <fixy/Stale.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -23,17 +24,27 @@ namespace crucible::canopy {
 template <std::size_t Capacity>
 concept SwimCapacity = Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
+// The bound of a count: at most Capacity.
 template <std::size_t Capacity>
     requires SwimCapacity<Capacity>
-using SwimCount = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity)>, std::uint16_t>;
+inline constexpr auto swim_count_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(Capacity)>;
+
+// The bound of an index: at most Capacity - 1.
+template <std::size_t Capacity>
+    requires SwimCapacity<Capacity>
+inline constexpr auto swim_index_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(Capacity - 1)>;
 
 template <std::size_t Capacity>
     requires SwimCapacity<Capacity>
-using SwimIndex = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity - 1)>, std::uint16_t>;
+using SwimCount = ::fixy::Refined<swim_count_bound<Capacity>, std::uint16_t>;
 
-using SwimDurationNs = safety::Refined<safety::positive, std::uint64_t>;
-using SwimPositiveCount = safety::Refined<safety::positive, std::uint16_t>;
-using SwimPeer = safety::Tagged<cog::CogIdentity, safety::source::SwimMember>;
+template <std::size_t Capacity>
+    requires SwimCapacity<Capacity>
+using SwimIndex = ::fixy::Refined<swim_index_bound<Capacity>, std::uint16_t>;
+
+using SwimDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
+using SwimPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
+using SwimPeer = ::fixy::Tagged<cog::CogIdentity, ::fixy::tags::source::SwimMember>;
 
 enum class SwimState : std::uint8_t {
     Alive = 0,
@@ -49,11 +60,11 @@ enum class SwimError : std::uint8_t {
 };
 
 struct SwimConfig {
-    SwimDurationNs period_ns{1000000000ULL};
-    SwimDurationNs ack_timeout_ns{500000000ULL};
-    SwimDurationNs indirect_timeout_ns{500000000ULL};
-    SwimPositiveCount indirect_checks{3};
-    SwimPositiveCount suspicion_misses{2};
+    SwimDurationNs period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000000000ULL});
+    SwimDurationNs ack_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{500000000ULL});
+    SwimDurationNs indirect_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{500000000ULL});
+    SwimPositiveCount indirect_checks = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3});
+    SwimPositiveCount suspicion_misses = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{2});
 };
 
 struct PeerHealth {
@@ -71,7 +82,7 @@ struct SwimEvent {
     std::uint64_t sequence = 0;
 };
 
-using GossipedSwimEvent = safety::Tagged<SwimEvent, safety::source::Gossiped>;
+using GossipedSwimEvent = ::fixy::Tagged<SwimEvent, ::fixy::tags::source::Gossiped>;
 
 struct SwimProbe {
     cog::Uuid target{};
@@ -82,32 +93,34 @@ struct SwimProbe {
 template <std::size_t Capacity>
     requires SwimCapacity<Capacity>
 struct SwimWitnessSet {
-    safety::FixedArray<cog::Uuid, Capacity> peers{};
+    ::fixy::FixedArray<cog::Uuid, Capacity> peers{};
     std::uint16_t count = 0;
 
+    // The membership fills at most Capacity witnesses.
     [[nodiscard]] constexpr SwimCount<Capacity> size() const noexcept {
-        return SwimCount<Capacity>{count, typename SwimCount<Capacity>::Trusted{}};
+        return ::fixy::mint_refined_trusted<swim_count_bound<Capacity>>(count);
     }
 };
 
 template <std::size_t MaxPiggyback>
     requires SwimCapacity<MaxPiggyback>
 struct SwimPiggybackBatch {
-    safety::FixedArray<SwimEvent, MaxPiggyback> events{};
+    ::fixy::FixedArray<SwimEvent, MaxPiggyback> events{};
     std::uint16_t count = 0;
 
+    // The membership copies at most MaxPiggyback events.
     [[nodiscard]] constexpr SwimCount<MaxPiggyback> size() const noexcept {
-        return SwimCount<MaxPiggyback>{count, typename SwimCount<MaxPiggyback>::Trusted{}};
+        return ::fixy::mint_refined_trusted<swim_count_bound<MaxPiggyback>>(count);
     }
 };
 
 template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32>
     requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback>
-class SwimMembership : public safety::Pinned<SwimMembership<MaxPeers, MaxPiggyback>> {
+class SwimMembership : public ::foundation::Pinned<SwimMembership<MaxPeers, MaxPiggyback>> {
 public:
     using peer_type = SwimPeer;
-    using health_type = safety::Stale<PeerHealth>;
-    using live_view_type = safety::Borrowed<const cog::CogIdentity, safety::source::SwimMember>;
+    using health_type = ::fixy::Stale<PeerHealth>;
+    using live_view_type = ::fixy::Borrowed<const cog::CogIdentity, ::fixy::tags::source::SwimMember>;
     using witness_set_type = SwimWitnessSet<MaxPeers>;
     using piggyback_batch_type = SwimPiggybackBatch<MaxPiggyback>;
 
@@ -177,8 +190,9 @@ public:
         return live_view_type{live_cache_.data(), live_count_};
     }
 
+    // add_peer and apply_gossip never let the count pass MaxPeers.
     [[nodiscard]] SwimCount<MaxPeers> size() const noexcept {
-        return SwimCount<MaxPeers>{count_, typename SwimCount<MaxPeers>::Trusted{}};
+        return ::fixy::mint_refined_trusted<swim_count_bound<MaxPeers>>(count_);
     }
 
     [[nodiscard]] SwimConfig config() const noexcept { return config_; }
@@ -406,25 +420,34 @@ private:
     }
 
     SwimConfig config_{};
-    safety::FixedArray<PeerSlot, MaxPeers> slots_{};
+    ::fixy::FixedArray<PeerSlot, MaxPeers> slots_{};
     std::uint16_t count_ = 0;
     std::uint16_t probe_cursor_ = 0;
     std::uint64_t sequence_ = 0;
-    safety::FixedArray<SwimEvent, MaxPiggyback> piggyback_{};
+    ::fixy::FixedArray<SwimEvent, MaxPiggyback> piggyback_{};
     std::uint16_t piggyback_count_ = 0;
-    mutable safety::FixedArray<cog::CogIdentity, MaxPeers> live_cache_{};
+    mutable ::fixy::FixedArray<cog::CogIdentity, MaxPeers> live_cache_{};
     mutable std::uint16_t live_count_ = 0;
 };
 
 static_assert(!std::is_copy_constructible_v<SwimMembership<8>>);
 static_assert(!std::is_move_constructible_v<SwimMembership<8>>);
 
-[[nodiscard]] inline SwimPeer admit_swim_peer(cog::CogIdentity peer) noexcept { return SwimPeer{peer}; }
+// The two admission doors.  Raw discovery output becomes a member
+// identity here, and a received event becomes gossip here.
+[[nodiscard]] inline SwimPeer admit_swim_peer(cog::CogIdentity peer) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::SwimMember>(peer);
+}
+
+[[nodiscard]] inline GossipedSwimEvent admit_gossiped_swim_event(SwimEvent event) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::Gossiped>(event);
+}
 
 template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32>
     requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback>
 [[nodiscard]] SwimMembership<MaxPeers, MaxPiggyback>
-mint_swim_membership(effects::Init, std::span<const SwimPeer> initial_peers = {}, SwimConfig config = {}) noexcept {
+mint_swim_membership(::foundation::effects::Init, std::span<const SwimPeer> initial_peers = {},
+                     SwimConfig config = {}) noexcept {
     return SwimMembership<MaxPeers, MaxPiggyback>{config, initial_peers};
 }
 

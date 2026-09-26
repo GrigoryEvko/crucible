@@ -17,12 +17,12 @@ namespace {
 }  // namespace
 
 int main() {
-    using crucible::canopy::GossipedSwimEvent;
     using crucible::canopy::SwimConfig;
     using crucible::canopy::SwimError;
     using crucible::canopy::SwimMembership;
     using crucible::canopy::SwimPeer;
     using crucible::canopy::SwimState;
+    using crucible::canopy::admit_gossiped_swim_event;
     using crucible::canopy::admit_swim_peer;
     using crucible::canopy::mint_swim_membership;
 
@@ -36,7 +36,7 @@ int main() {
         admit_swim_peer(peer(3)),
     };
 
-    auto membership = mint_swim_membership<8>(crucible::effects::testing::init(), std::span<const SwimPeer>{initial});
+    auto membership = mint_swim_membership<8>(::foundation::effects::testing::init(), std::span<const SwimPeer>{initial});
     assert(membership.size().value() == 3);
     assert(membership.config().period_ns.value() == SwimConfig{}.period_ns.value());
 
@@ -93,7 +93,7 @@ int main() {
 
     std::array<SwimPeer, 1> remote_initial{admit_swim_peer(peer(1))};
     auto remote =
-        mint_swim_membership<4>(crucible::effects::testing::init(), std::span<const SwimPeer>{remote_initial});
+        mint_swim_membership<4>(::foundation::effects::testing::init(), std::span<const SwimPeer>{remote_initial});
     assert(remote.size().value() == 1);
 
     crucible::canopy::SwimEvent gossiped_dead{};
@@ -102,18 +102,18 @@ int main() {
     gossiped_dead.consecutive_misses = 2;
     gossiped_dead.incarnation = 9;
     gossiped_dead.sequence = 99;
-    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 3000).has_value());
+    assert(remote.apply_gossip(admit_gossiped_swim_event(gossiped_dead), 3000).has_value());
     assert(remote.size().value() == 2);
     assert(remote.health(peer(4).uuid).peek().state == SwimState::Dead);
 
     gossiped_dead.state = SwimState::Alive;
     gossiped_dead.incarnation = 8;
-    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 4000).has_value());
+    assert(remote.apply_gossip(admit_gossiped_swim_event(gossiped_dead), 4000).has_value());
     assert(remote.health(peer(4).uuid).peek().state == SwimState::Dead);
 
     gossiped_dead.state = SwimState::Alive;
     gossiped_dead.incarnation = 10;
-    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 5000).has_value());
+    assert(remote.apply_gossip(admit_gossiped_swim_event(gossiped_dead), 5000).has_value());
     assert(remote.health(peer(4).uuid).peek().state == SwimState::Alive);
     assert(remote.health(peer(4).uuid).peek().last_heartbeat_ns == 5000);
 
@@ -121,7 +121,7 @@ int main() {
     assert(!missing.has_value());
     assert(missing.error() == SwimError::PeerNotFound);
 
-    auto tiny = mint_swim_membership<1>(crucible::effects::testing::init());
+    auto tiny = mint_swim_membership<1>(::foundation::effects::testing::init());
     assert(tiny.add_peer(admit_swim_peer(peer(10))).has_value());
     auto overflow = tiny.add_peer(admit_swim_peer(peer(11)));
     assert(!overflow.has_value());

@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
                 };
                 // Peer UUID is non-zero and the table (8) never fills with
                 // only 4 peers, so the apply must always succeed.
-                if (!membership.apply_gossip(cc::GossipedSwimEvent{se}, static_cast<std::uint64_t>(i) * 1000u)
+                if (!membership.apply_gossip(cc::admit_gossiped_swim_event(se),static_cast<std::uint64_t>(i) * 1000u)
                          .has_value()) {
                     return false;
                 }

@@ -44,11 +44,11 @@ int main() {
         .rtt_safety_multiplier = cc::LifeguardPositiveCount{3},
     };
     cc::SwimConfig scfg{
-        .period_ns = cc::SwimDurationNs{1000000000ULL},
-        .ack_timeout_ns = cc::SwimDurationNs{50000000ULL},
-        .indirect_timeout_ns = cc::SwimDurationNs{50000000ULL},
-        .indirect_checks = cc::SwimPositiveCount{2},
-        .suspicion_misses = cc::SwimPositiveCount{3},
+        .period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000000000ULL}),
+        .ack_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{50000000ULL}),
+        .indirect_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{50000000ULL}),
+        .indirect_checks = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{2}),
+        .suspicion_misses = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3}),
     };
 
     auto lifeguard = cc::mint_lifeguard_swim<4, 8, 4, 8>(crucible::effects::testing::init(), swim_peer(99),
@@ -104,7 +104,7 @@ int main() {
     suspect_self.state = cc::SwimState::Suspect;
     suspect_self.incarnation = 7;
     suspect_self.sequence = 77;
-    auto refute = lifeguard.apply_gossip(cc::GossipedSwimEvent{suspect_self}, 11000);
+    auto refute = lifeguard.apply_gossip(cc::admit_gossiped_swim_event(suspect_self), 11000);
     assert(refute.has_value());
     assert(refute->should_refute);
     assert(refute->alive.peer.uuid == peer(99).uuid);
@@ -117,7 +117,7 @@ int main() {
     remote_suspect.consecutive_misses = 1;
     remote_suspect.incarnation = 3;
     remote_suspect.sequence = 80;
-    auto applied = lifeguard.apply_gossip(cc::GossipedSwimEvent{remote_suspect}, 12000);
+    auto applied = lifeguard.apply_gossip(cc::admit_gossiped_swim_event(remote_suspect), 12000);
     assert(applied.has_value());
     assert(!applied->should_refute);
     assert(lifeguard.size().value() == 4);
