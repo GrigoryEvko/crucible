@@ -51,11 +51,11 @@ namespace crucible::fuzz::prop {
     NumericalRecipe r{};
     r.accum_dtype = random_scalar_type(rng);
     r.out_dtype = random_scalar_type(rng);
-    r.reduction_algo = static_cast<ReductionAlgo>(rng.next_below(4));
-    r.rounding = static_cast<RoundingMode>(rng.next_below(4));
-    r.scale_policy = static_cast<ScalePolicy>(rng.next_below(6));
-    r.softmax = static_cast<SoftmaxRecurrence>(rng.next_below(4));
-    r.determinism = static_cast<ReductionDeterminism>(rng.next_below(4));
+    r.reduction_algo = rng.pick<ReductionAlgo>();
+    r.rounding = rng.pick<RoundingMode>();
+    r.scale_policy = rng.pick<ScalePolicy>();
+    r.softmax = rng.pick<SoftmaxRecurrence>();
+    r.determinism = rng.pick<ReductionDeterminism>();
     r.flags = ::fixy::Bits<RecipeFlags>::from_raw(static_cast<uint8_t>(rng.next32() & 0xFF));
     // hash field intentionally left default-zero — caller invokes
     // hashed() or compute_recipe_hash to populate.
@@ -75,7 +75,7 @@ namespace crucible::fuzz::prop {
 
 // ─── LoopTermKind ──────────────────────────────────────────────────
 [[nodiscard]] inline LoopTermKind random_loop_term_kind(Rng& rng) noexcept {
-    return static_cast<LoopTermKind>(rng.next_below(2));
+    return rng.pick<LoopTermKind>();
 }
 
 // ─── TensorMeta ────────────────────────────────────────────────────

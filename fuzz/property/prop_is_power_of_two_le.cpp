@@ -95,7 +95,7 @@ template <typename T>
         // ── Generator ──
         [](Rng& rng) noexcept -> PowSpec<T> {
             PowSpec<T> spec{};
-            spec.mode = static_cast<Mode>(rng.next_below(4));
+            spec.mode = rng.pick<Mode>();
             switch (spec.mode) {
                 case Mode::PowerInBound: {
                     const uint32_t k = rng.next_below(max_pow + 1u);  // [0, max_pow]
@@ -123,7 +123,7 @@ template <typename T>
                     break;
                 }
                 default:
-                    std::unreachable();  // mode ∈ {0..3} by next_below(4)
+                    std::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },
@@ -154,8 +154,7 @@ template <typename T>
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
+    const Config cfg = parse_args(argc, argv, 2000000);
 
     // Both instantiations run the full iteration budget; the signed
     // one exercises the x<=0 guard and negative-bound branch.

@@ -34,8 +34,7 @@
 int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 10000) cfg.iterations = 10000;  // O(N) per iter
+    const Config cfg = parse_args(argc, argv, 10000);  // O(N) per iter
 
     return run(
         "Arena alloc alignment + non-aliasing", cfg,

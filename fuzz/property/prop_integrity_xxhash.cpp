@@ -126,15 +126,14 @@ template <typename ChunkFn>
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
+    const Config cfg = parse_args(argc, argv, 2000000);
 
     return run(
         "integrity_xxhash", cfg,
         // ── Generator ──
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
-            spec.mode = static_cast<LenMode>(rng.next_below(4u));
+            spec.mode = rng.pick<LenMode>();
             spec.len = gen_len(rng, spec.mode);
             for (std::uint32_t i = 0; i < spec.len; ++i) {
                 spec.bytes[i] = static_cast<std::byte>(rng.next32() & 0xFFu);

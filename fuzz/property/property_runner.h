@@ -5,8 +5,8 @@
 //
 // Property-based testing without an external dependency.  Each
 // property test runs N iterations with deterministic Philox-derived
-// randomness per iteration; a failing iteration prints its index +
-// the input that triggered the failure for trivial reproduction.
+// randomness per iteration; a failing iteration prints its index and
+// the seed, which reproduce the failing input exactly.
 //
 // Usage in a property test (`fuzz/property/prop_*.cpp`):
 //
@@ -15,8 +15,8 @@
 //
 //   int main(int argc, char** argv) {
 //       using namespace crucible::fuzz::prop;
-//       Config cfg = parse_args(argc, argv);  // --iters / --seed
-//       return run("hash_determinism", cfg,
+//       const Config cfg = parse_args(argc, argv, 2'000'000);
+//       return run("recipe_hash_determinism", cfg,
 //           [](Rng& rng) { return random_recipe(rng); },
 //           [](const NumericalRecipe& r) {
 //               return compute_recipe_hash(r) == compute_recipe_hash(r);
@@ -27,43 +27,87 @@
 //
 // Crucible's no-external-deps discipline (CLAUDE.md §I).  Property-
 // based testing here means: deterministic per-iteration RNG + an
-// invariant + a printable input.  None of that needs a library.
+// invariant + a reproducible input.  None of that needs a library.
 // Hand-rolling keeps the test layer GCC-16-only just like the rest
 // of the codebase.
 //
 // ─── Determinism ────────────────────────────────────────────────────
 //
-// Each iteration `i` derives its RNG key from the run-level seed
-// plus `i` via Philox.  The same (seed, i) always produces the same
-// random input, so a failure at iteration N is reproduced exactly by
-// re-running with the same seed.  The default seed (0xC0FFEE) is
-// fixed; --seed lets developers explore beyond the regression set.
+// Each iteration `i` draws from a Philox stream keyed by the run-level
+// seed, with the counter built from `i`.  The same (seed, i) always
+// produces the same random input, so a failure at iteration N is
+// reproduced exactly by re-running with the same seed.  The default
+// seed (0xC0FFEE) is fixed; --seed lets developers explore beyond the
+// regression set.
 //
 // ─── Failure reporting ──────────────────────────────────────────────
 //
 // On the first invariant violation, the runner prints:
 //
-//   PROPERTY FAILED: hash_determinism
+//   PROPERTY FAILED: recipe_hash_determinism
 //     iteration: 4271
 //     seed:      0xC0FFEE
-//     input:     <pretty-printed via reflect_print or to_string>
+//     reproduce: re-run the binary with --seed=0xC0FFEE --iters=4272
 //
 // then aborts (so sanitizer + core-dump + IDE all latch the failure).
+// The runner does not print the input: a generator may return a local
+// struct that reflection cannot name, and the seed and the iteration
+// already rebuild it.
 //
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Philox.h>
-#include <crucible/Reflect.h>
+#include <foundation/reflect/EnumName.h>
 
-#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+#include <limits>
+#include <meta>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::fuzz::prop {
+
+// ─── Dense enums ───────────────────────────────────────────────────
+//
+// A scoped enum whose enumerators hold 0, 1, ..., N - 1 in declaration
+// order, with N > 0.  Rng::pick draws an enumerator by its index, so a
+// hole or a reordered value would let it produce a value that names no
+// enumerator.  The count comes from the enumerators, so a new
+// enumerator is drawn without an edit at the draw site.
+
+template <class E>
+[[nodiscard]] consteval bool enumerators_are_dense() noexcept {
+    std::size_t index = 0;
+    for (const std::meta::info enumerator : std::meta::enumerators_of(^^E)) {
+        if (std::cmp_not_equal(std::to_underlying(std::meta::extract<E>(enumerator)), index)) return false;
+        ++index;
+    }
+    return index != 0;
+}
+
+template <class E>
+concept DenseEnum = ::foundation::reflect::ScopedEnum<E> && enumerators_are_dense<E>();
+
+namespace detail::dense_enum_self_test {
+
+enum class Dense : std::uint8_t { First, Second, Third };
+enum class Holed : std::uint8_t { First, Third = 2 };
+enum class Reordered : std::uint8_t { Second = 1, First = 0 };
+enum class Empty : std::uint8_t {};
+enum Unscoped : std::uint8_t { unscoped_first };
+
+static_assert(DenseEnum<Dense>);
+static_assert(!DenseEnum<Holed>);
+static_assert(!DenseEnum<Reordered>);
+static_assert(!DenseEnum<Empty>);
+static_assert(!DenseEnum<Unscoped>);
+static_assert(!DenseEnum<std::uint8_t>);
+
+}  // namespace detail::dense_enum_self_test
 
 // ─── Rng wrapper ───────────────────────────────────────────────────
 //
@@ -102,10 +146,10 @@ public:
     // Uniform float [0, 1).
     [[nodiscard]] float next_unit() noexcept { return Philox::to_uniform(next32()); }
 
-    // Pick one of N enumerated values.  Caller supplies the count.
-    template <typename E>
-    [[nodiscard]] E pick_enum(uint32_t count) noexcept {
-        return static_cast<E>(next_below(count));
+    // One enumerator of E, each with the same probability.
+    template <DenseEnum E>
+    [[nodiscard]] E pick() noexcept {
+        return static_cast<E>(next_below(static_cast<uint32_t>(::foundation::reflect::enum_count<E>)));
     }
 
 private:
@@ -137,8 +181,11 @@ struct Config {
 };
 
 // Parse --seed=N --iters=N --verbose from argv.  Defaults preserved
-// for missing args.  Unknown args are ignored.
-[[nodiscard]] inline Config parse_args(int argc, char** argv) noexcept {
+// for missing args.  Unknown args are ignored.  The iteration count is
+// clamped to `max_iterations`, the bound past which one property run
+// costs more than its coverage returns.
+[[nodiscard]] inline Config parse_args(int argc, char** argv,
+                                       uint64_t max_iterations = std::numeric_limits<uint64_t>::max()) noexcept {
     Config cfg{};
     for (int i = 1; i < argc; ++i) {
         std::string_view a{argv[i]};
@@ -150,14 +197,14 @@ struct Config {
             cfg.verbose = true;
         }
     }
+    if (cfg.iterations > max_iterations) cfg.iterations = max_iterations;
     return cfg;
 }
 
 // ─── Failure printer ───────────────────────────────────────────────
 //
-// Prints the failure header.  Caller can append a reflect_print of
-// the failing input afterward.  Then aborts so the sanitizer state
-// + stack frame are preserved for debugging.
+// Prints the failure header, then aborts so the sanitizer state and
+// the stack frame are preserved for debugging.
 
 [[noreturn]] inline void report_failure(std::string_view name, uint64_t iteration, uint64_t seed) noexcept {
     std::fprintf(stderr,
@@ -177,8 +224,7 @@ struct Config {
 //
 // Generic property runner.  `Generator(Rng&) -> Input`.
 // `Property(const Input&) -> bool` (true = invariant holds).
-// On first false return, prints failure with the input via
-// reflect_print (if Input is class-typed) or skips the input dump.
+// On the first false return, it reports the iteration and the seed.
 
 template <typename Generator, typename Property>
 [[nodiscard]] inline int run(const char* name, const Config& cfg, Generator&& gen, Property&& check) noexcept {
@@ -194,11 +240,6 @@ template <typename Generator, typename Property>
         }
 
         if (!check(input)) {
-            // No reflect_print of the input here — local struct
-            // generators in the property tests don't always satisfy
-            // reflect's identifier_of() prerequisite.  The seed +
-            // iteration in the failure report are the reproduction
-            // handles developers actually use.
             report_failure(name, i, cfg.seed);
         }
     }

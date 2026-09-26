@@ -117,15 +117,14 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     using crucible::decide::factorization_eq;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
+    const Config cfg = parse_args(argc, argv, 2000000);
 
     return run(
         "factorization_eq", cfg,
         // ── Generator: one of four factor-list shapes ──
         [](Rng& rng) noexcept -> FactorSpec {
             FactorSpec spec{};
-            spec.mode = static_cast<Mode>(rng.next_below(4));
+            spec.mode = rng.pick<Mode>();
             switch (spec.mode) {
                 case Mode::ExactFactorization: {
                     const uint64_t product = build_in_range(rng, spec.factors, spec.count);
@@ -158,7 +157,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 default:
-                    std::unreachable();  // mode ∈ {0..3} by next_below(4)
+                    std::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },

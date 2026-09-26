@@ -134,10 +134,9 @@ int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
 
-    Config cfg = parse_args(argc, argv);
     // Each iteration runs up to ~4K ring ops + O(N) mirror bookkeeping
     // — cap to keep 100K iters tractable in CI.
-    if (cfg.iterations > 100000) cfg.iterations = 100000;
+    const Config cfg = parse_args(argc, argv, 100000);
 
     // Hoist the 5.25 MB ring out of the per-iteration allocation path.
     // reset() restores all three cursors (head, tail, cached_tail_)

@@ -134,15 +134,14 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     using crucible::decide::intervals_cover_unit;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;  // O(total) per iter
+    const Config cfg = parse_args(argc, argv, 2000000);  // O(total) per iter
 
     return run(
         "intervals_cover_unit", cfg,
         // ── Generator: one of five partition shapes ──
         [](Rng& rng) noexcept -> CoverSpec {
             CoverSpec spec{};
-            spec.mode = static_cast<Mode>(rng.next_below(5));
+            spec.mode = rng.pick<Mode>();
             spec.total = 1u + rng.next_below(kMaxTotal);  // [1, kMaxTotal]
             switch (spec.mode) {
                 case Mode::ExactPartition: {
@@ -191,7 +190,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 default:
-                    std::unreachable();  // mode ∈ {0..4} by next_below(5)
+                    std::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },

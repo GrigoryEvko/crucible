@@ -111,11 +111,10 @@ constexpr uint32_t kAlphabetLen = sizeof(kAlphabet) - 1;  // exclude NUL
 int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(argc, argv);
     // Each iteration does O(N) inserts + O(N²) append-order scan at
     // N=48; cap at 5k iters to keep the sanitizer-instrumented runtime
     // reasonable under ctest's budget.
-    if (cfg.iterations > 5000) cfg.iterations = 5000;
+    const Config cfg = parse_args(argc, argv, 5000);
 
     return run(
         "CallSiteTable dedup + round-trip", cfg,

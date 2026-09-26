@@ -99,15 +99,14 @@ struct PairSpec {
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
+    const Config cfg = parse_args(argc, argv, 2000000);
 
     return run(
         "fractional_lattice", cfg,
         // ── Generator ──
         [](Rng& rng) noexcept -> PairSpec {
             PairSpec spec{};
-            spec.mode = static_cast<Mode>(rng.next_below(3));
+            spec.mode = rng.pick<Mode>();
             switch (spec.mode) {
                 case Mode::Random:
                     spec.a = gen_random(rng);

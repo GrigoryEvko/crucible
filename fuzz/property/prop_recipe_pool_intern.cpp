@@ -33,8 +33,7 @@
 int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 5000) cfg.iterations = 5000;  // O(M²) inner
+    const Config cfg = parse_args(argc, argv, 5000);  // O(M²) inner
 
     return run(
         "RecipePool intern iff semantic equal", cfg,

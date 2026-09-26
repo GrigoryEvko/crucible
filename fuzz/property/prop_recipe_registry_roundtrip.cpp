@@ -39,8 +39,7 @@ namespace names = crucible::recipe_names;
 int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 10000) cfg.iterations = 10000;  // setup-heavy
+    const Config cfg = parse_args(argc, argv, 10000);  // setup-heavy
 
     return run(
         "RecipeRegistry by_name ↔ by_hash circle", cfg,

@@ -232,8 +232,7 @@ template <typename T>
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
+    const Config cfg = parse_args(argc, argv, 2000000);
 
     int rc = 0;
     rc |= run_int<std::int8_t>("sdc_tol_i8", cfg);

@@ -122,8 +122,7 @@ struct Spec {
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
+    const Config cfg = parse_args(argc, argv, 2000000);
 
     return run(
         "ptp_degradation", cfg,

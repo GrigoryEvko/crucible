@@ -94,8 +94,7 @@ int main(int argc, char** argv) {
     using crucible::Arena;
     using crucible::build_csr;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 20000) cfg.iterations = 20000;  // O(E log E) per iter
+    const Config cfg = parse_args(argc, argv, 20000);  // O(E log E) per iter
 
     return run(
         "trace_graph_csr", cfg,

@@ -87,15 +87,14 @@ int main(int argc, char** argv) {
     using crucible::decide::strictly_increasing;
     using crucible::decide::weakly_increasing;
 
-    Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
+    const Config cfg = parse_args(argc, argv, 2000000);
 
     return run(
         "monotonic_predicates", cfg,
         // ── Generator ──
         [](Rng& rng) noexcept -> SeqSpec {
             SeqSpec spec{};
-            spec.mode = static_cast<Mode>(rng.next_below(4));
+            spec.mode = rng.pick<Mode>();
             // Bounded base value keeps accumulated sequences well inside
             // int32 range (start in [-10000, 9999]; max climb 64*1000).
             const T start = static_cast<T>(rng.next_below(20000u)) - 10000;
@@ -145,7 +144,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 default:
-                    std::unreachable();  // mode ∈ {0..3} by next_below(4)
+                    std::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },

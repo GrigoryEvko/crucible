@@ -162,7 +162,7 @@ struct Resolved {
                 s.sym_id = rng.next_below(p.nsyms);
                 break;
             case Kind::Composite: {
-                s.cop = static_cast<CompositeOp>(rng.next_below(2));
+                s.cop = rng.pick<CompositeOp>();
                 // Children MUST resolve to SYMBOLS (not integers, not
                 // earlier composites).  ExprPool's canonicalization
                 // collapses many cases the harness's structural key
@@ -386,9 +386,8 @@ struct Resolved {
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(argc, argv);
     // Inner check is O(N²) over kNumExprs; cap iterations accordingly.
-    if (cfg.iterations > 5000) cfg.iterations = 5000;
+    const Config cfg = parse_args(argc, argv, 5000);
 
     return run(
         "ExprPool intern iff structural equal", cfg, [](Rng& rng) { return gen_plan(rng); },

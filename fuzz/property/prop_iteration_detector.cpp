@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
         // ── Generator: one of three stream shapes ──
         [](Rng& rng) noexcept -> StreamSpec {
             StreamSpec spec{};
-            spec.mode = static_cast<Mode>(rng.next_below(3));
+            spec.mode = rng.pick<Mode>();
             switch (spec.mode) {
                 case Mode::Distinct: {
                     // Strictly increasing, all-distinct, non-zero — no
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 default:
-                    std::unreachable();  // mode ∈ {0,1,2} by next_below(3)
+                    std::unreachable();  // pick returns an enumerator of Mode
             }
             return spec;
         },

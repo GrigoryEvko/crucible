@@ -73,15 +73,13 @@ namespace {
 using crucible::Guard;
 using crucible::OpIndex;
 
-// Number of Guard::Kind variants — update this when a new variant is
-// added to MerkleDag.h:303.  reflect_hash iterates the enum as an
-// integer, so any out-of-range value is still HASHABLE; we stay
-// in-range for P2 field-disambiguation to be statistically sound
-// (two out-of-range enums would collide on the same underlying
-// uint8_t, and the "different field → different hash" property would
-// spuriously fail).  Current variants: SHAPE_DIM, SCALAR_VALUE,
-// DTYPE, DEVICE, OP_SEQUENCE.
-inline constexpr uint8_t kGuardKindCount = 5;
+// Number of Guard::Kind variants, read from the enumerators.
+// reflect_hash iterates the enum as an integer, so any out-of-range
+// value is still HASHABLE; we stay in-range for P2 field-disambiguation
+// to be statistically sound (two out-of-range enums would collide on
+// the same underlying uint8_t, and the "different field → different
+// hash" property would spuriously fail).
+inline constexpr uint8_t kGuardKindCount = static_cast<uint8_t>(::foundation::reflect::enum_count<Guard::Kind>);
 
 // Number of Guard fields (including each element of pad[3]) we
 // perturb for P2.  kind (1) + pad[3] (3) + op_index (1) + arg_index
@@ -98,7 +96,7 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 // pad bytes so the fuzzer sees those inputs.
 [[nodiscard]] Guard random_guard(crucible::fuzz::prop::Rng& rng) noexcept {
     Guard g{};
-    g.kind = static_cast<Guard::Kind>(rng.next_below(kGuardKindCount));
+    g.kind = rng.pick<Guard::Kind>();
     g.pad[0] = static_cast<uint8_t>(rng.next32() & 0xFFu);
     g.pad[1] = static_cast<uint8_t>(rng.next32() & 0xFFu);
     g.pad[2] = static_cast<uint8_t>(rng.next32() & 0xFFu);
