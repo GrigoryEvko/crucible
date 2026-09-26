@@ -339,7 +339,6 @@ add_library(crucible STATIC
   src/cog/NicConfig.cpp
   src/cog/NicOffloadAudit.cpp
   src/cog/SrIov.cpp
-  src/cntp/Backpressure.cpp
   src/cntp/ConnectionPool.cpp
   src/cntp/CongestionControl.cpp
   src/cntp/_wip/Doca.cpp

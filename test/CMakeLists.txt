@@ -7008,16 +7008,42 @@ crucible_neg_compile_test(neg_ktls_chacha_crypto
 crucible_neg_compile_test(neg_ktls_raw_crypto_offload
   "could not convert|no matching function|DeclaredTlsCryptoInfo|Tagged")
 
-# GAPS-137 — cntp/Backpressure.h + cntp/BackpressureRuntime.h substrate.
-#   * neg_backpressure_raw_admission_decision: admission outcomes must be tagged.
-#   * neg_backpressure_invalid_resource_kind: pressure samples require ResourceKind.
-#   * neg_backpressure_hot_ctx_credit: hot replay contexts cannot mutate credits.
-crucible_neg_compile_test(neg_backpressure_raw_admission_decision
-  "conversion from|could not convert|DeclaredAdmissionDecision|Tagged")
-crucible_neg_compile_test(neg_backpressure_invalid_resource_kind
-  "constraints not satisfied|IsResourceKind|ResourceKind")
-crucible_neg_compile_test(neg_backpressure_hot_ctx_credit
-  "constraints not satisfied|CtxFitsBackpressureRuntime|HotFgCtx")
+# cntp/Backpressure.h and cntp/BackpressureRuntime.h.  Each fixture names
+# the call that fails and the reason, so a fixture that fails for another
+# reason does not pass.
+#   * neg_backpressure_raw_admission_decision: a decision crosses a
+#     boundary only through its mint.
+#   * neg_backpressure_invalid_resource_kind: a pressure names a resource
+#     from the catalog.
+#   * neg_backpressure_raw_pressure_kind: no constructor names the resource
+#     around the mint.
+#   * neg_backpressure_hot_ctx_credit: the hot context cannot start a flow.
+#   * neg_backpressure_start_without_block: the start gate is a block.
+#   * neg_backpressure_controller_bg_mint: a controller is built at
+#     initialization.
+#   * neg_backpressure_controller_hot_accept: the hot context cannot ask
+#     for an admission.
+crucible_neg_compile_multi_test(neg_backpressure_raw_admission_decision
+  "conversion from .const crucible::cntp::AdmissionDecision. to non-scalar type .crucible::cntp::DeclaredAdmissionDecision."
+  "fixy::Tagged<crucible::cntp::AdmissionDecision, fixy::tags::source::AdmissionDecision>")
+crucible_neg_compile_multi_test(neg_backpressure_invalid_resource_kind
+  "no matching function for call to .mint_resource_pressure<bogus>\\(int\\)."
+  "required for the satisfaction of .IsResourceKind<Kind>. \\[with Kind = \\(foundation::effects::ResourceKind\\)255\\]")
+crucible_neg_compile_multi_test(neg_backpressure_raw_pressure_kind
+  "crucible::cntp::ResourcePressure::ResourcePressure\\(foundation::effects::ResourceKind, crucible::cntp::ResourcePressurePpm\\). is private within this context"
+  "declared private here")
+crucible_neg_compile_multi_test(neg_backpressure_hot_ctx_credit
+  "no matching function for call to .crucible::cntp::CreditFlowControl<1>::start_flow\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "required for the satisfaction of .CtxFitsBackpressureRuntime<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_multi_test(neg_backpressure_start_without_block
+  "no matching function for call to .crucible::cntp::CreditFlowControl<1>::start_flow\\(fixy::BgDrainCtx&"
+  "required for the satisfaction of .CtxMayBlock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_multi_test(neg_backpressure_controller_bg_mint
+  "no matching function for call to .mint_admission_controller<2, 2>\\(fixy::BgLoadCtx&\\)."
+  "required for the satisfaction of .CtxFitsBackpressureMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
+crucible_neg_compile_multi_test(neg_backpressure_controller_hot_accept
+  "no matching function for call to .crucible::cntp::AdmissionController<2, 2>::try_accept_connection\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "required for the satisfaction of .CtxFitsBackpressureRuntime<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
 # cntp/AfXdp.h.  Each fixture names the call that fails and the reason, so
 # a fixture that fails for another reason does not pass.

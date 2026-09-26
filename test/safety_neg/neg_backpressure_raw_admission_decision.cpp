@@ -1,13 +1,12 @@
-#include <crucible/cntp/Backpressure.h>
+// An admission decision crosses a runtime boundary only as a declared
+// decision, and mint_admission_decision is the one door to that type.  A
+// raw decision does not convert.
 
-// GAPS-137 fixture #1: admission decisions crossing runtime boundaries
-// must be tagged with source::AdmissionDecision. Raw decisions cannot
-// substitute for the declared provenance lane.
+#include <crucible/cntp/Backpressure.h>
 
 int main() {
     namespace cntp = crucible::cntp;
-    cntp::AdmissionDecision raw{};
+    cntp::AdmissionDecision const raw{.socket = cntp::admit_socket_fd(3).value()};
     cntp::DeclaredAdmissionDecision declared = raw;
-    (void)declared;
-    return 0;
+    return static_cast<int>(declared.value().retry_after_ms);
 }

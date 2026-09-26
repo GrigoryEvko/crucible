@@ -29,13 +29,10 @@ mint_plumtree|include/crucible/canopy/Plumtree.h
 mint_swim_membership|include/crucible/canopy/Swim.h
 
 # ── cntp ─────────────────────────────────────────────────────────────
-mint_admission_controller|include/crucible/cntp/BackpressureRuntime.h
 mint_admission_decision|include/crucible/cntp/Backpressure.h
 mint_bbr_qdisc_config|include/crucible/cntp/Pacing.h
 mint_connection|include/crucible/cntp/ConnectionPool.h
 mint_connection_pool|include/crucible/cntp/ConnectionPoolRuntime.h
-mint_connection_request|include/crucible/cntp/Backpressure.h
-mint_credit_flow_control|include/crucible/cntp/BackpressureRuntime.h
 mint_dctcp_incast_config|include/crucible/cntp/IncastControl.h
 mint_fountain_decoder|include/crucible/cntp/Fountain.h
 mint_incast_config|include/crucible/cntp/IncastControl.h

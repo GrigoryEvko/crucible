@@ -40,7 +40,6 @@ include/crucible/canopy/HyParView.h
 include/crucible/canopy/Plumtree.h
 
 # ── cntp/ ──────────────────────────────────────────────────────
-include/crucible/cntp/Backpressure.h
 include/crucible/cntp/ConnectionPool.h
 include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fountain.h

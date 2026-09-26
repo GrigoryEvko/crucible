@@ -1,11 +1,9 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/cntp/CongestionControl.h>
-#include <crucible/effects/_Resources.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_RefinedAlgebra.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <foundation/effects/Resources.h>
 
 #include <cstdint>
 #include <expected>
@@ -14,6 +12,8 @@
 
 namespace crucible::cntp {
 
+// An error has no spelling of its own, so its name is its enumerator's
+// identifier, read by foundation::reflect::enum_name.
 enum class BackpressureError : std::uint8_t {
     InvalidCreditBytes,
     InvalidConnectionLimit,
@@ -35,115 +35,157 @@ enum class AdmissionDecisionKind : std::uint8_t {
     RejectedResource,
 };
 
-[[nodiscard]] std::string_view backpressure_error_name(BackpressureError error) noexcept;
-[[nodiscard]] std::string_view admission_decision_kind_name(AdmissionDecisionKind kind) noexcept;
+// The spelling of each outcome that an operator log line uses.
+[[nodiscard]] constexpr std::string_view admission_decision_kind_name(AdmissionDecisionKind kind) noexcept {
+    switch (kind) {
+        case AdmissionDecisionKind::Accepted:
+            return "accepted";
+        case AdmissionDecisionKind::RejectedBackoff:
+            return "rejected_backoff";
+        case AdmissionDecisionKind::RejectedResource:
+            return "rejected_resource";
+        default:
+            return "unknown";
+    }
+}
 
-using PositiveBackpressureBytes = safety::Positive<std::uint32_t>;
-using PositiveConnectionLimit = safety::Positive<std::uint16_t>;
-using ResourcePressurePpm = safety::Bounded<std::uint32_t{0}, std::uint32_t{1000000}, std::uint32_t>;
-using ResourceLimitPpm = safety::Bounded<std::uint32_t{1}, std::uint32_t{1000000}, std::uint32_t>;
+// One part in a million is the unit of every pressure and every limit.
+// A pressure can be zero.  A limit cannot, because a limit of zero
+// refuses every connection.
+inline constexpr std::uint32_t kPpmFull = 1000000u;
+inline constexpr auto resource_pressure_ppm = ::fixy::in_range<std::uint32_t{0}, kPpmFull>;
+inline constexpr auto resource_limit_ppm = ::fixy::in_range<std::uint32_t{1}, kPpmFull>;
 
+using PositiveBackpressureBytes = ::fixy::Positive<std::uint32_t>;
+using PositiveConnectionLimit = ::fixy::Positive<std::uint16_t>;
+using ResourcePressurePpm = ::fixy::Refined<resource_pressure_ppm, std::uint32_t>;
+using ResourceLimitPpm = ::fixy::Refined<resource_limit_ppm, std::uint32_t>;
+
+// Every field is already a checked type, so each request built from them
+// is a valid request.
 struct ConnectionRequest {
     SocketFd socket;
-    PositiveBackpressureBytes initial_credit{std::uint32_t{1}};
+    PositiveBackpressureBytes initial_credit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
 };
 
-struct ResourcePressure {
-    effects::ResourceKind kind = effects::ResourceKind::NicQ;
-    ResourcePressurePpm used_ppm{std::uint32_t{0}};
+// A pressure sample names a resource from the catalog.  The mint is the
+// only way to name one, so no sample carries a kind outside the catalog.
+class ResourcePressure {
+public:
+    constexpr ResourcePressure() noexcept = default;
+
+    [[nodiscard]] constexpr ::foundation::effects::ResourceKind kind() const noexcept { return kind_; }
+    [[nodiscard]] constexpr ResourcePressurePpm used_ppm() const noexcept { return used_ppm_; }
+
+private:
+    constexpr ResourcePressure(::foundation::effects::ResourceKind kind, ResourcePressurePpm used_ppm) noexcept
+        : kind_{kind}, used_ppm_{used_ppm} {}
+
+    template <::foundation::effects::ResourceKind Kind>
+        requires ::foundation::effects::IsResourceKind<Kind>
+    friend constexpr std::expected<ResourcePressure, BackpressureError> mint_resource_pressure(std::uint32_t) noexcept;
+
+    ::foundation::effects::ResourceKind kind_ = ::foundation::effects::ResourceKind::NicQ;
+    ResourcePressurePpm used_ppm_ = ::fixy::mint_refined<resource_pressure_ppm>(std::uint32_t{0});
 };
 
-struct ResourceLimit {
-    effects::ResourceKind kind = effects::ResourceKind::NicQ;
-    ResourceLimitPpm reject_at_or_above_ppm{std::uint32_t{950000}};
+// A limit names a resource from the catalog, for the same reason.
+class ResourceLimit {
+public:
+    constexpr ResourceLimit() noexcept = default;
+
+    [[nodiscard]] constexpr ::foundation::effects::ResourceKind kind() const noexcept { return kind_; }
+    [[nodiscard]] constexpr ResourceLimitPpm reject_at_or_above_ppm() const noexcept { return reject_at_or_above_ppm_; }
+
+private:
+    constexpr ResourceLimit(::foundation::effects::ResourceKind kind, ResourceLimitPpm reject_at_or_above_ppm) noexcept
+        : kind_{kind}, reject_at_or_above_ppm_{reject_at_or_above_ppm} {}
+
+    template <::foundation::effects::ResourceKind Kind>
+        requires ::foundation::effects::IsResourceKind<Kind>
+    friend constexpr std::expected<ResourceLimit, BackpressureError> mint_resource_limit(std::uint32_t) noexcept;
+
+    ::foundation::effects::ResourceKind kind_ = ::foundation::effects::ResourceKind::NicQ;
+    ResourceLimitPpm reject_at_or_above_ppm_ = ::fixy::mint_refined<resource_limit_ppm>(std::uint32_t{950000});
 };
 
 struct AdmissionDecision {
     AdmissionDecisionKind kind = AdmissionDecisionKind::Accepted;
     SocketFd socket;
-    effects::ResourceKind limiting_resource = effects::ResourceKind::NicQ;
-    ResourcePressurePpm observed_ppm{std::uint32_t{0}};
-    ResourceLimitPpm threshold_ppm{std::uint32_t{1000000}};
+    ::foundation::effects::ResourceKind limiting_resource = ::foundation::effects::ResourceKind::NicQ;
+    ResourcePressurePpm observed_ppm = ::fixy::mint_refined<resource_pressure_ppm>(std::uint32_t{0});
+    ResourceLimitPpm threshold_ppm = ::fixy::mint_refined<resource_limit_ppm>(kPpmFull);
     std::uint32_t retry_after_ms = 0;
     std::uint64_t sequence = 0;
 };
 
-using DeclaredAdmissionDecision = safety::Tagged<AdmissionDecision, safety::source::AdmissionDecision>;
+using DeclaredAdmissionDecision = ::fixy::Tagged<AdmissionDecision, ::fixy::tags::source::AdmissionDecision>;
+
+namespace detail::backpressure {
+
+// The one admission shape: refuse a value the predicate rejects with the
+// error the caller names, and mint the refined value for one it admits.
+template <auto Pred, typename T>
+[[nodiscard]] constexpr std::expected<::fixy::Refined<Pred, T>, BackpressureError>
+admit(T value, BackpressureError refusal) noexcept {
+    if (!Pred(value)) {
+        return std::unexpected(refusal);
+    }
+    return ::fixy::mint_refined<Pred>(value);
+}
+
+}  // namespace detail::backpressure
 
 [[nodiscard]] constexpr std::expected<PositiveBackpressureBytes, BackpressureError>
 admit_backpressure_credit(std::uint32_t bytes) noexcept {
-    if (bytes == 0) {
-        return std::unexpected(BackpressureError::InvalidCreditBytes);
-    }
-    return PositiveBackpressureBytes{bytes, typename PositiveBackpressureBytes::Trusted{}};
+    return detail::backpressure::admit<::fixy::positive>(bytes, BackpressureError::InvalidCreditBytes);
 }
 
 [[nodiscard]] constexpr std::expected<PositiveConnectionLimit, BackpressureError>
 admit_connection_limit(std::uint16_t limit) noexcept {
-    if (limit == 0) {
-        return std::unexpected(BackpressureError::InvalidConnectionLimit);
-    }
-    return PositiveConnectionLimit{limit, typename PositiveConnectionLimit::Trusted{}};
+    return detail::backpressure::admit<::fixy::positive>(limit, BackpressureError::InvalidConnectionLimit);
 }
 
 [[nodiscard]] constexpr std::expected<ResourcePressurePpm, BackpressureError>
 admit_resource_pressure_ppm(std::uint32_t ppm) noexcept {
-    if (ppm > 1000000u) {
-        return std::unexpected(BackpressureError::InvalidResourcePressure);
-    }
-    return ResourcePressurePpm{ppm, typename ResourcePressurePpm::Trusted{}};
+    return detail::backpressure::admit<resource_pressure_ppm>(ppm, BackpressureError::InvalidResourcePressure);
 }
 
 [[nodiscard]] constexpr std::expected<ResourceLimitPpm, BackpressureError>
 admit_resource_limit_ppm(std::uint32_t ppm) noexcept {
-    if (ppm == 0 || ppm > 1000000u) {
-        return std::unexpected(BackpressureError::InvalidResourceLimit);
-    }
-    return ResourceLimitPpm{ppm, typename ResourceLimitPpm::Trusted{}};
+    return detail::backpressure::admit<resource_limit_ppm>(ppm, BackpressureError::InvalidResourceLimit);
 }
 
-template <effects::ResourceKind Kind>
-    requires effects::IsResourceKind<Kind>
+template <::foundation::effects::ResourceKind Kind>
+    requires ::foundation::effects::IsResourceKind<Kind>
 [[nodiscard]] constexpr std::expected<ResourcePressure, BackpressureError>
 mint_resource_pressure(std::uint32_t used_ppm) noexcept {
     auto admitted = admit_resource_pressure_ppm(used_ppm);
     if (!admitted.has_value()) {
         return std::unexpected(admitted.error());
     }
-    return ResourcePressure{
-        .kind = Kind,
-        .used_ppm = *admitted,
-    };
+    return ResourcePressure{Kind, *admitted};
 }
 
-template <effects::ResourceKind Kind>
-    requires effects::IsResourceKind<Kind>
+template <::foundation::effects::ResourceKind Kind>
+    requires ::foundation::effects::IsResourceKind<Kind>
 [[nodiscard]] constexpr std::expected<ResourceLimit, BackpressureError>
 mint_resource_limit(std::uint32_t reject_at_or_above_ppm) noexcept {
     auto admitted = admit_resource_limit_ppm(reject_at_or_above_ppm);
     if (!admitted.has_value()) {
         return std::unexpected(admitted.error());
     }
-    return ResourceLimit{
-        .kind = Kind,
-        .reject_at_or_above_ppm = *admitted,
-    };
+    return ResourceLimit{Kind, *admitted};
 }
 
-[[nodiscard]] constexpr std::expected<ConnectionRequest, BackpressureError>
-mint_connection_request(SocketFd socket, PositiveBackpressureBytes initial_credit) noexcept {
-    return ConnectionRequest{
-        .socket = socket,
-        .initial_credit = initial_credit,
-    };
-}
-
+// The one door from a raw decision to one that may cross a runtime
+// boundary.  AdmissionController is its caller.
 [[nodiscard]] constexpr DeclaredAdmissionDecision mint_admission_decision(AdmissionDecision decision) noexcept {
-    return DeclaredAdmissionDecision{decision};
+    return ::fixy::mint_tagged<::fixy::tags::source::AdmissionDecision>(decision);
 }
 
 [[nodiscard]] constexpr bool resource_pressure_exceeds(ResourcePressure pressure, ResourceLimit limit) noexcept {
-    return pressure.kind == limit.kind && pressure.used_ppm.value() >= limit.reject_at_or_above_ppm.value();
+    return pressure.kind() == limit.kind() && pressure.used_ppm().value() >= limit.reject_at_or_above_ppm().value();
 }
 
 static_assert(sizeof(PositiveBackpressureBytes) == sizeof(std::uint32_t));
@@ -153,8 +195,9 @@ static_assert(sizeof(ResourceLimitPpm) == sizeof(std::uint32_t));
 static_assert(sizeof(DeclaredAdmissionDecision) == sizeof(AdmissionDecision));
 static_assert(std::is_trivially_copy_constructible_v<ConnectionRequest>
               && std::is_trivially_destructible_v<ConnectionRequest>);
-static_assert(std::is_trivially_copyable_v<ResourcePressure>);
-static_assert(std::is_trivially_copyable_v<ResourceLimit>);
+static_assert(std::is_trivially_copy_constructible_v<ResourcePressure>
+              && std::is_trivially_destructible_v<ResourcePressure>);
+static_assert(std::is_trivially_copy_constructible_v<ResourceLimit> && std::is_trivially_destructible_v<ResourceLimit>);
 static_assert(std::is_trivially_copy_constructible_v<AdmissionDecision>
               && std::is_trivially_destructible_v<AdmissionDecision>);
 

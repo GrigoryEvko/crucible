@@ -70,8 +70,6 @@ include/crucible/canopy/HyParView.h
 include/crucible/canopy/Plumtree.h
 include/crucible/cipher/CipherTierPromotion.h
 include/crucible/cipher/SessionPersistenceSurface.h
-include/crucible/cntp/Backpressure.h
-include/crucible/cntp/BackpressureRuntime.h
 include/crucible/cntp/ConnectionPool.h
 include/crucible/cntp/ConnectionPoolRuntime.h
 include/crucible/cntp/Fountain.h
