@@ -1134,6 +1134,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::Borrowed, kMessageMarker},
     {^^::fixy::session::Released, kMessageMarker},
     {^^::fixy::session::DelegatedSession, kMessageMarker},
+    {^^::fixy::session::Delegate, kProtocol},
+    {^^::fixy::session::Accept, kProtocol},
+    {^^::fixy::session::is_delegate, kMetafunction},
+    {^^::fixy::session::is_accept, kMetafunction},
     {^^::fixy::session::HandleFactory,
      "the builder of every session handle: it has static members only, no object of it exists, and it is never a "
      "value"},

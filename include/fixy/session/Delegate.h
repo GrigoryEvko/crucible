@@ -42,6 +42,21 @@
 // Crash sessions and checkpoint sessions refuse a payload that delegates
 // (payload_conveys_delegation_v), because their theories have no
 // delegation.
+//
+// ── The delegation heads ─────────────────────────────────────────────
+//
+// fixy/session/Protocol.h defines Delegate<T, K> and Accept<T, K>, two
+// heads that state a hand-off in the protocol type.  They stand beside
+// the other combinators, because the payload walk of
+// fixy/session/Handle.h reads the registry when that header is read.  A
+// head that this header registered would be a head that the walk cannot
+// classify.
+//
+// No mint admits a protocol that holds one of the two heads.  The
+// permission-flow walk of fixy/session/Handle.h refuses a head that it
+// does not know, and no handle has a step for them.  A hand-off that
+// runs is a Send of a DelegatedSession.  The queries below read the
+// hand-off that a protocol type states.
 
 #include <fixy/session/Handle.h>
 #include <fixy/session/Payload.h>
@@ -195,6 +210,34 @@ template <typename H>
     return DelegationDoor::give_(std::move(handle));
 }
 
+// ── Queries over the delegation heads ────────────────────────────────
+
+// True when the head of P, under its VendorPinned wrappers, is a
+// Delegate or an Accept.
+template <typename P>
+struct is_delegate : std::bool_constant<detail::head_is<P>(^^Delegate)> {};
+
+template <typename P>
+struct is_accept : std::bool_constant<detail::head_is<P>(^^Accept)> {};
+
+template <typename P>
+inline constexpr bool is_delegate_v = is_delegate<P>::value;
+
+template <typename P>
+inline constexpr bool is_accept_v = is_accept<P>::value;
+
+// True when CarrierProto is a Delegate that hands off an endpoint of
+// DelegatedProto.
+template <typename CarrierProto, typename DelegatedProto>
+concept DelegatesTo =
+    is_delegate_v<CarrierProto> && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
+
+// True when CarrierProto is an Accept that receives an endpoint of
+// DelegatedProto.
+template <typename CarrierProto, typename DelegatedProto>
+concept AcceptsFrom =
+    is_accept_v<CarrierProto> && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
+
 }  // namespace fixy::session
 
 // ── Armed cell ───────────────────────────────────────────────────────
@@ -213,4 +256,30 @@ struct foundation::contracts::armed_cell<::fixy::session::detail::is_delegatable
     using accepts = witnesses<::fixy::session::detail::delegatable_armed_witness::Loose>;
     using refuses = witnesses<int, ::fixy::session::detail::delegatable_armed_witness::Branded,
                               ::fixy::session::detail::delegatable_armed_witness::InLoop>;
+};
+
+namespace fixy::session::detail::delegation_head_armed_witness {
+using Carried = Send<int, End>;
+using Hands = Delegate<Carried, End>;
+using Takes = Accept<Carried, End>;
+using PinnedHands = VendorPinned<VendorBackend::NV, Hands>;
+}  // namespace fixy::session::detail::delegation_head_armed_witness
+
+// A Delegate under a VendorPinned is still a Delegate.  A Send of a
+// protocol is no hand-off.
+template <>
+struct foundation::contracts::armed_cell<::fixy::session::is_delegate> {
+    using accepts = witnesses<::fixy::session::detail::delegation_head_armed_witness::Hands,
+                              ::fixy::session::detail::delegation_head_armed_witness::PinnedHands>;
+    using refuses = witnesses<int, ::fixy::session::detail::delegation_head_armed_witness::Takes,
+                              ::fixy::session::Send<::fixy::session::detail::delegation_head_armed_witness::Carried,
+                                                    ::fixy::session::End>>;
+};
+
+template <>
+struct foundation::contracts::armed_cell<::fixy::session::is_accept> {
+    using accepts = witnesses<::fixy::session::detail::delegation_head_armed_witness::Takes>;
+    using refuses = witnesses<int, ::fixy::session::detail::delegation_head_armed_witness::Hands,
+                              ::fixy::session::Recv<::fixy::session::detail::delegation_head_armed_witness::Carried,
+                                                    ::fixy::session::End>>;
 };

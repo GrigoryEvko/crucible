@@ -1,8 +1,9 @@
 #pragma once
 
 // The session-type protocol DSL.  A protocol is a type built from Send,
-// Recv, Select, Offer, Loop, Continue, End and VendorPinned.  The two
-// endpoints of one channel agree when their protocols are duals.
+// Recv, Select, Offer, Loop, Continue, End, VendorPinned, Delegate and
+// Accept.  The two endpoints of one channel agree when their protocols
+// are duals.
 //
 // Select is an internal choice: this endpoint picks the branch and tells
 // the peer which one.  Offer is an external choice: the peer picks, and
@@ -152,6 +153,24 @@ struct VendorPinned : Proto {
     static constexpr VendorBackend vendor_backend = V;
 };
 
+// The delegation heads.  Delegate<T, K> sends an endpoint of protocol T
+// and then continues as K.  Accept<T, K> receives an endpoint of
+// protocol T and then continues as K.  The endpoint itself travels, not
+// the view of its peer, so the dual of each head keeps T as it is.
+// fixy/session/Delegate.h states what a mint does with a protocol that
+// holds one of them.
+template <typename T, typename K>
+struct Delegate {
+    using delegated_proto = T;
+    using next = K;
+};
+
+template <typename T, typename K>
+struct Accept {
+    using delegated_proto = T;
+    using next = K;
+};
+
 // The payloads that the registry below has a rule for.  Each is defined
 // in the header of its layer: Crash in fixy/session/Crash.h, and PeerMsg
 // and Labelled in fixy/session/Projection.h.
@@ -296,6 +315,22 @@ inline constexpr ::foundation::algebra::transition::combinator vendor_pinned{
     .dual = ^^VendorPinned,
     .value_variance = ::foundation::algebra::transition::variance::invariant,
     .value_admits = ^^detail::vendor_is_named_v};
+
+// A delegation head is a step, and the protocol of the endpoint is its
+// payload.  The payload is invariant, so this layer states no refinement
+// between two delegated protocols at a head.  The payload order of
+// fixy/session/Subtype.h orders the DelegatedSession that a Send carries.
+inline constexpr ::foundation::algebra::transition::combinator delegate{
+    .shape = ^^Delegate,
+    .kind = ::foundation::algebra::transition::shape_kind::step,
+    .direction = ::foundation::algebra::transition::polarity::output,
+    .dual = ^^Accept};
+
+inline constexpr ::foundation::algebra::transition::combinator accept{
+    .shape = ^^Accept,
+    .kind = ::foundation::algebra::transition::shape_kind::step,
+    .direction = ::foundation::algebra::transition::polarity::input,
+    .dual = ^^Delegate};
 
 // The crash label is a payload that no endpoint sends (rule 1) and that
 // is no label a peer can send (rule 2).  fixy/session/Crash.h states why.
@@ -516,6 +551,18 @@ consteval bool empty_choice_of() {
 
 template <typename P>
 struct is_empty_choice : std::bool_constant<detail::empty_choice_of<P>()> {};
+
+// A delegated protocol becomes a session of its own, where an empty
+// choice leaves its holder stuck.  So a delegation head holds an empty
+// choice when its delegated protocol holds one, or when its continuation
+// holds one.
+template <typename T, typename K>
+struct is_empty_choice<Delegate<T, K>>
+    : std::bool_constant<is_empty_choice<T>::value || detail::empty_choice_of<Delegate<T, K>>()> {};
+
+template <typename T, typename K>
+struct is_empty_choice<Accept<T, K>>
+    : std::bool_constant<is_empty_choice<T>::value || detail::empty_choice_of<Accept<T, K>>()> {};
 
 // ── Duality ──────────────────────────────────────────────────────────
 
@@ -786,7 +833,9 @@ public:
 //      choice makes each label branch its label step, with no Loop and
 //      no VendorPinned above it.  foundation/algebra/Transition.h states
 //      the six rules, and ensure_choices_well_formed below names the
-//      rule that a choice breaks.
+//      rule that a choice breaks;
+//   6. the delegated protocol of each Delegate and each Accept is
+//      well-formed outside every Loop.
 //
 // A Send or a Recv of a PeerMsg or a Labelled is keyed.  Outside a choice
 // it is the Select or the Offer of that one branch, and the handle puts
@@ -830,6 +879,18 @@ consteval bool well_formed_of() {
 
 template <typename P, typename LoopCtx>
 struct is_well_formed : std::bool_constant<detail::well_formed_of<P, LoopCtx>()> {};
+
+// A delegation head is well-formed when its step and its continuation
+// are, and when its delegated protocol is well-formed outside every
+// Loop.  The endpoint travels to another participant, so a Continue in
+// the delegated protocol cannot name a Loop of the carrier.
+template <typename T, typename K, typename LoopCtx>
+struct is_well_formed<Delegate<T, K>, LoopCtx>
+    : std::bool_constant<is_well_formed<T, void>::value && detail::well_formed_of<Delegate<T, K>, LoopCtx>()> {};
+
+template <typename T, typename K, typename LoopCtx>
+struct is_well_formed<Accept<T, K>, LoopCtx>
+    : std::bool_constant<is_well_formed<T, void>::value && detail::well_formed_of<Accept<T, K>, LoopCtx>()> {};
 
 template <typename P>
 inline constexpr bool is_well_formed_v = is_well_formed<P>::value;
