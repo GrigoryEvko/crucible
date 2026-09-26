@@ -1,27 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I19 fixture — Vigil::dispatch_op_pure rejects Row<Effect::Block>.
-//
-// IsPure<Row<Block>> = false.  A blocking caller (futex, condvar,
-// blocking syscall path) cannot run on the foreground hot dispatch
-// path; the row mismatch catches the contract violation before any
-// CrucibleContext mutation.  This is the most common bug class in
-// production: an eager-fallback path that uses blocking primitives
-// inadvertently routed through dispatch_op_pure.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Block>>.
+// Vigil::dispatch_op_pure requires a pure caller row.  This caller names
+// Row<Block>, the row of a context that can wait in the kernel, so the gate
+// refuses it.  With the empty row in its place, the call compiles.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry e{};
     crucible::TensorMeta m{};
-    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::Block>>(crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
+    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::Block>>(
+        crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
     return 0;
 }

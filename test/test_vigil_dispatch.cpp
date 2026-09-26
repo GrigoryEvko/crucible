@@ -4,9 +4,7 @@
 // stage and the assertions say which one.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_FxAliases.h>
+#include <fixy/Aliases.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include "test_abort_probe.h"
@@ -311,7 +309,7 @@ static void test_dispatch_pool_bounds() {
 // must otherwise behave exactly like dispatch_op.  The row is erased
 // before it reaches the state machine, so every caller row has to reach
 // the same result on every leg.
-namespace eff = ::crucible::effects;
+namespace eff = ::fixy;
 
 static void test_dispatch_pure_FOUND_I19() {
     // Default row, explicit empty row, and each pure alias.

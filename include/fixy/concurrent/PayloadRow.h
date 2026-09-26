@@ -64,6 +64,7 @@
 
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
+#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -124,6 +125,9 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::fixy::Borrowed,
     ^^::fixy::Monotonic,
     ^^::fixy::AppendOnly,
+    ^^::fixy::WriteOnce,
+    ^^::fixy::FixedArray,
+    ^^std::vector,  // the elements; the allocator holds no row
 };
 
 // A family admitted as carrying nothing.  Every entry is a claim that

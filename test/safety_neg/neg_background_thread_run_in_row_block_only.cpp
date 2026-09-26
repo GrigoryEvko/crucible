@@ -1,24 +1,19 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I20 fixture — single-atom rejection (Block only).  Pins
-// BackgroundThread::run_in_row rejects Row<Block> = DivRow.  Block
-// alone does NOT imply Bg/Alloc/IO — the fence demands all four.
-// This rejection is also the F* alias rejection witness for DivRow
-// (which equals Row<Block>).
-//
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Block>> = false.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Block>>.
+// BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
+// IO and Block.  This background context claims Block alone, so the gate
+// refuses it.  With the row widened to all four atoms, the call compiles.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_FxAliases.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<eff::Effect::Block>>();
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Block>> ctx{eff::testing::bg()};
+    bt.run_in_row(ctx);
     return 0;
 }

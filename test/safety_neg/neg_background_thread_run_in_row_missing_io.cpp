@@ -1,30 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I20 fixture — per-axis missing-atom rejection (missing IO).
-// Pins BackgroundThread::run_in_row rejects Row<Bg, Alloc, Block> —
-// three of the four required atoms are present, but IO is missing.
-// The fence demands ALL four.
-//
-// Catches a regression where the fence is silently weakened to
-// stop charging IO — under the false intuition that the bg drain
-// "doesn't really do IO".  But region_ready_cb fires the audit-log
-// callback and the federated-cache enqueue, both of which are
-// observable IO.  Removing IO from the fence would let callers in
-// IO-forbidden contexts (Hot, DetSafe::Pure-bound) drive the bg
-// drain — silently violating their own row contract.
-//
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Bg, Alloc, Block>> = false.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Bg, Alloc, Block>>.
+// BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
+// IO and Block.  This background context claims the other three and not IO,
+// so the gate refuses it.  With IO added to the row, the call compiles.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Block>>();
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Block>> ctx{
+        eff::testing::bg()};
+    bt.run_in_row(ctx);
     return 0;
 }

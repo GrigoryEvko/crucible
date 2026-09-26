@@ -1,21 +1,19 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I20 fixture — single-atom rejection (Alloc only).  Pins
-// BackgroundThread::run_in_row rejects Row<Alloc>.  An Alloc cap
-// alone does NOT imply Bg/IO/Block — the fence demands all four.
-//
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Alloc>> = false.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Alloc>>.
+// BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
+// IO and Block.  This background context claims Alloc alone, so the gate
+// refuses it.  With the row widened to all four atoms, the call compiles.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<eff::Effect::Alloc>>();
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Alloc>> ctx{eff::testing::bg()};
+    bt.run_in_row(ctx);
     return 0;
 }

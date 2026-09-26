@@ -1,25 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I20 fixture — orthogonal-row rejection (Init only).  Pins
-// BackgroundThread::run_in_row rejects Row<Init>.  Init is the
-// initialization-context tag (Vigil construction, Keeper start) —
-// it is structurally orthogonal to the bg-loop's required row.
-// Catches a regression where any "non-Pure" context is accepted
-// (the fence demands the SPECIFIC four atoms, not just any
-// non-emptiness).
-//
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Init>> = false.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Init>>.
+// BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
+// IO and Block.  A start-up context claims Init, and no start-up context
+// can claim Bg, so the gate refuses it.  With a background context in its
+// place, the call compiles.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<eff::Effect::Init>>();
+    const eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init>> ctx{eff::testing::init()};
+    bt.run_in_row(ctx);
     return 0;
 }

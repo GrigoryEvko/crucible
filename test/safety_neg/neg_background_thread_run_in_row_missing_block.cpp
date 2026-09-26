@@ -1,30 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I20 fixture — per-axis missing-atom rejection (missing
-// Block).  Pins BackgroundThread::run_in_row rejects Row<Bg, Alloc,
-// IO> — three of the four required atoms are present, but Block is
-// missing.  The fence demands ALL four.
-//
-// Catches a regression where the fence is silently weakened to
-// stop charging Block — under the false intuition that bg is
-// "always blocked" and an explicit Block atom is redundant.  But
-// the SPSC drain spin-pauses + the OS scheduler parks std::thread
-// — both observable blocking effects.  Removing Block from the
-// fence would let callers in non-blocking contexts (Pure, ST
-// without Block) drive the bg drain.
-//
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Bg, Alloc, IO>> = false.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Bg, Alloc, IO>>.
+// BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
+// IO and Block.  This background context claims the other three and not
+// Block, so the gate refuses it.  With Block added to the row, the call
+// compiles.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>();
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>> ctx{
+        eff::testing::bg()};
+    bt.run_in_row(ctx);
     return 0;
 }

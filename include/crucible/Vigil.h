@@ -10,8 +10,8 @@
 //   DIVERGED   a transient replay status; the persistent mode falls back to
 //              RECORDING once divergence is handled
 //
-// The mode cell is also reachable as a single-party session for cold
-// observers.  The foreground dispatch path reads the status flag directly.
+// An observer reads the mode through mode().  The foreground dispatch path
+// reads the status flag directly.
 //
 // Member declaration order is load-bearing for destruction safety.  bg_ is
 // declared last, so it is destroyed first and joins the background thread
@@ -36,19 +36,23 @@
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
-#include <crucible/bridges/_MachineSessionBridge.h>
-#include <crucible/bridges/_VigilModeHandle.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_FxAliases.h>
-#include <crucible/handles/_PublishOnce.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>
-#include <crucible/safety/_Mutation.h>
-#include <crucible/safety/_Post.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/Aliases.h>
 #include <fixy/Ctx.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/ScopedView.h>
 #include <fixy/Stale.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <fixy/handle/PublishOnce.h>
+#include <fixy/session/VigilMode.h>
+#include <foundation/contracts/Post.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <atomic>
 #include <chrono>
@@ -59,56 +63,28 @@
 #include <type_traits>
 #include <utility>  // std::unreachable
 
-// This header spells its safety wrappers through the fixy namespaces but
-// deliberately does not pull the fixy umbrella header.  Re-opening the
-// namespaces installs the aliases from the narrow includes already listed
-// above, and adds no include.  The umbrella declares the same aliases
-// independently, so the two are idempotent.
-//
-// mint_atomic_session below is the exception: it is a substrate session mint
-// rather than a wrapper, so it keeps its own spelling.
-namespace crucible::fixy::wrap {
-using ::crucible::safety::AtomicMonotonic;
-using ::crucible::safety::bounded_above;
-using ::crucible::safety::NonNull;
-using ::crucible::safety::no_scoped_view_field_check;
-using ::crucible::safety::Refined;
-}  // namespace crucible::fixy::wrap
-namespace crucible::fixy::handle {
-using ::crucible::safety::PublishSlot;
-}  // namespace crucible::fixy::handle
-
 namespace crucible {
 
 class Vigil {
 public:
-    // The mode types live in a smaller header so the bridge that re-exports
-    // the mint does not drag this header's whole dependency closure with it.
-    // The aliases below keep every caller resolving the same types.
+    // The mode types live in a smaller header, so an observer names them
+    // without this header's whole dependency closure.
     //
     // A monotonic wrapper would be wrong for the mode: the lifecycle is
     // deliberately cyclic, running RECORDING to COMPILED and back to
     // RECORDING after a divergence.  ModeCell keeps the atomic private and
     // exposes only the two transitions the runtime actually performs.
     //
+    // The cell is private, and only the foreground publishes a mode, at the
+    // same step that activates or deactivates the replay context.  A session
+    // over the cell would drive those transitions, so Vigil hands out no
+    // session handle.  An observer reads mode().
+    //
     // The pending region uses a latest-wins publication slot rather than a
     // publish-once cell for the same reason: divergence recovery publishes
     // several regions over one process lifetime.
-    using Mode = ::crucible::vigil_mode::Mode;
-    using ModeCell = ::crucible::vigil_mode::ModeCell;
-
-    template <Mode From, Mode To>
-    using ModeTransition = ::crucible::vigil_mode::ModeTransition<From, To>;
-
-    using ModeRecordingToCompiled = ::crucible::vigil_mode::ModeRecordingToCompiled;
-    using ModeCompiledToRecording = ::crucible::vigil_mode::ModeCompiledToRecording;
-
-    using ModeProtocol = ::crucible::vigil_mode::ModeProtocol;
-    using ModeSessionHandle = ::crucible::vigil_mode::ModeSessionHandle;
-
-    static consteval bool mode_transition_allowed(Mode from, Mode to) noexcept {
-        return ::crucible::vigil_mode::mode_transition_allowed(from, to);
-    }
+    using Mode = ::fixy::session::vigil_mode::Mode;
+    using ModeCell = ::fixy::session::vigil_mode::ModeCell;
 
     struct Config {
         int32_t rank = -1;
@@ -156,8 +132,13 @@ public:
     static constexpr uint8_t ALIGNMENT_POS_MAX = static_cast<uint8_t>(ALIGNMENT_K);
     static_assert(ALIGNMENT_K <= UINT8_MAX, "ALIGNMENT_POS_MAX must fit in uint8_t.  Widen AlignmentPos's "
                                             "underlying type if ALIGNMENT_K is raised past 255.");
-    using AlignmentPos =
-        ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
+    using AlignmentPos = ::fixy::Refined<::fixy::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
+
+    // The one door to an alignment position.  The bound is checked here, at
+    // compile time for a constant and at run time otherwise.
+    [[nodiscard]] static constexpr AlignmentPos alignment_pos_at(uint8_t pos) noexcept {
+        return ::fixy::mint_refined<::fixy::bounded_above<ALIGNMENT_POS_MAX>>(pos);
+    }
 
     // No persistence, no distributed context.
     [[gnu::cold]] Vigil() : Vigil(Config{}) {}
@@ -186,10 +167,9 @@ private:
                 startup, ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{cfg_.cipher_path})));
         }
 
-        bg_.set_region_ready_callback(this, [](void* self, effects::Bg const& bg, BackgroundThread::PublishStage stage,
-                                               RegionNode* region) noexcept {
-            static_cast<Vigil*>(self)->on_region_ready(bg, stage, region);
-        });
+        bg_.set_region_ready_callback(
+            this, [](void* self, ::foundation::effects::Bg const& bg, BackgroundThread::PublishStage stage,
+                     RegionNode* region) noexcept { static_cast<Vigil*>(self)->on_region_ready(bg, stage, region); });
 
         // The watchdog is constructed before the background thread starts,
         // so on_region_ready can observe on the very first region transition
@@ -306,8 +286,8 @@ public:
     // background pumping helper or a test fixture that reaches the
     // foreground recording site by mistake.  The row mismatch fires at
     // compile time, before the ring head can advance.
-    template <typename CallerRow = ::crucible::effects::Row<>>
-        requires ::crucible::effects::IsPure<CallerRow>
+    template <typename CallerRow = ::foundation::effects::Row<>>
+        requires ::fixy::IsPure<CallerRow>
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
     dispatch_op_pure(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
                      ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
@@ -360,10 +340,6 @@ public:
     // earlier than is_compiled.  The acquire load pairs with the release
     // publish, and flush() orders that publish before it returns.
     [[nodiscard]] bool has_pending_region() const noexcept { return pending_region_.has_pending(); }
-
-    [[nodiscard]] constexpr ModeSessionHandle mode_session() const noexcept {
-        return safety::mint_atomic_session<ModeProtocol>(mode_);
-    }
 
     [[nodiscard]] const RegionNode* active_region() const noexcept {
         return bg_.active_region.load(std::memory_order_acquire);
@@ -470,7 +446,7 @@ public:
     // foreground state, so this runs on the producer thread.
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
-    [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, effects::Alloc a) {
+    [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         auto open_view = cipher_->mint_open_view(ctx);
         RegionNode* region = cipher_->load_content_addressed(open_view, a, cipher_->head(), load_arena_).get();
@@ -585,7 +561,7 @@ private:
     // log state and belongs to the foreground.  The background thread hands
     // over its own context, so the observation below acts under a context the
     // caller holds, not one built here.
-    [[gnu::cold]] void on_region_ready(::crucible::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
+    [[gnu::cold]] void on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
                                        RegionNode* region) {
         // bump returns the previous value, which is the index this call
         // reserved.  The background thread is the sole writer.
@@ -614,7 +590,7 @@ private:
         // because this runs on the region-publishing thread, not the
         // foreground.
         if (wd_) {
-            const auto v = wd_->observe(::crucible::effects::BgDrainCtx{bg});
+            const auto v = wd_->observe(::fixy::BgDrainCtx{bg});
             wd_last_verdict_.store(v, std::memory_order_release);
             switch (v) {
                 case ::crucible::warden::WatchdogVerdict::Healthy:
@@ -674,7 +650,7 @@ private:
         // progress, which is how a divergence becomes reachable with one
         // still open.
         pending_activation_ = nullptr;
-        alignment_pos_ = AlignmentPos{uint8_t{0}};
+        alignment_pos_ = alignment_pos_at(0);
 
         region_cache_.insert(ctx_.active_region());
 
@@ -744,7 +720,7 @@ private:
         if (region->num_ops == 0) return;
 
         pending_activation_ = region;
-        alignment_pos_ = AlignmentPos{uint8_t{0}};
+        alignment_pos_ = alignment_pos_at(0);
     }
 
     // A sliding-window match against the region's first K ops.
@@ -772,12 +748,12 @@ private:
             // The increment cannot exceed the bound: once the previous call
             // reached the threshold it cleared pending_activation_, so this
             // function is not called again past that point.
-            alignment_pos_ = AlignmentPos{static_cast<uint8_t>(pos + uint8_t{1})};
+            alignment_pos_ = alignment_pos_at(static_cast<uint8_t>(pos + uint8_t{1}));
         } else {
             // A mismatch resets, but this op may itself be a fresh start.
-            alignment_pos_ = AlignmentPos{uint8_t{0}};
+            alignment_pos_ = alignment_pos_at(0);
             if (region->num_ops > 0 && schema == region->ops[0].schema_hash && shape == region->ops[0].shape_hash) {
-                alignment_pos_ = AlignmentPos{uint8_t{1}};
+                alignment_pos_ = alignment_pos_at(1);
             }
         }
 
@@ -901,7 +877,7 @@ private:
     // production route to a foreground context.
     ::foundation::effects::host::ProducerClaim<Vigil> producer_claim_;
     ModeCell mode_;
-    fixy::wrap::AtomicMonotonic<uint64_t> step_{0};
+    ::fixy::AtomicMonotonic<uint64_t> step_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
     Arena load_arena_{1 << 20};
 
     // The publication is release on the background side and acquire on the
@@ -909,10 +885,10 @@ private:
     // visible after the observe.  It is a reusable latest-wins slot rather
     // than a publish-once cell because divergence recovery publishes
     // several regions over one process lifetime.
-    fixy::handle::PublishSlot<RegionNode> pending_region_;
+    ::fixy::handle::PublishSlot<RegionNode> pending_region_;
     // The four below are foreground-only.
     RegionNode* pending_activation_{nullptr};
-    AlignmentPos alignment_pos_{uint8_t{0}};
+    AlignmentPos alignment_pos_ = alignment_pos_at(0);
     CrucibleContext ctx_;
     RegionCache region_cache_;
 
@@ -938,18 +914,8 @@ private:
     BackgroundThread bg_;  // Must stay last.
 };
 
-// A convenience overload of the mode-cell mint, so a caller that already
-// holds a Vigil does not have to expose the cell.
-//
-// It is constexpr for uniformity with every other mint.  Vigil is not a
-// literal type, so this is never actually evaluated in a constant
-// expression.
-[[nodiscard]] constexpr Vigil::ModeSessionHandle mint_vigil_mode_bridge(const Vigil& vigil) noexcept {
-    return vigil.mode_session();
-}
-
 // A scoped view must not outlive the scope that minted it, so no field of
 // Vigil, transitively, is allowed to be one.
-static_assert(crucible::fixy::wrap::no_scoped_view_field_check<Vigil>());
+static_assert(::fixy::no_scoped_view_field_check<Vigil>());
 
 }  // namespace crucible

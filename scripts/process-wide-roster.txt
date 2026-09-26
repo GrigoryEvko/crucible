@@ -9,10 +9,6 @@
 # the same value, or the object is a cache or scratch that a second copy only
 # fills again.
 
-include/crucible/BackgroundThread.h | crucible::BackgroundThread::stage_held_by_this_thread_ | only libcrucible_vessel.so reaches it: the background thread and the jobs that it runs are compiled there, and libcrucible_dispatch.so names neither
-include/crucible/BackgroundThread.h | crucible::BackgroundThread::mailbox_closed_ | only libcrucible_vessel.so reaches it: the background thread and the jobs that it runs are compiled there, and libcrucible_dispatch.so names neither
-include/crucible/BackgroundThread.h | crucible::BackgroundThread::mailbox_inline_ | only libcrucible_vessel.so reaches it: the background thread and the jobs that it runs are compiled there, and libcrucible_dispatch.so names neither
-
 include/crucible/cipher/ComputationCache.h | crucible::cipher::detail::compiled_body_slot | a template variable, so the marker cannot reach it. A lookup in a second library misses, and that library fills its own slot of the cache
 include/crucible/cipher/ComputationCache.h | crucible::cipher::detail::computation_cache_self_test::s_data_global | a fixture of the self-test: only its address is used, as a template argument that the cache refuses
 include/crucible/cipher/ComputationCache.h | crucible::cipher::computation_cache_smoke_test()::call_counter | the smoke test runs at most one time in each library, and each run reads the slots of its own library

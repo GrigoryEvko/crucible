@@ -34,7 +34,9 @@ using crucible::warden::watchdog_verdict_name;
 
 // Each watchdog below comes from the mint, with a startup context from
 // the test door.  So each block also instantiates the mint at run time.
+// Each poll runs under a test context from the same door.
 const ::fixy::ColdInitCtx startup{::foundation::effects::testing::init()};
+const ::fixy::TestRunnerCtx runner{::foundation::effects::testing::test()};
 
 static_assert(static_cast<int>(WatchdogVerdict::InsufficientData) == 0,
               "InsufficientData must be the zero sentinel — default-construction "
@@ -81,7 +83,7 @@ int main() {
         Policy policy = Policy::production();  // a nonzero budget
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         for (int i = 0; i < 5; ++i) {
-            const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
+            const auto v = watchdog.observe(runner);
             if (v != WatchdogVerdict::InsufficientData) {
                 std::fprintf(stderr,
                              "nullptr-Senses Watchdog should return "
@@ -109,7 +111,7 @@ int main() {
         Policy policy = Policy::none();
         policy.deadline_miss_budget = 0;
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
-        const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
+        const auto v = watchdog.observe(runner);
         if (v != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr, "budget=0 should disable watchdog; got %s\n", watchdog_verdict_name(v));
             ++failures;
@@ -129,7 +131,7 @@ int main() {
         policy.watchdog_window_sec = 0;
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         for (int i = 0; i < 5; ++i) {
-            const auto v = watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
+            const auto v = watchdog.observe(runner);
             if (v != WatchdogVerdict::InsufficientData) {
                 std::fprintf(stderr,
                              "a zero window should disable the watchdog; "
@@ -200,7 +202,7 @@ int main() {
     {
         Policy policy = Policy::production();
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
-        (void)watchdog.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});  // no source, so no state changes
+        (void)watchdog.observe(runner);  // no source, so no state changes
         watchdog.reset();
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u) {
             std::fprintf(stderr, "reset() should zero diagnostics\n");
@@ -213,7 +215,7 @@ int main() {
         Policy policy = Policy::production();
         DeadlineWatchdog watchdog_src = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         DeadlineWatchdog watchdog_sink = std::move(watchdog_src);
-        const auto v = watchdog_sink.observe(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
+        const auto v = watchdog_sink.observe(runner);
         if (v != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr, "moved-into watchdog should still observe; got %s\n", watchdog_verdict_name(v));
             ++failures;

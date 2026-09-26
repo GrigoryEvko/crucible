@@ -738,10 +738,8 @@ def reexports(paths: list[Path] | None = None) -> dict[str, tuple[str, int]]:
 
     A re-export is a using-declaration whose last name starts with `mint_`.
     The key is the full name it names, from `::`, so a lookup matches the mint
-    the using actually names.  A bare-name key cannot: a re-export
-    `using ::crucible::mint_vigil_mode_bridge;` names the overload in
-    namespace `crucible`, not the one in `crucible::vigil_mode` that the
-    inventory pairs it with.
+    the using actually names.  A bare-name key cannot: two namespaces can
+    each declare a mint of one name, and a re-export names only one of them.
 
     A re-export may name its target through a namespace alias of the file.
     `fixy/Time.h` writes `namespace sf = ::crucible::safety;` and then

@@ -21,7 +21,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
@@ -43,8 +43,8 @@ uint64_t bench_rand() noexcept {
     return bench_rng_state;
 }
 
-TraceEntry make_synthetic_entry(effects::Alloc a, Arena& arena, uint16_t n_in, uint16_t n_out, uint16_t n_scalar,
-                                uint8_t ndim) {
+TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, Arena& arena, uint16_t n_in, uint16_t n_out,
+                                uint16_t n_scalar, uint8_t ndim) {
     TraceEntry te{};
     te.schema_hash = SchemaHash{bench_rand()};
     te.shape_hash = ShapeHash{bench_rand()};
@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
 
     // ── compute_content_hash at three region sizes ───────────────────
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 16};
         constexpr uint32_t N = 8;
         TraceEntry ops[N]{};
@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
     }());
 
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t N = 481;
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
     }());
 
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t N = 1110;
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
 
     // ── make_region (481 ops) ────────────────────────────────────────
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
         Arena data_arena{1 << 20};
         constexpr uint32_t N = 481;
         auto* ops = data_arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
 
     // ── compute_merkle_hash ──────────────────────────────────────────
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t N = 481;
         auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
@@ -191,7 +191,7 @@ int main(int argc, char* argv[]) {
 
     // ── build_csr (481 ops, 900 edges) ────────────────────────────────
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t NUM_OPS = 481;
         constexpr uint32_t NUM_EDGES = 900;
@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
 
     // ── compute_memory_plan (300 slots) ──────────────────────────────
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
         constexpr uint32_t NUM_SLOTS = 300;
         auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
@@ -248,7 +248,7 @@ int main(int argc, char* argv[]) {
 
     // ── build_trace full pipeline (481 synthetic ops) ────────────────
     reports.push_back([] {
-        auto test = effects::testing::test();
+        auto test = ::foundation::effects::testing::test();
 
         // A TraceRing is 6 MiB and the stack is 8 MiB, so the ring lives
         // on the heap, as it does in Vigil.
@@ -288,8 +288,8 @@ int main(int argc, char* argv[]) {
         }
 
         BackgroundThread bg;
-        bg.ring.set(BackgroundThread::RingPtr{ring.get()});
-        bg.meta_log.set(BackgroundThread::MetaLogPtr{&meta_log});
+        bg.ring.set(ring.get());
+        bg.meta_log.set(&meta_log);
 
         // Drain buffers heap-allocated; 4× 4096-element arrays on the
         // stack blow past our 512 kB stack-usage budget.
@@ -338,7 +338,7 @@ int main(int argc, char* argv[]) {
     // ── Optional: build_trace from real .crtrace argv paths ──────────
     for (int i = 1; i < argc; i++) {
         reports.push_back([path = argv[i]] {
-            auto test = effects::testing::test();
+            auto test = ::foundation::effects::testing::test();
             auto trace = load_trace(path);
             if (!trace) {
                 std::fprintf(stderr, "[skip] could not load %s\n", path);
@@ -361,7 +361,7 @@ int main(int argc, char* argv[]) {
             };
 
             BackgroundThread bg;
-            bg.meta_log.set(BackgroundThread::MetaLogPtr{&meta_log});
+            bg.meta_log.set(&meta_log);
             const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace->num_ops) * 256);
 
             char label[128];

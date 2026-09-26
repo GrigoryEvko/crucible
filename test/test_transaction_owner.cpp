@@ -42,7 +42,7 @@ namespace {
 // that true: no signature takes the proof by reference.
 using Stage = crucible::BackgroundThread::PublishStage;
 static_assert(std::is_same_v<crucible::BackgroundThread::RegionReadyCallback::Fn,
-                             void (*)(void*, crucible::effects::Bg const&, Stage, crucible::RegionNode*) noexcept>);
+                             void (*)(void*, ::foundation::effects::Bg const&, Stage, crucible::RegionNode*) noexcept>);
 static_assert(std::is_same_v<decltype(crucible::BackgroundThread::OwnerJob::fn), void (*)(void*, Stage) noexcept>);
 static_assert(!std::is_copy_constructible_v<Stage> && !std::is_move_constructible_v<Stage>);
 

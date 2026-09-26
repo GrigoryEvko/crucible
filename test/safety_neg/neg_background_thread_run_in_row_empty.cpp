@@ -1,31 +1,19 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I20 fixture — pure-row rejection.  Pins the requires-clause
-// on BackgroundThread::run_in_row<CallerRow>.  The template parameter
-// must satisfy `Subrow<Row<Bg, Alloc, IO, Block>, CallerRow>`.  A
-// caller in a Hot/Pure context (empty row, Row<>) cannot satisfy the
-// constraint because {Bg, Alloc, IO, Block} ⊄ {} — the substitution
-// must fail loudly with a constraint diagnostic, NOT silently
-// proceed.
-//
-// Why this matters: the 8th-axiom fence on run_in_row prevents fg
-// hot-path code from inadvertently driving the bg drain.  Without
-// this fence, a refactor that accidentally calls
-// bg.run_in_row(...) from a Hot context would compile cleanly AND
-// silently inherit Bg + Alloc + IO + Block effects on the fg
-// hot path — destroying recording-latency guarantees.  The fence
-// catches that drift at substitution time.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<>>.
+// BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
+// IO and Block.  This background context claims the empty row, so the gate
+// refuses it.  With the row widened to all four atoms, the call compiles.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<>>();
+    const eff::ExecCtx<eff::Bg, eff::Row<>> ctx{eff::testing::bg()};
+    bt.run_in_row(ctx);
     return 0;
 }

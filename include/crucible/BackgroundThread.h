@@ -16,22 +16,27 @@
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
-#include <crucible/_Saturate.h>
 #include <crucible/SchemaTable.h>
-#include <crucible/concurrent/_PermissionedSpscChannel.h>
-#include <crucible/concurrent/_Pipeline.h>
-#include <crucible/concurrent/_SpinLock.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/effects/_FxAliases.h>
-#include <crucible/permissions/_Permission.h>
-#include <crucible/fixy/Handle.h>
-#include <crucible/fixy/_Source.h>
-#include <crucible/fixy/Wrap.h>
 #include <crucible/TraceGraph.h>
+#include <fixy/Ctx.h>
+#include <fixy/Mutation.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/Tags.h>
+#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/Pipeline.h>
+#include <fixy/concurrent/Stage.h>
+#include <fixy/handle/OneShotFlag.h>
+#include <fixy/handle/PublishCommit.h>
+#include <fixy/os/SpinLock.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Saturate.h>
+#include <foundation/contracts/Pre.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
 
 namespace crucible {
 
@@ -41,17 +46,16 @@ namespace crucible {
 // Scratch buffers (PtrMap, SlotInfo, Edge) are allocated once and reused, so
 // the drain path performs no per-call allocation.
 struct BackgroundThread {
-    using RingPtr = crucible::fixy::wrap::NonNull<TraceRing*>;
-    using MetaLogPtr = crucible::fixy::wrap::NonNull<MetaLog*>;
-    crucible::fixy::wrap::WriteOnce<RingPtr> ring;
-    crucible::fixy::wrap::WriteOnce<MetaLogPtr> meta_log;
+    // start() sets each pointer one time, and never to null.
+    ::fixy::WriteOnceNonNull<TraceRing*> ring = ::fixy::mint_write_once_non_null<TraceRing*>();
+    ::fixy::WriteOnceNonNull<MetaLog*> meta_log = ::fixy::mint_write_once_non_null<MetaLog*>();
 
     int32_t rank = -1;
     int32_t world_size = 0;
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
-    using DeviceCapability = ::crucible::fixy::wrap::Tagged<uint64_t, ::crucible::fixy::tags::source::Meridian>;
-    DeviceCapability device_capability{0};
+    using DeviceCapability = ::fixy::Tagged<uint64_t, ::fixy::tags::source::Meridian>;
+    DeviceCapability device_capability{};
 
     // Written by the background thread, read by the foreground.  The
     // store(release) publishes the region data written before it, and the
@@ -106,18 +110,20 @@ struct BackgroundThread {
                   "an implicit-lifetime proof is forgeable by a lifetime start over bytes");
 
     struct RegionReadyCallback {
-        // The noexcept is load-bearing.  This fires mid-publish on the
-        // background thread, so an escaping exception would unwind through
-        // persistence and commit and leave the runtime half-applied.  Under
-        // -fno-exceptions that cannot happen, and the noexcept pins the
-        // invariant so a throwing callable reddens at the assignment site.
+        // The noexcept is load-bearing.  The callback runs on the publish
+        // stage in the middle of a publication, so an exception out of it
+        // would leave the transaction commit and the mode state half done.
+        // Nothing in the tree throws, and scripts/check-no-throw-no-rtti.sh
+        // refuses an artifact that references __cxa_throw.  The noexcept
+        // also puts the rule in the type: a function that is not noexcept
+        // does not convert to Fn.
         //
         // The callback receives the background context of the thread that
         // runs it.  A callee that acts under a background context takes that
         // one, and never builds its own.  It also receives the publish-stage
         // proof, which is what lets it write state that the publish stage
         // owns.
-        using Fn = void (*)(void*, effects::Bg const&, PublishStage, RegionNode*) noexcept;
+        using Fn = void (*)(void*, ::foundation::effects::Bg const&, PublishStage, RegionNode*) noexcept;
 
         void* ctx = nullptr;
         Fn fn = nullptr;
@@ -126,7 +132,7 @@ struct BackgroundThread {
 
         // The caller proves that it runs on the stage, and the callback
         // gets a proof of its own that dies with the call.
-        void operator()(effects::Bg const& bg, PublishStage const&, RegionNode* region) const noexcept {
+        void operator()(::foundation::effects::Bg const& bg, PublishStage const&, RegionNode* region) const noexcept {
             fn(ctx, bg, PublishStage{}, region);
         }
     };
@@ -206,8 +212,17 @@ struct BackgroundThread {
     // Own cache line: the background writes it, the foreground reads it for
     // diagnostics.  Sharing a line with the vectors above would invalidate
     // the foreground's copy on every push_back.
-    alignas(64) crucible::fixy::wrap::Monotonic<uint32_t> iterations_completed{0};
+    alignas(64) ::fixy::Monotonic<uint32_t> iterations_completed = ::fixy::mint_monotonic<uint32_t>(0);
     uint32_t last_iteration_length = 0;
+
+private:
+    // Each acquisition mints a token of this tag, so the token witnesses
+    // that the acquisition comes from inside this class.  The tag and the
+    // gate below are both private.  Code outside the class cannot name the
+    // tag, and it cannot reach the gate to deduce the tag from its type.
+    struct ArenaAllocGateTag {
+        using permission_row = ::foundation::effects::Row<>;
+    };
 
     // The build stage and the publish stage are separate pipeline threads.
     // Arena storage is append-only, so pointers already handed out stay
@@ -215,11 +230,14 @@ struct BackgroundThread {
     // serializes the two allocation windows against each other without
     // weakening the permissioned SPSC stage topology.
     //
-    // The gate spins on a pause budget and then yields, so a waiter can
-    // reach the kernel.  That is why the windows it covers are kept to the
-    // arena bumps themselves: every extra statement inside the gate is
-    // another reason for the other stage to reach the yield.
-    alignas(64) concurrent::SpinLock arena_alloc_gate_;
+    // Both stages run under a background context, so the gate is the
+    // blocking one: a waiter sleeps in the kernel until the holder releases.
+    // The windows it covers are kept to the arena bumps themselves, because
+    // every extra statement inside the gate is more time the other stage
+    // sleeps.
+    alignas(64) ::fixy::spin::BlockingLock<ArenaAllocGateTag> arena_alloc_gate_;
+
+public:
     Arena arena{1 << 20};
 
     // Regions that have been published but not compiled.  This is the
@@ -270,14 +288,14 @@ struct BackgroundThread {
 
     private:
         RegionNode* slots_[CAP]{};
-        crucible::fixy::wrap::AtomicMonotonic<uint64_t> total_{0};
+        ::fixy::AtomicMonotonic<uint64_t> total_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
     };
 
     UncompiledRegionQueue uncompiled_regions;
 
     // A one-way signal for a single run() invocation.  start() re-arms it
     // under quiescence before launching the next pipeline.
-    alignas(64) crucible::fixy::handle::OneShotFlag stop_requested;
+    alignas(64) ::fixy::handle::OneShotFlag stop_requested;
     std::jthread pipeline_thread;
 
     // Total entries fully processed.  The write surface is friend-gated to
@@ -289,7 +307,7 @@ struct BackgroundThread {
     // load sees the count.  bump_by's acq_rel supplies the release half.
     struct PublishStageAuth;
     struct PublishStageTag {};
-    using TotalProcessedCell = fixy::handle::PublishCommitCell<PublishStageTag, PublishStageAuth>;
+    using TotalProcessedCell = ::fixy::handle::PublishCommitCell<PublishStageTag, PublishStageAuth>;
     TotalProcessedCell total_processed;
 
     // The foreground raises this when compiled replay diverges.  The
@@ -300,7 +318,7 @@ struct BackgroundThread {
     //
     // Own cache line: the foreground writes it while the background reads it
     // each drain cycle, and the neighbouring fields are background-private.
-    alignas(64) crucible::fixy::handle::OneShotFlag reset_requested;
+    alignas(64) ::fixy::handle::OneShotFlag reset_requested;
 
     // Which side of the last reset a piece of pipeline work belongs to.
     //
@@ -320,7 +338,7 @@ struct BackgroundThread {
     // Commit markers are exempt.  They carry no region, only the count of
     // entries a batch consumed, and total_processed has to advance past a
     // dropped region for flush() to return.
-    alignas(64) crucible::fixy::wrap::AtomicMonotonic<uint32_t> reset_epoch{0};
+    alignas(64) ::fixy::AtomicMonotonic<uint32_t> reset_epoch = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
     // The mailbox of the publish-stage state.  It holds one of four values:
     //   &mailbox_closed_  no publish stage runs, so a caller may own the state
@@ -377,8 +395,10 @@ struct BackgroundThread {
     }
 
     // The background thread whose stage this thread holds, or null.  Read
-    // only by the contract in run_on_publish_stage, on the cold path.
-    static inline thread_local const BackgroundThread* stage_held_by_this_thread_ = nullptr;
+    // only by the contract in run_on_publish_stage, on the cold path.  It is
+    // one object for the process, so every shared library reads the same
+    // copy on a thread.
+    CRUCIBLE_PROCESS_WIDE static inline thread_local const BackgroundThread* stage_held_by_this_thread_ = nullptr;
 
     // The publish stage holds the mailbox open for as long as this scope
     // lives, so every way out of the stage closes it.  A mailbox left open
@@ -406,8 +426,11 @@ struct BackgroundThread {
 
     static constexpr uint32_t BATCH_SIZE = 4096;
 
+    // The payloads below are plain data.  A stage reaches the thread it
+    // serves through its input end (StageInput), so no payload points back
+    // at the owner, and the effect row of each payload is read off data
+    // alone.
     struct BgTraceBatch {
-        BackgroundThread* owner = nullptr;
         uint32_t count = 0;
         TraceRing::Entry entries[BATCH_SIZE]{};
         MetaIndex meta_starts[BATCH_SIZE]{};
@@ -416,7 +439,6 @@ struct BackgroundThread {
     };
 
     struct BgBuildWork {
-        BackgroundThread* owner = nullptr;
         bool commit_only = false;
         uint32_t commit_count = 0;
         uint32_t completed_len = 0;
@@ -430,9 +452,9 @@ struct BackgroundThread {
     };
 
     struct BgPipelineDone {};
-    struct BgPipelineStart {
-        BackgroundThread* owner = nullptr;
-    };
+    // The go signal of the drain stage.  run() pushes it once, before the
+    // stages start.
+    struct BgPipelineStart {};
 
     // Lifetime: the producing stage owns it until it is pushed, after which
     // the consuming stage owns it and deletes it once the graph is
@@ -450,7 +472,6 @@ struct BackgroundThread {
     // the caller then observes a compiled mode with no pending region, or an
     // active region whose plan is not finished.
     struct BgGraphPublish {
-        BackgroundThread* owner = nullptr;
         TraceGraph* graph = nullptr;
         bool commit_only = false;
         uint32_t commit_count = 0;
@@ -465,10 +486,38 @@ struct BackgroundThread {
     struct BgBuildWorkTag {};
     struct BgGraphPublishTag {};
 
-    using StartChannel = concurrent::PermissionedSpscChannel<BgPipelineStart, 1, BgPipelineStartTag>;
-    using TraceBatchChannel = concurrent::PermissionedSpscChannel<BgTraceBatch*, 64, BgTraceBatchTag>;
-    using BuildWorkChannel = concurrent::PermissionedSpscChannel<BgBuildWork*, 64, BgBuildWorkTag>;
-    using GraphPublishChannel = concurrent::PermissionedSpscChannel<BgGraphPublish*, 64, BgGraphPublishTag>;
+    using StartChannel = ::fixy::concurrent::PermissionedSpscChannel<BgPipelineStart, 1, BgPipelineStartTag>;
+    using TraceBatchChannel = ::fixy::concurrent::PermissionedSpscChannel<BgTraceBatch*, 64, BgTraceBatchTag>;
+    using BuildWorkChannel = ::fixy::concurrent::PermissionedSpscChannel<BgBuildWork*, 64, BgBuildWorkTag>;
+    using GraphPublishChannel = ::fixy::concurrent::PermissionedSpscChannel<BgGraphPublish*, 64, BgGraphPublishTag>;
+
+    // The consumer end of a stage, together with the thread the stage
+    // serves.  Only run() builds one, from a channel end and this object.
+    template <class Consumer>
+    class StageInput {
+        Consumer inner_;
+        BackgroundThread* owner_;
+
+        StageInput(Consumer&& inner, BackgroundThread& owner) noexcept : inner_{std::move(inner)}, owner_{&owner} {}
+        friend struct BackgroundThread;
+
+    public:
+        static constexpr std::size_t per_call_working_set = Consumer::per_call_working_set;
+
+        StageInput(StageInput&&) noexcept = default;
+        StageInput(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
+        StageInput& operator=(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
+        StageInput& operator=(StageInput&&) = delete("a stage input binds to one channel for life");
+
+        [[nodiscard]] decltype(std::declval<Consumer&>().try_pop()) try_pop() noexcept { return inner_.try_pop(); }
+
+        [[nodiscard]] BackgroundThread& owner() const noexcept { return *owner_; }
+    };
+
+    using StartInput = StageInput<typename StartChannel::ConsumerHandle>;
+    using TraceBatchInput = StageInput<typename TraceBatchChannel::ConsumerHandle>;
+    using BuildWorkInput = StageInput<typename BuildWorkChannel::ConsumerHandle>;
+    using GraphPublishInput = StageInput<typename GraphPublishChannel::ConsumerHandle>;
 
     // Also carries the owner to the publish stage from its first
     // iteration, so the stage can serve the owner mailbox before any
@@ -499,7 +548,6 @@ struct BackgroundThread {
 
     [[nodiscard]] BgBuildWork* make_commit_work(uint32_t count) {
         auto* work = new BgBuildWork{};
-        work->owner = this;
         work->commit_only = true;
         work->commit_count = count;
         return work;
@@ -509,7 +557,8 @@ struct BackgroundThread {
         uint32_t total = static_cast<uint32_t>(current_trace.size());
         const uint32_t iter_len = detector.last_completed_len;
 
-        const uint32_t warmup = crucible::sat::sub_sat(crucible::sat::sub_sat(total, IterationDetector::K), iter_len);
+        const uint32_t warmup =
+            ::foundation::sat::sub_sat(::foundation::sat::sub_sat(total, IterationDetector::K), iter_len);
         if (warmup > 0) [[unlikely]] {
             auto shift = [warmup](auto& vec) {
                 const auto n = vec.size();
@@ -524,17 +573,16 @@ struct BackgroundThread {
             shift(current_meta_starts);
             shift(current_scope_hashes);
             shift(current_callsite_hashes);
-            total = crucible::sat::sub_sat(total, warmup);
+            total = ::foundation::sat::sub_sat(total, warmup);
         }
 
-        const uint32_t completed_len = crucible::sat::sub_sat(total, IterationDetector::K);
+        const uint32_t completed_len = ::foundation::sat::sub_sat(total, IterationDetector::K);
         last_iteration_length = completed_len;
         iterations_completed.bump();
 
         BgBuildWork* work = nullptr;
         if (meta_log && completed_len > 0) {
             work = new BgBuildWork{};
-            work->owner = this;
             work->completed_len = completed_len;
             work->epoch = reset_epoch.get();
             work->trace.assign(current_trace.begin(), current_trace.begin() + completed_len);
@@ -568,39 +616,67 @@ struct BackgroundThread {
         if (!graph) return;
         const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
         if (max_meta_end > 0) {
-            meta_log.get().value()->advance_tail(max_meta_end);
+            meta_log.get()->advance_tail(max_meta_end);
         }
     }
 
-    void publish_trace_graph(::foundation::effects::Alloc a, PublishStage const& stage, TraceGraph* graph) CRUCIBLE_NO_THREAD_SAFETY {
+private:
+    // Takes the gate under the context of the calling stage.
+    //
+    // A root mint at each acquisition is sound here.  The tag and the gate
+    // are private, so only this class can mint a token of the tag.  The
+    // token is a compile-time witness: the gate reads its type and no
+    // state, and the token dies when the guard releases the gate.  The
+    // mutual exclusion comes from the gate, not from the token.
+    template <class Ctx, class Body>
+        requires ::fixy::spin::CtxMayBlock<Ctx> && std::is_nothrow_invocable_v<Body&>
+    void with_arena_alloc_gate_(Ctx const& ctx, Body&& body) noexcept {
+        auto proof = ::foundation::permissions::mint_permission_root<ArenaAllocGateTag>();
+        ::fixy::spin::GateGuard guard{ctx, arena_alloc_gate_, proof};
+        body();
+    }
+
+public:
+    // Takes the arena gate once, without a wait, and releases it at once.
+    // True when no stage held the gate.  A test uses it to show that the
+    // region callback runs outside the gate.
+    template <class Ctx>
+        requires ::fixy::spin::CtxMayBlock<Ctx>
+    [[nodiscard]] bool try_probe_arena_alloc_gate(Ctx const& ctx) noexcept {
+        auto proof = ::foundation::permissions::mint_permission_root<ArenaAllocGateTag>();
+        ::fixy::spin::GateGuard guard{std::try_to_lock, ctx, arena_alloc_gate_, proof};
+        return guard.was_acquired();
+    }
+
+    // The background context of the publish stage allocates the region and
+    // is handed to the region callback, which runs on the same thread.
+    void publish_trace_graph(::foundation::effects::Bg const& bg, PublishStage const& stage, TraceGraph* graph)
+        CRUCIBLE_NO_THREAD_SAFETY {
         if (!graph) return;
 
         const uint32_t num_ops = graph->num_ops.get_assuming_set();
         const uint32_t num_slots = graph->num_slots.get_assuming_set();
         const uint32_t max_meta_end = graph->max_meta_end.get_assuming_set();
 
-        // The gate covers the arena bump cursor and nothing else.  It used
-        // to wrap this whole function, which meant the region-ready callback
-        // ran inside it: that callback commits a transaction, flips the mode
-        // cell and reads sampled counters, and the build stage was locked
-        // out of the arena for all of it.  The gate spins on a budget and
-        // then yields, so the build stage reached the kernel every time.
+        // The gate covers the arena bump cursor and nothing else.  The
+        // region-ready callback stays outside it: that callback commits a
+        // transaction, flips the mode cell and reads sampled counters, and
+        // inside the gate the build stage would sleep for all of it.
         //
         // Nothing after this scope touches the arena.  recompute_merkle
         // walks nodes that already exist, advance_tail moves a counter in
         // the metadata log, and the queue below is heap storage the publish
         // stage owns alone.
         RegionNode* region = nullptr;
-        {
-            concurrent::SpinGuard guard{arena_alloc_gate_};
-            region = make_region(a, arena, graph->ops, num_ops, graph->content_hash);
+        with_arena_alloc_gate_(::fixy::BgLoadCtx{bg}, [&]() noexcept {
+            region = make_region(bg.alloc, arena, graph->ops, num_ops, graph->content_hash);
             if (graph->slots && num_slots > 0) {
-                region->plan = compute_memory_plan(a, graph->slots, num_slots);
+                region->plan = compute_memory_plan(bg.alloc, graph->slots, num_slots);
             }
-        }
+        });
 
         if (max_meta_end > 0) {
-            meta_log.get().value()->advance_tail(max_meta_end);
+            meta_log.get()->advance_tail(max_meta_end);
         }
 
         recompute_merkle(region);
@@ -608,30 +684,23 @@ struct BackgroundThread {
 
         active_region.store(region, std::memory_order_release);
         if (region_ready_cb) {
-            region_ready_cb(effects::mint_bg_context(effects::detail::ctx_mint::bg_key{}), stage, region);
+            region_ready_cb(bg, stage, region);
         }
     }
 
-    static void DrainTraceRingFn(typename StartChannel::ConsumerHandle&& in,
-                                 typename TraceBatchChannel::ProducerHandle&& out) {
-        BackgroundThread* owner = nullptr;
-        while (!owner) {
-            auto start = in.try_pop();
-            if (!start) {
-                CRUCIBLE_SPIN_PAUSE;
-                continue;
-            }
-            owner = start->owner;
+    static void DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
+        BackgroundThread* const owner = &in.owner();
+        while (!in.try_pop()) {
+            CRUCIBLE_SPIN_PAUSE;
         }
 
         auto batch = std::make_unique<BgTraceBatch>();
-        batch->owner = owner;
 
         while (true) {
             if (owner->stop_requested.peek()) break;
 
-            batch->count = owner->ring.get().value()->try_pop_batch(
-                batch->entries, batch->meta_starts, batch->scope_hashes, batch->callsite_hashes, BATCH_SIZE);
+            batch->count = owner->ring.get()->try_pop_batch(batch->entries, batch->meta_starts, batch->scope_hashes,
+                                                            batch->callsite_hashes, BATCH_SIZE);
 
             if (batch->count == 0) {
                 CRUCIBLE_SPIN_PAUSE;
@@ -641,11 +710,10 @@ struct BackgroundThread {
             push_pipeline(out, batch.get());
             batch.release();
             batch = std::make_unique<BgTraceBatch>();
-            batch->owner = owner;
         }
 
-        batch->count = owner->ring.get().value()->try_pop_batch(batch->entries, batch->meta_starts, batch->scope_hashes,
-                                                                batch->callsite_hashes, BATCH_SIZE);
+        batch->count = owner->ring.get()->try_pop_batch(batch->entries, batch->meta_starts, batch->scope_hashes,
+                                                        batch->callsite_hashes, BATCH_SIZE);
         if (batch->count > 0) {
             push_pipeline(out, batch.get());
             batch.release();
@@ -655,10 +723,8 @@ struct BackgroundThread {
         push_pipeline(out, stop);
     }
 
-    static void DetectIterationFn(typename TraceBatchChannel::ConsumerHandle&& in,
-                                  typename BuildWorkChannel::ProducerHandle&& out) {
-        [[maybe_unused]] auto bg = effects::mint_bg_context(effects::detail::ctx_mint::bg_key{});
-
+    static void DetectIterationFn(TraceBatchInput&& in, typename BuildWorkChannel::ProducerHandle&& out) {
+        BackgroundThread* const owner = &in.owner();
         while (true) {
             auto maybe_batch = in.try_pop();
             if (!maybe_batch) {
@@ -673,7 +739,6 @@ struct BackgroundThread {
                 return;
             }
 
-            BackgroundThread* owner = batch->owner;
             auto do_reset = [&]() noexcept {
                 owner->detector.restart_after_divergence();
                 owner->current_trace.clear();
@@ -709,15 +774,17 @@ struct BackgroundThread {
             auto commit = std::unique_ptr<BgBuildWork>(owner->make_commit_work(batch->count));
             push_pipeline(out, commit.get());
             commit.release();
-            (void)bg;
         }
     }
 
     // The stop sentinel, a null BgBuildWork*, is forwarded as a null
     // BgGraphPublish*.
-    static void BuildTraceFn(typename BuildWorkChannel::ConsumerHandle&& in,
-                             typename GraphPublishChannel::ProducerHandle&& out) {
-        [[maybe_unused]] auto bg = effects::mint_bg_context(effects::detail::ctx_mint::bg_key{});
+    //
+    // The pipeline runs this body as the entry of its own thread, so the
+    // body takes the background context of that thread from the door.
+    static void BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out) {
+        const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
+        BackgroundThread* const owner = &in.owner();
 
         while (true) {
             auto maybe_work = in.try_pop();
@@ -733,7 +800,6 @@ struct BackgroundThread {
                 return;
             }
 
-            BackgroundThread* owner = work->owner;
             if (work->commit_only) {
                 // Forward the marker downstream so total_processed advances
                 // only after every preceding graph has been published.
@@ -742,7 +808,6 @@ struct BackgroundThread {
                 // no pending region, or an active region whose plan is still
                 // being computed.
                 auto publish = std::make_unique<BgGraphPublish>();
-                publish->owner = owner;
                 publish->graph = nullptr;
                 publish->commit_only = true;
                 publish->commit_count = work->commit_count;
@@ -767,19 +832,17 @@ struct BackgroundThread {
             // that only runs when replay has already failed.
 
             TraceGraph* graph = nullptr;
-            {
-                concurrent::SpinGuard guard{owner->arena_alloc_gate_};
-                graph =
-                    owner->build_trace_from(bg.alloc, work->completed_len, work->trace.data(), work->meta_starts.data(),
-                                            work->scope_hashes.data(), work->callsite_hashes.data());
-            }
+            owner->with_arena_alloc_gate_(ctx, [&]() noexcept {
+                graph = owner->build_trace_from(ctx.cap().alloc, work->completed_len, work->trace.data(),
+                                                work->meta_starts.data(), work->scope_hashes.data(),
+                                                work->callsite_hashes.data());
+            });
 
             // Forwarding only well-formed graphs keeps the downstream
             // contract at "a non-null graph is publishable".
             if (!graph) continue;
 
             auto publish = std::make_unique<BgGraphPublish>();
-            publish->owner = owner;
             publish->graph = graph;
             publish->commit_only = false;
             publish->commit_count = 0;
@@ -802,10 +865,13 @@ struct BackgroundThread {
     // publish-stage proof for each call, serves the owner mailbox before
     // every pop, and closes the mailbox on its way out, so a job posted to
     // it runs here between two publications and never beside one.
-    static void MakeRegionFn(typename GraphPublishChannel::ConsumerHandle&& in, BgSinkProducerHandle&& out) {
-        [[maybe_unused]] auto bg = effects::mint_bg_context(effects::detail::ctx_mint::bg_key{});
-        BackgroundThread* const owner = out.owner;
-        CRUCIBLE_ASSERT(owner != nullptr);
+    //
+    // The pipeline runs this body as the entry of its own thread, so the
+    // body takes the background context of that thread from the door.
+    static void MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out) {
+        const ::foundation::effects::Bg bg = ::foundation::effects::host::BackgroundOwner::mint_background_context();
+        BackgroundThread* const owner = &in.owner();
+        CRUCIBLE_ASSERT(out.owner == owner);
         const OwnerMailboxScope mailbox{*owner, PublishStage{}};
 
         while (true) {
@@ -853,7 +919,7 @@ struct BackgroundThread {
                 continue;
             }
 
-            owner->publish_trace_graph(bg.alloc, PublishStage{}, publish->graph);
+            owner->publish_trace_graph(bg, PublishStage{}, publish->graph);
         }
     }
 
@@ -876,14 +942,18 @@ struct BackgroundThread {
                uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
         global_schema_table().seal();
         global_ckernel_table().value()->seal();
-        ring.set(RingPtr{ring_ptr});
-        meta_log.set(MetaLogPtr{meta_log_ptr});
+        ring.set(ring_ptr);
+        meta_log.set(meta_log_ptr);
         rank = rank_;
         world_size = world_size_;
-        device_capability = DeviceCapability{device_cap};
+        device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);
         reserve_iteration_buffers_();
-        stop_requested.reset_in_quiescent_context(::crucible::fixy::handle::OneShotFlag::QuiescenceProof{});
-        pipeline_thread = std::jthread([this](std::stop_token) noexcept { run_in_row<run_required_row>(); });
+        stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
+        // The lambda is the entry of the pipeline thread, so it takes the
+        // background context of that thread from the door.
+        pipeline_thread = std::jthread([this](std::stop_token) noexcept {
+            run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
+        });
     }
 
     void stop() CRUCIBLE_NO_THREAD_SAFETY {
@@ -925,10 +995,10 @@ private:
     // The key is an address observed from a foreign allocator, so the
     // background thread treats it as an opaque cookie: hash and equality
     // only, never an offset into an internal pool.
-    using PtrMapKey = ::crucible::fixy::wrap::Tagged<void*, ::crucible::fixy::tags::source::External>;
+    using PtrMapKey = ::fixy::Tagged<void*, ::fixy::tags::source::External>;
 
     struct PtrSlot {
-        PtrMapKey key{nullptr};
+        PtrMapKey key{};
         OpIndex op_index;
         SlotId slot_id;
         uint8_t port = 0;
@@ -974,26 +1044,28 @@ private:
 
     // Zero means not yet allocated.  ptr_mask_ is a derived view of map_cap_
     // kept raw because the inner probe loop loads it every iteration.
-    crucible::fixy::wrap::Monotonic<uint32_t> map_cap_{0};
+    ::fixy::Monotonic<uint32_t> map_cap_ = ::fixy::mint_monotonic<uint32_t>(0);
     uint32_t ptr_mask_ = 0;
-    crucible::fixy::wrap::Monotonic<uint32_t> slot_cap_max_{0};
-    crucible::fixy::wrap::Monotonic<uint32_t> edge_cap_max_{0};
+    ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
+    ::fixy::Monotonic<uint32_t> edge_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
 
     // Called after the scan above, which supplies exact counts.  Buffers
     // grow and never shrink, so the cost amortizes across iterations.
     void ensure_scratch_buffers(uint32_t total_inputs, uint32_t total_outputs) {
         // Power-of-two capacity at a load factor below one half.  The unique
         // pointer count is the output count plus a small external fraction.
-        uint32_t raw_map_size = std::max(
-            MIN_PTR_MAP_CAP, crucible::sat::mul_sat(crucible::sat::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
+        uint32_t raw_map_size =
+            std::max(MIN_PTR_MAP_CAP,
+                     ::foundation::sat::mul_sat(::foundation::sat::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
         uint32_t needed_map = (raw_map_size >= MAX_PTR_MAP_CAP) ? MAX_PTR_MAP_CAP : std::bit_ceil(raw_map_size);
 
         // Unique storages are bounded by the outputs plus external headroom.
-        uint32_t needed_slots = std::max(MIN_SCRATCH_SLOT_CAP, crucible::sat::add_sat(total_outputs, uint32_t{1024}));
+        uint32_t needed_slots =
+            std::max(MIN_SCRATCH_SLOT_CAP, ::foundation::sat::add_sat(total_outputs, uint32_t{1024}));
 
         // Data-flow edges are bounded by the inputs, alias edges by the
         // outputs.
-        uint32_t needed_edges = std::max(MIN_SCRATCH_EDGE_CAP, crucible::sat::add_sat(total_inputs, total_outputs));
+        uint32_t needed_edges = std::max(MIN_SCRATCH_EDGE_CAP, ::foundation::sat::add_sat(total_inputs, total_outputs));
 
         if (needed_map > map_cap_.get()) {
             map_cap_.advance(needed_map);
@@ -1025,7 +1097,7 @@ private:
             auto& slot = map[(bucket_idx + probe) & mask];
             if (slot.gen != gen) {
                 // A stale generation means the slot is empty.  Claim it.
-                slot.key = PtrMapKey{key};
+                slot.key = ::fixy::mint_tagged<::fixy::tags::source::External>(key);
                 slot.op_index = op_index;
                 slot.port = port;
                 slot.slot_id = slot_id;
@@ -1069,53 +1141,27 @@ private:
 public:
     // The drain loop runs in the background context, arena-allocates regions
     // and grows the trace vectors, fires the region callback as its only
-    // externally observable side effect, and spin-pauses on an empty ring.
-    // Those are the four atoms below.  A caller must declare a superset;
-    // declaring fewer is a compile error.
+    // externally observable side effect, and sleeps on the arena gate.
+    // Those are the four atoms below.  The caller hands a context whose row
+    // admits all four, and a context that admits fewer is a compile error.
     using run_required_row =
-        ::crucible::effects::Row<::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Alloc,
-                                 ::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
+        ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc,
+                                   ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
-    // The asserts below pin the exact row contents, so a refactor that drops
-    // or adds an atom fails here rather than silently moving the fence.
-    static_assert(
-        std::is_same_v<run_required_row,
-                       ::crucible::effects::Row<::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Alloc,
-                                                ::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>>,
-        "BackgroundThread::run_required_row must be exactly "
-        "Row<Bg, Alloc, IO, Block>.  Adding or removing an atom changes the "
-        "row every site that spawns this thread must declare.");
-    static_assert(::crucible::effects::row_size_v<run_required_row> == 4u,
-                  "run_required_row must be exactly 4 atoms (Bg + Alloc + IO + Block).");
-    static_assert(
-        ::crucible::effects::
-            row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
-                run_required_row, ::crucible::effects::Effect::Bg>,
-        "run_required_row must contain Effect::Bg.  This thread runs in the "
-        "background context by definition.");
-    static_assert(
-        ::crucible::effects::
-            row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
-                run_required_row, ::crucible::effects::Effect::Alloc>,
-        "run_required_row must contain Effect::Alloc.  Region construction "
-        "and trace-vector growth allocate.");
-    static_assert(
-        ::crucible::effects::
-            row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
-                run_required_row, ::crucible::effects::Effect::IO>,
-        "run_required_row must contain Effect::IO.  The region callback "
-        "fires with the freshly built region.");
-    static_assert(
-        ::crucible::effects::
-            row_contains_v<  // ROW-CONTAINS-OK: concrete row literal (run_required_row), not a Ctx capability check
-                run_required_row, ::crucible::effects::Effect::Block>,
-        "run_required_row must contain Effect::Block.  The drain spin-pauses "
-        "on an empty ring and the scheduler parks the thread.");
+    // The row is exactly the background load context's row, so the entry of
+    // the pipeline thread builds that context and no wider one exists.
+    static_assert(std::is_same_v<run_required_row, typename ::fixy::BgLoadCtx::row_type>,
+                  "BackgroundThread::run_required_row must be exactly Row<Bg, Alloc, IO, Block>, the row of "
+                  "fixy::BgLoadCtx.  Adding or removing an atom changes the context every site that runs "
+                  "this thread must hand in.");
 
-    template <typename CallerRow>
-        requires ::crucible::effects::Subrow<run_required_row, CallerRow>
-    void run_in_row() noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        run();
+    // The context is the evidence for the row.  It comes from the door of
+    // the background context, or from the test witness, and nothing else
+    // builds one.
+    template <class Ctx>
+        requires ::foundation::effects::CtxAdmits<Ctx, run_required_row>
+    void run_in_row(Ctx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        run(ctx);
     }
 
 #ifdef CRUCIBLE_BENCH
@@ -1123,9 +1169,11 @@ public:
 #else
 private:
 #endif
-    void run() noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        using namespace crucible::concurrent;
-        namespace saf = crucible::safety;
+    template <class Ctx>
+        requires ::foundation::effects::CtxAdmits<Ctx, run_required_row>
+    void run(Ctx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        namespace perm = ::foundation::permissions;
+        namespace spsc_tag = ::fixy::concurrent::spsc_tag;
 
         // Channel flow is
         //   Start → DrainTraceRing → TraceBatch → DetectIteration →
@@ -1138,49 +1186,49 @@ private:
         GraphPublishChannel graph_publish;
 
         StartChannel start;
-        auto start_whole = saf::mint_permission_root<spsc_tag::Whole<BgPipelineStartTag>>();
+        auto start_whole = perm::mint_permission_root<spsc_tag::Whole<BgPipelineStartTag>>();
         auto [start_prod_perm, start_cons_perm] =
-            saf::mint_permission_split<spsc_tag::Producer<BgPipelineStartTag>, spsc_tag::Consumer<BgPipelineStartTag>>(
+            perm::mint_permission_split<spsc_tag::Producer<BgPipelineStartTag>, spsc_tag::Consumer<BgPipelineStartTag>>(
                 std::move(start_whole));
 
-        auto trace_whole = saf::mint_permission_root<spsc_tag::Whole<BgTraceBatchTag>>();
+        auto trace_whole = perm::mint_permission_root<spsc_tag::Whole<BgTraceBatchTag>>();
         auto [trace_prod_perm, trace_cons_perm] =
-            saf::mint_permission_split<spsc_tag::Producer<BgTraceBatchTag>, spsc_tag::Consumer<BgTraceBatchTag>>(
+            perm::mint_permission_split<spsc_tag::Producer<BgTraceBatchTag>, spsc_tag::Consumer<BgTraceBatchTag>>(
                 std::move(trace_whole));
 
-        auto build_whole = saf::mint_permission_root<spsc_tag::Whole<BgBuildWorkTag>>();
+        auto build_whole = perm::mint_permission_root<spsc_tag::Whole<BgBuildWorkTag>>();
         auto [build_prod_perm, build_cons_perm] =
-            saf::mint_permission_split<spsc_tag::Producer<BgBuildWorkTag>, spsc_tag::Consumer<BgBuildWorkTag>>(
+            perm::mint_permission_split<spsc_tag::Producer<BgBuildWorkTag>, spsc_tag::Consumer<BgBuildWorkTag>>(
                 std::move(build_whole));
 
-        auto publish_whole = saf::mint_permission_root<spsc_tag::Whole<BgGraphPublishTag>>();
+        auto publish_whole = perm::mint_permission_root<spsc_tag::Whole<BgGraphPublishTag>>();
         auto [publish_prod_perm, publish_cons_perm] =
-            saf::mint_permission_split<spsc_tag::Producer<BgGraphPublishTag>, spsc_tag::Consumer<BgGraphPublishTag>>(
+            perm::mint_permission_split<spsc_tag::Producer<BgGraphPublishTag>, spsc_tag::Consumer<BgGraphPublishTag>>(
                 std::move(publish_whole));
 
         auto start_prod = start.producer(std::move(start_prod_perm));
-        auto start_cons = start.consumer(std::move(start_cons_perm));
+        auto start_cons = StartInput{start.consumer(std::move(start_cons_perm)), *this};
         auto trace_prod = trace_batches.producer(std::move(trace_prod_perm));
-        auto trace_cons = trace_batches.consumer(std::move(trace_cons_perm));
+        auto trace_cons = TraceBatchInput{trace_batches.consumer(std::move(trace_cons_perm)), *this};
         auto build_prod = build_work.producer(std::move(build_prod_perm));
-        auto build_cons = build_work.consumer(std::move(build_cons_perm));
+        auto build_cons = BuildWorkInput{build_work.consumer(std::move(build_cons_perm)), *this};
         auto publish_prod = graph_publish.producer(std::move(publish_prod_perm));
-        auto publish_cons = graph_publish.consumer(std::move(publish_cons_perm));
+        auto publish_cons = GraphPublishInput{graph_publish.consumer(std::move(publish_cons_perm)), *this};
 
-        auto ctx = effects::BgDrainCtx{effects::mint_bg_context(effects::detail::ctx_mint::bg_key{})}
-                       .template in_row<run_required_row>();
-        while (!start_prod.try_push(BgPipelineStart{this})) {
+        while (!start_prod.try_push(BgPipelineStart{})) {
             CRUCIBLE_SPIN_PAUSE;
         }
-        auto drain_stage = concurrent::mint_stage<&DrainTraceRingFn>(ctx, std::move(start_cons), std::move(trace_prod));
+        auto drain_stage =
+            ::fixy::concurrent::mint_stage<&DrainTraceRingFn>(ctx, std::move(start_cons), std::move(trace_prod));
         auto detect_stage =
-            concurrent::mint_stage<&DetectIterationFn>(ctx, std::move(trace_cons), std::move(build_prod));
-        auto build_stage = concurrent::mint_stage<&BuildTraceFn>(ctx, std::move(build_cons), std::move(publish_prod));
+            ::fixy::concurrent::mint_stage<&DetectIterationFn>(ctx, std::move(trace_cons), std::move(build_prod));
+        auto build_stage =
+            ::fixy::concurrent::mint_stage<&BuildTraceFn>(ctx, std::move(build_cons), std::move(publish_prod));
         auto publish_stage =
-            concurrent::mint_stage<&MakeRegionFn>(ctx, std::move(publish_cons), BgSinkProducerHandle{this});
+            ::fixy::concurrent::mint_stage<&MakeRegionFn>(ctx, std::move(publish_cons), BgSinkProducerHandle{this});
 
-        auto pipeline = concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
-                                                  std::move(build_stage), std::move(publish_stage));
+        auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
+                                                          std::move(build_stage), std::move(publish_stage));
         std::move(pipeline).run();
     }
 
@@ -1209,7 +1257,7 @@ public:
             const auto& re = trace_data[i];
             if (!ms.is_valid() && (re.num_inputs + re.num_outputs) > 0) {
                 // Overflow on an op that did have tensors.
-                if (max_meta_end > 0) meta_log.get().value()->advance_tail(max_meta_end);
+                if (max_meta_end > 0) meta_log.get()->advance_tail(max_meta_end);
                 return nullptr;
             }
             if (ms.is_valid()) {
@@ -1233,11 +1281,11 @@ public:
         TensorMeta* meta_base = nullptr;
         if (first_meta != UINT32_MAX) {
             uint32_t total_metas = max_meta_end - first_meta;
-            meta_base = meta_log.get().value()->try_contiguous(first_meta, total_metas);
+            meta_base = meta_log.get()->try_contiguous(first_meta, total_metas);
             if (!meta_base) [[unlikely]] {
                 meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
                 for (uint32_t meta_idx = 0; meta_idx < total_metas; meta_idx++)
-                    meta_base[meta_idx] = meta_log.get().value()->at(first_meta + meta_idx);
+                    meta_base[meta_idx] = meta_log.get()->at(first_meta + meta_idx);
             }
         }
 
@@ -1732,8 +1780,10 @@ public:
     }
 };
 
-// The two sentinels of the owner mailbox.  Only their addresses matter.
-inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_closed_{};
-inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_inline_{};
+// The two sentinels of the owner mailbox.  Only their addresses matter, so
+// each is one object for the process.  A job run from one shared library
+// then compares against the address that the stage in another one stored.
+CRUCIBLE_PROCESS_WIDE inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_closed_{};
+CRUCIBLE_PROCESS_WIDE inline constinit BackgroundThread::OwnerJob BackgroundThread::mailbox_inline_{};
 
 }  // namespace crucible

@@ -1,27 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I19 fixture — Vigil::dispatch_op_pure rejects Row<Effect::Bg>.
-//
-// IsPure<Row<Bg>> = false.  Vigil::dispatch_op is the FOREGROUND
-// dispatch path; a Bg-context caller would mean the bg consumer
-// thread is somehow producing entries through the Vigil API,
-// breaking SPSC discipline (Vigil::assert_producer_thread_ would
-// catch this at runtime in debug builds; the row fence catches it
-// at compile time).
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Bg>>.
+// Vigil::dispatch_op_pure requires a pure caller row.  This caller names
+// Row<Bg>, the row of the background thread, so the gate refuses it.  With
+// the empty row in its place, the call compiles.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry e{};
     crucible::TensorMeta m{};
-    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::Bg>>(crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
+    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::Bg>>(
+        crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
     return 0;
 }

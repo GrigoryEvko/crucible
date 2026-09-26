@@ -33,18 +33,16 @@
 // replay bit-exactly is a structural error.
 
 #include <crucible/Platform.h>
-#include <crucible/effects/_EffectRow.h>
-#include <crucible/effects/_ExecCtx.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
-#include <crucible/safety/_Checked.h>
-#include <crucible/safety/_ClockSource.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/ClockSource.h>
+#include <fixy/os/Time.h>
+#include <foundation/Saturate.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include <chrono>
 #include <cstdint>
-#include <ctime>
 #include <type_traits>
 
 namespace crucible::warden {
@@ -76,12 +74,12 @@ enum class WatchdogVerdict : uint8_t {
 // without the telemetry capability, or a test exercising the degraded
 // path, passes one deliberately.
 
-// A poll belongs to a background or start-up context. The hot
-// foreground is rejected.
+// A poll belongs to a background, start-up or test context. The hot
+// foreground is rejected.  A poll reads the boot clock, so the gate is
+// the gate of the clock reader.
 template <typename Ctx>
 concept CtxFitsDeadlineWatchdog =
-    ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Init,
-                                      ::crucible::effects::Effect::Test>;
+    ::foundation::effects::IsExecCtx<Ctx> && ::fixy::time::CtxFitsMonotonicClock<Ctx>;
 
 // Building a watchdog belongs to process startup, because the watchdog
 // takes the baseline that the first window is measured against.  The
@@ -120,13 +118,13 @@ class DeadlineWatchdog {
 
 public:
 
-    // The clock read is CLOCK_BOOTTIME rather than CLOCK_MONOTONIC
+    // The clock read is the boot clock rather than the monotonic clock,
     // because a host suspend freezes the monotonic clock. The window
     // would then never close and the verdict would stay at
     // InsufficientData for as long as the host stayed asleep.
-    template <::crucible::effects::IsExecCtx Ctx>
+    template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsDeadlineWatchdog<Ctx>
-    [[nodiscard]] WatchdogVerdict observe(Ctx const&) noexcept {
+    [[nodiscard]] WatchdogVerdict observe(Ctx const& ctx) noexcept {
         // A budget of zero is the opt-out. A window of zero is also
         // treated as off: every elapsed-time test would pass trivially
         // and the verdict would come from an observation covering
@@ -147,16 +145,17 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
 
-        // The clock has been available since Linux 2.6.39, so a
-        // failure here means something is deeply wrong. Report no
-        // signal and let the next call retry.
-        ::timespec ts{};
-        if (::clock_gettime(CLOCK_BOOTTIME, &ts) != 0) [[unlikely]] {
+        // The reader stamps its value with the boot clock.  When the
+        // clock read fails, the reader still stamps a value, and that
+        // value is zero.  The boot clock is never zero after boot and
+        // never goes back, so zero, or a value before the start of the
+        // window, is no reading and counts as no signal.  The reader is
+        // new on each call, so its clamp never replaces a reading.
+        const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(ctx);
+        const uint64_t now_ns = boot_clock.read().consume();
+        if (now_ns == 0 || now_ns < window_started_ns_) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }
-        auto now_bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Boot, std::uint64_t>(
-            static_cast<std::uint64_t>(ts.tv_sec) * 1000000000ull + static_cast<std::uint64_t>(ts.tv_nsec));
-        const uint64_t now_ns = std::move(now_bytes).consume();
         const uint64_t count = sched->context_switches();
 
         if (window_started_ns_ == 0) {
@@ -177,7 +176,7 @@ public:
         // positive number and manufacture a Downgrade out of nothing.
         const uint64_t elapsed_ns = now_ns - window_started_ns_;
         if (elapsed_ns >= window_ns_) {
-            const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(count, baseline_count_);
+            const uint64_t misses = ::foundation::sat::sub_sat<uint64_t>(count, baseline_count_);
             const WatchdogVerdict v = (misses > miss_budget_) ? WatchdogVerdict::Downgrade : WatchdogVerdict::Healthy;
 
             window_started_ns_ = now_ns;
@@ -188,7 +187,7 @@ public:
         // A budget already blown mid-window is reported at once rather
         // than a whole window later, which matters during a storm of
         // misses.
-        const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(count, baseline_count_);
+        const uint64_t misses = ::foundation::sat::sub_sat<uint64_t>(count, baseline_count_);
         if (misses > miss_budget_) {
             // The window is deliberately left running, so every
             // further call keeps reporting Downgrade until it closes.
@@ -216,7 +215,7 @@ public:
 
     // Saturating, for the same reason the subtraction in observe() is.
     CRUCIBLE_PURE uint64_t misses_in_window() const noexcept {
-        return ::crucible::sat::sub_sat<uint64_t>(latest_count_, baseline_count_);
+        return ::foundation::sat::sub_sat<uint64_t>(latest_count_, baseline_count_);
     }
 
     DeadlineWatchdog(const DeadlineWatchdog&) =
@@ -254,8 +253,8 @@ using TestRunner = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::A
 static_assert(CtxFitsDeadlineWatchdogMint<ColdInit> && CtxFitsDeadlineWatchdogMint<InitLoad>);
 static_assert(!CtxFitsDeadlineWatchdogMint<BgLoad> && !CtxFitsDeadlineWatchdogMint<TestRunner>);
 static_assert(!CtxFitsDeadlineWatchdogMint<fe::ExecCtx<>>);
-static_assert(!CtxFitsDeadlineWatchdogMint<::crucible::effects::ColdInitCtx>,
-              "An old-tree context is not a context of the new tree.");
+static_assert(CtxFitsDeadlineWatchdog<BgLoad> && CtxFitsDeadlineWatchdog<ColdInit> && CtxFitsDeadlineWatchdog<TestRunner>);
+static_assert(!CtxFitsDeadlineWatchdog<::fixy::HotFgCtx> && !CtxFitsDeadlineWatchdog<int>);
 static_assert(!std::is_constructible_v<DeadlineWatchdog, const ::crucible::perf::Senses*, const Policy&>,
               "The constructor is private.  A watchdog comes only from mint_deadline_watchdog.");
 }  // namespace detail::deadline_watchdog_mint_check

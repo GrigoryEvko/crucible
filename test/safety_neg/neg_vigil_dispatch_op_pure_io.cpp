@@ -1,25 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I19 fixture — Vigil::dispatch_op_pure rejects Row<Effect::IO>.
-//
-// IsPure<Row<IO>> = false.  An IO-context caller (filesystem,
-// network, syscall path) cannot silently invoke dispatch_op_pure
-// on the per-op recording hot path; the row mismatch rejects the
-// call before SPSC ring head advances.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::IO>>.
+// Vigil::dispatch_op_pure requires a pure caller row.  This caller names
+// Row<IO>, the row of a context that does I/O, so the gate refuses it.
+// With the empty row in its place, the call compiles.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry e{};
     crucible::TensorMeta m{};
-    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::IO>>(crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
+    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::IO>>(
+        crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
     return 0;
 }

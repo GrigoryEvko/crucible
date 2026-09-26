@@ -1,27 +1,20 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I19 fixture — Vigil::dispatch_op_pure rejects Row<Effect::Test>.
-//
-// IsPure<Row<Test>> = false.  Test context (poison-byte injection,
-// invariant probes, mock fixtures) cannot leak into production
-// dispatch_op_pure call sites — and conversely, production
-// dispatch_op_pure cannot be invoked from Test-tagged contexts.
-// The row fence enforces the cross-tier separation at compile
-// time.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Test>>.
+// Vigil::dispatch_op_pure requires a pure caller row.  This caller names
+// Row<Test>, the row of a test fixture, so the gate refuses it.  With the
+// empty row in its place, the call compiles.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry e{};
     crucible::TensorMeta m{};
-    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::Test>>(crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
+    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::Test>>(
+        crucible::mint_ffi_entry(e).retag<::fixy::tags::vessel_trust::Validated>(), &m, 1);
     return 0;
 }

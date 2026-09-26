@@ -30,7 +30,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
@@ -47,10 +47,10 @@ using namespace crucible;
 
 namespace {
 
-// Benches run outside the normal bg thread so we spin a standalone
-// effects::Bg context once and thread its .alloc token through every
-// capability-tagged call.
-const auto BG_CTX = effects::testing::bg();
+// Benches run outside the normal bg thread, so the bench takes one
+// background context from the test door and threads its .alloc token
+// through every capability-tagged call.
+const auto BG_CTX = ::foundation::effects::testing::bg();
 constexpr auto A = BG_CTX.alloc;
 
 struct PhaseTiming {
@@ -698,7 +698,7 @@ int main(int argc, char* argv[]) {
     meta_log.reset();
 
     BackgroundThread bg;
-    bg.meta_log.set(BackgroundThread::MetaLogPtr{&meta_log});
+    bg.meta_log.set(&meta_log);
 
     std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     std::vector<bench::Report> reports;

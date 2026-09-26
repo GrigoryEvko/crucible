@@ -1,24 +1,19 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I20 fixture — single-atom rejection (Bg only).  Pins
-// BackgroundThread::run_in_row rejects Row<Bg> — even though Bg is
-// THE canonical bg-thread context tag, the fence demands every
-// observable effect (Alloc + IO + Block).  Catches a regression
-// where the fence is silently weakened to "just Bg present" and
-// stops checking the per-effect budget.
-//
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Bg>> = false.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// Subrow<Row<Bg, Alloc, IO, Block>, Row<Bg>>.
+// BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
+// IO and Block.  This background context claims Bg alone, so the gate
+// refuses it.  With the row widened to all four atoms, the call compiles.
 
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_EffectRow.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
-namespace eff = ::crucible::effects;
+namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<eff::Effect::Bg>>();
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>> ctx{eff::testing::bg()};
+    bt.run_in_row(ctx);
     return 0;
 }

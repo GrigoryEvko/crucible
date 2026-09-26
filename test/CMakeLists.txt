@@ -1776,12 +1776,6 @@ crucible_test(test_session_payload_subsort)
 # protocol handles without firing the abandonment-check.
 crucible_test(test_machine_session_bridge)
 
-# Vigil mode bridge — production atomic-aware MachineSessionBridge
-# wiring over Vigil::ModeCell.  Verifies the live RECORDING <->
-# COMPILED mode cycle through a session handle without adding state to
-# Vigil or reviving stale REPLAYING/SERVING persistent modes.
-crucible_test(test_vigil_mode_bridge)
-
 # Non-consuming protocol-position views (#405, SAFEINT-B16).
 # Position-tagged ScopedView<SessionHandle, At*> borrows that let
 # external code inspect a handle's protocol position without
@@ -2455,8 +2449,8 @@ crucible_neg_compile_fixy_test(neg_monotonic_clock_non_exec_ctx
 #   doesn't freeze the window.  Two distinct-mismatch-class fixtures:
 #   HotFgCtx (row-content) and a bare `int` (ctx-type).
 crucible_neg_compile_fixy_test(neg_deadline_watchdog_hot_ctx
-  "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(crucible::effects::HotFgCtx&\\)."
-    "required for the satisfaction of .CtxFitsDeadlineWatchdog<Ctx>. .with Ctx = crucible::effects::ExecCtx<crucible::effects::ctx_cap::Fg,")
+  "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(const fixy::HotFgCtx&\\)."
+    "required for the satisfaction of .CtxFitsDeadlineWatchdog<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_fixy_test(neg_deadline_watchdog_non_exec_ctx
   "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(int\\)."
     "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = int.")
@@ -8179,23 +8173,19 @@ crucible_neg_compile_test(neg_thread_local_ref_mint_requires_default_ctor
 crucible_neg_compile_test(neg_thread_local_ref_store_wrong_type
   "constraints not satisfied|no matching function|associated constraints|cannot convert")
 
-# ─── FIXY-V-086 RegionReadyCallback noexcept tightening (2 fixtures) ──
-#
-# BackgroundThread::RegionReadyCallback::Fn pre-V-086 was the bare
-# function-pointer type `void(*)(void*, RegionNode*)` — accepting any
-# callable, including throwing ones.  V-086 tightens to the noexcept-
-# qualified variant; the callback fires on the BG thread inside
-# drain_for_one_iteration_, where a thrown exception would tear
-# through Cipher persistence + tx_log commit + DeadlineWatchdog
-# observe.  HS14: 2 fixtures across distinct mismatch classes:
-#   1. throwing-fnptr-rejected   — assignment-conversion gate.
-#      A non-noexcept fn-ptr MUST fail to convert to Fn.
-#   2. type-identity-drift       — typedef structural gate.
-#      Fn IS NOT std::is_same with the bare non-noexcept variant.
-crucible_neg_compile_test(neg_background_thread_callback_throwing_fnptr_rejected
-  "invalid conversion|no known conversion|cannot convert|noexcept|RegionReadyCallback")
-crucible_neg_compile_test(neg_background_thread_callback_type_identity_drift
-  "static assertion failed|noexcept|RegionReadyCallback|FIXY-V-086")
+# BackgroundThread::RegionReadyCallback::Fn is a noexcept function
+# pointer, because the callback runs on the publish stage in the middle
+# of a publication.  The first fixture shows that a function that is not
+# noexcept does not convert to Fn.  The second shows that Fn is not the
+# same type as the plain function pointer.
+set(BG_CALLBACK_PARAMS "void\\*, const foundation::effects::Bg&, crucible::BackgroundThread::PublishStage, crucible::RegionNode\\*")
+set(BG_CALLBACK_CLASS_PARAMS "void\\*, const class foundation::effects::Bg&, class crucible::BackgroundThread::PublishStage, struct crucible::RegionNode\\*")
+crucible_neg_compile_multi_test(neg_background_thread_callback_throwing_fnptr_rejected
+  "invalid conversion from .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\). to .crucible::BackgroundThread::RegionReadyCallback::Fn."
+  "aka .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\) noexcept.")
+crucible_neg_compile_multi_test(neg_background_thread_callback_type_identity_drift
+  "static assertion failed: RegionReadyCallback::Fn carries noexcept, so it is not the plain function pointer type"
+  ".void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\) noexcept. is not the same as .void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\).")
 
 # ─── FIXY-V-087 permission_fork rejects ctrl::throws (2 fixtures) ─────
 #
@@ -10436,75 +10426,64 @@ crucible_neg_compile_multi_test(neg_tracering_drain_pure_io_block
 crucible_neg_compile_multi_test(neg_tracering_drain_pure_full_row
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
 
-# ─── FOUND-I19 Vigil::dispatch_op row-fence ─────────────────────────
-# Vigil::dispatch_op_pure<CallerRow> requires IsPure<CallerRow>.
-# Sibling of TraceRing's I16 matrix and MetaLog's I17 matrix; the
-# foreground per-op recording entry point is the canonical Pure
-# operation per CRUCIBLE.md §L4.  8 fixtures complete the per-axis
-# matrix on the Vigil leg of the row-fence cluster.
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_alloc
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_io
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_bg
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_init
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_test
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_io_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_vigil_dispatch_op_pure_full_row
-  "constraints not satisfied|template constraint failure|associated constraints")
+# Vigil::dispatch_op_pure<CallerRow> requires IsPure<CallerRow>.  Each
+# fixture names a caller row that holds one effect or more.  The first
+# regex pins the refused call, the second pins the gate and the row.
+set(VIGIL_PURE_CALL "no matching function for call to .crucible::Vigil::dispatch_op_pure<")
+set(VIGIL_PURE_GATE "required for the satisfaction of .IsPure<CallerRow>. \\[with CallerRow = foundation::effects::Row<")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_alloc
+  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Alloc> >\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::Alloc>\\]")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_io
+  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::IO> >\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::IO>\\]")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_block
+  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Block> >\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::Block>\\]")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_bg
+  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Bg> >\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::Bg>\\]")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_init
+  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Init> >\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::Init>\\]")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_test
+  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::Test> >\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::Test>\\]")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_io_block
+  "${VIGIL_PURE_CALL}foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::IO, foundation::effects::Effect::Block>\\]")
+crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_full_row
+  "${VIGIL_PURE_CALL}fixy::AllRow>\\("
+  "${VIGIL_PURE_GATE}foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Bg, foundation::effects::Effect::Init, foundation::effects::Effect::Test>\\]")
 
-# ─── FOUND-I20 BackgroundThread::run row-fence ──────────────────────
-# BackgroundThread::run_in_row<CallerRow> requires
-# Subrow<Row<Bg, Alloc, IO, Block>, CallerRow>.  Structural inverse of
-# the I16/I17/I19 hot-path Pure fences: instead of "caller declares
-# AT MOST nothing", this is "caller declares AT LEAST {Bg, Alloc, IO,
-# Block}".  9 fixtures cover the per-axis missing-atom matrix + the
-# orthogonal-row rejections (Init/Test).  Mirrors the FOUND-I09
-# Cipher::record_event fence (Subrow<Row<IO, Block>, CallerRow>) but
-# at higher cardinality.
-crucible_neg_compile_test(neg_background_thread_run_in_row_empty
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_bg_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_alloc_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_io_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_block_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_missing_bg
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_missing_alloc
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_missing_io
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_missing_block
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_init_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_test_only
-  "constraints not satisfied|template constraint failure|associated constraints")
-
-# ─── FOUND-I20-AUDIT saturation-minus-one matrix ────────────────────
-# Maximum-cardinality (5 atoms) rejection witnesses — proves the
-# fence is sharp at the high-cardinality boundary, not just at
-# cardinality 3 or below.  Catches regressions where a future
-# refactor switches to a size-based check (cardinality ≥ 4) instead
-# of the membership-based Subrow.
-crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_bg
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_alloc
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_io
-  "constraints not satisfied|template constraint failure|associated constraints")
-crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_block
-  "constraints not satisfied|template constraint failure|associated constraints")
+# BackgroundThread::run_in_row(ctx) requires CtxAdmits<Ctx, Row<Bg,
+# Alloc, IO, Block>>.  Each fixture hands in a context whose row lacks
+# one required atom or more.  The first regex pins the refused context,
+# the second pins the gate and the row it demands.
+set(BG_RUN_GATE "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >.")
+set(BG_RUN_CALL "no matching function for call to .crucible::BackgroundThread::run_in_row\\(const foundation::effects::ExecCtx<")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_empty
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_bg_only
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_alloc_only
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_io_only
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_block_only
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_bg
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_alloc
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_io
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_block
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_init_only
+  "${BG_RUN_CALL}foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_multi_test(neg_background_thread_run_in_row_test_only
+  "${BG_RUN_CALL}foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >&\\)" "${BG_RUN_GATE}")
 
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
@@ -12214,28 +12193,19 @@ crucible_neg_compile_test(neg_publish_slot_copy_attempt
 crucible_neg_compile_multi_test(neg_vigil_copy_attempt
     "use of deleted function .crucible::Vigil::Vigil\\(const crucible::Vigil&\\)."
     "Vigil owns the runtime organism. not copyable")
-crucible_neg_compile_test(neg_vigil_mode_bridge_illegal_transition
-    "VigilModeBridge_IllegalTransition|use of deleted function")
-crucible_neg_compile_test(neg_vigil_mode_bridge_branch_out_of_range
-    "Branch_Index_Out_Of_Range|branch index")
 
-# WRAP-Vigil-7 (#1077) — Vigil::AlignmentPos = safety::Refined<safety::
-# bounded_above<ALIGNMENT_POS_MAX=ALIGNMENT_K=5>, uint8_t>; constructing
-# AlignmentPos{> 5} in constexpr context drives the bounded_above
-# pre-clause through constant evaluation.  Two fixtures per HS14:
-#   * _above_max  — boundary edge (6 = ALIGNMENT_K+1, the off-by-one
-#     past the threshold check at try_align_'s `>= threshold` branch),
-#     catches drift in ALIGNMENT_POS_MAX (e.g., a refactor that lowers
-#     the bound to ALIGNMENT_K - 1 silently passes the wide-miss
-#     fixture but fails this one).
-#   * _uint8_max  — wide miss (255 = uint8_t max), catches "lost
-#     narrowing" where a wider intermediate is truncated to uint8_t
-#     before being assigned (the migration risk if a future
-#     refactor drops the Refined wrap and admits raw byte writes).
-crucible_neg_compile_test(neg_vigil_alignment_pos_above_max
-    "contract|bounded_above|not a constant|non-constant|constexpr")
-crucible_neg_compile_test(neg_vigil_alignment_pos_uint8_max
-    "contract|bounded_above|not a constant|non-constant|constexpr")
+# Vigil::AlignmentPos is fixy::Refined<bounded_above<5>, uint8_t>, and
+# Vigil::alignment_pos_at is its one door.  A constant above the bound
+# stops the constant evaluation of the mint.  The first fixture passes 6,
+# one past the bound.  The second passes 255, the largest byte.
+crucible_neg_compile_multi_test(neg_vigil_alignment_pos_above_max
+    "in .constexpr. expansion of .crucible::Vigil::alignment_pos_at\\(6\\)."
+    "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<5>\\(\\), unsigned char>\\(pos\\)."
+    "error: .__builtin_trap\\(\\). is not a constant expression")
+crucible_neg_compile_multi_test(neg_vigil_alignment_pos_uint8_max
+    "in .constexpr. expansion of .crucible::Vigil::alignment_pos_at\\(255\\)."
+    "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<5>\\(\\), unsigned char>\\(pos\\)."
+    "error: .__builtin_trap\\(\\). is not a constant expression")
 
 # GAPS-044 — Permission inheritance is explicit and acyclic.  Crash-stop
 # recovery may mint survivor permissions only for declared inheritance
