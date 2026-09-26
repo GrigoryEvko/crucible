@@ -168,14 +168,14 @@ def access_of(node: tsast.Node) -> str:
         if child.index == member.index:
             break
         if child.type == "access_specifier":
-            access = child.text.strip()
+            access = tsast.lexeme(child)
     return access
 
 
 def classify(name_node: tsast.Node) -> tuple[str, str] | None:
     """Return the spelled name and the class of a door, or None when the name is no public door."""
     if name_node.type == "operator_name":
-        return name_node.text.replace(" ", ""), "accessor"
+        return tsast.spelled(name_node), "accessor"
     if name_node.type in ("destructor_name", "qualified_identifier"):
         return None
     # A template-id names its template in its name field; the arguments
@@ -184,7 +184,7 @@ def classify(name_node: tsast.Node) -> tuple[str, str] | None:
         name_node = name_node.child_by_field("name")
         if name_node is None:
             return None
-    name = name_node.text
+    name = tsast.leaf_name(name_node)
     if not name or name.endswith("_"):
         return None
     if name.startswith("mint_"):
@@ -211,7 +211,7 @@ def escapes_of(tree: tsast.Tree, shown: str) -> list[Escape]:
                     and not node.children_of_type("delete_method_clause") and access_of(node) == "public":
                 kind = cast.child_by_field("type")
                 sigil = "&" if target.type == "abstract_reference_declarator" else "*"
-                spelled = f"operator {kind.text if kind is not None else ''}{sigil}"
+                spelled = f"operator {tsast.spelled(kind) if kind is not None else ''}{sigil}"
                 found.append(Escape(shown, cast.line, spelled, "bare"))
             continue
         declarator, wrapped = function_declarator(node)

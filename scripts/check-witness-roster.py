@@ -285,7 +285,7 @@ def last_name(node: tsast.Node | None) -> str:
         node = node.child_by_field("name")
     if node is None or node.type not in NAME_LEAVES:
         return ""
-    return "".join(node.text.split())
+    return tsast.leaf_name(node) or ""
 
 
 def returns_expected_of(member: tsast.Node, declarator: tsast.Node, name: str) -> bool:
@@ -367,8 +367,8 @@ def qualified_class(node: tsast.Node) -> str:
         elif owner.type == "namespace_definition":
             name = owner.child_by_field("name")
             if name is not None:
-                spelled = [part.text for part in name.descendants("namespace_identifier")] \
-                    if name.type == "nested_namespace_specifier" else [name.text]
+                spelled = [tsast.leaf_name(part) or "" for part in name.descendants("namespace_identifier")] \
+                    if name.type == "nested_namespace_specifier" else [tsast.leaf_name(name) or ""]
                 parts[:0] = spelled
         owner = owner.parent
     return ROOT_PREFIX.sub("", "::".join(parts))
@@ -403,7 +403,7 @@ def class_shapes(node: tsast.Node, name: str) -> Shapes:
     assert body is not None
     for member in members(body):
         if member.type == "access_specifier":
-            access = member.text.strip()
+            access = tsast.lexeme(member)
             continue
         if member.type == "friend_declaration":
             functions = list(member.descendants("function_declarator"))

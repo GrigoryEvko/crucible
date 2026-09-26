@@ -106,7 +106,7 @@ def token_shape(tokens: list[tsast.Token]) -> bool:
     """Return True when the tokens of an unparsed macro body have the shape of combine_ids."""
     values = [token_value(token.text) if token.kind == "number" else None for token in tokens]
     has_salt = SALT in values
-    shifts = {(tokens[index].text.rstrip("="), values[index + 1]) for index in range(len(tokens) - 1)
+    shifts = {(tsast.lexeme(tokens[index]).rstrip("="), values[index + 1]) for index in range(len(tokens) - 1)
               if tokens[index].text in ("<<", "<<=", ">>", ">>=")}
     has_mix = any(token.text == MIX and index + 1 < len(tokens) and tokens[index + 1].text == "("
                   for index, token in enumerate(tokens))
@@ -138,8 +138,9 @@ def second_bodies(rel: str, tree: tsast.Tree) -> Iterator[tuple[int, str]]:
             yield lambda_node.start[0], "a lambda with the shape of combine_ids"
     for node in tree.find("identifier", "field_identifier", "type_identifier", "namespace_identifier"):
         is_definition_name = node.parent is not None and node.parent.type == "function_declarator"
-        if is_derived_name(node.text) and not is_definition_name:
-            yield node.start[0], f"the name {node.text}"
+        name = tsast.leaf_name(node) or ""
+        if is_derived_name(name) and not is_definition_name:
+            yield node.start[0], f"the name {name}"
 
 
 def macro_hits(body: tsast.MacroBody) -> Iterator[tuple[int, str]]:

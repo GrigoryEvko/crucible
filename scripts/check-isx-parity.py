@@ -75,19 +75,21 @@ def demanded(tree: tsast.Tree) -> set[str]:
     names: set[str] = set()
     for node in tree.find("alias_declaration"):
         name = node.child_by_field("name")
-        if name is not None and name.text.endswith("_t") and at_namespace_scope(node) \
+        alias = None if name is None else tsast.lexeme(name)
+        if alias is not None and alias.endswith("_t") and at_namespace_scope(node) \
                 and tsast.namespace_path(node) == EXTRACT:
-            names.add(name.text)
+            names.add(alias)
     for node in tree.find("declaration"):
         declared = node.child_by_field("type")
-        if declared is None or declared.type != "primitive_type" or declared.text != "bool":
+        if declared is None or declared.type != "primitive_type" or tsast.lexeme(declared) != "bool":
             continue
         if not at_namespace_scope(node) or tsast.namespace_path(node) != EXTRACT:
             continue
         for init in node.children_of_type("init_declarator"):
             target = init.child_by_field("declarator")
-            if target is not None and target.type == "identifier" and target.text.endswith("_v"):
-                names.add(target.text)
+            trait = None if target is None or target.type != "identifier" else tsast.lexeme(target)
+            if trait is not None and trait.endswith("_v"):
+                names.add(trait)
     for using in tsast.using_names(tree):
         if using.is_directive or not using.target:
             continue
