@@ -35,11 +35,10 @@
 # that held raw safety:: substrate spellings on that date.  Each
 # fixy::wrap migration removes its entry.
 
-# ── canopy/ (6 files) ───────────────────────────────────────────
+# ── canopy/ (5 files) ───────────────────────────────────────────
 include/crucible/canopy/Crdt.h
 include/crucible/canopy/Hlc.h
 include/crucible/canopy/HyParView.h
-include/crucible/canopy/Lifeguard.h
 include/crucible/canopy/Plumtree.h
 include/crucible/canopy/Scuttlebutt.h
 

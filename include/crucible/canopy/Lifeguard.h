@@ -2,10 +2,10 @@
 
 #include <crucible/Platform.h>
 #include <crucible/canopy/Swim.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_FixedArray.h>
-#include <crucible/safety/_Pinned.h>
-#include <crucible/safety/_Refined.h>
+#include <fixy/FixedArray.h>
+#include <fixy/Refined.h>
+#include <foundation/Pinned.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -23,14 +23,19 @@ concept LifeguardShape = MaxPeers > 0 && RttWindow > 1 && MaxEvents > 0
                       && RttWindow <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
                       && MaxEvents <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
+// The bound of a count: at most Capacity.
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
-using LifeguardCount = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity)>, std::uint16_t>;
+inline constexpr auto lifeguard_count_bound = ::fixy::bounded_above<static_cast<std::uint16_t>(Capacity)>;
 
-using LifeguardDurationNs = safety::Refined<safety::positive, std::uint64_t>;
-using LifeguardPositiveCount = safety::Refined<safety::positive, std::uint16_t>;
-using LifeguardMultiplier = safety::Refined<safety::positive, std::uint16_t>;
-using LifeguardRttNs = safety::Refined<safety::positive, std::uint64_t>;
+template <std::size_t Capacity>
+    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
+using LifeguardCount = ::fixy::Refined<lifeguard_count_bound<Capacity>, std::uint16_t>;
+
+using LifeguardDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
+using LifeguardPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
+using LifeguardMultiplier = ::fixy::Refined<::fixy::positive, std::uint16_t>;
+using LifeguardRttNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 
 enum class LifeguardOutcome : std::uint8_t {
     Ack,
@@ -51,14 +56,14 @@ enum class LifeguardError : std::uint8_t {
 [[nodiscard]] std::string_view lifeguard_error_name(LifeguardError error) noexcept;
 
 struct LifeguardConfig {
-    LifeguardDurationNs base_probe_timeout_ns{500000000ULL};
-    LifeguardPositiveCount min_indirect_checks{1};
-    LifeguardPositiveCount max_indirect_checks{5};
-    LifeguardMultiplier min_lhm{1};
-    LifeguardMultiplier max_lhm{8};
-    LifeguardPositiveCount lhm_timeout_penalty{1};
-    LifeguardPositiveCount lhm_success_recovery{1};
-    LifeguardPositiveCount rtt_safety_multiplier{3};
+    LifeguardDurationNs base_probe_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{500000000ULL});
+    LifeguardPositiveCount min_indirect_checks = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    LifeguardPositiveCount max_indirect_checks = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{5});
+    LifeguardMultiplier min_lhm = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    LifeguardMultiplier max_lhm = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{8});
+    LifeguardPositiveCount lhm_timeout_penalty = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    LifeguardPositiveCount lhm_success_recovery = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1});
+    LifeguardPositiveCount rtt_safety_multiplier = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3});
 };
 
 struct LifeguardEvent {
@@ -86,18 +91,20 @@ struct LifeguardRefutePlan {
 template <std::size_t Capacity>
     requires(Capacity > 0)
 struct LifeguardEventBatch {
-    safety::FixedArray<LifeguardEvent, Capacity> events{};
+    ::fixy::FixedArray<LifeguardEvent, Capacity> events{};
     std::uint16_t count = 0;
 
+    // The drain copies at most Capacity events.
     [[nodiscard]] constexpr LifeguardCount<Capacity> size() const noexcept {
-        return LifeguardCount<Capacity>{count, typename LifeguardCount<Capacity>::Trusted{}};
+        return ::fixy::mint_refined_trusted<lifeguard_count_bound<Capacity>>(count);
     }
 };
 
 template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
           std::size_t MaxEvents = MaxPeers * 4>
     requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
-class alignas(64) LifeguardSwim : public safety::Pinned<LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>> {
+class alignas(64) LifeguardSwim
+    : public ::foundation::Pinned<LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>> {
 public:
     using swim_type = SwimMembership<MaxPeers, MaxPiggyback>;
     using witness_set_type = SwimWitnessSet<MaxPeers>;
@@ -118,8 +125,9 @@ public:
 
     [[nodiscard]] cog::CogIdentity local_peer() const noexcept { return local_; }
 
+    // The membership count carries the same bound.
     [[nodiscard]] LifeguardCount<MaxPeers> size() const noexcept {
-        return LifeguardCount<MaxPeers>{swim_.size().value(), typename LifeguardCount<MaxPeers>::Trusted{}};
+        return ::fixy::mint_refined_trusted<lifeguard_count_bound<MaxPeers>>(swim_.size().value());
     }
 
     [[nodiscard]] std::expected<void, LifeguardError> add_peer(SwimPeer peer) noexcept {
@@ -139,7 +147,8 @@ public:
         if (slot == nullptr) {
             return std::unexpected(LifeguardError::PeerNotFound);
         }
-        return LifeguardMultiplier{slot->lhm, typename LifeguardMultiplier::Trusted{}};
+        // The multiplier is clamped to [min_lhm, max_lhm], and min_lhm is positive.
+        return ::fixy::mint_refined_trusted<::fixy::positive>(slot->lhm);
     }
 
     [[nodiscard]] std::expected<LifeguardDurationNs, LifeguardError> adaptive_timeout(cog::Uuid peer) const noexcept {
@@ -152,7 +161,7 @@ public:
                                        ? std::uint64_t{0}
                                        : sat_mul_(mean_rtt_(*slot), lifeguard_config_.rtt_safety_multiplier.value());
         const std::uint64_t timeout = std::max(by_lhm, by_rtt);
-        return LifeguardDurationNs{timeout == 0 ? std::uint64_t{1} : timeout, typename LifeguardDurationNs::Trusted{}};
+        return ::fixy::mint_refined_trusted<::fixy::positive>(timeout == 0 ? std::uint64_t{1} : timeout);
     }
 
     [[nodiscard]] std::optional<LifeguardProbe> next_probe(std::uint64_t now_ns) noexcept {
@@ -313,7 +322,7 @@ private:
         bool occupied = false;
         cog::CogIdentity peer{};
         std::uint16_t lhm = 1;
-        safety::FixedArray<std::uint64_t, RttWindow> rtt_ns{};
+        ::fixy::FixedArray<std::uint64_t, RttWindow> rtt_ns{};
         std::uint16_t rtt_count = 0;
         std::uint16_t rtt_cursor = 0;
     };
@@ -466,9 +475,9 @@ private:
     swim_type swim_;
     cog::CogIdentity local_{};
     LifeguardConfig lifeguard_config_{};
-    safety::FixedArray<Slot, MaxPeers> slots_{};
+    ::fixy::FixedArray<Slot, MaxPeers> slots_{};
     std::uint16_t slot_count_ = 0;
-    safety::FixedArray<LifeguardEvent, MaxEvents> events_{};
+    ::fixy::FixedArray<LifeguardEvent, MaxEvents> events_{};
     std::uint16_t event_count_ = 0;
     std::uint64_t sequence_ = 0;
 };
@@ -480,7 +489,7 @@ template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t
           std::size_t MaxEvents = MaxPeers * 4>
     requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
 [[nodiscard]] LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
-mint_lifeguard_swim(effects::Init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
+mint_lifeguard_swim(::foundation::effects::Init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
                     LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept {
     return LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>{local_peer, initial_peers, lifeguard_config,
                                                                        swim_config};

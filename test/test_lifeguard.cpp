@@ -34,14 +34,14 @@ int main() {
 
     std::array initial{swim_peer(1), swim_peer(2), swim_peer(3)};
     cc::LifeguardConfig lcfg{
-        .base_probe_timeout_ns = cc::LifeguardDurationNs{100000000ULL},
-        .min_indirect_checks = cc::LifeguardPositiveCount{1},
-        .max_indirect_checks = cc::LifeguardPositiveCount{3},
-        .min_lhm = cc::LifeguardMultiplier{1},
-        .max_lhm = cc::LifeguardMultiplier{4},
-        .lhm_timeout_penalty = cc::LifeguardPositiveCount{1},
-        .lhm_success_recovery = cc::LifeguardPositiveCount{1},
-        .rtt_safety_multiplier = cc::LifeguardPositiveCount{3},
+        .base_probe_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{100000000ULL}),
+        .min_indirect_checks = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1}),
+        .max_indirect_checks = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3}),
+        .min_lhm = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1}),
+        .max_lhm = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{4}),
+        .lhm_timeout_penalty = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1}),
+        .lhm_success_recovery = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{1}),
+        .rtt_safety_multiplier = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3}),
     };
     cc::SwimConfig scfg{
         .period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1000000000ULL}),
@@ -51,7 +51,7 @@ int main() {
         .suspicion_misses = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3}),
     };
 
-    auto lifeguard = cc::mint_lifeguard_swim<4, 8, 4, 8>(crucible::effects::testing::init(), swim_peer(99),
+    auto lifeguard = cc::mint_lifeguard_swim<4, 8, 4, 8>(::foundation::effects::testing::init(), swim_peer(99),
                                                          std::span<const cc::SwimPeer>{initial}, lcfg, scfg);
 
     assert(lifeguard.size().value() == 3);
@@ -82,12 +82,12 @@ int main() {
     assert(lifeguard.adaptive_timeout(peer(1).uuid)->value() == 400000000ULL);
     assert(lifeguard.swim().health(peer(1).uuid).peek().state == cc::SwimState::Dead);
 
-    assert(lifeguard.on_indirect_ack(peer(1).uuid, 9000, cc::LifeguardRttNs{40000000ULL}).has_value());
+    assert(lifeguard.on_indirect_ack(peer(1).uuid, 9000, ::fixy::mint_refined<::fixy::positive>(std::uint64_t{40000000ULL})).has_value());
     assert(lifeguard.swim().health(peer(1).uuid).peek().state == cc::SwimState::Alive);
     assert(lifeguard.local_health_multiplier(peer(1).uuid)->value() == 3);
     assert(lifeguard.adaptive_timeout(peer(1).uuid)->value() == 300000000ULL);
 
-    assert(lifeguard.on_ack(peer(1).uuid, 10000, cc::LifeguardRttNs{150000000ULL}).has_value());
+    assert(lifeguard.on_ack(peer(1).uuid, 10000, ::fixy::mint_refined<::fixy::positive>(std::uint64_t{150000000ULL})).has_value());
     assert(lifeguard.local_health_multiplier(peer(1).uuid)->value() == 2);
     assert(lifeguard.adaptive_timeout(peer(1).uuid)->value() == 285000000ULL);
 

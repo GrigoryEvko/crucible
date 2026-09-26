@@ -87,7 +87,6 @@ include/crucible/_Saturate.h
 include/crucible/canopy/Crdt.h
 include/crucible/canopy/Hlc.h
 include/crucible/canopy/HyParView.h
-include/crucible/canopy/Lifeguard.h
 include/crucible/canopy/Plumtree.h
 include/crucible/canopy/Scuttlebutt.h
 include/crucible/cipher/CipherTierPromotion.h
