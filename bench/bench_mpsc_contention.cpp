@@ -5,8 +5,8 @@
 //   "Real win for THIS API: multi-producer contention.
 //    Single FAA(tail, N) replaces N × FAA(tail, 1)."
 //
-// Single-thread bench (bench_mpmc_saturation) showed ~4.5× speedup
-// from the batched API.  This bench shows the multi-thread story:
+// A single-thread measurement showed a ~4.5× speedup from the batched
+// API.  This bench shows the multi-thread story:
 //   • Without batched API: every try_push contends on head_ via CAS.
 //     Per-call cost grows with producer count.
 //   • With batched API: each batch contends on head_ ONCE per N items
@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
 
     std::printf("\n  Interpretation:\n");
     std::printf("  • At P=1 (no contention), batched API gives the single-thread\n");
-    std::printf("    speedup measured in bench_mpmc_saturation (~4.5×).\n");
+    std::printf("    speedup (~4.5×).\n");
     std::printf("  • At P=2..8 (contention rises), the gap widens: batched API\n");
     std::printf("    does 1 CAS per N items, so head_ contention is reduced N×\n");
     std::printf("    vs single-call which CASes per item.\n");
