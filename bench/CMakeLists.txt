@@ -102,16 +102,12 @@ crucible_bench(bench_pipeline_dispatch)
 crucible_bench(bench_no_regression)
 crucible_bench(bench_mpmc_saturation)
 crucible_bench(bench_mpsc_contention)
-crucible_bench(bench_permissioned_calendar_grid)
 crucible_bench(bench_permissioned_zero_cost)
 crucible_bench(bench_permissioned_session_handle)
 crucible_bench(bench_session_persistence)
 crucible_bench(bench_spsc_session)
 crucible_bench(bench_metalog_session)
-crucible_bench(bench_chainedge_session)
 crucible_bench(bench_swmr_session)
-crucible_bench(bench_chaselev_session)
-target_compile_definitions(bench_chaselev_session PRIVATE NDEBUG)
 
 # ── The one gated latency number ─────────────────────────────────────
 #

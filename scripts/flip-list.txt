@@ -41,8 +41,6 @@
 #   - vis holds no consumer, and examples holds none outside the frozen
 #     examples/fn.
 
-bench/bench_chainedge_session.cpp
-bench/bench_chaselev_session.cpp
 bench/bench_cipher.cpp
 bench/bench_concurrent_queues.cpp
 bench/bench_concurrent_saturation.cpp
@@ -55,7 +53,6 @@ bench/bench_mpsc_contention.cpp
 bench/bench_no_regression.cpp
 bench/bench_observe_metrics_swmr.cpp
 bench/bench_perf_loader.cpp
-bench/bench_permissioned_calendar_grid.cpp
 bench/bench_permissioned_session_handle.cpp
 bench/bench_permissioned_zero_cost.cpp
 bench/bench_phases.cpp
