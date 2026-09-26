@@ -44,9 +44,10 @@
 # A build outside the tree (an export with its build beside it) must name
 # its database, or the guard refuses every unification as a violation.
 #
-# Run it before `git commit` on a marking.  What it rewrites is tracked,
-# so `git status` after a run names exactly the artifacts the marking
-# moved, and those belong in the same commit as the marking.
+# Run it before `git commit` on a marking.  The run names each file that
+# the regenerate half changed, and those files belong in the same commit
+# as the marking.  An edit that was in the tree before the run is not
+# named.
 #
 # Exit 0 clean, 1 if a check is still red after the refresh, 2 on a
 # usage error.
@@ -83,6 +84,33 @@ fi
 
 failures=0
 declare -a rewrote=()
+state_before=''
+state_after=''
+
+# Prints one line for each path that differs from HEAD: the hash of its
+# content and the path, or `-` and the path when no regular file is
+# there.  The regenerate half runs between two calls, and a path whose
+# line changed between them is a path that the half created, rewrote or
+# deleted.  A path whose edit came before the run prints the same line
+# both times.  Complexity: linear in the number and size of the changed
+# files.
+tree_state_() {
+    local -a paths=() files=() hashes=()
+    local path index
+    mapfile -d '' -t paths < <(git ls-files -z --modified --deleted --others --exclude-standard 2>/dev/null | sort -zu)
+    for path in "${paths[@]}"; do
+        if [ -f "$path" ] && [ ! -L "$path" ]; then
+            files+=("$path")
+        else
+            printf -- '- %s\n' "$path"
+        fi
+    done
+    [ ${#files[@]} -gt 0 ] || return 0
+    mapfile -t hashes < <(printf '%s\n' "${files[@]}" | git hash-object --stdin-paths)
+    for index in "${!files[@]}"; do
+        printf '%s %s\n' "${hashes[index]}" "${files[index]}"
+    done
+}
 
 run_() {
     local label=$1
@@ -112,8 +140,10 @@ run_() {
 # checks below are what name it.
 if [ "$MODE" = refresh ]; then
     printf 'refresh-derived: regenerating\n' >&2
+    state_before=$(tree_state_)
     run_ 'mint inventory'            python3 scripts/gen-mint-inventory.py --write
     run_ 'witness roster fixtures'   python3 scripts/check-witness-roster.py --gen
+    state_after=$(tree_state_)
 fi
 
 # ── The re-check half ────────────────────────────────────────────────
@@ -130,7 +160,11 @@ run_ 'witness roster'                python3 scripts/check-witness-roster.py --c
 
 # ── What the marking moved ───────────────────────────────────────────
 if [ "$MODE" = refresh ]; then
-    mapfile -t rewrote < <(git diff --name-only -- misc/mint-inventory.md scripts/witness-roster.txt test 2>/dev/null)
+    mapfile -t rewrote < <(comm -3 <(printf '%s\n' "$state_before" | sort) <(printf '%s\n' "$state_after" | sort) \
+                               | while IFS= read -r line; do
+                                     line=${line#$'\t'}
+                                     [ -n "$line" ] && printf '%s\n' "${line#* }"
+                                 done | sort -u)
     if [ ${#rewrote[@]} -gt 0 ]; then
         printf '\nrefresh-derived: the refresh rewrote these, and they belong in the marking commit:\n' >&2
         printf '  %s\n' "${rewrote[@]}" >&2
