@@ -7,6 +7,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
@@ -131,9 +132,19 @@ concept CtxFitsCogMimic =
 // as the friend of its only constructor.  Defined after the class.
 template <cog::CogKind K, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsCogMimic<Ctx, K>
-[[nodiscard]] constexpr CogMimic<K> mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const& identity,
+[[nodiscard]] constexpr CogMimic<K> mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const& identity CRUCIBLE_LIFETIMEBOUND,
                                                    cog::caps_for_t<K> calibrated_caps,
                                                    cog::OpcodeLatencyTable<K> opcodes) noexcept;
+
+// The CogMimic borrows its identity, so an identity that is a temporary
+// would dangle at the end of the full expression.  This form is the better
+// match for a temporary, and it is deleted.
+template <cog::CogKind K, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsCogMimic<Ctx, K>
+constexpr CogMimic<K> mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const&& identity,
+                                     cog::caps_for_t<K> calibrated_caps, cog::OpcodeLatencyTable<K> opcodes) noexcept =
+    delete("the CogMimic borrows its identity, so a temporary dangles at the end of the full expression; "
+           "bind the identity to a name first");
 
 // An identity bound to the caps and the opcode table that calibration
 // measured for it.  The constructor is private and mint_cog_mimic is its

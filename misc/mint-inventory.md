@@ -147,7 +147,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_cog_mimic` | `include/crucible/mimic/CogMimic.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| `mint_cog_mimic` | `include/crucible/mimic/CogMimic.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
 
 ## include/crucible/observe/
 

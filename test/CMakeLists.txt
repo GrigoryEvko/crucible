@@ -4876,6 +4876,8 @@ crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
 #     constructor that a caller can reach binds an identity.
 #   * bit_cast: the class is not trivially copyable, so no CogMimic is
 #     built from bytes.
+#   * temporary_identity: the mint refuses an identity that is a
+#     temporary, which the CogMimic would outlive.
 crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
     "no matching function for call to .allocate_cog_mimic_slot<crucible::cog::CogKind::PsuRail, fixy::ColdInitCtx>\\(\\)."
     "required for the satisfaction of .IsMimicSubstrate<K>. \\[with K = crucible::cog::CogKind::PsuRail\\]")
@@ -4897,6 +4899,9 @@ crucible_neg_compile_cog_test(neg_cog_mimic_default_construct
 crucible_neg_compile_cog_test(neg_cog_mimic_bit_cast
     "the expression .is_trivially_copyable_v<_To> \\[with _To = crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>\\]. evaluated to .false."
     ".crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>. is not trivially copyable")
+crucible_neg_compile_cog_test(neg_cog_mimic_temporary_identity
+    "use of deleted function .constexpr crucible::mimic::CogMimic<K> crucible::mimic::mint_cog_mimic\\(const Ctx&, const crucible::cog::CogIdentity&&,"
+    "the CogMimic borrows its identity, so a temporary dangles at the end of the full expression. bind the identity to a name first")
 
 # ─── topology::TopologyGraph ──────────────────────────────────────────
 #
