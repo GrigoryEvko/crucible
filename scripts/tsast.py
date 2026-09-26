@@ -597,6 +597,24 @@ class Tree:
         hi = starts[end[0]] + end[1] if end[0] < len(starts) else len(self.source)
         return self.source[lo:hi].decode("utf-8", "replace")
 
+    def line(self, row: int) -> str:
+        """Return one source row, without its line break, for a report.
+
+        A guard shows this text to the reader.  It decides nothing from it:
+        a comment, a string or a splice makes a row a poor unit of code.
+
+        Args:
+            row: The zero-based row
+
+        Returns:
+            The row's text, or "" for a row past the end of the file
+        """
+        starts = self._starts()
+        if row < 0 or row >= len(starts):
+            return ""
+        end = starts[row + 1] if row + 1 < len(starts) else len(self.source)
+        return self.source[starts[row]:end].decode("utf-8", "replace").rstrip("\r\n")
+
     def find(self, *types: str) -> Iterator[Node]:
         """Yield every node in the file whose type is one of the given types.
 
@@ -1455,6 +1473,49 @@ def prose_text(node: Node) -> str:
     if node.type not in _PROSE_TYPES:
         raise ValueError(f"prose_text() reads prose only, and a {node.type} node is code: {node!r}")
     return node.text
+
+
+def lexeme(item: Token | Node) -> str:
+    """Return the spelling of exactly one preprocessing token.
+
+    A guard may test the spelling of one token with a regex or a string
+    method, for example a naming convention on one identifier, because one
+    token has no structure to lose.  A guard reads that spelling through this
+    function, never through Node.text, so scripts/check-guard-engines.py can
+    tell a read of one token from a regex over code.  The spelling of a node
+    comes after phase 2, so a name that a splice cuts is one name.
+
+    Args:
+        item: A Token, or a node that holds exactly one token, such as an
+            identifier, a number or an access specifier
+
+    Returns:
+        The token's spelling
+
+    Raises:
+        ValueError: If the node holds no token or more than one
+    """
+    if isinstance(item, Token):
+        return item.text
+    tokens = item.lexed()
+    if len(tokens) != 1:
+        raise ValueError(f"lexeme() reads one token, and this {item.type} node holds {len(tokens)}: {item!r}")
+    return tokens[0].text
+
+
+def excerpt(node: Node) -> str:
+    """Return the first row of a node's text, stripped, for a report.
+
+    A guard shows this text to the reader.  It decides nothing from it.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The text from the node start to the end of its first row, without
+        the space at either end
+    """
+    return node.text.split("\n", 1)[0].strip()
 
 
 def comments_by_row(tree: Tree) -> dict[int, list[Node]]:
@@ -2725,6 +2786,26 @@ def _self_test_helpers(
         code_refused = str(exc)
     check("prose_text reads a comment", prose_text(first_comment).startswith("/* one"))
     check("prose_text refuses a code node", "reads prose only" in code_refused, negative=True)
+    lexeme_tree = parse_text("lexeme.cpp", "int long_na\\\nme = 7;\nclass K { public: int f; };\n")
+    spliced_name = next(lexeme_tree.find("identifier"))
+    access = next(lexeme_tree.find("access_specifier"))
+    check(
+        "lexeme reads one identifier with its splice joined, one access specifier and one Token",
+        lexeme(spliced_name) == "long_name" and lexeme(access) == "public"
+        and lexeme(Token("identifier", "x", 0)) == "x",
+    )
+    many_refused = ""
+    try:
+        lexeme(next(lexeme_tree.find("init_declarator")))
+    except ValueError as exc:
+        many_refused = str(exc)
+    check("lexeme refuses a node of several tokens", "reads one token" in many_refused, negative=True)
+    declaration = next(lexeme_tree.find("declaration"))
+    check(
+        "excerpt gives the first row of a node, and Tree.line gives one row without its break",
+        excerpt(declaration) == "int long_na\\" and lexeme_tree.line(1) == "me = 7;"
+        and lexeme_tree.line(99) == "",
+    )
     calls_by_name = {parts[-1]: node for parts, node in calls(prose_tree)}
     head_stmt = enclosing_statement(calls_by_name["cond"])
     check(
