@@ -6,8 +6,8 @@
 #include <cstdio>
 
 namespace mf = crucible::mimic;
-using BS = crucible::algebra::lattices::BarrierStrength;
-using MS = crucible::algebra::lattices::MemoryScope;
+using BS = foundation::algebra::lattices::BarrierStrength;
+using MS = foundation::algebra::lattices::MemoryScope;
 using FA = mf::FenceArch;
 
 // These assertions duplicate the golden lowering table on purpose.  A change to

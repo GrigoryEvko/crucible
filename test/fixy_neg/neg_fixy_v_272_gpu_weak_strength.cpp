@@ -19,8 +19,8 @@
 #include <crucible/mimic/Fence.h>
 
 namespace mf = crucible::mimic;
-using BS = crucible::algebra::lattices::BarrierStrength;
-using MS = crucible::algebra::lattices::MemoryScope;
+using BS = foundation::algebra::lattices::BarrierStrength;
+using MS = foundation::algebra::lattices::MemoryScope;
 
 constexpr auto bad = mf::lower_fence<BS::ReleaseStore, MS::Gpu, mf::FenceArch::Gpu>();
 

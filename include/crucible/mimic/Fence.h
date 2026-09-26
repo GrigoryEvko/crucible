@@ -1,19 +1,19 @@
 #pragma once
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/lattices/_BarrierStrengthLattice.h>
-#include <crucible/algebra/lattices/_MemoryScopeLattice.h>
+#include <foundation/algebra/lattices/BarrierStrengthLattice.h>
+#include <foundation/algebra/lattices/MemoryScopeLattice.h>
 
 #include <cstdint>
-#include <utility>
 
 namespace crucible::mimic {
 
-using ::crucible::algebra::lattices::BarrierStrength;
-using ::crucible::algebra::lattices::MemoryScope;
-using ::crucible::algebra::lattices::MemoryScopeLattice;
-using ::crucible::algebra::lattices::mem_scope_is_accel;
-using ::crucible::algebra::lattices::mem_scope_is_arm;
+using ::foundation::algebra::lattices::BarrierStrength;
+using ::foundation::algebra::lattices::BarrierStrengthLattice;
+using ::foundation::algebra::lattices::MemoryScope;
+using ::foundation::algebra::lattices::MemoryScopeLattice;
+using ::foundation::algebra::lattices::mem_scope_is_accel;
+using ::foundation::algebra::lattices::mem_scope_is_arm;
 
 // This enum is deliberately separate from the host-architecture tag used
 // elsewhere. That tag enumerates host ISAs only, and fence lowering needs a
@@ -83,7 +83,7 @@ static_assert(alignof(FenceSpec) == 1);
 // ordering the barrier establishes.
 [[nodiscard]] constexpr bool fence_strength_meets_scope(BarrierStrength strength, MemoryScope scope) noexcept {
     if (MemoryScopeLattice::leq(MemoryScope::Gpu, scope)) {
-        return std::to_underlying(strength) >= std::to_underlying(BarrierStrength::AcqRel);
+        return BarrierStrengthLattice::leq(BarrierStrength::AcqRel, strength);
     }
     return true;
 }
@@ -136,8 +136,7 @@ namespace detail {
 // PTX has no one-sided fence. Acquire-only and release-only fold to acq_rel,
 // seqcst and full fold to sc.
 [[nodiscard]] constexpr FenceOrder gpu_sem_of(BarrierStrength strength) noexcept {
-    return (std::to_underlying(strength) >= std::to_underlying(BarrierStrength::SeqCst)) ? FenceOrder::SeqCst
-                                                                                         : FenceOrder::AcqRel;
+    return BarrierStrengthLattice::leq(BarrierStrength::SeqCst, strength) ? FenceOrder::SeqCst : FenceOrder::AcqRel;
 }
 
 }  // namespace detail
@@ -164,7 +163,7 @@ namespace detail {
         case FenceArch::X86:
             // x86 is TSO. Acquire, release and acq_rel need no hardware
             // fence, only an optimizer barrier.
-            if (std::to_underlying(strength) >= std::to_underlying(BarrierStrength::SeqCst)) {
+            if (BarrierStrengthLattice::leq(BarrierStrength::SeqCst, strength)) {
                 return FenceSpec{FenceKind::X86Mfence, FenceDomain::None, FenceOrder::Full};
             }
             return FenceSpec{FenceKind::CompilerBarrier, FenceDomain::None, detail::order_of(strength)};

@@ -172,7 +172,6 @@ include/crucible/ledger/probes/CacheTier.h
 include/crucible/ledger/probes/HugePage.h
 include/crucible/ledger/probes/VectorWidth.h
 include/crucible/mimic/CogMimic.h
-include/crucible/mimic/Fence.h
 include/crucible/mimic/Semaphore.h
 include/crucible/mimic/_wip/network/Backend.h
 include/crucible/observe/HdrHistogram.h
