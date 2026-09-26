@@ -57,15 +57,44 @@ WHAT THE KIT CANNOT READ
         `->`.  It parses when the arguments are plain names, so a caller
         passes a member or a local rather than a member access.
       * The files in UNPARSEABLE are not C++.  Each entry names its reason.
+        They are out of scope for every C++ scan: cpp_files() and
+        is_in_cpp_scope() leave them out, so a guard needs no text fallback.
+
+WHY THE ANONYMOUS TOKENS COME FROM THE GAPS
+    The S-expression names only the named nodes.  A keyword such as `inline`
+    or `namespace`, and an operator such as `&&` or `<<=`, is an anonymous
+    token, so it has no line of its own.  Every anonymous token of a node lies
+    in the text between its named children, so Node.tokens() lexes that text
+    and descends into each child.  A comment is a named node, so it never
+    reaches a gap.
+    The alternatives were measured on 2026-09-26 over 4,698 files, with the
+    machine under a load average of about 38:
+      * `parse` (this module):  12.85 s, 410 MB of output
+      * `parse --xml`:          17.93 s, 912 MB of output
+      * `parse --cst`:          20.10 s, 1,177 MB of output
+    The gap lexer costs nothing at parse time, and it runs only for the nodes
+    a guard asks about.
+
+NAMES, SCOPES AND DECLARATIONS
+    The helpers after cpp_files() read the tree for the questions that the
+    guards ask: the parts of a qualified name, the namespaces that enclose a
+    node, namespace aliases and using-declarations, attributes, pragmas,
+    calls, contract clauses, parameters and namespace-scope declarations.
+    Each one reads nodes and tokens only.  None of them runs a regex over
+    source text.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
-from collections.abc import Iterator, Sequence
+import tempfile
+from bisect import bisect_right
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -102,6 +131,147 @@ class ParseError(RuntimeError):
 
 class KitMissing(RuntimeError):
     """The pinned tree-sitter kit is not installed."""
+
+
+class Token(NamedTuple):
+    """One preprocessing token with its zero-based row in the file.
+
+    The kind is one of: identifier, number, string, char, punctuator,
+    directive, text or other.  A directive is `#` plus a name, for example
+    `#define`, and occurs only in code text.  Text is a node that this module
+    does not lex, for example a macro body.
+    """
+
+    kind: str
+    text: str
+    row: int
+
+
+# The C++26 punctuators, longest first, so that one alternation does the
+# maximal munch.  `^^` is the reflection operator, and `[:` and `:]` bound a
+# splice.  The digraphs are here so that a digraph stays one token.
+_PUNCTUATORS = sorted(
+    (
+        "%:%:", "...", "<=>", "<<=", ">>=", "->*",
+        "::", "^^", "[:", ":]", "->", "++", "--", "<<", ">>", "<=", ">=", "==", "!=",
+        "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", ".*", "##",
+        "%:", "<:", ":>", "<%", "%>",
+        "{", "}", "[", "]", "(", ")", "<", ">", ";", ":", ",", ".", "?", "~", "!",
+        "+", "-", "*", "/", "%", "^", "&", "|", "=", "#", "@", "$", "\\",
+    ),
+    key=len,
+    reverse=True,
+)
+
+# One pass over spliced text.  The order of the alternatives matters: a raw
+# string and a prefixed literal start with an identifier character, so they
+# come before the identifier.  A number comes before a character literal, so a
+# digit separator such as 1'000 stays in the number.  A literal keeps its
+# user-defined suffix, as the standard's pp-token does.
+_LEXER = re.compile(
+    r"""
+    (?P<space>[ \t\f\v\r\n]+)
+  | (?P<line_comment>//[^\n]*)
+  | (?P<block_comment>/\*.*?(?:\*/|\Z))
+  | (?P<raw>(?:u8|[uUL])?R"(?P<delim>[^()\\ \t\v\f\n"]{0,16})\(.*?\)(?P=delim)"(?:[^\W\d]\w*)?)
+  | (?P<string>(?:u8|[uUL])?"(?:\\.|[^"\\\n])*"(?:[^\W\d]\w*)?)
+  | (?P<number>\.?[0-9](?:[eEpP][+-]|['\w.])*)
+  | (?P<char>(?:u8|[uUL])?'(?:\\.|[^'\\\n])*'(?:[^\W\d]\w*)?)
+  | (?P<identifier>[^\W\d]\w*)
+  | (?P<punctuator>"""
+    + "|".join(re.escape(p) for p in _PUNCTUATORS)
+    + r""")
+  | (?P<other>.)
+    """,
+    re.S | re.X,
+)
+_SPLICE = re.compile(r"\\\r?\n")
+_DIRECTIVE = re.compile(r"#[ \t]*([^\W\d]\w*)")
+
+
+def _lex(text: str, first_row: int, *, directives: bool) -> list[Token]:
+    """Split source text into tokens, after the line splices of phase 2.
+
+    Complexity: O(n) in the length of the text.
+
+    Args:
+        text: The source text
+        first_row: The zero-based row of the first character of the text
+        directives: When true, `#` and the name after it form one directive
+            token, as in code text.  When false, `#` stays a punctuator, as in
+            the replacement list of a macro, where `#` stringifies.
+
+    Returns:
+        The tokens in order.  Space and comments give no token.
+    """
+    # Map each offset in the spliced text back to the original offset, so a
+    # token reports the row it starts on in the file.  breaks[i] is the
+    # spliced offset from which splice i is gone, and shifts[i] is the number
+    # of original characters removed up to and with splice i.
+    pieces: list[str] = []
+    breaks: list[int] = []
+    shifts: list[int] = []
+    cursor = 0
+    kept = 0
+    removed = 0
+    for match in _SPLICE.finditer(text):
+        pieces.append(text[cursor:match.start()])
+        kept += match.start() - cursor
+        removed += match.end() - match.start()
+        breaks.append(kept)
+        shifts.append(removed)
+        cursor = match.end()
+    pieces.append(text[cursor:])
+    spliced = "".join(pieces)
+    newlines = [i for i, char in enumerate(text) if char == "\n"]
+
+    def row_of(offset: int) -> int:
+        """Return the row of a spliced offset in the original text."""
+        index = bisect_right(breaks, offset)
+        original = offset + (shifts[index - 1] if index else 0)
+        return first_row + bisect_right(newlines, original - 1)
+
+    tokens: list[Token] = []
+    pos = 0
+    length = len(spliced)
+    while pos < length:
+        if directives and spliced[pos] == "#":
+            directive = _DIRECTIVE.match(spliced, pos)
+            if directive is not None:
+                tokens.append(Token("directive", "#" + directive.group(1), row_of(pos)))
+                pos = directive.end()
+                continue
+        # `<::` is `<` then `::` unless a third `:` or a `>` follows.  The
+        # same rule keeps `[::` from forming a splice opener.
+        if spliced.startswith(("<::", "[::"), pos) and spliced[pos + 3:pos + 4] not in (":", ">", "]"):
+            tokens.append(Token("punctuator", spliced[pos], row_of(pos)))
+            pos += 1
+            continue
+        match = _LEXER.match(spliced, pos)
+        assert match is not None  # the `other` alternative matches any character
+        # lastgroup names the outer group, so a raw string reports `raw`.
+        kind = match.lastgroup
+        if kind not in ("space", "line_comment", "block_comment"):
+            tokens.append(Token("string" if kind == "raw" else str(kind), match.group(0), row_of(pos)))
+        pos = match.end()
+    return tokens
+
+
+def pp_tokens(text: str, first_row: int = 0) -> list[Token]:
+    """Return the preprocessing tokens of text such as a macro body.
+
+    The splices of phase 2 go first, so a name split by a backslash-newline
+    is one identifier.  `#` and `##` stay punctuators.  Comments give no
+    token.
+
+    Args:
+        text: The text to split
+        first_row: The zero-based row of the first character, for the report
+
+    Returns:
+        The tokens in order
+    """
+    return _lex(text, first_row, directives=False)
 
 
 _KIT_CACHE: Path | None = None
@@ -255,6 +425,73 @@ class Node:
             owner = self.tree.parent[owner]
         return None
 
+    def lexed(self, skip: Callable[[Node], bool] | None = None) -> list[Token]:
+        """Return every token under this node, in source order, with its row.
+
+        The anonymous tokens come from the text between the named children.
+        A literal, a comment and a macro body are one token each, because
+        the kit does not split them.  The walk descends into every named
+        child that `skip` does not refuse.
+
+        Complexity: O(n) in the size of the subtree plus the length of its gaps.
+
+        Args:
+            skip: A predicate on a named child.  A child it accepts gives no
+                token.  The default refuses comments.
+
+        Returns:
+            The tokens in order
+        """
+        refuse = is_comment if skip is None else skip
+        out: list[Token] = []
+        self._lex_into(out, refuse)
+        return out
+
+    def tokens(self, skip: Callable[[Node], bool] | None = None) -> list[str]:
+        """Return the text of every token under this node, in source order.
+
+        Args:
+            skip: As for lexed(); the default refuses comments
+
+        Returns:
+            The token texts in order
+        """
+        return [token.text for token in self.lexed(skip)]
+
+    def _lex_into(self, out: list[Token], refuse: Callable[[Node], bool]) -> None:
+        """Append the tokens of this node to out.
+
+        Args:
+            out: The list that collects the tokens
+            refuse: The predicate that removes a named child
+        """
+        atomic = _ATOMIC.get(self.type)
+        if atomic is not None:
+            text = self.text
+            if text:
+                out.append(Token(atomic, text, self.start[0]))
+            return
+        cursor = self.start
+        for child in self.children:
+            if child.start > cursor:
+                out.extend(_lex(self.tree.slice(cursor, child.start), cursor[0], directives=True))
+            if not refuse(child):
+                child._lex_into(out, refuse)
+            cursor = max(cursor, child.end)
+        if self.end > cursor:
+            out.extend(_lex(self.tree.slice(cursor, self.end), cursor[0], directives=True))
+
+    def gap_tokens(self) -> list[str]:
+        """Return the tokens that lie directly in this node, outside every named child.
+
+        A keyword such as `inline`, `namespace` or `typename`, and the `::`
+        of a global qualifier, is a direct token of its node.
+
+        Returns:
+            The token texts in order
+        """
+        return self.tokens(skip=lambda _child: True)
+
     def __repr__(self) -> str:
         """Return a short form that names the file and the line."""
         return f"<{self.type} {self.tree.path}:{self.line}>"
@@ -270,7 +507,7 @@ class Tree:
 
     __slots__ = (
         "path", "types", "fields", "srow", "scol", "erow", "ecol",
-        "parent", "kids", "diagnostic", "_source", "_line_starts",
+        "parent", "kids", "diagnostic", "_source", "_line_starts", "_comment_rows",
     )
 
     def __init__(self, path: Path) -> None:
@@ -291,6 +528,7 @@ class Tree:
         self.diagnostic: str | None = None
         self._source: bytes | None = None
         self._line_starts: list[int] | None = None
+        self._comment_rows: dict[int, list[Node]] | None = None
 
     @property
     def root(self) -> Node:
@@ -381,68 +619,86 @@ def parse(paths: Sequence[Path], *, strict: bool = True) -> Iterator[Tree]:
     kit = kit_dir()
     listing = "\n".join(str(p) for p in paths) + "\n"
 
-    proc = subprocess.Popen(
-        [
-            str(kit / "bin" / "tree-sitter"), "parse",
-            "--lib-path", str(kit / "lib" / "cpp.so"),
-            "--lang-name", "cpp",
-            "--paths", "/dev/stdin",
-        ],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        text=True,
-        bufsize=1 << 20,
-        cwd=REPO_ROOT,
-    )
-    assert proc.stdin is not None and proc.stdout is not None
-    proc.stdin.write(listing)
-    proc.stdin.close()
+    # stderr goes to a file, not a pipe, so a long error text cannot fill a
+    # pipe buffer and stall the CLI while this loop reads stdout.
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as errors:
+        proc = subprocess.Popen(
+            [
+                str(kit / "bin" / "tree-sitter"), "parse",
+                "--lib-path", str(kit / "lib" / "cpp.so"),
+                "--lang-name", "cpp",
+                "--paths", "/dev/stdin",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=errors,
+            text=True,
+            bufsize=1 << 20,
+            cwd=REPO_ROOT,
+            env={**os.environ, "NO_COLOR": "1"},
+        )
+        assert proc.stdin is not None and proc.stdout is not None
+        proc.stdin.write(listing)
+        proc.stdin.close()
 
-    tree: Tree | None = None
-    # open_at[depth] holds the node index that currently owns depth + 1.
-    open_at: list[int] = []
-    order = iter(paths)
-    diagnostics: dict[str, str] = {}
-    saw_diagnostic = False
+        tree: Tree | None = None
+        # open_at[depth] holds the node index that currently owns depth + 1.
+        open_at: list[int] = []
+        order = iter(paths)
+        diagnostics: dict[str, str] = {}
+        saw_diagnostic = False
+        delivered = 0
 
-    for line in proc.stdout:
-        match = _NODE_LINE.match(line)
-        if match is None:
-            diag = _DIAG_LINE.match(line)
-            if diag is not None:
-                diagnostics[diag.group(1).strip()] = line.rstrip("\n")
-                saw_diagnostic = True
-            continue
-        indent, field, node_type = match.group(1), match.group(2), match.group(3)
-        depth = len(indent) >> 1
-        if depth == 0:
-            if tree is not None:
-                yield _finish(tree, diagnostics, strict)
-            tree = Tree(Path(next(order)))
-            open_at = []
-        assert tree is not None
-        index = len(tree.types)
-        tree.types.append(node_type)
-        tree.fields.append(field)
-        tree.srow.append(int(match.group(4)))
-        tree.scol.append(int(match.group(5)))
-        tree.erow.append(int(match.group(6)))
-        tree.ecol.append(int(match.group(7)))
-        tree.kids.append([])
-        if depth == 0:
-            tree.parent.append(-1)
-        else:
-            owner = open_at[depth - 1]
-            tree.parent.append(owner)
-            tree.kids[owner].append(index)
-        del open_at[depth:]
-        open_at.append(index)
+        for line in proc.stdout:
+            match = _NODE_LINE.match(line)
+            if match is None:
+                diag = _DIAG_LINE.match(line)
+                if diag is not None:
+                    diagnostics[diag.group(1).strip()] = line.rstrip("\n")
+                    saw_diagnostic = True
+                continue
+            indent, field, node_type = match.group(1), match.group(2), match.group(3)
+            depth = len(indent) >> 1
+            if depth == 0:
+                if tree is not None:
+                    delivered += 1
+                    yield _finish(tree, diagnostics, strict)
+                tree = Tree(Path(next(order)))
+                open_at = []
+            assert tree is not None
+            index = len(tree.types)
+            tree.types.append(node_type)
+            tree.fields.append(field)
+            tree.srow.append(int(match.group(4)))
+            tree.scol.append(int(match.group(5)))
+            tree.erow.append(int(match.group(6)))
+            tree.ecol.append(int(match.group(7)))
+            tree.kids.append([])
+            if depth == 0:
+                tree.parent.append(-1)
+            else:
+                owner = open_at[depth - 1]
+                tree.parent.append(owner)
+                tree.kids[owner].append(index)
+            del open_at[depth:]
+            open_at.append(index)
 
-    if tree is not None:
-        yield _finish(tree, diagnostics, strict)
-    proc.stdout.close()
-    code = proc.wait()
+        if tree is not None:
+            delivered += 1
+            yield _finish(tree, diagnostics, strict)
+        proc.stdout.close()
+        code = proc.wait()
+        errors.seek(0)
+        error_text = errors.read().strip()
+
+    # The CLI stops at the first path it cannot read and exits 1, after the
+    # trees of the paths before it.  So a short count is a tool failure, even
+    # when an earlier file carried a parse error.
+    if delivered < len(paths):
+        raise ParseError(
+            f"tree-sitter parse stopped after {delivered} of {len(paths)} files, "
+            f"at {paths[delivered]}. The CLI said: {error_text or '(nothing)'}"
+        )
     # The CLI exits 1 when any file in the batch carries a parse error, which is
     # a result and not a tool failure.  The roster and the strict policy above
     # already decide what to do about it.  Every other nonzero exit, and a
@@ -452,7 +708,7 @@ def parse(paths: Sequence[Path], *, strict: bool = True) -> Iterator[Tree]:
     if code != 0:
         raise ParseError(
             f"tree-sitter parse exited {code} with no diagnostic to explain it. "
-            "The kit or the file list is wrong."
+            f"The kit or the file list is wrong. The CLI said: {error_text or '(nothing)'}"
         )
 
 
@@ -482,13 +738,37 @@ def _finish(tree: Tree, diagnostics: dict[str, str], strict: bool) -> Tree:
     return tree
 
 
-def cpp_files(*roots: str) -> list[Path]:
+# The one suffix policy of every C++ scan.  A BPF program is C (`.bpf.c`), and
+# the kit reads C++, so no C file is in scope.
+CPP_SUFFIXES: tuple[str, ...] = (".h", ".hpp", ".cpp", ".cc")
+
+
+def is_in_cpp_scope(path: Path | str) -> bool:
+    """Say whether a repo-relative path is in scope for a C++ scan.
+
+    A path is in scope when its suffix is in CPP_SUFFIXES and UNPARSEABLE does
+    not list it.  A guard that builds its own file list filters it with this
+    predicate, so it needs no text fallback for a file that is not C++.
+
+    Args:
+        path: A repo-relative path
+
+    Returns:
+        True when a C++ scan must read the file
+    """
+    text = Path(path).as_posix()
+    return text.endswith(CPP_SUFFIXES) and text not in UNPARSEABLE
+
+
+def cpp_files(*roots: str, include_unparseable: bool = False) -> list[Path]:
     """Return every C++ file under the given repo-relative roots, sorted.
 
     Sorted order makes a gate's report stable across runs, which DetSafe needs.
 
     Args:
         roots: Repo-relative directory names, for example "include"
+        include_unparseable: When true, keep the files that UNPARSEABLE lists.
+            Only the gate that proves the roster exact needs them.
 
     Returns:
         The matching paths, relative to the repo root, in sorted order
@@ -498,9 +778,1078 @@ def cpp_files(*roots: str) -> list[Path]:
         base = REPO_ROOT / root
         if not base.is_dir():
             continue
-        for suffix in (".h", ".hpp", ".cpp", ".cc"):
+        for suffix in CPP_SUFFIXES:
             found.extend(p.relative_to(REPO_ROOT) for p in base.rglob(f"*{suffix}"))
+    if not include_unparseable:
+        found = [p for p in found if p.as_posix() not in UNPARSEABLE]
     return sorted(found)
+
+
+# ── Tokens and spellings ─────────────────────────────────────────────────────
+
+# The node types that the kit does not split, with the token kind each one is.
+_ATOMIC: dict[str, str] = {
+    "string_literal": "string",
+    "raw_string_literal": "string",
+    "char_literal": "char",
+    "system_lib_string": "string",
+    "number_literal": "number",
+    "comment": "comment",
+    "preproc_arg": "text",
+}
+
+
+def is_comment(node: Node) -> bool:
+    """Say whether a node is a comment.
+
+    Args:
+        node: Any node
+
+    Returns:
+        True for a comment node
+    """
+    return node.type == "comment"
+
+
+def _is_word_char(char: str) -> bool:
+    """Say whether a character can continue an identifier or a number."""
+    return char.isalnum() or char == "_"
+
+
+def spelled(node: Node) -> str:
+    """Return the canonical spelling of a node: its tokens, comments dropped.
+
+    Two tokens are joined with no space, except two word tokens, which get
+    one space so that `unsigned long` does not become one name.  So a
+    comment, a line break or extra space inside the node cannot change the
+    result.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The canonical spelling
+    """
+    parts: list[str] = []
+    for text in node.tokens():
+        if parts and _is_word_char(parts[-1][-1]) and _is_word_char(text[0]):
+            parts.append(" ")
+        parts.append(text)
+    return "".join(parts)
+
+
+# ── Names ────────────────────────────────────────────────────────────────────
+
+_NAME_LEAVES = frozenset({
+    "identifier", "field_identifier", "type_identifier", "namespace_identifier",
+    "statement_identifier", "primitive_type",
+})
+_SPELLED_NAMES = frozenset({"operator_name", "destructor_name", "operator_cast"})
+_TEMPLATE_NAMES = frozenset({"template_type", "template_function", "template_method"})
+_DECLARATORS = frozenset({
+    "function_declarator", "init_declarator", "pointer_declarator", "reference_declarator",
+    "array_declarator", "attributed_declarator",
+})
+
+
+def _named_non_comment(node: Node) -> list[Node]:
+    """Return the named children of a node that are not comments."""
+    return [child for child in node.children if child.type != "comment"]
+
+
+def leaf_name(node: Node) -> str | None:
+    """Return the last name in a name, a declarator, a field access or a call.
+
+    `a::b::c` gives `c`, `Box<int>` gives `Box`, `x.template f<T>` gives `f`,
+    `int (*p)[3]` gives `p`, `operator<=>` gives `operator<=>` and `C::~C`
+    gives `~C`.
+
+    Args:
+        node: A name, declarator, field_expression or call_expression node
+
+    Returns:
+        The name, or None when the node carries no name
+    """
+    kind = node.type
+    if kind in _NAME_LEAVES:
+        return node.text
+    if kind in _SPELLED_NAMES:
+        return spelled(node)
+    if kind in ("qualified_identifier", *_TEMPLATE_NAMES):
+        name = node.child_by_field("name")
+        return None if name is None else leaf_name(name)
+    if kind in ("dependent_name", "dependent_type", "parenthesized_declarator", "variadic_declarator"):
+        inner = _named_non_comment(node)
+        return leaf_name(inner[-1]) if inner else None
+    if kind == "field_expression":
+        field = node.child_by_field("field")
+        return None if field is None else leaf_name(field)
+    if kind == "call_expression":
+        function = node.child_by_field("function")
+        return None if function is None else leaf_name(function)
+    if kind in _DECLARATORS:
+        inner_decl = node.child_by_field("declarator")
+        return None if inner_decl is None else leaf_name(inner_decl)
+    return None
+
+
+def _starts_with_scope_operator(node: Node) -> bool:
+    """Say whether a node begins with `::`, before its first named child."""
+    named = _named_non_comment(node)
+    end = named[0].start if named else node.end
+    head = _lex(node.tree.slice(node.start, end), node.start[0], directives=False)
+    return bool(head) and head[0].text == "::"
+
+
+def qualified_parts(node: Node) -> tuple[bool, tuple[str, ...]] | None:
+    """Return the parts of a name and whether it starts at the global scope.
+
+    `::a::b<int>::c` gives (True, ("a", "b", "c")).  Template arguments and
+    comments fall out.  A `decltype` scope, or any shape that is not a name,
+    gives None, because no name can be read from it.
+
+    Args:
+        node: A name node: an identifier of any kind, qualified_identifier,
+            nested_namespace_specifier, a template name, dependent_name,
+            operator_name or destructor_name
+
+    Returns:
+        (is_global, parts), or None when the node is not a name
+    """
+    kind = node.type
+    if kind in _NAME_LEAVES:
+        return (False, (node.text,))
+    if kind in _SPELLED_NAMES:
+        return (False, (spelled(node),))
+    if kind in _TEMPLATE_NAMES:
+        name = node.child_by_field("name")
+        return None if name is None else qualified_parts(name)
+    if kind in ("dependent_name", "dependent_type"):
+        inner = _named_non_comment(node)
+        return qualified_parts(inner[-1]) if inner else None
+    if kind == "qualified_identifier":
+        scope = node.child_by_field("scope")
+        name = node.child_by_field("name")
+        if name is None:
+            return None
+        name_parts = qualified_parts(name)
+        if name_parts is None:
+            return None
+        if scope is None:
+            return (True, name_parts[1])
+        scope_parts = qualified_parts(scope)
+        if scope_parts is None:
+            return None
+        return (scope_parts[0], scope_parts[1] + name_parts[1])
+    if kind == "nested_namespace_specifier":
+        parts: list[str] = []
+        for child in _named_non_comment(node):
+            inner = qualified_parts(child)
+            if inner is None:
+                return None
+            parts.extend(inner[1])
+        return (_starts_with_scope_operator(node), tuple(parts))
+    return None
+
+
+# ── Namespaces ───────────────────────────────────────────────────────────────
+
+_TEST_WORD = re.compile(r"(?:^|_)(?:self_?test|tests?|testing)(?:_|$)", re.IGNORECASE)
+_PRIVATE_SUFFIXES = ("_self_test", "_smoke", "_test", "_layout")
+
+
+def namespace_path(node: Node, *, skip_inline: bool = False) -> tuple[str, ...]:
+    """Return the namespaces that enclose a node, outermost first.
+
+    An anonymous namespace is "".  The node itself is not included, so the
+    path of a namespace_definition is the path it sits in.
+
+    Args:
+        node: Any node
+        skip_inline: When true, leave out each inline namespace
+
+    Returns:
+        The namespace names in order
+    """
+    groups: list[list[str]] = []
+    owner = node.ancestor_of_type("namespace_definition")
+    while owner is not None:
+        name = owner.child_by_field("name")
+        segments: list[str] = []
+        if name is None:
+            if not (skip_inline and "inline" in owner.gap_tokens()):
+                segments.append("")
+        elif name.type == "namespace_identifier":
+            if not (skip_inline and "inline" in owner.gap_tokens()):
+                segments.append(name.text)
+        else:
+            # `namespace a::inline b` marks one segment of a nested name inline.
+            is_inline = False
+            for text in name.tokens():
+                if text == "inline":
+                    is_inline = True
+                elif text != "::":
+                    if not (skip_inline and is_inline):
+                        segments.append(text)
+                    is_inline = False
+        groups.append(segments)
+        owner = owner.ancestor_of_type("namespace_definition")
+    return tuple(segment for group in reversed(groups) for segment in group)
+
+
+def is_test_namespace(path: Sequence[str]) -> bool:
+    """Say whether a namespace path names a test namespace.
+
+    A segment is a test segment when one of its words, split at `_`, is
+    test, tests, testing, selftest or self_test.
+
+    Args:
+        path: A namespace path, as namespace_path() returns it
+
+    Returns:
+        True when any segment is a test segment
+    """
+    return any(_TEST_WORD.search(segment) for segment in path)
+
+
+def is_private_namespace(path: Sequence[str]) -> bool:
+    """Say whether a namespace path is private to the tree.
+
+    A path is private when it is a test namespace, or when a segment is
+    anonymous (""), `detail` or `self_test`, or ends in `_self_test`,
+    `_smoke`, `_test` or `_layout`.
+
+    Args:
+        path: A namespace path, as namespace_path() returns it
+
+    Returns:
+        True when the path is private
+    """
+    if is_test_namespace(path):
+        return True
+    for segment in path:
+        if segment in ("", "detail", "self_test") or segment.endswith(_PRIVATE_SUFFIXES):
+            return True
+    return False
+
+
+_SCOPES = ("declaration_list", "compound_statement", "field_declaration_list", "translation_unit")
+
+
+def _scope_of(node: Node) -> Node:
+    """Return the nearest block, namespace body or class body around a node."""
+    owner = node.ancestor_of_type(*_SCOPES)
+    return node.tree.root if owner is None else owner
+
+
+class NamespaceAlias(NamedTuple):
+    """One `namespace name = target;` definition.
+
+    target holds the parts of the aliased namespace.  scope is the block or
+    namespace body that the alias is visible in.
+    """
+
+    name: str
+    target: tuple[str, ...]
+    scope: Node
+    node: Node
+    is_global: bool = False
+
+
+def namespace_aliases(tree: Tree) -> list[NamespaceAlias]:
+    """Return every namespace alias in a tree, in source order.
+
+    Args:
+        tree: A parsed file
+
+    Returns:
+        One NamespaceAlias for each alias definition whose target is a name
+    """
+    found: list[NamespaceAlias] = []
+    for node in tree.find("namespace_alias_definition"):
+        name = node.child_by_field("name")
+        targets = [child for child in _named_non_comment(node) if child.field != "name"]
+        if name is None or not targets:
+            continue
+        parts = qualified_parts(targets[0])
+        if parts is None:
+            continue
+        found.append(NamespaceAlias(name.text, parts[1], _scope_of(node), node, parts[0]))
+    return found
+
+
+def _encloses(outer: Node, inner: Node) -> bool:
+    """Say whether a node's span contains another node of the same tree."""
+    return outer.tree is inner.tree and outer.start <= inner.start and inner.end <= outer.end
+
+
+def resolve_namespace(
+    parts: Sequence[str],
+    at: Node | None,
+    aliases: Sequence[NamespaceAlias],
+    *,
+    is_global: bool = False,
+) -> tuple[str, ...]:
+    """Replace a leading namespace alias in a name by the namespace it names.
+
+    An alias applies when its name equals the first part, and it is visible
+    at `at`: it lies in the same tree, its scope encloses `at` and it ends
+    before `at`.  When `at` is None, every alias applies.  The innermost
+    visible alias wins.  The replacement repeats until no alias applies, so
+    an alias of an alias resolves, and a cycle stops after 32 steps.
+
+    Args:
+        parts: The parts of the name
+        at: The node where the name is used, or None
+        aliases: The aliases to apply
+        is_global: True when the name starts at `::`, which no alias can prefix
+
+    Returns:
+        The resolved parts
+    """
+    current = tuple(parts)
+    global_now = is_global
+    for _step in range(32):
+        if not current or global_now:
+            break
+        best: NamespaceAlias | None = None
+        for alias in aliases:
+            if alias.name != current[0]:
+                continue
+            if at is not None:
+                if not _encloses(alias.scope, at) or alias.node.end > at.start:
+                    continue
+                if best is not None and not _encloses(best.scope, alias.scope):
+                    continue
+            best = alias
+        if best is None:
+            break
+        current = best.target + current[1:]
+        global_now = best.is_global
+    return current
+
+
+def alias_closure(aliases: Sequence[NamespaceAlias], seeds: Iterable[Sequence[str]]) -> frozenset[str]:
+    """Return the names of the aliases that denote one of the seed namespaces.
+
+    Each alias target resolves through the other aliases, with no scope
+    check, and the alias joins when the result equals a seed.
+
+    Args:
+        aliases: The aliases, usually from several trees
+        seeds: The full parts of each namespace of interest
+
+    Returns:
+        The alias names that stand for a seed namespace
+    """
+    wanted = {tuple(seed) for seed in seeds}
+    names: set[str] = set()
+    for alias in aliases:
+        if resolve_namespace(alias.target, None, aliases, is_global=alias.is_global) in wanted:
+            names.add(alias.name)
+    return frozenset(names)
+
+
+class UsingDecl(NamedTuple):
+    """One target of a `using` declaration or directive.
+
+    kind is "namespace" for a using-directive, "enum" for `using enum`, and
+    "declaration" otherwise.  A declaration with two targets gives two
+    records.
+    """
+
+    target: tuple[str, ...]
+    is_directive: bool
+    scope: Node
+    node: Node
+    is_global: bool = False
+    kind: str = "declaration"
+
+
+def using_names(tree: Tree) -> list[UsingDecl]:
+    """Return every target of every using declaration in a tree, in source order.
+
+    Args:
+        tree: A parsed file
+
+    Returns:
+        One UsingDecl for each target whose name can be read
+    """
+    found: list[UsingDecl] = []
+    for node in tree.find("using_declaration"):
+        direct = node.gap_tokens()
+        kind = "namespace" if "namespace" in direct else "enum" if "enum" in direct else "declaration"
+        scope = _scope_of(node)
+        for child in _named_non_comment(node):
+            parts = qualified_parts(child)
+            if parts is None:
+                continue
+            found.append(UsingDecl(parts[1], kind == "namespace", scope, node, parts[0], kind))
+    return found
+
+
+# ── Expressions and literals ─────────────────────────────────────────────────
+
+def operator_of(node: Node) -> str:
+    """Return the operator of a binary or assignment expression.
+
+    The operator is the text of the tokens between the left and the right
+    operand, so a comment beside it cannot change the result.
+
+    Args:
+        node: A binary_expression or assignment_expression
+
+    Returns:
+        The operator, for example `==` or `<<=`, or "" when the node has no
+        left and right operand
+    """
+    left = node.child_by_field("left")
+    right = node.child_by_field("right")
+    if left is None or right is None:
+        return ""
+    return "".join(token.text for token in _lex(node.tree.slice(left.end, right.start), left.end[0], directives=False))
+
+
+_INTEGER_SUFFIX = re.compile(r"(?:[uU](?:ll|LL|l|L|z|Z)?|(?:ll|LL|l|L|z|Z)[uU]?)$")
+
+
+def number_value(node: Node) -> int | None:
+    """Return the value of an integer literal node.
+
+    Digit separators, the base prefixes 0x, 0b and 0, and the integer
+    suffixes are handled.  A floating literal gives None.
+
+    Args:
+        node: A number_literal node
+
+    Returns:
+        The integer value, or None when the literal is not an integer
+    """
+    if node.type != "number_literal":
+        return None
+    text = node.text.replace("'", "")
+    text = _INTEGER_SUFFIX.sub("", text)
+    try:
+        if text[:2] in ("0x", "0X"):
+            return int(text[2:], 16)
+        if text[:2] in ("0b", "0B"):
+            return int(text[2:], 2)
+        if len(text) > 1 and text[0] == "0" and text.isdigit():
+            return int(text, 8)
+        return int(text, 10)
+    except ValueError:
+        return None
+
+
+# ── Attributes and pragmas ───────────────────────────────────────────────────
+
+class Attribute(NamedTuple):
+    """One attribute, from `[[ns::name(args)]]` or `__attribute__((name(args)))`.
+
+    namespace is None for an attribute with no prefix.  A GNU
+    `__attribute__` spelling reports the namespace "gnu", because it names
+    the same attribute as `[[gnu::name]]`.
+    """
+
+    namespace: str | None
+    name: str
+    arguments: list[Node]
+    node: Node
+
+    @property
+    def qualified(self) -> str:
+        """Return `namespace::name`, or the bare name when there is no namespace."""
+        return self.name if self.namespace is None else f"{self.namespace}::{self.name}"
+
+
+def _attributes_of(holder: Node) -> Iterator[Attribute]:
+    """Yield the attributes of one attribute_declaration or attribute_specifier."""
+    if holder.type == "attribute_declaration":
+        # `[[using gnu: hot, cold]]` puts the namespace on the first attribute
+        # as the `namespace` field, and it applies to every attribute in the list.
+        shared: str | None = None
+        for attribute in holder.children_of_type("attribute"):
+            using_namespace = attribute.child_by_field("namespace")
+            if using_namespace is not None:
+                shared = using_namespace.text
+            prefix = attribute.child_by_field("prefix")
+            name = attribute.child_by_field("name")
+            if name is None:
+                continue
+            lists = attribute.children_of_type("argument_list")
+            arguments = _named_non_comment(lists[0]) if lists else []
+            yield Attribute(prefix.text if prefix is not None else shared, name.text, arguments, attribute)
+    elif holder.type == "attribute_specifier":
+        for argument_list in holder.children_of_type("argument_list"):
+            for item in _named_non_comment(argument_list):
+                if item.type == "call_expression":
+                    function = item.child_by_field("function")
+                    lists = item.children_of_type("argument_list")
+                    name_text = None if function is None else leaf_name(function)
+                    if name_text is not None:
+                        yield Attribute("gnu", name_text, _named_non_comment(lists[0]) if lists else [], item)
+                else:
+                    name_text = leaf_name(item)
+                    if name_text is not None:
+                        yield Attribute("gnu", name_text, [], item)
+
+
+def attributes(tree: Tree) -> list[Attribute]:
+    """Return every attribute in a tree, in source order.
+
+    Args:
+        tree: A parsed file
+
+    Returns:
+        One Attribute for each attribute in each attribute list
+    """
+    found: list[Attribute] = []
+    for holder in tree.find("attribute_declaration", "attribute_specifier"):
+        found.extend(_attributes_of(holder))
+    return found
+
+
+def attribute_names(node: Node) -> frozenset[str]:
+    """Return the qualified names of the attributes attached directly to a node.
+
+    `[[no_unique_address]]` gives "no_unique_address", `[[msvc::no_unique_address]]`
+    gives "msvc::no_unique_address" and `__attribute__((packed))` gives
+    "gnu::packed".
+
+    Args:
+        node: A declaration, field_declaration, class specifier or similar node
+
+    Returns:
+        The names of the attributes in the attribute lists that are direct
+        children of the node
+    """
+    names: set[str] = set()
+    for holder in node.children_of_type("attribute_declaration", "attribute_specifier"):
+        names.update(attribute.qualified for attribute in _attributes_of(holder))
+    return frozenset(names)
+
+
+_ESCAPES = {"\\\"": "\"", "\\'": "'", "\\\\": "\\", "\\n": "\n", "\\t": "\t", "\\?": "?"}
+
+
+def _string_value(literal: Node) -> str:
+    """Return the value of a string_literal node with its simple escapes decoded."""
+    pieces: list[str] = []
+    for child in literal.children:
+        if child.type == "string_content":
+            pieces.append(child.text)
+        elif child.type == "escape_sequence":
+            pieces.append(_ESCAPES.get(child.text, child.text))
+    return "".join(pieces)
+
+
+def pragmas(tree: Tree) -> Iterator[tuple[Node, str]]:
+    """Yield each `#pragma` directive and each `_Pragma` operator with its text.
+
+    Args:
+        tree: A parsed file
+
+    Yields:
+        (node, text), where text is the pragma text after `#pragma`, or the
+        decoded string of a `_Pragma` call
+    """
+    for node in tree.find("preproc_call", "pragma_operator"):
+        if node.type == "preproc_call":
+            directive = node.child_by_field("directive")
+            if directive is None or directive.text.replace(" ", "").replace("\t", "") != "#pragma":
+                continue
+            argument = node.child_by_field("argument")
+            yield (node, "" if argument is None else argument.text.strip())
+        else:
+            literals = list(node.descendants("string_literal"))
+            yield (node, _string_value(literals[0]) if literals else "")
+
+
+# ── Comments, prose and markers ──────────────────────────────────────────────
+
+def prose_nodes(tree: Tree) -> Iterator[Node]:
+    """Yield every comment, string literal and raw string literal in a tree.
+
+    A guard that reads prose reads these nodes, never the source text, so a
+    word inside code cannot match.
+
+    Args:
+        tree: A parsed file
+
+    Yields:
+        Each prose node, in source order
+    """
+    yield from tree.find("comment", "string_literal", "raw_string_literal")
+
+
+def comments_by_row(tree: Tree) -> dict[int, list[Node]]:
+    """Map each zero-based row to the comment nodes that occupy it.
+
+    A block comment over several rows appears under each of its rows.  The
+    map is computed once for each tree.
+
+    Args:
+        tree: A parsed file
+
+    Returns:
+        Row to comment nodes, in source order
+    """
+    if tree._comment_rows is None:
+        rows: dict[int, list[Node]] = {}
+        for comment in tree.find("comment"):
+            for row in range(comment.start[0], comment.end[0] + 1):
+                rows.setdefault(row, []).append(comment)
+        tree._comment_rows = rows
+    return tree._comment_rows
+
+
+_STATEMENTS = frozenset({
+    "expression_statement", "return_statement", "declaration", "field_declaration",
+    "alias_declaration", "type_definition", "using_declaration", "static_assert_declaration",
+    "namespace_alias_definition", "break_statement", "continue_statement", "goto_statement",
+    "throw_statement", "co_return_statement", "co_yield_statement", "contract_assert_statement",
+    "if_statement", "while_statement", "do_statement", "for_statement", "for_range_loop",
+    "switch_statement", "case_statement", "labeled_statement", "try_statement",
+    "preproc_def", "preproc_function_def", "preproc_call", "preproc_include",
+    "function_definition", "concept_definition", "friend_declaration", "template_instantiation",
+})
+_BODY_TYPES = frozenset({
+    "compound_statement", "field_declaration_list", "declaration_list", "enumerator_list",
+    "requirement_seq",
+})
+
+
+def enclosing_statement(node: Node) -> Node:
+    """Return the nearest statement or declaration that holds a node.
+
+    A template_declaration is never the answer, so a node in a class
+    template gets its member declaration, not the whole template.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The statement node, or the node itself when no statement holds it
+    """
+    if node.type in _STATEMENTS:
+        return node
+    owner = node.ancestor_of_type(*_STATEMENTS)
+    return node if owner is None else owner
+
+
+def _statement_last_row(stmt: Node) -> int:
+    """Return the last row of a statement's head: its end, or the row its body opens on."""
+    for child in stmt.children:
+        if child.type in _BODY_TYPES and child.field in ("body", "consequence"):
+            return child.start[0]
+    return stmt.end[0]
+
+
+def has_marker(stmt: Node, marker: str, *, rows_above: int = 0) -> bool:
+    """Say whether a comment near a statement holds a marker text.
+
+    A comment counts when it starts on a row from the statement's first row
+    to its last row.  For a statement with a body, such as an `if`, the last
+    row is the row the body opens on.  With rows_above, a run of comment-only
+    rows directly above the statement also counts, up to that many rows.
+
+    Args:
+        stmt: A statement, usually from enclosing_statement()
+        marker: The text to find inside the comment
+        rows_above: How many comment-only rows above the statement count
+
+    Returns:
+        True when a counted comment holds the marker
+    """
+    tree = stmt.tree
+    rows = comments_by_row(tree)
+    first = stmt.start[0]
+    last = _statement_last_row(stmt)
+    for row in range(first, last + 1):
+        for comment in rows.get(row, ()):
+            if comment.start[0] == row and marker in comment.text:
+                return True
+    row = first - 1
+    remaining = rows_above
+    # A row above counts only while it holds comments and no code.
+    while remaining > 0 and row >= 0 and row in rows and site_key(tree, row) == "":
+        if any(marker in comment.text for comment in rows[row]):
+            return True
+        remaining -= 1
+        row -= 1
+    return False
+
+
+def site_key(tree: Tree, row: int) -> str:
+    """Return the content key of a source row: its text minus comments, trimmed.
+
+    A key names a site by its code, not by its line number, so an edit above
+    the site cannot move the key.  The comment spans come from the tree, so a
+    `//` inside a string stays in the key.
+
+    Args:
+        tree: A parsed file
+        row: A zero-based row
+
+    Returns:
+        The row text with every comment span removed, stripped at both ends
+    """
+    starts = tree._starts()
+    if row >= len(starts):
+        return ""
+    data = tree.source
+    lo = starts[row]
+    hi = starts[row + 1] - 1 if row + 1 < len(starts) else len(data)
+    keep = bytearray(data[lo:hi])
+    for comment in comments_by_row(tree).get(row, ()):
+        begin = comment.start[1] if comment.start[0] == row else 0
+        end = comment.end[1] if comment.end[0] == row else len(keep)
+        keep[begin:end] = b"\0" * (end - begin)
+    return keep.replace(b"\0", b"").decode("utf-8", "replace").strip()
+
+
+# ── Calls, functions and parameters ──────────────────────────────────────────
+
+def calls(tree: Tree, names: Iterable[str] | None = None) -> Iterator[tuple[tuple[str, ...], Node]]:
+    """Yield each call expression with the parts of the name it calls.
+
+    `a::b::f(x)` gives ("a", "b", "f"), `obj.f(x)` and `p->f(x)` give ("f",),
+    and `x.template f<T>(y)` gives ("f",).  A call through an expression with
+    no name, such as a lambda call, is left out.
+
+    Args:
+        tree: A parsed file
+        names: When given, only calls whose last part is one of these names
+
+    Yields:
+        (parts, call_expression node), in source order
+    """
+    wanted = None if names is None else frozenset(names)
+    for node in tree.find("call_expression"):
+        function = node.child_by_field("function")
+        if function is None:
+            continue
+        if function.type == "field_expression":
+            field = function.child_by_field("field")
+            parts = None if field is None else qualified_parts(field)
+        else:
+            parts = qualified_parts(function)
+        if parts is None or not parts[1]:
+            continue
+        if wanted is not None and parts[1][-1] not in wanted:
+            continue
+        yield (parts[1], node)
+
+
+def _function_declarator(node: Node) -> Node | None:
+    """Return the function_declarator of a function, a declaration or a declarator."""
+    current: Node | None = node
+    if current is not None and current.type in ("function_definition", "declaration", "field_declaration"):
+        current = current.child_by_field("declarator")
+    while current is not None and current.type != "function_declarator":
+        if current.type not in _DECLARATORS and current.type != "parenthesized_declarator":
+            return None
+        inner = current.child_by_field("declarator")
+        if inner is None and current.type == "parenthesized_declarator":
+            named = _named_non_comment(current)
+            inner = named[0] if named else None
+        current = inner
+    return current
+
+
+def contract_clauses(declarator: Node) -> list[Node]:
+    """Return the `pre` and `post` specifiers of a function, in source order.
+
+    Args:
+        declarator: A function_declarator, or a function_definition or
+            declaration that holds one
+
+    Returns:
+        The function_contract_specifier nodes
+    """
+    function = _function_declarator(declarator)
+    return [] if function is None else function.children_of_type("function_contract_specifier")
+
+
+_PARAMETER_TYPES = (
+    "parameter_declaration", "optional_parameter_declaration", "variadic_parameter_declaration",
+)
+
+
+def parameters(function: Node) -> list[tuple[str, Node]]:
+    """Return the parameters of a function with their names.
+
+    Args:
+        function: A function_definition, a declaration or a function_declarator
+
+    Returns:
+        (name, parameter node) for each parameter in order.  An unnamed
+        parameter has the name "".
+    """
+    declarator = _function_declarator(function)
+    if declarator is None:
+        return []
+    parameter_list = declarator.child_by_field("parameters")
+    if parameter_list is None:
+        return []
+    found: list[tuple[str, Node]] = []
+    for parameter in parameter_list.children_of_type(*_PARAMETER_TYPES):
+        inner = parameter.child_by_field("declarator")
+        found.append(("" if inner is None else leaf_name(inner) or "", parameter))
+    return found
+
+
+_CLASS_SPECIFIERS = ("class_specifier", "struct_specifier", "union_specifier")
+
+
+def enclosing_function(node: Node) -> tuple[str, ...] | None:
+    """Return the name of the function whose definition holds a node.
+
+    The name holds the enclosing classes, outermost first, then the parts of
+    the declarator name, so a member defined in its class and one defined out
+    of line give the same result.  Namespaces are not part of it: use
+    namespace_path() for those.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The parts of the function name, or None when no function definition
+        holds the node or its name cannot be read
+    """
+    owner = node.ancestor_of_type("function_definition")
+    if owner is None:
+        return None
+    declarator = _function_declarator(owner)
+    name = None if declarator is None else declarator.child_by_field("declarator")
+    parts = None if name is None else qualified_parts(name)
+    if parts is None:
+        return None
+    classes: list[str] = []
+    holder = owner.ancestor_of_type(*_CLASS_SPECIFIERS)
+    while holder is not None:
+        class_name = holder.child_by_field("name")
+        if class_name is not None:
+            text = leaf_name(class_name)
+            if text is not None:
+                classes.append(text)
+        holder = holder.ancestor_of_type(*_CLASS_SPECIFIERS)
+    return tuple(reversed(classes)) + parts[1]
+
+
+# ── Declarations and templates ───────────────────────────────────────────────
+
+class Declaration(NamedTuple):
+    """One name that a declaration at namespace scope introduces.
+
+    kind is one of class, struct, union, enum, function, variable, alias,
+    typedef, concept, namespace_alias or using.  scope_parts holds the
+    qualifier of a qualified declarator name, for example ("C",) for an
+    out-of-line `C::member`.
+    """
+
+    ns: tuple[str, ...]
+    name: str
+    kind: str
+    forward_only: bool
+    node: Node
+    scope_parts: tuple[str, ...] = ()
+
+
+_CONTAINERS = frozenset({
+    "translation_unit", "declaration_list", "preproc_if", "preproc_ifdef", "preproc_else",
+    "preproc_elif", "preproc_elifdef",
+})
+
+
+def _name_and_scope(name_node: Node | None) -> tuple[str, tuple[str, ...]]:
+    """Split a declared name node into its last part and its qualifier."""
+    if name_node is None:
+        return ("", ())
+    parts = qualified_parts(name_node)
+    if parts is None or not parts[1]:
+        text = leaf_name(name_node)
+        return (text or "", ())
+    return (parts[1][-1], parts[1][:-1])
+
+
+def _declarations_of(item: Node, ns: tuple[str, ...]) -> Iterator[Declaration]:
+    """Yield the Declarations of one namespace-scope item."""
+    kind = item.type
+    if kind == "template_declaration":
+        for inner in _named_non_comment(item):
+            if inner.field != "parameters" and inner.type != "requires_clause":
+                yield from _declarations_of(inner, ns)
+        return
+    if kind in (*_CLASS_SPECIFIERS, "enum_specifier"):
+        name, scope = _name_and_scope(item.child_by_field("name"))
+        yield Declaration(ns, name, kind.removesuffix("_specifier"), item.child_by_field("body") is None,
+                          item, scope)
+        return
+    if kind == "function_definition":
+        declarator = _function_declarator(item)
+        name_node = None if declarator is None else declarator.child_by_field("declarator")
+        name, scope = _name_and_scope(name_node)
+        yield Declaration(ns, name, "function", False, item, scope)
+        return
+    if kind == "declaration":
+        type_node = item.child_by_field("type")
+        if type_node is not None and type_node.type in (*_CLASS_SPECIFIERS, "enum_specifier") \
+                and type_node.child_by_field("body") is not None:
+            yield from _declarations_of(type_node, ns)
+        is_extern = any(
+            child.type == "storage_class_specifier" and child.text == "extern" for child in item.children
+        )
+        for declarator in item.children:
+            if declarator.field != "declarator":
+                continue
+            function = _function_declarator(declarator)
+            if function is not None:
+                name, scope = _name_and_scope(function.child_by_field("declarator"))
+                yield Declaration(ns, name, "function", True, item, scope)
+            else:
+                name, scope = _name_and_scope(declarator)
+                yield Declaration(ns, name, "variable", is_extern and declarator.type != "init_declarator",
+                                  item, scope)
+        return
+    if kind == "alias_declaration":
+        name, scope = _name_and_scope(item.child_by_field("name"))
+        yield Declaration(ns, name, "alias", False, item, scope)
+        return
+    if kind == "type_definition":
+        for declarator in item.children:
+            if declarator.field == "declarator":
+                name, scope = _name_and_scope(declarator)
+                yield Declaration(ns, name, "typedef", False, item, scope)
+        return
+    if kind == "concept_definition":
+        name, scope = _name_and_scope(item.child_by_field("name"))
+        yield Declaration(ns, name, "concept", False, item, scope)
+        return
+    if kind == "namespace_alias_definition":
+        name_node = item.child_by_field("name")
+        yield Declaration(ns, "" if name_node is None else name_node.text, "namespace_alias", False, item)
+        return
+    if kind == "using_declaration" and "namespace" not in item.gap_tokens():
+        for child in _named_non_comment(item):
+            parts = qualified_parts(child)
+            if parts is not None and parts[1]:
+                yield Declaration(ns, parts[1][-1], "using", False, item, parts[1][:-1])
+
+
+def namespace_scope_declarations(tree: Tree) -> Iterator[Declaration]:
+    """Yield every name that a declaration at namespace scope introduces.
+
+    The walk enters the translation unit, each namespace body, each
+    `extern "C"` body and each arm of a preprocessor conditional.  It does
+    not enter a class body or a function body.
+
+    Args:
+        tree: A parsed file
+
+    Yields:
+        One Declaration for each declared name, in source order
+    """
+    yield from _walk_namespace_scope(tree.root)
+
+
+def _walk_namespace_scope(container: Node) -> Iterator[Declaration]:
+    """Yield the Declarations of one namespace-scope container, in source order.
+
+    The recursion depth is the nesting depth of namespaces, linkage bodies
+    and preprocessor arms, which stays small.
+    """
+    for item in _named_non_comment(container):
+        if item.type in _CONTAINERS:
+            yield from _walk_namespace_scope(item)
+        elif item.type in ("namespace_definition", "linkage_specification"):
+            body = item.child_by_field("body")
+            if body is None:
+                continue
+            if body.type == "declaration_list":
+                yield from _walk_namespace_scope(body)
+            else:
+                yield from _declarations_of(body, namespace_path(body))
+        else:
+            yield from _declarations_of(item, namespace_path(item))
+
+
+class TemplateDecl(NamedTuple):
+    """One template declaration, primary or specialization.
+
+    kind is class, function, variable, alias, concept or other.  An explicit
+    specialization has an empty parameter list, and a partial one has a
+    non-empty list and a template-id name.
+    """
+
+    name: str
+    kind: str
+    is_specialization: bool
+    partial: bool
+    node: Node
+    scope_parts: tuple[str, ...] = ()
+
+
+def _template_item(template: Node) -> Node | None:
+    """Return the declaration that a template_declaration introduces."""
+    for child in _named_non_comment(template):
+        if child.field == "parameters" or child.type == "requires_clause":
+            continue
+        return child
+    return None
+
+
+def _is_template_id(node: Node | None) -> bool:
+    """Say whether a declared name is a template-id, at its end."""
+    while node is not None and node.type == "qualified_identifier":
+        node = node.child_by_field("name")
+    return node is not None and node.type in _TEMPLATE_NAMES
+
+
+def specializations(tree: Tree) -> Iterator[TemplateDecl]:
+    """Yield every template declaration in a tree, primary and specialization.
+
+    A declaration with two template headers, such as the out-of-line member
+    template of a class template, is reported once, for the inner header.
+
+    Args:
+        tree: A parsed file
+
+    Yields:
+        One TemplateDecl for each template declaration, in source order
+    """
+    for template in tree.find("template_declaration"):
+        item = _template_item(template)
+        if item is None or item.type == "template_declaration":
+            continue
+        params = template.child_by_field("parameters")
+        has_params = params is not None and bool(_named_non_comment(params))
+        name_node: Node | None
+        if item.type in (*_CLASS_SPECIFIERS, "enum_specifier"):
+            kind = "class"
+            name_node = item.child_by_field("name")
+        elif item.type in ("declaration", "function_definition", "field_declaration"):
+            function = _function_declarator(item)
+            if function is not None:
+                kind = "function"
+                name_node = function.child_by_field("declarator")
+            else:
+                kind = "variable"
+                name_node = item.child_by_field("declarator")
+                if name_node is not None and name_node.type == "init_declarator":
+                    name_node = name_node.child_by_field("declarator")
+        elif item.type == "alias_declaration":
+            kind = "alias"
+            name_node = item.child_by_field("name")
+        elif item.type == "concept_definition":
+            kind = "concept"
+            name_node = item.child_by_field("name")
+        else:
+            kind = "other"
+            name_node = None
+        is_specialization = _is_template_id(name_node)
+        name, scope = _name_and_scope(name_node)
+        yield TemplateDecl(name, kind, is_specialization, is_specialization and has_params, template, scope)
 
 
 def _self_test() -> int:
@@ -512,17 +1861,21 @@ def _self_test() -> int:
     import tempfile
 
     failures: list[str] = []
+    negatives: list[str] = []
 
-    def check(name: str, ok: bool) -> None:
+    def check(name: str, ok: bool, *, negative: bool = False) -> None:
         """Record one check result and print it.
 
         Args:
             name: What the check asserts
             ok: Whether it held
+            negative: True for a negative control, which proves a refusal
         """
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")
         if not ok:
             failures.append(name)
+        if negative:
+            negatives.append(name)
 
     print("tsast --self-test")
     with tempfile.TemporaryDirectory() as work:
@@ -586,6 +1939,7 @@ def _self_test() -> int:
         check(
             "strict parse raises for an unrostered error, naming the roster",
             "tsast.UNPARSEABLE" in reason,
+            negative=True,
         )
         # Positive control: the same file passes when strict is off.
         tolerated = list(parse([broken], strict=False))
@@ -676,6 +2030,8 @@ def _self_test() -> int:
             parse_text("typed.cpp", qualified_row.replace("Label<1>", "U")).diagnostic is None,
         )
 
+        _self_test_helpers(check, parse_text, Path(work))
+
     # Negative control: a rostered file is admitted, and it really does carry an
     # error, so the roster entry is not stale.
     rostered = Path("include/crucible/perf/bpf/vmlinux.h")
@@ -684,13 +2040,388 @@ def _self_test() -> int:
         check(
             "a rostered file is admitted and still carries its error",
             len(admitted) == 1 and admitted[0].diagnostic is not None,
+            negative=True,
+        )
+        check(
+            "cpp_files leaves the rostered file out, unless it is asked for",
+            rostered not in cpp_files("include/crucible/perf/bpf")
+            and rostered in cpp_files("include/crucible/perf/bpf", include_unparseable=True),
+            negative=True,
         )
 
     if failures:
         print(f"tsast --self-test: FAILED — {len(failures)} of the checks did not hold")
         return 2
-    print("tsast --self-test: every check passes, 6 of them negative controls.")
+    print(f"tsast --self-test: every check passes, {len(negatives)} of them negative controls.")
     return 0
+
+
+def _self_test_helpers(
+    check: Callable[..., None],
+    parse_text: Callable[[str, str], Tree],
+    work: Path,
+) -> None:
+    """Check each name, scope, token and declaration helper, positive and negative.
+
+    Args:
+        check: The recorder of the enclosing self-test
+        parse_text: Parses one source text in the scratch directory
+        work: The scratch directory
+    """
+    # parse(): a path the CLI cannot read stops the batch.  The trees before
+    # it arrive, and then the short count raises.
+    one = work / "one.cpp"
+    one.write_text("int a;\n", encoding="utf-8")
+    three = work / "three.cpp"
+    three.write_text("int c;\n", encoding="utf-8")
+    broken = work / "broken.cpp"
+    delivered: list[Tree] = []
+    stopped = ""
+    try:
+        for tree in parse([broken, work / "missing.cpp", three], strict=False):
+            delivered.append(tree)
+    except ParseError as exc:
+        stopped = str(exc)
+    check(
+        "an unreadable path in a batch raises and names the path, after the trees before it",
+        len(delivered) == 1 and "missing.cpp" in stopped and "1 of 3" in stopped,
+        negative=True,
+    )
+    check("a batch of readable paths gives one tree for each", len(list(parse([one, three]))) == 2)
+
+    # Tokens and spellings.
+    tokens_tree = parse_text(
+        "tokens.cpp",
+        "int f(int&& x, int /*c*/ y) { return x << 6 && y; }\n"
+        "std :: /*c*/ vector < int > v;\n"
+        "unsigned\n  long w;\n",
+    )
+    declarator = next(tokens_tree.find("function_declarator"))
+    check(
+        "tokens() carries the anonymous tokens of a node",
+        "&&" in declarator.tokens() and "(" in declarator.tokens(),
+    )
+    check("tokens() drops a comment by default", "/*c*/" not in declarator.tokens(), negative=True)
+    check(
+        "tokens() keeps a comment when skip admits it",
+        "/*c*/" in declarator.tokens(skip=lambda _node: False),
+    )
+    body_ops = [node for node in tokens_tree.find("binary_expression") if operator_of(node) == "&&"]
+    check("the operators of a nested expression read apart", len(body_ops) == 1)
+    vector_decl = list(tokens_tree.find("declaration"))[0]
+    type_node = vector_decl.child_by_field("type")
+    check(
+        "spelled() drops the comment and the space inside a qualified template name",
+        type_node is not None and spelled(type_node) == "std::vector<int>",
+    )
+    unsigned_long = list(tokens_tree.find("sized_type_specifier"))
+    check(
+        "spelled() keeps one space between two words, so two keywords stay apart",
+        len(unsigned_long) == 1 and spelled(unsigned_long[0]) == "unsigned long",
+    )
+
+    # Names.
+    names_tree = parse_text(
+        "names.cpp",
+        "namespace a::b { int x; }\n"
+        "namespace cr = ::crucible /*x*/ ::safety;\n"
+        "struct C { ~C(); };\n"
+        "C::~C() {}\n"
+        "auto operator<=>(C const&, C const&) = default;\n"
+        "decltype(C{})::type y;\n"
+        "int z = a::b::c<int>(1);\n",
+    )
+    specifiers = list(names_tree.find("nested_namespace_specifier"))
+    by_text = {node.text: node for node in specifiers}
+    check(
+        "qualified_parts reads a leading :: through a comment",
+        qualified_parts(by_text["::crucible /*x*/ ::safety"]) == (True, ("crucible", "safety")),
+    )
+    check(
+        "qualified_parts does not call a nested namespace name global",
+        qualified_parts(by_text["a::b"]) == (False, ("a", "b")),
+        negative=True,
+    )
+    destructor = [node for node in names_tree.find("qualified_identifier") if node.text == "C::~C"]
+    check(
+        "leaf_name and qualified_parts read a destructor",
+        len(destructor) == 1 and leaf_name(destructor[0]) == "~C"
+        and qualified_parts(destructor[0]) == (False, ("C", "~C")),
+    )
+    spaceship = list(names_tree.find("operator_name"))
+    check(
+        "leaf_name reads an operator name whole",
+        len(spaceship) == 1 and leaf_name(spaceship[0]) == "operator<=>",
+    )
+    decltype_scope = [node for node in names_tree.find("qualified_identifier") if node.text.startswith("decltype")]
+    check(
+        "qualified_parts refuses a decltype scope",
+        len(decltype_scope) == 1 and qualified_parts(decltype_scope[0]) is None,
+        negative=True,
+    )
+    call = next(names_tree.find("call_expression"))
+    check(
+        "leaf_name of a call to a template names the template",
+        leaf_name(call) == "c" and leaf_name(next(names_tree.find("number_literal"))) is None,
+    )
+
+    # Namespaces, aliases and using-declarations.
+    scope_tree = parse_text(
+        "scope.cpp",
+        "namespace a::b { inline namespace v1 { namespace { int hidden; } } }\n"
+        "void early() { cs::Refined r0; }\n"
+        "namespace cr = crucible;\n"
+        "namespace cs = cr::safety;\n"
+        "void user() { cs::Refined r1; }\n"
+        "using namespace ::crucible::ledger;\n"
+        "enum class E { A };\n"
+        "void k() { using enum E; }\n"
+        "using Alias = int;\n",
+    )
+    hidden = [node for node in scope_tree.find("identifier") if node.text == "hidden"]
+    check(
+        "namespace_path reads nested, inline and anonymous namespaces",
+        len(hidden) == 1 and namespace_path(hidden[0]) == ("a", "b", "v1", ""),
+    )
+    check(
+        "namespace_path with skip_inline leaves the inline namespace out",
+        len(hidden) == 1 and namespace_path(hidden[0], skip_inline=True) == ("a", "b", ""),
+    )
+    check(
+        "namespace_path of a top-level node is empty",
+        namespace_path(scope_tree.root) == (),
+        negative=True,
+    )
+    check(
+        "is_test_namespace splits words at underscores",
+        is_test_namespace(("crucible", "selftest")) and is_test_namespace(("x", "fmt_tests"))
+        and not is_test_namespace(("crucible", "contest")),
+    )
+    check(
+        "is_private_namespace admits detail, anonymous and the private suffixes only",
+        is_private_namespace(("a", "detail")) and is_private_namespace(("",))
+        and is_private_namespace(("x_smoke",)) and not is_private_namespace(("a", "details"))
+        and not is_private_namespace(("crucible", "safety")),
+    )
+    aliases = namespace_aliases(scope_tree)
+    uses = [node for node in scope_tree.find("qualified_identifier") if node.text == "cs::Refined"]
+    check(
+        "resolve_namespace applies an alias of an alias at a later use",
+        len(uses) == 2 and resolve_namespace(("cs", "Refined"), uses[1], aliases)
+        == ("crucible", "safety", "Refined"),
+    )
+    check(
+        "resolve_namespace does not apply an alias above its definition",
+        len(uses) == 2 and resolve_namespace(("cs", "Refined"), uses[0], aliases) == ("cs", "Refined"),
+        negative=True,
+    )
+    check(
+        "alias_closure names the aliases of a namespace and no other",
+        alias_closure(aliases, [("crucible", "safety")]) == frozenset({"cs"}),
+    )
+    usings = using_names(scope_tree)
+    check(
+        "using_names reads a global qualified using-directive",
+        any(u.is_directive and u.is_global and u.target == ("crucible", "ledger") for u in usings),
+    )
+    check(
+        "using_names reads `using enum` as its own kind",
+        any(u.kind == "enum" and u.target == ("E",) and not u.is_directive for u in usings),
+    )
+    check(
+        "using_names leaves an alias declaration out",
+        not any(u.target == ("Alias",) for u in usings),
+        negative=True,
+    )
+
+    # Expressions and literals.
+    expr_tree = parse_text(
+        "expr.cpp",
+        "bool t = a /* c */ == b;\n"
+        "void f() { v <<= 6; g(1); }\n"
+        "long n1 = 0x9e37'79b9'7f4a'7c15ULL; int n2 = 0b101; int n3 = 017; double n4 = 1.5;\n",
+    )
+    operators = {operator_of(node) for node in expr_tree.find("binary_expression", "assignment_expression")}
+    check("operator_of reads an operator beside a comment, and a compound one", {"==", "<<="} <= operators)
+    check(
+        "operator_of of a call is empty",
+        operator_of(next(expr_tree.find("call_expression"))) == "",
+        negative=True,
+    )
+    values = [number_value(node) for node in expr_tree.find("number_literal")]
+    check(
+        "number_value reads separators, suffixes, hex, binary and octal",
+        0x9E3779B97F4A7C15 in values and 5 in values and 15 in values,
+    )
+    check("number_value refuses a floating literal", None in values, negative=True)
+
+    # Attributes and pragmas.
+    attr_tree = parse_text(
+        "attrs.cpp",
+        "struct P { [[msvc::no_unique_address]] int a; [[no_unique_address]] int b; };\n"
+        "__attribute__((hot, optimize(\"O3\"))) void h1();\n"
+        "[[using gnu: hot, cold]] void h2();\n"
+        "#pragma GCC optimize(\"fast-math\")\n"
+        "_Pragma(\"GCC optimize(\\\"O3\\\")\")\n"
+        "#error stop\n",
+    )
+    fields = list(attr_tree.find("field_declaration"))
+    check(
+        "attribute_names keeps a namespace prefix apart from the bare name",
+        len(fields) == 2 and attribute_names(fields[0]) == frozenset({"msvc::no_unique_address"})
+        and attribute_names(fields[1]) == frozenset({"no_unique_address"}),
+    )
+    qualified = [attribute.qualified for attribute in attributes(attr_tree)]
+    check(
+        "attributes reads the GNU spelling and a using-prefix list",
+        qualified.count("gnu::hot") == 2 and "gnu::optimize" in qualified and "gnu::cold" in qualified,
+    )
+    found_pragmas = [text for _node, text in pragmas(attr_tree)]
+    check(
+        "pragmas reads #pragma and _Pragma, and decodes the operator string",
+        found_pragmas == ['GCC optimize("fast-math")', 'GCC optimize("O3")'],
+    )
+    check("pragmas leaves #error out", all("stop" not in text for text in found_pragmas), negative=True)
+
+    # Comments, prose, markers and keys.
+    prose_tree = parse_text(
+        "prose.cpp",
+        "/* one\n   two\n   three */\n"
+        "int test_value = 1;\n"
+        "// MARK: above\n"
+        "void w() { return; }\n"
+        "void u(int x) {\n"
+        "  if (cond(x)) {  // MARK: head\n"
+        "    // MARK: body\n"
+        "    act(x);\n"
+        "  }\n"
+        "  int v = sink(x);\n"
+        "}\n"
+        "int y = ::write(1, \"a//b\", 3);  // KEY-NOTE\n",
+    )
+    rows = comments_by_row(prose_tree)
+    check("comments_by_row lists a block comment under each of its rows", all(r in rows for r in (0, 1, 2)))
+    prose_texts = [node.text for node in prose_nodes(prose_tree)]
+    check(
+        "prose_nodes gives comments and strings, not code",
+        '"a//b"' in prose_texts and not any("test_value" in text for text in prose_texts),
+    )
+    calls_by_name = {parts[-1]: node for parts, node in calls(prose_tree)}
+    head_stmt = enclosing_statement(calls_by_name["cond"])
+    check(
+        "has_marker reads the head row of an if statement",
+        head_stmt.type == "if_statement" and has_marker(head_stmt, "MARK: head"),
+    )
+    check(
+        "has_marker does not read the body of an if statement",
+        not has_marker(head_stmt, "MARK: body"),
+        negative=True,
+    )
+    sink_stmt = enclosing_statement(calls_by_name["sink"])
+    check(
+        "has_marker with rows_above reads a comment-only row, not a code row",
+        has_marker(enclosing_statement(next(prose_tree.find("return_statement"))).parent.parent,
+                   "MARK: above", rows_above=1)
+        and not has_marker(sink_stmt, "MARK", rows_above=2),
+    )
+    key_row = calls_by_name["write"].start[0]
+    check(
+        "site_key keeps a // inside a string and drops the comment",
+        site_key(prose_tree, key_row) == 'int y = ::write(1, "a//b", 3);',
+    )
+
+    # Calls, functions and parameters.
+    func_tree = parse_text(
+        "funcs.cpp",
+        "struct K { void m() { call(1); } void n(); };\n"
+        "void K::n() { obj.f(1); a::b::g(2); x.template h<int>(3); [](){}(); }\n"
+        "int top = seed(4);\n"
+        "constexpr int p(int n, int, auto... rest) noexcept pre(n > 0) post(r: r == n) { return n; }\n",
+    )
+    call_parts = [parts for parts, _node in calls(func_tree)]
+    check(
+        "calls reads member, qualified and template-member calls",
+        ("f",) in call_parts and ("a", "b", "g") in call_parts and ("h",) in call_parts,
+    )
+    check(
+        "calls leaves out a call through a lambda, and filters by name",
+        len(call_parts) == 5 and [p for p, _n in calls(func_tree, ["g"])] == [("a", "b", "g")],
+        negative=True,
+    )
+    owners = {parts[-1]: enclosing_function(node) for parts, node in calls(func_tree)}
+    check(
+        "enclosing_function gives the same shape in class and out of line",
+        owners["call"] == ("K", "m") and owners["f"] == ("K", "n"),
+    )
+    check("enclosing_function is None outside a function body", owners["seed"] is None, negative=True)
+    definitions = list(func_tree.find("function_definition"))
+    last = definitions[-1]
+    check(
+        "contract_clauses and parameters read a function with a pack and an unnamed parameter",
+        [clause.text for clause in contract_clauses(last)] == ["pre(n > 0)", "post(r: r == n)"]
+        and [name for name, _node in parameters(last)] == ["n", "", "rest"],
+    )
+
+    # Declarations and templates.
+    decl_tree = parse_text(
+        "decls.cpp",
+        "struct S;\n"
+        "extern \"C\" { int cfun(int); }\n"
+        "#if X\nint in_if;\n#else\nint in_else;\n#endif\n"
+        "namespace n1 { struct Inner { int member; }; }\n"
+        "int C::out_of_line() { return 0; }\n"
+        "template <class T> struct Box {};\n"
+        "template <> struct trait<int> {};\n"
+        "template <class T> struct part<T*> {};\n"
+        "template <> struct ns::trait<long> {};\n"
+        "template <class T> inline constexpr bool is_x_v = false;\n"
+        "template <> inline constexpr bool is_x_v<int> = true;\n",
+    )
+    declarations = list(namespace_scope_declarations(decl_tree))
+    by_name = {(decl.ns, decl.name): decl for decl in declarations}
+    check(
+        "namespace_scope_declarations reads a forward declaration, a linkage body and both #if arms",
+        by_name[((), "S")].forward_only and ((), "cfun") in by_name
+        and ((), "in_if") in by_name and ((), "in_else") in by_name,
+    )
+    check(
+        "namespace_scope_declarations does not enter a class body",
+        (("n1",), "Inner") in by_name and not any(decl.name == "member" for decl in declarations),
+        negative=True,
+    )
+    check(
+        "an out-of-line member keeps its qualifier in scope_parts",
+        by_name[((), "out_of_line")].scope_parts == ("C",),
+    )
+    templates = {(t.name, t.scope_parts, t.is_specialization, t.partial) for t in specializations(decl_tree)}
+    check(
+        "specializations tells primary, explicit and partial apart, qualified or not",
+        {("Box", (), False, False), ("trait", (), True, False), ("part", (), True, True),
+         ("trait", ("ns",), True, False), ("is_x_v", (), False, False), ("is_x_v", (), True, False)}
+        <= templates,
+    )
+
+    # pp_tokens and the scope policy.
+    spliced = pp_tokens("a <::std [::x] start_life\\\ntime_as\nnext", 7)
+    texts = [token.text for token in spliced]
+    check(
+        "pp_tokens joins a spliced name and keeps its first row",
+        "start_lifetime_as" in texts and spliced[texts.index("start_lifetime_as")].row == 7,
+    )
+    check(
+        "pp_tokens reports the row after a splice and a newline",
+        spliced[texts.index("next")].row == 9,
+    )
+    check(
+        "pp_tokens splits <:: and [:: as the standard does",
+        texts[:3] == ["a", "<", "::"] and texts[4:6] == ["[", "::"],
+    )
+    check(
+        "is_in_cpp_scope refuses a C file and a rostered file",
+        is_in_cpp_scope("include/x.h") and not is_in_cpp_scope("src/prog.bpf.c")
+        and not is_in_cpp_scope("include/crucible/perf/bpf/vmlinux.h"),
+        negative=True,
+    )
 
 
 if __name__ == "__main__":

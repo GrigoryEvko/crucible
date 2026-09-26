@@ -84,7 +84,7 @@ def scan() -> int:
         0 when the roster is exact, 2 on any finding, 3 when the kit is absent
     """
     try:
-        files = tsast.cpp_files(*ROOTS)
+        files = tsast.cpp_files(*ROOTS, include_unparseable=True)
     except tsast.KitMissing as exc:
         print(f"check-parse-clean: {exc}", file=sys.stderr)
         return 3
