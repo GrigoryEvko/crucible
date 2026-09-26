@@ -1,17 +1,18 @@
 // NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture for GAPS-196. Calibration is startup/background work, not a
-// foreground hot-path operation.
+// Calibration is startup or background work, not a foreground hot-path
+// operation, so the context gate refuses the foreground context. The
+// foreground context is built only from the producer claim, so the
+// fixture names it in an unevaluated operand.
 
 #include <crucible/cog/Calibrate.h>
 
-namespace cog = crucible::cog;
-namespace eff = crucible::effects;
+#include <fixy/Ctx.h>
 
-int main() {
-    cog::CogIdentity id{};
-    id.uuid = cog::Uuid{1, 2};
-    id.kind = cog::CogKind::Gpu;
-    auto result = cog::calibrate_cog<cog::CogKind::Gpu>(eff::HotFgCtx{}, id);
-    return result.has_value() ? 0 : 1;
-}
+#include <utility>
+
+namespace cog = crucible::cog;
+
+using Refused = decltype(cog::calibrate_cog<cog::CogKind::Gpu>(std::declval<::fixy::HotFgCtx const&>(), cog::CogIdentity{}));
+
+int main() { return 0; }

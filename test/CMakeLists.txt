@@ -6698,30 +6698,33 @@ crucible_neg_compile_test(neg_congestion_control_custom_missing_name
 crucible_neg_compile_test(neg_congestion_control_custom_invalid_name
   "constraints not satisfied|CustomCcModule|has_value")
 
-# GAPS-196 — cog/Calibrate.h per-Cog calibration substrate.
-#   * neg_calibrate_psu_rail: only schedulable substrates calibrate.
-#   * neg_calibrate_zero_latency_quantile: measured latency must be positive.
-#   * neg_calibrate_hot_fg_ctx: calibration is Init/Bg work, never hot Fg.
+# cog/Calibrate.h, the per-Cog calibration schema.
+#   * neg_calibrate_psu_rail: only a kind with caps and an opcode table
+#     calibrates.
+#   * neg_calibrate_zero_latency_quantile and
+#     neg_calibrate_misordered_latency_quantile: each conjunct of the
+#     calibration predicate refuses its own half of a bad triple.
+#   * neg_calibrate_nonpositive_throughput: a throughput is a finite
+#     positive rate.
+#   * neg_calibrate_hot_fg_ctx: calibration is Init or Bg work, never the
+#     hot foreground.
+# A refused checked mint reports the mint call with its predicate and its
+# refused value, so each refinement fixture pins all three.
 crucible_neg_compile_cog_test(neg_calibrate_psu_rail
   "constraints.*not satisfied"
-    "CalibratableCogKind|HasOpcodeTable|HasCaps")
-# These three fixtures cannot carry a second regex, and cog_neg is
-# therefore not under the two-regex floor.  Each witnesses a Refined
-# construction whose predicate is false, and GCC reports that as
-# `_Refined.h:157: contract predicate is false in constant expression`
-# — the location of the shared `pre(Pred(v))` clause.  The diagnostic
-# names neither the predicate nor the refined type, so the only text
-# that distinguishes one of these fixtures from any other Refined
-# violation anywhere in the translation unit is the `In file included
-# from` chain, which names a header rather than a gate.  Adding a
-# second regex here would assert something the compiler never says.
-# Closing cog_neg needs the substrate to name the predicate in the
-# contract message first.
+    "CalibratableCogKind")
 crucible_neg_compile_cog_test(neg_calibrate_zero_latency_quantile
-    "contract|precondition|calibration_quantiles_valid|Refined|CalibrationLatencyQuantiles")
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "mint_refined<(fixy::)?refined_algebra::AllOf<crucible::cog::AreQuantilesOrdered\\(\\), crucible::cog::IsMedianPositive\\(\\)>\\(\\), crucible::cog::LatencyQuantiles>\\(crucible::cog::LatencyQuantiles\\{0, 1, 2\\}\\)")
+crucible_neg_compile_cog_test(neg_calibrate_misordered_latency_quantile
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "mint_refined<(fixy::)?refined_algebra::AllOf<crucible::cog::AreQuantilesOrdered\\(\\), crucible::cog::IsMedianPositive\\(\\)>\\(\\), crucible::cog::LatencyQuantiles>\\(crucible::cog::LatencyQuantiles\\{90, 50, 70\\}\\)")
+crucible_neg_compile_cog_test(neg_calibrate_nonpositive_throughput
+    "__builtin_trap\\(\\).* is not a constant expression"
+    "mint_refined<(fixy::)?refined_algebra::AllOf<(fixy::)?IsPositive\\(\\), (fixy::)?BoundedAbove<1.0e\\+30>\\(\\)>\\(\\), double>\\(0.0\\)")
 crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
   "constraints.*not satisfied"
-    "CtxFitsCalibration|CtxAdmits|Init|Bg")
+    "CtxFitsCalibration")
 
 # GAPS-192 — cog/NicConfig.h ethtool/sysctl/tc-qdisc config substrate.
 #   * neg_nic_config_raw_apply: privileged apply requires tagged config.

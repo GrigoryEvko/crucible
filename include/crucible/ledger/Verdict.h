@@ -396,13 +396,14 @@ enum class EvidenceFault : std::uint8_t {
     if (evidence.sample_count < kMinSampleCount) {
         return EvidenceFault::TooFewSamples;
     }
-    // cog's own ordering predicate, so the ledger and the calibration
-    // schema cannot come to different conclusions about the same triple.
+    // The two conjuncts of cog's calibration predicate, read one at a
+    // time so each refusal names its own fault. The ledger and the
+    // calibration schema cannot come to different conclusions about the
+    // same triple.
     if (!cog::quantile_ordered(evidence.quantiles)) {
         return EvidenceFault::QuantilesOutOfOrder;
     }
-    // A p50 of zero is a timer that did not run, not a free operation.
-    if (evidence.quantiles.p50_ns == 0u) {
+    if (!cog::median_positive(evidence.quantiles)) {
         return EvidenceFault::ZeroMedian;
     }
     if (evidence.within_run_cv_ppm > kMaxWithinRunCvPpm) {

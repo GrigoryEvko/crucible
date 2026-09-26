@@ -1,15 +1,19 @@
 #include <crucible/cog/Calibrate.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cassert>
 #include <cstdio>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <type_traits>
 
 namespace cog = crucible::cog;
-namespace eff = crucible::effects;
-namespace saf = crucible::safety;
+namespace eff = ::fixy;
+namespace testing = ::foundation::effects::testing;
 
 namespace {
 
@@ -68,9 +72,28 @@ void test_admission() {
     assert(!bad_throughput.has_value());
     assert(bad_throughput.error() == cog::CalibrationError::InvalidThroughput);
 
+    // A NaN fails the positive conjunct and an infinity fails the ceiling.
+    assert(!cog::admit_throughput_per_sec(std::numeric_limits<double>::quiet_NaN()).has_value());
+    assert(!cog::admit_throughput_per_sec(std::numeric_limits<double>::infinity()).has_value());
+    assert(!cog::admit_throughput_per_sec(0.0).has_value());
+
     auto bad_drift = cog::admit_drift_basis_points(0);
     assert(!bad_drift.has_value());
     assert(bad_drift.error() == cog::CalibrationError::InvalidDriftBasisPoints);
+    assert(!cog::admit_drift_basis_points(10001).has_value());
+    assert(cog::admit_drift_basis_points(10000).has_value());
+
+    assert(!cog::admit_runtime_budget_ms(0).has_value());
+    assert(cog::admit_runtime_budget_ms(86400000u).has_value());
+    assert(!cog::admit_runtime_budget_ms(86400001u).has_value());
+
+    // A count above the storage width is refused before the narrowing,
+    // never truncated into range.
+    auto wide_count = cog::admit_sample_count(65536u + 7u);
+    assert(!wide_count.has_value());
+    assert(wide_count.error() == cog::CalibrationError::InvalidSampleCount);
+    assert(!cog::admit_sample_count(0u).has_value());
+    assert(cog::admit_sample_count(65535u)->value() == 65535u);
 
     std::printf("  test_admission: PASSED\n");
 }
@@ -160,27 +183,30 @@ void test_nic_result() {
     std::printf("  test_nic_result: PASSED\n");
 }
 
+eff::ColdInitCtx init_ctx() { return eff::ColdInitCtx{testing::init()}; }
+eff::BgDrainCtx bg_ctx() { return eff::BgDrainCtx{testing::bg()}; }
+
 void test_backend_boundaries() {
-    auto init = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity());
+    auto init = cog::calibrate_cog<cog::CogKind::Gpu>(init_ctx(), gpu_identity());
     assert(!init.has_value());
     assert(init.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(eff::BgDrainCtx{::crucible::effects::testing::bg()}, gpu_identity());
+    auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(bg_ctx(), gpu_identity());
     assert(!bg.has_value());
     assert(bg.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, nic_identity());
+    auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(init_ctx(), nic_identity());
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == cog::CalibrationError::KindMismatch);
 
     std::array<cog::GpuOpcode, 1> opcodes{cog::GpuOpcode::GemmPlain};
-    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(),
+    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(),
                                                                        std::span<const cog::GpuOpcode>{opcodes});
     assert(!specific.has_value());
     assert(specific.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{::crucible::effects::testing::init()}, gpu_identity(),
-                                                                             std::span<const cog::GpuOpcode>{});
+    auto empty_specific =
+        cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(), std::span<const cog::GpuOpcode>{});
     assert(!empty_specific.has_value());
     assert(empty_specific.error() == cog::CalibrationError::EmptyOpcodeSet);
 
@@ -193,7 +219,7 @@ void test_drift_gate() {
         .threshold_bps = *cog::admit_drift_basis_points(1000),
     };
     assert(!cog::should_recalibrate(below));
-    auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{::crucible::effects::testing::bg()}, gpu_identity(), below);
+    auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), below);
     assert(!below_result.has_value());
     assert(below_result.error() == cog::CalibrationError::DriftBelowThreshold);
 
@@ -202,7 +228,7 @@ void test_drift_gate() {
         .threshold_bps = *cog::admit_drift_basis_points(1000),
     };
     assert(cog::should_recalibrate(above));
-    auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{::crucible::effects::testing::bg()}, gpu_identity(), above);
+    auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), above);
     assert(!above_result.has_value());
     assert(above_result.error() == cog::CalibrationError::BackendUnavailable);
 
@@ -220,9 +246,20 @@ int main() {
     static_assert(cog::CtxFitsCalibration<eff::ColdInitCtx>);
     static_assert(cog::CtxFitsCalibration<eff::BgDrainCtx>);
     static_assert(!cog::CtxFitsCalibration<eff::HotFgCtx>);
-    static_assert(std::is_trivially_copyable_v<cog::CalibrationPlan>);
-    assert(cog::calibration_error_name(cog::CalibrationError::BackendUnavailable)
-           == std::string_view{"BackendUnavailable"});
+    static_assert(!cog::CtxFitsCalibration<eff::TestRunnerCtx>);
+    static_assert(std::is_trivially_copy_constructible_v<cog::CalibrationPlan>);
+    static_assert(!std::is_trivially_copyable_v<cog::CalibrationPlan>,
+                  "a plan holds refined members, so no byte copy builds one");
+
+    // The conjunction refuses both ways a triple can be wrong.
+    static_assert(cog::calibration_quantiles_valid(cog::LatencyQuantiles{1u, 2u, 3u}));
+    static_assert(!cog::calibration_quantiles_valid(cog::LatencyQuantiles{0u, 2u, 3u}));
+    static_assert(!cog::calibration_quantiles_valid(cog::LatencyQuantiles{3u, 2u, 1u}));
+
+    static_assert(::foundation::reflect::enum_name(cog::CalibrationError::BackendUnavailable) == "BackendUnavailable");
+    static_assert(::foundation::reflect::enum_name(cog::CalibrationError::InvalidDriftBasisPoints)
+                  == "InvalidDriftBasisPoints");
+    static_assert(::foundation::reflect::enum_name(static_cast<cog::CalibrationError>(200)) == "<unknown CalibrationError>");
 
     std::printf("test_calibrate:\n");
     test_admission();
