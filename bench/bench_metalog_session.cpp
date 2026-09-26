@@ -105,9 +105,7 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
 
 }  // namespace
 
-int main(int argc, char** argv) {
-    const char* json = (argc > 1) ? argv[1] : nullptr;
-
+int main() {
     static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(::crucible::MetaLog*));
     static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(::crucible::MetaLog*));
 
@@ -133,18 +131,17 @@ int main(int argc, char** argv) {
     bench::emit_reports_text(reports);
 
     std::printf("\n=== MetaLogSession deltas ===\n");
-    bench::Compare cmps[] = {
+    const bench::Compare cmps[] = {
         bench::compare(reports[0], reports[1]),
         bench::compare(reports[0], reports[2]),
     };
-    for (const auto& c : cmps)
-        c.print_text(stdout);
+    bench::emit_compares(cmps);
 
     std::printf("\n=== verdict (TIER A — structural) ===\n");
     std::printf("  PermissionedMetaLog handles are pointer-sized.\n");
     std::printf("  Timed MetaLog deltas above are informational; the bodies copy a\n");
     std::printf("  168-byte TensorMeta and are sensitive to harness layout.\n");
 
-    if (json) bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports, bench::env_json());
     return 0;
 }

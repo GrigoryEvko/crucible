@@ -126,7 +126,8 @@ int main() {
     std::printf("  Cap:     %zu slots (1M — never fills)\n", kCap);
     std::printf("  Method:  bare vs wrapped per primitive,\n");
     std::printf("           bench::compare with Mann-Whitney U test\n");
-    std::printf("  PASS:    every pair [indistinguishable] OR Δp99 ≤ 5%%\n\n");
+    std::printf("  PASS:    no pair flagged [REGRESS] (Δp99 > %.0f%% with p < 0.01)\n\n",
+                bench::Compare::kFlagDeltaP99Pct);
 
     bench::Report reports[] = {
         // 0..1   MPSC push
@@ -145,25 +146,23 @@ int main() {
         bench::compare(reports[0], reports[1]),
         bench::compare(reports[2], reports[3]),
     };
-    for (const auto& c : cmps)
-        c.print_text(stdout);
+    bench::emit_compares(cmps);
 
     // ── Headline verdict ──────────────────────────────────────────────
     std::printf("\n=== verdict ===\n");
     int regressions = 0;
     for (const auto& c : cmps) {
-        if (c.distinguishable && c.delta_p99_pct > 5.0) {
+        if (c.is_regression()) {
             std::printf("  REGRESS: %s → %s  Δp99=%+.2f%%\n", c.a_name.c_str(), c.b_name.c_str(), c.delta_p99_pct);
             ++regressions;
         }
     }
     if (regressions == 0) {
-        std::printf("  PASS — both permissioned MPSC pairs are\n");
-        std::printf("         statistically indistinguishable from\n");
-        std::printf("         their bare counterparts (zero-cost claim\n");
-        std::printf("         empirically validated).\n");
+        std::printf("  PASS — no permissioned MPSC pair is slower than\n");
+        std::printf("         its bare counterpart by more than %.0f%% Δp99.\n", bench::Compare::kFlagDeltaP99Pct);
     } else {
-        std::printf("  FAIL — %d wrapper(s) regressed beyond 5%% Δp99.\n", regressions);
+        std::printf("  FAIL — %d wrapper(s) regressed beyond %.0f%% Δp99.\n", regressions,
+                    bench::Compare::kFlagDeltaP99Pct);
     }
 
     bench::emit_reports_json(reports, json);

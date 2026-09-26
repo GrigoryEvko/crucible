@@ -1015,14 +1015,29 @@ struct Compare {
     double z = 0;
     bool distinguishable = false;  // |z| > 2.576 → p < 0.01
 
+    // The p99 change, in percent, past which a distinguishable pair counts
+    // as a regression or an improvement.
+    static constexpr double kFlagDeltaP99Pct = 5.0;
+
+    [[nodiscard]] bool is_regression() const noexcept { return distinguishable && delta_p99_pct > kFlagDeltaP99Pct; }
+    [[nodiscard]] bool is_improvement() const noexcept { return distinguishable && delta_p99_pct < -kFlagDeltaP99Pct; }
+
     // One-line summary — C stdio + std::string::c_str() only, noexcept
     // for the same reasons as Report::print_text.
+    // A pair that the test tells apart but whose p99 moves less than the
+    // threshold says so, and does not claim to be indistinguishable.
     void print_text(FILE* out = stdout) const noexcept {
-        const char* flag = "  [indistinguishable]";
-        if (distinguishable && delta_p99_pct > 5.0) flag = "  [REGRESS]";
-        if (distinguishable && delta_p99_pct < -5.0) flag = "  [IMPROVE]";
-        std::fprintf(out, "  Δ %s → %s:  Δp50=%+6.2f%%  Δp99=%+6.2f%%  Δμ=%+6.2f%%  z=%+5.2f%s\n", a_name.c_str(),
-                     b_name.c_str(), delta_p50_pct, delta_p99_pct, delta_mean_pct, z, flag);
+        std::fprintf(out, "  Δ %s → %s:  Δp50=%+6.2f%%  Δp99=%+6.2f%%  Δμ=%+6.2f%%  z=%+5.2f", a_name.c_str(),
+                     b_name.c_str(), delta_p50_pct, delta_p99_pct, delta_mean_pct, z);
+        if (is_regression()) {
+            std::fputs("  [REGRESS]\n", out);
+        } else if (is_improvement()) {
+            std::fputs("  [IMPROVE]\n", out);
+        } else if (distinguishable) {
+            std::fprintf(out, "  [distinguishable, |Δp99| <= %.0f%%]\n", kFlagDeltaP99Pct);
+        } else {
+            std::fputs("  [indistinguishable]\n", out);
+        }
     }
 };
 
@@ -1795,6 +1810,12 @@ template <typename Body>
 inline void emit_reports_text(std::span<const Report> reports, FILE* out = stdout) noexcept {
     for (const auto& r : reports)
         r.print_text(out);
+}
+
+// Emit the one-line summary of every Compare, in the order given.
+inline void emit_compares(std::span<const Compare> compares, FILE* out = stdout) noexcept {
+    for (const auto& c : compares)
+        c.print_text(out);
 }
 
 // Emit the JSON array tail for every Report, iff `json`. No-op otherwise.

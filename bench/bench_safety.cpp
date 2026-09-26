@@ -5,7 +5,8 @@
 // measurable cycles, it invalidates the load-bearing claim that the
 // safety layer is zero-cost after -O3. bench::compare() between every
 // adjacent bare/wrapped pair makes this a one-line pass/fail per
-// wrapper (look for [indistinguishable]; anything else is a regression).
+// wrapper (look for [REGRESS]; a pair the test tells apart by less than
+// the threshold is flagged as distinguishable but is no regression).
 //
 // Each wrapped arm builds its value through the wrapper's mint door, so
 // the arm measures the door's cost too.  mint_refined runs the predicate,
