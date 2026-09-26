@@ -312,27 +312,6 @@ def schema_facts(schema_text: str, model: ModuleType) -> tuple[int, int, int, bo
     return len(arguments), tensor_mask, list_mask, parsed.is_mutable
 
 
-def enclosing_namespaces(node: tsast.Node) -> tuple[str, ...]:
-    """Return the names of the namespaces that enclose a node, outermost first.
-
-    Args:
-        node: A node of a parsed ops header
-
-    Returns:
-        One entry for each namespace level, with an anonymous namespace as ""
-    """
-    parts: list[str] = []
-    owner = node.ancestor_of_type("namespace_definition")
-    while owner is not None:
-        named = owner.child_by_field("name")
-        leaves = [] if named is None else (
-            [named.text] if named.type == "namespace_identifier"
-            else [leaf.text for leaf in named.children_of_type("namespace_identifier")])
-        parts[:0] = leaves or [""]
-        owner = owner.ancestor_of_type("namespace_definition")
-    return tuple(parts)
-
-
 def member_name(field: tsast.Node) -> tuple[str, bool] | None:
     """Return the name that a member declaration declares, and whether it is a function.
 
@@ -390,7 +369,7 @@ def ops_of_tree(tree: tsast.Tree, model: ModuleType) -> list[Op]:
     for struct in tree.find("struct_specifier"):
         named = struct.child_by_field("name")
         body = struct.child_by_field("body")
-        if named is None or body is None or enclosing_namespaces(struct) != OPS_NAMESPACE:
+        if named is None or body is None or tsast.namespace_path(struct) != OPS_NAMESPACE:
             continue
         strings: dict[str, str] = {}
         functions: set[str] = set()
