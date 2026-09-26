@@ -39,11 +39,15 @@ THE SITES
     a literal are not sites.  A call that spans lines is one site, keyed on
     the line of its name.
 
-WHAT THE PARSER CANNOT READ
-    A macro body is raw text.  The guard lexes it with scripts/cxx_lex.py and
-    applies the same two spellings as a pattern.  A file in
-    tsast.UNPARSEABLE gets the same lexical scan over its whole text.  A
-    parse error in any other file is a guard failure.
+MACRO BODIES
+    A macro body is parsed on its own (tsast.macro_bodies), with every
+    fragment joined, and the guard reads the same calls in its tree, so a
+    block comment inside the body cannot cut a member call away from its
+    object.  A body that the parser cannot read, such as one that pastes
+    tokens with ##, is read from its preprocessing tokens with the same two
+    spellings.  A marker on any row of the definition covers the calls of
+    its body.  The files of tsast.UNPARSEABLE are not C++ and are out of
+    scope.  A parse error in any other file is a guard failure.
 
 Usage:
   check-syscall-capability.py              scan; exit 1 on a violation, 2 on a stale entry
@@ -63,13 +67,13 @@ import os
 import re
 import sys
 import tempfile
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
-from cxx_lex import blank, line_of, splice  # noqa: E402
 
 SYSCALLS = frozenset("""
     socket bind listen connect accept send sendto sendmsg recv recvfrom recvmsg shutdown setsockopt getsockopt
@@ -101,12 +105,11 @@ assert KERNEL_ONLY <= SYSCALLS, "a kernel-only name is missing from SYSCALLS"
 
 ROOTS = ("include", "src", "vessel")
 EXCLUDED = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
-SUFFIXES = (".h", ".hh", ".hpp", ".cpp", ".cc", ".cxx", ".inl")
 ALLOWLIST = "scripts/syscall-capability-allowlist.txt"
 MARKER_WORD = "SYSCALL-CAP-OK"
 MARKER = re.compile(rf"{MARKER_WORD}:\s*\S")
-LEXICAL = re.compile(r"(?<![A-Za-z_0-9])::\s*(?P<global>[A-Za-z_]\w*)\s*\("
-                     r"|(?<![A-Za-z_0-9:.>\s])(?<![A-Za-z_0-9:.>])\s*(?P<bare>[A-Za-z_]\w*)\s*\(")
+# A bare kernel-only name after one of these tokens is part of a larger expression.
+NOT_BARE_AFTER = frozenset({"::", ".", "->", ">", ":"})
 # The statements that bound where a marker comment counts.
 STATEMENTS = frozenset({"expression_statement", "return_statement", "declaration", "field_declaration",
                         "condition_clause", "init_statement", "for_range_loop", "throw_statement"})
@@ -142,8 +145,7 @@ def in_scope(rel: Path) -> bool:
 
     A file of tsast.UNPARSEABLE is not C++, so it is out of scope.
     """
-    return (rel.suffix in SUFFIXES and bool(rel.parts) and rel.parts[0] in ROOTS
-            and rel.as_posix() not in tsast.UNPARSEABLE
+    return (tsast.is_in_cpp_scope(rel) and bool(rel.parts) and rel.parts[0] in ROOTS
             and not any(part in EXCLUDED or part.startswith("build") for part in rel.parts[:-1]))
 
 
@@ -163,11 +165,12 @@ def callee_name(call: tsast.Node) -> str | None:
     if callee is None:
         return None
     if callee.type == "identifier":
-        return callee.text if callee.text in KERNEL_ONLY else None
+        spelled = tsast.spelled(callee)
+        return spelled if spelled in KERNEL_ONLY else None
     if callee.type == "qualified_identifier" and callee.child_by_field("scope") is None:
         name = callee.child_by_field("name")
-        if name is not None and name.type == "identifier" and name.text in SYSCALLS:
-            return name.text
+        if name is not None and name.type == "identifier" and tsast.spelled(name) in SYSCALLS:
+            return tsast.spelled(name)
     return None
 
 
@@ -188,16 +191,47 @@ def statement_rows(node: tsast.Node) -> tuple[int, int]:
     return first, last
 
 
-def lexical_names(text: str) -> list[tuple[int, str]]:
-    """Return (zero-based row, syscall) for each syscall spelling in raw text, after the lexer blanks it."""
-    joined, joins = splice(text)
-    code, _ = blank(joined, blank_literals=True)
-    found = []
-    for match in LEXICAL.finditer(code):
-        name = match.group("global") or match.group("bare")
-        if (match.group("global") and name in SYSCALLS) or (match.group("bare") and name in KERNEL_ONLY):
-            found.append((line_of(joined, joins, match.start()) - 1, name))
-    return found
+def define_rows(define: tsast.Node) -> tuple[int, int]:
+    """Return the first and last row of a `#define`.
+
+    The parser ends a definition at column 0 of the row after it, because the
+    node holds the closing newline, so that row is not part of the definition.
+    """
+    return define.start[0], define.end[0] - (define.end[1] == 0)
+
+
+def token_calls(tokens: list[tsast.Token]) -> Iterator[tuple[int, set[str]]]:
+    """Yield (row, syscall names) for each syscall call in the tokens of a macro body that did not parse.
+
+    The spellings are the two that the tree reads: `::name(` with no name,
+    and no `>` of a template, right before the `::`, and a bare kernel-only
+    name with `(` after it and no name, `::`, `.`, `->`, `>` or `:` right
+    before it.  A raw `syscall(` names the x of each SYS_x among its
+    arguments.
+    """
+    for index, token in enumerate(tokens):
+        if token.kind != "identifier" or index + 1 >= len(tokens) or tokens[index + 1].text != "(":
+            continue
+        before = tokens[index - 1] if index >= 1 else None
+        if before is not None and before.text == "::":
+            prior = tokens[index - 2] if index >= 2 else None
+            is_call = token.text in SYSCALLS and (prior is None or (prior.kind != "identifier" and prior.text != ">"))
+        else:
+            is_call = token.text in KERNEL_ONLY and (before is None or (
+                before.kind not in ("identifier", "number") and before.text not in NOT_BARE_AFTER))
+        if not is_call:
+            continue
+        numbers: set[str] = set()
+        if token.text == "syscall":
+            depth, cursor = 0, index + 1
+            while cursor < len(tokens):
+                depth += {"(": 1, ")": -1}.get(tokens[cursor].text, 0)
+                if tokens[cursor].kind == "identifier" and tokens[cursor].text.startswith("SYS_"):
+                    numbers.add(tokens[cursor].text[4:])
+                if depth == 0:
+                    break
+                cursor += 1
+        yield token.row, numbers or {token.text}
 
 
 def holder_of(node: tsast.Node) -> tuple[str, ...]:
@@ -228,7 +262,8 @@ def syscall_numbers(call: tsast.Node) -> set[str]:
     arguments = call.child_by_field("arguments")
     if arguments is None:
         return set()
-    return {node.text[4:] for node in arguments.descendants("identifier") if node.text.startswith("SYS_")}
+    return {tsast.spelled(node)[4:] for node in arguments.descendants("identifier")
+            if tsast.spelled(node).startswith("SYS_")}
 
 
 @dataclass(frozen=True)
@@ -237,6 +272,25 @@ class Marker:
 
     path: str
     line: int
+
+
+@dataclass
+class Calls:
+    """The syscall calls of one file, by the row of the call's name.
+
+    For each row: the syscall names, the row spans where a marker covers a
+    call, and the holders of the calls.
+    """
+
+    names: dict[int, set[str]] = field(default_factory=dict)
+    spans: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
+    holders: dict[int, set[tuple[str, ...]]] = field(default_factory=dict)
+
+    def add(self, row: int, names: set[str], span: tuple[int, int], holder: tuple[str, ...]) -> None:
+        """Record one call."""
+        self.names.setdefault(row, set()).update(names)
+        self.spans.setdefault(row, []).append(span)
+        self.holders.setdefault(row, set()).add(holder)
 
 
 @dataclass
@@ -266,46 +320,55 @@ def scan(root: Path) -> Scan:
         site, and the names that each file with a site spells
     """
     found = Scan([], [], [], {})
+    trees: list[tsast.Tree] = []
+    calls: dict[str, Calls] = {}
     for tree in tsast.parse(scope_files(root), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
             found.failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        # row -> syscall names, row -> the rows its marker may sit on, row -> the holders of its calls
-        hits: dict[int, set[str]] = {}
-        spans: dict[int, list[tuple[int, int]]] = {}
-        holders: dict[int, set[tuple[str, ...]]] = {}
+        trees.append(tree)
+        calls[rel] = Calls()
         for call in tree.find("call_expression"):
             name = callee_name(call)
             if name is None:
                 continue
             callee = call.child_by_field("function")
             row = callee.end[0] if callee is not None else call.start[0]
-            if name == "syscall":
-                hits.setdefault(row, set()).update(syscall_numbers(call) or {"syscall"})
-            else:
-                hits.setdefault(row, set()).add(name)
-            spans.setdefault(row, []).append(statement_rows(call))
-            holders.setdefault(row, set()).add(holder_of(call))
-        for body in tree.find("preproc_arg"):
-            macro = body.parent.child_by_field("name") if body.parent is not None else None
-            for row, name in lexical_names(body.text):
-                hits.setdefault(body.start[0] + row, set()).add(name)
-                spans.setdefault(body.start[0] + row, []).append((body.start[0], body.end[0]))
-                holders.setdefault(body.start[0] + row, set()).add(() if macro is None else (macro.text,))
+            names = (syscall_numbers(call) or {name}) if name == "syscall" else {name}
+            calls[rel].add(row, names, statement_rows(call), holder_of(call))
+    for body in tsast.macro_bodies(trees):
+        record = calls[Path(body.define.tree.path).relative_to(root).as_posix()]
+        span = define_rows(body.define)
+        holder = (body.name,) if body.name else ()
+        if body.is_parsed:
+            for call in body.root.descendants("call_expression"):
+                name = callee_name(call)
+                if name is None:
+                    continue
+                callee = call.child_by_field("function")
+                anchor = callee.child_by_field("name") or callee
+                names = (syscall_numbers(call) or {name}) if name == "syscall" else {name}
+                record.add(body.origin(anchor)[0], names, span, holder)
+        else:
+            for row, names in token_calls(tsast.pp_tokens(body.text, body.first_row)):
+                record.add(row, names, span, holder)
+    for tree in trees:
+        rel = Path(tree.path).relative_to(root).as_posix()
+        record = calls[rel]
         markers: dict[int, list[tsast.Node]] = {}
         for comment in tree.find("comment"):
             if MARKER_WORD in comment.text:
                 markers.setdefault(comment.start[0], []).append(comment)
         used: set[int] = set()
         before = len(found.sites)
-        for row in sorted(hits):
-            covering = [comment for first, last in spans[row] for probe in range(first, last + 1)
+        for row in sorted(record.names):
+            covering = [comment for first, last in record.spans[row] for probe in range(first, last + 1)
                         for comment in markers.get(probe, ())]
             used.update(comment.index for comment in covering)
             if not any(MARKER.search(comment.text) for comment in covering):
-                found.sites.append(Site(rel, row + 1, f"{rel}:{tsast.site_key(tree, row)}", frozenset(hits[row]),
-                                        frozenset(holders[row])))
+                found.sites.append(Site(rel, row + 1, f"{rel}:{tsast.site_key(tree, row)}",
+                                        frozenset(record.names[row]), frozenset(record.holders[row])))
         found.dead.extend(Marker(rel, comment.line) for row in sorted(markers) for comment in markers[row]
                           if comment.index not in used)
         if len(found.sites) > before:
@@ -502,6 +565,12 @@ def self_test() -> int:
         "inline long literal() { return ::write(1, \"a//b\", 3); }  // SYSCALL-CAP-OK: // in a literal\n"  # 36
         "inline int nothing() { return 0; }  // SYSCALL-CAP-OK: a marker on no syscall\n"  # 37
         "inline int widened() { return ::renameat2(0, nullptr, 0, nullptr, 0); }\n"        # 38
+        "#define CTL(d) (d). /* c */ \\\n"                                                 # 39
+        "    ioctl(0)\n"                                                                   # 40
+        "#define PASTE_OPEN(p) ::openat(p##_fd, 0, 0)\n"                                   # 41
+        "#define RAW_IN_MACRO(n) ::syscall(\\\n"                                           # 42
+        "    SYS_gettid, n)\n"                                                             # 43
+        "#define MARKED_OPEN(p) ::openat(0, p, 0)  // SYSCALL-CAP-OK: fixture\n"           # 44
     )
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -521,7 +590,9 @@ def self_test() -> int:
                             (10, "a call whose name and arguments span lines"), (12, "a raw syscall"),
                             (13, "a call in a macro body"), (22, "a marker with no reason"),
                             (23, "a marker on a later statement"), (29, "a marker deeper in an if body"),
-                            (38, "a call of a syscall that the table gained with the dead-marker check")):
+                            (38, "a call of a syscall that the table gained with the dead-marker check"),
+                            (41, "a call in a macro body that pastes tokens"),
+                            (42, "a raw syscall in a macro body cut by a line splice")):
             expect(f"caught: {label}", line in lines)
         for line, label in ((4, "a marked call"), (6, "a call whose marker sits on its statement's last line"),
                             (14, "a line comment"), (15, "a block comment"), (16, "a string literal"),
@@ -529,16 +600,23 @@ def self_test() -> int:
                             (19, "a declaration"), (20, "a member call"), (21, "a call through a namespace"),
                             (26, "a condition call marked on its body's opening line"),
                             (33, "a condition call marked on its one-statement body"),
-                            (36, "a marked call whose line holds // in a string literal")):
+                            (36, "a marked call whose line holds // in a string literal"),
+                            (39, "a member call in a macro body split by a block comment"),
+                            (40, "a member call in a macro body split by a block comment"),
+                            (44, "a marked call in a macro body")):
             expect(f"not caught: {label}", line not in lines, True)
         dead_lines = {marker.line for marker in dead if marker.path == "src/planted/Sys.cpp"}
         expect("a marker on a statement with no syscall is dead", 37 in dead_lines)
         expect("a marker on a later statement or deeper in a body exempts nothing, so it is dead",
                {24, 31} <= dead_lines)
-        expect("a marker that exempts a site is not dead", not dead_lines & {4, 7, 22, 27, 34, 36}, True)
+        expect("a marker that exempts a site is not dead", not dead_lines & {4, 7, 22, 27, 34, 36, 44}, True)
         expect("a directory named test is out of scope", all(s.path != "src/test/Out.cpp" for s in sites), True)
         expect("the raw syscall names its SYS_ number",
                any(s.line == 12 and s.names == frozenset({"gettid"}) for s in sites))
+        expect("the raw syscall in a macro body names its SYS_ number",
+               any(s.line == 42 and s.names == frozenset({"gettid"}) for s in sites))
+        expect("the call in a macro body is held by the macro",
+               any(s.line == 13 and s.holders == frozenset({("OPEN_IN_MACRO",)}) for s in sites))
         expect("the planted file parses", not broken)
         with contextlib.redirect_stderr(io.StringIO()) as report:
             code = check(root)
