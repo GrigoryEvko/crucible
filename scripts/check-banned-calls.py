@@ -24,10 +24,10 @@ THE FOUR BANS
                        `#include <fstream>`.  A file there goes through
                        fixy::mint_file, safety::OwnedFile or
                        safety::FileHandle.  Roots: each include/crucible
-                       directory that CMakeLists.txt registers with
-                       crucible_register_fixy_only_directory, and its src/
-                       twin.  A registry that names no such directory fails
-                       the guard, because the ban would then read nothing.
+                       directory that scripts/fixy-only-paths.txt lists, and
+                       its src/ twin.  A list that names no such directory
+                       fails the guard, because the ban would then read
+                       nothing.
     process spawn      every reference to a C library function that creates
                        a process, replaces its image or reaps a child (fork,
                        vfork, clone, the exec family, posix_spawn, system,
@@ -46,15 +46,17 @@ THE FOUR BANS
     vendor, or a component that starts with build, is out of scope.  The
     reinterpret_cast ban also skips bench/.
 
-WHAT THE PARSER CANNOT READ
-    A macro body is one `preproc_arg` node of raw text.  The guard scans that
-    text with the lexer of scripts/cxx_lex.py, which drops comments, string
-    literals, character literals and raw strings, and it reports each banned
-    token that remains.  A file in tsast.UNPARSEABLE
-    gets the same lexical scan over its whole text.  A parse error in any
-    other file is a guard failure.  In raw text a spawn name counts unless
-    `.`, `->` or a qualifier other than std stands before it, so a name that
-    a macro only passes as an argument also counts, and needs a row.
+MACRO BODIES
+    The body of each #define is parsed as a C++ fragment (tsast.macro_bodies),
+    and the same node rules run on that tree.  In a fragment the name of a
+    declaration also counts for the spawn ban, because a body such as
+    `macro_name fork` is text that a use site completes.  A namespace alias
+    of std comes from the file that holds the #define.  A body that does not
+    parse, for example one with `#` or `##`, is read as preprocessing tokens:
+    a banned name counts unless `.` or `->` stands before it, and a spawn name
+    also counts only when no qualifier other than std or an alias of std
+    stands before it.  A file that the parser cannot read is a guard failure.
+    A file that is not C++ (tsast.is_in_cpp_scope) is out of scope.
 
 WHAT THE GUARD CANNOT SEE
     A name that a macro builds with `##`, a syscall number written as a
@@ -90,10 +92,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import cxx_lex  # noqa: E402
 import tsast  # noqa: E402
 
-SUFFIXES = (".h", ".hpp", ".cpp", ".cc")
 EXCLUDED_COMPONENTS = frozenset({"test", "examples", "third_party", "external", "vendor"})
 FILE_STREAMS = frozenset({
     "ofstream", "ifstream", "fstream", "filebuf",
@@ -110,8 +110,6 @@ SPAWN_NAMES = frozenset({
     "SYS_fork", "SYS_vfork", "SYS_clone", "SYS_clone3", "SYS_execve", "SYS_execveat",
     "__NR_fork", "__NR_vfork", "__NR_clone", "__NR_clone3", "__NR_execve", "__NR_execveat",
 })
-SPAWN_TOKEN = re.compile(r"(?:(?P<scope>[A-Za-z_]\w*)?\s*(?P<access>::|\.|->)\s*)?\b(?P<name>"
-                         + "|".join(sorted(SPAWN_NAMES, key=len, reverse=True)) + r")\b")
 # The data file that lists the fixy-only directories, one per line.
 FIXY_ONLY_PATHS = "scripts/fixy-only-paths.txt"
 
@@ -126,13 +124,29 @@ class Hit:
 
 
 @dataclass(frozen=True)
+class Scope:
+    """What a node rule needs to know about the text it reads.
+
+    Attributes:
+        std_names: std and every namespace alias of std in the file that
+            holds the text
+        is_fragment: True for the parse of a macro body, where the name of a
+            declaration is text that a use site completes
+    """
+
+    std_names: frozenset[str]
+    is_fragment: bool
+
+
+@dataclass(frozen=True)
 class Ban:
     """One banned construct, where it is banned, and how it is exempted.
 
     Attributes:
-        token: The lexical form, for a macro body and an unparseable file
-        token_filter: Decides whether one match of the token is a use, or
-            None when every match is
+        node_hits: The node rule, over a parse tree
+        token_hit: The rule over the preprocessing tokens of a macro body
+            that does not parse: the token list and an index, true when the
+            token at the index is a use
         excluded_prefixes: Repo-relative path prefixes that the ban skips
     """
 
@@ -142,17 +156,27 @@ class Ban:
     marker: str
     allowlist: str
     rule: str
-    token: re.Pattern[str]
-    node_hits: Callable[[tsast.Tree], Iterator[tsast.Node]]
-    token_filter: Callable[[re.Match[str]], bool] | None = None
+    node_hits: Callable[[tsast.Tree, Scope], Iterator[tsast.Node]]
+    token_hit: Callable[[list[tsast.Token], int, Scope], bool]
     excluded_prefixes: tuple[str, ...] = ()
 
 
-def _reinterpret_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
+def _after_member_access(tokens: list[tsast.Token], index: int) -> bool:
+    """Return True when a member access (`.` or `->`) stands before the token, past `template` and `X ::` pairs."""
+    at = index - 1
+    while at >= 1 and tokens[at].text == "::" and tokens[at - 1].kind == "identifier":
+        at -= 2
+    if at >= 0 and tokens[at].text == "template":
+        at -= 1
+    return at >= 0 and tokens[at].text in (".", "->")
+
+
+def _reinterpret_nodes(tree: tsast.Tree, scope: Scope) -> Iterator[tsast.Node]:
     """Yield each identifier token spelled reinterpret_cast.
 
     Args:
-        tree: One parsed file
+        tree: One parsed file or macro body
+        scope: Unused, the keyword has no other use
 
     Yields:
         The identifier node of each cast
@@ -160,6 +184,11 @@ def _reinterpret_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
     for node in tree.find("identifier"):
         if node.text == "reinterpret_cast":
             yield node
+
+
+def _reinterpret_token(tokens: list[tsast.Token], index: int, scope: Scope) -> bool:
+    """Return True for the keyword reinterpret_cast in the tokens of an unparsed macro body."""
+    return tokens[index].text == "reinterpret_cast"
 
 
 def _final_name(node: tsast.Node) -> tsast.Node | None:
@@ -185,11 +214,12 @@ def _final_name(node: tsast.Node) -> tsast.Node | None:
     return None
 
 
-def _reserve_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
+def _reserve_nodes(tree: tsast.Tree, scope: Scope) -> Iterator[tsast.Node]:
     """Yield the name token of each member call named reserve.
 
     Args:
-        tree: One parsed file
+        tree: One parsed file or macro body
+        scope: Unused, a member call has no namespace
 
     Yields:
         The `reserve` name node of each such call
@@ -204,14 +234,21 @@ def _reserve_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
             yield name
 
 
-def _file_stream_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
+def _reserve_token(tokens: list[tsast.Token], index: int, scope: Scope) -> bool:
+    """Return True for `reserve` after a member access and before `(` or `<` in an unparsed macro body."""
+    following = tokens[index + 1].text if index + 1 < len(tokens) else ""
+    return tokens[index].text == "reserve" and following in ("(", "<") and _after_member_access(tokens, index)
+
+
+def _file_stream_nodes(tree: tsast.Tree, scope: Scope) -> Iterator[tsast.Node]:
     """Yield each name of a file stream and each include of <fstream>.
 
     The name counts with or without a `std::` qualifier, so a
     using-directive or a namespace alias does not hide it.
 
     Args:
-        tree: One parsed file
+        tree: One parsed file or macro body
+        scope: Unused, every spelling counts
 
     Yields:
         The name node or the include node of each use
@@ -225,98 +262,68 @@ def _file_stream_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
             yield node
 
 
-def _qualifiers(node: tsast.Node) -> tuple[bool, list[str]]:
-    """Read the qualifier chain above a name, outermost first.
-
-    Args:
-        node: An identifier or a type_identifier
-
-    Returns:
-        Whether the chain starts at `::`, and the text of each scope
-    """
-    is_global = False
-    scopes: list[str] = []
-    current = node
-    while current.field == "name" and current.parent is not None and current.parent.type == "qualified_identifier":
-        scope = current.parent.child_by_field("scope")
-        if scope is None:
-            is_global = True
-        else:
-            scopes.insert(0, scope.text)
-        current = current.parent
-    return is_global, scopes
+def _file_stream_token(tokens: list[tsast.Token], index: int, scope: Scope) -> bool:
+    """Return True for the name of a file stream in the tokens of an unparsed macro body, unless it is a member."""
+    return tokens[index].text in FILE_STREAMS and not _after_member_access(tokens, index)
 
 
-def _std_aliases(tree: tsast.Tree) -> set[str]:
-    """Return every namespace alias of the file that names std, through chains of aliases.
-
-    Complexity: quadratic in the number of aliases of the file, which is small.
-    """
-    targets: dict[str, str] = {}
-    for node in tree.find("namespace_alias_definition"):
-        named = node.child_by_field("name")
-        if named is not None:
-            value = "".join(child.text for child in node.children if child.field != "name").replace(" ", "")
-            targets[named.text] = value.removeprefix("::")
-    names = {"std"}
-    changed = True
-    while changed:
-        changed = False
-        for alias, target in targets.items():
-            if alias not in names and target in names:
-                names.add(alias)
-                changed = True
-    return names
+def _std_names(tree: tsast.Tree) -> frozenset[str]:
+    """Return std and every namespace alias of the file that denotes std, through chains of aliases."""
+    return frozenset({"std"}) | tsast.alias_closure(tsast.namespace_aliases(tree), [("std",)])
 
 
-def _spawn_nodes(tree: tsast.Tree) -> Iterator[tsast.Node]:
+def _outer_qualified(node: tsast.Node) -> tsast.Node:
+    """Return the outermost qualified_identifier whose final name is NODE, or NODE itself."""
+    outer = node
+    while outer.field == "name" and outer.parent is not None and outer.parent.type == "qualified_identifier":
+        outer = outer.parent
+    return outer
+
+
+def _spawn_nodes(tree: tsast.Tree, scope: Scope) -> Iterator[tsast.Node]:
     """Yield each reference to a process-spawn function or syscall number of the C library.
 
     A reference is a name in an expression, bare, qualified from `::`, or
     qualified by std or an alias of std.  A call, an address, a function
     pointer and a using-declaration all hold one.  A name in a template
     argument counts as well, because `call<fork>()` parses it as a type.
-    The name of a declaration and a member name do not count, and a name
-    qualified by any other namespace or by a class names a project entity.
+    A member name does not count, and a name qualified by any other
+    namespace or by a class names a project entity.  The name of a
+    declaration counts only in a macro body.
 
     Args:
-        tree: One parsed file
+        tree: One parsed file or macro body
+        scope: The std aliases of the file, and whether TREE is a fragment
 
     Yields:
         The name node of each reference
     """
-    std_names = _std_aliases(tree)
     for node in tree.find("identifier", "type_identifier"):
         if node.text not in SPAWN_NAMES:
             continue
-        if node.type == "type_identifier":
-            outer = node
-            while outer.field == "name" and outer.parent is not None and outer.parent.type == "qualified_identifier":
-                outer = outer.parent
-            if outer.parent is None or outer.parent.type != "type_descriptor":
-                continue
-        if node.field == "declarator" or (node.parent is not None and node.parent.type == "enumerator"):
+        outer = _outer_qualified(node)
+        if node.type == "type_identifier" and (outer.parent is None or outer.parent.type != "type_descriptor"):
             continue
-        _, scopes = _qualifiers(node)
-        if not scopes or (len(scopes) == 1 and scopes[0].replace(" ", "") in std_names):
+        if node.parent is not None and node.parent.type == "enumerator":
+            continue
+        if node.field == "declarator" and not scope.is_fragment:
+            continue
+        parts = tsast.qualified_parts(outer)
+        if parts is None:
+            continue
+        qualifiers = parts[1][:-1]
+        if not qualifiers or (len(qualifiers) == 1 and qualifiers[0] in scope.std_names):
             yield node
 
 
-def _spawn_token_is_use(match: re.Match[str]) -> bool:
-    """Decide whether one lexical match of a spawn name in raw text is a reference to the C library.
-
-    A name after `.` or `->` is a member.  A name after `X::` is a project
-    name unless X is std.
-
-    Args:
-        match: A match of the spawn token, with the groups `scope` and `access`
-
-    Returns:
-        Whether the match counts
-    """
-    if match.group("access") in (".", "->"):
+def _spawn_token(tokens: list[tsast.Token], index: int, scope: Scope) -> bool:
+    """Return True for a spawn name in an unparsed macro body, unless a member access or a foreign qualifier precedes it."""
+    if tokens[index].text not in SPAWN_NAMES or _after_member_access(tokens, index):
         return False
-    return match.group("scope") in (None, "std")
+    if index >= 1 and tokens[index - 1].text == "::":
+        qualifier = tokens[index - 2] if index >= 2 else None
+        return qualifier is None or qualifier.kind != "identifier" or qualifier.text in scope.std_names
+    return True
 
 
 def _band3_roots(root: Path) -> tuple[str, ...]:
@@ -346,8 +353,8 @@ BANS = (
         marker="NO-REINTERPRET-OK",
         allowlist="scripts/no-reinterpret-allowlist.txt",
         rule="reinterpret_cast is banned (CLAUDE.md §III). Use std::bit_cast or std::start_lifetime_as",
-        token=re.compile(r"\breinterpret_cast\b"),
         node_hits=_reinterpret_nodes,
+        token_hit=_reinterpret_token,
     ),
     Ban(
         name="reserve",
@@ -357,8 +364,8 @@ BANS = (
         allowlist="scripts/no-reserve-allowlist.txt",
         rule="std::vector::reserve is banned (CLAUDE.md §IV). Use std::inplace_vector, "
              "a sized constructor, or arena storage",
-        token=re.compile(r"(?:\.|->)\s*reserve\s*\("),
         node_hits=_reserve_nodes,
+        token_hit=_reserve_token,
     ),
     Ban(
         name="file stream",
@@ -368,8 +375,8 @@ BANS = (
         allowlist="scripts/no-file-stream-allowlist.txt",
         rule="a C++ file stream is banned in a fixy-only band-3 directory. Use fixy::mint_file, "
              "safety::OwnedFile or safety::FileHandle",
-        token=re.compile(r"\b(?:basic_)?w?(?:[oi]?fstream|filebuf)\b"),
         node_hits=_file_stream_nodes,
+        token_hit=_file_stream_token,
     ),
     Ban(
         name="process spawn",
@@ -379,46 +386,28 @@ BANS = (
         allowlist="scripts/no-spawn-process-allowlist.txt",
         rule="a raw process spawn is banned in production code (CLAUDE.md §IX). The child carries no "
              "Permission and no effect row. Use std::jthread with permission_fork",
-        token=SPAWN_TOKEN,
         node_hits=_spawn_nodes,
-        token_filter=_spawn_token_is_use,
+        token_hit=_spawn_token,
         excluded_prefixes=("include/crucible/perf/bpf/",),
     ),
 )
 
 
-def strip_literals(text: str) -> tuple[str, list[tuple[int, str]]]:
-    """Blank the comments and literals of a C++ text with the shared lexer, and keep the comments.
+def macro_body_rows(body: tsast.MacroBody, ban: Ban, scope: Scope) -> Iterator[int]:
+    """Yield the zero-based row in its file of each use of the ban in one macro body.
 
-    Each blanked character becomes a space and each newline stays, so an
-    offset in the result is an offset in the input.  A prefixed character
-    literal such as u8'"' is one token, so the quote inside it starts no
-    string.  Complexity: linear in the length of the text.
-
-    Args:
-        text: The C++ source text
-
-    Returns:
-        The blanked text, and each comment as (start offset, comment text)
+    A body that parses gives its rows through the node rule.  A body that
+    does not parse gives its rows through the token rule over its
+    preprocessing tokens.
     """
-    blanked, _ = cxx_lex.blank(text, blank_literals=True)
-    return blanked, cxx_lex.comments(text)
-
-
-def _row_of(text: str, offset: int) -> int:
-    """Return the zero-based row of an offset in a text."""
-    return text.count("\n", 0, offset)
-
-
-def _token_rows(ban: Ban, blanked: str) -> Iterator[int]:
-    """Yield the zero-based row of each lexical match of a ban's token that its filter keeps.
-
-    The row is the row of the group `name` when the token has one, so a
-    qualifier on the line above does not move the hit.
-    """
-    for match in ban.token.finditer(blanked):
-        if ban.token_filter is None or ban.token_filter(match):
-            yield _row_of(blanked, match.start("name") if "name" in ban.token.groupindex else match.start())
+    if body.is_parsed:
+        for node in ban.node_hits(body.tree, scope):
+            yield body.origin(node)[0]
+        return
+    tokens = tsast.pp_tokens(body.text, body.first_row)
+    for index, token in enumerate(tokens):
+        if token.kind == "identifier" and ban.token_hit(tokens, index, scope):
+            yield token.row
 
 
 def in_scope(rel: Path, ban: Ban, roots: tuple[str, ...]) -> bool:
@@ -432,7 +421,7 @@ def in_scope(rel: Path, ban: Ban, roots: tuple[str, ...]) -> bool:
     Returns:
         Whether the ban reads the file
     """
-    if rel.suffix not in SUFFIXES or not any(rel.is_relative_to(top) for top in roots) \
+    if not tsast.is_in_cpp_scope(rel) or not any(rel.is_relative_to(top) for top in roots) \
             or rel.as_posix().startswith(ban.excluded_prefixes):
         return False
     excluded = EXCLUDED_COMPONENTS | ban.extra_excluded
@@ -458,19 +447,20 @@ def scope_files(root: Path, ban: Ban, roots: tuple[str, ...]) -> list[Path]:
     return sorted(found)
 
 
-def _marked(line_comments: dict[int, list[str]], row: int, marker: str) -> bool:
-    """Return True when a comment on the row carries the marker and a reason.
+def _marked(tree: tsast.Tree, row: int, marker: str) -> bool:
+    """Return True when a comment node that starts on the row carries the marker and a reason.
 
     Args:
-        line_comments: Comment texts by zero-based row
-        row: The row of the banned token
+        tree: The parsed file
+        row: The zero-based row of the banned token
         marker: The marker word
 
     Returns:
         Whether the row is exempt
     """
     pattern = re.compile(re.escape(marker) + r":\s*\S")
-    return any(pattern.search(comment) for comment in line_comments.get(row, ()))
+    return any(comment.start[0] == row and pattern.search(comment.text)
+               for comment in tsast.comments_by_row(tree).get(row, ()))
 
 
 def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
@@ -491,41 +481,29 @@ def scan(root: Path, ban: Ban) -> tuple[list[Hit], list[str]]:
     roots = ban.roots(root)
     if not roots:
         return [], [f"the {ban.name} ban has no root directory, so it reads nothing. For the file-stream ban, "
-                    f"CMakeLists.txt must register the band-3 directories with "
-                    f"crucible_register_fixy_only_directory"]
+                    f"{FIXY_ONLY_PATHS} must list the band-3 directories under include/crucible"]
     files = scope_files(root, ban, roots)
     hits: list[Hit] = []
     failures: list[str] = []
+    rows_by_tree: dict[str, tuple[tsast.Tree, set[int], Scope]] = {}
     for tree in tsast.parse(files, strict=False):
         rel = str(Path(tree.path).relative_to(root))
-        source = tree.source.decode("utf-8", "replace")
-        lines = source.split("\n")
-        rows: set[int] = set()
-        line_comments: dict[int, list[str]] = {}
         if tree.diagnostic is not None:
-            if rel not in tsast.UNPARSEABLE:
-                failures.append(f"{rel}: the parser cannot read this file, so the ban cannot see it. "
-                                f"{tree.diagnostic.strip()}")
-                continue
-            blanked, comments = strip_literals(source)
-            rows.update(_token_rows(ban, blanked))
-        else:
-            rows.update(node.start[0] for node in ban.node_hits(tree))
-            comments = []
-            for node in tree.find("comment"):
-                line_comments.setdefault(node.start[0], []).append(node.text)
-            for body in tree.find("preproc_arg"):
-                blanked, inner = strip_literals(body.text)
-                base_row = body.start[0]
-                rows.update(base_row + row for row in _token_rows(ban, blanked))
-                for offset, text in inner:
-                    line_comments.setdefault(base_row + _row_of(body.text, offset), []).append(text)
-        for offset, text in comments:
-            line_comments.setdefault(_row_of(source, offset), []).append(text)
+            failures.append(f"{rel}: the parser cannot read this file, so the ban cannot see it. "
+                            f"{tree.diagnostic.strip()}")
+            continue
+        scope = Scope(_std_names(tree), is_fragment=False)
+        rows_by_tree[rel] = (tree, {node.start[0] for node in ban.node_hits(tree, scope)}, scope)
+    trees = [tree for tree, _, _ in rows_by_tree.values()]
+    for body in tsast.macro_bodies(trees):
+        rel = str(Path(body.define.tree.path).relative_to(root))
+        tree, rows, scope = rows_by_tree[rel]
+        rows.update(macro_body_rows(body, ban, Scope(scope.std_names, is_fragment=True)))
+    for rel, (tree, rows, _) in rows_by_tree.items():
+        lines = tree.source.decode("utf-8", "replace").split("\n")
         for row in sorted(rows):
-            if _marked(line_comments, row, ban.marker):
-                continue
-            hits.append(Hit(rel, row + 1, lines[row].strip()))
+            if not _marked(tree, row, ban.marker):
+                hits.append(Hit(rel, row + 1, lines[row].strip()))
     return hits, failures
 
 
@@ -647,6 +625,10 @@ def self_test() -> int:
         "// v.reserve(18);\n"
         'inline const char* text = "v.reserve(19);";\n'
         "inline void reserved_name(V& v) { v.reserved_slots(20); }\n"
+        "#define QUALIFIED_RESERVE(v) (v).Base::reserve(24)\n"
+        "#define TEMPLATE_RESERVE(v) (v).template reserve<int>(25)\n"
+        "#define PASTED_RESERVE(v) v ## _tail; (v).reserve(26)\n"
+        "#define RESERVE_FIELD(v) (v).reserve_count\n"
     )
     stream_fixture = (
         "#pragma once\n"
@@ -698,6 +680,12 @@ def self_test() -> int:
         "inline int declared(int popen) { return 0; }\n"
         "// return fork(in_comment);\n"
         "inline const char* text = \"system(in_string)\";\n"
+        "#define ALIASED_IN_MACRO(c) s2::system(c)\n"
+        "namespace s3 = /* a comment inside the alias */ std;\n"
+        "inline int commented_alias() { return s3::system(\"commented_alias\"); }\n"
+        "#define PASTED_THEN_SPAWN(x) x ## _tail; fork(pasted_spawn)\n"
+        "#define PASTED_MEMBER(x) x ## _tail; (x).fork(pasted_member)\n"
+        "#define PASTED_PROJECT(x) x ## _tail; crucible::fork(pasted_project)\n"
     )
     cast_ban, reserve_ban, stream_ban, spawn_ban = BANS
     with tempfile.TemporaryDirectory() as work:
@@ -758,11 +746,15 @@ def self_test() -> int:
                               ("a call that spans two lines", "reserve(9)"),
                               ("a call with spaces around . and (", "reserve (10)"),
                               ("a qualified member call", "reserve(12)"), ("a call in a macro body", "reserve(1)"),
-                              ("a call in bench/", "reserve(23)")):
+                              ("a call in bench/", "reserve(23)"),
+                              ("a qualified member call in a macro body", "reserve(24)"),
+                              ("a template member call in a macro body", "reserve<int>(25)"),
+                              ("a call in a macro body that does not parse", "reserve(26)")):
             expect(f"reserve: {label} is caught", any(needle in key for key in reserves))
         for label, needle in (("a marked call", "reserve(15)"), ("a call in a comment", "reserve(18)"),
                               ("a call in a string literal", "reserve(19)"),
-                              ("a longer member name", "reserved_slots")):
+                              ("a longer member name", "reserved_slots"),
+                              ("a longer field name in a macro body", "reserve_count")):
             expect(f"reserve: {label} is not caught", not any(needle in key for key in reserves), True)
 
         streams = keys(root, stream_ban)
@@ -777,7 +769,7 @@ def self_test() -> int:
         for label, needle in (("another standard header", "<iostream>"), ("a marked use", "marked_out"),
                               ("a use in a comment", "in_comment"), ("a use in a string literal", "in_string"),
                               ("a longer name", "plural"), ("a use under a test/ directory", "band_test_dir"),
-                              ("a directory that only a CMake comment registers", "commented_dir"),
+                              ("a directory that only a comment line lists", "commented_dir"),
                               ("a directory that is not band-3", "not_band3")):
             expect(f"file stream: {label} is not caught", not any(needle in key for key in streams), True)
         spawns = keys(root, spawn_ban)
@@ -791,7 +783,10 @@ def self_test() -> int:
                               ("a call qualified by ::std", "global_std()"), ("an address", "address()"),
                               ("a function pointer", "pointer()"), ("a using-declaration", "using ::popen"),
                               ("a syscall number", "raw_syscall()"), ("a template argument", "template_arg()"),
-                              ("a reaping call", "reap()"), ("a call in vessel/", "vessel_spawn")):
+                              ("a reaping call", "reap()"), ("a call in vessel/", "vessel_spawn"),
+                              ("a call through an alias of std in a macro body", "ALIASED_IN_MACRO"),
+                              ("a call through an alias whose target holds a comment", "commented_alias()"),
+                              ("a call in a macro body that does not parse", "PASTED_THEN_SPAWN")):
             expect(f"process spawn: {label} is caught", any(needle in key for key in spawns))
         for label, needle in (("a marked call", "marked()"), ("a member call", "member("),
                               ("a call through ->", "arrow("), ("a call qualified by a project namespace", "project()"),
@@ -802,7 +797,9 @@ def self_test() -> int:
                               ("a project call in a macro body", "PROJECT_IN_MACRO"),
                               ("a call in a comment", "in_comment"), ("a call in a string literal", "in_string"),
                               ("the kernel dump under perf/bpf", "kernel_dump"),
-                              ("a call under a test/ directory", "test_dir_spawn")):
+                              ("a call under a test/ directory", "test_dir_spawn"),
+                              ("a member call in a macro body that does not parse", "PASTED_MEMBER"),
+                              ("a project call in a macro body that does not parse", "PASTED_PROJECT")):
             expect(f"process spawn: {label} is not caught", not any(needle in key for key in spawns), True)
         report = io.StringIO()
         with contextlib.redirect_stderr(report):
