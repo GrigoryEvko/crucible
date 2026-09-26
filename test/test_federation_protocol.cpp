@@ -12,8 +12,8 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <crucible/Serialize.h>  // CDAG_MAGIC
 #include <crucible/Types.h>
-#include <crucible/effects/_OsUniverse.h>
 #include <fixy/Federation.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 
@@ -126,7 +126,7 @@ static void test_round_trip_basic() {
     ASSERT_TRUE(written.has_value());
     assert(*written == fed::FEDERATION_HEADER_BYTES + payload.size());
 
-    const auto receiver_card = static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality);
+    const auto receiver_card = static_cast<std::uint16_t>(::foundation::effects::effect_count);
     auto view =
         fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written), receiver_card);
     ASSERT_TRUE(view.has_value());
@@ -164,7 +164,7 @@ static void test_round_trip_empty_payload() {
 
     auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+        static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.empty());
     assert(view->header.payload_size == 0u);
@@ -543,7 +543,7 @@ static void test_round_trip_full_byte_range() {
 
     auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+        static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.size() == payload.size());
     for (std::size_t i = 0; i < payload.size(); ++i) {
@@ -566,7 +566,7 @@ static void test_view_payload_aliases_input() {
 
     auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+        static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
 
     assert(view->payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
@@ -733,7 +733,7 @@ static void test_audit_c_extra_bytes_at_end() {
 
     // Decode over the whole buffer, not over the bytes just written.
     auto view = fed::deserialize_untrusted_federation_entry(
-        buf, static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+        buf, static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->header.payload_size == 4u);
     assert(view->payload.size() == 4u);
@@ -766,7 +766,7 @@ static void test_audit_d_partial_sentinel_accepted() {
         ASSERT_TRUE(written.has_value());
 
         auto view = fed::deserialize_untrusted_federation_entry(
-            buf, static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+            buf, static_cast<std::uint16_t>(::foundation::effects::effect_count));
         ASSERT_TRUE(view.has_value());
         assert(view->header.content_hash.raw() == MAX);
     }
@@ -784,7 +784,7 @@ static void test_audit_d_partial_sentinel_accepted() {
         ASSERT_TRUE(written.has_value());
 
         auto view = fed::deserialize_untrusted_federation_entry(
-            buf, static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+            buf, static_cast<std::uint16_t>(::foundation::effects::effect_count));
         ASSERT_TRUE(view.has_value());
         assert(view->header.row_hash.raw() == MAX);
     }
@@ -822,7 +822,7 @@ static void test_audit_e_same_bit_pattern_axes() {
 
     auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+        static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->header.content_hash.raw() == SHARED_BITS);
     assert(view->header.row_hash.raw() == SHARED_BITS);
@@ -927,7 +927,7 @@ static void test_audit_i_vector_buffer_roundtrip() {
 
     auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+        static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.size() == payload.size());
     for (std::size_t i = 0; i < payload.size(); ++i) {
@@ -977,7 +977,7 @@ static void test_permissioned_decode_tags_the_view() {
     ASSERT_TRUE(written.has_value());
 
     auto tagged = fed::deserialize_federation_entry(*admitted, std::span<const std::uint8_t>(buf.data(), *written),
-                                                    static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(tagged.has_value());
     using TaggedView = std::remove_cvref_t<decltype(*tagged)>;
     static_assert(std::is_same_v<typename TaggedView::tag_type, fp::tag::FederatedPeer<FederationProtocolTestOrg>>);

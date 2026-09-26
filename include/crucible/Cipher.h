@@ -652,7 +652,7 @@ public:
 
             auto view = cipher::federation::deserialize_untrusted_federation_entry(
                 std::span<const std::uint8_t>{bytes},
-                static_cast<std::uint16_t>(::crucible::effects::OsUniverse::cardinality));
+                static_cast<std::uint16_t>(::foundation::effects::effect_count));
             if (!view) continue;
             if (view->header.content_hash != hash) continue;
             if (view->header.row_hash != SESSION_EVENT_FEDERATION_ROW_HASH) {

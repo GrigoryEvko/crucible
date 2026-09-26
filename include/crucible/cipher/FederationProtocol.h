@@ -50,9 +50,6 @@
 // of the messages around one entry.
 
 #include <crucible/Types.h>
-#include <crucible/effects/_OsUniverse.h>
-#include <crucible/safety/_Decide.h>
-#include <crucible/safety/_Pre.h>
 #include <fixy/Federation.h>
 #include <fixy/Tagged.h>
 #include <fixy/session/ContentAddressed.h>
@@ -60,6 +57,9 @@
 #include <fixy/session/Network.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
+#include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
 #include <array>
@@ -67,7 +67,9 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <limits>
 #include <span>
+#include <string_view>
 #include <type_traits>
 
 namespace crucible::cipher::federation {
@@ -124,10 +126,10 @@ template <std::size_t MaxRegions>
 [[nodiscard]] constexpr bool cold_blob_regions_pairwise_disjoint(std::span<const ColdBlobRegion> regions) noexcept {
     if (regions.size() > MaxRegions) return false;
 
-    std::array<decide::Interval<std::size_t>, MaxRegions> intervals{};
+    std::array<::foundation::decide::Interval<std::size_t>, MaxRegions> intervals{};
     for (std::size_t i = 0; i < regions.size(); ++i) {
         const ColdBlobRegion region = regions[i];
-        if (!decide::no_overflow_sum(region.offset_bytes, region.nbytes)) {
+        if (!::foundation::decide::no_overflow_sum(region.offset_bytes, region.nbytes)) {
             return false;
         }
         intervals[i] = {
@@ -135,12 +137,12 @@ template <std::size_t MaxRegions>
             .hi = region.offset_bytes + region.nbytes,
         };
     }
-    return decide::intervals_pairwise_disjoint(
-        std::span<const decide::Interval<std::size_t>>{intervals.data(), regions.size()});
+    return ::foundation::decide::intervals_pairwise_disjoint(
+        std::span<const ::foundation::decide::Interval<std::size_t>>{intervals.data(), regions.size()});
 }
 
 [[nodiscard]] constexpr bool federation_entry_blob_layout_disjoint(std::size_t payload_bytes) noexcept {
-    if (!decide::no_overflow_sum(FEDERATION_HEADER_BYTES, payload_bytes)) {
+    if (!::foundation::decide::no_overflow_sum(FEDERATION_HEADER_BYTES, payload_bytes)) {
         return false;
     }
     const std::size_t payload_end = FEDERATION_HEADER_BYTES + payload_bytes;
@@ -157,8 +159,8 @@ static_assert(((FEDERATION_MAGIC >> 8) & 0xFFu) == 'F', "FEDERATION_MAGIC byte 1
 static_assert(((FEDERATION_MAGIC >> 16) & 0xFFu) == 'E', "FEDERATION_MAGIC byte 2 must be 'E'.");
 static_assert(((FEDERATION_MAGIC >> 24) & 0xFFu) == 'D', "FEDERATION_MAGIC byte 3 must be 'D'.");
 
-static_assert(::crucible::effects::OsUniverse::cardinality <= std::uint16_t{0xFFFF},
-              "OsUniverse::cardinality must fit in the uint16_t wire field.");
+static_assert(::foundation::effects::effect_count <= std::uint16_t{0xFFFF},
+              "The effect-atom count must fit in the uint16_t wire field.");
 
 // The other binary stream format in this runtime is the graph
 // snapshot, whose magic word is spelled out here as a literal rather
@@ -254,7 +256,7 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
     FederationEntryHeader hdr{};
     hdr.magic = FEDERATION_MAGIC;
     hdr.protocol_version = FEDERATION_PROTOCOL_V1;
-    hdr.universe_cardinality = static_cast<std::uint16_t>(::crucible::effects::OsUniverse::cardinality);
+    hdr.universe_cardinality = static_cast<std::uint16_t>(::foundation::effects::effect_count);
     hdr.content_hash = key.content_hash;
     hdr.row_hash = key.row_hash;
     hdr.payload_size = static_cast<std::uint32_t>(payload.size());

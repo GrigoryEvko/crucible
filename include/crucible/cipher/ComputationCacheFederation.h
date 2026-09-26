@@ -266,7 +266,7 @@ inline bool computation_cache_federation_smoke_test() noexcept {
 
         auto view = deserialize_untrusted_federation_entry(
             std::span<const std::uint8_t>(buf.data(), *written),
-            static_cast<std::uint16_t>(::crucible::effects::OsUniverse::cardinality));
+            static_cast<std::uint16_t>(::foundation::effects::effect_count));
         ok = ok && view.has_value();
         if (!view.has_value()) return false;
 

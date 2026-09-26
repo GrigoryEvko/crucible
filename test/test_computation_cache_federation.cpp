@@ -149,7 +149,7 @@ static void test_t10_codec_round_trip() {
     ASSERT_TRUE(written.has_value());
 
     auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                            static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
+                                                            static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
 
     const auto expected_key = fed::federation_key<&t_unary, R0, int>();
@@ -244,7 +244,7 @@ static void test_t15_payload_aliases_input() {
     ASSERT_TRUE(written.has_value());
 
     auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                            static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
+                                                            static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
 
@@ -277,7 +277,7 @@ static void test_t16_content_addressed_payload_elision() {
 
     auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(hash_only_buf.data(), *hash_only_written),
-        static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
+        static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.empty());
     assert((view->header.content_hash == fed::federation_key<&t_unary, R0, int>().content_hash));
@@ -360,7 +360,7 @@ static void test_audit_b_wire_byte_offset_stability() {
 // does. What is under test is that the refusal still reaches a caller going
 // through the bridge.
 static void test_audit_c_cross_universe_cardinality_rejection() {
-    constexpr auto current_cardinality = static_cast<std::uint16_t>(eff::OsUniverse::cardinality);
+    constexpr auto current_cardinality = static_cast<std::uint16_t>(::foundation::effects::effect_count);
     static_assert(current_cardinality >= 1u, "The fixture subtracts one to build a smaller receiver cardinality, "
                                              "so the universe must hold at least one atom.");
 
@@ -432,7 +432,7 @@ static void test_audit_e_saturation_row_round_trip() {
     ASSERT_TRUE(written.has_value());
 
     auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                            static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
+                                                            static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->header.content_hash == k_full.content_hash);
     assert(view->header.row_hash == k_full.row_hash);
