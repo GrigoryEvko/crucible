@@ -1,4 +1,7 @@
 #include <crucible/cntp/Pacing.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/Socket.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cassert>
@@ -12,7 +15,6 @@
 #include <unistd.h>
 
 namespace cntp = crucible::cntp;
-namespace saf = crucible::safety;
 
 namespace {
 
@@ -172,7 +174,10 @@ void test_live_loopback_qdisc_query_if_available() {
 
     auto lo = cntp::NicInterfaceName::from("lo");
     assert(lo.has_value());
-    auto queried = cntp::query_active_qdisc(*lo);
+    // The socket door wants IO and Block, and the test runner context
+    // carries both.
+    ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
+    auto queried = cntp::query_active_qdisc(test_ctx, *lo);
     if (!queried.has_value()) {
         assert(queried.error() == cntp::PacingError::QdiscKindMissing
                || queried.error() == cntp::PacingError::NetlinkOpenFailed
@@ -196,7 +201,10 @@ int main() {
     static_assert(cntp::BbrCompatibleQdisc<cntp::Qdisc::FqCodel>);
     static_assert(!cntp::BbrCompatibleQdisc<cntp::Qdisc::Pfifo>);
     static_assert(std::is_trivially_copyable_v<cntp::NicInterfaceName>);
-    static_assert(std::is_trivially_copyable_v<cntp::QdiscConfig>);
+    static_assert(std::is_trivially_copy_constructible_v<cntp::QdiscConfig>
+                  && std::is_trivially_destructible_v<cntp::QdiscConfig>);
+    static_assert(!::fixy::net::CtxFitsSocketMint<::fixy::ColdInitCtx, ::fixy::net::socket_kind::NetlinkRoute>,
+                  "a context without Block must not open the netlink socket the qdisc query needs");
 
     // The length and the bytes are unreachable from outside, the type is
     // not an aggregate, and there is no constructor that takes a length,
@@ -213,7 +221,7 @@ int main() {
     // The guarantee every consumer relies on when it copies view() into a
     // fixed-size kernel field.
     static_assert(cntp::NicInterfaceName::from("eth0").value().view().size() < cntp::NicInterfaceName::max_bytes);
-    static_assert(std::same_as<cntp::DeclaredQdiscConfig::tag_type, saf::source::QdiscConfig>);
+    static_assert(std::same_as<cntp::DeclaredQdiscConfig::tag_type, ::fixy::tags::source::QdiscConfig>);
 
     std::printf("test_cntp_pacing:\n");
     test_interface_name_admission();

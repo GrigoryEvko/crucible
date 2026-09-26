@@ -111,7 +111,6 @@ include/crucible/cntp/GossipMulticast.h
 include/crucible/cntp/Integrity.h
 include/crucible/cntp/MtlsTransport.h
 include/crucible/cntp/OverlayMulticast.h
-include/crucible/cntp/Pacing.h
 include/crucible/cntp/PathSwap.h
 include/crucible/cntp/RoceConfig.h
 include/crucible/cntp/Tcam.h
@@ -167,7 +166,6 @@ include/crucible/topology/TopologyGraph.h
 include/crucible/warden/DeadlineWatchdog.h
 include/crucible/warden/Quarantine.h
 src/_DiagRuntime.cpp
-src/cntp/Pacing.cpp
 src/cntp/RoceConfig.cpp
 src/cog/NicOffloadAudit.cpp
 src/cog/NumaNic.cpp

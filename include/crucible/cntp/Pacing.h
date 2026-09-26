@@ -9,8 +9,11 @@
 // comes back, and the fq parameters are declared values that nothing applies.
 
 #include <crucible/cntp/CongestionControl.h>
-#include <crucible/safety/_Refined.h>
-#include <crucible/safety/_Tagged.h>
+#include <fixy/Refined.h>
+#include <fixy/Tagged.h>
+#include <fixy/os/Fs.h>
+#include <fixy/os/Socket.h>
+#include <foundation/effects/Ctx.h>
 
 #include <array>
 #include <cstddef>
@@ -18,6 +21,7 @@
 #include <expected>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::cntp {
 
@@ -46,8 +50,8 @@ enum class PacingError : std::uint8_t {
 
 [[nodiscard]] std::string_view qdisc_name(Qdisc qdisc) noexcept;
 
-using PositivePacingRate = safety::Positive<std::uint64_t>;
-using PositiveFqParam = safety::Positive<std::uint32_t>;
+using PositivePacingRate = ::fixy::Positive<std::uint64_t>;
+using PositiveFqParam = ::fixy::Positive<std::uint32_t>;
 
 // The stored length is private and from() is the only code that writes
 // it, so every NicInterfaceName that exists satisfies
@@ -96,9 +100,9 @@ private:
 };
 
 struct FqConfig {
-    PositiveFqParam max_quantum{8192};
-    PositiveFqParam flow_limit{100};
-    PositiveFqParam low_rate_threshold_kbps{50};
+    PositiveFqParam max_quantum = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{8192});
+    PositiveFqParam flow_limit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{100});
+    PositiveFqParam low_rate_threshold_kbps = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{50});
 };
 
 struct QdiscConfig {
@@ -108,11 +112,13 @@ struct QdiscConfig {
     bool allow_auto_config = false;
 };
 
-using DeclaredQdiscConfig = safety::Tagged<QdiscConfig, safety::source::QdiscConfig>;
+using DeclaredQdiscConfig = ::fixy::Tagged<QdiscConfig, ::fixy::tags::source::QdiscConfig>;
 
 static_assert(sizeof(PositivePacingRate) == sizeof(std::uint64_t));
 static_assert(std::is_trivially_copyable_v<NicInterfaceName>);
-static_assert(std::is_trivially_copyable_v<QdiscConfig>);
+// The refined fq fields keep the config from being trivially copyable, so
+// no byte copy builds one; the copy and the destructor stay trivial.
+static_assert(std::is_trivially_copy_constructible_v<QdiscConfig> && std::is_trivially_destructible_v<QdiscConfig>);
 // Aggregate initialization would reach the private length again, this
 // time through `NicInterfaceName{bytes, 200}` rather than assignment.
 // from() must stay the only writer of the length.
@@ -127,28 +133,64 @@ admit_pacing_rate(std::uint64_t bytes_per_second) noexcept {
     if (bytes_per_second == 0) {
         return std::unexpected(PacingError::InvalidPacingRate);
     }
-    return PositivePacingRate{bytes_per_second, typename PositivePacingRate::Trusted{}};
+    return ::fixy::mint_refined<::fixy::positive>(bytes_per_second);
 }
 
 template <Qdisc Required>
     requires BbrCompatibleQdisc<Required>
 [[nodiscard]] constexpr DeclaredQdiscConfig mint_bbr_qdisc_config(NicInterfaceName iface, FqConfig fq = {},
                                                                   bool allow_auto_config = false) noexcept {
-    return DeclaredQdiscConfig{QdiscConfig{
+    return ::fixy::mint_tagged<::fixy::tags::source::QdiscConfig>(QdiscConfig{
         .interface = iface,
         .required = Required,
         .fq = fq,
         .allow_auto_config = allow_auto_config,
-    }};
+    });
 }
 
 [[nodiscard]] std::expected<Qdisc, PacingError> qdisc_from_kernel_name(std::string_view name) noexcept;
 
 [[nodiscard]] std::expected<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noexcept;
 
-[[nodiscard]] std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noexcept;
+namespace detail {
 
-[[nodiscard]] std::expected<void, PacingError> ensure_fq_active(DeclaredQdiscConfig config) noexcept;
+// Runs the qdisc dump over a netlink socket that the socket door opened.
+// The descriptor is borrowed; the caller's handle closes it.
+[[nodiscard]] std::expected<Qdisc, PacingError> query_active_qdisc_over(::fixy::fs::OwnedFd const& nl,
+                                                                      NicInterfaceName iface) noexcept;
+
+}  // namespace detail
+
+// The query opens a netlink socket through the socket door, which counts
+// the socket family as IO and Block, so only a context that carries both
+// may ask which qdisc is live.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::net::CtxFitsSocketMint<Ctx, ::fixy::net::socket_kind::NetlinkRoute>
+[[nodiscard]] std::expected<Qdisc, PacingError> query_active_qdisc(Ctx const& ctx, NicInterfaceName iface) noexcept {
+    auto opened = ::fixy::net::mint_socket<::fixy::net::socket_kind::NetlinkRoute>(ctx);
+    if (!opened.has_value()) {
+        return std::unexpected(PacingError::NetlinkOpenFailed);
+    }
+    const ::fixy::fs::OwnedFd nl = std::move(*opened).consume();
+    return detail::query_active_qdisc_over(nl, iface);
+}
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::net::CtxFitsSocketMint<Ctx, ::fixy::net::socket_kind::NetlinkRoute>
+[[nodiscard]] std::expected<void, PacingError> ensure_fq_active(Ctx const& ctx, DeclaredQdiscConfig config) noexcept {
+    auto const& raw = config.value();
+    auto active = query_active_qdisc(ctx, raw.interface);
+    if (!active.has_value()) {
+        return std::unexpected(active.error());
+    }
+    if (*active == Qdisc::Fq || *active == Qdisc::FqCodel) {
+        return {};
+    }
+    if (raw.allow_auto_config) {
+        return std::unexpected(PacingError::AutoConfigDeferred);
+    }
+    return std::unexpected(PacingError::FqRequired);
+}
 
 [[nodiscard]] std::expected<void, PacingError> set_socket_pacing_rate(SocketFd fd,
                                                                       PositivePacingRate bytes_per_second) noexcept;

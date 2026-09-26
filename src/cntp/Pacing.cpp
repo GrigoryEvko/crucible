@@ -1,6 +1,5 @@
 #include <crucible/cntp/Pacing.h>
 
-#include <crucible/handles/_FileHandle.h>
 #include <foundation/Lifetime.h>
 
 #include <array>
@@ -19,8 +18,6 @@
 namespace crucible::cntp {
 
 namespace {
-
-using LocalFd = ::crucible::safety::FileHandle;
 
 struct QdiscDumpRequest {
     nlmsghdr header{};
@@ -120,15 +117,14 @@ std::expected<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noe
     return qdisc_from_kernel_name(text.substr(kind_start, pos - kind_start));
 }
 
-std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noexcept {
+std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::OwnedFd const& nl,
+                                                                  NicInterfaceName iface) noexcept {
     std::array<char, NicInterfaceName::max_bytes> ifname{};
     std::memcpy(ifname.data(), iface.view().data(), iface.view().size());
     const unsigned ifindex = ::if_nametoindex(ifname.data());
     if (ifindex == 0) {
         return std::unexpected(PacingError::InterfaceNotFound);
     }
-
-    LocalFd nl{::socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE)};
     if (!nl.is_open()) {
         return std::unexpected(PacingError::NetlinkOpenFailed);
     }
@@ -229,21 +225,6 @@ std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noe
             remaining -= step;
         }
     }
-}
-
-std::expected<void, PacingError> ensure_fq_active(DeclaredQdiscConfig config) noexcept {
-    auto const& raw = config.value();
-    auto active = query_active_qdisc(raw.interface);
-    if (!active.has_value()) {
-        return std::unexpected(active.error());
-    }
-    if (*active == Qdisc::Fq || *active == Qdisc::FqCodel) {
-        return {};
-    }
-    if (raw.allow_auto_config) {
-        return std::unexpected(PacingError::AutoConfigDeferred);
-    }
-    return std::unexpected(PacingError::FqRequired);
 }
 
 std::expected<void, PacingError> set_socket_pacing_rate(SocketFd fd, PositivePacingRate bytes_per_second) noexcept {
