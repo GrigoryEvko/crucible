@@ -170,13 +170,15 @@ public:
     using row_payload = T;
 
     // The door consumes the exclusive region, which is the evidence:
-    // there is no shared region without one, and the region it was built
-    // from is gone.  This is the shape SharedPermissionPool uses for the
+    // there is no shared region without one.  The door takes the base and
+    // the count out of that region, so it is empty afterwards and cannot
+    // write beside a share.  This is the shape SharedPermissionPool uses for the
     // same reason, and it is why this class is not on the witness
     // roster: a constructor that consumes its own evidence guards
     // nothing a private one would guard better.
     constexpr explicit SharedRegion(OwnedRegion<T, Tag, Brand>&& region) noexcept
-        : base_{region.base_}, count_{region.count_}, pool_{std::move(region.perm_)} {}
+        : base_{std::exchange(region.base_, nullptr)}, count_{std::exchange(region.count_, 0)},
+          pool_{std::move(region.perm_)} {}
 
     // A caller who offers the region without surrendering it means to go
     // on reading it exclusively, and the rvalue reference alone answers

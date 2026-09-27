@@ -124,9 +124,12 @@ struct split_mint_t {};
 //   assemble a tuple and get a whole.  There is no public constructor
 //   here, so a tuple alone no longer reaches recombine.
 //
-//   A receipt spent twice.  The type is move-only, so a second
-//   recombine has nothing left to pass, and the copy that would make
-//   one is deleted with its reason.
+//   A copied receipt.  The type is move-only, and the copy is deleted
+//   with its reason.  A second move of one receipt compiles, because a
+//   moved-from receipt is still an object.  scripts/check-use-after-move.py
+//   refuses that second move.  The shards of the first recombine are
+//   then empty at a null base, so the whole that a second recombine
+//   rebuilds from them covers no byte.
 //
 //   A receipt from the wrong split.  The tag, the brand of the region
 //   that was split, the arity and the name of the split site are all
@@ -319,8 +322,21 @@ public:
     OwnedRegion(const OwnedRegion&) = delete("OwnedRegion owns a Permission — copy would duplicate the linear token");
     OwnedRegion& operator=(const OwnedRegion&) =
         delete("OwnedRegion owns a Permission — assignment would overwrite the linear token");
-    constexpr OwnedRegion(OwnedRegion&&) noexcept = default;
-    constexpr OwnedRegion& operator=(OwnedRegion&&) noexcept = default;
+
+    // Each door that consumes a region takes its base and its count, so
+    // the consumed region is empty.  A shard that a caller moves out of a
+    // tuple therefore covers no byte of the whole that recombine rebuilds,
+    // and recombine aborts on the tuple.  The use-after-move guard sees a
+    // moved name, but not a moved tuple element.
+    constexpr OwnedRegion(OwnedRegion&& other) noexcept
+        : base_{std::exchange(other.base_, nullptr)}, count_{std::exchange(other.count_, 0)},
+          perm_{std::move(other.perm_)} {}
+    constexpr OwnedRegion& operator=(OwnedRegion&& other) noexcept {
+        base_ = std::exchange(other.base_, nullptr);
+        count_ = std::exchange(other.count_, 0);
+        perm_ = std::move(other.perm_);
+        return *this;
+    }
     ~OwnedRegion() = default;
 
     // Erasure, one way only: a region of one instance becomes a region
@@ -329,7 +345,8 @@ public:
     template <typename Other>
         requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
     constexpr OwnedRegion(OwnedRegion<T, Tag, Other>&& other) noexcept
-        : base_{other.base_}, count_{other.count_}, perm_{std::move(other.perm_)} {}
+        : base_{std::exchange(other.base_, nullptr)}, count_{std::exchange(other.count_, 0)},
+          perm_{std::move(other.perm_)} {}
 
     // The caller proves exclusive ownership by surrendering the
     // Permission token.
@@ -390,22 +407,28 @@ public:
         // The receipt is spent by being taken by rvalue and named here.
         // It carries no bytes, so there is nothing else to consume.
         [[maybe_unused]] Disjoint<Tag, Brand, SplitName, sizeof...(Is)> spent{std::move(witness)};
+        // Each shard gives up its base and its count here, so no shard in
+        // the consumed tuple keeps its bytes beside the rebuilt whole.
+        std::array<T*, sizeof...(Is)> const bases{std::exchange(std::get<Is>(shards).base_, nullptr)...};
+        std::array<std::size_t, sizeof...(Is)> const counts{std::exchange(std::get<Is>(shards).count_, 0)...};
         // Shard 0 starts at offset 0, so its base is the whole's base.
-        T* const base = std::get<0>(shards).base_;
         // Each shard must start where the one before it ends.  Two regions
         // split at one site share a brand, so their shards and receipts are
-        // one type, and only their addresses tell them apart.  With the
-        // check the rebuilt span is exactly the storage of the shards that
-        // were consumed.  Complexity: one comparison per shard.
+        // one type, and only their addresses tell them apart.  A shard that
+        // was moved out of the tuple is empty at a null base, so it breaks
+        // the chain too.  With the check the rebuilt span is exactly the
+        // storage of the shards that were consumed.  Complexity: one
+        // comparison per shard.
+        T* const base = bases[0];
         T* next = base;
-        auto const follows = [&next](T* shard_base, std::size_t shard_count) noexcept {
-            bool const adjacent = shard_base == next;
-            next = shard_base + shard_count;
-            return adjacent;
-        };
-        bool const contiguous = (follows(std::get<Is>(shards).base_, std::get<Is>(shards).count_) && ...);
+        bool contiguous = true;
+        std::size_t total = 0;
+        for (std::size_t index = 0; index < sizeof...(Is); ++index) {
+            contiguous = contiguous && bases[index] == next;
+            next = bases[index] + counts[index];
+            total += counts[index];
+        }
         CRUCIBLE_FATAL_INVARIANT(contiguous);
-        std::size_t const total = (std::size_t{0} + ... + std::get<Is>(shards).count_);
         return OwnedRegion{
             base, total,
             ::foundation::permissions::mint_permission_combine_n<Tag>(std::move(std::get<Is>(shards).perm_)...)};
@@ -464,11 +487,11 @@ template <std::size_t N, typename SplitName, std::size_t... Is>
 auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) && noexcept {
     static_assert(sizeof...(Is) == N, "index_sequence size mismatch");
 
-    // Snapshot the base and the count before the permission is
-    // consumed.  The split leaves perm_ moved-from, while base_ and
-    // count_ stay readable until this object is destroyed.
-    T* base = base_;
-    const std::size_t total = count_;
+    // The split takes the base and the count out of the region it
+    // consumes, so that region is empty and no longer covers the bytes
+    // that the shards cover.
+    T* const base = std::exchange(base_, nullptr);
+    const std::size_t total = std::exchange(count_, 0);
 
     auto sub_perms =
         ::foundation::permissions::mint_permission_split_n<Slice<Tag, Is, SplitName>...>(std::move(perm_));

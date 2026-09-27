@@ -222,10 +222,23 @@ void test_a_share_of_a_region_of_the_same_site_aborts() {
     CRUCIBLE_TEST_REQUIRE(::foundation::test::aborts([&] { (void)::fixy::mint_shared_read(ctx, *guard_a, shared_b); }));
 }
 
+// The door takes the base and the count out of the region it consumes.
+// A region that kept them could write the bytes that every share reads.
+void test_the_consumed_region_is_empty() {
+    static std::uint64_t storage[3] = {4, 5, 6};
+    auto region = ::fixy::mint_owned_region(storage, std::size_t{3}, perm::mint_permission_root<Cache>());
+    ::fixy::SharedRegion shared{std::move(region)};
+    CRUCIBLE_TEST_REQUIRE(region.empty());
+    CRUCIBLE_TEST_REQUIRE(region.data() == nullptr);
+    CRUCIBLE_TEST_REQUIRE(region.span().empty());
+    CRUCIBLE_TEST_REQUIRE(shared.size() == 3);
+}
+
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "test_shared_region:\n");
+    run_test("test_the_consumed_region_is_empty", test_the_consumed_region_is_empty);
     run_test("test_a_read_sees_the_region", test_a_read_sees_the_region);
     run_test("test_an_upgrade_waits_for_every_share", test_an_upgrade_waits_for_every_share);
     run_test("test_two_readers_hold_one_region", test_two_readers_hold_one_region);

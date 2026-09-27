@@ -408,8 +408,11 @@ void test_brand_travels_through_split_and_recombine() {
     CRUCIBLE_TEST_REQUIRE(whole.size() == 8);
     CRUCIBLE_TEST_REQUIRE(whole.data() == storage);
 
+    // The erasure consumes the branded region, so the branded region is
+    // empty afterwards.
     OwnedRegion<std::uint64_t, DataA> erased = std::move(whole);
     CRUCIBLE_TEST_REQUIRE(erased.data() == storage);
+    CRUCIBLE_TEST_REQUIRE(whole.empty() && whole.data() == nullptr);
 }
 
 // A split inside one function is one split site, so every call gives
@@ -425,10 +428,14 @@ auto split_branded_in_two(std::uint64_t* storage) {
     return ::fixy::mint_split<2>(::fixy::mint_owned_region(storage, std::size_t{4}, mint_permission_root<DataA>()));
 }
 
+// The mixed tuple takes shard 1 of the second region, so the second
+// region cannot recombine after it.  A third split at the same site shows
+// that its own shards still recombine.
 template <typename Split>
 void require_mixed_rebuild_aborts(Split split) {
     static std::uint64_t first[4] = {};
     static std::uint64_t second[4] = {};
+    static std::uint64_t third[4] = {};
     auto parts_a = split(first);
     auto parts_b = split(second);
     static_assert(std::is_same_v<decltype(parts_a), decltype(parts_b)>, "one split site is one type");
@@ -438,12 +445,68 @@ void require_mixed_rebuild_aborts(Split split) {
         auto mixed = std::tuple{std::move(std::get<0>(parts_a.shards)), std::move(std::get<1>(parts_b.shards))};
         (void)Region::recombine(std::move(parts_a.witness), std::move(mixed));
     }));
-    auto whole = Region::recombine(std::move(parts_b.witness),
-                                   std::tuple{std::move(std::get<0>(parts_b.shards)), std::move(std::get<1>(parts_b.shards))});
-    CRUCIBLE_TEST_REQUIRE(whole.data() == second && whole.size() == 4);
+    auto parts_c = split(third);
+    auto whole = Region::recombine(std::move(parts_c.witness), std::move(parts_c.shards));
+    CRUCIBLE_TEST_REQUIRE(whole.data() == third && whole.size() == 4);
 }
 
 void test_recombine_refuses_shards_of_two_erased_regions() { require_mixed_rebuild_aborts(split_erased_in_two); }
+
+// A shard moved out of the tuple before the recombine is empty at a null
+// base, so it breaks the chain of shards and recombine aborts.  A shard
+// that kept its base and its count would write the bytes of the rebuilt
+// whole.  The use-after-move guard does not see this use, because it
+// moves a tuple element and then the tuple.
+template <std::size_t KeptIndex>
+void require_recombine_aborts_without_shard() {
+    static std::uint64_t storage[4] = {};
+    auto parts = split_branded_in_two(storage);
+    using Region = OwnedRegion<std::uint64_t, DataA,
+                               typename std::remove_cvref_t<decltype(std::get<0>(parts.shards))>::brand_type>;
+    CRUCIBLE_TEST_REQUIRE(::foundation::test::aborts([&] {
+        auto kept = std::move(std::get<KeptIndex>(parts.shards));
+        (void)Region::recombine(std::move(parts.witness), std::move(parts.shards));
+        kept.span()[0] = 7;
+    }));
+}
+
+void test_recombine_refuses_a_shard_moved_out_of_the_tuple() {
+    require_recombine_aborts_without_shard<0>();
+    require_recombine_aborts_without_shard<1>();
+}
+
+// One mint site is one brand, so two regions from this helper are one
+// type and one can be assigned to the other.
+auto branded_at_one_site(std::uint64_t* storage, std::size_t count) {
+    return ::fixy::mint_owned_region(storage, count, mint_permission_root<DataA>());
+}
+
+// Each door that consumes a region leaves it empty: the move, the move
+// assignment, the split and the recombine.  The erasure to the unbranded
+// spelling is pinned in test_brand_travels_through_split_and_recombine.
+// No consumed region keeps the bytes that its successor owns.
+void test_every_consuming_door_empties_the_region() {
+    static std::uint64_t storage[4] = {1, 2, 3, 4};
+    auto source = branded_at_one_site(storage, 4);
+    using Branded = decltype(source);
+
+    Branded moved_into = std::move(source);
+    CRUCIBLE_TEST_REQUIRE(source.empty() && source.data() == nullptr);
+    CRUCIBLE_TEST_REQUIRE(moved_into.data() == storage && moved_into.size() == 4);
+
+    Branded assigned = branded_at_one_site(storage, 0);
+    assigned = std::move(moved_into);
+    CRUCIBLE_TEST_REQUIRE(moved_into.empty() && moved_into.data() == nullptr);
+    CRUCIBLE_TEST_REQUIRE(assigned.data() == storage && assigned.size() == 4);
+
+    auto parts = ::fixy::mint_split<2>(std::move(assigned));
+    CRUCIBLE_TEST_REQUIRE(assigned.empty() && assigned.data() == nullptr);
+
+    auto whole = Branded::recombine(std::move(parts.witness), std::move(parts.shards));
+    CRUCIBLE_TEST_REQUIRE(std::get<0>(parts.shards).empty() && std::get<0>(parts.shards).data() == nullptr);
+    CRUCIBLE_TEST_REQUIRE(std::get<1>(parts.shards).empty() && std::get<1>(parts.shards).data() == nullptr);
+    CRUCIBLE_TEST_REQUIRE(whole.data() == storage && whole.size() == 4);
+}
 
 void test_recombine_refuses_shards_of_two_regions_of_one_site() {
     require_mixed_rebuild_aborts(split_branded_in_two);
@@ -483,6 +546,9 @@ int main() {
              test_recombine_refuses_shards_of_two_erased_regions);
     run_test("test_recombine_refuses_shards_of_two_regions_of_one_site",
              test_recombine_refuses_shards_of_two_regions_of_one_site);
+    run_test("test_recombine_refuses_a_shard_moved_out_of_the_tuple",
+             test_recombine_refuses_a_shard_moved_out_of_the_tuple);
+    run_test("test_every_consuming_door_empties_the_region", test_every_consuming_door_empties_the_region);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
