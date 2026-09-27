@@ -1118,8 +1118,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::Labelled,
      "a message of the binary view of a projected protocol: it names a label beside its payload, it is the "
      "payload of a Send or a Recv, and the handle that steps through the protocol folds it"},
-    {^^::fixy::session::session_loop_ctx_traits, kMetafunction},
-    {^^::fixy::session::session_loop_ctx_rebind_inner, kMetafunction},
     {^^::fixy::session::SessionHandleBase,
      "the base every session handle derives from: it is never held by value, and the handle folds.  It "
      "publishes the Stepping modality without a resource, so hashing it directly is a hard error"},

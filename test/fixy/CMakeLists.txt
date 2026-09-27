@@ -1772,7 +1772,7 @@ fixy_neg_compile_test(neg_sess_rewind_unresumable
   "the expression ..is_resumable_position<R, LoopCtx>... .with R = fixy::session::Continue. LoopCtx = void.. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_rewind_branded
   "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::End, void>"
-  "the expression .is_void_v<typename fixy::session::detail::session_brand_of<EndLoopCtx>::type> .with EndLoopCtx = fixy::session::detail::session_brand<neg_sess_rewind_branded_types::Body, void>.. evaluated to .false.")
+  "satisfaction of .carries_brand<EndLoopCtx, void>. .with EndLoopCtx = fixy::session::detail::session_brand<neg_sess_rewind_branded_types::Body, void>.")
 
 # Delegate.h: a message that carries a live endpoint.  The test hands an
 # endpoint over a channel, hands an endpoint with the token of its set,
@@ -1942,6 +1942,11 @@ fixy_neg_compile_test(neg_sess_trait_spec_is_crash_well_formed
 fixy_neg_compile_test(neg_sess_trait_spec_is_checkpoint_compliant
   "specialization of alias template .template<class Q> using fixy::session::is_checkpoint_compliant = "
   "= std::bool_constant<fixy::session::detail::checkpoint::pair_is_compliant\\(\\^\\^Q\\)>")
+# The inner loop context is an alias over a function that knows each form
+# of a loop context, so no specialization sends a Continue elsewhere.
+fixy_neg_compile_test(neg_sess_loop_ctx_inner_specialized
+  "invalid class name in declaration of .using fixy::session::session_loop_ctx_inner_t = "
+  "struct fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> >.")
 
 # Commit is a marker that the registry marks as not plain.  The
 # well-formedness algebra refuses it at every depth, so a plain mint
@@ -2269,7 +2274,7 @@ fixy_neg_compile_test(neg_sess_with_session_body_stops_early
 fixy_neg_compile_test(neg_sess_with_session_forged_end_handle
   "no matching function for call to .with_session"
   "SessionBody<Body, Proto, Resource, Policy>"
-  "is_same_v<typename fixy::session::detail::session_brand_of<typename H::loop_ctx>::type, Brand>")
+  "satisfaction of .carries_brand<typename H::loop_ctx, Brand>.")
 
 # check::Cancel needs a Resource that can send a cancellation.
 fixy_neg_compile_test(neg_sess_cancel_policy_without_channel
@@ -2378,7 +2383,7 @@ fixy_neg_compile_test(neg_sess_ctx_with_session_keeps_handle
 fixy_neg_compile_test(neg_sess_ctx_with_session_foreign_end
   "no matching function for call to .with_session<foreign_end_fixture::Stream>"
   "satisfaction of .CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>."
-  "the expression .is_same_v<typename fixy::session::detail::session_brand_of<typename H::loop_ctx>::type, Brand>")
+  "satisfaction of .carries_brand<typename H::loop_ctx, Brand>.")
 fixy_neg_compile_test(neg_sess_ctx_with_session_copies_resource
   "use of deleted function .copies_resource_fixture::Channel::Channel\\(const copies_resource_fixture::Channel&\\)."
   "initializing argument 2 of .constexpr Resource fixy::session::with_session\\(const Ctx&, Resource, Body, std::source_location\\)")

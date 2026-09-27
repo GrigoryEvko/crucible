@@ -212,6 +212,20 @@ static_assert(
     std::is_same_v<s::detail::loop_entry_perm_set_t<s::detail::PermLoopFrame<s::Loop<s::End>, HoldsRegion>>,
                    HoldsRegion>);
 
+// A loop context is void, a Loop, a frame or a brand around one of these,
+// and the body comes from the template argument of the Loop.  A brand
+// passes through to the context that it wraps.
+using ReceivesForever = s::Loop<s::Recv<Pong, s::Continue>>;
+static_assert(std::is_same_v<s::detail::loop_body_t<ReceivesForever>, s::Recv<Pong, s::Continue>>);
+static_assert(std::is_same_v<s::detail::loop_body_t<s::detail::PermLoopFrame<ReceivesForever, HoldsRegion>>,
+                             s::Recv<Pong, s::Continue>>);
+static_assert(std::is_same_v<s::session_loop_ctx_inner_t<s::detail::session_brand<Region, ReceivesForever>>, ReceivesForever>);
+static_assert(std::is_same_v<s::session_loop_ctx_inner_t<void>, void>);
+static_assert(std::is_same_v<s::session_loop_ctx_rebind_inner_t<s::detail::session_brand<Region, void>, ReceivesForever>,
+                             s::detail::session_brand<Region, ReceivesForever>>);
+static_assert(std::is_same_v<s::session_loop_ctx_rebind_inner_t<void, ReceivesForever>, ReceivesForever>);
+static_assert(std::is_same_v<s::detail::loop_entry_perm_set_t<s::detail::session_brand<Region, ReceivesForever>>, NoPerms>);
+
 // The delta of one message comes from fixy/session/Payload.h.  A send of
 // a token takes its region from the set, and the matching receive adds
 // it.  A sender that does not hold the region cannot send the token, and
@@ -562,8 +576,8 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 // entry point knows that the End handle is the one it gave out.
 [[nodiscard]] int walk_with_session() {
     const ValueWire back = s::with_session<Once>(ValueWire{}, [](auto head) noexcept {
-        using Brand = typename s::detail::session_brand_of<typename decltype(head)::loop_ctx>::type;
-        static_assert(!std::is_void_v<Brand>, "a handle of an owned session carries the brand of its body");
+        static_assert(!s::detail::carries_brand<typename decltype(head)::loop_ctx, void>,
+                      "a handle of an owned session carries the brand of its body");
         auto after = std::move(head).send(Ping{5}, [](ValueWire& w, Ping& p) noexcept {
         w.last_sent = p.value;
         return true;
@@ -574,6 +588,27 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     });
     if (back.last_sent != 5) {
         std::fprintf(stderr, "with_session returned a resource that lost the protocol's effect\n");
+        return 1;
+    }
+    return 0;
+}
+
+// ── Runtime: a receiving loop ────────────────────────────────────────
+//
+// A handle of Loop<Recv<Pong, Continue>> receives, and after its Continue
+// it stands at the same reception again.
+[[nodiscard]] int walk_receiving_loop() {
+    auto head = s::mint_session_handle<ReceivesForever>(ValueWire{7});
+    int received = 0;
+    for (int round = 0; round < 3; ++round) {
+        auto [pong, next] = std::move(head).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+        static_assert(std::is_same_v<decltype(next), decltype(head)>, "a Continue lands on the reception again");
+        received += pong.value;
+        head = std::move(next);
+    }
+    std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
+    if (received != 21) {
+        std::fprintf(stderr, "the receiving loop did not receive three times\n");
         return 1;
     }
     return 0;
@@ -1234,6 +1269,7 @@ int main() {
     if (const int rc = walk_keyed_choice_in_another_order(); rc != 0) return rc;
     if (const int rc = view_a_position(); rc != 0) return rc;
     if (const int rc = walk_with_session(); rc != 0) return rc;
+    if (const int rc = walk_receiving_loop(); rc != 0) return rc;
     if (const int rc = walk_loop_with_permission_set(); rc != 0) return rc;
     if (const int rc = move_token_through_session(); rc != 0) return rc;
     if (const int rc = walk_vendor_pinned_session(); rc != 0) return rc;

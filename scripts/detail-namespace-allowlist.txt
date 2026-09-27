@@ -44,7 +44,7 @@ test/fixy/test_session_crash_stop.cpp ::foundation::effects::detail x1 — build
 test/fixy/test_session_entry.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_global_attack.cpp ::fixy::session::detail x1 — reads the projection check of each role
 test/fixy/test_session_global_crash.cpp ::foundation::effects::detail x1 — builds a background context from its witness
-test/fixy/test_session_handle.cpp ::fixy::session::detail x18 — pins the loop frames of the session handle
+test/fixy/test_session_handle.cpp ::fixy::session::detail x26 — pins the loop frames and the forms of a loop context of the session handle
 test/fixy/test_session_handle.cpp ::fixy::session::watch::detail x2 — reads the owner of a watched endpoint record
 test/fixy/test_session_handle.cpp ::foundation::effects::detail x5 — builds a background context from its witness
 test/fixy/test_session_handle_attacks.cpp ::fixy::session::detail x3 — builds the forked head type that the attack uses

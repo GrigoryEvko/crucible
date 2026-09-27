@@ -46,8 +46,8 @@
 // The EpochCtx context wrapper of the ported source is not here.  No
 // production file uses it, so the port drops it.  The lattices that it
 // reads are in foundation: foundation/algebra/lattices/StrongCounterLattice.h
-// holds EpochLattice and GenerationLattice.  The LoopCtx traits keep their
-// indirection, so a context wrapper is one specialization of each.
+// holds EpochLattice and GenerationLattice.  A loop context has four
+// forms, and one function reads them (the section on the loop context).
 
 #include <foundation/algebra/Transition.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
@@ -466,31 +466,97 @@ consteval bool require_registered_spine() {
 
 // ── Loop context ─────────────────────────────────────────────────────
 //
-// The traits indirection has one inhabitant: a LoopCtx is its own inner
-// context.  It stays because the context axis is an extension point.  A
-// wrapper that carries admission facts beside the loop specializes these
-// three, and each Continue resolution stays correct.
+// A handle carries a loop context, which has one of four forms:
+//
+//   void                          outside a loop
+//   Loop<Body>                    after the first step of a loop
+//   PermLoopFrame<Loop, EntryPS>  the same, when the loop starts with a
+//                                 permission set that each iteration must
+//                                 give back
+//   session_brand<Brand, Inner>   one of the forms above, lent by an
+//                                 owning entry point to a body
+//
+// One function over reflections reads each form and refuses every other
+// type, and the aliases below splice its answer.  An alias and a function
+// that is not a template take no specialization, so no program can send
+// Continue to a body that the loop does not hold.  The body comes from the
+// template argument of the Loop, never from a member, so a specialization
+// of Loop cannot change it either.
+
+namespace detail {
+
+// The loop context of a handle that an owning entry point lends to a
+// body.  fixy/session/Handle.h states what the brand closes.  Each form
+// is read from its template arguments, so no form has a member.
+template <typename Brand, typename InnerLoopCtx = void>
+struct session_brand {};
+
+// The loop context of a loop that starts with the permission set EntryPS.
+// fixy/session/Handle.h builds it and checks the set at each Continue.
+template <typename LoopType, typename EntryPS>
+struct PermLoopFrame {};
+
+// Called during constant evaluation only for a loop context of no known
+// form, so the call is the diagnostic.
+void a_loop_context_has_no_known_form() noexcept;
+
+[[nodiscard]] consteval bool is_instance_of(std::meta::info type, std::meta::info family) {
+    return ::foundation::algebra::transition::shape_of(type) == family;
+}
+
+// The Loop that an inner loop context stands for, or void for void.
+// Any other type is refused.
+[[nodiscard]] consteval std::meta::info loop_of_inner(std::meta::info inner) {
+    const std::meta::info type = std::meta::dealias(inner);
+    if (type == ^^void || is_instance_of(type, ^^Loop)) return type;
+    if (is_instance_of(type, ^^PermLoopFrame)) {
+        const std::meta::info loop = std::meta::dealias(std::meta::template_arguments_of(type)[0]);
+        if (is_instance_of(loop, ^^Loop)) return loop;
+    }
+    a_loop_context_has_no_known_form();
+    return ^^void;
+}
+
+// The inner loop context: void, a Loop or a frame, with every brand taken
+// away.
+[[nodiscard]] consteval std::meta::info inner_loop_ctx_of(std::meta::info loop_ctx) {
+    const std::meta::info type = std::meta::dealias(loop_ctx);
+    if (is_instance_of(type, ^^session_brand)) return inner_loop_ctx_of(std::meta::template_arguments_of(type)[1]);
+    static_cast<void>(loop_of_inner(type));
+    return type;
+}
+
+// The loop context with its inner context replaced.  A brand stays around
+// the new inner context.
+[[nodiscard]] consteval std::meta::info rebind_inner_loop_ctx(std::meta::info loop_ctx, std::meta::info new_inner) {
+    const std::meta::info type = std::meta::dealias(loop_ctx);
+    if (is_instance_of(type, ^^session_brand)) {
+        const auto arguments = std::meta::template_arguments_of(type);
+        return std::meta::substitute(^^session_brand, {arguments[0], rebind_inner_loop_ctx(arguments[1], new_inner)});
+    }
+    static_cast<void>(loop_of_inner(type));
+    static_cast<void>(loop_of_inner(new_inner));
+    return std::meta::dealias(new_inner);
+}
+
+// The body of the loop that a loop context or a Loop stands for, read
+// from the template argument of the Loop.
+[[nodiscard]] consteval std::meta::info loop_body_of(std::meta::info loop_ctx) {
+    const std::meta::info loop = loop_of_inner(inner_loop_ctx_of(loop_ctx));
+    if (loop == ^^void) a_loop_context_has_no_known_form();
+    return std::meta::dealias(std::meta::template_arguments_of(loop)[0]);
+}
 
 template <typename LoopCtx>
-struct session_loop_ctx_traits {
-    using inner_loop_ctx = LoopCtx;
-};
+using loop_body_t = [:loop_body_of(^^LoopCtx):];
 
-template <>
-struct session_loop_ctx_traits<void> {
-    using inner_loop_ctx = void;
-};
+}  // namespace detail
 
 template <typename LoopCtx>
-using session_loop_ctx_inner_t = typename session_loop_ctx_traits<LoopCtx>::inner_loop_ctx;
+using session_loop_ctx_inner_t = [:detail::inner_loop_ctx_of(^^LoopCtx):];
 
 template <typename LoopCtx, typename NewInnerLoopCtx>
-struct session_loop_ctx_rebind_inner {
-    using type = NewInnerLoopCtx;
-};
-
-template <typename LoopCtx, typename NewInnerLoopCtx>
-using session_loop_ctx_rebind_inner_t = typename session_loop_ctx_rebind_inner<LoopCtx, NewInnerLoopCtx>::type;
+using session_loop_ctx_rebind_inner_t = [:detail::rebind_inner_loop_ctx(^^LoopCtx, ^^NewInnerLoopCtx):];
 
 // ── Shape traits ─────────────────────────────────────────────────────
 //

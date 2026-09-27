@@ -173,7 +173,7 @@ struct resolve {
     using loop = LoopCtx;
 };
 template <typename LoopCtx>
-struct resolve<Continue, LoopCtx> : resolve<typename LoopCtx::body, LoopCtx> {};
+struct resolve<Continue, LoopCtx> : resolve<::fixy::session::detail::loop_body_t<LoopCtx>, LoopCtx> {};
 template <typename B, typename LoopCtx>
 struct resolve<Loop<B>, LoopCtx> : resolve<B, Loop<B>> {};
 

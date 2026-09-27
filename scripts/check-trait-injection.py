@@ -188,8 +188,6 @@ QualifiedName = tuple[str, ...]
 IN_THE_LAYERS = ("include/foundation/*", "include/fixy/*")
 SPLIT_REASON = ("scripts/check-splits-orphan.py admits each split manifest only beside the tags it names, a "
                 "stronger rule than an authoring set")
-SESSION_REASON = ("each protocol combinator of the session layer states its own case of the protocol algebra "
-                  "beside its definition")
 EXTENSION_POINTS: dict[QualifiedName, tuple[tuple[str, ...], str]] = {
     ("foundation", "contracts", "armed_cell"): (
         IN_THE_LAYERS, "a cell holds the witnesses that a gate predicate accepts and refuses, beside the predicate.  "
@@ -210,8 +208,6 @@ EXTENSION_POINTS: dict[QualifiedName, tuple[tuple[str, ...], str]] = {
     ("foundation", "permissions", "can_split_into_pack"): (("*",), SPLIT_REASON),
     ("foundation", "permissions", "has_split_authoring_witness"): (("*",), SPLIT_REASON),
     ("foundation", "permissions", "has_split_pack_authoring_witness"): (("*",), SPLIT_REASON),
-    ("fixy", "session", "session_loop_ctx_traits"): (("include/fixy/session/*",), SESSION_REASON),
-    ("fixy", "session", "session_loop_ctx_rebind_inner"): (("include/fixy/session/*",), SESSION_REASON),
 }
 
 

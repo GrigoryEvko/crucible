@@ -581,26 +581,21 @@ inline constexpr bool perm_set_is_empty_v =
 // start with a different set, and a permission would be lost or
 // duplicated once per iteration.  The frame records the entry set beside
 // the loop.  With an empty set the frame is the Loop itself, so a handle
-// without permissions has the same loop context as before.
-template <typename LoopType, typename EntryPS>
-struct PermLoopFrame {
-    using loop_type = LoopType;
-    using body = typename LoopType::body;
-    using entry_perm_set = EntryPS;
-};
+// without permissions has the same loop context as before.  The frame
+// type, PermLoopFrame, stands in fixy/session/Protocol.h beside the other
+// forms of a loop context.
+
+// The entry set of a loop context: the second argument of a frame, and
+// the empty set for any other form.  The form is checked, so no type of an
+// unknown form gives an entry set.
+[[nodiscard]] consteval std::meta::info entry_perm_set_of(std::meta::info loop_ctx) {
+    const std::meta::info inner = inner_loop_ctx_of(loop_ctx);
+    if (is_instance_of(inner, ^^PermLoopFrame)) return std::meta::dealias(std::meta::template_arguments_of(inner)[1]);
+    return ^^::foundation::permissions::EmptyPermSet;
+}
 
 template <typename Frame>
-struct loop_entry_perm_set {
-    using type = ::foundation::permissions::EmptyPermSet;
-};
-
-template <typename LoopType, typename EntryPS>
-struct loop_entry_perm_set<PermLoopFrame<LoopType, EntryPS>> {
-    using type = EntryPS;
-};
-
-template <typename Frame>
-using loop_entry_perm_set_t = typename loop_entry_perm_set<Frame>::type;
+using loop_entry_perm_set_t = [:entry_perm_set_of(^^Frame):];
 
 template <typename LoopType, typename PS>
 using loop_frame_t = std::conditional_t<perm_set_is_empty_v<PS>, LoopType, PermLoopFrame<LoopType, PS>>;
@@ -616,36 +611,22 @@ using loop_frame_t = std::conditional_t<perm_set_is_empty_v<PS>, LoopType, PermL
 // accepts back only a handle with that brand.  No public mint makes a
 // branded handle, so the returned handle is one that the body received.
 //
-// The brand wraps the loop context and passes the loop traits through,
-// which is the extension point that Protocol.h keeps for a context
-// wrapper.
-template <typename Brand, typename InnerLoopCtx = void>
-struct session_brand {
-    using brand_type = Brand;
-    using inner_loop_ctx = InnerLoopCtx;
-};
+// The brand, session_brand, is a form of loop context, so it stands in
+// fixy/session/Protocol.h with the other forms.
 
-template <typename LoopCtx>
-struct session_brand_of {
-    using type = void;
-};
+// The brand of a loop context, or void for a context with no brand.
+[[nodiscard]] consteval std::meta::info brand_of(std::meta::info loop_ctx) {
+    const std::meta::info type = std::meta::dealias(loop_ctx);
+    if (is_instance_of(type, ^^session_brand)) return std::meta::dealias(std::meta::template_arguments_of(type)[0]);
+    return ^^void;
+}
 
-template <typename Brand, typename InnerLoopCtx>
-struct session_brand_of<session_brand<Brand, InnerLoopCtx>> {
-    using type = Brand;
-};
+// True when the loop context carries the brand Brand.  A context with no
+// brand carries the brand void.
+template <typename LoopCtx, typename Brand>
+concept carries_brand = brand_of(^^LoopCtx) == std::meta::dealias(^^Brand);
 
 }  // namespace detail
-
-template <typename Brand, typename InnerLoopCtx>
-struct session_loop_ctx_traits<detail::session_brand<Brand, InnerLoopCtx>> {
-    using inner_loop_ctx = session_loop_ctx_inner_t<InnerLoopCtx>;
-};
-
-template <typename Brand, typename InnerLoopCtx, typename NewInnerLoopCtx>
-struct session_loop_ctx_rebind_inner<detail::session_brand<Brand, InnerLoopCtx>, NewInnerLoopCtx> {
-    using type = detail::session_brand<Brand, session_loop_ctx_rebind_inner_t<InnerLoopCtx, NewInnerLoopCtx>>;
-};
 
 // ── Passkeys ─────────────────────────────────────────────────────────
 //
@@ -1246,7 +1227,7 @@ concept ResumablePosition = detail::is_resumable_position<R, LoopCtx>();
 // The gate of HandleFactory::rewind.
 template <typename R, typename LoopCtx, typename EndLoopCtx>
 concept RewindableTo =
-    ResumablePosition<R, LoopCtx> && std::is_void_v<typename detail::session_brand_of<EndLoopCtx>::type>;
+    ResumablePosition<R, LoopCtx> && detail::carries_brand<EndLoopCtx, void>;
 
 // ── Local choices ────────────────────────────────────────────────────
 //
@@ -2106,13 +2087,13 @@ constexpr auto HandleFactory::step_(Resource r, watch::session_ref session, std:
                       "permission set, so a Continue would start the next iteration with a different set.  Each "
                       "permission that the body receives, it must send back before the Continue, and each "
                       "permission that the body sends, it must receive back.");
-        using NextBody = typename ActiveLoopCtx::body;
+        using NextBody = detail::loop_body_t<ActiveLoopCtx>;
         // The body may itself begin with a Loop or a Continue, so this
         // recurses.  Forwarding `loc` keeps the outermost caller's site
         // rather than replacing it with this frame's.
         return step_<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else if constexpr (is_loop_v<R>) {
-        using InnerBody = typename R::body;
+        using InnerBody = detail::loop_body_t<R>;
         using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, detail::loop_frame_t<R, PS>>;
         // Entering an inner Loop shadows the enclosing loop context.
         // That shadowing is what binds Continue to the nearest Loop.
@@ -2388,8 +2369,7 @@ constexpr auto HandleFactory::start_(Resource r, std::source_location loc, watch
     static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_Refused]: the handle "
                                              "factory opens a session only over a Resource that a mint admits.");
     static_assert(std::is_void_v<LoopCtx>
-                      || std::is_same_v<LoopCtx, detail::session_brand<typename detail::session_brand_of<LoopCtx>::type,
-                                                                       void>>,
+                      || std::is_same_v<LoopCtx, detail::session_brand<typename[:detail::brand_of(^^LoopCtx):], void>>,
                   "fixy::session::diagnostic [Protocol_Ill_Formed]: the first handle of a session has no loop "
                   "context, or the brand of the body that owns the session.");
     static_assert(PermissionFlowCloses<Proto, PS>,
@@ -2778,7 +2758,7 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
 // close() gives back the Resource.
 template <typename H, typename Resource, typename Brand>
 concept ClosesInSessionOf = std::is_same_v<std::remove_cvref_t<H>, H> && requires { typename H::loop_ctx; }
-                         && std::is_same_v<typename detail::session_brand_of<typename H::loop_ctx>::type, Brand>
+                         && detail::carries_brand<typename H::loop_ctx, Brand>
                          && requires(H handle) {
                                 { std::move(handle).close() } -> std::same_as<Resource>;
                             };
