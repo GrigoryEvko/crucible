@@ -257,6 +257,22 @@ template <typename T>
     requires is_swmr_reader_v<T>
 using swmr_reader_value_t = typename detail::load_shape<std::remove_cvref_t<T>>::payload;
 
+// The channel a handle acts on.  Each channel handle names it, so a place
+// that joins two handles can ask that they meet on one channel: a stage
+// that writes channel A and a stage that drains channel B agree in payload
+// and never exchange a value.  A handle that names no channel meets no
+// other handle, so the question fails closed.
+template <typename T>
+concept NamesItsChannel = requires { typename std::remove_cvref_t<T>::channel_type; };
+
+template <typename T>
+    requires NamesItsChannel<T>
+using handle_channel_t = typename std::remove_cvref_t<T>::channel_type;
+
+template <typename Producer, typename Consumer>
+concept HandlesShareChannel = NamesItsChannel<Producer> && NamesItsChannel<Consumer>
+                           && std::is_same_v<handle_channel_t<Producer>, handle_channel_t<Consumer>>;
+
 namespace detail::handle_traits_self_test {
 
 // ── the consumer and producer poles ─────────────────────────────────
@@ -454,6 +470,30 @@ static_assert(!is_consumer_handle_v<synthetic_writer> && !is_producer_handle_v<s
               && is_swmr_writer_v<synthetic_writer> && !is_swmr_reader_v<synthetic_writer>);
 static_assert(!is_consumer_handle_v<synthetic_reader> && !is_producer_handle_v<synthetic_reader>
               && !is_swmr_writer_v<synthetic_reader> && is_swmr_reader_v<synthetic_reader>);
+
+// ── the channel a handle names ──────────────────────────────────────
+
+struct channel_a {};
+struct channel_b {};
+
+struct producer_on_a {
+    using channel_type = channel_a;
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
+};
+struct consumer_on_a {
+    using channel_type = channel_a;
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+};
+struct consumer_on_b {
+    using channel_type = channel_b;
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+};
+
+static_assert(NamesItsChannel<producer_on_a> && NamesItsChannel<consumer_on_b const&>);
+static_assert(!NamesItsChannel<synthetic_producer>);
+static_assert(HandlesShareChannel<producer_on_a, consumer_on_a>);
+static_assert(!HandlesShareChannel<producer_on_a, consumer_on_b>, "one payload, two channels");
+static_assert(!HandlesShareChannel<synthetic_producer, synthetic_consumer>, "a handle that names no channel meets none");
 
 }  // namespace detail::handle_traits_self_test
 

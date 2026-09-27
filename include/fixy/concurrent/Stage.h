@@ -7,10 +7,9 @@
 //
 // Whether each channel suits the context it runs in is settled where the
 // handles were bound to their contexts, and is deliberately not rechecked
-// here: a handle does not carry its channel type back, so the check would
-// have to be reconstructed from nothing.  Agreement between one stage's output
-// and the next stage's input is a property of the chain, and belongs to
-// whatever assembles the chain.
+// here.  Whether one stage feeds the next is a property of the chain, and
+// fixy/concurrent/Pipeline.h checks it: the producer handle of one stage and
+// the consumer handle of the next name the same channel.
 //
 // Old spelling: include/crucible/concurrent/Stage.h.  MpmcStage and
 // SwmrStage have a private constructor.  Their one friend is the door of
@@ -440,14 +439,25 @@ namespace detail::stage_self_test {
 
 namespace eff = ::foundation::effects;
 
+// A pipeline joins two stages only when their handles name one channel, so
+// each fake names one.  The writer publishes into a cell that no stage
+// drains, so it names a cell of its own.
+template <typename T>
+struct FakeChannel {};
+
+template <typename T>
+struct FakeCell {};
+
 template <typename T>
 struct FakeConsumer {
+    using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
     [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>
 struct FakeProducer {
+    using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
@@ -456,6 +466,7 @@ struct FakeProducer {
 // for.  SwmrStage below is instantiated over it.
 template <typename T>
 struct FakeWriter {
+    using channel_type = FakeCell<T>;
     static constexpr std::size_t per_call_working_set = 64;
     void publish(T const&) noexcept {}
 };

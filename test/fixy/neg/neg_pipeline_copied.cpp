@@ -12,13 +12,19 @@
 
 namespace {
 
+// The two stages chain, so their handles name one channel.
+template <typename T>
+struct FakeChannel {};
+
 template <typename T>
 struct FakeConsumer {
+    using channel_type = FakeChannel<T>;
     [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>
 struct FakeProducer {
+    using channel_type = FakeChannel<T>;
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
 

@@ -40,14 +40,19 @@ constexpr fixy::HotFgCtx kForeground = foundation::effects::testing::foreground(
 constexpr fixy::BgDrainCtx kCoordinator{foundation::effects::testing::bg()};
 
 // Handles that never block and carry the working set that the router reads.
+// The stages chain, so each handle names the same channel.
+struct IntChannel {};
+
 template <std::size_t Ws>
 struct Consumer {
+    using channel_type = IntChannel;
     static constexpr std::size_t per_call_working_set = Ws;
     [[nodiscard]] std::optional<int> try_pop() noexcept { return 1; }
 };
 
 template <std::size_t Ws>
 struct Producer {
+    using channel_type = IntChannel;
     static constexpr std::size_t per_call_working_set = Ws;
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };

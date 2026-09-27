@@ -73,7 +73,10 @@ struct Consumer {
 
 }  // namespace mpsc_tag
 
-template <RingValue T, std::size_t Capacity, typename UserTag = void>
+// UserTag has no default, for the reason fixy/concurrent/
+// PermissionedSpscChannel.h gives: two channels on one tag share their
+// Permission types.
+template <RingValue T, std::size_t Capacity, typename UserTag>
 class PermissionedMpscChannel : public ::foundation::Pinned<PermissionedMpscChannel<T, Capacity, UserTag>> {
 public:
     using value_type = T;
@@ -113,6 +116,10 @@ public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
         using row_discipline = ::fixy::row_discipline::mpsc_producer;
         using row_payload = T;
+        // The channel this handle acts on.  A pipeline joins two stages
+        // only when the producer of one and the consumer of the next name
+        // the same channel.
+        using channel_type = PermissionedMpscChannel;
 
         ProducerHandle(const ProducerHandle&) =
             delete("ProducerHandle owns a Pool refcount share — copy would double-count");
@@ -151,6 +158,7 @@ public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
         using row_discipline = ::fixy::row_discipline::mpsc_consumer;
         using row_payload = T;
+        using channel_type = PermissionedMpscChannel;
 
         ConsumerHandle(const ConsumerHandle&) =
             delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
@@ -181,10 +189,12 @@ public:
         return ConsumerHandle{*this, std::move(perm)};
     }
 
-    // Runs the body with every producer out, which is what a reset, a
-    // resize or a migration needs.  Returns false when producers were
-    // still out and the body did not run.  A producer can be lent again
-    // once the body returns.
+    // Runs the body with every producer out.  Returns false when producers
+    // were still out and the body did not run.  A producer can be lent
+    // again once the body returns.  The body gets no ring, because the
+    // consumer handle is still alive and pops from the same cells: the
+    // body acts through the handles it holds.  For example, the consumer
+    // drains the ring to empty, and no push lands at the same time.
     template <typename Body>
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
@@ -207,6 +217,18 @@ private:
     MpscRing<T, Capacity> ring_;
     ::foundation::permissions::SharedPermissionPool<producer_tag> producer_pool_;
 };
+
+namespace detail::mpsc_channel_self_test {
+
+// The tag the witness roster names for this channel.
+struct WitnessTag {};
+
+// A channel that omits its tag does not name a type.
+template <template <RingValue, std::size_t, typename...> class Channel>
+concept NamesATypeWithoutATag = requires { typename Channel<int, 8>; };
+static_assert(!NamesATypeWithoutATag<PermissionedMpscChannel>);
+
+}  // namespace detail::mpsc_channel_self_test
 
 }  // namespace fixy::concurrent
 

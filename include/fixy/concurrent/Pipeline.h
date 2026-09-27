@@ -18,15 +18,20 @@
 //
 // Every stage settled its own fit with its own context when it was minted, and
 // each of its endpoints did the same before that.  What is left to check here
-// is that consecutive payload types agree, and that the coordinating context
-// may start threads and admits the effects of all the stage contexts it is
-// about to start.  The mint checks the context of the minting thread, and run
-// checks the context of the thread that starts the stages.
+// is that each output feeds the next input on one channel, and that the
+// coordinating context can start threads and admits the effects of all the
+// stage contexts it is about to start.  The mint checks the context of the
+// minting thread, and run checks the context of the thread that starts the
+// stages.
+//
+// A channel is known by its type.  Two channels of one type are one channel
+// to the check, so each channel of a pipeline names a tag of its own.
 //
 // Old spelling: include/crucible/concurrent/Pipeline.h.  That header also
 // included the SPSC channel and the permission token and used neither.
 
 #include <fixy/Ctx.h>
+#include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/Topology.h>
@@ -84,16 +89,25 @@ struct stage_ports;
 
 template <auto FnPtr, class Ctx>
 struct stage_ports<Stage<FnPtr, Ctx>> {
+    using stage_type = Stage<FnPtr, Ctx>;
     static constexpr std::size_t input_count = 1;
     static constexpr std::size_t output_count = 1;
 
     template <std::size_t I>
         requires(I == 0)
-    using input_value_type = typename Stage<FnPtr, Ctx>::input_value_type;
+    using input_value_type = typename stage_type::input_value_type;
 
     template <std::size_t I>
         requires(I == 0)
-    using output_value_type = typename Stage<FnPtr, Ctx>::output_value_type;
+    using output_value_type = typename stage_type::output_value_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using input_handle_type = typename stage_type::consumer_handle_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using output_handle_type = typename stage_type::producer_handle_type;
 };
 
 template <auto FnPtr, class Ctx, class Inputs, class Outputs>
@@ -109,6 +123,14 @@ struct stage_ports<MpmcStage<FnPtr, Ctx, Inputs, Outputs>> {
     template <std::size_t I>
         requires(I < output_count)
     using output_value_type = typename stage_type::template output_value_type<I>;
+
+    template <std::size_t I>
+        requires(I < input_count)
+    using input_handle_type = typename stage_type::template input_handle_type<I>;
+
+    template <std::size_t I>
+        requires(I < output_count)
+    using output_handle_type = typename stage_type::template output_handle_type<I>;
 };
 
 template <auto FnPtr, class Ctx>
@@ -124,6 +146,14 @@ struct stage_ports<SwmrStage<FnPtr, Ctx>> {
     template <std::size_t I>
         requires(I == 0)
     using output_value_type = typename stage_type::output_value_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using input_handle_type = typename stage_type::consumer_handle_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    using output_handle_type = typename stage_type::writer_handle_type;
 };
 
 }  // namespace detail
@@ -147,9 +177,27 @@ template <class Stage, std::size_t I>
     requires IsStage<Stage>
 using stage_output_value_t = typename detail::stage_ports<std::remove_cvref_t<Stage>>::template output_value_type<I>;
 
+template <class Stage, std::size_t I>
+    requires IsStage<Stage>
+using stage_input_handle_t = typename detail::stage_ports<std::remove_cvref_t<Stage>>::template input_handle_type<I>;
+
+template <class Stage, std::size_t I>
+    requires IsStage<Stage>
+using stage_output_handle_t = typename detail::stage_ports<std::remove_cvref_t<Stage>>::template output_handle_type<I>;
+
+// An output feeds an input when the two carry one payload and their handles
+// name one channel.  The payload alone is not sufficient.  A stage that
+// writes channel A, before a stage that drains channel B, agrees in payload,
+// no value goes from one to the other, and the pipeline never ends.  The
+// caller checks the two port indices first.
+template <class From, std::size_t Output, class To, std::size_t Input>
+concept stage_port_feeds =
+    std::is_same_v<stage_output_value_t<From, Output>, stage_input_value_t<To, Input>>
+    && HandlesShareChannel<stage_output_handle_t<From, Output>, stage_input_handle_t<To, Input>>;
+
 template <class S1, class S2>
 concept stages_chain = IsStage<S1> && IsStage<S2> && stage_output_count_v<S1> == 1 && stage_input_count_v<S2> == 1
-                    && std::is_same_v<stage_output_value_t<S1, 0>, stage_input_value_t<S2, 0>>;
+                    && stage_port_feeds<S1, 0, S2, 0>;
 
 namespace detail {
 
@@ -272,8 +320,7 @@ consteval bool stage_graph_edge_valid() noexcept {
                       || Edge::to_input >= stage_input_count_v<to_stage>) {
             return false;
         } else {
-            return std::is_same_v<stage_output_value_t<from_stage, Edge::from_output>,
-                                  stage_input_value_t<to_stage, Edge::to_input>>;
+            return stage_port_feeds<from_stage, Edge::from_output, to_stage, Edge::to_input>;
         }
     }
 }
@@ -814,9 +861,41 @@ static_assert(std::is_same_v<stage_output_value_t<M1, 0>, int>);
 static_assert(stage_input_count_v<W1> == 1);
 static_assert(stage_output_count_v<W1> == 1);
 static_assert(std::is_same_v<stage_output_value_t<W1, 0>, int>);
-static_assert(stages_chain<W1, S_int_to_int>);
+// The writer of W1 publishes into a cell, and no stage drains a cell, so W1
+// feeds no stage although the payloads agree.
+static_assert(!stages_chain<W1, S_int_to_int>);
 static_assert(stages_chain<M1, S_int_to_int>);
 static_assert(!stages_chain<S_int_to_int, M1>);
+
+// One payload on two channels.  The producer of this stage names another
+// channel than the consumer of S_int_to_int names.
+template <typename T>
+struct OtherChannel {};
+
+template <typename T>
+struct OtherProducer {
+    using channel_type = OtherChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    [[nodiscard]] bool try_push(T const&) noexcept { return false; }
+};
+
+// A producer that names no channel.  It meets no consumer, and it can still
+// be the last output of a pipeline, where no stage follows.
+template <typename T>
+struct NamelessProducer {
+    static constexpr std::size_t per_call_working_set = 64;
+    [[nodiscard]] bool try_push(T const&) noexcept { return false; }
+};
+
+inline void stage_into_other_channel(FakeConsumer<int>&&, OtherProducer<int>&&) noexcept {}
+inline void stage_into_nameless(FakeConsumer<int>&&, NamelessProducer<int>&&) noexcept {}
+using S_into_other = Stage<&stage_into_other_channel, HotFgCtx>;
+using S_into_nameless = Stage<&stage_into_nameless, HotFgCtx>;
+
+static_assert(std::is_same_v<stage_output_value_t<S_into_other, 0>, stage_input_value_t<S_int_to_int, 0>>);
+static_assert(!stages_chain<S_into_other, S_int_to_int>, "one payload, two channels");
+static_assert(!stages_chain<S_into_nameless, S_int_to_int>, "a handle that names no channel feeds no stage");
+static_assert(pipeline_chain<S_int_to_int, S_into_nameless>);
 
 static_assert(stages_chain<S_int_to_int, S_int_to_int>);
 static_assert(stages_chain<S_int_to_float, S_float_to_double>);
@@ -832,6 +911,7 @@ static_assert(pipeline_chain<S_int_to_int, S_int_to_float, S_float_to_double>);
 static_assert(pipeline_chain<S_bg_int_to_int, S_int_to_int>);
 static_assert(!pipeline_chain<S_int_to_int, S_float_to_double>);
 static_assert(!pipeline_chain<S_int_to_int, S_int_to_int, S_float_to_double>);
+static_assert(!pipeline_chain<S_into_other, S_int_to_int>);
 static_assert(!pipeline_chain<int>);
 static_assert(!pipeline_chain<>);
 
@@ -864,12 +944,15 @@ using CycleGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int>, EdgePack<St
 using UnreachableGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int>, EdgePack<StageEdge<0, 1>>>;
 using DisconnectedGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
                                      EdgePack<StageEdge<0, 1>, StageEdge<2, 3>>>;
+// One edge, which agrees in payload and joins two channels.
+using CrossedGraph = StageGraph<StagePack<S_into_other, S_int_to_int>, EdgePack<StageEdge<0, 1>>>;
 
 static_assert(StageGraphWellFormed<FanOutGraph>);
 static_assert(StageGraphWellFormed<DiamondGraph>);
 static_assert(!StageGraphWellFormed<CycleGraph>);
 static_assert(!StageGraphWellFormed<UnreachableGraph>);
 static_assert(!StageGraphWellFormed<DisconnectedGraph>);
+static_assert(!StageGraphWellFormed<CrossedGraph>);
 static_assert(CtxFitsPipelineDag<BgDrainCtx, FanOutGraph>);
 static_assert(CtxFitsPipelineDag<BgDrainCtx, DiamondGraph>);
 static_assert(!CtxFitsPipelineDag<HotFgCtx, DiamondGraph>);

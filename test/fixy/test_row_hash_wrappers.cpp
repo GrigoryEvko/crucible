@@ -839,6 +839,11 @@ struct SwmrReaderTag {
 };
 struct SwmrReaderBrand {};
 struct SwmrWriterBrand {};
+// The tags of the two ring channel witnesses.  A channel names its tag.
+struct SpscWitnessTag {};
+struct MpscWitnessTag {};
+using SpscWitness = ::fixy::concurrent::PermissionedSpscChannel<int, 8, SpscWitnessTag>;
+using MpscWitness = ::fixy::concurrent::PermissionedMpscChannel<int, 8, MpscWitnessTag>;
 struct PureRegionBrand {};
 using SwmrWitness =
     ::fixy::concurrent::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
@@ -951,8 +956,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::ChaseLevDeque, ^^::fixy::concurrent::ChaseLevDeque<int, 8>},
     {^^::fixy::concurrent::MpscRing, ^^::fixy::concurrent::MpscRing<int, 8>},
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
-    {^^::fixy::concurrent::PermissionedMpscChannel, ^^::fixy::concurrent::PermissionedMpscChannel<int, 8>},
-    {^^::fixy::concurrent::PermissionedSpscChannel, ^^::fixy::concurrent::PermissionedSpscChannel<int, 8>},
+    {^^::fixy::concurrent::PermissionedMpscChannel, ^^MpscWitness},
+    {^^::fixy::concurrent::PermissionedSpscChannel, ^^SpscWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
     {^^::fixy::concurrent::swmr_session::SwmrSession, ^^SwmrWitness},
     {^^::fixy::concurrent::Stage, ^^stage_probe::S1},
@@ -1448,10 +1453,10 @@ static_assert(row_hash_contribution_v<::fixy::AtomicMonotonic<std::uint64_t>>
 static_assert(row_hash_contribution_v<pipeline_probe::P1>
               != row_hash_contribution_v<pipeline_probe::S_int_to_int>);
 static_assert(row_hash_contribution_v<stage_probe::S1> != row_hash_contribution_v<stage_probe::W1>);
-static_assert(row_hash_contribution_v<::fixy::concurrent::PermissionedSpscChannel<int, 8>::ProducerHandle>
-              != row_hash_contribution_v<::fixy::concurrent::PermissionedSpscChannel<int, 8>::ConsumerHandle>);
-static_assert(row_hash_contribution_v<::fixy::concurrent::PermissionedMpscChannel<int, 8>::ProducerHandle>
-              != row_hash_contribution_v<::fixy::concurrent::PermissionedSpscChannel<int, 8>::ProducerHandle>);
+static_assert(row_hash_contribution_v<SpscWitness::ProducerHandle>
+              != row_hash_contribution_v<SpscWitness::ConsumerHandle>);
+static_assert(row_hash_contribution_v<MpscWitness::ProducerHandle>
+              != row_hash_contribution_v<SpscWitness::ProducerHandle>);
 
 }  // namespace census
 

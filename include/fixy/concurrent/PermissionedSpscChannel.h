@@ -67,7 +67,10 @@ struct Consumer {
 
 }  // namespace spsc_tag
 
-template <RingValue T, std::size_t Capacity, typename UserTag = void>
+// UserTag has no default.  A default would give every channel that omits
+// it one set of Permission types, and the endpoints of two such channels
+// would be interchangeable.
+template <RingValue T, std::size_t Capacity, typename UserTag>
 class PermissionedSpscChannel : public ::foundation::Pinned<PermissionedSpscChannel<T, Capacity, UserTag>> {
 public:
     using value_type = T;
@@ -102,6 +105,10 @@ public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
         using row_discipline = ::fixy::row_discipline::spsc_producer;
         using row_payload = T;
+        // The channel this handle acts on.  A pipeline joins two stages
+        // only when the producer of one and the consumer of the next name
+        // the same channel.
+        using channel_type = PermissionedSpscChannel;
 
         ProducerHandle(const ProducerHandle&) =
             delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
@@ -136,6 +143,7 @@ public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
         using row_discipline = ::fixy::row_discipline::spsc_consumer;
         using row_payload = T;
+        using channel_type = PermissionedSpscChannel;
 
         ConsumerHandle(const ConsumerHandle&) =
             delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
@@ -164,16 +172,18 @@ public:
     // Scoped exclusive access to the ring.  Both endpoints here hold
     // linear tokens and there is no refcount to drain, so surrendering
     // the recombined whole permission is itself the proof that no
-    // handle is alive.  The pool-backed channels instead drain their
-    // atomic state and take no permission.  The whole permission comes
-    // back so the caller can split it again for the next session, and
-    // the whole exchange is type-level with no atomic operation.
+    // handle is alive.  No handle is alive, so the body gets the ring:
+    // it can fill it before the first session or drain what the last one
+    // left.  The pool-backed channels instead drain their atomic state
+    // and take no permission.  The whole permission comes back so the
+    // caller can split it again for the next session, and the whole
+    // exchange is type-level with no atomic operation.
     template <typename Body>
-        requires std::is_invocable_v<Body>
+        requires std::is_invocable_v<Body, SpscRing<T, Capacity>&>
     [[nodiscard]] ::foundation::permissions::Permission<whole_tag>
     with_recombined_access(::foundation::permissions::Permission<whole_tag>&& whole,
-                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
-        std::forward<Body>(body)();
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body, SpscRing<T, Capacity>&>) {
+        std::forward<Body>(body)(ring_);
         return std::move(whole);
     }
 
@@ -189,6 +199,18 @@ public:
 private:
     SpscRing<T, Capacity> ring_;
 };
+
+namespace detail::spsc_channel_self_test {
+
+// The tag the witness roster names for this channel.
+struct WitnessTag {};
+
+// A channel that omits its tag does not name a type.
+template <template <RingValue, std::size_t, typename...> class Channel>
+concept NamesATypeWithoutATag = requires { typename Channel<int, 8>; };
+static_assert(!NamesATypeWithoutATag<PermissionedSpscChannel>);
+
+}  // namespace detail::spsc_channel_self_test
 
 }  // namespace fixy::concurrent
 

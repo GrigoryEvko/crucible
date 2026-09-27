@@ -503,6 +503,10 @@ public:
 
     public:
         static constexpr std::size_t per_call_working_set = Consumer::per_call_working_set;
+        // The pipeline joins this input to the output before it only when
+        // the two name one channel, so the input names the channel of the
+        // consumer end that it holds.
+        using channel_type = typename Consumer::channel_type;
 
         StageInput(StageInput&&) noexcept = default;
         StageInput(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");

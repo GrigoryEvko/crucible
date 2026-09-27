@@ -15,13 +15,20 @@ namespace {
 
 namespace cc = fixy::concurrent;
 
+// The edge of the graph joins two handles on one channel, so the graph
+// is well formed and only the pack of stages can refuse.
+template <typename T>
+struct FakeChannel {};
+
 template <typename T>
 struct FakeConsumer {
+    using channel_type = FakeChannel<T>;
     [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>
 struct FakeProducer {
+    using channel_type = FakeChannel<T>;
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
 

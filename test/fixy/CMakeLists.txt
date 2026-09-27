@@ -3488,6 +3488,13 @@ fixy_neg_compile_test(neg_pipeline_mint_chain_break
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
   "pipeline_chain_check<std::tuple<typename std::remove_cvref<_Tps>::type \\.\\.\\.> >\\)\\(\\{\\}\\)"
   "&float_to_double\\(<unnamed>::FakeConsumer<float>&&")
+# One payload on two channels.  The payloads of the two stages agree, so
+# only the channel that each handle names can refuse the chain.  The two
+# last regexes pin the producer on channel A and the consumer on channel B.
+fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
+  "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
+  "&writes_a\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::InTag>::ConsumerHandle&&, fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::ATag>::ProducerHandle&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag>::ConsumerHandle&&")
 fixy_neg_compile_test(neg_pipeline_mint_empty_pack
   "no matching function for call to .mint_pipeline\\(const fixy::BgDrainCtx&\\)."
   "sizeof \\.\\.\\. \\(Stages \\.\\.\\.\\) >= 1 \\[with Stages = \\{\\}\\]. evaluated to .false.")
@@ -3561,16 +3568,23 @@ fixy_neg_compile_test(neg_pipeline_inline_claim_without_opt_in
   "P::will_run_inline_v<32 \\* <unnamed>::KiB, 1 \\* <unnamed>::MiB>"
   "&tiny\\(<unnamed>::TinyConsumer<128>&&")
 
-# The graph's two well-formedness refusals, separated by the edge each
-# one declares: an edge running backwards is a cycle witness, and a
-# graph of three stages with one edge leaves the third with no edge in
-# either direction.
+# The graph's well-formedness refusals.  The first two are separated by
+# the edge each one declares: an edge running backwards is a cycle
+# witness, and a graph of three stages with one edge leaves the third
+# with no edge in either direction.
 fixy_neg_compile_test(neg_pipeline_dag_cyclic_graph
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
   "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<1, 0, 0, 0> >")
 fixy_neg_compile_test(neg_pipeline_dag_unreachable_stage
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
   "fixy::concurrent::EdgePack<fixy::concurrent::StageEdge<0, 1, 0, 0> >")
+# The third refusal: the one edge agrees in payload and joins channel A
+# to channel B.  The graph is connected and the edge runs forward, so only
+# the channel check can refuse it.
+fixy_neg_compile_test(neg_pipeline_dag_edge_across_channels
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag>::ProducerHandle&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag>::ConsumerHandle&&")
 
 # The dag mint's two clauses, in order: the graph is a graph at all, and
 # the supplied pack is the graph's own stage pack.  The second fixture's

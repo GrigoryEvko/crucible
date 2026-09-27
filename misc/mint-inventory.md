@@ -243,8 +243,8 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_endpoint` | `include/fixy/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 9 |
 | `mint_mpmc_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 9 |
-| `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
+| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 10 |
+| `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_reader_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_recording_endpoint` | `include/fixy/concurrent/EndpointMint.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 21 |

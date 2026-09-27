@@ -20,14 +20,20 @@ namespace cc = fixy::concurrent;
 
 namespace pipeline_dag_test {
 
+// Each edge joins two handles, and the handles of an edge name one channel.
+template <typename T>
+struct FakeChannel {};
+
 template <typename T>
 struct FakeConsumer {
+    using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
     [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>
 struct FakeProducer {
+    using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
     [[nodiscard]] bool try_push(T const&) noexcept { return true; }
 };

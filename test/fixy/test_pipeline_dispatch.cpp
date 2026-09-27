@@ -22,14 +22,20 @@ namespace pipeline_dispatch_test {
 constexpr std::size_t KiB = 1024;
 constexpr std::size_t MiB = 1024 * KiB;
 
+// The stages chain, so each handle names the same channel.  Its working
+// set does not change which channel it acts on.
+struct IntChannel {};
+
 template <std::size_t Ws>
 struct Consumer {
+    using channel_type = IntChannel;
     static constexpr std::size_t per_call_working_set = Ws;
     [[nodiscard]] std::optional<int> try_pop() noexcept { return 1; }
 };
 
 template <std::size_t Ws>
 struct Producer {
+    using channel_type = IntChannel;
     static constexpr std::size_t per_call_working_set = Ws;
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };

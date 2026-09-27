@@ -136,6 +136,9 @@ public:
         using brand_type = writer_brand;
         using row_discipline = ::fixy::row_discipline::swmr_writer;
         using row_payload = T;
+        // The cell this handle acts on.  No stage drains a cell, so a
+        // pipeline joins no stage after the writer.
+        using channel_type = SwmrSession;
 
         WriterHandle(WriterHandle const&) = delete("SwmrSession::WriterHandle owns the linear writer permission");
         WriterHandle&
@@ -165,6 +168,7 @@ public:
         using tag_type = reader_tag;
         using row_discipline = ::fixy::row_discipline::swmr_reader;
         using row_payload = T;
+        using channel_type = SwmrSession;
 
         ReaderHandle(ReaderHandle const&) = delete("SwmrSession::ReaderHandle owns one SharedPermissionPool share");
         ReaderHandle&
@@ -196,6 +200,10 @@ public:
         return ReaderHandle{*this, std::move(*guard)};
     }
 
+    // Runs the body with every reader out, and returns false when readers
+    // were still out and the body did not run.  The body gets no snapshot,
+    // because the writer handle is still alive and publishes into the same
+    // bytes: the body acts through the handles it holds.
     template <typename Body>
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {

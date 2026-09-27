@@ -20,14 +20,19 @@ namespace cc = fixy::concurrent;
 constexpr std::size_t KiB = 1024;
 constexpr std::size_t MiB = 1024 * KiB;
 
+// The three stages chain, so their handles name one channel.
+struct TinyChannel {};
+
 template <std::size_t Ws>
 struct TinyConsumer {
+    using channel_type = TinyChannel;
     static constexpr std::size_t per_call_working_set = Ws;
     [[nodiscard]] std::optional<int> try_pop() noexcept { return 1; }
 };
 
 template <std::size_t Ws>
 struct TinyProducer {
+    using channel_type = TinyChannel;
     static constexpr std::size_t per_call_working_set = Ws;
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
