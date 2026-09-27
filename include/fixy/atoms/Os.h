@@ -256,19 +256,17 @@ struct resource final : detail::leak_atom_of {};
 }  // namespace leak
 
 // Names the types that may authorize a deliberate leak.  Only the leak
-// atom satisfies it, so a region that takes an IsLeakAtom witness cannot
-// be talked out of its unmap by any other type.  The region type that
-// consumes this lives in the os/ port and reads the concept by name.
+// atom satisfies it, so a resource that takes an IsLeakAtom witness
+// cannot be talked out of its release by any other type.  fixy::OwnedMmap
+// and fixy::OwnedFile read the concept by name.
 //
-// One reflection query answers it.  The primary-plus-specialization
-// form the old tree used was itself a door: a foreign translation unit
-// could specialize the primary and mint an authorization out of any
-// type it liked.
+// One reflection query answers it, and the query is written inside the
+// concept.  A concept cannot be specialized, so no translation unit can
+// add a class to the set that it admits.  A class template or a variable
+// template that a gate reads is a door: a specialization for a class of
+// a caller mints an authorization for that class.
 template <typename G>
-inline constexpr bool is_leak_atom_v = ::foundation::reflect::is_instance_of_v<G, ^^leak::resource>;
-
-template <typename G>
-concept IsLeakAtom = is_leak_atom_v<G>;
+concept IsLeakAtom = ::foundation::reflect::IsInstanceOf<G, ^^leak::resource>;
 
 namespace detail {
 

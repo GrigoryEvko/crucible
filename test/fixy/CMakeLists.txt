@@ -1605,7 +1605,12 @@ fixy_neg_compile_test(neg_owned_mmap_release_without_leak_atom
   "no matching function for call to .fixy::OwnedMmap<.*>::release\\("
   "constraints not satisfied"
   "required for the satisfaction of .IsLeakAtom<LeakAtom>."
-  "the expression .is_leak_atom_v<G> \\[with G = <unnamed>::NotALeakAtom\\]. evaluated to .false.")
+  "required for the satisfaction of .IsInstanceOf<G, \\^\\^fixy::atom::leak::resource>. \\[with G = <unnamed>::NotALeakAtom\\]")
+# The leak concept reads no trait, so a specialization that tries to add
+# a class to the set of leak atoms has no template to name.
+fixy_neg_compile_test(neg_leak_atom_specialized_trait
+  "expected initializer before .<. token"
+  "neg_leak_atom_specialized_trait\\.cpp:17:49: error:")
 
 # The compile-time accessor carries its bound in a requires clause.
 fixy_neg_compile_test(neg_fixed_array_at_out_of_range_index
@@ -4046,7 +4051,7 @@ fixy_neg_compile_test(neg_owned_file_forged_through_mint_linear
 fixy_neg_compile_test(neg_owned_file_release_without_leak_atom
   "no matching function for call to .fixy::OwnedFile::release\\("
   "required for the satisfaction of .IsLeakAtom<LeakAtom>."
-  "the expression .is_leak_atom_v<G> \\[with G = <unnamed>::NotALeakAtom\\]. evaluated to .false.")
+  "required for the satisfaction of .IsInstanceOf<G, \\^\\^fixy::atom::leak::resource>. \\[with G = <unnamed>::NotALeakAtom\\]")
 
 fixy_neg_compile_test(neg_owned_file_release_from_an_lvalue
   "passing .fixy::OwnedFile. as .this. argument discards qualifiers"
