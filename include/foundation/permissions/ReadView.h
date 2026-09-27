@@ -166,10 +166,7 @@ inline constexpr auto may_carry_a_read_view = [](::foundation::reflect::TypeNode
         && std::meta::is_void_type(std::meta::remove_cv(std::meta::remove_pointer(type)))) {
         return true;
     }
-    if (!node.may_read_members || !std::meta::is_class_type(type)) return false;
-    if (std::meta::has_template_arguments(type) || std::meta::is_empty_type(type)) return false;
-    const auto unchecked = std::meta::access_context::unchecked();
-    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
+    return ::foundation::reflect::holds_unreadable_state(node);
 };
 
 }  // namespace detail

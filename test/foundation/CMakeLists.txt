@@ -1012,6 +1012,12 @@ foundation_neg_compile_test(neg_lifetime_start_as_array_proof_holder
 foundation_neg_compile_test(neg_lifetime_start_as_proof_array
   "no matching function for call to .start_as_array<foundation::permissions::Permission<.*Region"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = foundation::permissions::Permission<")
+# A closure with captures is implicit-lifetime, and GCC 16 reflects no
+# capture, so a walk over bases and members finds nothing in it.  The
+# checked start refuses a class whose state the walk cannot read.
+foundation_neg_compile_test(neg_lifetime_start_as_capturing_closure
+  "no matching function for call to .start_as_array<.*EpochCarrier>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = <unnamed>::._anon_[0-9]+\\]")
 
 # A pool that ends while a share is out aborts.  The attack runs in a
 # child process, and the test passes only on that diagnostic.

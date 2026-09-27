@@ -76,9 +76,10 @@
 //   * a value behind type erasure, as in std::function or std::any, where
 //     the type of the held value is not part of the static type;
 //   * a lambda capture.  GCC 16 reflects no data member of a closure
-//     type, so a capture is not a component.  The self-test pins this, so
-//     the day the compiler starts to reflect captures, the pin fails and
-//     the gap closes by itself.
+//     type, so a capture is not a component.  holds_unreadable_state
+//     names such a class, so that a gate can refuse it.  The self-test
+//     pins the gap, so the day the compiler starts to reflect captures,
+//     the pin fails and the gap closes by itself.
 
 #include <cstddef>
 #include <meta>
@@ -159,6 +160,27 @@ enum class SpecializationRead : unsigned char {
         return TypeNode{bare, std::meta::is_complete_type(bare)};
     }
     return TypeNode{bare, members_readable_without_instantiation(bare)};
+}
+
+// True for a class whose state the walk cannot read: complete, not
+// empty, and with no reflected base and no reflected non-static data
+// member.  A lambda with captures has this shape, because GCC 16
+// reflects no capture.  A class that holds only unnamed bit-fields has
+// it too, because an unnamed bit-field is not a member.  A gate that
+// must know what a class holds refuses such a class.  The query reads
+// members only where the node says `may_read_members`.
+//
+// A specialization answers false with no read.  A closure type is never
+// a specialization, and the completeness query would instantiate a
+// specialization that a walk promises to read for its arguments only.
+[[nodiscard]] consteval bool holds_unreadable_state(TypeNode node) {
+    const std::meta::info type = bare_type(node.type);
+    if (!node.may_read_members) return false;
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
+    if (std::meta::has_template_arguments(type)) return false;
+    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
+    const auto unchecked = std::meta::access_context::unchecked();
+    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
 }
 
 // The components one step below `type` that need no read of its
@@ -378,6 +400,19 @@ inline constexpr auto captures_needle = [held = NeedleValue{}] { return sizeof(h
 static_assert(!any_component_satisfies<is_needle>(^^decltype(captures_needle)),
               "the walk now sees a lambda capture.  The compiler reflects captures, which closes a gap: delete "
               "this cell and the capture paragraph at the head of this header.");
+
+// A gate refuses the closure instead, because its state is unreadable.
+inline constexpr auto captures_nothing = [] { return 7; };
+struct HoldsOnlyAnUnnamedBitField {
+    unsigned : 8;
+};
+static_assert(holds_unreadable_state(TypeNode{^^decltype(captures_needle), true}));
+static_assert(holds_unreadable_state(TypeNode{^^HoldsOnlyAnUnnamedBitField, true}));
+static_assert(!holds_unreadable_state(TypeNode{^^decltype(captures_nothing), true}), "an empty closure holds nothing");
+static_assert(!holds_unreadable_state(TypeNode{^^HoldsNeedle, true}));
+static_assert(!holds_unreadable_state(TypeNode{^^int, true}));
+static_assert(!holds_unreadable_state(TypeNode{^^decltype(captures_needle), false}),
+              "a node whose members the walk may not read is not read");
 
 static_assert(!any_component_satisfies<is_needle>(^^int));
 static_assert(!any_component_satisfies<is_needle>(^^Unrelated));

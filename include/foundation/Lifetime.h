@@ -23,6 +23,13 @@
 // union included, and it refuses a reference member, which no lifetime
 // start binds.
 //
+// The walk also refuses a class whose state it cannot read.  A lambda
+// with captures has a trivial copy constructor, so it is implicit-lifetime,
+// and GCC 16 reflects no capture, so the walk finds no subobject in it.  A
+// closure that captures an epoch would give an epoch that no successor step
+// made.  foundation/reflect/TypeComponents.h names the shape, and the walk
+// refuses it as a subobject at every depth.
+//
 // A class can also refuse a lifetime start while it stays implicit-lifetime.
 // A value that must come only from its own doors, such as a count or a
 // version, keeps a trivial copy constructor so that the ABI passes it in a
@@ -32,6 +39,8 @@
 //
 // scripts/check-start-lifetime.py refuses a direct use of the two library
 // functions outside a reviewed list.  New code uses start_as_array.
+
+#include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
 #include <cstddef>
@@ -63,6 +72,9 @@ inline constexpr int max_subobject_depth = 64;
     }
     const bool is_class_or_union = std::meta::is_class_type(type) || std::meta::is_union_type(type);
     if (is_class_or_union && !std::meta::is_complete_type(type)) return false;
+    if (is_class_or_union && ::foundation::reflect::holds_unreadable_state(::foundation::reflect::TypeNode{type, true})) {
+        return false;
+    }
     if (is_class_or_union && !std::meta::annotations_of_with_type(type, ^^no_start_over_bytes).empty()) return false;
     if (!std::meta::extract<bool>(std::meta::substitute(^^std::is_implicit_lifetime_v, {type}))) return false;
     if (!is_class_or_union) return true;
@@ -177,6 +189,23 @@ static_assert(!ImplicitLifetimeThroughout<HoldsMarked> && !ImplicitLifetimeThrou
     return !ImplicitLifetimeThroughout<MarkedOrByte>;
 }
 static_assert(refuses_a_marked_union_member(), "the marker refuses the class as a union member");
+
+// A closure with captures is implicit-lifetime, and the walk cannot read
+// what it holds, so the walk refuses it alone, as a member, as an array
+// element and as a base.  A closure with no capture holds nothing.
+inline constexpr auto carries_a_count = [count = 7ULL] { return count; };
+inline constexpr auto carries_nothing = [] { return 7ULL; };
+using CountCarrier = std::remove_const_t<decltype(carries_a_count)>;
+struct HoldsCountCarrier {
+    CountCarrier carrier;
+};
+struct DerivesCountCarrier : CountCarrier {};
+static_assert(std::is_implicit_lifetime_v<CountCarrier> && !ImplicitLifetimeThroughout<CountCarrier>,
+              "a closure with captures is implicit-lifetime, and the walk must refuse it");
+static_assert(!ImplicitLifetimeThroughout<HoldsCountCarrier> && !ImplicitLifetimeThroughout<CountCarrier[2]>
+                  && !ImplicitLifetimeThroughout<DerivesCountCarrier>,
+              "the walk refuses the closure as a member, as an array element and as a base");
+static_assert(ImplicitLifetimeThroughout<std::remove_const_t<decltype(carries_nothing)>>);
 
 // The element of the span is const when the storage or T is const, and
 // volatile storage is refused.

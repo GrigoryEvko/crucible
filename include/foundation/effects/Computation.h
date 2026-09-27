@@ -298,23 +298,13 @@ struct conveys_authority_directly : std::bool_constant<conveys_authority_listed_
 template <typename T>
 inline constexpr bool conveys_authority_directly_v = conveys_authority_directly<T>::value;
 
-// A class whose state the walk cannot read: complete, not empty, and
-// with no reflected base or data member.  A lambda with captures has
-// this shape.
-[[nodiscard]] consteval bool holds_unreadable_state(std::meta::info type) {
-    if (!std::meta::is_class_type(type) || std::meta::has_template_arguments(type)) return false;
-    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
-    const auto unchecked = std::meta::access_context::unchecked();
-    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
-}
-
 // The opt-in member is read only where the walk may read members.  A
 // read elsewhere would instantiate a specialization that the walk
 // reached through an argument or a pointer, and TypeComponents.h
 // promises no such instantiation.  The enumerated kinds match by
 // partial specialization, which instantiates nothing.
 [[nodiscard]] consteval bool node_conveys_authority(::foundation::reflect::TypeNode node) {
-    if (holds_unreadable_state(node.type)) return true;
+    if (::foundation::reflect::holds_unreadable_state(node)) return true;
     const std::meta::info trait = node.may_read_members ? ^^conveys_authority_directly_v : ^^conveys_authority_listed_v;
     return std::meta::extract<bool>(std::meta::substitute(trait, {node.type}));
 }
