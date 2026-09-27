@@ -8,10 +8,8 @@
 // This header reads that content off the tag. Each tag in
 // foundation/diag/Catalog.h states its own severity and its own four
 // prose fields, beside the name and the description it already carries,
-// and the authoring rule for them is stated there. This file used to
-// hold one explicit insight_provider specialization per tag, which
-// spelled the tag name a second time and put the prose in a different
-// file from the tag it describes.
+// and the authoring rule for them is stated there. So the prose stays
+// in the file of the tag that it describes.
 //
 // A tag that states none of the five reads as empty fields and an Error
 // severity. The builder skips an empty field, so such a tag degrades to

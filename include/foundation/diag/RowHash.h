@@ -25,20 +25,13 @@
 // zero, a computation carrying an empty row would alias its own bare
 // payload, and those are different things.
 //
-// Old spelling: include/crucible/safety/diag/RowHashFold.h.
+// A wrapper is a spelling over Graded, so one specialization over Graded
+// covers every wrapper: the axis is the lattice type, the tier is the
+// pinned grade of the lattice, and the payload is the recursion of the
+// fold. A new wrapper adds nothing here.
 //
-// What changed, and it is the point of the port. The old header carried
-// one partial specialization per wrapper, fifty-two of them, each
-// pairing a hand-allocated salt byte with the wrapper's own template
-// parameters. Every new wrapper took a new salt, a new specialization
-// and a new chance to reuse a byte. In this tree a wrapper is a spelling
-// over Graded, so one specialization over Graded covers every one of
-// them: the axis is the lattice type, the tier is the lattice's pinned
-// grade, and the payload is the fold's own recursion. Adding a wrapper
-// now adds nothing here.
-//
-// Two salts survive, because the two types they cover are not Graded:
-// the effect row itself and the computation carrier.
+// Two types have their own salt, because they are not Graded: the effect
+// row itself and the computation carrier.
 //
 // Not every carrier that holds a discipline is a one-axis grade, so two
 // more shapes reach a fold of their own. A session handle carries a
@@ -49,11 +42,6 @@
 // zero below, so test/fixy/test_row_hash_wrappers.cpp reads the carrier
 // roster by reflection and fails on any member that folds to zero and
 // has no stated reason to.
-//
-// The old header had a sibling, RowHashGrade.h, answering the other
-// question: which instance is this, rather than which type. No
-// production file and no header of this tree asks it, so the surface is
-// not ported, and include/crucible/safety/diag/_RowHashGrade.h is marked.
 //
 // Portability bound, and it is not one bound but three. The arithmetic,
 // the effect enum values and the salts are portable. A lattice identity
@@ -66,11 +54,10 @@
 // reflected name at all. A peer on another toolchain computes the same
 // value for the same row.
 //
-// The graded fold is not portable, and the port widened that. Under the
-// old per-wrapper salts a handful of wrapper kinds folded a reflected
-// name. Under one fold every graded wrapper does, because the lattice
-// identity is one of the fold's three inputs. The multi-axis binding in
-// fixy/Fn.h folds such a name for every axis but two.
+// The graded fold is not portable. Every graded wrapper folds a reflected
+// name, because the lattice identity is one of the three inputs of the
+// fold. The multi-axis binding in fixy/Fn.h folds such a name for every
+// axis but two.
 //
 // The carrier is portable exactly when both of its halves are.
 //
@@ -290,8 +277,8 @@ inline constexpr std::uint64_t FEDERATION_TOOLCHAIN_TAG = federation_toolchain_i
 // Publishing one graded member is a claim to be graded. A type that
 // publishes a lattice or a modality and still reaches the primary below
 // has published part of a contract, and it would fold to zero without a
-// word. That is the fail-open the port set out to close, so it is a hard
-// error here rather than a silent slot.
+// word. That would be a fail-open, so it is a hard error here rather
+// than a silent slot.
 template <typename T>
 concept PublishesGradedMember = requires { typename T::lattice_type; } || requires { T::modality; };
 
@@ -418,8 +405,7 @@ struct row_hash_contribution<::foundation::effects::Computation<R, T>> {
 // fold total. A wrapper written as an alias and a wrapper written as a
 // class holding a Graded member are the same claim about a value, and a
 // fold that saw only the alias would hand every class-shaped wrapper the
-// primary template's zero. That is the fail-open the old header warned
-// about, and the reason it needed a specialisation per wrapper.
+// zero of the primary template, which is a fail-open.
 template <typename W>
 concept GradedShaped = requires {
     typename W::lattice_type;

@@ -7,14 +7,12 @@
 // and the types it must refuse, and the build fails on the day an arm is
 // deleted rather than on the day someone notices a gate stopped gating.
 //
-// The shape this exists for was measured, not imagined.  fixy/Qtt.h
-// carried two gates whose tables the port left with a false primary and
-// no specialization at all, where the old tree had four.  Both gates
-// read their table, the table answered "no" to every question, and both
-// static assertions became tautologies: Affine<Linear<int>> compiled and
-// an exactly-once obligation silently became at-most-once.  Nothing in
-// the tree could say so, because a table with no arms and a table whose
-// arms all refuse are the same text.
+// The failure it catches: a gate reads a table whose primary answers
+// false and which has no specialization.  The table answers "no" to every
+// question, and each static assertion over it becomes a tautology, so
+// Affine<Linear<int>> compiles and an exactly-once obligation becomes
+// at-most-once.  A table with no arms and a table whose arms all refuse
+// are the same text, so only a witness of the arms can tell them apart.
 //
 // Pred is a class trait, which is the form a template template argument
 // can name.  A predicate that exists only as a concept or as a variable

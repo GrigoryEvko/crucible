@@ -62,6 +62,3 @@ mint_thread_name|include/fixy/os/ThreadName.h
 mint_bounded_sleep|include/fixy/os/Time.h
 mint_clock_reader|include/fixy/os/Time.h
 mint_tsc_reader|include/fixy/os/Time.h
-
-# include/foundation
-mint_diagnostic|include/foundation/diag/Catalog.h

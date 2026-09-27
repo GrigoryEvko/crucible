@@ -313,10 +313,9 @@ class Test;
 // The roster of contexts, and the whole of it.  IsContext reads this
 // array and nothing else, so a class is a context because this header
 // lists it, not because of what it derives from or what a translation
-// unit specializes.  The old is_cap_type was a class template with one
-// specialization per context, and a class template can be explicitly
-// specialized from any translation unit, so a lookalike that
-// specialized it was a capability source to every gate.
+// unit specializes.  A class template trait would not do: any translation
+// unit can specialize a class template explicitly, and a lookalike that
+// specialized it would be a capability source to every gate.
 namespace detail {
 
 inline constexpr std::meta::info context_roster[] = {^^Bg, ^^Init, ^^Test};
@@ -593,12 +592,9 @@ static_assert(effect_count == 6, "The Effect catalog has grown or shrunk.  Confi
                                  "reaches every atom.  CT and Fail are not atoms: the note at the top "
                                  "of this file says where each one lives, and why a row cannot hold it.");
 
-// The walk that used to sit here asked whether any atom reported the
-// unknown sentinel.  It policed a hand-written switch.  effect_name now
-// reads the enumerator, so that walk answered true by construction and
-// is gone.  What replaces it is the stronger statement: each atom
-// renders as exactly the identifier it declares, and a value outside
-// the enum still reaches the sentinel.
+// effect_name reads the enumerator by reflection.  Each atom renders as
+// exactly the identifier it declares, and a value outside the enum
+// reaches the sentinel.
 static_assert(effect_name(Effect::Alloc) == "Alloc");
 static_assert(effect_name(Effect::IO) == "IO");
 static_assert(effect_name(Effect::Block) == "Block");

@@ -28,9 +28,7 @@ struct tag_base {
 // passage is dangerous rather than merely wrong, and offers no override.
 //
 // The severity grades a tag, so it is declared beside the tags rather
-// than beside the reader in Insights.h, which is where it used to sit.
-// The spelling foundation::diag::Severity is unchanged, and Insights.h
-// includes this header, so no consumer sees a difference.
+// than beside the reader in Insights.h.  Insights.h includes this header.
 enum class Severity : std::uint8_t {
     Hint = 0,  // the code is correct and could be better shaped
     Warning = 1,  // the code compiles and carries a runtime risk
@@ -44,11 +42,9 @@ enum class Severity : std::uint8_t {
 //
 // A tag also carries the prose a structured rejection prints: a
 // severity, why the rule exists, how the violation usually arrives, and
-// the compliant line beside the violating one. These sat in
-// foundation/diag/Insights.h as one explicit insight_provider
-// specialization per tag, which restated the tag name a second time.
-// The tag carries them itself now, and Insights.h reads the members off
-// whichever tag it is asked about.
+// the compliant line beside the violating one. The tag carries them as
+// members, and Insights.h reads the members off whichever tag it is
+// asked about.
 //
 // When writing them: the why states the architectural constraint and
 // answers what actually breaks if it is ignored. The symptom describes
@@ -69,7 +65,7 @@ struct EffectRowMismatch : tag_base {
         "to include the callee's effects, OR narrow the callee's row by "
         "removing operations that introduce the offending effects.  Use "
         "row_difference_t<R_callee, R_caller> to identify exactly which "
-        "atoms are missing.  See effects/EffectRow.h for the row algebra.";
+        "atoms are missing.  See foundation/effects/Row.h for the row algebra.";
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
@@ -133,19 +129,19 @@ struct GradedWrapperViolation : tag_base {
                                                     "is not a Graded<...> specialization), modality inconsistency "
                                                     "(declared Absolute but substrate is Comonad), forwarder "
                                                     "fidelity break (value_type_name() / lattice_name() return "
-                                                    "strings inconsistent with substrate).  See algebra/GradedTrait.h "
-                                                    "for the full concept definition and the five cheats it "
-                                                    "rejects.";
-    static constexpr std::string_view remediation = "Audit the wrapper against algebra/GradedTrait.h's "
+                                                    "strings inconsistent with substrate).  See "
+                                                    "foundation/algebra/GradedTrait.h for the full concept "
+                                                    "definition and the five cheats it rejects.";
+    static constexpr std::string_view remediation = "Audit the wrapper against foundation/algebra/GradedTrait.h's "
                                                     "GradedWrapper concept clause-by-clause: verify graded_type is "
                                                     "Graded<M, L, T> for some M/L/T; verify W::modality matches "
                                                     "graded_modality_v<W::graded_type>; verify forwarders return "
                                                     "the SAME strings as the substrate's.  Run the cheat probe "
-                                                    "harness (test/test_concept_cheat_probe.cpp) after fixing.";
+                                                    "harness (test/fixy/test_cheat_probe.cpp) after fixing.";
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "GradedWrapper is the structural concept (algebra/GradedTrait.h) "
+        "GradedWrapper is the structural concept (foundation/algebra/GradedTrait.h) "
         "every safety wrapper must satisfy: graded_type points at a "
         "real Graded<M, L, T>, the wrapper's modality matches the "
         "substrate's, value_type and lattice_type are consistent, "
@@ -181,7 +177,7 @@ struct LinearityViolation : tag_base {
                                                     "(if the substrate permits — most don't) or fractional "
                                                     "permissions via SharedPermissionPool<Tag>.  Use std::move at "
                                                     "the consumption point; capture by value not reference into a "
-                                                    "lambda that takes ownership.  See permissions/Permission.h for "
+                                                    "lambda that takes ownership.  See foundation/permissions/Permission.h for "
                                                     "the CSL primitive surface.";
 
     static constexpr Severity severity = Severity::Error;
@@ -209,38 +205,39 @@ struct LinearityViolation : tag_base {
 
 struct RefinementViolation : tag_base {
     static constexpr std::string_view name = "RefinementViolation";
-    static constexpr std::string_view description = "A Refined<Pred, T> constructor was called with a value that "
-                                                    "fails the predicate.  The predicate evaluation happens in "
-                                                    "the constructor's pre() clause; under contract semantic="
-                                                    "enforce the failure aborts via std::terminate, under "
-                                                    "semantic=ignore the value is constructed with a violated "
-                                                    "invariant (caller's responsibility to validate first).";
-    static constexpr std::string_view remediation = "Either validate the value before construction (call Pred(v) "
-                                                    "explicitly and branch), OR use Refined<Pred, T>::Trusted{} "
-                                                    "construction at sites where the caller has already proven "
-                                                    "the invariant by other means.  Never use Trusted{} as a "
-                                                    "general escape hatch — every use is a documented "
-                                                    "load-bearing assertion that the caller is responsible for.  "
-                                                    "See safety/Refined.h for the predicate catalog.";
+    static constexpr std::string_view description = "mint_refined<Pred>(v) was called with a value that fails the "
+                                                    "predicate.  The mint checks the predicate with a precondition.  "
+                                                    "Under the enforce semantic (Debug) and the observe semantic "
+                                                    "(Release) the violation aborts through the contract handler.  "
+                                                    "Only a translation unit compiled with the ignore semantic "
+                                                    "constructs the value with a violated invariant.";
+    static constexpr std::string_view remediation = "Either validate the value before the mint (call Pred(v) "
+                                                    "explicitly and branch), OR use mint_refined_trusted<Pred>(v) "
+                                                    "at sites where the caller has already proven the invariant "
+                                                    "by other means.  Never use the trusted mint as a general "
+                                                    "escape hatch — every use is a documented load-bearing "
+                                                    "assertion that the caller is responsible for.  See "
+                                                    "fixy/Refined.h for the predicate catalog.";
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters = "Refined<P, T> attaches a compile-time-named predicate P to "
-                                                         "values of type T (safety/Refined.h).  The constructor's "
-                                                         "pre() clause checks P(v) at runtime under contract semantic="
-                                                         "enforce (debug builds, CI) and treats it as [[assume(P(v))]] "
-                                                         "under semantic=ignore (release builds).  The downstream code "
-                                                         "is OPTIMIZED on the assumption that P holds; violating the "
+                                                         "values of type T (fixy/Refined.h).  mint_refined checks P(v) "
+                                                         "at run time under the enforce semantic (Debug) and the "
+                                                         "observe semantic (Release), and aborts on a violation.  A "
+                                                         "translation unit compiled with the ignore semantic treats "
+                                                         "the check as [[assume(P(v))]], and the downstream code is "
+                                                         "OPTIMIZED on the assumption that P holds.  There, a violated "
                                                          "predicate at the construction site causes the optimizer to "
                                                          "make incorrect downstream decisions (UB).  The discipline is "
                                                          "to validate at the construction site.";
     static constexpr std::string_view symptom_pattern = "Surfaces when boundary-validating user input incorrectly: "
-                                                        "e.g., using Refined<positive>(value) on a value that could "
-                                                        "be zero or negative.  Or when a refactor changes the source "
-                                                        "of a Refined<bounded_above<8>>(ndim) where ndim came from a "
-                                                        "now-uncapped tensor metadata field.";
-    static constexpr std::string_view correct_example = "if (n > 0) Refined<positive, int>(n); // validated first";
+                                                        "e.g., using mint_refined<positive>(value) on a value that "
+                                                        "could be zero or negative.  Or when a refactor changes the "
+                                                        "source of a mint_refined<bounded_above<8>>(ndim) where ndim "
+                                                        "came from a now-uncapped tensor metadata field.";
+    static constexpr std::string_view correct_example = "if (n > 0) mint_refined<positive>(n); // validated first";
     static constexpr std::string_view violating_example =
-        "Refined<positive, int>(maybe_zero); // pre() fails; UB on optimize";
+        "mint_refined<positive>(maybe_zero); // the precondition fails and aborts";
 };
 
 struct HotPathViolation : tag_base {
@@ -865,17 +862,17 @@ struct RecipeSpecMismatch : tag_base {
         "compile(RecipeSpec<RELAXED, KAHAN, Kernel>{node});  // wrong axes";
 };
 
-// The next three tags cover the alias predicates over effect rows. There are
-// three and not more. The pure, total and ghost rows are all the empty row, so
-// a single tag classifies a failure against any of them. The universal row is
-// the lattice top, satisfied by every row, so a violation of it is unreachable
-// and carries no tag.
+// The next three tags cover the alias predicates over effect rows of
+// fixy/Aliases.h. There are three and not more. PureRow is the empty row,
+// and IsPure is its predicate. The universal row is the lattice top,
+// satisfied by every row, so a violation of it is unreachable and carries no
+// tag.
 struct PureFunctionViolation : tag_base {
     static constexpr std::string_view name = "PureFunctionViolation";
-    static constexpr std::string_view description = "A function declared as IsPure<R> / IsTot<R> / IsGhost<R> was "
-                                                    "called with a row R that contains at least one Effect atom.  "
-                                                    "PureRow / TotRow / GhostRow all encode the EMPTY effect row "
-                                                    "— pure functions have no observable effects in F*.  Adding "
+    static constexpr std::string_view description = "A function declared as IsPure<R> was called with a row R that "
+                                                    "contains at least one Effect atom.  PureRow encodes the EMPTY "
+                                                    "effect row — pure functions have no observable effects in "
+                                                    "F*.  Adding "
                                                     "Alloc, IO, Block, Bg, Init, or Test to a pure function's row "
                                                     "structurally violates F*'s PURE effect class.  Distinct from "
                                                     "EffectRowMismatch (Category 0) because the bound is the F* "
@@ -893,9 +890,10 @@ struct PureFunctionViolation : tag_base {
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "The F* effect lattice (FxAliases.h, Tang-Lindley POPL 2026) "
-        "anchors at PURE — the empty row — as its bottom.  Pure / Tot / "
-        "Ghost functions promise NO observable effects: no Alloc, no IO, "
+        "The F* effect lattice (fixy/Aliases.h, Tang-Lindley POPL 2026) "
+        "anchors at PURE — the empty row PureRow — as its bottom.  A "
+        "function whose row satisfies IsPure promises NO observable "
+        "effects: no Alloc, no IO, "
         "no Block, no Bg / Init / Test context tags.  Admitting any "
         "Effect atom turns a pure projection into a stateful operation "
         "that downstream callers (KernelCache content-addressing, "
@@ -906,8 +904,8 @@ struct PureFunctionViolation : tag_base {
         "content-addressing and §III.8 DetSafe axiom.";
     static constexpr std::string_view symptom_pattern =
         "Surfaces after adding 'just one debug line' (printf, fprintf, "
-        "std::cout) to a function declared Pure<T>, Tot<E, T>, or "
-        "Ghost<R, T>.  Or after a refactor that adds arena allocation "
+        "std::cout) to a function declared Pure<T>.  Or after a "
+        "refactor that adds arena allocation "
         "to a previously-pointer-free pure helper.  The diagnostic "
         "names the function's required-empty-row contract and the "
         "atom that violates it (typically IO or Alloc).  The remediation "
@@ -934,11 +932,11 @@ struct DivergenceBudgetViolation : tag_base {
                                                     "Pure ⊑ Div ⊑ ST ⊑ All — moving up admits more effects but "
                                                     "narrows the call sites that can use the function (only callers "
                                                     "that already permit ST can pass arguments).  See "
-                                                    "effects/FxAliases.h for the full alias-row catalog.";
+                                                    "fixy/Aliases.h for the full alias-row catalog.";
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "The F* DIV effect class (FxAliases.h Div<T>) extends PURE only "
+        "The F* DIV effect class (DivRow in fixy/Aliases.h) extends PURE only "
         "with potential-non-termination (Block) — NOT with state mutation "
         "or external observable effects.  This narrow widening is "
         "load-bearing for fixed-point iterators, convergence loops, and "
@@ -952,16 +950,16 @@ struct DivergenceBudgetViolation : tag_base {
     static constexpr std::string_view symptom_pattern =
         "Surfaces in fixed-point or DEQ-style convergence loops when "
         "the body grows a scratchpad allocation across iterations.  Or "
-        "when a 'log progress' fprintf is added inside a Div<T>-declared "
-        "loop body.  The diagnostic names the function's DivRow = "
+        "when a 'log progress' fprintf is added inside a loop body whose "
+        "row satisfies IsDiv.  The diagnostic names the function's DivRow = "
         "Row<Block> requirement and the offending atom (Alloc or IO).  "
         "Remediation: lift the declaration to IsST (admits Block + "
         "Alloc + IO) or eliminate the allocation by reusing a "
         "caller-provided arena via a Pure helper signature.";
     static constexpr std::string_view correct_example =
-        "Div<int> fixed_point(int x);  // Block only — terminates eventually";
+        "Computation<DivRow, int> fixed_point(int x);  // Block only — terminates eventually";
     static constexpr std::string_view violating_example =
-        "Div<int> fixed_point(int x) { void* p = std::malloc(64); ... }  // Alloc";
+        "Computation<DivRow, int> fixed_point(int x) { void* p = std::malloc(64); ... }  // Alloc";
 };
 
 struct StateBudgetViolation : tag_base {
@@ -984,7 +982,7 @@ struct StateBudgetViolation : tag_base {
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "The F* ST effect class (FxAliases.h ST<T>) extends DIV with "
+        "The F* ST effect class (STRow in fixy/Aliases.h) extends DIV with "
         "state effects (Alloc + IO) — admitting malloc, file handles, "
         "kernel ioctls — but NOT with context capabilities (Bg / Init / "
         "Test).  Context tags are NOT state effects; they encode WHERE "
@@ -1005,9 +1003,9 @@ struct StateBudgetViolation : tag_base {
         "atoms), OR remove the cap-tag parameter if the function is "
         "genuinely state-only and the context is caller-provided.";
     static constexpr std::string_view correct_example =
-        "ST<int> stateful_compute(int x);  // Alloc + IO, no context tag";
+        "Computation<STRow, int> stateful_compute(int x);  // Alloc + IO, no context tag";
     static constexpr std::string_view violating_example =
-        "ST<int> stateful_compute(eff::Bg bg, int x);  // Bg cap → rejected";
+        "Computation<STRow, int> stateful_compute(eff::Bg bg, int x);  // Bg cap → rejected";
 };
 
 struct InsufficientWitness : tag_base {
@@ -1352,7 +1350,7 @@ struct BorrowedBoundsViolation : tag_base {
                                                     "the indexing site through size()-aware iteration, or add a "
                                                     "CRUCIBLE_PRE(i < size()) ahead of the operator[] call (the "
                                                     "pre catches at consteval AND under enforce semantic at "
-                                                    "runtime — see safety/Pre.h).  For subspan: prefer "
+                                                    "runtime — see foundation/contracts/Pre.h).  For subspan: prefer "
                                                     "subspan(offset).first(count) which reports the misuse at "
                                                     "first() rather than after the offset slice has already "
                                                     "advanced past size().";
@@ -1645,8 +1643,8 @@ struct category_of_impl {
                                               "fields directly without the Category indirection.");
     static constexpr std::size_t index = category_index_of<Tag>();
     static_assert(index < catalog_size, "category_of_v<Tag>: Tag is not registered in the foundation "
-                                        "Catalog.  The Category enum is CLOSED to the foundation's 22 "
-                                        "wrapper-axis categories; user-defined tags inherit from "
+                                        "Catalog.  The Category enum is CLOSED to the tags of the "
+                                        "Catalog tuple; user-defined tags inherit from "
                                         "tag_base and participate in the type-level diagnostic surface "
                                         "(diagnostic_name_v, Diagnostic<UserTag, Ctx...>) without "
                                         "occupying a Category slot.  If you genuinely need this tag "

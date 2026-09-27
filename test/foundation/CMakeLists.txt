@@ -1315,6 +1315,16 @@ foundation_neg_compile_test(neg_row_mismatch_tag_not_a_tag
   "row_message_check<int, some_function, int, float, double, false>"
   "is_diagnostic_class_v<int>. evaluates to false")
 
+# mint_diagnostic admits a class that derives from tag_base and is not
+# tag_base itself.  A class without the lineage and the root tag_base are
+# the two ways to miss.  The second regex names the refused constraint.
+foundation_neg_compile_test(neg_diag_mint_diagnostic_refuses_a_class_without_the_tag_base
+  "no matching function for call to .mint_diagnostic<LooksLikeADiagnosticTag>\\(\\)."
+  "the expression .is_diagnostic_class_v<Tag> \\[with Tag = LooksLikeADiagnosticTag\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_diag_mint_diagnostic_refuses_the_tag_base_itself
+  "no matching function for call to .mint_diagnostic<foundation::diag::tag_base>\\(\\)."
+  "the expression .is_diagnostic_class_v<Tag> \\[with Tag = foundation::diag::tag_base\\]. evaluated to .false.")
+
 # ── The row hash, as one fold ─────────────────────────────────────────
 #
 # The half of the cache key that separates one effect regime from

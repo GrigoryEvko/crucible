@@ -14,8 +14,6 @@
 // body, a postcondition near its return.  A predicate whose consequent
 // dereferences a pointer the antecedent proves non-null must use short-circuit
 // `||`, because a function-call spelling of implication evaluates both operands.
-//
-// Old spelling: include/crucible/safety/Post.h.
 
 #pragma once
 

@@ -8,25 +8,12 @@
 // context minted with the empty row admits nothing effectful, and every
 // relaxation is a wider row named in the type.
 //
-// The old context (include/crucible/effects/_ExecCtx.h) carried six
-// further axes: NUMA policy, allocator class, heat tier, cache
-// residency, workload hint, progress class.  Outside the old substrate
-// no production site read them; the three that spelled the tags
-// (topology/TopologyGraph.h, ledger/LedgerStore.h, mimic/CogMimic.h)
-// were naming a context, not reading an axis.  Inside the old substrate
-// they had readers, and those readers are what the later port tasks
-// decide about: concurrent/ExecCtxBridge.h and SubstrateCtxFit.h
-// project the residency and workload axes into the cache-tier gates on
-// the channel and session mints, WorkloadBudgetCoherent.h and
-// AutoSplit.h read the workload hint, Endpoint.h reads the heat tier
-// and the allocator class, permissions/PermissionFork.h reads the
-// workload budget to choose between running the children inline and
-// spawning them, and sessions/_SessionMint.h re-exports every axis.
-// This layer carries none of that policy.  Where a caller wants to say
-// how hot a path is or which allocator it reaches for, it grades the
-// value with the band wrapper for that axis; a channel or a fork that
-// wants a budget takes it as its own parameter.  A context describes
-// the surrounding scope, not a value.
+// A context carries a capability source and a row, and no other axis: no
+// NUMA policy, allocator class, heat tier, cache residency, workload hint
+// or progress class.  A caller that wants to say how hot a path is or
+// which allocator it reaches for grades the value with the band wrapper
+// for that axis.  A channel or a fork that wants a budget takes it as its
+// own parameter.  A context describes the surrounding scope, not a value.
 
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>

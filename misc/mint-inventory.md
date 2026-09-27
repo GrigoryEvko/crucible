@@ -321,7 +321,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_diagnostic` | `include/foundation/diag/Catalog.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
+| `mint_diagnostic` | `include/foundation/diag/Catalog.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 
 ## include/foundation/effects/
 
@@ -357,4 +357,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 112 | 47 | 62 | 3 | 0 | · | 13 |
+| new (`include/foundation/`, `include/fixy/`) | 112 | 47 | 62 | 3 | 0 | · | 12 |
