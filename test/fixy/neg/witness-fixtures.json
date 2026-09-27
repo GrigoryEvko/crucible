@@ -402,6 +402,11 @@
       "constructor": "\\bCrashWatched\\("
     },
     {
+      "name": "neg_witness_session_crashwriter_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCrashWriter\\("
+    },
+    {
       "name": "neg_witness_session_delegatedsession_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bDelegatedSession\\("

@@ -295,8 +295,9 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
-| `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 7 |
-| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 24 |
+| `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 3 |
+| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | ctx | Y | · | HS14: 24 |
+| `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 27 |
 | `mint_delegated_session(H)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_delegated_session(H,Hold)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 5 |
@@ -357,4 +358,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 112 | 53 | 56 | 3 | 0 | · | 4 |
+| new (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | · | 4 |

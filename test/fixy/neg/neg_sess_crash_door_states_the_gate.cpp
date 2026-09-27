@@ -22,8 +22,9 @@ int main() {
     using namespace neg_sess_crash_door_states_the_gate_types;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     s::PeerCrashCell cell;
+    s::PeerCrashCell own;
     auto forged = s::CrashSessionDoor::open<s::Recv<int, s::End>, Alice, Bob, s::ReliableSet<>, s::DefaultAbandonmentPolicy>(
-        ctx, Wire{}, cell, std::source_location{});
+        ctx, Wire{}, cell, s::mint_crash_writer(own), std::source_location{});
     std::move(forged).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

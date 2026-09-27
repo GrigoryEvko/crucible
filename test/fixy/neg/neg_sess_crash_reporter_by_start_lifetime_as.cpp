@@ -11,6 +11,6 @@ namespace s = ::fixy::session;
 int main() {
     alignas(s::CrashReporter) unsigned char storage[sizeof(s::CrashReporter)]{};
     auto* forged = std::start_lifetime_as<s::CrashReporter>(storage);
-    static_cast<void>(std::move(*forged).report(s::CrashCause::Abort, s::MessageCount{1000}));
+    static_cast<void>(std::move(*forged).report(s::CrashCause::Abort));
     return 0;
 }

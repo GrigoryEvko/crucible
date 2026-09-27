@@ -275,8 +275,8 @@ int run_sender_crashes_after_send() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
     auto [p_value, p_label_lost] = std::move(p).send(push_label);
     if (p_label_lost) return fail("a label to a live peer came back");
@@ -285,7 +285,7 @@ int run_sender_crashes_after_send() {
     if (to_q.slots.size() != 2 || to_q.slots.front() != s::step_wire_word_v<BinaryP> || to_q.slots.back() != 11) {
         return fail("the keyed send did not write its label word and then its value");
     }
-    (void)std::move(p_wait).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
+    (void)std::move(p_wait).crash(s::CrashCause::Abort);
 
     int value_on_q = 0;
     bool reply_was_lost = false;
@@ -316,9 +316,9 @@ int run_sender_crashes_first() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
-    (void)std::move(p).crash(s::CrashCause::ErrorReturn, s::mint_crash_reporter(cell_p));
+    auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
+    (void)std::move(p).crash(s::CrashCause::ErrorReturn);
 
     bool detected = false;
     std::move(q).branch(poll_label, [&](auto q_branch) noexcept {

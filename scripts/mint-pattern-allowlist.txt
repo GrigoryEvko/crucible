@@ -160,6 +160,11 @@ include/fixy/os/Spawn.h:mint_spawn:constexpr-ok
 # names the mint as the friend of its only constructor, so the guard sees
 # the signature two times, and one entry covers the two sites.
 include/fixy/session/CrashTransport.h:mint_crash_reporter:constexpr-ok
+# The writer mint claims its cell with an atomic exchange, and
+# mint_crash_session reads at run time the writer that it takes, so
+# neither can be constexpr.
+include/fixy/session/CrashTransport.h:mint_crash_writer:constexpr-ok
+include/fixy/session/CrashTransport.h:mint_crash_session:constexpr-ok
 # fixy/concurrent/SwmrSession.h: the reader mint takes a share from an
 # atomic reference count, so it reads runtime state and cannot be constexpr.
 include/fixy/concurrent/SwmrSession.h:mint_swmr_reader:constexpr-ok

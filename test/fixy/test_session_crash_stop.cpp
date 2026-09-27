@@ -256,8 +256,9 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     return static_cast<std::size_t>(slot);
 };
 
-using CheckedP =
-    decltype(s::mint_crash_session<ProtoP, P, Q>(std::declval<const BgCtx&>(), Port{}, std::declval<const s::PeerCrashCell&>()));
+using CheckedP = decltype(s::mint_crash_session<ProtoP, P, Q>(std::declval<const BgCtx&>(), Port{},
+                                                               std::declval<const s::PeerCrashCell&>(),
+                                                               std::declval<s::CrashWriter>()));
 static_assert(std::is_same_v<CheckedP::protocol, ProtoP>);
 
 // The context of a crash session admits the effect row of each payload,
@@ -307,8 +308,8 @@ int run_without_crash() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;  // watched by q
     s::PeerCrashCell cell_q;  // watched by p
-    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
@@ -348,10 +349,10 @@ int run_receiver_crashes_first() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
-    const Port q_port = std::move(q).crash(s::CrashCause::Throw, s::mint_crash_reporter(cell_q));
+    const Port q_port = std::move(q).crash(s::CrashCause::Throw);
     if (q_port.in != &to_q) return fail("crash() did not give back the resource");
 
     auto p_sent = std::move(p).select<0>(push_label);
@@ -380,13 +381,18 @@ int run_sender_crashes_after_send() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
     if (p_undelivered) return fail("a payload to a live peer came back");
-    (void)std::move(p_wait).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
+    (void)std::move(p_wait).crash(s::CrashCause::Abort);
+    // The label and its payload are one message, and the session of p
+    // wrote the count that the report of its crash carries.
+    const std::optional<s::CrashWitness> p_witness = cell_p.witness();
+    if (!p_witness || std::to_underlying(p_witness->messages_sent) != 1)
+        return fail("the report did not carry the count that the session of p wrote");
 
     bool took_message = false;
     std::move(q).branch(poll_label, [&](auto q_branch) {
@@ -449,7 +455,8 @@ struct WirePort {
 using StreamP = s::Loop<s::Select<s::Send<int, s::Continue>>>;
 using StreamQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
 using StreamQHandle = decltype(s::mint_crash_session<StreamQ, Q, P>(std::declval<const BgCtx&>(), WirePort{},
-                                                                    std::declval<const s::PeerCrashCell&>()));
+                                                                    std::declval<const s::PeerCrashCell&>(),
+                                                                    std::declval<s::CrashWriter>()));
 
 constexpr int kStreamMessages = 200;
 constexpr int kStreamRuns = 50;
@@ -470,7 +477,7 @@ int run_stream_across_threads() {
 
         std::jthread receiver([&] {
             std::optional<StreamQHandle> q{
-                s::mint_crash_session<StreamQ, Q, P>(bg_ctx(), WirePort{&to_q, &to_p}, cell_p)};
+                s::mint_crash_session<StreamQ, Q, P>(bg_ctx(), WirePort{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q))};
             bool is_done = false;
             while (!is_done) {
                 StreamQHandle current = std::move(*q);
@@ -505,7 +512,7 @@ int run_stream_across_threads() {
         // The crash at the end also releases q if a send goes wrong, so
         // the join always returns.
         bool was_payload_returned = false;
-        auto p = s::mint_crash_session<StreamP, P, Q>(bg_ctx(), WirePort{&to_p, &to_q}, cell_q);
+        auto p = s::mint_crash_session<StreamP, P, Q>(bg_ctx(), WirePort{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
         for (int message = 0; message < kStreamMessages; ++message) {
             auto chosen = std::move(p).select<0>([](WirePort& port, std::size_t label) noexcept {
                 port.out->push(label);
@@ -518,7 +525,7 @@ int run_stream_across_threads() {
             was_payload_returned = was_payload_returned || undelivered.has_value();
             p = std::move(next);
         }
-        (void)std::move(p).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
+        (void)std::move(p).crash(s::CrashCause::Abort);
         receiver.join();
 
         if (was_payload_returned) return fail("a payload to a live peer came back");
@@ -529,25 +536,17 @@ int run_stream_across_threads() {
     return 0;
 }
 
-// The cell keeps the one report of its one reporter, cause and count
-// together, up to the largest count a report can carry.
+// The cell keeps the one report of its one reporter, with its cause and
+// the count that the session of the endpoint wrote.  An endpoint with no
+// session sent nothing, so its report carries the count zero.
 int run_cell() {
     s::PeerCrashCell cell;
     if (cell.has_crashed() || cell.crash_cause() || cell.witness()) return fail("a fresh cell reports a crash");
-    if (!s::mint_crash_reporter(cell).report(s::CrashCause::ErrorReturn, s::MessageCount{5}))
-        return fail("the first report was refused");
+    if (!s::mint_crash_reporter(cell).report(s::CrashCause::ErrorReturn)) return fail("the first report was refused");
     const std::optional<s::CrashWitness> witness = cell.witness();
-    if (!witness || witness->cause != s::CrashCause::ErrorReturn || std::to_underlying(witness->messages_sent) != 5)
-        return fail("the report did not keep its cause and its count");
+    if (!witness || witness->cause != s::CrashCause::ErrorReturn || std::to_underlying(witness->messages_sent) != 0)
+        return fail("the report did not keep its cause and the count of the session");
     if (cell.crash_cause() != s::CrashCause::ErrorReturn) return fail("the cause did not match the report");
-
-    s::PeerCrashCell full;
-    const auto largest = static_cast<s::MessageCount>(s::PeerCrashCell::max_message_count);
-    if (!s::mint_crash_reporter(full).report(s::CrashCause::Unknown, largest))
-        return fail("the report of the largest count was refused");
-    const std::optional<s::CrashWitness> full_witness = full.witness();
-    if (!full_witness || full_witness->cause != s::CrashCause::Unknown || full_witness->messages_sent != largest)
-        return fail("the largest count did not survive the report");
     return 0;
 }
 

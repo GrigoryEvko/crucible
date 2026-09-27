@@ -23,7 +23,8 @@ int main() {
     using ReceivesIo = s::Offer<s::Recv<eff::Computation<eff::Row<eff::Effect::IO>, int>, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
     s::PeerCrashCell cell;
-    auto handle = s::mint_crash_session<ReceivesIo, Alice, Bob>(ctx, Wire{}, cell);
+    s::PeerCrashCell own;
+    auto handle = s::mint_crash_session<ReceivesIo, Alice, Bob>(ctx, Wire{}, cell, s::mint_crash_writer(own));
     std::move(handle).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

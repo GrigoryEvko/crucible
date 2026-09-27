@@ -40,9 +40,12 @@
 // returns the value itself waits inside the transport, where no crash is
 // seen, so the exact return type refuses it.
 //
-// The detector is a PeerCrashCell.  A CrashReporter writes it, and each
-// cell has one reporter: the Keeper's failure detector, or the endpoint
-// that crashes and reports itself.  The decorator only reads the cell.
+// The detector is a PeerCrashCell.  One cell watches one endpoint.  The
+// session of that endpoint writes the count of the messages it sent into
+// the cell, through the CrashWriter that its mint consumed.  The report of
+// a crash comes from the one CrashReporter of the cell, held by the
+// Keeper's failure detector, or from the endpoint itself when it crashes.
+// The peer of the endpoint reads the cell.
 //
 // ── The witness of a crash ──────────────────────────────────────────
 //
@@ -59,10 +62,23 @@
 // received count is below the reported count, a message is still owed,
 // and the decorator waits for it instead of taking the crash branch.
 //
-// The transport cannot write the witness.  It gets only the Resource, the
-// report is fixed once it is published, and only the one reporter of the
-// cell can publish it.  An endpoint that crashes reports its own count,
-// which its handle kept, so the count needs no trust in the caller.
+// The count has one source: the endpoint that sent the messages.  The
+// cell holds it in one word, and the session adds one to the word with
+// one read-modify-write after each message that it finished.  A report
+// reads the count from that word, so neither the failure detector nor a
+// transport chooses it, and the transport cannot write the witness at all.
+//
+// The model is crash-stop, and the report is a fence.  A failure detector
+// can report an endpoint that is still alive.  The report sets a fence
+// bit in the count word with one fetch_or, and publishes the count that
+// the same operation read.  The session reads the bit from the result of
+// each add.  A message that it finished after the fence is past the
+// reported count.  A peer that had not received it before the report
+// refuses it, and the session ends the process with
+// Crash_Endpoint_Reported, so no endpoint goes on after its report.  A
+// peer that received it before the report has a count above the reported
+// count, and it takes the crash branch at its next reception.  The add is
+// one locked operation for each message, on a crash-watched session only.
 //
 // ── One class for every head ────────────────────────────────────────
 //
@@ -138,30 +154,54 @@ struct CrashWitness {
 };
 
 class CrashReporter;
+class CrashWriter;
+class CrashSessionDoor;
 
-// One word of state on its own cache line: the cause in the top byte,
-// the message count in the low 56 bits, or all ones while the peer is
-// alive.  A cause is at most crash_cause_top_value, so no report is all
-// ones.  The report is one compare-and-swap, so the first report wins
-// whole, and a reader never sees the cause of one report beside the count
-// of another.
+// The cell that watches one endpoint.  It has two words, each on its own
+// cache line.
+//
+//   - The report: the cause in the top byte, the message count in the low
+//     56 bits, or all ones while the endpoint is alive.  A cause is at
+//     most crash_cause_top_value, so no report is all ones.  The report is
+//     one compare-and-swap, so the first report wins whole, and a reader
+//     never sees the cause of one report beside the count of another.
+//   - The count: the messages that the endpoint finished sending, in the
+//     low 56 bits, and the fence bit in the top bit.  Only the session of
+//     the endpoint adds to it, and a report sets the fence (the witness of
+//     a crash, above).
 class PeerCrashCell : public ::foundation::Pinned<PeerCrashCell> {
     static constexpr std::uint64_t alive_state = ~std::uint64_t{0};
     static constexpr unsigned count_bits = 56;
     static constexpr std::uint64_t count_mask = (std::uint64_t{1} << count_bits) - 1;
+    static constexpr std::uint64_t fence_bit = std::uint64_t{1} << 63;
 
     alignas(64) std::atomic<std::uint64_t> state_{alive_state};
     // Set when the one reporter of this cell is minted.
     std::atomic<bool> has_reporter_{false};
+    alignas(64) std::atomic<std::uint64_t> sent_{0};
+    // Set when the one writer of this cell is minted.
+    std::atomic<bool> has_writer_{false};
 
     friend class CrashReporter;
+    friend class CrashWriter;
+    friend class CrashSessionDoor;
 
-    // Returns true when this report is the first.
-    bool publish_(CrashWitness witness) noexcept {
-        const std::uint64_t packed = (std::uint64_t{static_cast<std::uint8_t>(witness.cause)} << count_bits)
-                                   | std::to_underlying(witness.messages_sent);
+    // Sets the fence and publishes the count that the fence read.  Returns
+    // true when this report is the first.
+    bool publish_(CrashCause cause) noexcept {
+        const std::uint64_t counted = sent_.fetch_or(fence_bit, std::memory_order_acq_rel) & count_mask;
+        const std::uint64_t packed = (std::uint64_t{static_cast<std::uint8_t>(cause)} << count_bits) | counted;
         std::uint64_t expected = alive_state;
         return state_.compare_exchange_strong(expected, packed, std::memory_order_acq_rel, std::memory_order_acquire);
+    }
+
+    // Counts one more finished message.  Returns false when a report set
+    // the fence before this message, so the message is past the count that
+    // the peer reads.
+    [[nodiscard]] bool count_one_sent_() noexcept {
+        const std::uint64_t before = sent_.fetch_add(1, std::memory_order_acq_rel);
+        CRUCIBLE_FATAL_INVARIANT((before & count_mask) != count_mask);
+        return (before & fence_bit) == 0;
     }
 
 public:
@@ -172,10 +212,10 @@ public:
 
     [[nodiscard]] bool has_crashed() const noexcept { return state_.load(std::memory_order_acquire) != alive_state; }
 
-    // The report, or no value while the peer is alive.  Only the reporter
-    // writes the state, and its precondition keeps the cause inside
-    // CrashCause and the count inside 56 bits, so the decode is total over
-    // what can be read.
+    // The report, or no value while the endpoint is alive.  Only the
+    // reporter and the crash of the endpoint write the state, their
+    // preconditions keep the cause inside CrashCause, and the count is 56
+    // bits wide, so the decode is total over what can be read.
     [[nodiscard]] std::optional<CrashWitness> witness() const noexcept {
         const std::uint64_t state = state_.load(std::memory_order_acquire);
         if (state == alive_state) return std::nullopt;
@@ -194,18 +234,43 @@ namespace detail::crash_transport {
 [[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_second_reporter() noexcept {
     std::fprintf(stderr,
                  "fixy::session: diagnostic [Crash_Reporter_Twice]: a crash reporter was minted for a cell that "
-                 "already has one.  A cell has one author, so that the count it publishes has one source.  Give the "
-                 "one reporter to the failure detector, or to the endpoint that reports its own crash.\n");
+                 "already has one.  A cell has one reporter.  Give the one reporter to the failure detector.\n");
+    std::abort();
+}
+
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_second_writer() noexcept {
+    std::fprintf(stderr,
+                 "fixy::session: diagnostic [Crash_Writer_Twice]: a crash writer was minted for a cell that already "
+                 "has one.  One cell watches one endpoint, and only the session of that endpoint counts its "
+                 "messages.  Give each crash session a cell of its own.\n");
+    std::abort();
+}
+
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_moved_writer() noexcept {
+    std::fprintf(stderr,
+                 "fixy::session: diagnostic [Crash_Writer_Moved_From]: mint_crash_session took a crash writer that "
+                 "names no cell, because a move took its cell before.  Pass the writer that mint_crash_writer "
+                 "gave, by move, to one mint.\n");
+    std::abort();
+}
+
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_reported_endpoint() noexcept {
+    std::fprintf(stderr,
+                 "fixy::session: diagnostic [Crash_Endpoint_Reported]: this endpoint finished a message after a "
+                 "report of its crash.  The report is a fence: the peer reads the count of messages that the report "
+                 "took, and it never takes this one.  Under crash-stop a reported endpoint does not go on, so the "
+                 "process stops.\n");
     std::abort();
 }
 
 }  // namespace detail::crash_transport
 
-// The one author of the reports of one cell.  Only mint_crash_reporter
-// builds it, and each cell has one, so a transport that holds the cell
-// cannot write a report: it would need the reporter, and the reporter is
-// held by the failure detector or by the endpoint that crashes.  A report
-// consumes the reporter, because a peer crashes once.
+// The one reporter of one cell.  Only mint_crash_reporter builds it, and
+// each cell has one, so a transport that holds the cell cannot write a
+// report: it would need the reporter, and the reporter is held by the
+// failure detector.  A report consumes the reporter, because an endpoint
+// crashes once.  It carries no count: the cell reads the count that the
+// session of the endpoint wrote.
 //
 // The move constructor is user-provided, so the class is not trivially
 // copyable and std::bit_cast cannot build one.  It has no trivial
@@ -220,20 +285,19 @@ class [[nodiscard]] CrashReporter {
 
 public:
     CrashReporter(CrashReporter&& other) noexcept : cell_{std::exchange(other.cell_, nullptr)} {}
-    CrashReporter(const CrashReporter&) = delete("a cell has one reporter, so its count has one source");
-    CrashReporter& operator=(const CrashReporter&) = delete("a cell has one reporter, so its count has one source");
+    CrashReporter(const CrashReporter&) = delete("a cell has one reporter, so a report has one author");
+    CrashReporter& operator=(const CrashReporter&) = delete("a cell has one reporter, so a report has one author");
     CrashReporter& operator=(CrashReporter&&) = delete("a reporter names one cell for its whole life");
     ~CrashReporter() = default;
 
-    // Publishes the crash: its cause, and the number of messages that the
-    // crashed peer sent on the session.  Returns true when this is the
-    // first report of the cell.
-    bool report(CrashCause cause, MessageCount messages_sent) && noexcept {
+    // Publishes the crash with its cause and the count that the session of
+    // the endpoint wrote, and fences the count.  Returns true when this is
+    // the first report of the cell.
+    bool report(CrashCause cause) && noexcept {
         CRUCIBLE_PRE(cell_ != nullptr);
         CRUCIBLE_PRE(static_cast<std::uint8_t>(cause) <= crash_cause_top_value);
-        CRUCIBLE_PRE(std::to_underlying(messages_sent) <= PeerCrashCell::max_message_count);
         PeerCrashCell* const cell = std::exchange(cell_, nullptr);
-        return cell->publish_(CrashWitness{cause, messages_sent});
+        return cell->publish_(cause);
     }
 
 private:
@@ -241,6 +305,43 @@ private:
         return !cell.has_reporter_.exchange(true, std::memory_order_acq_rel);
     }
 };
+
+// The one writer of the count of one cell.  Only mint_crash_writer builds
+// it, and each cell has one.  mint_crash_session takes it by value, so no
+// two sessions count into one cell: the writer is move-only, and a writer
+// that a move emptied stops the mint with Crash_Writer_Moved_From.
+class [[nodiscard]] CrashWriter {
+    PeerCrashCell* cell_ = nullptr;
+
+    explicit CrashWriter(PeerCrashCell& cell) noexcept : cell_{&cell} {}
+
+    friend CrashWriter mint_crash_writer(PeerCrashCell& cell) noexcept;
+    friend class CrashSessionDoor;
+
+public:
+    CrashWriter(CrashWriter&& other) noexcept : cell_{std::exchange(other.cell_, nullptr)} {}
+    CrashWriter(const CrashWriter&) = delete("one session counts into a cell, so the cell has one writer");
+    CrashWriter& operator=(const CrashWriter&) = delete("one session counts into a cell, so the cell has one writer");
+    CrashWriter& operator=(CrashWriter&&) = delete("a writer names one cell for its whole life");
+    ~CrashWriter() = default;
+
+private:
+    [[nodiscard]] static bool claim_(PeerCrashCell& cell) noexcept {
+        return !cell.has_writer_.exchange(true, std::memory_order_acq_rel);
+    }
+};
+
+// Mints the one writer of a cell.  A second mint for the same cell ends
+// the process with Crash_Writer_Twice.
+[[nodiscard]] inline CrashWriter mint_crash_writer(PeerCrashCell& cell) noexcept {
+    if (!CrashWriter::claim_(cell)) [[unlikely]]
+        detail::crash_transport::abort_on_second_writer();
+    return CrashWriter{cell};
+}
+
+void mint_crash_writer(const PeerCrashCell&) noexcept =
+    delete("[Crash_Writer_From_Const_Cell] a const cell is a view of the detector, and a view gives no right to count "
+           "the messages of an endpoint.  Mint the writer from the cell that watches this endpoint.");
 
 // Mints the one reporter of a cell.  A second mint for the same cell
 // ends the process with Crash_Reporter_Twice.
@@ -541,26 +642,54 @@ class CrashSessionDoor final {
     [[nodiscard]] static constexpr auto wrap_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& from,
                                               Next next, detail::crash_transport::message_counts counts) noexcept {
         return CrashWatched<Next, Self, Peer, Reliable, Ctx, NextPosition>{std::move(next), *from.peer_cell_,
-                                                                           from.ctx_, counts};
+                                                                           *from.own_cell_, from.ctx_, counts};
+    }
+
+    // The counts after one more message that this endpoint finished.  The
+    // cell of the endpoint counts the message too.  A report that fenced
+    // the count before it stops the process (the witness of a crash, in
+    // the head of this header).
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
+    [[nodiscard]] static detail::crash_transport::message_counts
+    one_more_sent_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& watched) noexcept {
+        if (!watched.own_cell_->count_one_sent_()) [[unlikely]]
+            detail::crash_transport::abort_on_reported_endpoint();
+        return detail::crash_transport::one_more_sent(watched.counts_);
     }
 
 public:
     // mint_crash_session: opens the plain handle of Proto, and puts around
-    // it the decorator that reads the cell of the watched peer.
+    // it the decorator that reads the cell of the watched peer and counts
+    // into the cell of this endpoint.
     template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy, typename Ctx,
               typename Resource>
         requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource>
-    [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, const PeerCrashCell& peer_cell,
-                                             std::source_location loc) noexcept {
+    [[nodiscard]] static auto open(Ctx const& ctx, Resource resource, const PeerCrashCell& peer_cell, CrashWriter own,
+                                   std::source_location loc) noexcept {
+        PeerCrashCell* const own_cell = std::exchange(own.cell_, nullptr);
+        if (own_cell == nullptr) [[unlikely]]
+            detail::crash_transport::abort_on_moved_writer();
         auto inner = mint_session_handle<Proto, Resource, Policy>(std::forward<Resource>(resource), loc);
-        return CrashWatched<decltype(inner), Self, Peer, Reliable, Ctx>{std::move(inner), peer_cell, ctx};
+        return CrashWatched<decltype(inner), Self, Peer, Reliable, Ctx>{std::move(inner), peer_cell, *own_cell, ctx};
     }
 
     template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy, typename Ctx,
               typename Resource>
-    static void open(Ctx const&, Resource, const PeerCrashCell&&, std::source_location) =
+    static void open(Ctx const&, Resource, const PeerCrashCell&&, CrashWriter, std::source_location) =
         delete("[Crash_Cell_Temporary] the detector cell is a temporary.  The decorator keeps its address, so the "
                "cell must outlive every handle of the session.");
+
+    // crash(): stops the endpoint and reports it through its own cell.
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
+    [[nodiscard]] static typename Handle::resource_type
+    crash(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched, CrashCause cause) noexcept {
+        CRUCIBLE_PRE(static_cast<std::uint8_t>(cause) <= crash_cause_top_value);
+        using Resource = typename Handle::resource_type;
+        Resource resource = std::forward<Resource>(watched.inner_.resource());
+        std::move(watched.inner_).detach(detach_reason::LocalCrashStop{});
+        static_cast<void>(watched.own_cell_->publish_(cause));
+        return std::forward<Resource>(resource);
+    }
 
     // ── send ─────────────────────────────────────────────────────────
     //
@@ -590,8 +719,7 @@ public:
         // select counted.  A payload that did not go is no message.
         constexpr bool is_payload_of_label = std::is_same_v<Position, detail::crash_transport::payload_to_send>;
         const detail::crash_transport::message_counts counts =
-            (is_payload_of_label || undelivered.has_value()) ? watched.counts_
-                                                             : detail::crash_transport::one_more_sent(watched.counts_);
+            (is_payload_of_label || undelivered.has_value()) ? watched.counts_ : one_more_sent_(watched);
         auto wrapped = wrap_(watched, std::move(next), counts);
         return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
     }
@@ -609,8 +737,7 @@ public:
         bool is_written = false;
         auto next = std::move(watched.inner_).send(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
             *watched.peer_cell_, transport, is_written));
-        const detail::crash_transport::message_counts counts =
-            is_written ? detail::crash_transport::one_more_sent(watched.counts_) : watched.counts_;
+        const detail::crash_transport::message_counts counts = is_written ? one_more_sent_(watched) : watched.counts_;
         auto wrapped = [&] {
             if constexpr (keyed_step_has_value_v<P>) {
                 return wrap_<detail::crash_transport::payload_to_send>(watched, std::move(next), counts);
@@ -634,8 +761,7 @@ public:
         auto next = std::move(watched.inner_).template select<I>(
             detail::crash_transport::watched_word_write<typename Handle::resource_type>(*watched.peer_cell_, transport,
                                                                                         is_written));
-        const detail::crash_transport::message_counts counts =
-            is_written ? detail::crash_transport::one_more_sent(watched.counts_) : watched.counts_;
+        const detail::crash_transport::message_counts counts = is_written ? one_more_sent_(watched) : watched.counts_;
         using Next = decltype(next);
         constexpr bool is_inside_message = [] {
             if constexpr (is_keyed_choice_v<P>) {
@@ -830,6 +956,10 @@ class [[nodiscard]] CrashWatched {
 
     Handle inner_;
     const PeerCrashCell* peer_cell_;
+    // The cell that watches this endpoint.  The session counts its
+    // messages there, and its crash reports there.  The mint took the one
+    // writer of the cell, so no other session counts into it.
+    PeerCrashCell* own_cell_;
     // The context of the mint.  The door enters a crash branch with it.
     [[no_unique_address]] Ctx ctx_;
     detail::crash_transport::message_counts counts_{};
@@ -838,9 +968,9 @@ class [[nodiscard]] CrashWatched {
     // so no specialization of this template reaches another.
     friend class CrashSessionDoor;
 
-    constexpr CrashWatched(Handle inner, const PeerCrashCell& cell, const Ctx& ctx,
+    constexpr CrashWatched(Handle inner, const PeerCrashCell& peer_cell, PeerCrashCell& own_cell, const Ctx& ctx,
                            detail::crash_transport::message_counts counts = {}) noexcept
-        : inner_{std::move(inner)}, peer_cell_{&cell}, ctx_{ctx}, counts_{counts} {}
+        : inner_{std::move(inner)}, peer_cell_{&peer_cell}, own_cell_{&own_cell}, ctx_{ctx}, counts_{counts} {}
 
 public:
     using handle_type = Handle;
@@ -1011,19 +1141,19 @@ public:
 
     // ── crash ────────────────────────────────────────────────────────
     //
-    // Stops the local endpoint and tells the peer through `announce`, the
-    // reporter of the cell that the peer watches.  The report carries the
-    // number of messages this endpoint sent, which its handles counted, so
-    // the peer takes its crash branch once every one of them has arrived.
-    // The endpoint is then at the runtime type Stop, where no operation
-    // exists, so the call gives back the Resource instead of a handle.
-    // Rule r-↯ does not apply to a process that has already ended, so End
-    // has no crash().  A crash never falls inside one message: after a
-    // positional label whose branch opens with a send, or after the label
-    // word of a keyed message with a value, the payload goes first.
+    // Stops the local endpoint and reports it through the cell of this
+    // endpoint, which the peer watches.  The report carries the count that
+    // this session wrote into the cell, so the peer takes its crash branch
+    // once every counted message has arrived.  The endpoint is then at the
+    // runtime type Stop, where no operation exists, so the call gives back
+    // the Resource instead of a handle.  Rule r-↯ does not apply to a
+    // process that has already ended, so End has no crash().  A crash never
+    // falls inside one message: after a positional label whose branch opens
+    // with a send, or after the label word of a keyed message with a value,
+    // the payload goes first.
     template <typename P = protocol>
         requires(!is_terminal_state_v<P>)
-    [[nodiscard]] resource_type crash(CrashCause cause, CrashReporter&& announce) && {
+    [[nodiscard]] resource_type crash(CrashCause cause) && {
         static_assert(!reliable_set_contains_v<Reliable, Self>,
                       "fixy::session::diagnostic [Crash_Of_Reliable_Role]: crash(): the local role is in the "
                       "reliable set.  Rule r-↯ lets only a role outside the reliable set crash.  Remove the "
@@ -1034,10 +1164,7 @@ public:
                       "value of a keyed message.  The label and the payload are one message, so a crash here "
                       "delivers half of it, and the peer waits in a position with no crash branch.  Send the "
                       "payload first, then crash.");
-        resource_type resource = std::forward<resource_type>(inner_.resource());
-        std::move(inner_).detach(detach_reason::LocalCrashStop{});
-        static_cast<void>(std::move(announce).report(cause, static_cast<MessageCount>(counts_.sent)));
-        return std::forward<resource_type>(resource);
+        return CrashSessionDoor::crash(std::move(*this), cause);
     }
 
     template <typename Reason>
@@ -1052,20 +1179,23 @@ public:
 
 // ── The mint ─────────────────────────────────────────────────────────
 
+// The mint takes the cell of the peer, which it reads, and the one writer
+// of the cell of this endpoint, which it counts into.  The body reads the
+// writer at run time, so the mint is not constexpr.
 template <typename Proto, typename Self, typename Peer, typename Reliable = NoReliableRoles,
           AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource>
     requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource>
-[[nodiscard]] constexpr auto mint_crash_session(Ctx const& ctx, Resource resource, const PeerCrashCell& peer_cell,
-                                                std::source_location loc = std::source_location::current()) noexcept {
-    return CrashSessionDoor::open<Proto, Self, Peer, Reliable, Policy>(ctx, std::forward<Resource>(resource),
-                                                                       peer_cell, loc);
+[[nodiscard]] auto mint_crash_session(Ctx const& ctx, Resource resource, const PeerCrashCell& peer_cell,
+                                      CrashWriter own, std::source_location loc = std::source_location::current()) noexcept {
+    return CrashSessionDoor::open<Proto, Self, Peer, Reliable, Policy>(ctx, std::forward<Resource>(resource), peer_cell,
+                                                                       std::move(own), loc);
 }
 
 // The decorator keeps the cell's address, so a temporary cell would
 // dangle before the first step.
 template <typename Proto, typename Self, typename Peer, typename Reliable = NoReliableRoles,
           AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource>
-void mint_crash_session(Ctx const&, Resource, const PeerCrashCell&&,
+void mint_crash_session(Ctx const&, Resource, const PeerCrashCell&&, CrashWriter,
                         std::source_location = std::source_location::current()) =
     delete("[Crash_Cell_Temporary] mint_crash_session: the detector cell is a temporary.  The decorator keeps its "
            "address, so the cell must outlive every handle of the session.");

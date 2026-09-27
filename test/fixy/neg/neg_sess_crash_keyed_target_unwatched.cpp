@@ -30,7 +30,8 @@ int main() {
     using namespace neg_sess_crash_keyed_target_unwatched_types;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
     const s::PeerCrashCell cell_of_r;
-    auto watched = s::mint_crash_session<ToQ, P, R, s::NoReliableRoles>(ctx, Wire{}, cell_of_r);
+    s::PeerCrashCell cell_of_p;
+    auto watched = s::mint_crash_session<ToQ, P, R, s::NoReliableRoles>(ctx, Wire{}, cell_of_r, s::mint_crash_writer(cell_of_p));
     static_cast<void>(watched);
     return 0;
 }

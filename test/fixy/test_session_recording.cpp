@@ -260,12 +260,14 @@ int check_crash_recording() {
     s::PeerCrashCell cell_q;
     s::SessionEventLog log_p;
     s::SessionEventLog log_q;
-    auto p = s::mint_recorded_session(s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q), log_p, kSelf,
-                                      kPeer);
-    auto q = s::mint_recorded_session(s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p), log_q, kPeer,
-                                      kSelf);
+    auto p = s::mint_recorded_session(
+        s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p)), log_p,
+        kSelf, kPeer);
+    auto q = s::mint_recorded_session(
+        s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q)), log_q,
+        kPeer, kSelf);
 
-    (void)std::move(q).crash(s::CrashCause::Throw, s::mint_crash_reporter(cell_q));
+    (void)std::move(q).crash(s::CrashCause::Throw);
     if (log_q.size() != 1 || log_q[0].op() != s::SessionOp::Stop || log_q[0].stop_reason() != s::StopReasonKind::LocalAbort
         || log_q[0].crash_cause() != s::CrashCause::Throw || log_q[0].stopped_role() != kPeer)
         return fail("the local crash was not recorded as a LocalAbort stop");

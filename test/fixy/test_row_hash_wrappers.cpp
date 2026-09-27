@@ -1219,6 +1219,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::CrashReporter,
      "the one author of the reports of one crash cell: it holds a pointer to the cell, a report consumes it, and "
      "it is never a template argument of a kernel signature"},
+    {^^::fixy::session::CrashWriter,
+     "the one writer of the message count of one crash cell: it holds a pointer to the cell, a crash mint consumes "
+     "it, and it is never a template argument of a kernel signature"},
     {^^::fixy::session::PeerCrashCell, kDescriptor},
     {^^::fixy::session::CrashSession, kQuery},
     {^^::fixy::session::is_crash_session_admissible, kMetafunction},

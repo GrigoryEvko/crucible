@@ -2744,7 +2744,19 @@ fixy_neg_compile_test(neg_sess_crash_reporter_from_const_cell
   "\\[Crash_Reporter_From_Const_Cell\\]")
 fixy_neg_compile_test(neg_sess_crash_reporter_copied
   "use of deleted function .fixy::session::CrashReporter::CrashReporter\\(const fixy::session::CrashReporter&\\)"
-  "a cell has one reporter, so its count has one source")
+  "a cell has one reporter, so a report has one author")
+# The count of a crash report comes from the session of the endpoint.  A
+# report takes no count, and the one writer of a cell is move-only and
+# comes only from a cell that is not const.
+fixy_neg_compile_test(neg_sess_crash_writer_from_const_cell
+  "use of deleted function .void fixy::session::mint_crash_writer"
+  "\\[Crash_Writer_From_Const_Cell\\]")
+fixy_neg_compile_test(neg_sess_crash_writer_copied
+  "use of deleted function .fixy::session::CrashWriter::CrashWriter\\(const fixy::session::CrashWriter&\\)"
+  "one session counts into a cell, so the cell has one writer")
+fixy_neg_compile_test(neg_sess_crash_report_with_count
+  "no matching function for call to .fixy::session::CrashReporter::report"
+  "report\\(fixy::session::CrashCause, fixy::session::MessageCount\\)")
 #
 # The priority order of fixy/session/Watch.h: the two ends of a channel
 # state one priority, and a Resource states it with its own type.

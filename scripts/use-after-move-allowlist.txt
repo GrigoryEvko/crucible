@@ -93,6 +93,10 @@ test/fixy/test_session_handle_attacks.cpp:use_after_move:handle
 test/fixy/test_session_handle_attacks.cpp:view_a_moved_from_handle:handle
 test/fixy/test_session_hold_consumed_aborts.cpp:take_twice:hold
 
+# Probe: a crash writer that a move emptied names no cell, and the crash
+# mint that takes it aborts.
+test/fixy/test_session_crash_attack.cpp:mint_takes_a_moved_from_writer:writer
+
 # Probe: a moved-from versioned or budgeted value drops its claim to
 # genesis or to unbounded, and a trivially copyable one keeps a true claim.
 test/fixy/test_versioned_budgeted_attacks.cpp:attack_moved_from_budget:source
