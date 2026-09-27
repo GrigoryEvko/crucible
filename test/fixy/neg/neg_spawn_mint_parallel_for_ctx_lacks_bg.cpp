@@ -24,6 +24,7 @@ int main() {
     auto region = fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), storage.size(),
                                                             perm::mint_permission_root<RegionWhole>());
     [[maybe_unused]] auto whole =
-        fixy::spawn::mint_parallel_for<2>(ctx, std::move(region), [](auto& shard) noexcept { (void)shard; });
+        fixy::spawn::mint_parallel_for<2>(ctx, fixy::concurrent::WorkBudget{}, std::move(region),
+                                          [](auto& shard) noexcept { (void)shard; });
     return 0;
 }

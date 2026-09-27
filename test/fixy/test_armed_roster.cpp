@@ -334,24 +334,6 @@ struct foundation::contracts::armed_cell<::fixy::detail::is_throws_atom> {
 };
 
 template <>
-struct foundation::contracts::armed_cell<at::spawn::detail::is_detach_with> {
-    using accepts = witnesses<at::spawn::detach_with<"drain outlives the owner">>;
-    using refuses = witnesses<int, at::spawn::syscall_only<"loader">, at::spawn::subprocess<"helper">>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<at::spawn::detail::is_syscall_only> {
-    using accepts = witnesses<at::spawn::syscall_only<"loader">>;
-    using refuses = witnesses<int, at::spawn::detach_with<"drain">, at::spawn::subprocess<"helper">>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<at::spawn::detail::is_subprocess> {
-    using accepts = witnesses<at::spawn::subprocess<"helper">>;
-    using refuses = witnesses<int, at::spawn::detach_with<"drain">, at::spawn::syscall_only<"loader">>;
-};
-
-template <>
 struct foundation::contracts::armed_cell<::fixy::io::engine_is_io_uring> {
     using accepts = witnesses<::fixy::io::engine::IoUring>;
     using refuses = witnesses<void, int, ::fixy::io::zerocopy::Sendfile>;

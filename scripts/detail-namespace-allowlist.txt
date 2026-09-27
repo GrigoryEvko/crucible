@@ -12,7 +12,6 @@
 # relation with the detail predicates that it names.
 test/fixy/rejections_generated.cpp ::fixy::atom::detail x1 — reads the atom roster that the generated rejections cover
 test/fixy/rejections_generated.cpp ::fixy::detail x2 — reads the refusal tier of each generated rejection
-test/fixy/test_armed_roster.cpp ::fixy::atom::spawn::detail x3 — names each armed predicate of the spawn atoms
 test/fixy/test_armed_roster.cpp ::fixy::collision::detail x46 — names each armed predicate of the collision rules
 test/fixy/test_armed_roster.cpp ::fixy::concurrent::detail x26 — names each armed predicate of the stages and the stage fakes
 test/fixy/test_armed_roster.cpp ::fixy::corpus::detail x11 — names each armed predicate of the corpus

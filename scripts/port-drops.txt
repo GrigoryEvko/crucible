@@ -242,7 +242,7 @@ crucible/fixy/_Hw.h:TscMode  → include/fixy/os/Time.h  — The enum moved to f
 crucible/fixy/_Hw.h:RngSource  — The source enum of the RNG grant. Nothing outside the old tests reads the RNG grant, so the enum was not carried.
 crucible/fixy/_Hw.h:valid_simd_width_v  — The width check of the SIMD width grant. An atom of fixy/atoms/Simd.h names the instruction set that a body was emitted for, and that set fixes the width.
 crucible/fixy/_Hw.h:is_sanctioned_cpuid_leaf_v  — The leaf check of the cpuid grant. Nothing outside the old tests reads the cpuid grant, so the check was not carried.
-crucible/fixy/_Hw.h:rationale_nonempty_v  — The rationale check of the assembly and vendor-intrinsic grants, which were not carried. fixy/os/Spawn.h:177 keeps a check of the same name for the spawn rationale.
+crucible/fixy/_Hw.h:rationale_nonempty_v  — The rationale check of the assembly and vendor-intrinsic grants, which were not carried. fixy/os/Spawn.h keeps a check of the same name for the spawn rationale.
 crucible/fixy/_Hw.h:scope_arch_trunk_consistent  — The coherence check between a memory scope and a fence dialect. V402 in fixy/Collision.h checks a scope atom against the SIMD atom of the binding instead.
 crucible/fixy/_Hw.h:CpuPinProof  — An empty token that stated that the thread was pinned, and any code could make it. fixy/os/CpuPinned.h carries a pin proof that only mint_affinity makes, after sched_setaffinity succeeds.
 crucible/fixy/_Hw.h:root  — The permission tag of the MSR mint. The MSR grant was not carried, so the tag has no use.
@@ -599,7 +599,7 @@ crucible/safety/diag/_RowHashFold.h:FpRounding  → include/fixy/atoms/Fp.h  —
 crucible/safety/diag/_RowHashFold.h:FpTrapMask  → include/fixy/atoms/Fp.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier's head comment names trap mask among the seven FpModeLattice settings no collision rule reads, which it does not restate.
 crucible/safety/diag/_RowHashFold.h:Hw  → include/fixy/atoms/Hw.h  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and the wrapper itself was not carried: the HwInstruction tier it pinned moved to the binding as the atom family of the carrier, which declares the five enumerators verbatim.
 crucible/safety/diag/_RowHashFold.h:HwInstruction  → include/fixy/atoms/Hw.h  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and the carrier declares the five enumerators verbatim, same names and same values, for its atom family.
-crucible/safety/diag/_RowHashFold.h:JoinPolicy  → none  — Two forward declarations, the wrapper and its tier enum, and no header in the new tree carries either: they are defined in crucible/safety/_JoinPolicy.h and crucible/algebra/lattices/_JoinPolicyLattice.h, whose rows defer them because the chain order is wrong, and the JoinMechanism of fixy/os/Spawn.h ports the spawn grant of the old fixy tree, a different ladder.
+crucible/safety/diag/_RowHashFold.h:JoinPolicy  → none  — Two forward declarations, the wrapper and its tier enum, and no header in the new tree carries either: they are defined in crucible/safety/_JoinPolicy.h and crucible/algebra/lattices/_JoinPolicyLattice.h, whose rows defer them because the chain order is wrong.
 crucible/safety/diag/_RowHashFold.h:MemOrder  → none  — A forward declaration made so the old fold could specialise on the wrapper without including its header. The new fold names no wrapper, and no header in the new tree carries the wrapper: it is defined in crucible/safety/_MemOrder.h, whose rows drop it because no production file reads it.
 crucible/safety/diag/_RowHashFold.h:MemOrderTag  → none  — A forward declaration of the tier enum the old fold read to build a salt's low byte. The new fold reads the lattice type instead, and no header in the new tree carries the enum: it is defined in crucible/algebra/lattices/_MemOrderLattice.h, whose rows drop it because no production file reads a pinned memory order.
 crucible/safety/diag/_RowHashFold.h:pred_canonical_id  — Generalised to lattice_canonical_id in foundation/diag/RowHash.h. A refinement's predicate is a template argument of its lattice in the new tree, so one rename hook keyed on the lattice covers the predicate case and every other axis with it.
@@ -1213,14 +1213,25 @@ crucible/safety/_Workload.h:should_parallelize  → include/fixy/concurrent/Para
 crucible/safety/_Workload.h:parallel_for_views  → include/fixy/os/Spawn.h  — Ported as fixy::spawn::mint_parallel_for, which recombines the shards rather than rebuild the parent through the forgeable rebuild_parent_.
 crucible/safety/_Workload.h:parallel_reduce_views  — Not carried, because no production file reduced over shards, and the old form rebuilt the parent through the forgeable rebuild_parent_.
 crucible/safety/_Workload.h:parallel_apply_pair  — Not carried, because no production file split two regions together, and the old form rebuilt both parents through the forgeable rebuild_parent_.
-crucible/safety/_Workload.h:parallel_for_views_adaptive  — Not carried, because no production file called it, and a caller asks ParallelismRule::recommend before it calls mint_parallel_for.
-crucible/safety/_Workload.h:parallel_for_smart  — Not carried, because no production file called it, and a caller asks ParallelismRule::recommend for the factor before it calls mint_parallel_for.
+crucible/safety/_Workload.h:parallel_for_views_adaptive  — Not carried, because no production file called it, and mint_parallel_for asks ParallelismRule::recommend itself.
+crucible/safety/_Workload.h:parallel_for_smart  — Not carried, because no production file called it, and mint_parallel_for asks ParallelismRule::recommend for the factor itself.
 crucible/safety/_Workload.h:log_topology_at_startup  — Not carried, because nothing called it, and fixy::concurrent::Topology::instance().log_summary() prints the same summary.
+crucible/fixy/spawn/_JoinPolicy.h:JoinMechanism  — The enum of the join-mechanism tags, which did not come, because no mint read a mechanism tag.
+crucible/fixy/spawn/_JoinPolicy.h:join_mechanism_count  — The count of the enum above, gone with it.
+crucible/fixy/spawn/_JoinPolicy.h:AutoJoin  — A join-mechanism tag. No mint read the tags, and mint_spawn and mint_parallel_for always join.
+crucible/fixy/spawn/_JoinPolicy.h:ManualJoin  — A join-mechanism tag. No mint read the tags, and mint_spawn and mint_parallel_for always join.
+crucible/fixy/spawn/_JoinPolicy.h:Detached  — A join-mechanism tag. No mint read the tags, and the detach_with atom of fixy/os/Spawn.h states a detached spawn for rule L003.
+crucible/fixy/spawn/_JoinPolicy.h:Cloned  — A join-mechanism tag. No mint read the tags, and the syscall_only atom of fixy/os/Spawn.h states a raw clone for rule L003.
+crucible/fixy/spawn/_JoinPolicy.h:Forked  — A join-mechanism tag. No mint read the tags, and no mint forks a process.
+crucible/fixy/spawn/_JoinPolicy.h:PosixSpawn  — A join-mechanism tag. No mint read the tags, and no mint spawns a process.
+crucible/fixy/spawn/_JoinPolicy.h:Default  — An alias of the AutoJoin tag, gone with it.
+crucible/fixy/spawn/_JoinPolicy.h:IsJoinMechanismTag  — The allowlist of the join-mechanism tags, gone with them.
+crucible/fixy/spawn/_JoinPolicy.h:mechanism_of_v  — The enumerator of a join-mechanism tag, gone with the tags.
 
 # ── concurrent: the scheduler pool, its queue policies, the auto split and the context bridges ──
 crucible/concurrent/_AdaptiveScheduler.h:Pool  — Not carried, because no production file ran a job on it, and its idle workers spin with a pause and never park.
 crucible/concurrent/_AdaptiveScheduler.h:dispatch  — A member and free entry of the dropped pool, which no production file called.
-crucible/concurrent/_AdaptiveScheduler.h:dispatch_with_workload  — A member and free entry of the dropped pool. A caller asks ParallelismRule::recommend and then calls mint_parallel_for or mint_spawn.
+crucible/concurrent/_AdaptiveScheduler.h:dispatch_with_workload  — A member and free entry of the dropped pool. mint_parallel_for and mint_spawn take the budget and ask ParallelismRule themselves.
 crucible/concurrent/_AdaptiveScheduler.h:DispatchWithWorkloadResult  — The result record of dispatch_with_workload on the dropped pool.
 crucible/concurrent/_AdaptiveScheduler.h:WorkloadProfile  — The job description of the dropped pool. Its byte counts are the WorkBudget of fixy/concurrent/ParallelismRule.h, and its other fields are caller hints the rule refuses.
 crucible/concurrent/_AdaptiveScheduler.h:WorkShard  — The shard record of the dropped pool. mint_parallel_for in fixy/os/Spawn.h gives each body its own shard of the region.

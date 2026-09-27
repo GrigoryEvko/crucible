@@ -2,9 +2,10 @@
 //
 // L1/L2 workloads must stay on the inline path, while L3/DRAM
 // workloads must go parallel without losing to the sequential
-// baseline.  The "rule" arm asks fixy::concurrent::ParallelismRule for
-// a decision and runs the work through fixy::spawn::mint_parallel_for
-// at the factor of that decision.  The "forced" baseline intentionally
+// baseline.  The "rule" arm runs the work through
+// fixy::spawn::mint_parallel_for, which asks
+// fixy::concurrent::ParallelismRule for a decision and runs at the
+// factor of that decision.  The "forced" baseline intentionally
 // models naive per-call thread fanout: it spawns workers for every
 // iteration regardless of the working set, which is the overhead the
 // rule is meant to avoid.
@@ -45,13 +46,13 @@ struct PieceTableWhole {
 
 namespace {
 
-// mint_parallel_for starts one thread per shard, so its context owns Bg.
+// mint_parallel_for can start threads, so its context owns Bg.
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 
 // The work divides into this many pieces, the top of the factor ladder
-// of fixy/concurrent/ParallelismRule.h.  Each factor of the ladder
-// divides it, so every shard of mint_parallel_for runs the same number
-// of pieces.
+// of fixy/concurrent/ParallelismRule.h.  Each piece is one shard of
+// mint_parallel_for.  Each factor of the ladder divides the count, so
+// every thread of the mint runs the same number of pieces.
 constexpr std::size_t kPieces = 16;
 
 constexpr std::size_t KiB = 1024;
@@ -292,51 +293,22 @@ using PieceTable = std::array<std::uint32_t, kPieces>;
     return table;
 }
 
-// Runs the work as Shards shards, one thread for each shard when Shards
-// is more than one, and on the calling thread when it is one.
-template <std::size_t Shards>
-void run_rule_shards(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces) noexcept {
-    static_assert(kPieces % Shards == 0, "every shard must run the same number of pieces");
+// Runs the work through mint_parallel_for, one shard for each piece.
+// The mint asks the rule for a decision on each call and starts no more
+// threads than the factor of that decision.  A sequential decision runs
+// every piece on the calling thread.
+void run_rule(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces) noexcept {
     const BgCtx ctx{eff::testing::bg()};
     auto region = ::fixy::OwnedRegion<std::uint32_t, PieceTableWhole>::wrap(
         pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
-    auto whole = ::fixy::spawn::mint_parallel_for<Shards>(ctx, std::move(region), [&w, &sink](auto& shard) noexcept {
-        for (const std::uint32_t piece : shard) {
-            w.run_range(split_range(w.units, piece, kPieces), sink);
-        }
-    });
+    auto whole = ::fixy::spawn::mint_parallel_for<kPieces>(ctx, w.budget, std::move(region),
+                                                           [&w, &sink](auto& shard) noexcept {
+                                                               for (const std::uint32_t piece : shard) {
+                                                                   w.run_range(split_range(w.units, piece, kPieces),
+                                                                               sink);
+                                                               }
+                                                           });
     (void)whole;
-}
-
-[[noreturn]] CRUCIBLE_COLD void stop_on_unknown_factor(std::size_t factor) noexcept {
-    std::fprintf(stderr, "bench_no_regression: the parallelism rule gave the factor %zu, which is not on its ladder\n",
-                 factor);
-    std::abort();
-}
-
-// Asks the rule for a decision on each call, as a caller of the rule
-// does, and runs the work at the factor of that decision.
-void run_rule(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces) noexcept {
-    const fc::ParallelismDecision dec = fc::ParallelismRule::recommend(w.budget);
-    switch (dec.factor) {
-        case 1:
-            run_rule_shards<1>(w, sink, pieces);
-            return;
-        case 2:
-            run_rule_shards<2>(w, sink, pieces);
-            return;
-        case 4:
-            run_rule_shards<4>(w, sink, pieces);
-            return;
-        case 8:
-            run_rule_shards<8>(w, sink, pieces);
-            return;
-        case 16:
-            run_rule_shards<16>(w, sink, pieces);
-            return;
-        default:
-            stop_on_unknown_factor(dec.factor);
-    }
 }
 
 void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {

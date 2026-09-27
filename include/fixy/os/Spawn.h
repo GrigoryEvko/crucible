@@ -1,8 +1,8 @@
 #pragma once
 
-// Structured spawning: the mechanism a child is joined by, the rationale
-// a non-joining mechanism has to state, and the two mints that fan work
-// out and collect it again.
+// Structured spawning: the rationale a spawn that no join ties to the
+// frame has to state, and the two mints that fan work out and collect it
+// again.
 //
 // Old spelling: include/crucible/fixy/spawn/Spawn.h,
 // include/crucible/fixy/spawn/JoinPolicy.h and
@@ -33,7 +33,9 @@
 //     lifts them.  They carry Axis::Protocol, which is the routing the
 //     old which_dim specializations gave them, and no effect row, because
 //     stating a justification performs no operation.  The roster and the
-//     two roster checks sit beside them.
+//     two roster checks sit beside them.  Rule L003 of fixy/Collision.h
+//     reads detach_with and syscall_only: a borrow together with a spawn
+//     that no join ties to the frame is refused.
 //
 //  4. mint_parallel_for's body takes its shard by mutable reference and
 //     the shards are recombined, not rebuilt.  The old one handed each
@@ -60,6 +62,20 @@
 //     choice happens at run time and the spawning arm must be admissible.
 //     Bodies that wait on each other must not share a fork, because the
 //     inline arm runs them one after another.
+//
+//     mint_parallel_for takes a budget too, and asks the rule for the
+//     whole decision.  A sequential decision runs every shard on the
+//     calling thread.  A parallel one starts no more threads than its
+//     factor, and a thread runs every shard whose index is its own
+//     modulo the thread count.  The old one started one thread per shard
+//     whatever the size of the work, so a region in the private cache of
+//     one core paid for N threads and ran slower than a loop.  Two shards
+//     can run one after the other on one thread, so bodies that wait on
+//     each other must not share a parallel-for either.
+//
+//  6. The join-mechanism tags and the concept that tied a mechanism to
+//     its rationale atom are gone.  No mint read them, so the concept
+//     refused nothing that a caller could reach.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -73,83 +89,13 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cstdint>
-#include <meta>
-#include <string_view>
 #include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
-
-namespace fixy::spawn::join {
-
-enum class JoinMechanism : std::uint8_t {
-    AutoJoin = 0,
-    ManualJoin = 1,
-    Detached = 2,
-    Cloned = 3,
-    Forked = 4,
-    PosixSpawn = 5,
-};
-
-inline constexpr std::size_t join_mechanism_count = std::meta::enumerators_of(^^JoinMechanism).size();
-
-[[nodiscard]] consteval std::string_view name_of(JoinMechanism m) noexcept {
-    switch (m) {
-        case JoinMechanism::AutoJoin:
-            return "AutoJoin";
-        case JoinMechanism::ManualJoin:
-            return "ManualJoin";
-        case JoinMechanism::Detached:
-            return "Detached";
-        case JoinMechanism::Cloned:
-            return "Cloned";
-        case JoinMechanism::Forked:
-            return "Forked";
-        case JoinMechanism::PosixSpawn:
-            return "PosixSpawn";
-        default:
-            return std::string_view{"<unknown JoinMechanism>"};
-    }
-}
-
-// Each tag is final so no imposter can inherit from one and reach the
-// identity allowlist below through a derived type.
-struct AutoJoin final {
-    static constexpr JoinMechanism mechanism = JoinMechanism::AutoJoin;
-};
-struct ManualJoin final {
-    static constexpr JoinMechanism mechanism = JoinMechanism::ManualJoin;
-};
-struct Detached final {
-    static constexpr JoinMechanism mechanism = JoinMechanism::Detached;
-};
-struct Cloned final {
-    static constexpr JoinMechanism mechanism = JoinMechanism::Cloned;
-};
-struct Forked final {
-    static constexpr JoinMechanism mechanism = JoinMechanism::Forked;
-};
-struct PosixSpawn final {
-    static constexpr JoinMechanism mechanism = JoinMechanism::PosixSpawn;
-};
-
-// The gate is an identity allowlist rather than a structural check for a
-// mechanism member. A structural check would admit any struct that declares
-// the field, letting a caller substitute its own type for a declared tag.
-template <typename T>
-concept IsJoinMechanismTag = std::is_same_v<T, AutoJoin> || std::is_same_v<T, ManualJoin> || std::is_same_v<T, Detached>
-                          || std::is_same_v<T, Cloned> || std::is_same_v<T, Forked> || std::is_same_v<T, PosixSpawn>;
-
-template <typename T>
-    requires IsJoinMechanismTag<T>
-inline constexpr JoinMechanism mechanism_of_v = T::mechanism;
-
-using Default = AutoJoin;
-
-}  // namespace fixy::spawn::join
 
 // The three atoms that put a non-default spawn engagement in the type,
 // per deviation 3.  Each routes to Axis::Protocol, because a spawn
@@ -207,42 +153,6 @@ struct subprocess final : atom_of<Axis::Protocol> {
     static constexpr ::fixy::atom::ctrl::rationale reason = Rationale;
 };
 
-// The coherence check asks whether a pack holds a given atom at any
-// rationale, which is a class-template match rather than a type compare.
-namespace detail {
-
-template <typename A>
-struct is_detach_with : std::false_type {};
-template <::fixy::atom::ctrl::rationale R>
-struct is_detach_with<detach_with<R>> : std::true_type {};
-
-template <typename A>
-struct is_syscall_only : std::false_type {};
-template <::fixy::atom::ctrl::rationale R>
-struct is_syscall_only<syscall_only<R>> : std::true_type {};
-
-template <typename A>
-struct is_subprocess : std::false_type {};
-template <::fixy::atom::ctrl::rationale R>
-struct is_subprocess<subprocess<R>> : std::true_type {};
-
-template <template <typename> class Pred, typename... Atoms>
-inline constexpr bool any_of_v = (Pred<Atoms>::value || ...);
-
-}  // namespace detail
-
-// One predicate per family rather than a template-template dispatcher.
-// The dispatcher would be shorter and would report a mismatch far less
-// clearly.
-template <typename... Atoms>
-inline constexpr bool has_detach_with_v = detail::any_of_v<detail::is_detach_with, Atoms...>;
-
-template <typename... Atoms>
-inline constexpr bool has_syscall_only_v = detail::any_of_v<detail::is_syscall_only, Atoms...>;
-
-template <typename... Atoms>
-inline constexpr bool has_subprocess_v = detail::any_of_v<detail::is_subprocess, Atoms...>;
-
 }  // namespace fixy::atom::spawn
 
 namespace fixy::atom::detail {
@@ -275,20 +185,6 @@ namespace fixy::spawn {
 
 namespace eff = ::foundation::effects;
 namespace perm = ::foundation::permissions;
-namespace atom_spawn = ::fixy::atom::spawn;
-
-// The pack must carry an atom of the family the chosen mechanism demands.
-// The two joining mechanisms demand nothing, because choosing the tag is
-// itself the acknowledgement.
-template <typename Mechanism, typename... Atoms>
-concept JoinPolicyGrantsCoherent =
-    join::IsJoinMechanismTag<Mechanism>
-    && (std::is_same_v<Mechanism, join::AutoJoin>  // default — no atom required
-        || std::is_same_v<Mechanism, join::ManualJoin>  // tag-acknowledged join site
-        || (std::is_same_v<Mechanism, join::Detached> && atom_spawn::has_detach_with_v<Atoms...>)
-        || (std::is_same_v<Mechanism, join::Cloned> && atom_spawn::has_syscall_only_v<Atoms...>)
-        || (std::is_same_v<Mechanism, join::Forked> && atom_spawn::has_subprocess_v<Atoms...>)
-        || (std::is_same_v<Mechanism, join::PosixSpawn> && atom_spawn::has_subprocess_v<Atoms...>));
 
 namespace detail {
 
@@ -338,8 +234,10 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
     return perm::mint_permission_fork<Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
 }
 
-// The background capability is demanded even when N is one and no thread
-// is spawned, so the contract does not change shape with N.
+// The background capability is demanded even when N is one or the budget
+// runs every shard inline, so the contract does not change shape with N
+// or with the size of the work.  The choice between the arms happens at
+// run time, and the threaded arm must be admissible.
 // The shard a body actually receives carries the name of the split that
 // cut it, and that name is minted inside the call below, so no clause
 // out here can spell it.  The probe shard therefore carries the Unsplit
@@ -359,13 +257,30 @@ concept CtxFitsParallelFor =
 // mint and nothing else.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
-[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
-mint_parallel_for(Ctx const& ctx, ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body) noexcept;
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
+                                                                     ::fixy::concurrent::WorkBudget budget,
+                                                                     ::fixy::OwnedRegion<T, Whole, Brand>&& region,
+                                                                     Body body) noexcept;
 
-// The fan-out of mint_parallel_for: one thread per shard, each mutating its
-// own tuple element.  The array of jthreads joins in its destructor, so
-// every body has returned before the member does and the tuple is whole
-// again for recombine.
+namespace detail {
+
+// The number of threads that run N shards.  A sequential decision of the
+// parallelism rule gives one, which is the calling thread.  A parallel
+// decision gives its factor, and never more threads than shards.
+template <std::size_t N>
+[[nodiscard]] std::size_t parallel_for_thread_count(::fixy::concurrent::WorkBudget budget) noexcept {
+    const ::fixy::concurrent::ParallelismDecision decision = ::fixy::concurrent::ParallelismRule::recommend(budget);
+    if (!decision.is_parallel()) return 1;
+    return std::min(N, decision.factor);
+}
+
+}  // namespace detail
+
+// The fan-out of mint_parallel_for: one thread for each of `threads`
+// workers, and each worker mutates the tuple elements whose index is its
+// own modulo `threads`.  Each shard then has exactly one thread.  The
+// array of jthreads joins in its destructor, so every body has returned
+// before the member does and the tuple is whole again for recombine.
 //
 // Starting threads is the work of the mint, so only the mint may reach it.
 // The member is private and static, the mint is the only friend, and the
@@ -388,34 +303,55 @@ class ParallelForRunner final {
     template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
         requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
     friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
+                                                                  ::fixy::concurrent::WorkBudget budget,
                                                                   ::fixy::OwnedRegion<T, Whole, Brand>&& region,
                                                                   Body body) noexcept;
 
     template <typename Ctx, typename Shards, typename Body, std::size_t... Is>
         requires eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
-    static void run_shards_(Ctx const&, Shards& shards, Body body, std::index_sequence<Is...>) noexcept {
-        std::array<std::jthread, sizeof...(Is)> workers{
-            std::jthread{[&shards, body](std::stop_token) mutable noexcept { body(std::get<Is>(shards)); }}...};
-        (void)workers;
+    static void run_shards_(Ctx const&, Shards& shards, Body body, std::size_t threads,
+                            std::index_sequence<Is...>) noexcept {
+        std::array<std::jthread, sizeof...(Is)> workers{};
+        for (std::size_t worker = 0; worker < threads; ++worker) {
+            workers[worker] = std::jthread{[&shards, body, worker, threads](std::stop_token) mutable noexcept {
+                ((Is % threads == worker ? static_cast<void>(body(std::get<Is>(shards))) : static_cast<void>(0)),
+                 ...);
+            }};
+        }
     }
 };
 
 // The call returns once every shard has run its body, and the region it
-// hands back is recombined from the shards.
+// hands back is recombined from the shards.  The budget states the bytes
+// the bodies touch together, and the parallelism rule chooses the thread
+// count from it, per deviation 5.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
-[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
-mint_parallel_for(Ctx const& ctx, ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body) noexcept {
-    // The fan-out below is driven by N alone.  The context is read by the
-    // constraint on the declaration and by the runner, which asks for the
-    // background effect again before it starts a thread.
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
+                                                                     ::fixy::concurrent::WorkBudget budget,
+                                                                     ::fixy::OwnedRegion<T, Whole, Brand>&& region,
+                                                                     Body body) noexcept {
+    // The constraint on the declaration reads the context.  The runner
+    // reads it too, and asks for the background effect again before it
+    // starts a thread.
     auto parts = ::fixy::mint_split<N>(std::move(region));
 
     if constexpr (N == 1) {
-        (void)ctx;
-        body(std::get<0>(parts.shards));
+        // One shard runs on the calling thread, whatever the budget.
+        static_cast<void>(ctx);
+        static_cast<void>(budget);
+        static_cast<void>(body(std::get<0>(parts.shards)));
     } else {
-        ParallelForRunner::run_shards_(ctx, parts.shards, body, std::make_index_sequence<N>{});
+        const std::size_t threads = detail::parallel_for_thread_count<N>(budget);
+        if (threads == 1) {
+            // The inline arm: every shard on the calling thread, in shard
+            // order.
+            [&parts, &body]<std::size_t... Is>(std::index_sequence<Is...>) noexcept {
+                (static_cast<void>(body(std::get<Is>(parts.shards))), ...);
+            }(std::make_index_sequence<N>{});
+        } else {
+            ParallelForRunner::run_shards_(ctx, parts.shards, body, threads, std::make_index_sequence<N>{});
+        }
     }
 
     // Deviation 4: every shard is surrendered here, and their Slice
@@ -430,79 +366,7 @@ mint_parallel_for(Ctx const& ctx, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
 namespace fixy::spawn::detail::spawn_self_test {
 
 namespace atom_spawn = ::fixy::atom::spawn;
-namespace join_ = ::fixy::spawn::join;
 using ::fixy::atom::IsAtom;
-
-// ── The mechanism universe ──────────────────────────────────────────
-
-static_assert(join_::join_mechanism_count == 6, "fixy::spawn::join::JoinMechanism universe drifted from six "
-                                                "{AutoJoin, ManualJoin, Detached, Cloned, Forked, PosixSpawn}. "
-                                                "Adding a mechanism is append-only at the next free ordinal, "
-                                                "because a stored cache slot keys on the ordinal. Update the "
-                                                "cardinality sentinel, the tag struct and the name_of switch "
-                                                "together.");
-
-[[nodiscard]] consteval bool every_mechanism_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^join_::JoinMechanism));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (join_::name_of([:en:]) == std::string_view{"<unknown JoinMechanism>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_mechanism_has_name(), "fixy::spawn::join::name_of switch is missing an arm for at least "
-                                          "one JoinMechanism enumerator. Add the arm, or the new mechanism "
-                                          "leaks the '<unknown JoinMechanism>' sentinel into debug output.");
-
-static_assert(join_::AutoJoin::mechanism == join_::JoinMechanism::AutoJoin);
-static_assert(join_::ManualJoin::mechanism == join_::JoinMechanism::ManualJoin);
-static_assert(join_::Detached::mechanism == join_::JoinMechanism::Detached);
-static_assert(join_::Cloned::mechanism == join_::JoinMechanism::Cloned);
-static_assert(join_::Forked::mechanism == join_::JoinMechanism::Forked);
-static_assert(join_::PosixSpawn::mechanism == join_::JoinMechanism::PosixSpawn);
-
-static_assert(join_::mechanism_of_v<join_::AutoJoin> == join_::JoinMechanism::AutoJoin);
-static_assert(join_::mechanism_of_v<join_::PosixSpawn> == join_::JoinMechanism::PosixSpawn);
-
-static_assert(join_::IsJoinMechanismTag<join_::AutoJoin>);
-static_assert(join_::IsJoinMechanismTag<join_::ManualJoin>);
-static_assert(join_::IsJoinMechanismTag<join_::Detached>);
-static_assert(join_::IsJoinMechanismTag<join_::Cloned>);
-static_assert(join_::IsJoinMechanismTag<join_::Forked>);
-static_assert(join_::IsJoinMechanismTag<join_::PosixSpawn>);
-
-static_assert(!join_::IsJoinMechanismTag<int>);
-static_assert(!join_::IsJoinMechanismTag<void>);
-static_assert(!join_::IsJoinMechanismTag<join_::JoinMechanism>);
-
-// The allowlist is by identity, so a struct that declares the same member
-// is still refused.  That is the cheat the comment beside it names.
-struct MechanismImposter {
-    static constexpr join_::JoinMechanism mechanism = join_::JoinMechanism::Detached;
-};
-static_assert(!join_::IsJoinMechanismTag<MechanismImposter>,
-              "IsJoinMechanismTag must be an identity allowlist. A structural check would admit any struct "
-              "that declares a mechanism member.");
-
-static_assert(std::is_empty_v<join_::AutoJoin> && sizeof(join_::AutoJoin) == 1);
-static_assert(std::is_empty_v<join_::PosixSpawn> && sizeof(join_::PosixSpawn) == 1);
-static_assert(std::is_final_v<join_::AutoJoin>);
-static_assert(std::is_final_v<join_::ManualJoin>);
-static_assert(std::is_final_v<join_::Detached>);
-static_assert(std::is_final_v<join_::Cloned>);
-static_assert(std::is_final_v<join_::Forked>);
-static_assert(std::is_final_v<join_::PosixSpawn>);
-static_assert(!std::is_same_v<join_::AutoJoin, join_::ManualJoin>);
-static_assert(!std::is_same_v<join_::Cloned, join_::Forked>);
-static_assert(!std::is_same_v<join_::Forked, join_::PosixSpawn>);
-static_assert(std::is_same_v<join_::Default, join_::AutoJoin>);
-
-static_assert(join_::name_of(join_::JoinMechanism::AutoJoin) == "AutoJoin");
-static_assert(join_::name_of(join_::JoinMechanism::PosixSpawn) == "PosixSpawn");
 
 // ── The rationale atoms ─────────────────────────────────────────────
 
@@ -538,40 +402,6 @@ static_assert(atom_spawn::detach_with<"audit">::reason.size() == 6);  // "audit"
 // The rationale is part of the type, so two reasons are two types.
 static_assert(!std::is_same_v<atom_spawn::detach_with<"reason_a">, atom_spawn::detach_with<"reason_b">>);
 static_assert(!std::is_same_v<atom_spawn::detach_with<"x">, atom_spawn::syscall_only<"x">>);
-
-static_assert(atom_spawn::has_detach_with_v<atom_spawn::detach_with<"x">>);
-static_assert(!atom_spawn::has_detach_with_v<atom_spawn::syscall_only<"x">>);
-static_assert(atom_spawn::has_detach_with_v<atom_spawn::syscall_only<"x">, atom_spawn::detach_with<"y">>);
-static_assert(!atom_spawn::has_detach_with_v<>);  // empty pack
-
-// ── The coherence bridge ────────────────────────────────────────────
-
-static_assert(JoinPolicyGrantsCoherent<join_::AutoJoin>);
-static_assert(JoinPolicyGrantsCoherent<join_::ManualJoin>);
-static_assert(JoinPolicyGrantsCoherent<join_::AutoJoin, atom_spawn::detach_with<"unused but allowed">>);
-
-static_assert(!JoinPolicyGrantsCoherent<join_::Detached>);
-static_assert(JoinPolicyGrantsCoherent<join_::Detached, atom_spawn::detach_with<"logger drain outlives container">>);
-static_assert(!JoinPolicyGrantsCoherent<join_::Detached, atom_spawn::subprocess<"wrong atom family">>);
-
-static_assert(!JoinPolicyGrantsCoherent<join_::Cloned>);
-static_assert(JoinPolicyGrantsCoherent<join_::Cloned, atom_spawn::syscall_only<"perf bpf loader needs CLONE_VM">>);
-
-static_assert(!JoinPolicyGrantsCoherent<join_::Forked>);
-static_assert(JoinPolicyGrantsCoherent<join_::Forked, atom_spawn::subprocess<"CLI launcher fork-then-exec">>);
-
-static_assert(!JoinPolicyGrantsCoherent<join_::PosixSpawn>);
-static_assert(JoinPolicyGrantsCoherent<join_::PosixSpawn, atom_spawn::subprocess<"test-harness fork-exec helper">>);
-
-static_assert(!JoinPolicyGrantsCoherent<join_::Detached, atom_spawn::syscall_only<"wrong family">>);
-static_assert(!JoinPolicyGrantsCoherent<join_::Cloned, atom_spawn::detach_with<"wrong family">>);
-static_assert(!JoinPolicyGrantsCoherent<join_::Forked, atom_spawn::detach_with<"wrong family">>);
-
-// The right atom anywhere in the pack satisfies it.
-static_assert(JoinPolicyGrantsCoherent<join_::Detached, atom_spawn::syscall_only<"a">,
-                                       atom_spawn::detach_with<"r">, atom_spawn::subprocess<"b">>);
-
-static_assert(!JoinPolicyGrantsCoherent<int>);
 
 // ── The throws gate ─────────────────────────────────────────────────
 

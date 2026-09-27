@@ -11,9 +11,13 @@
 #include <fixy/os/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <set>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -143,7 +147,7 @@ namespace {
 
     // The body takes its shard by mutable reference, so the shard stays in
     // the tuple and recombine can consume it.
-    auto whole = spawn::mint_parallel_for<kShards>(ctx, std::move(region), [](auto& shard) noexcept {
+    auto whole = spawn::mint_parallel_for<kShards>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
         for (int& element : shard) {
             element += 1;
         }
@@ -186,7 +190,7 @@ namespace {
 
     auto region = fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), kCount,
                                                             perm::mint_permission_root<RegionWhole>());
-    auto whole = spawn::mint_parallel_for<1>(ctx, std::move(region), [](auto& shard) noexcept {
+    auto whole = spawn::mint_parallel_for<1>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
         for (int& element : shard) {
             element = 9;
         }
@@ -205,6 +209,110 @@ namespace {
     return 0;
 }
 
+// The thread each shard ran on, for a region with one element per shard.
+// Element i holds i, so a body learns its shard from its element.
+template <std::size_t Shards>
+struct ShardThreads {
+    std::array<std::uint32_t, Shards> storage{};
+    std::array<std::thread::id, Shards> thread_of_shard{};
+    std::array<int, Shards> runs_of_shard{};
+
+    // Runs the shards under one budget and records who ran each one.
+    void run(fixy::concurrent::WorkBudget budget) noexcept {
+        for (std::uint32_t index = 0; index < Shards; ++index) {
+            storage[index] = index;
+        }
+        BgCtx ctx{eff::testing::bg()};
+        auto region = fixy::mint_owned_region(storage.data(), Shards, perm::mint_permission_root<RegionWhole>());
+        auto whole = spawn::mint_parallel_for<Shards>(ctx, budget, std::move(region), [this](auto& shard) noexcept {
+            for (const std::uint32_t index : shard) {
+                thread_of_shard[index] = std::this_thread::get_id();
+                ++runs_of_shard[index];
+            }
+        });
+        (void)whole;
+    }
+
+    [[nodiscard]] bool every_shard_ran_once() const noexcept {
+        return std::all_of(runs_of_shard.begin(), runs_of_shard.end(), [](int runs) noexcept { return runs == 1; });
+    }
+
+    [[nodiscard]] std::size_t distinct_threads() const noexcept {
+        std::set<std::thread::id> threads(thread_of_shard.begin(), thread_of_shard.end());
+        return threads.size();
+    }
+
+    [[nodiscard]] bool ran_on(std::thread::id thread) const noexcept {
+        return std::find(thread_of_shard.begin(), thread_of_shard.end(), thread) != thread_of_shard.end();
+    }
+};
+
+// A working set in the private cache of one core is already hot there, so
+// the parallelism rule keeps it on the calling thread.  The old mint
+// started one thread per shard whatever the budget.
+[[nodiscard]] int parallel_for_core_resident_runs_inline() {
+    ShardThreads<8> record{};
+    record.run(fixy::concurrent::ParallelismRule::budget_for_span<std::uint32_t>(8));
+    if (!record.every_shard_ran_once()) {
+        std::fprintf(stderr, "mint_parallel_for: a shard of the core-resident run did not run exactly once\n");
+        return 1;
+    }
+    if (record.distinct_threads() != 1 || !record.ran_on(std::this_thread::get_id())) {
+        std::fprintf(stderr, "mint_parallel_for: a core-resident budget must run every shard on the calling thread, "
+                             "but the shards ran on %zu threads\n",
+                     record.distinct_threads());
+        return 1;
+    }
+    return 0;
+}
+
+// Past L3 the rule goes parallel.  The mint starts no more threads than the
+// factor of the decision, never uses the calling thread for a shard, and
+// runs each shard on exactly one thread.
+[[nodiscard]] int parallel_for_dram_bound_caps_threads_at_the_factor() {
+    const auto budget = dram_bound_budget();
+    const auto decision = fixy::concurrent::ParallelismRule::recommend(budget);
+    ShardThreads<16> record{};
+    record.run(budget);
+    if (!record.every_shard_ran_once()) {
+        std::fprintf(stderr, "mint_parallel_for: a shard of the DRAM-bound run did not run exactly once\n");
+        return 1;
+    }
+    const std::size_t want_threads = decision.is_parallel() ? std::min<std::size_t>(16, decision.factor) : 1;
+    if (record.distinct_threads() > want_threads) {
+        std::fprintf(stderr, "mint_parallel_for: the shards ran on %zu threads, but the rule allows %zu\n",
+                     record.distinct_threads(), want_threads);
+        return 1;
+    }
+    if (want_threads > 1 && record.ran_on(std::this_thread::get_id())) {
+        std::fprintf(stderr, "mint_parallel_for: a threaded run put a shard on the calling thread\n");
+        return 1;
+    }
+    return 0;
+}
+
+// Inside the shared L3 the rule caps the factor below the shard count, so
+// sixteen shards share a few threads.
+[[nodiscard]] int parallel_for_l3_resident_shares_threads() {
+    const auto& topo = fixy::concurrent::Topology::instance();
+    const fixy::concurrent::WorkBudget budget{.read_bytes = (topo.l2_per_core_bytes() + topo.l3_total_bytes()) / 2};
+    const auto decision = fixy::concurrent::ParallelismRule::recommend(budget);
+    ShardThreads<16> record{};
+    record.run(budget);
+    if (!record.every_shard_ran_once()) {
+        std::fprintf(stderr, "mint_parallel_for: a shard of the L3-resident run did not run exactly once\n");
+        return 1;
+    }
+    const std::size_t want_threads = decision.is_parallel() ? std::min<std::size_t>(16, decision.factor) : 1;
+    if (record.distinct_threads() > want_threads || want_threads >= 16) {
+        std::fprintf(stderr, "mint_parallel_for: an L3-resident run used %zu threads for 16 shards, and the rule "
+                             "allows %zu\n",
+                     record.distinct_threads(), want_threads);
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -212,5 +320,8 @@ int main() {
     if (const int rc = spawn_arm_follows_the_budget(); rc != 0) return rc;
     if (const int rc = parallel_for_visits_every_element_once(); rc != 0) return rc;
     if (const int rc = parallel_for_with_one_shard_runs_inline(); rc != 0) return rc;
+    if (const int rc = parallel_for_core_resident_runs_inline(); rc != 0) return rc;
+    if (const int rc = parallel_for_dram_bound_caps_threads_at_the_factor(); rc != 0) return rc;
+    if (const int rc = parallel_for_l3_resident_shares_threads(); rc != 0) return rc;
     return 0;
 }

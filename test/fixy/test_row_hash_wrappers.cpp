@@ -689,7 +689,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::mmap::advice, kGradeVocabulary},
     {^^::fixy::concurrent::mpsc_tag, kGradeVocabulary},
     {^^::fixy::concurrent::spsc_tag, kGradeVocabulary},
-    {^^::fixy::spawn::join, kGradeVocabulary},
     {^^::fixy::spawn, "the holder of the parallel-for fan-out: static members only, and no object of it exists"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},

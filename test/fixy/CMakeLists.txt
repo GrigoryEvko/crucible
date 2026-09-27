@@ -4181,20 +4181,10 @@ fixy_neg_compile_test(neg_spawn_callable_member_carries_throws
   "static assertion failed: mint_spawn: a callable.s type carries fixy::atom::ctrl::throws"
   "tears through the join")
 
-# A mechanism that never joins has to say why.
-fixy_neg_compile_test(neg_spawn_detached_missing_rationale
-  "static assertion failed: a Detached mechanism with no detach_with atom must be refused"
-  "required by the constraints of .template<class Mechanism, class \\.\\.\\. Atoms> concept fixy::spawn::JoinPolicyGrantsCoherent.")
-
+# A spawn that no join ties to the frame has to say why.
 fixy_neg_compile_test(neg_spawn_empty_rationale
   "static assertion failed: detach_with<\"\"> rejected"
   "enumerates every legitimate detach across the codebase")
-
-# The mechanism allowlist is by identity, so a lookalike that declares the
-# same member is still refused.
-fixy_neg_compile_test(neg_spawn_join_concept_rejects_non_tag
-  "static assertion failed: a struct that merely declares a mechanism member must not pass for a declared tag"
-  "required by the constraints of .template<class T> concept fixy::spawn::join::IsJoinMechanismTag.")
 
 # canonicalize_for gates on the two axes a content hash depends on.
 fixy_neg_compile_test(neg_canonicalize_for_non_bitexact_spec

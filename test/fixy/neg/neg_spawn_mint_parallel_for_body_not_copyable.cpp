@@ -39,6 +39,7 @@ struct MoveOnlyBody {
 int main() {
     BgCtx ctx{eff::testing::bg()};
     auto region = fixy::mint_owned_region(storage.data(), storage.size(), perm::mint_permission_root<RegionWhole>());
-    [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<2>(ctx, std::move(region), MoveOnlyBody{});
+    [[maybe_unused]] auto whole =
+        fixy::spawn::mint_parallel_for<2>(ctx, fixy::concurrent::WorkBudget{}, std::move(region), MoveOnlyBody{});
     return 0;
 }
