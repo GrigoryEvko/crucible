@@ -1,7 +1,9 @@
 // Sentinel TU for foundation/SwissTableBuffer.h.  One allocation holds the
 // control bytes and the slots, the slots start at the capacity offset with
-// their lifetime started, a move hands the allocation on, and a violated
-// capacity precondition aborts.
+// their lifetime started, a move hands the allocation on, and a capacity
+// off the shape or a byte size that wraps aborts.  The build compiles this
+// file twice: once under the contract semantic of the preset and once
+// under the ignore semantic, where no contract clause checks anything.
 
 #include <foundation/SwissTableBuffer.h>
 
@@ -16,6 +18,14 @@
 namespace {
 
 using PtrBuffer = ::foundation::SwissTableBuffer<const int*>;
+
+// A slot of 2^34 - 1 bytes.  At the largest capacity, 2^30, the slots take
+// 2^64 - 2^30 bytes, and the control bytes in front of them make the sum
+// wrap to zero.  The type is never built, only named.
+struct HugeSlot {
+    unsigned char bytes[(std::size_t{1} << 34) - 1];
+};
+using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
 
 // The allocation is one block of 64-byte alignment: the control bytes
 // first, the slots after them, the total rounded to 64.
@@ -80,11 +90,16 @@ int main() {
     if (const int failed = move_hands_the_block_on(); failed != 0) return 30 + failed;
     if (const int failed = zero_capacity_is_empty(); failed != 0) return 40 + failed;
 
-    // A capacity below the group width or not a power of two violates the
-    // precondition, and the contract aborts before anything is allocated.
+    // A capacity below the group width, not a power of two or past the
+    // bound aborts before anything is allocated, under every semantic.
     if (!aborts([] { (void)PtrBuffer::allocate(8); })) return 50;
     if (!aborts([] { (void)PtrBuffer::allocate(48); })) return 51;
     if (aborts([] { (void)PtrBuffer::allocate(1024); })) return 52;
+    if (!aborts([] { (void)PtrBuffer::allocate(::foundation::swiss_table_max_capacity * 2); })) return 53;
+
+    // The slot bytes fit, and the control bytes added to them wrap the size
+    // to zero.  The size check aborts before the heap sees the request.
+    if (!aborts([] { (void)HugeBuffer::allocate(::foundation::swiss_table_max_capacity); })) return 54;
 
     return 0;
 }

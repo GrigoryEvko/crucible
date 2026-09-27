@@ -9,6 +9,7 @@
 // the table writes one.  A proof type, or a class that holds one, cannot start
 // its lifetime that way, so it cannot be a slot.
 
+#include <foundation/AlignedBuffer.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 
@@ -52,18 +53,17 @@ public:
 
     constexpr SwissTableBuffer() noexcept = default;
 
-    // Exhaustion aborts: this runs where a failed allocation has no recovery.
-    [[nodiscard]] static SwissTableBuffer allocate(size_type capacity) pre(is_swiss_table_capacity(capacity)) {
+    // A capacity off the shape misaligns the slots or passes the bound, so
+    // the check is an always-on invariant and not a contract clause, which
+    // the ignore semantic removes.  A size that wraps aborts, and so does
+    // exhaustion, because this runs where a failed allocation has no
+    // recovery.
+    [[nodiscard]] static SwissTableBuffer allocate(size_type capacity) {
+        CRUCIBLE_FATAL_INVARIANT(is_swiss_table_capacity(capacity));
         if (capacity == 0) [[unlikely]]
             return SwissTableBuffer{};
-        size_type slot_bytes = 0;
-        if (__builtin_mul_overflow(capacity, sizeof(SlotPtr), &slot_bytes)) [[unlikely]]
-            std::abort();
-        const size_type total = capacity + slot_bytes;
-        const size_type rounded = (total + 63) & ~size_type{63};
-        void* raw = std::aligned_alloc(64, rounded);
-        if (!raw) [[unlikely]]
-            std::abort();
+        const size_type rounded = detail::aligned_allocation_bytes<64>(capacity, capacity, sizeof(SlotPtr));
+        void* const raw = detail::allocate_aligned_storage_(64, rounded);
 
         // aligned_alloc creates the control bytes implicitly: an array of a
         // byte type is an implicit-lifetime type.  The slots start their
@@ -146,18 +146,8 @@ private:
 
 namespace detail::swiss_table_buffer_self_test {
 
-// The shape of a proof: every constructor is user-provided, so the class is
-// not an implicit-lifetime type.
-class ProofShape {
-public:
-    ProofShape(const ProofShape&) noexcept {}
-
-private:
-    ProofShape() noexcept {}
-};
-struct HoldsProof {
-    ProofShape proof;
-};
+// A class that holds a proof, whose lifetime cannot start over bytes.
+using ::foundation::lifetime::detail::lifetime_self_test::HoldsProof;
 
 static_assert(!std::is_copy_constructible_v<SwissTableBuffer<void*>>);
 static_assert(!std::is_copy_assignable_v<SwissTableBuffer<void*>>);

@@ -45,17 +45,61 @@ inline constexpr std::size_t huge_page_bytes = std::size_t{2} << 20;
 
 namespace detail {
 
+template <typename Tag>
+CRUCIBLE_COLD inline void print_diagnostic_() noexcept {
+    std::fprintf(stderr, "  %.*s: %.*s\n  remediation: %.*s\n", static_cast<int>(Tag::name.size()), Tag::name.data(),
+                 static_cast<int>(Tag::description.size()), Tag::description.data(),
+                 static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
+}
+
 [[noreturn]] CRUCIBLE_COLD inline void aligned_allocation_failed_abort_(std::size_t alloc_bytes,
                                                                         std::size_t alignment) noexcept {
     std::fprintf(stderr, "crucible: fatal: aligned_alloc(alignment=%zu, bytes=%zu) returned nullptr\n", alignment,
                  alloc_bytes);
-    if (alignment >= huge_page_bytes) {
-        using Tag = ::foundation::diag::HugePageAllocationFailed;
-        std::fprintf(stderr, "  %.*s: %.*s\n  remediation: %.*s\n", static_cast<int>(Tag::name.size()),
-                     Tag::name.data(), static_cast<int>(Tag::description.size()), Tag::description.data(),
-                     static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
-    }
+    if (alignment >= huge_page_bytes) print_diagnostic_<::foundation::diag::HugePageAllocationFailed>();
     std::abort();
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void allocation_size_overflow_abort_(std::size_t prefix_bytes, std::size_t count,
+                                                                       std::size_t element_bytes,
+                                                                       std::size_t alignment) noexcept {
+    std::fprintf(stderr,
+                 "crucible: fatal: %zu prefix bytes and %zu elements of %zu bytes, rounded to %zu, do not fit in "
+                 "size_t\n",
+                 prefix_bytes, count, element_bytes, alignment);
+    print_diagnostic_<::foundation::diag::AllocationSizeOverflow>();
+    std::abort();
+}
+
+// The bytes of one allocation: a prefix, then `count` elements of
+// `element_bytes` each, rounded up to the alignment, which aligned_alloc
+// requires.  Each step wraps on a count that no real allocation has, and
+// a wrap would hand back a block smaller than asked for, so a wrap
+// aborts.  The checks are plain code and not contract clauses, so they
+// hold under every contract evaluation semantic.  AlignedBuffer and
+// SwissTableBuffer compute their sizes here.  Complexity: O(1).
+template <std::size_t Alignment>
+    requires(std::has_single_bit(Alignment))
+[[nodiscard]] constexpr std::size_t aligned_allocation_bytes(std::size_t prefix_bytes, std::size_t count,
+                                                             std::size_t element_bytes) noexcept {
+    std::size_t element_total = 0;
+    std::size_t total = 0;
+    std::size_t padded = 0;
+    const bool wraps = __builtin_mul_overflow(count, element_bytes, &element_total)
+                    || __builtin_add_overflow(prefix_bytes, element_total, &total)
+                    || __builtin_add_overflow(total, Alignment - 1, &padded);
+    if (wraps) [[unlikely]]
+        allocation_size_overflow_abort_(prefix_bytes, count, element_bytes, Alignment);
+    return padded & ~(Alignment - 1);
+}
+
+// Fresh storage of `bytes` at the alignment.  Exhaustion aborts: this runs
+// where a failed allocation has no recovery.
+[[nodiscard]] inline void* allocate_aligned_storage_(std::size_t alignment, std::size_t bytes) {
+    void* const raw = std::aligned_alloc(alignment, bytes);
+    if (raw == nullptr) [[unlikely]]
+        aligned_allocation_failed_abort_(bytes, alignment);
+    return raw;
 }
 
 }  // namespace detail
@@ -75,17 +119,10 @@ public:
     constexpr AlignedBuffer() noexcept = default;
 
     // The bytes the allocation of `count` elements occupies: the element
-    // bytes rounded up to the alignment, which aligned_alloc requires.  Both
-    // steps wrap on a count no real buffer has, and a wrap would hand back a
-    // buffer smaller than asked for, so a wrap aborts.
+    // bytes rounded up to the alignment.  A wrap aborts through the
+    // AllocationSizeOverflow diagnostic.
     [[nodiscard]] static constexpr size_type allocation_bytes(size_type count) noexcept {
-        size_type raw_bytes = 0;
-        if (__builtin_mul_overflow(count, sizeof(T), &raw_bytes)) [[unlikely]]
-            std::abort();
-        size_type padded = 0;
-        if (__builtin_add_overflow(raw_bytes, Alignment - 1, &padded)) [[unlikely]]
-            std::abort();
-        return padded & ~(Alignment - 1);
+        return detail::aligned_allocation_bytes<Alignment>(0, count, sizeof(T));
     }
 
     // Starts the lifetime of `count` elements over fresh storage.  An
@@ -165,11 +202,7 @@ private:
     explicit AlignedBuffer(T* data, size_type size) noexcept : data_{data}, size_{size} {}
 
     [[nodiscard]] static void* allocate_storage_(size_type count) {
-        const size_type bytes = allocation_bytes(count);
-        void* const raw = std::aligned_alloc(Alignment, bytes);
-        if (raw == nullptr) [[unlikely]]
-            detail::aligned_allocation_failed_abort_(bytes, Alignment);
-        return raw;
+        return detail::allocate_aligned_storage_(Alignment, allocation_bytes(count));
     }
 
     T* data_ = nullptr;
@@ -178,18 +211,8 @@ private:
 
 namespace detail::aligned_buffer_self_test {
 
-// The shape of a proof: every constructor is user-provided, so the class is
-// not an implicit-lifetime type.
-class ProofShape {
-public:
-    ProofShape(const ProofShape&) noexcept {}
-
-private:
-    ProofShape() noexcept {}
-};
-struct HoldsProof {
-    ProofShape proof;
-};
+// A class that holds a proof, whose lifetime cannot start over bytes.
+using ::foundation::lifetime::detail::lifetime_self_test::HoldsProof;
 
 // A count that refuses a start over bytes and builds from its own default
 // constructor, the shape of a provenance tag.
@@ -221,6 +244,19 @@ static_assert(!can_buffer<int&>, "an element is an object type");
 static_assert(AlignedBuffer<int>::allocation_bytes(3) == 12);
 static_assert(AlignedBuffer<int, 64>::allocation_bytes(3) == 64);
 static_assert(AlignedBuffer<unsigned char, huge_page_bytes>::allocation_bytes(1) == huge_page_bytes);
+static_assert(aligned_allocation_bytes<64>(16, 16, 8) == 192, "16 prefix bytes and 16 slots of 8 bytes round to 192");
+static_assert(aligned_allocation_bytes<16>(0, 0, 8) == 0);
+
+// A size that wraps is not a constant expression: the abort is not constexpr.
+template <std::size_t Prefix, std::size_t Count, std::size_t ElementBytes>
+concept has_constant_size = requires {
+    typename std::integral_constant<std::size_t, aligned_allocation_bytes<64>(Prefix, Count, ElementBytes)>;
+};
+inline constexpr std::size_t max_size = ~std::size_t{0};
+static_assert(has_constant_size<0, 1, 8>);
+static_assert(!has_constant_size<0, (std::size_t{1} << 62), 8>, "count * element bytes wraps");
+static_assert(!has_constant_size<17, (std::size_t{1} << 60) - 1, 16>, "prefix + element bytes wraps");
+static_assert(!has_constant_size<0, max_size, 1>, "the round up to the alignment wraps");
 
 }  // namespace detail::aligned_buffer_self_test
 

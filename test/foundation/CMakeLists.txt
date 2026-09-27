@@ -1408,6 +1408,12 @@ foundation_neg_compile_test(neg_stable_id_refuses_a_union_value
 foundation_test(test_swiss_table_buffer)
 foundation_test(test_aligned_buffer)
 
+# The same Swiss table test under the ignore semantic, where no contract
+# clause checks anything.  The capacity check and the size check are plain
+# code, so each still aborts.
+foundation_test(test_swiss_table_buffer_ignore test_swiss_table_buffer.cpp)
+target_compile_options(test_swiss_table_buffer_ignore PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
+
 foundation_neg_compile_test(neg_swiss_table_buffer_proof_slot
   "template constraint failure for .template<class SlotPtr>  requires  SwissTableSlot<SlotPtr> class foundation::SwissTableBuffer."
   "required for the satisfaction of .ImplicitLifetimeThroughout<SlotPtr>. .with SlotPtr = <unnamed>::HoldsToken\\]")
