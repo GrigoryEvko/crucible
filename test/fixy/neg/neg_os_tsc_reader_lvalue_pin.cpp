@@ -1,7 +1,7 @@
 // The TSC reader owns its pin, so the mint takes the pin from the caller.
-// The mint took a forwarding reference, and an lvalue pin bound to it
-// and was moved out, with no std::move at the call site.  The gate now
-// refuses an lvalue pin, so the call site must name the move.
+// A forwarding reference would bind an lvalue pin and move it out with no
+// std::move at the call site.  The gate refuses an lvalue pin, so the call
+// site must name the move.
 
 #include <fixy/os/Time.h>
 

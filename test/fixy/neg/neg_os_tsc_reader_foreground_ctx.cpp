@@ -1,7 +1,7 @@
 // A TSC value differs from machine to machine, so a read on the
-// replay-bound foreground path makes replay diverge.  The TSC mint took
-// any execution context.  It now asks for the gate of the clock readers,
-// which admits a context that owns Bg, Init or Test.
+// replay-bound foreground path makes replay diverge.  The TSC mint asks
+// for the gate of the clock readers, which admits a context that owns Bg,
+// Init or Test, and the foreground context owns none of them.
 
 #include <fixy/Ctx.h>
 #include <fixy/os/Time.h>
