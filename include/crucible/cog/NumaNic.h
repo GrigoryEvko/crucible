@@ -42,8 +42,11 @@ public:
 
 static_assert(sizeof(NumaNodeId) == sizeof(std::uint16_t));
 
-[[nodiscard]] inline NumaNodeId query_numa_for_nic(const char* sysfs_numa_node_path) noexcept {
-    int const node = warden::numa_node_of_device(sysfs_numa_node_path);
+// The query reads a sysfs file, so it takes a context that owns IO and
+// Block.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline NumaNodeId query_numa_for_nic(Ctx const& ctx, const char* sysfs_numa_node_path) noexcept {
+    int const node = warden::numa_node_of_device(ctx, sysfs_numa_node_path);
     if (node < 0 || node > UINT16_MAX - 1) {
         return NumaNodeId::unknown();
     }

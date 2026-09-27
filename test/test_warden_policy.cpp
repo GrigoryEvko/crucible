@@ -1,8 +1,8 @@
 // The suite runs unprivileged, so it cannot verify that SCHED_DEADLINE,
 // the frequency lock or the C-state disable took effect.  What it can
-// check is that apply() warns and continues rather than failing when a
-// privilege is missing.  That is why several assertions below accept
-// either outcome.
+// check is that mint_hardening() warns and continues rather than failing
+// when a privilege is missing.  That is why several assertions below
+// accept either outcome.
 
 #include <algorithm>
 #include <cstdio>
@@ -20,10 +20,16 @@
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/Registry.h>
 #include <crucible/warden/CpuTopology.h>
+#include <fixy/Ctx.h>
 
 namespace {
 
 int failures = 0;
+
+// The topology queries read sysfs and procfs, and a policy is startup
+// work, so the suite holds the startup load context, which owns Init,
+// IO and Block.
+constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
 
 #define CHECK(cond, msg)                                                                     \
     do {                                                                                     \
@@ -39,13 +45,13 @@ void test_topology_basic() {
     const int n = num_online_cpus();
     CHECK(n >= 1, "must see at least one online CPU");
 
-    const auto allowed = allowed_cpus();
+    const auto allowed = allowed_cpus(kStartup);
     CHECK(!allowed.empty(), "cpuset must grant at least one CPU");
     for (const int c : allowed) {
         CHECK(c >= 0 && c < n + 1024, "allowed CPU out of plausible range");
     }
 
-    const auto iso = isolated_cpus();
+    const auto iso = isolated_cpus(kStartup);
     // The isolated set is legitimately empty on most systems, so only
     // the shape of an entry can be asserted.
     for (const int c : iso) {
@@ -55,12 +61,12 @@ void test_topology_basic() {
     // The result is discarded: the claim is only that probing a
     // non-hybrid CPU is safe.
     for (const int c : allowed) {
-        (void)is_p_core(c);
+        (void)is_p_core(kStartup, c);
     }
 
     if (!allowed.empty()) {
         const int c = allowed.front();
-        const auto sibs = smt_siblings(c);
+        const auto sibs = smt_siblings(kStartup, c);
         if (!sibs.empty()) {
             CHECK(std::find(sibs.begin(), sibs.end(), c) != sibs.end(), "thread_siblings must include the core itself");
         }
@@ -126,15 +132,15 @@ void test_core_selector() {
     sel.prefer_p_core = true;
     sel.avoid_smt_sibling = true;
 
-    const int pick = select_hot_cpu(sel);
-    const auto allowed = allowed_cpus();
+    const int pick = select_hot_cpu(kStartup, sel);
+    const auto allowed = allowed_cpus(kStartup);
     CHECK(pick >= 0, "select_hot_cpu must return something on a normal system");
     CHECK(std::find(allowed.begin(), allowed.end(), pick) != allowed.end(), "picked CPU must be in allowed set");
 
     if (!allowed.empty()) {
         CoreSelector sel_explicit;
         sel_explicit.explicit_cpu = allowed.back();
-        CHECK(select_hot_cpu(sel_explicit) == allowed.back(), "explicit_cpu must be honored when allowed");
+        CHECK(select_hot_cpu(kStartup, sel_explicit) == allowed.back(), "explicit_cpu must be honored when allowed");
     }
 }
 
@@ -145,7 +151,7 @@ void test_core_selector() {
 void test_core_selector_avoids_cpu0() {
     using namespace crucible::warden;
 
-    const auto allowed = allowed_cpus();
+    const auto allowed = allowed_cpus(kStartup);
     // The heuristic is only exercisable when cpu 0 is in the cpuset and
     // at least one other CPU exists to steer towards.  A runner inside a
     // cpu-constrained cgroup legitimately takes the skip.
@@ -153,7 +159,7 @@ void test_core_selector_avoids_cpu0() {
     if (!have0 || allowed.size() < 2) return;
 
     CoreSelector sel;  // default: avoid_cpu0 = true
-    const int pick = select_hot_cpu(sel);
+    const int pick = select_hot_cpu(kStartup, sel);
     CHECK(pick >= 0, "select_hot_cpu returns something");
     CHECK(pick != 0, "default selector avoids cpu0 when another CPU is available");
 
@@ -163,14 +169,14 @@ void test_core_selector_avoids_cpu0() {
     sel_legacy.avoid_cpu0 = false;
     sel_legacy.prefer_p_core = false;  // flatten any P/E signal
     sel_legacy.prefer_isolcpu = false;  // ignore isolcpus
-    const int pick_legacy = select_hot_cpu(sel_legacy);
+    const int pick_legacy = select_hot_cpu(kStartup, sel_legacy);
     CHECK(pick_legacy == 0, "avoid_cpu0=false with flat scoring returns cpu0");
 }
 
 void test_core_selector_avoids_exclude() {
     using namespace crucible::warden;
 
-    const auto allowed = allowed_cpus();
+    const auto allowed = allowed_cpus(kStartup);
     if (allowed.size() < 2) {
         // A single-CPU cpuset leaves nowhere to steer to, which
         // satisfies the exclude path trivially.
@@ -184,7 +190,7 @@ void test_core_selector_avoids_exclude() {
 
     const int excluded = allowed.front();
     const std::vector<int> exclude{excluded};
-    const int pick = select_hot_cpu(sel, exclude);
+    const int pick = select_hot_cpu(kStartup, sel, exclude);
 
     CHECK(pick >= 0, "select_hot_cpu must still return a CPU when one is excluded");
     CHECK(pick != excluded, "select_hot_cpu must not return a CPU that was in the exclude list");
@@ -200,7 +206,7 @@ void test_policy_none_is_noop() {
     (void)::sched_getaffinity(0, sizeof(before), &before);
 #endif
 
-    auto g = apply(Policy::none());
+    auto g = mint_hardening(kStartup, Policy::none());
     CHECK(!g.scheduler_applied(), "none() should not touch scheduler");
     CHECK(!g.affinity_applied(), "none() should not touch affinity");
     CHECK(g.regions_locked() == 0, "none() should lock nothing");
@@ -225,7 +231,7 @@ void test_policy_dev_quiet_pins_and_reverts() {
 #endif
 
     {
-        auto g = apply(Policy::dev_quiet());
+        auto g = mint_hardening(kStartup, Policy::dev_quiet());
         // This policy stays on SCHED_OTHER, so pinning is the only
         // change it can make, and declining to pin is also legal.
         CHECK(g.affinity_applied() || g.pinned_cpu() < 0, "dev_quiet either pins or declines cleanly");
@@ -259,7 +265,7 @@ void test_revert_clears_observers() {
 
     // Explicit early revert.
     {
-        auto g = apply(Policy::dev_quiet());
+        auto g = mint_hardening(kStartup, Policy::dev_quiet());
         const bool had_affinity = g.affinity_applied();
         const int had_pin = g.pinned_cpu();
         (void)had_pin;
@@ -273,8 +279,8 @@ void test_revert_clears_observers() {
 
     // Move assignment.
     {
-        auto lhs = apply(Policy::dev_quiet());
-        auto rhs = apply(Policy::dev_quiet());
+        auto lhs = mint_hardening(kStartup, Policy::dev_quiet());
+        auto rhs = mint_hardening(kStartup, Policy::dev_quiet());
         lhs = std::move(rhs);
         // NOLINTNEXTLINE(bugprone-use-after-move) — reading the
         // moved-from object is the point: a disarmed one must report
@@ -294,14 +300,14 @@ void test_policy_production_degrades_gracefully() {
 
     // This policy asks for SCHED_DEADLINE, CAP_SYS_NICE, a frequency
     // lock and a C-state disable, most of which are absent here.  The
-    // claim is only that apply() returns instead of failing.
+    // claim is only that mint_hardening() returns instead of failing.
     Policy p = Policy::production();
     p.on_missing_capability = OnMissingCap::DegradeAndWarn;
 
-    // The quiet flag is scoped tightly around apply() so that later
+    // The quiet flag is scoped tightly around mint_hardening() so that later
     // tests still surface a warning if one fires.
     ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
-    auto g = apply(p);
+    auto g = mint_hardening(kStartup, p);
     ::unsetenv("CRUCIBLE_WARDEN_QUIET");
 
     CHECK(g.pinned_cpu() >= -1, "pinned_cpu is plausible after production()");
@@ -340,9 +346,9 @@ void test_registry_basic() {
 }
 
 // Whether the mlock took effect is unobservable without CAP_IPC_LOCK,
-// so the claim is narrower: apply() walks the registry and teardown
-// leaves the registry at the size it started from.
-void test_registry_applies_on_apply() {
+// so the claim is narrower: mint_hardening() walks the registry and
+// teardown leaves the registry at the size it started from.
+void test_registry_applies_on_mint_hardening() {
     using namespace crucible::warden;
 
     alignas(64) unsigned char buf[4096]{};
@@ -355,7 +361,7 @@ void test_registry_applies_on_apply() {
     // so the walk runs without needing CAP_SYS_NICE.
     ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
     {
-        auto g = apply(Policy::dev_quiet());
+        auto g = mint_hardening(kStartup, Policy::dev_quiet());
         // The count is nonzero only where CAP_IPC_LOCK or memlock
         // headroom exists, so it carries no claim here.
         (void)g.regions_locked();
@@ -380,7 +386,7 @@ int main() {
     test_revert_clears_observers();
     test_policy_production_degrades_gracefully();
     test_registry_basic();
-    test_registry_applies_on_apply();
+    test_registry_applies_on_mint_hardening();
 
     if (failures == 0) {
         std::puts("test_warden_policy: OK");

@@ -2,9 +2,8 @@
 //
 // mint_hardening refuses the hot foreground context.  Its row is empty,
 // and a policy applied again from the hot path would issue every system
-// call of Hardening::apply() at hot-path cadence.  The mint is the type
-// barrier.  A caller of the plain apply() function bypasses it, and that
-// route is outside the scope of this fixture.
+// call of Hardening::apply() at hot-path cadence.  The mint and
+// Hardening::apply() take the same gate, so no route bypasses it.
 
 #include <crucible/warden/Hardening.h>
 

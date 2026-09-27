@@ -1171,9 +1171,9 @@ public:
     // drives pinning and the direct pin_() path is skipped entirely —
     // so `.hardening(p)` unconditionally wins over any prior or
     // subsequent `.core(N)` / `.no_pin()` in the same builder chain.
-    // The RAII guard returned by crucible::warden::apply() reverts sched
-    // class, affinity, mlock'd regions, and THP flag when measure()
-    // returns.
+    // The RAII guard returned by crucible::warden::mint_hardening()
+    // reverts sched class, affinity, mlock'd regions, and THP flag when
+    // measure() returns.
     //
     // Default: no hardening (have_hardening_ == false -> direct pin_()).
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
@@ -1214,11 +1214,14 @@ public:
         // direct pin_() path.
         crucible::warden::AppliedPolicy hardening_guard;
         CpuId pinned_cpu;
+        // The bench applies a policy at the start of a measurement, which is
+        // startup work, so it holds the startup load context.
+        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         if (have_hardening_) {
-            hardening_guard = crucible::warden::apply(hardening_);
+            hardening_guard = crucible::warden::mint_hardening(startup, hardening_);
             pinned_cpu = CpuId{hardening_guard.pinned_cpu()};
         } else if (auto env = env_hardening_(); env.has_value()) {
-            hardening_guard = crucible::warden::apply(*env);
+            hardening_guard = crucible::warden::mint_hardening(startup, *env);
             pinned_cpu = CpuId{hardening_guard.pinned_cpu()};
         } else {
             pinned_cpu = pin_();
@@ -1495,7 +1498,7 @@ private:
     }
 
     // Optional realtime policy applied for the duration of measure().
-    // When set, crucible::warden::apply() is invoked at the top of measure()
+    // When set, crucible::warden::mint_hardening() is invoked at the top of measure()
     // and the returned AppliedPolicy is held until measure() returns —
     // scheduler / affinity / mlocks revert automatically. `.core()` and
     // `.no_pin()` are overridden by the policy's own CoreSelector when
@@ -1559,10 +1562,11 @@ private:
             // Auto path, OR Explicit-but-negative.
             //
             // Use the rt topology-aware selector. Same heuristic the
-            // Keeper's Policy::apply() uses: isolcpu first, P-core
+            // Keeper's mint_hardening() uses: isolcpu first, P-core
             // preference, avoid cpu0 and its SMT sibling (timer-tick
             // IRQ landing pad).
-            target = crucible::warden::select_hot_cpu(crucible::warden::CoreSelector{});
+            target = crucible::warden::select_hot_cpu(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
+                                                      crucible::warden::CoreSelector{});
             if (target < 0) target = sched_getcpu();
         }
         if (target < 0) return CpuId::none();

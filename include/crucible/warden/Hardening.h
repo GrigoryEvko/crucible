@@ -196,18 +196,31 @@ private:
     std::vector<LockedRegion> locked_{};
 };
 
+// Applying a policy mutates process-wide state through privileged
+// system calls, which belongs to start-up only.  The choice of the hot
+// CPU reads sysfs and procfs, which can wait on the file system.  So the
+// context must own Init, IO and Block, and a hot foreground or a drain
+// context does not reach this surface.
+template <class Ctx>
+concept CtxFitsHardeningMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+    && ::fixy::CtxFitsFileOpen<Ctx>;
+
 class Hardening {
 public:
     // Hold the returned guard for as long as the policy is to stay in
     // effect. Setting CRUCIBLE_WARDEN_QUIET to 1 suppresses the
     // warnings that a skipped knob emits.
-    [[nodiscard]] static AppliedPolicy apply(const Policy& p) noexcept {
+    template <class Ctx>
+        requires CtxFitsHardeningMint<Ctx>
+    [[nodiscard]] static AppliedPolicy apply(Ctx const& ctx, const Policy& p) noexcept {
         AppliedPolicy g;
         if (!p.hot_enabled) return g;
 
 #ifdef __linux__
         {
-            const int cpu = select_hot_cpu(p.hot_core);
+            const int cpu = select_hot_cpu(ctx, p.hot_core);
             if (cpu >= 0) {
                 cpu_set_t prior;
                 CPU_ZERO(&prior);
@@ -235,7 +248,7 @@ public:
         // isolated. Setting CRUCIBLE_WARDEN_FORCE to 1 overrides this.
         bool realtime_allowed = true;
         if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
-            const auto iso = isolated_cpus();
+            const auto iso = isolated_cpus(ctx);
             const bool on_isolcpu = std::find(iso.begin(), iso.end(), g.pinned_cpu_) != iso.end();
             if (!on_isolcpu) {
                 const char* force = std::getenv("CRUCIBLE_WARDEN_FORCE");
@@ -340,6 +353,7 @@ public:
 #else
         (void)g;
         (void)p;
+        (void)ctx;
 #endif
 
         return g;
@@ -440,20 +454,10 @@ public:
     }
 };
 
-[[nodiscard]] inline AppliedPolicy apply(const Policy& p) noexcept { return Hardening::apply(p); }
-
-// Applying a policy mutates process-wide state through privileged
-// system calls, which belongs to start-up only. A hot foreground or
-// background context must not reach this surface.
-template <class Ctx>
-concept CtxFitsHardeningMint =
-    ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
-
 // The privileged system calls this surface issues, named once at the
 // type level so the set is discoverable and auditable. This is a
 // classification, not a gate: admission is decided by the concept
-// above, which requires only the start-up capability.
+// CtxFitsHardeningMint above Hardening.
 //
 // The set covers reads as well as writes. An auditor asking what this
 // code does to the kernel is owed the whole answer, and apply() reads
@@ -501,11 +505,12 @@ static_assert(std::tuple_size_v<hardening_syscall_atoms> == 9,
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>
-[[nodiscard]] inline AppliedPolicy mint_hardening(Ctx const&, const Policy& policy) noexcept {
-    return Hardening::apply(policy);
+[[nodiscard]] inline AppliedPolicy mint_hardening(Ctx const& ctx, const Policy& policy) noexcept {
+    return Hardening::apply(ctx, policy);
 }
 
-static_assert(CtxFitsHardeningMint<::fixy::ColdInitCtx>);
+static_assert(CtxFitsHardeningMint<::fixy::InitLoadCtx>);
+static_assert(!CtxFitsHardeningMint<::fixy::ColdInitCtx>, "The cold init context owns no Block, so it cannot read sysfs.");
 static_assert(!CtxFitsHardeningMint<::fixy::BgDrainCtx>);
 static_assert(!CtxFitsHardeningMint<::fixy::HotFgCtx>);
 

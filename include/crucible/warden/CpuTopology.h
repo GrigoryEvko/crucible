@@ -23,6 +23,11 @@
 // one for a sampling query such as cpu_cur_freq_khz, whose value moves
 // every few milliseconds. Nothing here sits on a hot path, so the fold
 // bought nothing worth that.
+//
+// Each query that reads a file, or that asks the file system whether a
+// path exists, takes a context that owns IO and Block, because the open
+// and the read can wait on the kernel.  The gate is fixy::CtxFitsFileOpen.
+// The two parsers and num_online_cpus take no context.
 
 #include <fixy/OwnedFile.h>
 #include <foundation/contracts/Decide.h>
@@ -52,7 +57,8 @@ namespace crucible::warden {
 
 namespace detail {
 
-[[nodiscard]] inline std::string read_small_file(const char* path) noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::string read_small_file(Ctx const&, const char* path) noexcept {
     std::string out;
     // The close is discharged by the handle on every exit path. Its
     // result is ignored because a failure to close a sysfs read offers
@@ -185,32 +191,36 @@ namespace detail {
 
 // The CPUs this task may run on, as granted by whatever placed it.
 // Procfs is the authoritative source and is consulted first.
-[[nodiscard]] inline std::vector<int> allowed_cpus() noexcept {
-    const auto status = detail::read_small_file("/proc/self/status");
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::vector<int> allowed_cpus(Ctx const& ctx) noexcept {
+    const auto status = detail::read_small_file(ctx, "/proc/self/status");
     if (auto v = detail::parse_cpus_allowed_list(status); !v.empty()) return v;
     return detail::allowed_cpus_fallback();
 }
 
 // The CPUs the kernel command line has withheld from the scheduler.
 // Empty when no such argument was given.
-[[nodiscard]] inline std::vector<int> isolated_cpus() noexcept {
-    return detail::parse_cpulist(detail::read_small_file("/sys/devices/system/cpu/isolated"));
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::vector<int> isolated_cpus(Ctx const& ctx) noexcept {
+    return detail::parse_cpulist(detail::read_small_file(ctx, "/sys/devices/system/cpu/isolated"));
 }
 
-[[nodiscard]] inline std::vector<int> smt_siblings(int cpu) noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::vector<int> smt_siblings(Ctx const& ctx, int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu);
-    return detail::parse_cpulist(detail::read_small_file(path));
+    return detail::parse_cpulist(detail::read_small_file(ctx, path));
 }
 
 // On a hybrid part the core-type file reads "Core" for a performance
 // core and "Atom" for an efficiency core. A uniform part does not
 // publish the file at all, and its absence counts as a performance
 // core so that every CPU on such a host answers the same way.
-[[nodiscard]] inline bool is_p_core(int cpu) noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline bool is_p_core(Ctx const& ctx, int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/core_type", cpu);
-    const auto s = detail::read_small_file(path);
+    const auto s = detail::read_small_file(ctx, path);
     if (s.empty()) return true;
     return s.find("Core") != std::string::npos;
 }
@@ -219,7 +229,8 @@ namespace detail {
 // The kernel publishes the membership as a symlink named after the
 // node, so the node number is recovered by testing which name exists.
 // Nodes past the search bound below read as -1.
-[[nodiscard]] inline int numa_node_of(int cpu) noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline int numa_node_of(Ctx const&, int cpu) noexcept {
     for (int n = 0; n < 64; ++n) {
         char path[128];
         std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/node%d", cpu, n);
@@ -230,28 +241,31 @@ namespace detail {
 
 // The NUMA node nearest a device. The caller passes the sysfs path of
 // that device's numa_node file. -1 when it cannot be read.
-[[nodiscard]] inline int numa_node_of_device(const char* sysfs_numa_node_path) noexcept {
-    const auto s = detail::read_small_file(sysfs_numa_node_path);
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline int numa_node_of_device(Ctx const& ctx, const char* sysfs_numa_node_path) noexcept {
+    const auto s = detail::read_small_file(ctx, sysfs_numa_node_path);
     if (s.empty()) return -1;
     const int n = std::atoi(s.c_str());
     return n < 0 ? -1 : n;
 }
 
 // Zero when the frequency driver publishes nothing for this CPU.
-[[nodiscard]] inline uint64_t cpu_cur_freq_khz(int cpu) noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline uint64_t cpu_cur_freq_khz(Ctx const& ctx, int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
-    const auto s = detail::read_small_file(path);
+    const auto s = detail::read_small_file(ctx, path);
     if (s.empty()) return 0;
     const long v = std::atol(s.c_str());
     return v > 0 ? static_cast<uint64_t>(v) : 0;
 }
 
 // Zero when the frequency driver publishes nothing for this CPU.
-[[nodiscard]] inline uint64_t cpu_max_freq_khz(int cpu) noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline uint64_t cpu_max_freq_khz(Ctx const& ctx, int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
-    const auto s = detail::read_small_file(path);
+    const auto s = detail::read_small_file(ctx, path);
     if (s.empty()) return 0;
     const long v = std::atol(s.c_str());
     return v > 0 ? static_cast<uint64_t>(v) : 0;
@@ -279,14 +293,16 @@ struct CoreSelector {
 
 // Returns -1 only when this task is allowed no CPU at all, which is
 // unrecoverable and means the caller should refuse to start.
-[[nodiscard]] inline int select_hot_cpu(const CoreSelector& sel, const std::vector<int>& exclude = {}) noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline int select_hot_cpu(Ctx const& ctx, const CoreSelector& sel,
+                                        const std::vector<int>& exclude = {}) noexcept {
     // The bonuses are multiplied by this before the CPU index is
     // subtracted, so the index can only break ties between equal
     // bonuses and never outweigh one. 1024 exceeds the size of the
     // fixed CPU set this selector works with.
     constexpr int kScoreScale = 1024;
 
-    const auto allowed = allowed_cpus();
+    const auto allowed = allowed_cpus(ctx);
     if (allowed.empty()) return -1;
 
     if (sel.explicit_cpu >= 0 && std::find(allowed.begin(), allowed.end(), sel.explicit_cpu) != allowed.end()) {
@@ -301,7 +317,7 @@ struct CoreSelector {
     std::vector<std::vector<int>> pools;
 
     if (sel.prefer_isolcpu) {
-        std::vector<int> iso = isolated_cpus();
+        std::vector<int> iso = isolated_cpus(ctx);
         std::vector<int> inter;
         std::set_intersection(allowed.begin(), allowed.end(), iso.begin(), iso.end(), std::back_inserter(inter));
         if (!inter.empty()) pools.push_back(std::move(inter));
@@ -317,7 +333,7 @@ struct CoreSelector {
         for (const int c : pool) {
             if (is_excluded(c)) continue;
             if (sel.avoid_smt_sibling) {
-                const auto sibs = smt_siblings(c);
+                const auto sibs = smt_siblings(ctx, c);
                 bool clash = false;
                 for (const int s : sibs)
                     if (s != c && is_excluded(s)) {
@@ -327,8 +343,8 @@ struct CoreSelector {
                 if (clash) continue;
             }
             int score = 0;
-            if (sel.prefer_p_core && is_p_core(c)) score += 4;
-            if (sel.numa_hint >= 0 && numa_node_of(c) == sel.numa_hint) score += 2;
+            if (sel.prefer_p_core && is_p_core(ctx, c)) score += 4;
+            if (sel.numa_hint >= 0 && numa_node_of(ctx, c) == sel.numa_hint) score += 2;
             // The penalties are sized against the performance-core
             // bonus above. The larger one outweighs it, so any other
             // CPU beats the first one. The smaller one cancels it, so
@@ -338,7 +354,7 @@ struct CoreSelector {
                 if (c == 0) {
                     score -= 8;
                 } else {
-                    const auto sibs = smt_siblings(c);
+                    const auto sibs = smt_siblings(ctx, c);
                     if (std::find(sibs.begin(), sibs.end(), 0) != sibs.end()) score -= 4;
                 }
             }
@@ -365,16 +381,17 @@ struct CoreSelector {
 // Companion CPUs for the supporting threads. Those on the same NUMA
 // node as the given CPU come first, and the given CPU itself is never
 // among them.
-[[nodiscard]] inline std::vector<int> select_warm_cpus(int hot_cpu, int count) noexcept
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::vector<int> select_warm_cpus(Ctx const& ctx, int hot_cpu, int count) noexcept
     pre(::foundation::decide::non_negative(count)) {
-    const auto allowed = allowed_cpus();
-    const int hot_numa = (hot_cpu >= 0) ? numa_node_of(hot_cpu) : -1;
+    const auto allowed = allowed_cpus(ctx);
+    const int hot_numa = (hot_cpu >= 0) ? numa_node_of(ctx, hot_cpu) : -1;
 
     std::vector<int> same_numa;
     std::vector<int> other;
     for (const int c : allowed) {
         if (c == hot_cpu) continue;
-        const int n = numa_node_of(c);
+        const int n = numa_node_of(ctx, c);
         if (hot_numa >= 0 && n == hot_numa)
             same_numa.push_back(c);
         else

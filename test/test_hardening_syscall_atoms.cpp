@@ -68,9 +68,11 @@ static_assert(std::is_same_v<fe::lift_row_t<sc::per<sc::SyscallId::prctl>>, Priv
 static_assert(std::is_same_v<fe::lift_row_t<sc::per<sc::SyscallId::sched_getaffinity>>, ThreadSyncRow>);
 static_assert(std::is_same_v<fe::lift_row_t<sc::per<sc::SyscallId::sched_getattr>>, ThreadSyncRow>);
 
-// The gate is the Init row.  The syscall list is a classification that
-// sits beside that gate.  It does not tighten the row.
-static_assert(::crucible::warden::CtxFitsHardeningMint<::fixy::ColdInitCtx>);
+// The gate is the Init row with IO and Block, because the choice of the
+// hot CPU reads sysfs.  The syscall list is a classification that sits
+// beside that gate.  It does not tighten the row.
+static_assert(::crucible::warden::CtxFitsHardeningMint<::fixy::InitLoadCtx>);
+static_assert(!::crucible::warden::CtxFitsHardeningMint<::fixy::ColdInitCtx>);
 static_assert(!::crucible::warden::CtxFitsHardeningMint<::fixy::HotFgCtx>);
 static_assert(!::crucible::warden::CtxFitsHardeningMint<::fixy::BgDrainCtx>);
 
