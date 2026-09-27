@@ -43,10 +43,13 @@
 //     fixy::fs namespaces check that each declared tag has an entry.
 //
 //  5. The descriptor handle.  The old tree returned its FileHandle,
-//     whose constructor took an int and whose destructor closed it: the
-//     shape three doors this cycle closed.  OwnedFd below has a private constructor and two static
-//     factories that perform the ::open themselves, so a descriptor that
-//     is owned is a descriptor the kernel handed out.  Nothing to forge.
+//     whose constructor took an int and whose destructor closed it.
+//     OwnedFd below has a private constructor, and three door classes
+//     make the ::open and ::socket calls: FileDoor here, SocketDoor in
+//     fixy/os/Socket.h and PtpDeviceDoor in fixy/os/Time.h.  The members
+//     of each door are private, and its friends are the gated mints that
+//     use it.  So a descriptor that is owned is a descriptor the kernel
+//     handed out to a gated mint.
 //
 //  6. open_dirfd takes a context and a sanitized path.  It took a bare
 //     std::filesystem::path and no context, which made it the one call
@@ -67,7 +70,6 @@
 #include <foundation/effects/Row.h>
 
 #include <fcntl.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -150,57 +152,42 @@ inline constexpr bool is_known_atomicity_v = std::is_same_v<Atomicity, atomicity
                                           || std::is_same_v<Atomicity, atomicity::Rename>
                                           || std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace>;
 
+class FileDoor;
+
+}  // namespace fixy::fs
+
+namespace fixy::net {
+class SocketDoor;
+}  // namespace fixy::net
+
+namespace fixy::time {
+class PtpDeviceDoor;
+}  // namespace fixy::time
+
+namespace fixy::fs {
+
 // Exclusive ownership of one descriptor, closed on destruction.
 //
 // The constructor that claims a descriptor is private.  A public one
 // took an int and the destructor closed it, so a caller could hand it
 // any small integer — stdin, a descriptor another object still owns —
-// and have it closed on scope exit.  The three factories make the
-// ::open or ::socket call themselves and build a handle only from what
-// the kernel returned.  Same shape as OwnedMmap::map_region, for the
-// same reason.
+// and have it closed on scope exit.  The three door classes below are
+// its only friends.  Each makes the ::open or ::socket call itself and
+// builds a handle only from what the kernel returned, and each admits
+// only the gated mints that use it.
 class [[nodiscard]] OwnedFd {
     int fd_ = -1;
 
     explicit OwnedFd(int fd) noexcept : fd_{fd} {}
 
+    friend class FileDoor;
+    friend class ::fixy::net::SocketDoor;
+    friend class ::fixy::time::PtpDeviceDoor;
+
 public:
     // The empty handle owns nothing and closes nothing, so it stays
     // public: it claims no descriptor.
     OwnedFd() noexcept = default;
-
-    // The one door for a file.  ::open consults perms only when flags
-    // carries O_CREAT and ignores it otherwise, so it is passed
-    // unconditionally.  Returns the errno on failure and no handle.
-    [[nodiscard]] static std::expected<OwnedFd, int> open_path(const char* path, int flags, ::mode_t perms) noexcept {
-        const int fd = ::open(path, flags, perms);  // SYSCALL-CAP-OK: OwnedFd::open_path, two callers: mint_file ctx-gate (CtxFitsFileMint) and fixy::time::mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
-        if (fd < 0) {
-            return std::unexpected{errno};
-        }
-        return OwnedFd{fd};
-    }
-
-    // The one door for a directory.  O_DIRECTORY refuses anything else,
-    // O_NOFOLLOW refuses a symlink standing in for it, and the
-    // descriptor is what a later fsync flushes the entry through.
-    [[nodiscard]] static std::expected<OwnedFd, int> open_directory(const char* dir_path) noexcept {
-        const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  // SYSCALL-CAP-OK: OwnedFd::open_directory, sole caller open_dirfd ctx-gate (CtxAdmitsFs)
-        if (fd < 0) {
-            return std::unexpected{errno};
-        }
-        return OwnedFd{fd};
-    }
-
-    // The one door for a socket.  SOCK_CLOEXEC is folded in, because a
-    // descriptor that survives execve leaks into every child process.
-    // Returns the errno on failure and no handle.
-    [[nodiscard]] static std::expected<OwnedFd, int> open_socket(int domain, int type, int protocol) noexcept {
-        const int fd = ::socket(domain, type | SOCK_CLOEXEC, protocol);  // SYSCALL-CAP-OK: OwnedFd::open_socket, sole caller fixy::net::mint_socket ctx-gate (CtxFitsSocketMint)
-        if (fd < 0) {
-            return std::unexpected{errno};
-        }
-        return OwnedFd{fd};
-    }
 
     OwnedFd(const OwnedFd&) = delete("a descriptor is unique; copy would double-close on destruction");
     OwnedFd& operator=(const OwnedFd&) = delete("a descriptor is unique; copy would double-close on destruction");
@@ -432,13 +419,70 @@ concept CtxFitsCommitAtomic = CtxAdmitsFs<Ctx> && is_known_atomicity_v<Atomicity
 // The Atoms pack precedes Ctx because every explicit template argument
 // fills the pack and Ctx deduces from the first function argument.
 //
+// Declared here and defined below FileDoor, because FileDoor names it as
+// a friend, and a friend must already have been declared.  The default
+// argument belongs to this declaration.
+//
 // §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
-mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms = 0644) noexcept {
+mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms = 0644) noexcept;
+
+// The door to ::open.  No object of it exists.  Its members are private,
+// and its two friends are the gated mints that open a path, mint_file
+// and open_dirfd.  OwnedFd befriends this class, so a handle over a path
+// comes only from one of those two mints, after their gates.
+//
+// The trailing return types are necessary: fixy/os/CpuPinned.h gives the
+// parse reason.
+class FileDoor final {
+    FileDoor() = delete("the file door holds static members only; no object of it exists");
+    FileDoor(const FileDoor&) = delete("the file door holds static members only");
+    FileDoor& operator=(const FileDoor&) = delete("the file door holds static members only");
+    FileDoor(FileDoor&&) = delete("the file door holds static members only");
+    FileDoor& operator=(FileDoor&&) = delete("the file door holds static members only");
+    constexpr ~FileDoor() noexcept {}
+
+    template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
+        requires CtxFitsFileMint<FriendCtx, FriendAtoms...>
+    friend auto mint_file(FriendCtx const&, Path<tags::source::Sanitized>, ::mode_t) noexcept
+        -> std::expected<Linear<OwnedFd>, std::error_code>;
+
+    template <eff::IsExecCtx FriendCtx>
+        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
+    friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized>) noexcept
+        -> std::expected<Dirfd, std::error_code>;
+
+    // ::open consults perms only when flags carries O_CREAT and ignores
+    // it otherwise, so it is passed unconditionally.  Returns the errno on
+    // failure and no handle.
+    [[nodiscard]] static std::expected<OwnedFd, int> open_path_(const char* path, int flags, ::mode_t perms) noexcept {
+        const int fd = ::open(path, flags, perms);  // SYSCALL-CAP-OK: FileDoor::open_path_, sole caller mint_file ctx-gate (CtxFitsFileMint)
+        if (fd < 0) {
+            return std::unexpected{errno};
+        }
+        return OwnedFd{fd};
+    }
+
+    // O_DIRECTORY refuses anything else, O_NOFOLLOW refuses a symlink
+    // that stands in for the directory, and the descriptor is what a later
+    // fsync flushes the entry through.
+    [[nodiscard]] static std::expected<OwnedFd, int> open_directory_(const char* dir_path) noexcept {
+        const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  // SYSCALL-CAP-OK: FileDoor::open_directory_, sole caller open_dirfd ctx-gate (CtxAdmitsFs)
+        if (fd < 0) {
+            return std::unexpected{errno};
+        }
+        return OwnedFd{fd};
+    }
+};
+
+template <typename... Atoms, eff::IsExecCtx Ctx>
+    requires CtxFitsFileMint<Ctx, Atoms...>
+[[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
+mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms) noexcept {
     constexpr int flags = detail::fold_open_flags<Atoms...>();
-    auto fd = OwnedFd::open_path(sanitized_path.value().c_str(), flags, perms);
+    auto fd = FileDoor::open_path_(sanitized_path.value().c_str(), flags, perms);
     if (!fd) {
         return std::unexpected{std::error_code{fd.error(), std::system_category()}};
     }
@@ -506,7 +550,7 @@ commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp, Path<tags::source::
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] std::expected<Dirfd, std::error_code> open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept {
-    auto fd = OwnedFd::open_directory(dir.value().c_str());
+    auto fd = FileDoor::open_directory_(dir.value().c_str());
     if (!fd) {
         return std::unexpected{std::error_code{fd.error(), std::system_category()}};
     }
@@ -711,6 +755,9 @@ static_assert(!std::is_constructible_v<Dirfd, OwnedFd&&>,
               "An OwnedFd is evidence of a descriptor, not of a directory; open_dirfd is the only door.");
 static_assert(std::is_default_constructible_v<Dirfd>);
 static_assert(!std::is_copy_constructible_v<Dirfd>);
+static_assert(!std::is_default_constructible_v<FileDoor> && !std::is_copy_constructible_v<FileDoor>
+                  && !std::is_move_constructible_v<FileDoor>,
+              "No object of the file door exists.  Its private members are the only calls to ::open.");
 
 // Every tag the four fixy::fs namespaces declare is known to the
 // predicate that gates it.  For a mode and a flag the predicate is the

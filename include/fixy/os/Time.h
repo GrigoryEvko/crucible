@@ -44,6 +44,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <fcntl.h>
 #include <linux/ptp_clock.h>
 #include <sys/ioctl.h>
 
@@ -443,6 +444,51 @@ private:
     ::fixy::fs::OwnedFd fd_;
 };
 
+// The door to the open of a /dev/ptpN node.  No object of it exists.  Its
+// member is private, and its one friend is mint_ptp_clock_reader.
+// fixy::fs::OwnedFd befriends this class, so a descriptor of a PTP device
+// comes only from that mint, after its gate.  The door builds the device
+// path from the index itself, so a caller cannot point it at a file that
+// is not a PTP device node.
+class PtpDeviceDoor final {
+    PtpDeviceDoor() = delete("the PTP device door holds static members only; no object of it exists");
+    PtpDeviceDoor(const PtpDeviceDoor&) = delete("the PTP device door holds static members only");
+    PtpDeviceDoor& operator=(const PtpDeviceDoor&) = delete("the PTP device door holds static members only");
+    PtpDeviceDoor(PtpDeviceDoor&&) = delete("the PTP device door holds static members only");
+    PtpDeviceDoor& operator=(PtpDeviceDoor&&) = delete("the PTP device door holds static members only");
+    constexpr ~PtpDeviceDoor() noexcept {}
+
+    template <eff::IsExecCtx Ctx>
+        requires CtxFitsPtpClockReaderMint<Ctx>
+    friend std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex) noexcept;
+
+    // Opens /dev/ptpN read-only and returns its descriptor, or the errno
+    // of a failed open.
+    [[nodiscard]] static std::expected<::fixy::fs::OwnedFd, int> open_(PtpDeviceIndex index) noexcept {
+        // "/dev/ptp", a maximum of three digits for an index of 255 or
+        // less, and the null at the end: 12 bytes, in a buffer of 16.
+        std::array<char, 16> path{'/', 'd', 'e', 'v', '/', 'p', 't', 'p'};
+        std::size_t length = 8;
+        std::array<char, 3> digits{};
+        std::size_t digit_count = 0;
+        std::uint16_t remaining = index.value();
+        do {
+            digits[digit_count++] = static_cast<char>('0' + remaining % 10u);
+            remaining = static_cast<std::uint16_t>(remaining / 10u);
+        } while (remaining != 0);
+        while (digit_count > 0) {
+            path[length++] = digits[--digit_count];
+        }
+        path[length] = '\0';
+
+        const int fd = ::open(path.data(), O_RDONLY | O_CLOEXEC);  // SYSCALL-CAP-OK: PtpDeviceDoor::open_, sole caller mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
+        if (fd < 0) {
+            return std::unexpected{errno};
+        }
+        return ::fixy::fs::OwnedFd{fd};
+    }
+};
+
 template <std::uint64_t MaxNanos>
     requires(MaxNanos > 0)
 struct BoundedSleeper final {
@@ -480,33 +526,15 @@ template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
     return {};
 }
 
-// Opens /dev/ptpN read-only and returns its reader, or the errno of a
-// failed open.  The mint builds the device path from the index itself.
-// A caller cannot point the reader at a file that is not a PTP device
-// node.
+// Opens /dev/ptpN read-only through PtpDeviceDoor and returns its reader,
+// or the errno of a failed open.
 //
 // §XXI carve-out: cx=alloc — opening /dev/ptpN invokes the kernel.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsPtpClockReaderMint<Ctx>
 [[nodiscard]] std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&,
                                                                                   PtpDeviceIndex index) noexcept {
-    // "/dev/ptp", a maximum of three digits for an index of 255 or less,
-    // and the null at the end: 12 bytes, in a buffer of 16.
-    std::array<char, 16> path{'/', 'd', 'e', 'v', '/', 'p', 't', 'p'};
-    std::size_t length = 8;
-    std::array<char, 3> digits{};
-    std::size_t digit_count = 0;
-    std::uint16_t remaining = index.value();
-    do {
-        digits[digit_count++] = static_cast<char>('0' + remaining % 10u);
-        remaining = static_cast<std::uint16_t>(remaining / 10u);
-    } while (remaining != 0);
-    while (digit_count > 0) {
-        path[length++] = digits[--digit_count];
-    }
-    path[length] = '\0';
-
-    auto fd = ::fixy::fs::OwnedFd::open_path(path.data(), O_RDONLY | O_CLOEXEC, 0);
+    auto fd = PtpDeviceDoor::open_(index);
     if (!fd) {
         return std::unexpected{std::error_code{fd.error(), std::system_category()}};
     }
@@ -594,6 +622,9 @@ static_assert(std::is_nothrow_move_constructible_v<PtpClockReader>);
 static_assert(CtxFitsPtpClockReaderMint<BackgroundFsCtx>);
 static_assert(!CtxFitsPtpClockReaderMint<BackgroundCtx>);
 static_assert(!CtxFitsPtpClockReaderMint<ForegroundCtx>);
+static_assert(!std::is_default_constructible_v<PtpDeviceDoor> && !std::is_copy_constructible_v<PtpDeviceDoor>
+                  && !std::is_move_constructible_v<PtpDeviceDoor>,
+              "No object of the PTP device door exists.  Its private member is the only open of a /dev/ptpN node.");
 
 // The clock id of descriptor 3 is (~3 << 3) | 3, which is -29 as a
 // clockid_t, and the kernel's decode (~id >> 3) gives the descriptor back.

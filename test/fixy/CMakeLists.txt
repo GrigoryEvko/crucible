@@ -3974,16 +3974,11 @@ fixy_neg_compile_test(neg_os_numa_placement_foreground_ctx
 
 # ── OwnedMmap has one door, and it is the one that maps ──────────────
 #
-# The constructor over an address was public, so a caller could claim a
-# mapping it never made — and since the destructor unmaps whatever it
-# holds, a stack address handed in was a stack address unmapped on scope
-# exit.  The constructor is private now and OwnedMmap::map_region
-# performs the ::mmap itself.
-#
-# Two routes, because the region is handed out inside Linear and the
-# generic mint_linear forwarder sits between the mints and the object.
-# The direct route fails on access; the forwarded route fails because
-# there is no reachable constructor to forward to.
+# The constructor over an address is private, and OwnedMmap::mint_region
+# performs the ::mmap itself.  Two routes to a forged region, because the
+# region is handed out inside Linear and the generic mint_linear forwarder
+# sits between the mints and the object.  The direct route fails on
+# access, and the forwarded route finds no reachable constructor.
 fixy_neg_compile_test(neg_owned_mmap_forged_address
   "is private within this context"
   "OwnedMmap\\(void\\*, std::size_t\\)")
@@ -3991,6 +3986,39 @@ fixy_neg_compile_test(neg_owned_mmap_forged_address
 fixy_neg_compile_test(neg_owned_mmap_forged_through_mint_linear
   "no matching function for call"
   "mint_linear<.*::Region>\\(void\\*, long unsigned int\\)")
+
+# The door calculates the PROT_* and MAP_* words from the region type,
+# so the type states what the kernel mapped.  One fixture for each class
+# of refusal: a shared range typed as an anonymous one, an executable
+# page with no licence, and a context without Block.
+fixy_neg_compile_test(neg_owned_mmap_region_shared_as_modifier
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, "
+  "the expression .\\(RegionModifier<Modifiers> && \\.\\.\\.\\) \\[with Modifiers = \\{fixy::mmap::share::Shared\\}\\]. evaluated to .false.")
+
+fixy_neg_compile_test(neg_owned_mmap_region_exec_without_jit
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::Exec, fixy::mmap::share::Private, "
+  "required for the satisfaction of .ExecIsLicensed<Prot, Modifiers \\.\\.\\.>. .with Prot = fixy::mmap::prot::Exec")
+
+fixy_neg_compile_test(neg_owned_mmap_region_ctx_lacks_block
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, "
+  "required for the satisfaction of .CtxAdmitsMapping<Ctx, Prot, Share, Modifiers \\.\\.\\.>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >")
+
+# ── A descriptor comes only from a gated mint ────────────────────────
+#
+# OwnedFd had three public static factories, and each opened a descriptor
+# with no context and no gate.  The calls moved into door classes whose
+# members are private, and only the gated mints are friends.
+fixy_neg_compile_test(neg_os_fs_file_door_is_private
+  "is private within this context"
+  "fixy::fs::FileDoor::open_path_\\(const char\\*, int, mode_t\\)")
+
+fixy_neg_compile_test(neg_os_socket_door_is_private
+  "is private within this context"
+  "fixy::net::SocketDoor::open_\\(\\) .with Kind = fixy::net::socket_kind::NetlinkRoute.")
+
+fixy_neg_compile_test(neg_os_ptp_device_door_is_private
+  "is private within this context"
+  "fixy::time::PtpDeviceDoor::open_\\(fixy::time::PtpDeviceIndex\\)")
 
 # ── OwnedFile has two doors, and both are the ones that open ─────────
 #

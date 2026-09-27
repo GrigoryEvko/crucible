@@ -48,7 +48,7 @@ struct probe_tag {
 // leaving its owner, so this is exactly where the guard must hold.
 CRUCIBLE_NO_RAW_ESCAPE(fixy::OwnedFile);
 CRUCIBLE_NO_RAW_ESCAPE(fixy::fs::OwnedFd);
-CRUCIBLE_NO_RAW_ESCAPE(fixy::OwnedMmap<int, int, int>);
+CRUCIBLE_NO_RAW_ESCAPE(fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>);
 CRUCIBLE_NO_RAW_ESCAPE(fixy::OwnedRegion<int, pt::HugePageTag>);
 CRUCIBLE_NO_RAW_ESCAPE(fixy::Linear<int>);
 CRUCIBLE_NO_RAW_ESCAPE(fixy::Affine<int>);

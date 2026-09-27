@@ -199,6 +199,7 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
+| `OwnedMmap::mint_region` | `include/fixy/OwnedMmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `foundation::permissions::FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `foundation::permissions::FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | · | HS14: 2 |
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
@@ -222,7 +223,7 @@ apply to the row.
 | `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 16 |
 | `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 15 |
+| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 | `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
@@ -346,7 +347,7 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 157 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 160 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 27 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
@@ -357,4 +358,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 112 | 47 | 62 | 3 | 0 | · | 12 |
+| new (`include/foundation/`, `include/fixy/`) | 113 | 48 | 62 | 3 | 0 | · | 12 |

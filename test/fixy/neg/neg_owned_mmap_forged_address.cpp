@@ -19,12 +19,11 @@
 
 namespace {
 struct StackRegionTag final {};
-struct AnyProt final {};
-struct AnyShare final {};
 alignas(4096) char not_a_mapping[8192];
 }  // namespace
 
 int main() {
-    fixy::OwnedMmap<StackRegionTag, AnyProt, AnyShare> forged{not_a_mapping, sizeof(not_a_mapping)};
+    fixy::OwnedMmap<StackRegionTag, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> forged{
+        not_a_mapping, sizeof(not_a_mapping)};
     return forged.is_mapped() ? 0 : 1;
 }

@@ -1,32 +1,53 @@
-// Every mapping below comes from Region::map_region, because that is
+// Every mapping below comes from OwnedMmap::mint_region, because that is
 // the only door there is: the constructor that claims an address is
-// private, so a region exists only over what ::mmap returned.  These
-// cases used to call ::mmap themselves and wrap the result, which is
-// exactly the pattern the private constructor removed.
+// private, so a region exists only over what ::mmap returned.
 //
 // Sentinel TU for fixy/OwnedMmap.h: the region is move-only, the leak
-// witness admits only the leak atom, and release binds to an rvalue.
+// witness admits only the leak atom, release binds to an rvalue, and the
+// kernel maps the protection that the type claims.
 //
 // The empty state is the only one reachable without a syscall, so it is
-// checked first.  Then this TU maps one anonymous page, so the unmap
-// path, the move path and the grant-gated release all run.
+// checked first.  Then this TU maps anonymous pages, so the unmap path,
+// the move path and the grant-gated release all run.
 
 #include <fixy/OwnedMmap.h>
+#include <foundation/permissions/Permission.h>
 
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <bit>
 #include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <string>
 #include <type_traits>
 #include <utility>
 
 namespace {
 
-struct PageTag {};
-struct PageProt {};
-struct PageShare {};
-using Region = ::fixy::OwnedMmap<PageTag, PageProt, PageShare>;
+namespace eff = ::foundation::effects;
+namespace perm = ::foundation::permissions;
+namespace mm = ::fixy::mmap;
+
+struct PageTag {
+    using permission_row = eff::Row<>;
+};
+using Region = ::fixy::OwnedMmap<PageTag, mm::prot::WriteCopy, mm::share::Anonymous>;
 using SampleLeak = ::fixy::atom::leak::resource<::fixy::atom::detail::leak_sample_rationale>;
+
+// A context of a test that maps: it owns IO and Block, the row of a
+// mapping.
+using MapCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
+
+// A mapping takes the brand of the permission it is minted with, so each
+// case mints a permission and maps under its brand.
+template <typename Prot, typename Brand>
+[[nodiscard]] auto map_pages(perm::Permission<PageTag, Brand> const& owner, std::size_t length) {
+    MapCtx ctx{eff::testing::test()};
+    return ::fixy::OwnedMmap<PageTag, Prot, mm::share::Anonymous, Brand>::mint_region(ctx, owner, -1, length, 0);
+}
 
 static_assert(!std::is_copy_constructible_v<Region>);
 static_assert(!std::is_copy_assignable_v<Region>);
@@ -37,7 +58,7 @@ static_assert(sizeof(Region) == sizeof(void*) + sizeof(std::size_t));
 // The tag triple is part of the type, so two regions that name
 // different tags cannot be assigned across.
 struct OtherTag {};
-using OtherRegion = ::fixy::OwnedMmap<OtherTag, PageProt, PageShare>;
+using OtherRegion = ::fixy::OwnedMmap<OtherTag, mm::prot::WriteCopy, mm::share::Anonymous>;
 static_assert(!std::is_assignable_v<Region&, OtherRegion&&>);
 static_assert(!std::is_constructible_v<Region, OtherRegion&&>);
 
@@ -54,12 +75,50 @@ std::size_t page_bytes() {
     return reported > 0 ? static_cast<std::size_t>(reported) : std::size_t{4096};
 }
 
+// The protection field of the /proc/self/maps line that holds address,
+// such as "r--p", or an empty string when no line holds it.
+std::string protection_of(void const* address) {
+    std::ifstream maps{"/proc/self/maps"};
+    const auto wanted = std::bit_cast<std::uintptr_t>(address);
+    std::string line;
+    while (std::getline(maps, line)) {
+        unsigned long start = 0;
+        unsigned long end = 0;
+        char protection[5] = {};
+        if (std::sscanf(line.c_str(), "%lx-%lx %4s", &start, &end, protection) != 3) continue;
+        if (wanted >= start && wanted < end) return std::string{protection};
+    }
+    return {};
+}
+
+// The kernel maps the protection and the share mode that the type claims.
+// A caller gives mint_region no bit, so a region typed read-only is a
+// read-only private page, and one typed copy-on-write is writable.
+int check_the_kernel_maps_the_claimed_protection() {
+    const std::size_t len = page_bytes();
+    auto const owner = perm::mint_permission_root<PageTag>();
+    auto read_only = map_pages<mm::prot::ReadOnly>(owner, len);
+    if (!read_only) return 0;
+    if (protection_of(read_only->data()) != "r--p") {
+        std::fprintf(stderr, "a region typed prot::ReadOnly is mapped %s\n", protection_of(read_only->data()).c_str());
+        return 50;
+    }
+    auto writable = map_pages<mm::prot::WriteCopy>(owner, len);
+    if (!writable) return 0;
+    if (protection_of(writable->data()) != "rw-p") {
+        std::fprintf(stderr, "a region typed prot::WriteCopy is mapped %s\n", protection_of(writable->data()).c_str());
+        return 51;
+    }
+    return 0;
+}
+
 int check_live_mapping() {
     const std::size_t len = page_bytes();
-    auto mapped = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    auto const owner = perm::mint_permission_root<PageTag>();
+    auto mapped = map_pages<mm::prot::WriteCopy>(owner, len);
     if (!mapped) return 0;  // mapping unavailable; nothing to check
 
-    Region r = std::move(*mapped);
+    auto r = std::move(*mapped);
     void* const addr = r.data();
     if (!r.is_mapped()) return 10;
     if (addr == MAP_FAILED) return 11;
@@ -67,7 +126,7 @@ int check_live_mapping() {
 
     // The destructor unmaps.  A second region moved from this one must
     // leave the source empty so the unmap happens exactly once.
-    Region moved = std::move(r);
+    auto moved = std::move(r);
     if (r.is_mapped()) return 13;
     if (!moved.is_mapped()) return 14;
     if (moved.data() != addr) return 15;
@@ -77,10 +136,11 @@ int check_live_mapping() {
 
 int check_release_hands_the_region_back() {
     const std::size_t len = page_bytes();
-    auto mapped = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    auto const owner = perm::mint_permission_root<PageTag>();
+    auto mapped = map_pages<mm::prot::WriteCopy>(owner, len);
     if (!mapped) return 0;
 
-    Region r = std::move(*mapped);
+    auto r = std::move(*mapped);
     void* const addr = r.data();
     auto [out_addr, out_len] = std::move(r).release(SampleLeak{});
     if (out_addr != addr) return 20;
@@ -94,13 +154,14 @@ int check_release_hands_the_region_back() {
 
 int check_move_assign_unmaps_the_replaced_region() {
     const std::size_t len = page_bytes();
-    auto first = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    auto const owner = perm::mint_permission_root<PageTag>();
+    auto first = map_pages<mm::prot::WriteCopy>(owner, len);
     if (!first) return 0;
-    auto second = Region::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, len, 0);
+    auto second = map_pages<mm::prot::WriteCopy>(owner, len);
     if (!second) return 0;
 
-    Region a = std::move(*first);
-    Region b = std::move(*second);
+    auto a = std::move(*first);
+    auto b = std::move(*second);
     void* const second_addr = b.data();
     a = std::move(b);
     if (b.is_mapped()) return 30;
@@ -136,6 +197,7 @@ int check_empty_state() {
 
 int main() {
     if (int rc = check_empty_state(); rc != 0) return rc;
+    if (int rc = check_the_kernel_maps_the_claimed_protection(); rc != 0) return rc;
     if (int rc = check_live_mapping(); rc != 0) return rc;
     if (int rc = check_release_hands_the_region_back(); rc != 0) return rc;
     if (int rc = check_move_assign_unmaps_the_replaced_region(); rc != 0) return rc;

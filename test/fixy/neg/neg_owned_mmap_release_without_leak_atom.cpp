@@ -11,15 +11,13 @@
 namespace {
 
 struct RegionTag {};
-struct ProtTag {};
-struct ShareTag {};
 
 struct NotALeakAtom final {};
 
 }  // namespace
 
 int main() {
-    fixy::OwnedMmap<RegionTag, ProtTag, ShareTag> region{};
+    fixy::OwnedMmap<RegionTag, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> region{};
     auto [addr, len] = std::move(region).release(NotALeakAtom{});
     return (addr == nullptr && len == 0) ? 0 : 1;
 }

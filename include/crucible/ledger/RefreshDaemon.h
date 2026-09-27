@@ -185,7 +185,8 @@ struct CycleReport {
 // Split out from the daemon so a test can drive it with a synthetic
 // competence report and no thread, and so the rule has a name a reader can
 // grep for rather than being a condition inside a loop.
-[[nodiscard]] inline CycleReport refresh_when_fit(Ledger& ledger, std::span<const VerdictId> wanted,
+[[nodiscard]] inline CycleReport refresh_when_fit(LedgerIoCtx const& ctx, Ledger& ledger,
+                                                  std::span<const VerdictId> wanted,
                                                   std::span<const ProbeRegistration> registry,
                                                   CompetenceReport const& competence,
                                                   std::uint64_t now_unix_seconds) noexcept {
@@ -207,7 +208,7 @@ struct CycleReport {
         return report;
     }
 
-    report.outcome = run_refresh(ledger, queue, registry, competence, now_unix_seconds);
+    report.outcome = run_refresh(ctx, ledger, queue, registry, competence, now_unix_seconds);
     report.result = (report.outcome.admitted_count > 0u) ? CycleResult::Admitted : CycleResult::AllRefused;
     return report;
 }
@@ -340,7 +341,7 @@ public:
         working_.cpu_vendor = facts_.cpu_vendor;
         working_.cpu_model = facts_.cpu_model;
 
-        CycleReport report = refresh_when_fit(working_, config_.wanted, config_.registry, competence, now);
+        CycleReport report = refresh_when_fit(io_ctx, working_, config_.wanted, config_.registry, competence, now);
 
         if (report.result == CycleResult::Admitted) {
             if (!commit_ledger(io_ctx, working_).has_value()) {

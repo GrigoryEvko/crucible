@@ -23,9 +23,7 @@
 
 namespace {
 struct ForwardedRegionTag final {};
-struct AnyProt final {};
-struct AnyShare final {};
-using Region = fixy::OwnedMmap<ForwardedRegionTag, AnyProt, AnyShare>;
+using Region = fixy::OwnedMmap<ForwardedRegionTag, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>;
 alignas(4096) char not_a_mapping[8192];
 }  // namespace
 

@@ -4,11 +4,9 @@
 // twice: once for the domain, type and protocol that ::socket takes, and
 // once for the effect row that the calling context must admit.
 //
-// The old tree had no socket factory.  src/cntp/Pacing.cpp wraps the
-// return value of ::socket in the old FileHandle, whose public
-// constructor adopts any integer.  mint_socket below makes the call
-// itself, through OwnedFd::open_socket, so a socket handle holds a
-// descriptor that the kernel returned.
+// mint_socket below makes the call through SocketDoor, the one door to
+// ::socket, so a socket handle holds a descriptor that the kernel
+// returned to a gated mint.
 //
 // One kind is declared, because one production site opens a socket.
 // A new kind is a tag in fixy::net::socket_kind and a specialization of
@@ -26,6 +24,7 @@
 #include <linux/netlink.h>
 #include <sys/socket.h>
 
+#include <cerrno>
 #include <concepts>
 #include <expected>
 #include <meta>
@@ -76,12 +75,49 @@ concept CtxFitsSocketMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, socket_ro
 // The Kind parameter precedes Ctx because the caller names it explicitly
 // and Ctx deduces from the argument.
 //
+// Declared here and defined below SocketDoor, because SocketDoor names it
+// as its friend, and a friend must already have been declared.
+//
 // §XXI carve-out: cx=alloc — opening a socket invokes the kernel.
 template <typename Kind, eff::IsExecCtx Ctx>
     requires CtxFitsSocketMint<Ctx, Kind>
+[[nodiscard]] inline std::expected<Linear<::fixy::fs::OwnedFd>, std::error_code> mint_socket(Ctx const&) noexcept;
+
+// The door to ::socket.  No object of it exists.  Its member is private,
+// and its one friend is mint_socket.  OwnedFd befriends this class, so a
+// socket handle comes only from mint_socket, after its gate.  The door
+// reads the triple of the kind, so no caller gives it a domain, a type or
+// a protocol.
+class SocketDoor final {
+    SocketDoor() = delete("the socket door holds static members only; no object of it exists");
+    SocketDoor(const SocketDoor&) = delete("the socket door holds static members only");
+    SocketDoor& operator=(const SocketDoor&) = delete("the socket door holds static members only");
+    SocketDoor(SocketDoor&&) = delete("the socket door holds static members only");
+    SocketDoor& operator=(SocketDoor&&) = delete("the socket door holds static members only");
+    constexpr ~SocketDoor() noexcept {}
+
+    template <typename FriendKind, eff::IsExecCtx FriendCtx>
+        requires CtxFitsSocketMint<FriendCtx, FriendKind>
+    friend auto mint_socket(FriendCtx const&) noexcept -> std::expected<Linear<::fixy::fs::OwnedFd>, std::error_code>;
+
+    // SOCK_CLOEXEC is folded in, because a descriptor that survives execve
+    // leaks into every child process.  Returns the errno on failure and no
+    // handle.
+    template <MappedSocketKind Kind>
+    [[nodiscard]] static std::expected<::fixy::fs::OwnedFd, int> open_() noexcept {
+        using triple = socket_triple<Kind>;
+        const int fd = ::socket(triple::domain, triple::type | SOCK_CLOEXEC, triple::protocol);  // SYSCALL-CAP-OK: SocketDoor::open_, sole caller mint_socket ctx-gate (CtxFitsSocketMint)
+        if (fd < 0) {
+            return std::unexpected{errno};
+        }
+        return ::fixy::fs::OwnedFd{fd};
+    }
+};
+
+template <typename Kind, eff::IsExecCtx Ctx>
+    requires CtxFitsSocketMint<Ctx, Kind>
 [[nodiscard]] inline std::expected<Linear<::fixy::fs::OwnedFd>, std::error_code> mint_socket(Ctx const&) noexcept {
-    using triple = socket_triple<Kind>;
-    auto fd = ::fixy::fs::OwnedFd::open_socket(triple::domain, triple::type, triple::protocol);
+    auto fd = SocketDoor::open_<Kind>();
     if (!fd) {
         return std::unexpected{std::error_code{fd.error(), std::system_category()}};
     }
@@ -111,6 +147,9 @@ static_assert(CtxFitsSocketMint<IoBlockCtx, socket_kind::NetlinkRoute>);
 static_assert(!CtxFitsSocketMint<IoOnlyCtx, socket_kind::NetlinkRoute>,
               "a context without Block must not open a socket: the catalog puts socket in a family that can park.");
 static_assert(!CtxFitsSocketMint<IoBlockCtx, NotASocketKind>, "a kind with no triple must be refused.");
+static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_constructible_v<SocketDoor>
+                  && !std::is_move_constructible_v<SocketDoor>,
+              "No object of the socket door exists.  Its private member is the only call to ::socket.");
 
 // Every tag in fixy::net::socket_kind has a triple.  The walk is the
 // check that a new tag also has its specialization.

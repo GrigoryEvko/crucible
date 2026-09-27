@@ -1009,6 +1009,8 @@ inline constexpr std::string_view kProjectionModel =
     "time, and it is never a value in a signature";
 inline constexpr std::string_view kDoor =
     "a door of a session mint: it has static members only, no object of it exists, and it is never a value";
+inline constexpr std::string_view kDescriptorDoor =
+    "a door of a descriptor mint: it has static members only, no object of it exists, and it is never a value";
 
 inline constexpr StatedZero kZeros[] = {
     {^^::foundation::Pinned, "a CRTP marker base: it forbids moves on its deriver and is never a value"},
@@ -1326,6 +1328,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fs::flag_bits, kMetafunction},
     {^^::fixy::fs::OwnedFd, kDescriptor},
     {^^::fixy::fs::Dirfd, kDescriptor},
+    {^^::fixy::fs::FileDoor, kDescriptorDoor},
+    {^^::fixy::net::SocketDoor, kDescriptorDoor},
+    {^^::fixy::time::PtpDeviceDoor, kDescriptorDoor},
     {^^::fixy::net::socket_triple, kMetafunction},
     {^^::fixy::mmap::prot_bits, kMetafunction},
     {^^::fixy::mmap::share_flags, kMetafunction},

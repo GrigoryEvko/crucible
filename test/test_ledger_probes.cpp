@@ -171,8 +171,11 @@ void test_ratio_evidence_catches_an_unreproducible_ratio() {
     std::printf("  test_ratio_evidence_catches_an_unreproducible_ratio: PASSED\n");
 }
 
+// A probe maps and pins under the context of the store.
+constexpr ledger::LedgerIoCtx probe_ctx{::foundation::effects::testing::bg()};
+
 void test_scratch_region_is_aligned_and_faultable() {
-    auto region = ledger::ProbeRegion::create(4u * 1024u * 1024u, ledger::PagePolicy::BasePages);
+    auto region = ledger::ProbeRegion::create(probe_ctx, 4u * 1024u * 1024u, ledger::PagePolicy::BasePages);
     assert(region.has_value());
     assert(region->is_mapped());
     assert(region->size() == 4u * 1024u * 1024u);
@@ -188,7 +191,7 @@ void test_scratch_region_is_aligned_and_faultable() {
 
     // Break it: a zero-length region is a caller error and not a
     // zero-length mapping.
-    auto empty = ledger::ProbeRegion::create(0u, ledger::PagePolicy::BasePages);
+    auto empty = ledger::ProbeRegion::create(probe_ctx, 0u, ledger::PagePolicy::BasePages);
     assert(!empty.has_value());
     assert(empty.error() == LedgerError::MalformedRecord);
 
@@ -207,7 +210,7 @@ void test_page_policy_is_verified_against_the_kernel() {
     // honoured it.
     const std::size_t bytes = 8u * 1024u * 1024u;
 
-    auto base = ledger::ProbeRegion::create(bytes, ledger::PagePolicy::BasePages);
+    auto base = ledger::ProbeRegion::create(probe_ctx, bytes, ledger::PagePolicy::BasePages);
     assert(base.has_value());
     (void)base->fault_in(1u);
     assert(ledger::probes::huge_page_detail::verify_page_policy_took(*base, ledger::PagePolicy::BasePages));
@@ -216,7 +219,7 @@ void test_page_policy_is_verified_against_the_kernel() {
     assert(!ledger::probes::huge_page_detail::verify_page_policy_took(*base, ledger::PagePolicy::HugePages));
 
     if (::fixy::concurrent::Topology::instance().hugepage_2mb_available()) {
-        auto huge = ledger::ProbeRegion::create(bytes, ledger::PagePolicy::HugePages);
+        auto huge = ledger::ProbeRegion::create(probe_ctx, bytes, ledger::PagePolicy::HugePages);
         assert(huge.has_value());
         (void)huge->fault_in(1u);
         // Not asserted as true: a host whose memory is fragmented enough
@@ -268,7 +271,8 @@ void test_memo_shares_one_measurement() {
 
 int g_stub_probe_calls = 0;
 
-[[nodiscard]] std::expected<ledger::VerdictMeasurement, LedgerError> stub_probe(CompetenceReport const&) noexcept {
+[[nodiscard]] std::expected<ledger::VerdictMeasurement, LedgerError> stub_probe(ledger::LedgerIoCtx const&,
+                                                                                CompetenceReport const&) noexcept {
     ++g_stub_probe_calls;
     VerdictEvidence evidence{};
     evidence.quantiles = cog::LatencyQuantiles{20u, 24u, 40u};
@@ -290,7 +294,7 @@ void test_an_unfit_host_is_never_probed() {
     ledger::Ledger ledger{};
     g_stub_probe_calls = 0;
     const ledger::CycleReport skipped =
-        ledger::refresh_when_fit(ledger, kStubWanted, kStubRegistry, unfit_host(), 10000u);
+        ledger::refresh_when_fit(probe_ctx, ledger, kStubWanted, kStubRegistry, unfit_host(), 10000u);
     assert(skipped.result == CycleResult::SkippedUnfitHost);
     assert(skipped.queued_count == 1u);
     assert(g_stub_probe_calls == 0);
@@ -300,7 +304,8 @@ void test_an_unfit_host_is_never_probed() {
     // does admit the result, so the gate is the competence and not an
     // unconditional refusal.
     g_stub_probe_calls = 0;
-    const ledger::CycleReport ran = ledger::refresh_when_fit(ledger, kStubWanted, kStubRegistry, fit_host(), 10000u);
+    const ledger::CycleReport ran =
+        ledger::refresh_when_fit(probe_ctx, ledger, kStubWanted, kStubRegistry, fit_host(), 10000u);
     assert(ran.result == CycleResult::Admitted);
     assert(g_stub_probe_calls == 1);
     assert(ledger.entries.size() == 1u);
@@ -309,7 +314,8 @@ void test_an_unfit_host_is_never_probed() {
     // And a second cycle on the same fresh ledger has nothing to do, so a
     // served verdict is not re-measured every period.
     g_stub_probe_calls = 0;
-    const ledger::CycleReport idle = ledger::refresh_when_fit(ledger, kStubWanted, kStubRegistry, fit_host(), 10001u);
+    const ledger::CycleReport idle =
+        ledger::refresh_when_fit(probe_ctx, ledger, kStubWanted, kStubRegistry, fit_host(), 10001u);
     assert(idle.result == CycleResult::NothingToDo);
     assert(g_stub_probe_calls == 0);
 
@@ -325,7 +331,8 @@ int g_sibling_measure_count = 0;
     return g_sibling_memo.get_or_measure([] { return ++g_sibling_measure_count; });
 }
 
-[[nodiscard]] std::expected<ledger::VerdictMeasurement, LedgerError> sibling_probe(CompetenceReport const&) noexcept {
+[[nodiscard]] std::expected<ledger::VerdictMeasurement, LedgerError> sibling_probe(ledger::LedgerIoCtx const&,
+                                                                                   CompetenceReport const&) noexcept {
     const int shared = shared_sibling_measurement();
     VerdictEvidence evidence{};
     evidence.quantiles = cog::LatencyQuantiles{20u, 24u, 40u};
@@ -367,7 +374,7 @@ void test_sibling_verdicts_share_one_measurement() {
     g_sibling_measure_count = 0;
 
     const ledger::CycleReport report =
-        ledger::refresh_when_fit(ledger, kSiblingWanted, kSiblingRegistry, fit_host(), 10000u);
+        ledger::refresh_when_fit(probe_ctx, ledger, kSiblingWanted, kSiblingRegistry, fit_host(), 10000u);
     assert(report.result == CycleResult::Admitted);
     assert(report.outcome.measured_count == 3u);
     assert(report.outcome.admitted_count == 3u);
@@ -387,7 +394,7 @@ void test_sibling_verdicts_share_one_measurement() {
     for (const VerdictId id : kSiblingWanted) {
         g_sibling_memo.forget();  // stands in for the lifetime running out
         const VerdictId one[] = {id};
-        (void)ledger::refresh_when_fit(second, one, kSiblingRegistry, fit_host(), 10000u);
+        (void)ledger::refresh_when_fit(probe_ctx, second, one, kSiblingRegistry, fit_host(), 10000u);
     }
     assert(g_sibling_measure_count == 3);
     assert(second.entries.size() == 3u);
@@ -510,7 +517,7 @@ void test_vector_width_probe_answers_or_declines() {
     ledger::set_probe_settings(ledger::ProbeSettings{.sample_count = 64, .pin_core = -1});
     ledger::probes::vector_width_detail::g_memo.forget();
 
-    const auto preferred = ledger::probes::probe_vector_width_preferred_bits(fit_host());
+    const auto preferred = ledger::probes::probe_vector_width_preferred_bits(probe_ctx, fit_host());
 
     if constexpr (ledger::kBuildIsInstrumented) {
         // The claim: an instrumented build declines rather than reporting
@@ -522,8 +529,8 @@ void test_vector_width_probe_answers_or_declines() {
         // of a 256-bit one.
         assert(!preferred.has_value());
         assert(preferred.error() == LedgerError::NotApplicableOnThisHost);
-        assert(!ledger::probes::probe_vector_width_compute_gain(fit_host()).has_value());
-        assert(!ledger::probes::probe_vector_width_memory_gain(fit_host()).has_value());
+        assert(!ledger::probes::probe_vector_width_compute_gain(probe_ctx, fit_host()).has_value());
+        assert(!ledger::probes::probe_vector_width_memory_gain(probe_ctx, fit_host()).has_value());
         std::printf("  test_vector_width_probe_answers_or_declines: PASSED (instrumented build declines)\n");
         return;
     }
@@ -543,8 +550,8 @@ void test_vector_width_probe_answers_or_declines() {
     // The two margins come from the SAME measurement, because the memo is
     // what shares it. If they did not, each verdict would describe a
     // different moment of a machine that had not changed.
-    const auto compute = ledger::probes::probe_vector_width_compute_gain(fit_host());
-    const auto memory = ledger::probes::probe_vector_width_memory_gain(fit_host());
+    const auto compute = ledger::probes::probe_vector_width_compute_gain(probe_ctx, fit_host());
+    const auto memory = ledger::probes::probe_vector_width_memory_gain(probe_ctx, fit_host());
     assert(compute.has_value());
     assert(memory.has_value());
 

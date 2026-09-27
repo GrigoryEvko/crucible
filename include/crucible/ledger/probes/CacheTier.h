@@ -498,7 +498,7 @@ struct SweepPass {
     return folded;
 }
 
-[[nodiscard]] inline CacheTierMeasurement measure_sweep() noexcept {
+[[nodiscard]] inline CacheTierMeasurement measure_sweep(LedgerIoCtx const& ctx) noexcept {
     CacheTierMeasurement result{};
 
     // An instrumented build measures its own instrumentation. Refer to
@@ -523,7 +523,7 @@ struct SweepPass {
         return result;
     }
 
-    auto region = ProbeRegion::create(sweep_ceiling_bytes(), PagePolicy::BasePages);
+    auto region = ProbeRegion::create(ctx, sweep_ceiling_bytes(), PagePolicy::BasePages);
     if (!region.has_value()) {
         worker.stop();
         result.fault = region.error();
@@ -537,7 +537,7 @@ struct SweepPass {
     return fold_sweeps(first, second);
 }
 
-[[nodiscard]] inline NumaMeasurement measure_numa() noexcept {
+[[nodiscard]] inline NumaMeasurement measure_numa(LedgerIoCtx const& ctx) noexcept {
     NumaMeasurement result{};
 
     // An instrumented build measures its own instrumentation. Refer to
@@ -558,12 +558,12 @@ struct SweepPass {
     // between two cache hits and says nothing about the interconnect.
     const std::size_t bytes = sweep_ceiling_bytes();
 
-    auto local_region = ProbeRegion::create(bytes, PagePolicy::BasePages);
+    auto local_region = ProbeRegion::create(ctx, bytes, PagePolicy::BasePages);
     if (!local_region.has_value()) {
         result.fault = local_region.error();
         return result;
     }
-    auto remote_region = ProbeRegion::create(bytes, PagePolicy::BasePages);
+    auto remote_region = ProbeRegion::create(ctx, bytes, PagePolicy::BasePages);
     if (!remote_region.has_value()) {
         result.fault = remote_region.error();
         return result;
@@ -641,19 +641,21 @@ struct SweepPass {
     return result;
 }
 
-[[nodiscard]] inline CacheTierMeasurement const& shared_sweep() noexcept {
-    return g_sweep_memo.get_or_measure(&measure_sweep);
+[[nodiscard]] inline CacheTierMeasurement const& shared_sweep(LedgerIoCtx const& ctx) noexcept {
+    return g_sweep_memo.get_or_measure([&ctx] { return measure_sweep(ctx); });
 }
 
-[[nodiscard]] inline NumaMeasurement const& shared_numa() noexcept { return g_numa_memo.get_or_measure(&measure_numa); }
+[[nodiscard]] inline NumaMeasurement const& shared_numa(LedgerIoCtx const& ctx) noexcept {
+    return g_numa_memo.get_or_measure([&ctx] { return measure_numa(ctx); });
+}
 
 }  // namespace cache_tier_detail
 
 // ── The three ProbeFunctions ──────────────────────────────────────────
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_parallel_knee_bytes(CompetenceReport const&) noexcept {
-    CacheTierMeasurement const& measured = cache_tier_detail::shared_sweep();
+probe_parallel_knee_bytes(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    CacheTierMeasurement const& measured = cache_tier_detail::shared_sweep(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }
@@ -667,8 +669,8 @@ probe_parallel_knee_bytes(CompetenceReport const&) noexcept {
 }
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_parallel_ceiling_bytes(CompetenceReport const&) noexcept {
-    CacheTierMeasurement const& measured = cache_tier_detail::shared_sweep();
+probe_parallel_ceiling_bytes(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    CacheTierMeasurement const& measured = cache_tier_detail::shared_sweep(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }
@@ -680,8 +682,8 @@ probe_parallel_ceiling_bytes(CompetenceReport const&) noexcept {
 }
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_numa_remote_cost(CompetenceReport const&) noexcept {
-    NumaMeasurement const& measured = cache_tier_detail::shared_numa();
+probe_numa_remote_cost(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    NumaMeasurement const& measured = cache_tier_detail::shared_numa(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }

@@ -246,7 +246,7 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
     return run;
 }
 
-[[nodiscard]] inline VectorWidthMeasurement measure() noexcept {
+[[nodiscard]] inline VectorWidthMeasurement measure([[maybe_unused]] LedgerIoCtx const& ctx) noexcept {
     VectorWidthMeasurement result{};
 
     // An instrumented build measures its own instrumentation. Refer to
@@ -266,7 +266,7 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
         return result;
     }
 
-    auto compute_region = ProbeRegion::create(kComputeBytes, PagePolicy::BasePages);
+    auto compute_region = ProbeRegion::create(ctx, kComputeBytes, PagePolicy::BasePages);
     if (!compute_region.has_value()) {
         result.fault = compute_region.error();
         return result;
@@ -277,7 +277,7 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
     // worse case, so a tie measured here is a tie under the more
     // demanding of the two page policies.
     const std::size_t stream_bytes = stream_bytes_for_host();
-    auto stream_region = ProbeRegion::create(stream_bytes, PagePolicy::BasePages);
+    auto stream_region = ProbeRegion::create(ctx, stream_bytes, PagePolicy::BasePages);
     if (!stream_region.has_value()) {
         result.fault = stream_region.error();
         return result;
@@ -368,8 +368,8 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
     return result;
 }
 
-[[nodiscard]] inline VectorWidthMeasurement const& shared_measurement() noexcept {
-    return g_memo.get_or_measure(&measure);
+[[nodiscard]] inline VectorWidthMeasurement const& shared_measurement(LedgerIoCtx const& ctx) noexcept {
+    return g_memo.get_or_measure([&ctx] { return measure(ctx); });
 }
 
 }  // namespace vector_width_detail
@@ -377,8 +377,8 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
 // ── The three ProbeFunctions ──────────────────────────────────────────
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_vector_width_preferred_bits(CompetenceReport const&) noexcept {
-    VectorWidthMeasurement const& measured = vector_width_detail::shared_measurement();
+probe_vector_width_preferred_bits(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    VectorWidthMeasurement const& measured = vector_width_detail::shared_measurement(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }
@@ -386,8 +386,8 @@ probe_vector_width_preferred_bits(CompetenceReport const&) noexcept {
 }
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_vector_width_compute_gain(CompetenceReport const&) noexcept {
-    VectorWidthMeasurement const& measured = vector_width_detail::shared_measurement();
+probe_vector_width_compute_gain(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    VectorWidthMeasurement const& measured = vector_width_detail::shared_measurement(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }
@@ -399,8 +399,8 @@ probe_vector_width_compute_gain(CompetenceReport const&) noexcept {
 }
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_vector_width_memory_gain(CompetenceReport const&) noexcept {
-    VectorWidthMeasurement const& measured = vector_width_detail::shared_measurement();
+probe_vector_width_memory_gain(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    VectorWidthMeasurement const& measured = vector_width_detail::shared_measurement(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }

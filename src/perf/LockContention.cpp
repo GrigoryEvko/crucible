@@ -26,7 +26,7 @@ LockContention::LockContention(LockContention&&) noexcept = default;
 LockContention& LockContention::operator=(LockContention&&) noexcept = default;
 LockContention::~LockContention() = default;
 
-std::optional<LockContention> LockContention::load(::fixy::InitLoadCtx const&) noexcept {
+std::optional<LockContention> LockContention::load(::fixy::InitLoadCtx const& ctx) noexcept {
     // The attach is all-or-nothing.  With the enter tracepoint attached but
     // the exit one missing, wait-start entries fill the map to its capacity,
     // and contention data is lost silently past that point.
@@ -42,7 +42,7 @@ std::optional<LockContention> LockContention::load(::fixy::InitLoadCtx const&) n
         .counter_map = "lock_wait_count",
         .counter_fallback = "wait_count() returns 0",
     };
-    auto state = detail::load_ring<State>(spec);
+    auto state = detail::load_ring<State>(ctx, spec);
     if (state == nullptr) return std::nullopt;
     LockContention hub;
     hub.state_ = std::move(state);

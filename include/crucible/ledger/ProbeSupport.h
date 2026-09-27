@@ -372,11 +372,13 @@ enum class PagePolicy : std::uint8_t {
 
 namespace probe_detail {
 
-struct ProbeRegionTag {};
-struct ProbeRegionProt {};
-struct ProbeRegionShare {};
+// A pure tag.  The context that maps, and not the permission, carries the
+// effects of the map call.
+struct ProbeRegionTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
-using ProbeMapping = ::fixy::OwnedMmap<ProbeRegionTag, ProbeRegionProt, ProbeRegionShare>;
+using ProbeMapping = ::fixy::OwnedMmap<ProbeRegionTag, ::fixy::mmap::prot::WriteCopy, ::fixy::mmap::share::Anonymous>;
 
 }  // namespace probe_detail
 
@@ -400,7 +402,8 @@ public:
     // Returns a region of at least `bytes`, or the reason there is none.
     // A probe that cannot get memory reports StoreReadFailed rather than
     // measuring something smaller and not saying so.
-    [[nodiscard]] static std::expected<ProbeRegion, LedgerError> create(std::size_t bytes, PagePolicy policy) noexcept {
+    [[nodiscard]] static std::expected<ProbeRegion, LedgerError> create(LedgerIoCtx const& ctx, std::size_t bytes,
+                                                                        PagePolicy policy) noexcept {
         if (bytes == 0u) {
             return std::unexpected(LedgerError::MalformedRecord);
         }
@@ -408,15 +411,13 @@ public:
         // lands inside the mapping whatever address the kernel picks.
         const std::size_t mapped_bytes = bytes + kHugePageBytes;
 
-        // The capability proof: every caller is a ProbeFunction reached
-        // from run_refresh, which the daemon and the tool both invoke
-        // under a context satisfying CtxFitsLedgerStore, the IO and Block
-        // effects, checked at the type level in LedgerStore.h and
-        // witnessed by the neg-compile fixtures in test/ledger_neg/.  The
+        // The context owns IO and Block, the row of a mapping, and the
         // mapping door does the mmap itself, so the region owns only an
-        // address the kernel returned.
-        auto mapped = probe_detail::ProbeMapping::map_region(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1,
-                                                             mapped_bytes, 0);
+        // address the kernel returned.  The region is on the erased
+        // identity of its tag, because nothing discards its pages.
+        const ::foundation::permissions::Permission<probe_detail::ProbeRegionTag> owner =
+            ::foundation::permissions::mint_permission_root<probe_detail::ProbeRegionTag>();
+        auto mapped = probe_detail::ProbeMapping::mint_region(ctx, owner, -1, mapped_bytes, 0);
         if (!mapped.has_value()) {
             return std::unexpected(LedgerError::StorePathUnavailable);
         }
@@ -437,7 +438,7 @@ public:
             // usable, just at whatever page size the kernel chose. The
             // probe that cares reads back /proc/self/smaps to find out
             // what it actually got rather than trusting this call.
-            (void)::madvise(address, bytes, advice);  // SYSCALL-CAP-OK: see the proof above
+            (void)::madvise(address, bytes, advice);  // SYSCALL-CAP-OK: ctx owns IO and Block, the row of madvise
         }
         return region;
     }

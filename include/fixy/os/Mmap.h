@@ -4,7 +4,8 @@
 //
 // An atom pack says what the mapping is — its protection, its share
 // mode, whether an executable page is licensed — and the pack is read
-// twice.  Once for the PROT_* and MAP_* bits the syscall takes, and once
+// twice.  Once for the region type and its modifiers, from which
+// OwnedMmap::mint_region calculates the PROT_* and MAP_* bits, and once
 // for the effect row the calling context has to admit.
 //
 // Old spelling: include/crucible/fixy/Mmap.h.
@@ -87,9 +88,6 @@
 #ifndef MADV_DONTDUMP
 #define MADV_DONTDUMP 16  // Linux 3.4 (2012-05).
 #endif
-#ifndef MAP_HUGE_2MB
-#define MAP_HUGE_2MB (21 << 26)
-#endif
 
 namespace fixy::mmap {
 
@@ -102,76 +100,10 @@ namespace fixy::mmap {
 // namespaces.  What is here is what only this header can express: each
 // tag's MADV_* value, and the clause that every tag declared there has
 // one.
-
-// Write and execute are never both set: prot::Exec carries read and
-// execute only.  A JIT that has to stage writes maps the same pages
-// twice, once writable for code generation and once executable to run
-// them, which is the discipline hardware execute-only memory assumes
-// anyway.
 //
-// WriteCopy and ReadWrite carry identical bits and differ only in the
-// share mode they are meant to accompany.
-
-// The primary has no value.  PROT_NONE is zero, so a primary that
-// answered zero mapped an unknown tag as a page nobody may touch, and
-// the kernel accepted it.  A tag reaches mmap only through a
-// specialization below.
-template <typename Prot>
-struct prot_bits {};
-template <>
-struct prot_bits<prot::ReadOnly> : std::integral_constant<int, PROT_READ> {};
-template <>
-struct prot_bits<prot::WriteCopy> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
-template <>
-struct prot_bits<prot::ReadWrite> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
-template <>
-struct prot_bits<prot::Exec> : std::integral_constant<int, PROT_READ | PROT_EXEC> {};
-
-template <typename Prot>
-inline constexpr int prot_bits_v = prot_bits<Prot>::value;
-
-// The first three are primary modes and a mapping has exactly one.  The
-// last three are flags that stack on any primary.
-
-// The primary has no value, for the same reason: a zero share word is
-// whatever the other flags say.
-template <typename Share>
-struct share_flags {};
-template <>
-struct share_flags<share::Private> : std::integral_constant<int, MAP_PRIVATE> {};
-template <>
-struct share_flags<share::Shared> : std::integral_constant<int, MAP_SHARED> {};
-template <>
-struct share_flags<share::Anonymous> : std::integral_constant<int, MAP_PRIVATE | MAP_ANONYMOUS> {};
-template <>
-struct share_flags<share::Locked> : std::integral_constant<int, MAP_LOCKED> {};
-template <>
-struct share_flags<share::Populate> : std::integral_constant<int, MAP_POPULATE> {};
-template <>
-struct share_flags<share::HugeTLB> : std::integral_constant<int, MAP_HUGETLB | MAP_HUGE_2MB> {};
-
-template <typename Share>
-inline constexpr int share_flags_v = share_flags<Share>::value;
-
-template <typename Share>
-inline constexpr bool is_primary_share_v = std::is_same_v<Share, share::Private> || std::is_same_v<Share, share::Shared>
-                                        || std::is_same_v<Share, share::Anonymous>;
-
-// A tag is known when its bit map has an entry.  The predicate is the
-// specialization set, so no second list can drift from the map.  The
-// walk at the foot of this header reads fixy::mmap::prot and
-// fixy::mmap::share and fails if a declared tag has no entry.
-template <typename Prot>
-concept MappedProt = requires { prot_bits<Prot>::value; };
-
-template <typename Share>
-concept MappedShare = requires { share_flags<Share>::value; };
-
-template <typename Prot>
-inline constexpr bool is_known_prot_v = MappedProt<Prot>;
-
-template <typename Share>
-inline constexpr bool is_known_share_v = MappedShare<Share>;
+// The PROT_* and MAP_* bit maps are in fixy/OwnedMmap.h, beside the one
+// door that maps, because that door calculates its bits from the type of
+// the region it builds.
 
 template <typename Advice>
 struct advice_value : std::integral_constant<int, -1> {};
@@ -216,9 +148,6 @@ inline constexpr bool is_with_prot_v = ::foundation::reflect::is_instance_of_v<A
 
 template <typename A>
 inline constexpr bool is_with_share_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::mmap::with_share>;
-
-template <typename A>
-inline constexpr bool is_trusted_jit_v = std::is_same_v<std::remove_cvref_t<A>, atom_mmap::trusted_jit>;
 
 // The tag an atom was given.  void where the atom is of another kind,
 // which is what lets the fold below skip it.
@@ -269,9 +198,6 @@ template <typename... Atoms>
 inline constexpr bool has_primary_share_atom_v = (is_primary_with_share_v<Atoms> || ...);
 
 template <typename... Atoms>
-inline constexpr bool has_trusted_jit_v = (is_trusted_jit_v<Atoms> || ...);
-
-template <typename... Atoms>
 inline constexpr bool has_duplicate_prot_v = (static_cast<int>(is_with_prot_v<Atoms>) + ... + 0) > 1;
 
 template <typename... Atoms>
@@ -300,55 +226,53 @@ struct primary_share_of<First, Rest...> {
 template <typename... Atoms>
 using primary_share_of_t = typename primary_share_of<Atoms...>::type;
 
-// An atom of another kind contributes nothing, so the fold is an OR over
-// the whole pack and needs no filtering.
-//
-// The branches are discarded statements, not a conditional expression.
-// A conditional instantiates the bits of the arm the atom does not take,
-// and the closed map refuses the void tag that arm names.
-template <typename A>
-[[nodiscard]] consteval int atom_prot_bits() noexcept {
-    if constexpr (is_with_prot_v<A>) {
-        return prot_bits_v<extract_prot_t<std::remove_cvref_t<A>>>;
-    } else {
-        return 0;
-    }
-}
+// The modifiers a pack names for OwnedMmap::mint_region: the share
+// flags that stack on the primary, and the trusted_jit licence.  The prot
+// atom and the primary share atom become the type of the region, and an
+// atom of another kind adds no bit, so the fold skips all three.
+template <typename... Modifiers>
+struct region_modifiers {};
 
-template <typename A>
-[[nodiscard]] consteval int atom_share_flags() noexcept {
-    if constexpr (is_with_share_v<A>) {
-        return share_flags_v<extract_share_t<std::remove_cvref_t<A>>>;
-    } else {
-        return 0;
-    }
-}
+template <typename List, typename A>
+struct push_modifier {
+    using type = List;
+};
+template <typename... Modifiers, typename Share>
+    requires(!is_primary_share_v<Share>)
+struct push_modifier<region_modifiers<Modifiers...>, atom_mmap::with_share<Share>> {
+    using type = region_modifiers<Modifiers..., Share>;
+};
+template <typename... Modifiers>
+struct push_modifier<region_modifiers<Modifiers...>, atom_mmap::trusted_jit> {
+    using type = region_modifiers<Modifiers..., atom_mmap::trusted_jit>;
+};
 
-template <typename A>
-inline constexpr int atom_prot_bits_v = atom_prot_bits<A>();
-
-template <typename A>
-inline constexpr int atom_share_flags_v = atom_share_flags<A>();
-
-template <typename... Atoms>
-[[nodiscard]] consteval int fold_prot_bits() noexcept {
-    int acc = 0;
-    ((acc |= atom_prot_bits_v<Atoms>), ...);
-    return acc;
-}
+template <typename List, typename... Atoms>
+struct fold_modifiers {
+    using type = List;
+};
+template <typename List, typename First, typename... Rest>
+struct fold_modifiers<List, First, Rest...>
+    : fold_modifiers<typename push_modifier<List, std::remove_cvref_t<First>>::type, Rest...> {};
 
 template <typename... Atoms>
-[[nodiscard]] consteval int fold_share_flags() noexcept {
-    int acc = 0;
-    ((acc |= atom_share_flags_v<Atoms>), ...);
-    return acc;
+using region_modifiers_t = typename fold_modifiers<region_modifiers<>, Atoms...>::type;
+
+// The gate of the region door, read over the modifier list of a pack.  A
+// pack that names no prot or no primary share gives void, and the door
+// refuses void.
+template <typename Ctx, typename Prot, typename Share, typename List>
+inline constexpr bool region_mint_admits_v = false;
+template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
+inline constexpr bool region_mint_admits_v<Ctx, Prot, Share, region_modifiers<Modifiers...>> =
+    CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...>;
+
+template <typename Region, typename... Modifiers, typename Ctx, typename Owner>
+[[nodiscard]] std::expected<Region, std::error_code> mint_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx,
+                                                                       Owner const& owner, int fd, std::size_t length,
+                                                                       ::off_t offset) noexcept {
+    return Region::template mint_region<Modifiers...>(ctx, owner, fd, length, offset);
 }
-
-template <typename A>
-inline constexpr bool is_exec_prot_v = std::is_same_v<std::remove_cvref_t<A>, atom_mmap::with_prot<prot::Exec>>;
-
-template <typename... Atoms>
-inline constexpr bool has_exec_prot_v = (is_exec_prot_v<Atoms> || ...);
 
 template <typename A>
 inline constexpr bool is_anonymous_share_v =
@@ -383,11 +307,17 @@ concept CtxAdmitsAtomRow = ::foundation::effects::IsExecCtx<Ctx>
                         && (::foundation::effects::LiftsToRow<std::remove_cvref_t<Atoms>> && ...)
                         && ::foundation::effects::CtxAdmits<Ctx, detail::atoms_row_t<Atoms...>>;
 
+// The last clause is the gate of OwnedMmap::mint_region, read over the
+// region type and the modifiers of the pack.  So the licence of an
+// executable page and the row of a mapping are one rule, stated once, in
+// fixy/OwnedMmap.h.
 template <typename Ctx, typename... Atoms>
 concept CtxFitsMmapMint = CtxAdmitsAtomRow<Ctx, Atoms...> && detail::all_atom_tags_known_v<Atoms...>
                        && detail::has_prot_atom_v<Atoms...> && detail::has_primary_share_atom_v<Atoms...>
                        && !detail::has_duplicate_prot_v<Atoms...> && !detail::has_duplicate_primary_share_v<Atoms...>
-                       && (!detail::has_exec_prot_v<Atoms...> || detail::has_trusted_jit_v<Atoms...>);
+                       && detail::region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>,
+                                                       detail::primary_share_of_t<Atoms...>,
+                                                       detail::region_modifiers_t<Atoms...>>;
 
 template <typename Ctx, typename... Atoms>
 concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Atoms...> && detail::pack_has_anonymous_v<Atoms...>;
@@ -450,18 +380,17 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag,
     requires CtxFitsMmapMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<
     Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>, std::error_code>
-mint_mmap(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/, int fd, std::size_t length,
+mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner, int fd, std::size_t length,
           ::off_t offset = 0) noexcept {
-    constexpr int prot = detail::fold_prot_bits<Atoms...>();
-    constexpr int flags = detail::fold_share_flags<Atoms...>();
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
     // The syscall lives with the region's only constructor, in
     // fixy/OwnedMmap.h, so that no address but the kernel's can become a
-    // region.  What this mint owns is the gate above: which atoms, and
-    // which context.
-    auto region = Region::map_region(prot, flags, fd, length, offset);
+    // region, and its bits come from the region type.  What this mint
+    // adds is the atom pack: which atoms, and the row they lift to.
+    auto region = detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, fd, length,
+                                                    offset);
     if (!region) {
-        return std::unexpected{std::error_code{region.error(), std::system_category()}};
+        return std::unexpected{region.error()};
     }
     return mint_linear<Region>(std::move(*region));
 }
@@ -475,14 +404,12 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag,
     requires CtxFitsAnonMmapMint<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<
     Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>, std::error_code>
-mint_mmap_anon(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
+mint_mmap_anon(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner,
                std::size_t length) noexcept {
-    constexpr int prot = detail::fold_prot_bits<Atoms...>();
-    constexpr int flags = detail::fold_share_flags<Atoms...>();
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
-    auto region = Region::map_region(prot, flags, -1, length, 0);
+    auto region = detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, -1, length, 0);
     if (!region) {
-        return std::unexpected{std::error_code{region.error(), std::system_category()}};
+        return std::unexpected{region.error()};
     }
     return mint_linear<Region>(std::move(*region));
 }
@@ -548,16 +475,6 @@ advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
 
 namespace fixy::mmap::detail::mmap_surface_invariants {
 
-static_assert(prot_bits_v<prot::ReadOnly> == PROT_READ);
-static_assert(prot_bits_v<prot::WriteCopy> == (PROT_READ | PROT_WRITE));
-static_assert(prot_bits_v<prot::ReadWrite> == (PROT_READ | PROT_WRITE));
-static_assert(prot_bits_v<prot::Exec> == (PROT_READ | PROT_EXEC));
-static_assert((prot_bits_v<prot::Exec> & PROT_WRITE) == 0, "W^X: prot::Exec must NOT include PROT_WRITE");
-
-static_assert(share_flags_v<share::Private> == MAP_PRIVATE);
-static_assert(share_flags_v<share::Shared> == MAP_SHARED);
-static_assert((share_flags_v<share::Anonymous> & MAP_ANONYMOUS) != 0);
-
 static_assert(advice_value_v<advice::DontNeed> == MADV_DONTNEED);
 static_assert(advice_value_v<advice::HugePage> == MADV_HUGEPAGE);
 static_assert(advice_value_v<advice::Free> == MADV_FREE);
@@ -590,10 +507,6 @@ static_assert(has_duplicate_prot_v<A_RO, A_RO>);
 static_assert(!has_duplicate_prot_v<A_RO, A_Shared>);
 static_assert(has_duplicate_primary_share_v<A_Shared, A_Private>);
 static_assert(!has_duplicate_primary_share_v<A_Shared, A_Locked>);
-static_assert(has_exec_prot_v<A_Exec, A_Shared>);
-static_assert(!has_exec_prot_v<A_RO, A_Shared>);
-static_assert(has_trusted_jit_v<A_Jit, A_Shared>);
-static_assert(!has_trusted_jit_v<A_RO, A_Shared>);
 static_assert(pack_has_anonymous_v<A_RO, A_Anon>);
 static_assert(!pack_has_anonymous_v<A_RO, A_Shared>);
 
@@ -608,8 +521,11 @@ static_assert(std::is_same_v<prot_of_t<A_Shared, A_Exec, A_Jit>, prot::Exec>);
 static_assert(std::is_same_v<primary_share_of_t<A_RO, A_Shared>, share::Shared>);
 static_assert(std::is_same_v<primary_share_of_t<A_RO, A_Anon, A_Locked>, share::Anonymous>);
 
-static_assert(fold_prot_bits<A_RO, A_Exec, A_Jit>() == (PROT_READ | PROT_EXEC));
-static_assert(fold_share_flags<A_Shared, A_Locked>() == (MAP_SHARED | MAP_LOCKED));
+// The prot atom and the primary share atom become the region type.  The
+// modifiers are what is left of the pack for the region door.
+static_assert(std::is_same_v<region_modifiers_t<A_RO, A_Shared>, region_modifiers<>>);
+static_assert(std::is_same_v<region_modifiers_t<A_Shared, A_Exec, A_Locked, A_Jit>,
+                             region_modifiers<share::Locked, ::fixy::atom::mmap::trusted_jit>>);
 
 // The derived row and the row the old header named by hand are the same
 // answer.  This is the pin on that equality: it fails if an mmap atom

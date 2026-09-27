@@ -19,7 +19,9 @@
 // pages from the policy of the thread that reads them.  mbind(2) returns
 // success for both, so a proof over such a range would state a binding
 // that the kernel does not keep.  The mint takes an OwnedMmap whose share
-// mode is share::Anonymous and no other.
+// mode is share::Anonymous and no other.  That type is a true claim,
+// because OwnedMmap::mint_region calculates its MAP_* word from the type
+// and no caller gives it a bit.
 //
 // The proof is move-only.  A move carries the region and the node, and
 // the source then covers no node.  The proof gives the address and the

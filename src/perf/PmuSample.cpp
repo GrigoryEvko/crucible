@@ -167,7 +167,7 @@ PmuSample::PmuSample(PmuSample&&) noexcept = default;
 PmuSample& PmuSample::operator=(PmuSample&&) noexcept = default;
 PmuSample::~PmuSample() = default;
 
-std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const&) noexcept {
+std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcept {
     constexpr const char* facade = "pmu_sample";
     // A perf_event program needs no tracepoint probe.  The verifier does
     // not care whether the PMU exists, and perf_event_open below reports an
@@ -270,7 +270,7 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const&) noexcept {
 
     if (!state->object.require_attached(spec)) return std::nullopt;
     state->timeline =
-        detail::map_array<PmuSampleRingTag>(state->object, facade, "pmu_sample_buf", PmuSampleRing::bytes);
+        detail::map_array<PmuSampleRingTag>(ctx, state->object, facade, "pmu_sample_buf", PmuSampleRing::bytes);
     if (!state->timeline) return std::nullopt;
     state->object.report_partial(facade);
 

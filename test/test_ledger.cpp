@@ -590,11 +590,16 @@ void test_store_round_trips_through_the_filesystem() {
 
 // ── The refresh seam ──────────────────────────────────────────────────
 
-std::expected<ledger::VerdictMeasurement, LedgerError> stub_probe(CompetenceReport const&) noexcept {
+// A refresh runs its probes under the context of the store.
+constexpr ledger::LedgerIoCtx refresh_ctx{::foundation::effects::testing::bg()};
+
+std::expected<ledger::VerdictMeasurement, LedgerError> stub_probe(ledger::LedgerIoCtx const&,
+                                                                  CompetenceReport const&) noexcept {
     return ledger::VerdictMeasurement{.value = VerdictValue{42u}, .evidence = sound_evidence()};
 }
 
-std::expected<ledger::VerdictMeasurement, LedgerError> failing_probe(CompetenceReport const&) noexcept {
+std::expected<ledger::VerdictMeasurement, LedgerError> failing_probe(ledger::LedgerIoCtx const&,
+                                                                     CompetenceReport const&) noexcept {
     return std::unexpected(LedgerError::StoreReadFailed);
 }
 
@@ -637,7 +642,7 @@ void test_refresh_plan_and_run() {
         {.id = VerdictId::TimerFloorNanos, .run = &stub_probe},
     };
     ledger::Ledger target{};
-    const auto outcome = ledger::run_refresh(target, plan, registry, fit, 10000u);
+    const auto outcome = ledger::run_refresh(refresh_ctx, target, plan, registry, fit, 10000u);
     assert(outcome.measured_count == 1u);
     assert(outcome.admitted_count == 1u);
     assert(outcome.refused_count == 0u);
@@ -646,7 +651,7 @@ void test_refresh_plan_and_run() {
 
     // An upsert replaces rather than appending, so one question never
     // gets two answers in one file.
-    const auto again = ledger::run_refresh(target, plan, registry, fit, 20000u);
+    const auto again = ledger::run_refresh(refresh_ctx, target, plan, registry, fit, 20000u);
     assert(again.admitted_count == 1u);
     assert(target.entries.size() == 1u);
     assert(target.find(VerdictId::TimerFloorNanos)->measured_at_unix_seconds == 20000u);
@@ -654,7 +659,7 @@ void test_refresh_plan_and_run() {
     // A queued verdict with no registered probe is counted, not crashed
     // on, and the record says which one had no answer.
     ledger::Ledger orphan{};
-    const auto no_probe = ledger::run_refresh(orphan, plan, {}, fit, 10000u);
+    const auto no_probe = ledger::run_refresh(refresh_ctx, orphan, plan, {}, fit, 10000u);
     assert(no_probe.no_probe_count == 1u);
     assert(no_probe.measured_count == 0u);
     assert(no_probe.log.size() == 1u);
@@ -666,7 +671,7 @@ void test_refresh_plan_and_run() {
         {.id = VerdictId::TimerFloorNanos, .run = &failing_probe},
     };
     ledger::Ledger unfilled{};
-    const auto failed = ledger::run_refresh(unfilled, plan, broken, fit, 10000u);
+    const auto failed = ledger::run_refresh(refresh_ctx, unfilled, plan, broken, fit, 10000u);
     assert(failed.refused_count == 1u);
     assert(failed.admitted_count == 0u);
     assert(failed.log.size() == 1u);
@@ -686,7 +691,8 @@ void test_refusals_name_the_bar_they_missed() {
     const auto plan = ledger::refresh_plan(empty, wanted, 10000u);
 
     struct NoisyProbe {
-        static std::expected<ledger::VerdictMeasurement, LedgerError> run(CompetenceReport const&) noexcept {
+        static std::expected<ledger::VerdictMeasurement, LedgerError> run(ledger::LedgerIoCtx const&,
+                                                                          CompetenceReport const&) noexcept {
             VerdictEvidence noisy = sound_evidence();
             noisy.within_run_cv_ppm = 83440;  // the 8.344% this host produced under load
             return ledger::VerdictMeasurement{.value = VerdictValue{1u}, .evidence = noisy};
@@ -697,7 +703,7 @@ void test_refusals_name_the_bar_they_missed() {
     };
 
     ledger::Ledger target{};
-    const auto outcome = ledger::run_refresh(target, plan, registry, fit, 10000u);
+    const auto outcome = ledger::run_refresh(refresh_ctx, target, plan, registry, fit, 10000u);
     assert(outcome.refused_count == 1u);
     assert(outcome.admitted_count == 0u);
     assert(outcome.log.size() == 1u);

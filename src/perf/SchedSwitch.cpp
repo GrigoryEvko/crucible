@@ -26,7 +26,7 @@ SchedSwitch::SchedSwitch(SchedSwitch&&) noexcept = default;
 SchedSwitch& SchedSwitch::operator=(SchedSwitch&&) noexcept = default;
 SchedSwitch::~SchedSwitch() = default;
 
-std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const&) noexcept {
+std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const& ctx) noexcept {
     const detail::RingSpec spec{
         .load = {.facade = "sched_switch",
                  .object_name = "crucible_sched_switch",
@@ -38,7 +38,7 @@ std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const&) noexcep
         .counter_map = "cs_count",
         .counter_fallback = "context_switches() returns 0",
     };
-    auto state = detail::load_ring<State>(spec);
+    auto state = detail::load_ring<State>(ctx, spec);
     if (state == nullptr) return std::nullopt;
     SchedSwitch hub;
     hub.state_ = std::move(state);

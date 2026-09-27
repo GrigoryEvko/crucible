@@ -171,14 +171,14 @@ struct FaultInOutcome {
     bench::Report second{};
 };
 
-[[nodiscard]] inline FaultInOutcome measure_fault_in(PagePolicy policy, const char* first_name,
-                                                     const char* second_name) noexcept {
+[[nodiscard]] inline FaultInOutcome measure_fault_in(LedgerIoCtx const& ctx, PagePolicy policy,
+                                                     const char* first_name, const char* second_name) noexcept {
     FaultInOutcome outcome{};
     bool every_sample_took = true;
 
     auto one_run = [&](const char* name) {
         return configured_run(name, kFaultSampleCount, 30000).measure([&] {
-            auto region = ProbeRegion::create(kFaultRegionBytes, policy);
+            auto region = ProbeRegion::create(ctx, kFaultRegionBytes, policy);
             if (!region.has_value()) {
                 every_sample_took = false;
                 return;
@@ -276,7 +276,7 @@ namespace huge_page_detail {
 
 inline MeasurementMemo<HugePageMeasurement> g_memo{};
 
-[[nodiscard]] inline HugePageMeasurement measure() noexcept {
+[[nodiscard]] inline HugePageMeasurement measure(LedgerIoCtx const& ctx) noexcept {
     HugePageMeasurement result{};
 
     // An instrumented build measures its own instrumentation. Refer to
@@ -295,7 +295,7 @@ inline MeasurementMemo<HugePageMeasurement> g_memo{};
     }
 
     const FaultInOutcome huge =
-        measure_fault_in(PagePolicy::HugePages, "ledger.thp.fault.huge.run1", "ledger.thp.fault.huge.run2");
+        measure_fault_in(ctx, PagePolicy::HugePages, "ledger.thp.fault.huge.run1", "ledger.thp.fault.huge.run2");
     if (!huge.policy_took) {
         // The advice was recorded and the fault path did not honour it, so
         // whatever was measured was not huge pages. Reporting it would put
@@ -305,7 +305,7 @@ inline MeasurementMemo<HugePageMeasurement> g_memo{};
         return result;
     }
     const FaultInOutcome base =
-        measure_fault_in(PagePolicy::BasePages, "ledger.thp.fault.base.run1", "ledger.thp.fault.base.run2");
+        measure_fault_in(ctx, PagePolicy::BasePages, "ledger.thp.fault.base.run1", "ledger.thp.fault.base.run2");
 
     result.fault_cost_nanos_per_mib = saturating_nanos(huge.nanos_per_mib);
     result.fault_gain_percent = gain_percent(base.nanos_per_mib, huge.nanos_per_mib);
@@ -317,8 +317,8 @@ inline MeasurementMemo<HugePageMeasurement> g_memo{};
     result.fault_gain_evidence = evidence_for_ratio(base.first, huge.first, base.second, huge.second);
 
     // ── Payback ──
-    auto huge_region = ProbeRegion::create(kChaseRegionBytes, PagePolicy::HugePages);
-    auto base_region = ProbeRegion::create(kChaseRegionBytes, PagePolicy::BasePages);
+    auto huge_region = ProbeRegion::create(ctx, kChaseRegionBytes, PagePolicy::HugePages);
+    auto base_region = ProbeRegion::create(ctx, kChaseRegionBytes, PagePolicy::BasePages);
     if (!huge_region.has_value() || !base_region.has_value()) {
         result.fault = LedgerError::StorePathUnavailable;
         return result;
@@ -368,8 +368,8 @@ inline MeasurementMemo<HugePageMeasurement> g_memo{};
     return result;
 }
 
-[[nodiscard]] inline HugePageMeasurement const& shared_measurement() noexcept {
-    return g_memo.get_or_measure(&measure);
+[[nodiscard]] inline HugePageMeasurement const& shared_measurement(LedgerIoCtx const& ctx) noexcept {
+    return g_memo.get_or_measure([&ctx] { return measure(ctx); });
 }
 
 }  // namespace huge_page_detail
@@ -377,8 +377,8 @@ inline MeasurementMemo<HugePageMeasurement> g_memo{};
 // ── The three ProbeFunctions ──────────────────────────────────────────
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_thp_fault_cost(CompetenceReport const&) noexcept {
-    HugePageMeasurement const& measured = huge_page_detail::shared_measurement();
+probe_thp_fault_cost(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    HugePageMeasurement const& measured = huge_page_detail::shared_measurement(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }
@@ -387,8 +387,8 @@ probe_thp_fault_cost(CompetenceReport const&) noexcept {
 }
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_thp_fault_gain(CompetenceReport const&) noexcept {
-    HugePageMeasurement const& measured = huge_page_detail::shared_measurement();
+probe_thp_fault_gain(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    HugePageMeasurement const& measured = huge_page_detail::shared_measurement(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }
@@ -400,8 +400,8 @@ probe_thp_fault_gain(CompetenceReport const&) noexcept {
 }
 
 [[nodiscard]] inline std::expected<VerdictMeasurement, LedgerError>
-probe_thp_access_gain(CompetenceReport const&) noexcept {
-    HugePageMeasurement const& measured = huge_page_detail::shared_measurement();
+probe_thp_access_gain(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept {
+    HugePageMeasurement const& measured = huge_page_detail::shared_measurement(ctx);
     if (!measured.is_usable()) {
         return std::unexpected(measured.fault);
     }

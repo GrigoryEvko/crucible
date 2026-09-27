@@ -16,6 +16,8 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/permissions/Permission.h>
 
 #include <unistd.h>
 
@@ -233,16 +235,33 @@ private:
     ::fixy::Monotonic<std::size_t> attach_failures_ = ::fixy::mint_monotonic<std::size_t>(0);
 };
 
+// The region tag of one mapped BPF map.  It carries the tag of the
+// facade, so the mapping of one facade does not pass for the mapping of
+// another.  Its permission row is empty, because the mapping context, and
+// not the permission, carries the effects of the map call.
 template <class Tag>
-using ReadOnlyMapping = ::fixy::OwnedMmap<Tag, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
+struct bpf_map_region final {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+template <class Tag>
+using ReadOnlyMapping =
+    ::fixy::OwnedMmap<bpf_map_region<Tag>, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
+
+// A facade loads under a context that may map a BPF map read-only and
+// shared: one that owns IO and Block.
+template <class Ctx>
+concept CtxFitsMapArray = ::fixy::mmap::CtxFitsRegionMint<Ctx, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
 
 // Maps the BPF_F_MMAPABLE array map `map_name` read-only and shared,
 // rounded up to whole pages.  Tag keeps one facade's mapping from passing
 // for another facade's.  An empty result means that the facade is
 // unavailable, and the reason is already reported.
-template <class Tag, int MaxLinks>
-[[nodiscard]] std::optional<ReadOnlyMapping<Tag>> map_array(const BpfObject<MaxLinks>& object, const char* facade,
-                                                            const char* map_name, std::size_t bytes) noexcept {
+template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsMapArray<Ctx>
+[[nodiscard]] std::optional<ReadOnlyMapping<Tag>> map_array(Ctx const& ctx, const BpfObject<MaxLinks>& object,
+                                                            const char* facade, const char* map_name,
+                                                            std::size_t bytes) noexcept {
     bpf_map* const map = object.find_map(map_name);
     if (map == nullptr) {
         report_unavailable(facade, map_name, "map not found in object (bytecode and header out of sync; rebuild)");
@@ -257,13 +276,15 @@ template <class Tag, int MaxLinks>
     }
     const auto page = static_cast<std::size_t>(page_raw);
     const std::size_t length = (bytes + page - 1) & ~(page - 1);
-    auto mapped = ReadOnlyMapping<Tag>::map_region(::fixy::mmap::prot_bits_v<::fixy::mmap::prot::ReadOnly>,
-                                                   ::fixy::mmap::share_flags_v<::fixy::mmap::share::Shared>,
-                                                   map_fd(map).value(), length, 0);
+    // The mapping is on the erased identity of its tag.  Nothing discards
+    // its pages, so no advise_release_aware asks for its brand.
+    const ::foundation::permissions::Permission<bpf_map_region<Tag>> owner =
+        ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>();
+    auto mapped = ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_fd(map).value(), length, 0);
     if (!mapped) {
         report_unavailable(facade, map_name,
                            "mmap failed (apply CAP_BPF; BPF_F_MMAPABLE needs CAP_BPF or kernel 5.5 or later)",
-                           mapped.error());
+                           mapped.error().value());
         return std::nullopt;
     }
     return std::optional<ReadOnlyMapping<Tag>>{std::move(*mapped)};
@@ -349,12 +370,13 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
 
 // Loads a ring facade.  An empty pointer means that the facade is
 // unavailable, and the reason is already reported.
-template <class State>
-[[nodiscard]] std::unique_ptr<State> load_ring(const RingSpec& spec) noexcept {
+template <class State, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsMapArray<Ctx>
+[[nodiscard]] std::unique_ptr<State> load_ring(Ctx const& ctx, const RingSpec& spec) noexcept {
     auto state = std::make_unique<State>();
     if (!state->object.load(spec.load)) return nullptr;
-    state->timeline =
-        map_array<typename State::tag_type>(state->object, spec.load.facade, spec.timeline_map, State::layout::bytes);
+    state->timeline = map_array<typename State::tag_type>(ctx, state->object, spec.load.facade, spec.timeline_map,
+                                                          State::layout::bytes);
     if (!state->timeline) return nullptr;
     if (bpf_map* const counter = state->object.find_map(spec.counter_map); counter != nullptr) {
         state->counter = map_fd(counter);

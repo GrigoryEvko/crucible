@@ -227,6 +227,11 @@
       "constructor": "\\bDirfd\\("
     },
     {
+      "name": "neg_witness_fs_filedoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bFileDoor\\("
+    },
+    {
       "name": "neg_witness_fs_ownedfd_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bOwnedFd\\("
@@ -245,6 +250,11 @@
       "name": "neg_witness_monotonic_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bMonotonic\\("
+    },
+    {
+      "name": "neg_witness_net_socketdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bSocketDoor\\("
     },
     {
       "name": "neg_witness_numaplacement_direct_construction",
@@ -480,6 +490,11 @@
       "name": "neg_witness_time_ptpclockreader_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bPtpClockReader\\("
+    },
+    {
+      "name": "neg_witness_time_ptpdevicedoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bPtpDeviceDoor\\("
     },
     {
       "name": "neg_witness_versionsource_direct_construction",

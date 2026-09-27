@@ -154,7 +154,8 @@ using crucible::ledger::evidence_from_two_runs;
 // run-to-run spread and none of them show up within a run. The evidence
 // record has a field for each because they fail differently, and filling
 // the second one from the first would be a lie the reader cannot detect.
-[[nodiscard]] std::expected<VerdictMeasurement, LedgerError> probe_timer_floor(CompetenceReport const&) noexcept {
+[[nodiscard]] std::expected<VerdictMeasurement, LedgerError> probe_timer_floor(ledger::LedgerIoCtx const&,
+                                                                             CompetenceReport const&) noexcept {
     int sink = 0;
 
     auto one_run = [&](const char* name) {
@@ -349,7 +350,7 @@ int main(int argc, char** argv) {
                     static_cast<int>(reason.size()), reason.data());
     }
 
-    const ledger::RefreshOutcome outcome = ledger::run_refresh(working, queue, kProbeTable, competence, now);
+    const ledger::RefreshOutcome outcome = ledger::run_refresh(ctx, working, queue, kProbeTable, competence, now);
 
     std::printf("refresh     measured=%u admitted=%u refused=%u no_probe=%u\n", outcome.measured_count,
                 outcome.admitted_count, outcome.refused_count, outcome.no_probe_count);

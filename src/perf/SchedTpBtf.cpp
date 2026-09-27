@@ -26,7 +26,7 @@ SchedTpBtf::SchedTpBtf(SchedTpBtf&&) noexcept = default;
 SchedTpBtf& SchedTpBtf::operator=(SchedTpBtf&&) noexcept = default;
 SchedTpBtf::~SchedTpBtf() = default;
 
-std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const&) noexcept {
+std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const& ctx) noexcept {
     const detail::RingSpec spec{
         .load = {.facade = "sched_tp_btf",
                  .object_name = "crucible_sched_tp_btf",
@@ -41,7 +41,7 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const&) noexcept 
         .counter_map = "cs_count",
         .counter_fallback = "context_switches() returns 0",
     };
-    auto state = detail::load_ring<State>(spec);
+    auto state = detail::load_ring<State>(ctx, spec);
     if (state == nullptr) return std::nullopt;
     SchedTpBtf hub;
     hub.state_ = std::move(state);

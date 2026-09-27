@@ -32,7 +32,7 @@ SenseHub::SenseHub(SenseHub&&) noexcept = default;
 SenseHub& SenseHub::operator=(SenseHub&&) noexcept = default;
 SenseHub::~SenseHub() = default;
 
-std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const&) noexcept {
+std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const& ctx) noexcept {
     constexpr const char* facade = "BPF sense hub";
     const detail::LoadSpec spec{
         .facade = facade,
@@ -43,7 +43,7 @@ std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const&) noexcept {
     };
     auto state = std::make_unique<State>();
     if (!state->object.load(spec)) return std::nullopt;
-    state->counters = detail::map_array<SenseHubCountersTag>(state->object, facade, "counters",
+    state->counters = detail::map_array<SenseHubCountersTag>(ctx, state->object, facade, "counters",
                                                              NUM_COUNTERS * sizeof(uint64_t));
     if (!state->counters) return std::nullopt;
     state->object.report_partial(facade);

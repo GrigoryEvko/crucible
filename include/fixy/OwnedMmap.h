@@ -2,68 +2,42 @@
 
 // Exclusive ownership of one mmap'd region, unmapped on destruction.
 //
-// The empty sentinel is MAP_FAILED and not nullptr, which is what
-// ::mmap returns on failure, so a caller may pass its result straight
-// in and let is_mapped report.  The stored length must be exactly the
-// length given to ::mmap, because ::munmap is called with it verbatim.
+// The empty sentinel is MAP_FAILED and not nullptr, because ::mmap
+// returns MAP_FAILED on failure.  The stored length is exactly the length
+// given to ::mmap, because ::munmap is called with it verbatim.
 //
-// Tag, Prot, Share and Brand are never interpreted here.  Tag gives each
-// region its own type, so two unrelated mappings cannot be swapped at
-// a call boundary.  Prot and Share are read by the layers that gate
-// the syscall and that reason about where the region lives.
+// Prot and Share are claims about the region, and the type makes them
+// true.  The one door that maps, mint_region, calculates the PROT_* word
+// from Prot and the MAP_* word from Share at compile time.  No caller
+// gives it a bit.  So a region typed prot::ReadOnly holds a page that the
+// kernel mapped read-only, and a region typed share::Anonymous holds a
+// private anonymous range.  fixy::numa::mint_numa_placement and the W^X
+// rule of prot::Exec each read those claims off the type.
 //
-// Brand names one instance of the tag.  The mints of fixy/os/Mmap.h
-// take the tag and the brand from the exclusive permission the caller
-// presents, so a mapping has the identity of that permission.  The one
-// door there that discards pages admits only a permission of that
-// identity.  A region spelled without a brand is on the erased identity
-// DefaultBrand, and foundation/Brand.h states the rules of a brand.
+// Tag gives each region its own type, so two unrelated mappings cannot be
+// swapped at a call boundary.  Brand names one instance of the tag, and
+// foundation/Brand.h states the rules of a brand.  mint_region takes the
+// exclusive permission of the tag and the brand, so a mapping has the
+// identity of that permission.  fixy::mmap::advise_release_aware, the one
+// door that discards pages, admits only a permission of that identity.
+//
+// The constructor over an address is private, and mint_region is its only
+// caller.  mint_region performs the ::mmap itself, so a region exists only
+// over an address that the kernel returned.  Its gate asks for a context
+// that owns IO and Block, because a mapping can park the caller.  The
+// atom-pack mints of fixy/os/Mmap.h build their regions through this door.
 //
 // The address a mapping lands at is randomized by the kernel and is
 // deliberately not reproducible.  No replay path may observe it.
-//
-// Old spelling: include/crucible/safety/OwnedMmap.h.  Two deviations.
-//
-// The leak witness.  The old header carried its own is_leak_grant trait
-// with an undefined primary, which any translation unit could specialize
-// to mint an authorization out of a type of its choosing.  The witness
-// is now fixy::atom::IsLeakAtom, one reflection query over the leak atom
-// of fixy/atoms/Os.h, so the only type that authorizes a leak is the one
-// the atom catalog declares.
-//
-// The construction door.  The old constructor took an address and a
-// length and was public, so a caller could hand it a stack address and
-// the destructor would ::munmap it.  That is not only a forgeable claim,
-// it is a way to unmap memory the program owns by other means, written
-// in one line of ordinary-looking code.  The constructor is private now
-// and map_region below is the only thing that reaches it: it performs
-// the ::mmap itself and builds a region only from an address the kernel
-// returned.
-//
-// There is no token in that arrangement, which is the point.  A passkey
-// threaded through a factory can be forged by anything the key's friend
-// list reaches, and the generic mint_linear forwarder sits between these
-// regions and every caller, so a key would have had to travel through
-// it.  Putting the syscall and the construction in one place leaves
-// nothing to forge.
-//
-// Mapping is a syscall and this header already made one — ::munmap, in
-// release_ below — so the map call adds no include and no new kind of
-// dependency.  The pair now sits together, which reads better than the
-// half that only ever released.
-//
-// What map_region does NOT decide is who may map.  That gate is
-// CtxFitsMmapMint on fixy::mmap::mint_mmap, which folds the atom pack
-// into an effect row and demands the calling context admit it.  This
-// function is reachable, and a caller that reaches it has to hand-compute
-// PROT_* and MAP_* bits, which is visibly not going through the surface
-// and which `grep map_region` finds.  The same split, and the same
-// reasoning, as fixy::detail::pin_calling_thread in fixy/os/CpuPinned.h.
 
 #include <fixy/atoms/Os.h>
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Lift.h>
+#include <foundation/effects/Row.h>
+#include <foundation/permissions/Permission.h>
 
 #include <sys/mman.h>
 
@@ -71,8 +45,135 @@
 #include <cstddef>
 #include <cstdlib>
 #include <expected>
+#include <system_error>
 #include <type_traits>
 #include <utility>
+
+// A libc header older than the flag does not declare it.
+#ifndef MAP_HUGE_2MB
+#define MAP_HUGE_2MB (21 << 26)
+#endif
+
+namespace fixy::mmap {
+
+// The primary has no value.  PROT_NONE is zero, so a primary that
+// answered zero mapped an unknown tag as a page nobody may touch, and the
+// kernel accepted it.  A tag reaches mmap only through a specialization.
+template <typename Prot>
+struct prot_bits {};
+template <>
+struct prot_bits<prot::ReadOnly> : std::integral_constant<int, PROT_READ> {};
+template <>
+struct prot_bits<prot::WriteCopy> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
+template <>
+struct prot_bits<prot::ReadWrite> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
+template <>
+struct prot_bits<prot::Exec> : std::integral_constant<int, PROT_READ | PROT_EXEC> {};
+
+template <typename Prot>
+inline constexpr int prot_bits_v = prot_bits<Prot>::value;
+
+// The primary has no value, for the same reason: a zero share word is
+// whatever the other flags say.
+template <typename Share>
+struct share_flags {};
+template <>
+struct share_flags<share::Private> : std::integral_constant<int, MAP_PRIVATE> {};
+template <>
+struct share_flags<share::Shared> : std::integral_constant<int, MAP_SHARED> {};
+template <>
+struct share_flags<share::Anonymous> : std::integral_constant<int, MAP_PRIVATE | MAP_ANONYMOUS> {};
+template <>
+struct share_flags<share::Locked> : std::integral_constant<int, MAP_LOCKED> {};
+template <>
+struct share_flags<share::Populate> : std::integral_constant<int, MAP_POPULATE> {};
+template <>
+struct share_flags<share::HugeTLB> : std::integral_constant<int, MAP_HUGETLB | MAP_HUGE_2MB> {};
+
+template <typename Share>
+inline constexpr int share_flags_v = share_flags<Share>::value;
+
+// A tag is known when its bit map has an entry.  The predicate is the
+// specialization set, so no second list can drift from the map.  The walk
+// at the foot of fixy/os/Mmap.h reads fixy::mmap::prot and
+// fixy::mmap::share and fails if a declared tag has no entry.
+template <typename Prot>
+concept MappedProt = requires { prot_bits<Prot>::value; };
+
+template <typename Share>
+concept MappedShare = requires { share_flags<Share>::value; };
+
+template <typename Prot>
+inline constexpr bool is_known_prot_v = MappedProt<Prot>;
+
+template <typename Share>
+inline constexpr bool is_known_share_v = MappedShare<Share>;
+
+// A mapping has exactly one primary share mode.  The other share tags are
+// flags that stack on a primary.
+template <typename Share>
+inline constexpr bool is_primary_share_v = std::is_same_v<Share, share::Private> || std::is_same_v<Share, share::Shared>
+                                        || std::is_same_v<Share, share::Anonymous>;
+
+template <typename Share>
+concept PrimaryShare = MappedShare<Share> && is_primary_share_v<Share>;
+
+// A modifier of a region is a share flag that stacks on the primary, or
+// the trusted_jit atom, which licenses an executable page.
+template <typename Modifier>
+concept RegionModifier = (MappedShare<Modifier> && !is_primary_share_v<Modifier>)
+                      || std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>;
+
+namespace detail {
+
+// The MAP_* bits of a modifier.  The licence adds no bit.
+template <typename Modifier>
+[[nodiscard]] consteval int modifier_flags() noexcept {
+    if constexpr (std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>) {
+        return 0;
+    } else {
+        return share_flags_v<Modifier>;
+    }
+}
+
+// The atom that states the modifier, so the row of the mapping is read
+// off the atoms as the atom-pack mints read it.
+template <typename Modifier>
+struct modifier_atom {
+    using type = ::fixy::atom::mmap::with_share<Modifier>;
+};
+template <>
+struct modifier_atom<::fixy::atom::mmap::trusted_jit> {
+    using type = ::fixy::atom::mmap::trusted_jit;
+};
+
+template <typename... Atoms>
+struct mapping_row {
+    using type = ::foundation::effects::Row<>;
+};
+template <typename First, typename... Rest>
+struct mapping_row<First, Rest...> {
+    using type = ::foundation::effects::row_union_t<::foundation::effects::lift_row_t<First>,
+                                                    typename mapping_row<Rest...>::type>;
+};
+
+template <typename Prot, typename Share, typename... Modifiers>
+using mapping_row_t =
+    typename mapping_row<::fixy::atom::mmap::with_prot<Prot>, ::fixy::atom::mmap::with_share<Share>,
+                         typename modifier_atom<Modifiers>::type...>::type;
+
+// How many members of Pack are Modifier.
+template <typename Modifier, typename... Pack>
+inline constexpr std::size_t occurrences_v = (std::size_t{std::is_same_v<Modifier, Pack>} + ... + std::size_t{0});
+
+// Two copies of one modifier.  The bits fold to the same word, and a
+// repeat names nothing new, so the gate refuses it.
+template <typename... Modifiers>
+inline constexpr bool has_repeated_modifier_v = ((occurrences_v<Modifiers, Modifiers...> > 1) || ...);
+
+}  // namespace detail
+
+}  // namespace fixy::mmap
 
 namespace fixy {
 
@@ -84,18 +185,53 @@ template <typename Prot, typename Share>
 struct owned_mmap;
 }  // namespace row_discipline
 
+namespace mmap {
+
+// The gate of mint_region.  Each clause is its own concept, so a refusal
+// names the clause that failed.
+//
+// A mapping can park the caller on page-cache pressure, on a NUMA-remote
+// page fault and on write-back, so the atoms of the mapping lift to IO and
+// Block, and the context must admit that row.
+template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
+concept CtxAdmitsMapping = ::foundation::effects::IsExecCtx<Ctx>
+                        && ::foundation::effects::CtxAdmits<Ctx, detail::mapping_row_t<Prot, Share, Modifiers...>>;
+
+// Write and execute are never both set, because prot::Exec carries read
+// and execute only.  An executable page also needs the trusted_jit atom,
+// which states that the caller audited the bytes that will run.
+template <typename Prot, typename... Modifiers>
+concept ExecIsLicensed =
+    !std::is_same_v<Prot, prot::Exec> || (std::is_same_v<Modifiers, ::fixy::atom::mmap::trusted_jit> || ...);
+
+template <typename... Modifiers>
+concept ModifiersAreDistinct = !detail::has_repeated_modifier_v<Modifiers...>;
+
+template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
+concept CtxFitsRegionMint = MappedProt<Prot> && PrimaryShare<Share> && (RegionModifier<Modifiers> && ...)
+                         && ModifiersAreDistinct<Modifiers...> && ExecIsLicensed<Prot, Modifiers...>
+                         && CtxAdmitsMapping<Ctx, Prot, Share, Modifiers...>;
+
+}  // namespace mmap
+
 template <typename Tag, typename Prot, typename Share, typename Brand = ::foundation::brand::DefaultBrand>
 class [[nodiscard]] OwnedMmap {
     static_assert(::foundation::brand::IsBrand<Brand>,
                   "OwnedMmap<Tag, Prot, Share, Brand>: Brand must be an empty class type: the brand of the "
                   "permission the mapping was minted with, or DefaultBrand.");
+    static_assert(mmap::MappedProt<Prot>,
+                  "OwnedMmap<Tag, Prot, Share, Brand>: Prot must be a tag of fixy::mmap::prot.  The type is the "
+                  "claim of the protection, so a tag with no PROT_* bits claims nothing.");
+    static_assert(mmap::PrimaryShare<Share>,
+                  "OwnedMmap<Tag, Prot, Share, Brand>: Share must be a primary share tag of fixy::mmap::share: "
+                  "Private, Shared or Anonymous.  The type is the claim of the share mode.");
 
     void* addr_ = MAP_FAILED;
     std::size_t len_ = 0;
 
-    // Private, and map_region above is the only caller.  A public one
-    // let any address be claimed, and the destructor unmaps whatever it
-    // was claimed over.
+    // Private, and mint_region is its only caller.  A public one let any
+    // address be claimed, and the destructor unmaps whatever it was
+    // claimed over.
     explicit OwnedMmap(void* address, std::size_t length) noexcept : addr_{address}, len_{length} {}
 
 public:
@@ -110,19 +246,24 @@ public:
     // nothing, so it stays public.
     OwnedMmap() noexcept = default;
 
-    // The one door.  It performs the mapping and builds a region only
-    // from an address the kernel returned, so a region that exists is a
-    // region the process owns.  On failure it hands back the errno and
-    // no region is built.
+    // The one door.  It maps with the bits of Prot, Share and the
+    // modifiers, and it builds a region only from an address the kernel
+    // returned.  On failure it returns the errno and builds no region.
     //
-    // The protection and flag words arrive already folded, because the
-    // atoms that decide them live a layer up in fixy/os/Mmap.h and this
-    // header must not depend on that layer.
-    [[nodiscard]] static std::expected<OwnedMmap, int> map_region(int protection, int flags, int fd,
-                                                                  std::size_t length, ::off_t offset) noexcept {
-        void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);
+    // The permission is read and not consumed.  The caller keeps it, and
+    // presents it again to fixy::mmap::advise_release_aware.
+    //
+    // §XXI carve-out: cx=alloc — mapping is a kernel side effect.
+    template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx>
+        requires mmap::CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...>
+    [[nodiscard]] static std::expected<OwnedMmap, std::error_code>
+    mint_region(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/, int fd,
+                std::size_t length, ::off_t offset) noexcept {
+        constexpr int protection = mmap::prot_bits_v<Prot>;
+        constexpr int flags = (mmap::share_flags_v<Share> | ... | mmap::detail::modifier_flags<Modifiers>());
+        void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);  // SYSCALL-CAP-OK: OwnedMmap::mint_region ctx-gate (CtxFitsRegionMint, IO+Block)
         if (address == MAP_FAILED) {
-            return std::unexpected{errno};
+            return std::unexpected{std::error_code{errno, std::system_category()}};
         }
         return OwnedMmap{address, length};
     }
@@ -180,10 +321,10 @@ private:
 
 namespace detail::owned_mmap_self_test {
 
-struct DummyTag {};
-struct DummyProt {};
-struct DummyShare {};
-using SmokeOwnedMmap = OwnedMmap<DummyTag, DummyProt, DummyShare>;
+struct DummyTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+using SmokeOwnedMmap = OwnedMmap<DummyTag, mmap::prot::ReadOnly, mmap::share::Private>;
 
 static_assert(!std::is_copy_constructible_v<SmokeOwnedMmap>, "OwnedMmap must be move-only — copy would double-unmap");
 static_assert(!std::is_copy_assignable_v<SmokeOwnedMmap>);
@@ -198,12 +339,12 @@ static_assert(sizeof(SmokeOwnedMmap) == sizeof(void*) + sizeof(std::size_t),
 // befriend.  A public constructor over an address let a caller claim a
 // mapping it never made, and the destructor unmaps whatever it holds, so
 // a stack address handed in here is a stack address unmapped on scope
-// exit.  map_region is the only way to a non-empty region, and it builds
+// exit.  mint_region is the only way to a non-empty region, and it builds
 // one only from what ::mmap returned.
 static_assert(!std::is_constructible_v<SmokeOwnedMmap, void*, std::size_t>,
               "The constructor that claims an address must not be public.  A caller could hand it a stack or heap "
-              "address and the destructor would munmap it.  Take a region from map_region, or from "
-              "fixy::mmap::mint_mmap, which gates who may map at all.");
+              "address and the destructor would munmap it.  Take a region from mint_region, or from "
+              "fixy::mmap::mint_mmap.");
 static_assert(!std::is_constructible_v<SmokeOwnedMmap, void*>,
               "There is no one-argument form either: a region without its exact length cannot be unmapped.");
 static_assert(std::is_default_constructible_v<SmokeOwnedMmap>,
@@ -214,8 +355,8 @@ static_assert(std::is_default_constructible_v<SmokeOwnedMmap>,
 // cannot be handed where a mapping of another is asked for.
 struct DummyBrand {};
 struct OtherDummyBrand {};
-using BrandedSmoke = OwnedMmap<DummyTag, DummyProt, DummyShare, DummyBrand>;
-using OtherBrandedSmoke = OwnedMmap<DummyTag, DummyProt, DummyShare, OtherDummyBrand>;
+using BrandedSmoke = OwnedMmap<DummyTag, mmap::prot::ReadOnly, mmap::share::Private, DummyBrand>;
+using OtherBrandedSmoke = OwnedMmap<DummyTag, mmap::prot::ReadOnly, mmap::share::Private, OtherDummyBrand>;
 static_assert(sizeof(BrandedSmoke) == sizeof(SmokeOwnedMmap), "a brand adds no byte to a mapping");
 static_assert(std::is_same_v<SmokeOwnedMmap::brand_type, ::foundation::brand::DefaultBrand>);
 static_assert(std::is_same_v<BrandedSmoke::brand_type, DummyBrand>);
@@ -237,6 +378,44 @@ static_assert(!can_release<NotAnAtom>);
 static_assert(!can_release<DummyTag>);
 static_assert(!can_release<void*>);
 static_assert(!can_release<int>);
+
+// The bits of each tag, pinned.
+static_assert(mmap::prot_bits_v<mmap::prot::ReadOnly> == PROT_READ);
+static_assert(mmap::prot_bits_v<mmap::prot::WriteCopy> == (PROT_READ | PROT_WRITE));
+static_assert(mmap::prot_bits_v<mmap::prot::ReadWrite> == (PROT_READ | PROT_WRITE));
+static_assert(mmap::prot_bits_v<mmap::prot::Exec> == (PROT_READ | PROT_EXEC));
+static_assert((mmap::prot_bits_v<mmap::prot::Exec> & PROT_WRITE) == 0, "W^X: prot::Exec must NOT include PROT_WRITE");
+static_assert(mmap::share_flags_v<mmap::share::Private> == MAP_PRIVATE);
+static_assert(mmap::share_flags_v<mmap::share::Shared> == MAP_SHARED);
+static_assert(mmap::share_flags_v<mmap::share::Anonymous> == (MAP_PRIVATE | MAP_ANONYMOUS),
+              "an anonymous region is private: the kernel keeps a NUMA binding only for a private range");
+
+// The gate, one clause at a time.
+using IoBlockCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Test,
+    ::foundation::effects::Row<::foundation::effects::Effect::Test, ::foundation::effects::Effect::IO,
+                               ::foundation::effects::Effect::Block>>;
+using IoOnlyCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Test,
+    ::foundation::effects::Row<::foundation::effects::Effect::Test, ::foundation::effects::Effect::IO>>;
+using Jit = ::fixy::atom::mmap::trusted_jit;
+
+static_assert(mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Private>);
+static_assert(mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous, mmap::share::Locked,
+                                      mmap::share::Populate>);
+static_assert(!mmap::CtxFitsRegionMint<IoOnlyCtx, mmap::prot::ReadOnly, mmap::share::Private>,
+              "a context without Block must not map: the call can park on page-cache pressure.");
+static_assert(!mmap::CtxFitsRegionMint<::foundation::effects::ExecCtx<>, mmap::prot::ReadOnly, mmap::share::Private>);
+static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::Exec, mmap::share::Private>,
+              "an executable page needs the trusted_jit atom.");
+static_assert(mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::Exec, mmap::share::Private, Jit>);
+static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Anonymous, mmap::share::Shared>,
+              "a primary share mode is part of the type and is not a modifier: a shared range must not pass for an "
+              "anonymous private one.");
+static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Private, mmap::share::Locked,
+                                       mmap::share::Locked>,
+              "a repeated modifier names nothing new.");
+static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, int, mmap::share::Private>, "a prot tag with no bits is refused.");
 
 }  // namespace detail::owned_mmap_self_test
 

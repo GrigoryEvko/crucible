@@ -26,7 +26,7 @@ SyscallTpBtf::SyscallTpBtf(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf& SyscallTpBtf::operator=(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf::~SyscallTpBtf() = default;
 
-std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const&) noexcept {
+std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const& ctx) noexcept {
     // The attach is all-or-nothing.  With sys_enter attached but sys_exit
     // missing, every recorded start entry stays unconsumed until the LRU
     // hash map evicts it.
@@ -45,7 +45,7 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const&) noexc
         .counter_map = "total_syscalls",
         .counter_fallback = "total_syscalls() returns 0",
     };
-    auto state = detail::load_ring<State>(spec);
+    auto state = detail::load_ring<State>(ctx, spec);
     if (state == nullptr) return std::nullopt;
     SyscallTpBtf hub;
     hub.state_ = std::move(state);

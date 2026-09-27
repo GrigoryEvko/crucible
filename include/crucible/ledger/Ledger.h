@@ -245,11 +245,16 @@ struct VerdictMeasurement {
     VerdictEvidence evidence{};
 };
 
-// The signature #68-#70 implement. A free function pointer rather than a
+// The signature of a probe. A free function pointer rather than a
 // type-erased callable: the table is static, the call is once per refresh,
 // and a plain pointer keeps the registration a compile-time constant that a
 // reader can follow to the definition.
-using ProbeFunction = std::expected<VerdictMeasurement, LedgerError> (*)(CompetenceReport const&) noexcept;
+//
+// A probe maps scratch memory and pins helper threads, so it takes the
+// context of the store, which owns IO and Block.  The context is a type,
+// so a probe cannot run where nothing admits those effects.
+using ProbeFunction = std::expected<VerdictMeasurement, LedgerError> (*)(LedgerIoCtx const&,
+                                                                         CompetenceReport const&) noexcept;
 
 struct ProbeRegistration {
     VerdictId id = VerdictId::TimerFloorNanos;
@@ -289,9 +294,9 @@ struct RefreshOutcome {
 
 // Runs the queued probes and folds the results into `ledger`. Does not
 // commit; the caller decides whether a run that admitted nothing is worth a
-// write. Shared verbatim between the tool and #67 so the two cannot drift
-// into disagreeing about what a refresh does.
-[[nodiscard]] inline RefreshOutcome run_refresh(Ledger& ledger, RefreshQueue const& queue,
+// write. The tool and the refresh daemon share it, so the two cannot drift
+// into disagreeing about what a refresh does.  Each probe runs under ctx.
+[[nodiscard]] inline RefreshOutcome run_refresh(LedgerIoCtx const& ctx, Ledger& ledger, RefreshQueue const& queue,
                                                 std::span<const ProbeRegistration> registry,
                                                 CompetenceReport const& competence,
                                                 std::uint64_t now_unix_seconds) noexcept {
@@ -310,7 +315,7 @@ struct RefreshOutcome {
         }
         record.had_probe = true;
 
-        auto measured = probe(competence);
+        auto measured = probe(ctx, competence);
         ++outcome.measured_count;
         if (!measured.has_value()) {
             ++outcome.refused_count;
