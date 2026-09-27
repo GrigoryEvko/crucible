@@ -6,7 +6,10 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
+#include <fixy/concurrent/Topology.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
@@ -14,6 +17,9 @@
 #include <optional>
 #include <thread>
 #include <type_traits>
+#include <vector>
+
+#include <sched.h>
 
 namespace cc = fixy::concurrent;
 
@@ -158,11 +164,79 @@ static void test_large_pipeline_spawns_threads() {
             "large pipeline should spawn one worker thread per stage");
 }
 
+// The stages below run under a background context, so the pipeline pins the
+// thread of each one.  Each body records the CPU that its thread runs on
+// after the pin.
+constexpr std::size_t kPinnedStages = 2;
+std::array<std::atomic<int>, kPinnedStages> pinned_cpus{};
+std::atomic<std::size_t> pinned_calls{0};
+
+static void pinned_body(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
+    const std::size_t slot = pinned_calls.fetch_add(1, std::memory_order_acq_rel);
+    if (slot < kPinnedStages) pinned_cpus[slot].store(::sched_getcpu(), std::memory_order_release);
+}
+
+// A caller keeps its threads off a CPU through its affinity mask, and each
+// thread that the pipeline starts obeys the same mask.  The test narrows the
+// mask of the calling thread to one CPU, which is not one of the first CPUs
+// of the largest cache cluster.  A CPU table that ignores the mask pins the
+// stages to those first CPUs.  A process with fewer than three CPUs cannot
+// tell the two apart, and the test then only checks that each stage ran.
+static void test_threaded_stages_stay_in_the_caller_mask() {
+    cpu_set_t before;
+    CPU_ZERO(&before);
+    require(::sched_getaffinity(0, sizeof(before), &before) == 0, "cannot read the affinity mask of the caller");
+
+    std::vector<int> allowed;
+    for (std::size_t cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+        if (CPU_ISSET(cpu, &before)) allowed.push_back(static_cast<int>(cpu));
+    }
+    require(!allowed.empty(), "the affinity mask of the caller is empty");
+
+    // The CPUs that a table which ignores the mask gives the two stages.
+    std::vector<int> mask_blind;
+    for (auto const& cluster : cc::Topology::instance().cache_clusters()) {
+        if (cluster.size() > mask_blind.size()) mask_blind = cluster;
+    }
+    mask_blind.resize(std::min(mask_blind.size(), kPinnedStages));
+
+    int target = -1;
+    for (auto cpu = allowed.rbegin(); cpu != allowed.rend(); ++cpu) {
+        if (std::find(mask_blind.begin(), mask_blind.end(), *cpu) == mask_blind.end()) {
+            target = *cpu;
+            break;
+        }
+    }
+    const bool can_tell_apart = allowed.size() >= 3 && target >= 0;
+    if (target < 0) target = allowed.front();
+
+    cpu_set_t narrow;
+    CPU_ZERO(&narrow);
+    CPU_SET(static_cast<std::size_t>(target), &narrow);
+    require(::sched_setaffinity(0, sizeof(narrow), &narrow) == 0, "cannot narrow the affinity mask of the caller");
+
+    pinned_calls.store(0, std::memory_order_release);
+    const fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
+    auto s0 = cc::mint_stage<&pinned_body>(bg, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
+    auto s1 = cc::mint_stage<&pinned_body>(bg, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
+    auto p = cc::mint_pipeline(bg, std::move(s0), std::move(s1));
+    std::move(p).run(bg);
+
+    require(::sched_setaffinity(0, sizeof(before), &before) == 0, "cannot restore the affinity mask of the caller");
+    require(pinned_calls.load(std::memory_order_acquire) == kPinnedStages, "each pinned stage should run once");
+    if (!can_tell_apart) return;
+    for (std::size_t i = 0; i < kPinnedStages; ++i) {
+        require(pinned_cpus[i].load(std::memory_order_acquire) == target,
+                "a stage thread ran outside the affinity mask of the caller");
+    }
+}
+
 }  // namespace pipeline_dispatch_test
 
 int main() {
     pipeline_dispatch_test::test_small_pipeline_runs_inline();
     pipeline_dispatch_test::test_large_pipeline_spawns_threads();
+    pipeline_dispatch_test::test_threaded_stages_stay_in_the_caller_mask();
     std::fprintf(stderr, "test_pipeline_dispatch: ALL PASSED\n");
     return EXIT_SUCCESS;
 }

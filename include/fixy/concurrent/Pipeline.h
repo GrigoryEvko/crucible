@@ -42,12 +42,16 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #if __has_include(<pthread.h>) && __has_include(<sched.h>)
 #include <pthread.h>
@@ -492,38 +496,62 @@ enum class PipelineDispatchKind : std::uint8_t {
 
 namespace detail {
 
-[[nodiscard]] inline int pipeline_affinity_cpu_(const Topology& topology, std::size_t worker_index) noexcept {
-    auto clusters = topology.cache_clusters();
-    if (!clusters.empty()) {
-        const std::vector<int>* best = &clusters.front();
-        for (auto const& cluster : clusters) {
-            if (cluster.size() > best->size()) best = &cluster;
-        }
-        if (!best->empty()) {
-            return (*best)[worker_index % best->size()];
-        }
-    }
+// One cursor for all pipelines of the process, in each shared library too.
+// Each threaded run takes the next N positions, so two runs at the same time
+// start on different CPUs.
+CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<std::size_t> pipeline_cpu_cursor_{0};
 
-    auto node0 = topology.cores_on_node(topology.numa_node_ids().front());
-    if (!node0.empty()) {
-        return node0[worker_index % node0.size()];
+// The CPUs that the calling thread can run on, in increasing order.  A core
+// that the process must not use, such as a reserved or an isolated core, is
+// outside that mask, so no stage goes there.  An unreadable mask gives no
+// CPU, and the stages then run unpinned.  The context proves that the caller
+// can start threads, which is the authority that a pin asks for.
+template <class Ctx>
+    requires CtxStartsStageThreads<Ctx>
+[[nodiscard]] std::vector<int> caller_allowed_cpus_(Ctx const& /*ctx*/) noexcept {
+    std::vector<int> cpus;
+#if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    if (::sched_getaffinity(0, sizeof(mask), &mask) != 0) {  // SYSCALL-CAP-OK: CtxStartsStageThreads gate (Bg|Init)
+        return cpus;
     }
-
-    return -1;
+    for (std::size_t cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+        if (CPU_ISSET(cpu, &mask)) cpus.push_back(static_cast<int>(cpu));
+    }
+#endif
+    return cpus;
 }
 
-template <std::size_t N>
-[[nodiscard]] inline const std::array<int, N>& pipeline_affinity_cpus_() noexcept {
-    static const std::array<int, N> cpus = [] {
-        std::array<int, N> out{};
-        out.fill(-1);
+// The CPUs that one threaded run of N stages takes, one for each stage, or
+// -1 for a stage that runs unpinned.  The candidates are the CPUs of the
+// cache cluster that holds the most CPUs of the caller's mask, so the stages
+// of one run share one last-level cache.  When no cluster meets the mask,
+// the candidates are the whole mask.  The work is O(C log C) for C CPUs in
+// the mask, once for each run, next to the start of N threads.
+template <std::size_t N, class Ctx>
+    requires CtxStartsStageThreads<Ctx>
+[[nodiscard]] std::array<int, N> pipeline_affinity_cpus_(Ctx const& ctx) noexcept {
+    std::array<int, N> cpus{};
+    cpus.fill(-1);
 
-        const auto& topology = Topology::instance();
-        for (std::size_t i = 0; i < N; ++i) {
-            out[i] = pipeline_affinity_cpu_(topology, i);
+    const std::vector<int> allowed = caller_allowed_cpus_(ctx);
+    if (allowed.empty()) return cpus;
+
+    std::vector<int> candidates;
+    for (auto const& cluster : Topology::instance().cache_clusters()) {
+        std::vector<int> inside;
+        for (int cpu : cluster) {
+            if (std::binary_search(allowed.begin(), allowed.end(), cpu)) inside.push_back(cpu);
         }
-        return out;
-    }();
+        if (inside.size() > candidates.size()) candidates = std::move(inside);
+    }
+    if (candidates.empty()) candidates = allowed;
+
+    const std::size_t start = pipeline_cpu_cursor_.fetch_add(N, std::memory_order_acq_rel);
+    for (std::size_t i = 0; i < N; ++i) {
+        cpus[i] = candidates[(start + i) % candidates.size()];
+    }
     return cpus;
 }
 
@@ -613,12 +641,15 @@ public:
     }
 
     // The class that holds this runner checks the context of the caller
-    // against its own gate before it calls here.
-    void run_stages() && noexcept {
+    // against its own gate before it calls here.  The context also gives the
+    // authority to read the affinity mask of the caller.
+    template <class Ctx>
+        requires CtxStartsStageThreads<Ctx>
+    void run_stages(Ctx const& ctx) && noexcept {
         if (will_run_inline()) {
             std::move(*this).run_inline_(std::index_sequence_for<Stages...>{});
         } else {
-            std::move(*this).run_threaded_(std::index_sequence_for<Stages...>{});
+            std::move(*this).run_threaded_(ctx, std::index_sequence_for<Stages...>{});
         }
     }
 
@@ -637,9 +668,12 @@ private:
         ((void)std::move(std::get<Is>(stages_)).run(), ...);
     }
 
-    template <std::size_t... Is>
-    void run_threaded_(std::index_sequence<Is...>) && noexcept {
-        const auto& affinity_cpus = pipeline_affinity_cpus_<sizeof...(Is)>();
+    // The CPUs come from the mask of the caller at each run.  Two pipelines
+    // of one size then do not share their cores, and a mask that the caller
+    // sets after the first run still applies.
+    template <class Ctx, std::size_t... Is>
+    void run_threaded_(Ctx const& ctx, std::index_sequence<Is...>) && noexcept {
+        const std::array<int, sizeof...(Is)> affinity_cpus = pipeline_affinity_cpus_<sizeof...(Is)>(ctx);
 
         // Each thread takes its stage by move.  The array destructor at the
         // end of this function joins them all.
@@ -685,8 +719,8 @@ public:
     // the stages.
     template <::foundation::effects::IsExecCtx RunCtx>
         requires CtxFitsPipeline<RunCtx, Stages...>
-    void run(RunCtx const& /*ctx*/) && noexcept {
-        static_cast<runner_type&&>(*this).run_stages();
+    void run(RunCtx const& ctx) && noexcept {
+        static_cast<runner_type&&>(*this).run_stages(ctx);
     }
 
 private:
@@ -760,8 +794,8 @@ public:
     // As for a linear pipeline, the caller presents its own context.
     template <::foundation::effects::IsExecCtx RunCtx>
         requires CtxFitsPipelineDag<RunCtx, graph_type>
-    void run(RunCtx const& /*ctx*/) && noexcept {
-        static_cast<runner_type&&>(*this).run_stages();
+    void run(RunCtx const& ctx) && noexcept {
+        static_cast<runner_type&&>(*this).run_stages(ctx);
     }
 
 private:
