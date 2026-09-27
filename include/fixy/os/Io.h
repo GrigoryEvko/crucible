@@ -23,17 +23,16 @@
 //     refused: engine::{Synchronous, Aio} and zerocopy::{None, Splice,
 //     MsgZerocopy}, each of which the old header's own self-test asserts
 //     the gate answered false for.  The predicates that refused them are
-//     ported anyway, with false primaries: engine_is_io_uring_v and
-//     zerocopy_is_simple_transfer_v answer false for every tag they were
-//     not told about, so a tag added to either namespace later is
-//     refused on the day it appears rather than on the day somebody
-//     remembers to extend a gate.  Three old negative fixtures named
-//     those tags and cannot be written here; the predicates are what
-//     stands in their place.
+//     concepts over closed lists: EngineIsIoUring and SimpleTransfer
+//     answer false for every tag that they do not name, so a tag added to
+//     either namespace later is refused on the day it appears rather than
+//     on the day somebody remembers to extend a gate.  Three old negative
+//     fixtures named those tags and cannot be written here, and the
+//     concepts stand in their place.
 //
 //     The sixth, ring_flag::Default, is a different case, and grouping it
 //     with the five said something false about it.  The old mint DID
-//     accept it: ring_flag_bits mapped it to zero, so it set up a ring
+//     accept it: the old bit map mapped it to zero, so it set up a ring
 //     with no setup bits.  A pack that names no ring-flag atom sets up
 //     the identical ring, which is why the tag is not here.  Nothing is
 //     lost and nothing was refused.
@@ -46,23 +45,22 @@
 //     gave you, and nothing but the setup call can make that claim
 //     truthfully.
 //
-//  5. The ring-flag bit map gets the same fail-closed predicate the
-//     mapping surface got: a flag tag the map has never heard of folds
-//     to zero, which is a ring set up without the flag the caller asked
-//     for rather than a refusal.
+//  5. The ring flags are a closed table, as the mapping tags are.  In the
+//     old header a flag tag the map had never heard of folded to zero,
+//     which set up a ring without the flag the caller asked for rather
+//     than refusing it.  A flag with no row is refused here.
 //
 //  6. zerocopy_is_none_v and the gate conjunct that read it are gone
 //     with the zerocopy::None tag they existed to refuse.  Nothing is
-//     weakened: zerocopy_is_simple_transfer_v answers false for every
-//     tag but the two, so a None reintroduced tomorrow is refused by
-//     the surviving conjunct without anyone remembering to add a
-//     sentinel check for it.
+//     weakened: SimpleTransfer answers false for every tag but the two,
+//     so a None reintroduced tomorrow is refused by the surviving
+//     conjunct without anyone remembering to add a sentinel check for it.
 
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
+#include <fixy/os/AtomPack.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
-#include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 
 #include <linux/io_uring.h>
@@ -102,75 +100,61 @@ namespace fixy::io {
 class IoUringRing;
 
 // An atom pack engages exactly one engine.  Only IoUring reaches a mint
-// here, and the predicate is false for anything else, so a tag added to
-// fixy::io::engine later is refused rather than admitted.
-
+// here, so a tag added to fixy::io::engine later is refused rather than
+// admitted.  A concept cannot be specialized, so no class of a caller can
+// pass for io_uring.
 template <typename E>
-struct engine_is_io_uring : std::false_type {};
-template <>
-struct engine_is_io_uring<engine::IoUring> : std::true_type {};
-template <typename E>
-inline constexpr bool engine_is_io_uring_v = engine_is_io_uring<E>::value;
+concept EngineIsIoUring = std::is_same_v<E, engine::IoUring>;
 
 // Only the two primitives with a uniform fd-to-fd signature are
-// reachable from a mint here.  splice(2) needs a pipe as intermediary
+// reachable from a transfer here.  splice(2) needs a pipe as intermediary
 // and send(MSG_ZEROCOPY) needs socket-message arguments, so neither has
 // a shape this call can take.
+inline constexpr std::meta::info simple_transfer_tags[] = {^^zerocopy::Sendfile, ^^zerocopy::CopyFileRange};
 
 template <typename Z>
-struct zerocopy_is_simple_transfer : std::false_type {};
-template <>
-struct zerocopy_is_simple_transfer<zerocopy::Sendfile> : std::true_type {};
-template <>
-struct zerocopy_is_simple_transfer<zerocopy::CopyFileRange> : std::true_type {};
-template <typename Z>
-inline constexpr bool zerocopy_is_simple_transfer_v = zerocopy_is_simple_transfer<Z>::value;
+concept SimpleTransfer = ::fixy::atom_pack::names_tag(simple_transfer_tags, ^^Z);
 
-// These are bits of one setup word, so a pack may engage several of
-// different kinds and they fold together.
+// The IORING_SETUP_* bit of each ring flag.  These are bits of one setup
+// word, so a pack may engage several flags and they fold together.  A
+// tag reaches io_uring_setup only through a row of this table, and
+// fixy/os/AtomPack.h says why a table is closed.  A map that answered
+// zero for an unknown flag set up a ring without the flag the caller
+// asked for.
+inline constexpr ::fixy::atom_pack::tag_row<std::uint32_t> ring_flag_table[] = {
+    {^^ring_flag::IoPoll, IORING_SETUP_IOPOLL},
+    {^^ring_flag::SqPoll, IORING_SETUP_SQPOLL},
+    {^^ring_flag::SingleIssuer, IORING_SETUP_SINGLE_ISSUER},
+    {^^ring_flag::CoopTaskrun, IORING_SETUP_COOP_TASKRUN},
+    {^^ring_flag::DeferTaskrun, IORING_SETUP_DEFER_TASKRUN},
+};
 
-// The primary has no value.  A zero set up a ring without the flag the
-// caller asked for.  A tag reaches io_uring_setup only through a
-// specialization below.
+// A flag is known when the table has a row.  The walk at the foot of this
+// header checks that each tag fixy::io::ring_flag declares has a row.
 template <typename F>
-struct ring_flag_bits {};
-template <>
-struct ring_flag_bits<ring_flag::IoPoll> : std::integral_constant<std::uint32_t, IORING_SETUP_IOPOLL> {};
-template <>
-struct ring_flag_bits<ring_flag::SqPoll> : std::integral_constant<std::uint32_t, IORING_SETUP_SQPOLL> {};
-template <>
-struct ring_flag_bits<ring_flag::SingleIssuer> : std::integral_constant<std::uint32_t, IORING_SETUP_SINGLE_ISSUER> {};
-template <>
-struct ring_flag_bits<ring_flag::CoopTaskrun> : std::integral_constant<std::uint32_t, IORING_SETUP_COOP_TASKRUN> {};
-template <>
-struct ring_flag_bits<ring_flag::DeferTaskrun> : std::integral_constant<std::uint32_t, IORING_SETUP_DEFER_TASKRUN> {};
-template <typename F>
-inline constexpr std::uint32_t ring_flag_bits_v = ring_flag_bits<F>::value;
+concept MappedRingFlag = ::fixy::atom_pack::has_row(ring_flag_table, ^^F);
 
-// A flag is known when the bit map has an entry.  The predicate is the
-// specialization set, so no second list can drift from the map, and the
-// walk at the foot of this header checks that each tag fixy::io::ring_flag
-// declares has an entry.
-template <typename F>
-concept MappedRingFlag = requires { ring_flag_bits<F>::value; };
-
-template <typename F>
-inline constexpr bool is_known_ring_flag_v = MappedRingFlag<F>;
+// The bit of a flag that has a row.  The lookup is a function and not a
+// variable template, because a caller can specialize a variable template
+// for one flag and give it a bit of its own.
+[[nodiscard]] consteval std::uint32_t ring_flag_bits_of(std::meta::info flag_tag) noexcept {
+    return ::fixy::atom_pack::value_for(ring_flag_table, flag_tag);
+}
 
 namespace detail {
 
 namespace eff = ::foundation::effects;
 
 template <typename A>
-inline constexpr bool is_engine_atom_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::io::engine>;
+inline constexpr bool is_engine_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::io::engine>;
 template <typename A>
-inline constexpr bool is_zerocopy_atom_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::io::zerocopy>;
+inline constexpr bool is_zerocopy_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::io::zerocopy>;
 template <typename A>
-inline constexpr bool is_ring_flag_atom_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::io::ring_flag>;
+inline constexpr bool is_ring_flag_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::io::ring_flag>;
 template <typename A>
-inline constexpr bool is_sq_entries_atom_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::io::sq_entries>;
+inline constexpr bool is_sq_entries_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::io::sq_entries>;
 template <typename A>
-inline constexpr bool is_cq_entries_atom_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::io::cq_entries>;
+inline constexpr bool is_cq_entries_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::io::cq_entries>;
 
 template <typename A>
 struct extract_engine {
@@ -206,22 +190,9 @@ template <typename A>
 using extract_ring_flag_t = typename extract_ring_flag<A>::type;
 
 template <typename... Atoms>
-inline constexpr bool has_engine_atom_v = (is_engine_atom_v<Atoms> || ...);
-template <typename... Atoms>
-inline constexpr bool has_zerocopy_atom_v = (is_zerocopy_atom_v<Atoms> || ...);
-template <typename... Atoms>
 inline constexpr bool has_sq_entries_atom_v = (is_sq_entries_atom_v<Atoms> || ...);
 template <typename... Atoms>
 inline constexpr bool has_cq_entries_atom_v = (is_cq_entries_atom_v<Atoms> || ...);
-
-template <typename... Atoms>
-inline constexpr bool has_duplicate_engine_v = (static_cast<int>(is_engine_atom_v<Atoms>) + ... + 0) > 1;
-template <typename... Atoms>
-inline constexpr bool has_duplicate_zerocopy_v = (static_cast<int>(is_zerocopy_atom_v<Atoms>) + ... + 0) > 1;
-template <typename... Atoms>
-inline constexpr bool has_duplicate_sq_entries_v = (static_cast<int>(is_sq_entries_atom_v<Atoms>) + ... + 0) > 1;
-template <typename... Atoms>
-inline constexpr bool has_duplicate_cq_entries_v = (static_cast<int>(is_cq_entries_atom_v<Atoms>) + ... + 0) > 1;
 
 template <typename... Atoms>
 struct engine_of {
@@ -236,9 +207,6 @@ template <typename... Atoms>
 using engine_of_t = typename engine_of<Atoms...>::type;
 
 template <typename... Atoms>
-inline constexpr bool pack_engine_is_io_uring_v = ::fixy::io::engine_is_io_uring_v<engine_of_t<Atoms...>>;
-
-template <typename... Atoms>
 struct zerocopy_of {
     using type = void;
 };
@@ -249,10 +217,6 @@ struct zerocopy_of<First, Rest...> {
 };
 template <typename... Atoms>
 using zerocopy_of_t = typename zerocopy_of<Atoms...>::type;
-
-template <typename... Atoms>
-inline constexpr bool pack_zerocopy_is_simple_transfer_v =
-    ::fixy::io::zerocopy_is_simple_transfer_v<zerocopy_of_t<Atoms...>>;
 
 // Exactly one entries atom of each kind is engaged, and the rest
 // contribute zero, so the fold is a sum.
@@ -299,7 +263,7 @@ template <typename A>
     // A discarded statement, not a conditional expression: a conditional
     // instantiates the bits of the void tag a non-flag atom names.
     if constexpr (is_ring_flag_atom_v<A>) {
-        return ::fixy::io::ring_flag_bits_v<extract_ring_flag_t<std::remove_cvref_t<A>>>;
+        return ::fixy::io::ring_flag_bits_of(^^extract_ring_flag_t<std::remove_cvref_t<A>>);
     } else {
         return 0u;
     }
@@ -319,62 +283,32 @@ template <typename... Atoms>
 // and the fold is a conjunction over the whole pack.
 template <typename A>
 inline constexpr bool ring_flag_atom_is_known_v =
-    !is_ring_flag_atom_v<A> || ::fixy::io::is_known_ring_flag_v<extract_ring_flag_t<std::remove_cvref_t<A>>>;
+    !is_ring_flag_atom_v<A> || ::fixy::io::MappedRingFlag<extract_ring_flag_t<std::remove_cvref_t<A>>>;
 
 template <typename... Atoms>
 inline constexpr bool all_ring_flags_known_v = (ring_flag_atom_is_known_v<Atoms> && ... && true);
 
-// A repeat of one kind is a duplicate.  Two different kinds are not,
-// because their bits fold together, so the count has to be per kind.
-template <typename Target, typename A>
-inline constexpr bool is_specific_ring_flag_v =
-    std::is_same_v<std::remove_cvref_t<A>, ::fixy::atom::io::ring_flag<Target>>;
-
-template <typename Target, typename... Atoms>
-inline constexpr bool has_duplicate_specific_ring_flag_v =
-    (static_cast<int>(is_specific_ring_flag_v<Target, Atoms>) + ... + 0) > 1;
-
-template <typename... Atoms>
-inline constexpr bool has_duplicate_ring_flag_v =
-    has_duplicate_specific_ring_flag_v<::fixy::io::ring_flag::IoPoll, Atoms...>
-    || has_duplicate_specific_ring_flag_v<::fixy::io::ring_flag::SqPoll, Atoms...>
-    || has_duplicate_specific_ring_flag_v<::fixy::io::ring_flag::SingleIssuer, Atoms...>
-    || has_duplicate_specific_ring_flag_v<::fixy::io::ring_flag::CoopTaskrun, Atoms...>
-    || has_duplicate_specific_ring_flag_v<::fixy::io::ring_flag::DeferTaskrun, Atoms...>;
-
-// The row a pack exercises is the union of the rows its atoms lift to.
-template <typename... Atoms>
-struct atoms_row {
-    using type = eff::Row<>;
-};
-template <typename First, typename... Rest>
-struct atoms_row<First, Rest...> {
-    using type = eff::row_union_t<eff::lift_row_t<std::remove_cvref_t<First>>, typename atoms_row<Rest...>::type>;
-};
-template <typename... Atoms>
-using atoms_row_t = typename atoms_row<Atoms...>::type;
-
 }  // namespace detail
 
+// A ring engages one engine, one submission count and at most one
+// completion count.  A ring flag may appear once each, and two different
+// flags fold together.  The repeat rule reads the pack, so a flag added
+// to fixy::io::ring_flag later is covered with no list to extend.
 template <typename Ctx, typename... Atoms>
-concept CtxAdmitsAtomRow = ::foundation::effects::IsExecCtx<Ctx>
-                        && (::fixy::atom::IsAtom<std::remove_cvref_t<Atoms>> && ...)
-                        && (::foundation::effects::LiftsToRow<std::remove_cvref_t<Atoms>> && ...)
-                        && ::foundation::effects::CtxAdmits<Ctx, detail::atoms_row_t<Atoms...>>;
+concept CtxFitsIoUringMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...>
+                          && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::io::engine, Atoms...>
+                          && EngineIsIoUring<detail::engine_of_t<Atoms...>>
+                          && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::io::sq_entries, Atoms...>
+                          && detail::sq_entries_is_pow2_v<Atoms...>
+                          && ::fixy::atom_pack::HasAtMostOneAtomOf<^^::fixy::atom::io::cq_entries, Atoms...>
+                          && detail::cq_entries_is_pow2_or_default_v<Atoms...>
+                          && !::fixy::atom_pack::RepeatsAnAtomOf<^^::fixy::atom::io::ring_flag, Atoms...>
+                          && detail::all_ring_flags_known_v<Atoms...>;
 
 template <typename Ctx, typename... Atoms>
-concept CtxFitsIoUringMint =
-    CtxAdmitsAtomRow<Ctx, Atoms...> && detail::has_engine_atom_v<Atoms...>
-    && !detail::has_duplicate_engine_v<Atoms...> && detail::pack_engine_is_io_uring_v<Atoms...>
-    && detail::has_sq_entries_atom_v<Atoms...> && !detail::has_duplicate_sq_entries_v<Atoms...>
-    && detail::sq_entries_is_pow2_v<Atoms...> && !detail::has_duplicate_cq_entries_v<Atoms...>
-    && detail::cq_entries_is_pow2_or_default_v<Atoms...> && !detail::has_duplicate_ring_flag_v<Atoms...>
-    && detail::all_ring_flags_known_v<Atoms...>;
-
-template <typename Ctx, typename... Atoms>
-concept CtxFitsZerocopyMint = CtxAdmitsAtomRow<Ctx, Atoms...> && detail::has_zerocopy_atom_v<Atoms...>
-                           && !detail::has_duplicate_zerocopy_v<Atoms...>
-                           && detail::pack_zerocopy_is_simple_transfer_v<Atoms...>;
+concept CtxFitsZerocopyMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...>
+                           && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::io::zerocopy, Atoms...>
+                           && SimpleTransfer<detail::zerocopy_of_t<Atoms...>>;
 
 // Declared before the class so the class can name it as its sole friend.
 // The definition follows the class, because it builds one.
@@ -607,15 +541,15 @@ mint_zerocopy_transfer(Ctx const&, int src_fd, int dst_fd, std::size_t length, :
 
 namespace fixy::io::detail::io_surface_invariants {
 
-static_assert(ring_flag_bits_v<ring_flag::IoPoll> == IORING_SETUP_IOPOLL);
-static_assert(ring_flag_bits_v<ring_flag::SqPoll> == IORING_SETUP_SQPOLL);
-static_assert(ring_flag_bits_v<ring_flag::SingleIssuer> == IORING_SETUP_SINGLE_ISSUER);
-static_assert(ring_flag_bits_v<ring_flag::CoopTaskrun> == IORING_SETUP_COOP_TASKRUN);
-static_assert(ring_flag_bits_v<ring_flag::DeferTaskrun> == IORING_SETUP_DEFER_TASKRUN);
+static_assert(ring_flag_bits_of(^^ring_flag::IoPoll) == IORING_SETUP_IOPOLL);
+static_assert(ring_flag_bits_of(^^ring_flag::SqPoll) == IORING_SETUP_SQPOLL);
+static_assert(ring_flag_bits_of(^^ring_flag::SingleIssuer) == IORING_SETUP_SINGLE_ISSUER);
+static_assert(ring_flag_bits_of(^^ring_flag::CoopTaskrun) == IORING_SETUP_COOP_TASKRUN);
+static_assert(ring_flag_bits_of(^^ring_flag::DeferTaskrun) == IORING_SETUP_DEFER_TASKRUN);
 
-static_assert(engine_is_io_uring_v<engine::IoUring>);
-static_assert(zerocopy_is_simple_transfer_v<zerocopy::Sendfile>);
-static_assert(zerocopy_is_simple_transfer_v<zerocopy::CopyFileRange>);
+static_assert(EngineIsIoUring<engine::IoUring>);
+static_assert(SimpleTransfer<zerocopy::Sendfile>);
+static_assert(SimpleTransfer<zerocopy::CopyFileRange>);
 
 // The three predicates are fail-closed: a tag they were never told about
 // answers false.  fixy::io no longer declares engine::Synchronous,
@@ -624,14 +558,13 @@ static_assert(zerocopy_is_simple_transfer_v<zerocopy::CopyFileRange>);
 struct FutureEngine final {};
 struct FutureZerocopy final {};
 struct FutureRingFlag final {};
-static_assert(!engine_is_io_uring_v<FutureEngine>,
+static_assert(!EngineIsIoUring<FutureEngine>,
               "an engine tag this surface was not told about must be refused, not admitted.");
-static_assert(!zerocopy_is_simple_transfer_v<FutureZerocopy>);
-static_assert(!is_known_ring_flag_v<FutureRingFlag>);
-static_assert(!MappedRingFlag<FutureRingFlag>, "a ring flag with no entry must have no bits, not zero.");
+static_assert(!SimpleTransfer<FutureZerocopy>);
+static_assert(!MappedRingFlag<FutureRingFlag>, "a ring flag with no row must have no bits, not zero.");
 static_assert(!MappedRingFlag<void>);
 static_assert(MappedRingFlag<ring_flag::IoPoll>);
-static_assert(!engine_is_io_uring_v<void>, "an empty pack names no engine, and void must not pass for one.");
+static_assert(!EngineIsIoUring<void>, "an empty pack names no engine, and void must not pass for one.");
 
 static_assert(!is_pow2_(0));
 static_assert(is_pow2_(1));
@@ -657,9 +590,8 @@ static_assert(atom_sq_entries_v<A_Sq8> == 8);
 static_assert(is_zerocopy_atom_v<A_Sendfile>);
 static_assert(is_ring_flag_atom_v<A_IoPoll>);
 
-static_assert(has_engine_atom_v<A_Engine, A_Sq8>);
-static_assert(pack_engine_is_io_uring_v<A_Engine, A_Sq8>);
-static_assert(!pack_engine_is_io_uring_v<A_FutureEngine, A_Sq8>);
+static_assert(std::is_same_v<engine_of_t<A_Engine, A_Sq8>, engine::IoUring>);
+static_assert(std::is_same_v<engine_of_t<A_FutureEngine, A_Sq8>, FutureEngine>);
 static_assert(sq_entries_of_v<A_Engine, A_Sq8> == 8);
 static_assert(sq_entries_is_pow2_v<A_Engine, A_Sq8>);
 static_assert(!sq_entries_is_pow2_v<A_Engine, A_Sq7>);
@@ -667,45 +599,47 @@ static_assert(cq_entries_is_pow2_or_default_v<A_Engine, A_Sq8>);
 static_assert(cq_entries_of_v<A_Engine, A_Sq8> == 0, "no cq atom means the kernel default, which is a zero here.");
 static_assert(cq_entries_of_v<A_Engine, A_Sq8, A_Cq16> == 16);
 
-static_assert(has_duplicate_engine_v<A_Engine, A_Sq8, A_Engine>);
-static_assert(!has_duplicate_engine_v<A_Engine, A_Sq8>);
-static_assert(has_duplicate_sq_entries_v<A_Engine, A_Sq8, A_Sq8>);
-static_assert(!has_duplicate_sq_entries_v<A_Engine, A_Sq8>);
-static_assert(has_duplicate_ring_flag_v<A_IoPoll, A_IoPoll>);
-static_assert(!has_duplicate_ring_flag_v<A_IoPoll, A_SqPoll>);
+// The repeat rule reads the pack.  One flag named two times is a repeat,
+// and two different flags fold together.
+static_assert(::fixy::atom_pack::RepeatsAnAtomOf<^^::fixy::atom::io::ring_flag, A_IoPoll, A_IoPoll>);
+static_assert(!::fixy::atom_pack::RepeatsAnAtomOf<^^::fixy::atom::io::ring_flag, A_IoPoll, A_SqPoll>);
 static_assert(fold_ring_flags<A_IoPoll, A_SqPoll>() == (IORING_SETUP_IOPOLL | IORING_SETUP_SQPOLL));
 static_assert(all_ring_flags_known_v<A_Engine, A_Sq8, A_IoPoll>);
 static_assert(!all_ring_flags_known_v<A_Engine, A_Sq8, A_FutureFlag>);
 
-static_assert(pack_zerocopy_is_simple_transfer_v<A_Sendfile>);
-static_assert(!pack_zerocopy_is_simple_transfer_v<A_Engine>, "a pack with no zerocopy atom names no transfer.");
+static_assert(SimpleTransfer<zerocopy_of_t<A_Sendfile>>);
+static_assert(!SimpleTransfer<zerocopy_of_t<A_Engine>>, "a pack with no zerocopy atom names no transfer.");
 
 // The derived row and the row the old header named by hand are the same
 // answer.  This is the pin on that equality.
 using ExpectedIoRow = eff::Row<eff::Effect::IO, eff::Effect::Block>;
-static_assert(std::is_same_v<atoms_row_t<A_Engine, A_Sq8, A_IoPoll>, ExpectedIoRow>);
-static_assert(std::is_same_v<atoms_row_t<A_Sendfile>, ExpectedIoRow>);
-static_assert(std::is_same_v<atoms_row_t<>, eff::Row<>>);
+static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_Engine, A_Sq8, A_IoPoll>, ExpectedIoRow>);
+static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_Sendfile>, ExpectedIoRow>);
 
 using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
 using IoOnlyCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO>>;
 
 static_assert(CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8>);
 static_assert(CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8, A_Cq16, A_IoPoll>);
+static_assert(CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8, A_IoPoll, A_SqPoll>);
 static_assert(!CtxFitsIoUringMint<IoOnlyCtx, A_Engine, A_Sq8>,
               "a context without Block must not set up a ring: the call can park.");
 static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Sq8>, "a pack with no engine atom names nothing to set up.");
 static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine>, "a ring needs a submission-queue size.");
 static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq7>, "the submission count must be a power of two.");
+static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Engine, A_Sq8>, "two engine atoms in one pack.");
+static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8, A_Sq8>, "two submission counts in one pack.");
+static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8, A_Cq16, A_Cq16>, "two completion counts in one pack.");
 static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8, A_IoPoll, A_IoPoll>);
 static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8, A_FutureFlag>,
-              "a ring flag with no IORING_SETUP_* mapping must be refused, not folded to no bits.");
+              "a ring flag with no IORING_SETUP_* row must be refused, not folded to no bits.");
 static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_FutureEngine, A_Sq8>);
 static_assert(!CtxFitsIoUringMint<IoBlockCtx>);
 
 static_assert(CtxFitsZerocopyMint<IoBlockCtx, A_Sendfile>);
 static_assert(!CtxFitsZerocopyMint<IoOnlyCtx, A_Sendfile>);
 static_assert(!CtxFitsZerocopyMint<IoBlockCtx, A_Engine>);
+static_assert(!CtxFitsZerocopyMint<IoBlockCtx, A_Sendfile, A_Sendfile>, "two transfers in one pack.");
 
 // The handle owns a descriptor and three mappings, so it is move-only,
 // and the constructor that claims them is private with the mint as its
@@ -721,27 +655,13 @@ static_assert(!std::is_constructible_v<IoUringRing, int, void*, std::size_t, voi
               "the constructor that claims a descriptor and three mappings must not be public: a caller who never "
               "called io_uring_setup could hand it numbers and the destructor would close and unmap them.");
 
-// Every tag fixy::io::ring_flag declares has an IORING_SETUP_* entry in
-// the bit map.  The known-flag predicate is the map, so this walk is the
+// Every tag fixy::io::ring_flag declares has an IORING_SETUP_* row in the
+// table.  The known-flag concept reads the table, so this walk is the
 // check that no declared tag is missing from it.
-[[nodiscard]] consteval bool every_ring_flag_is_known_() noexcept {
-    static constexpr auto members = std::define_static_array(
-        std::meta::members_of(^^::fixy::io::ring_flag, std::meta::access_context::unchecked()));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
-                      && std::meta::is_class_type(member)) {
-            using T = [:member:];
-            if (!is_known_ring_flag_v<T>) return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
-static_assert(every_ring_flag_is_known_(),
-              "fixy/os/Io.h: a tag declared in fixy::io::ring_flag has no entry in ring_flag_bits, so the "
-              "gate refuses every ring that names it.");
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::io::ring_flag, [](std::meta::info flag_tag) consteval {
+                  return ::fixy::atom_pack::has_row(ring_flag_table, flag_tag);
+              }>(),
+              "fixy/os/Io.h: a tag declared in fixy::io::ring_flag has no row in ring_flag_table, so the gate "
+              "refuses every ring that names it.");
 
 }  // namespace fixy::io::detail::io_surface_invariants

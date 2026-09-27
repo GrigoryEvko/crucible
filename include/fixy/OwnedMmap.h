@@ -31,11 +31,11 @@
 // deliberately not reproducible.  No replay path may observe it.
 
 #include <fixy/atoms/Os.h>
+#include <fixy/os/AtomPack.h>
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
-#include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
@@ -45,6 +45,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <expected>
+#include <meta>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -56,73 +57,63 @@
 
 namespace fixy::mmap {
 
-// The primary has no value.  PROT_NONE is zero, so a primary that
-// answered zero mapped an unknown tag as a page nobody may touch, and the
-// kernel accepted it.  A tag reaches mmap only through a specialization.
-template <typename Prot>
-struct prot_bits {};
-template <>
-struct prot_bits<prot::ReadOnly> : std::integral_constant<int, PROT_READ> {};
-template <>
-struct prot_bits<prot::WriteCopy> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
-template <>
-struct prot_bits<prot::ReadWrite> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
-template <>
-struct prot_bits<prot::Exec> : std::integral_constant<int, PROT_READ | PROT_EXEC> {};
+// The PROT_* word of each protection tag and the MAP_* bits of each share
+// tag.  A tag reaches mmap only through a row of these tables, and
+// fixy/os/AtomPack.h says why a table is closed: a class template map
+// took a specialization for a class of the caller, and that class then
+// brought PROT_WRITE | PROT_EXEC to the door.  No row is PROT_NONE or a
+// zero share word, so a tag with no row is refused rather than mapped as
+// a page that nobody may touch.
+inline constexpr ::fixy::atom_pack::tag_row<int> prot_table[] = {
+    {^^prot::ReadOnly, PROT_READ},
+    {^^prot::WriteCopy, PROT_READ | PROT_WRITE},
+    {^^prot::ReadWrite, PROT_READ | PROT_WRITE},
+    {^^prot::Exec, PROT_READ | PROT_EXEC},
+};
 
-template <typename Prot>
-inline constexpr int prot_bits_v = prot_bits<Prot>::value;
-
-// The primary has no value, for the same reason: a zero share word is
-// whatever the other flags say.
-template <typename Share>
-struct share_flags {};
-template <>
-struct share_flags<share::Private> : std::integral_constant<int, MAP_PRIVATE> {};
-template <>
-struct share_flags<share::Shared> : std::integral_constant<int, MAP_SHARED> {};
-template <>
-struct share_flags<share::Anonymous> : std::integral_constant<int, MAP_PRIVATE | MAP_ANONYMOUS> {};
-template <>
-struct share_flags<share::Locked> : std::integral_constant<int, MAP_LOCKED> {};
-template <>
-struct share_flags<share::Populate> : std::integral_constant<int, MAP_POPULATE> {};
-template <>
-struct share_flags<share::HugeTLB> : std::integral_constant<int, MAP_HUGETLB | MAP_HUGE_2MB> {};
-
-template <typename Share>
-inline constexpr int share_flags_v = share_flags<Share>::value;
-
-// A tag is known when its bit map has an entry.  The predicate is the
-// specialization set, so no second list can drift from the map.  The walk
-// at the foot of fixy/os/Mmap.h reads fixy::mmap::prot and
-// fixy::mmap::share and fails if a declared tag has no entry.
-template <typename Prot>
-concept MappedProt = requires { prot_bits<Prot>::value; };
-
-template <typename Share>
-concept MappedShare = requires { share_flags<Share>::value; };
-
-template <typename Prot>
-inline constexpr bool is_known_prot_v = MappedProt<Prot>;
-
-template <typename Share>
-inline constexpr bool is_known_share_v = MappedShare<Share>;
+inline constexpr ::fixy::atom_pack::tag_row<int> share_table[] = {
+    {^^share::Private, MAP_PRIVATE},
+    {^^share::Shared, MAP_SHARED},
+    {^^share::Anonymous, MAP_PRIVATE | MAP_ANONYMOUS},
+    {^^share::Locked, MAP_LOCKED},
+    {^^share::Populate, MAP_POPULATE},
+    {^^share::HugeTLB, MAP_HUGETLB | MAP_HUGE_2MB},
+};
 
 // A mapping has exactly one primary share mode.  The other share tags are
 // flags that stack on a primary.
-template <typename Share>
-inline constexpr bool is_primary_share_v = std::is_same_v<Share, share::Private> || std::is_same_v<Share, share::Shared>
-                                        || std::is_same_v<Share, share::Anonymous>;
+inline constexpr std::meta::info primary_share_tags[] = {^^share::Private, ^^share::Shared, ^^share::Anonymous};
+
+// A tag is known when its table has a row.  The walk at the foot of
+// fixy/os/Mmap.h reads fixy::mmap::prot and fixy::mmap::share and fails if
+// a declared tag has no row.
+template <typename Prot>
+concept MappedProt = ::fixy::atom_pack::has_row(prot_table, ^^Prot);
 
 template <typename Share>
-concept PrimaryShare = MappedShare<Share> && is_primary_share_v<Share>;
+concept MappedShare = ::fixy::atom_pack::has_row(share_table, ^^Share);
+
+// The bits of a tag that has a row.  Each lookup is a function and not a
+// variable template, because a caller can specialize a variable template
+// for one tag and give it bits of its own.  A function over a reflection
+// takes no specialization.  A call for a tag with no row is not a
+// constant expression, so it fails the build.
+[[nodiscard]] consteval int prot_bits_of(std::meta::info prot_tag) noexcept {
+    return ::fixy::atom_pack::value_for(prot_table, prot_tag);
+}
+
+[[nodiscard]] consteval int share_flags_of(std::meta::info share_tag) noexcept {
+    return ::fixy::atom_pack::value_for(share_table, share_tag);
+}
+
+template <typename Share>
+concept PrimaryShare = MappedShare<Share> && ::fixy::atom_pack::names_tag(primary_share_tags, ^^Share);
 
 // A modifier of a region is a share flag that stacks on the primary, or
 // the trusted_jit atom, which licenses an executable page.
 template <typename Modifier>
-concept RegionModifier = (MappedShare<Modifier> && !is_primary_share_v<Modifier>)
-                      || std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>;
+concept RegionModifier =
+    (MappedShare<Modifier> && !PrimaryShare<Modifier>) || std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>;
 
 namespace detail {
 
@@ -132,7 +123,7 @@ template <typename Modifier>
     if constexpr (std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>) {
         return 0;
     } else {
-        return share_flags_v<Modifier>;
+        return share_flags_of(^^Modifier);
     }
 }
 
@@ -147,29 +138,10 @@ struct modifier_atom<::fixy::atom::mmap::trusted_jit> {
     using type = ::fixy::atom::mmap::trusted_jit;
 };
 
-template <typename... Atoms>
-struct mapping_row {
-    using type = ::foundation::effects::Row<>;
-};
-template <typename First, typename... Rest>
-struct mapping_row<First, Rest...> {
-    using type = ::foundation::effects::row_union_t<::foundation::effects::lift_row_t<First>,
-                                                    typename mapping_row<Rest...>::type>;
-};
-
 template <typename Prot, typename Share, typename... Modifiers>
 using mapping_row_t =
-    typename mapping_row<::fixy::atom::mmap::with_prot<Prot>, ::fixy::atom::mmap::with_share<Share>,
-                         typename modifier_atom<Modifiers>::type...>::type;
-
-// How many members of Pack are Modifier.
-template <typename Modifier, typename... Pack>
-inline constexpr std::size_t occurrences_v = (std::size_t{std::is_same_v<Modifier, Pack>} + ... + std::size_t{0});
-
-// Two copies of one modifier.  The bits fold to the same word, and a
-// repeat names nothing new, so the gate refuses it.
-template <typename... Modifiers>
-inline constexpr bool has_repeated_modifier_v = ((occurrences_v<Modifiers, Modifiers...> > 1) || ...);
+    ::fixy::atom_pack::atoms_row_t<::fixy::atom::mmap::with_prot<Prot>, ::fixy::atom::mmap::with_share<Share>,
+                                   typename modifier_atom<Modifiers>::type...>;
 
 }  // namespace detail
 
@@ -197,15 +169,20 @@ template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
 concept CtxAdmitsMapping = ::foundation::effects::IsExecCtx<Ctx>
                         && ::foundation::effects::CtxAdmits<Ctx, detail::mapping_row_t<Prot, Share, Modifiers...>>;
 
-// Write and execute are never both set, because prot::Exec carries read
-// and execute only.  An executable page also needs the trusted_jit atom,
-// which states that the caller audited the bytes that will run.
+// W^X, read off the bits.  A protection that writes and executes is
+// refused under every licence, and a protection that executes needs the
+// trusted_jit atom, which states that the caller audited the bytes that
+// will run.  The rule reads the PROT_* word and not the tag, so it holds
+// for each row of the table.
 template <typename Prot, typename... Modifiers>
 concept ExecIsLicensed =
-    !std::is_same_v<Prot, prot::Exec> || (std::is_same_v<Modifiers, ::fixy::atom::mmap::trusted_jit> || ...);
+    MappedProt<Prot> && ((prot_bits_of(^^Prot) & (PROT_WRITE | PROT_EXEC)) != (PROT_WRITE | PROT_EXEC))
+    && ((prot_bits_of(^^Prot) & PROT_EXEC) == 0 || (std::is_same_v<Modifiers, ::fixy::atom::mmap::trusted_jit> || ...));
 
+// Two copies of one modifier fold to the same word, and a repeat names
+// nothing new, so the gate refuses it.
 template <typename... Modifiers>
-concept ModifiersAreDistinct = !detail::has_repeated_modifier_v<Modifiers...>;
+concept ModifiersAreDistinct = !(::fixy::atom_pack::OccursMoreThanOnce<Modifiers, Modifiers...> || ...);
 
 template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
 concept CtxFitsRegionMint = MappedProt<Prot> && PrimaryShare<Share> && (RegionModifier<Modifiers> && ...)
@@ -259,8 +236,8 @@ public:
     [[nodiscard]] static std::expected<OwnedMmap, std::error_code>
     mint_region(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/, int fd,
                 std::size_t length, ::off_t offset) noexcept {
-        constexpr int protection = mmap::prot_bits_v<Prot>;
-        constexpr int flags = (mmap::share_flags_v<Share> | ... | mmap::detail::modifier_flags<Modifiers>());
+        constexpr int protection = mmap::prot_bits_of(^^Prot);
+        constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
         void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);  // SYSCALL-CAP-OK: OwnedMmap::mint_region ctx-gate (CtxFitsRegionMint, IO+Block)
         if (address == MAP_FAILED) {
             return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -380,14 +357,14 @@ static_assert(!can_release<void*>);
 static_assert(!can_release<int>);
 
 // The bits of each tag, pinned.
-static_assert(mmap::prot_bits_v<mmap::prot::ReadOnly> == PROT_READ);
-static_assert(mmap::prot_bits_v<mmap::prot::WriteCopy> == (PROT_READ | PROT_WRITE));
-static_assert(mmap::prot_bits_v<mmap::prot::ReadWrite> == (PROT_READ | PROT_WRITE));
-static_assert(mmap::prot_bits_v<mmap::prot::Exec> == (PROT_READ | PROT_EXEC));
-static_assert((mmap::prot_bits_v<mmap::prot::Exec> & PROT_WRITE) == 0, "W^X: prot::Exec must NOT include PROT_WRITE");
-static_assert(mmap::share_flags_v<mmap::share::Private> == MAP_PRIVATE);
-static_assert(mmap::share_flags_v<mmap::share::Shared> == MAP_SHARED);
-static_assert(mmap::share_flags_v<mmap::share::Anonymous> == (MAP_PRIVATE | MAP_ANONYMOUS),
+static_assert(mmap::prot_bits_of(^^mmap::prot::ReadOnly) == PROT_READ);
+static_assert(mmap::prot_bits_of(^^mmap::prot::WriteCopy) == (PROT_READ | PROT_WRITE));
+static_assert(mmap::prot_bits_of(^^mmap::prot::ReadWrite) == (PROT_READ | PROT_WRITE));
+static_assert(mmap::prot_bits_of(^^mmap::prot::Exec) == (PROT_READ | PROT_EXEC));
+static_assert((mmap::prot_bits_of(^^mmap::prot::Exec) & PROT_WRITE) == 0, "W^X: prot::Exec must NOT include PROT_WRITE");
+static_assert(mmap::share_flags_of(^^mmap::share::Private) == MAP_PRIVATE);
+static_assert(mmap::share_flags_of(^^mmap::share::Shared) == MAP_SHARED);
+static_assert(mmap::share_flags_of(^^mmap::share::Anonymous) == (MAP_PRIVATE | MAP_ANONYMOUS),
               "an anonymous region is private: the kernel keeps a NUMA binding only for a private range");
 
 // The gate, one clause at a time.
@@ -416,6 +393,20 @@ static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::s
                                        mmap::share::Locked>,
               "a repeated modifier names nothing new.");
 static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, int, mmap::share::Private>, "a prot tag with no bits is refused.");
+
+// A tag with no row is refused, and so is a tag with a cv-qualifier,
+// which is another type.  An alias of a tag is the tag.
+struct NotAProt final {};
+using ReadOnlyAlias = mmap::prot::ReadOnly;
+static_assert(!mmap::MappedProt<NotAProt> && !mmap::MappedProt<const mmap::prot::ReadOnly>);
+static_assert(mmap::MappedProt<ReadOnlyAlias>);
+static_assert(mmap::PrimaryShare<mmap::share::Anonymous> && !mmap::PrimaryShare<mmap::share::Locked>);
+static_assert(mmap::RegionModifier<mmap::share::Locked> && !mmap::RegionModifier<mmap::share::Private>);
+
+// The W^X rule reads the bits of each row: no row writes and executes,
+// and each row that executes asks for the licence.
+static_assert(mmap::ExecIsLicensed<mmap::prot::ReadWrite> && !mmap::ExecIsLicensed<mmap::prot::Exec>);
+static_assert(mmap::ExecIsLicensed<mmap::prot::Exec, Jit> && !mmap::ExecIsLicensed<NotAProt, Jit>);
 
 }  // namespace detail::owned_mmap_self_test
 

@@ -4000,6 +4000,18 @@ fixy_neg_compile_test(neg_os_mmap_release_erased_mapping
   "required for the satisfaction of .MappingIsBranded<Region>. .with Region = fixy::OwnedMmap<<unnamed>::MappedRegion, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, foundation::brand::DefaultBrand>"
   "the expression .!\\(is_same_v<B, foundation::brand::DefaultBrand>\\) .with B = foundation::brand::DefaultBrand.. evaluated to .false.")
 
+# The plain advise surface refuses each advice that lets the kernel
+# discard the pages, Free as well as DontNeed.  The MADV_* value of a tag
+# is a row of a closed table, so no class of a caller brings a value of
+# its own, and a specialization of a variable template of advice values
+# names nothing.
+fixy_neg_compile_test(neg_os_mmap_free_on_safe_surface
+  "no matching function for call to .advise<fixy::mmap::advice::Free>\\("
+  "the expression .!\\(DiscardsPages<Advice>\\) \\[with Advice = fixy::mmap::advice::Free\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_mmap_foreign_advice_row
+  "expected initializer before .<. token"
+  "neg_os_mmap_foreign_advice_row\\.cpp:17:48: error:")
+
 # ── A mapping is minted with the exclusive permission of its region ──
 #
 # mint_mmap and mint_mmap_anon read the tag and the brand of the
@@ -4102,6 +4114,13 @@ fixy_neg_compile_test(neg_owned_mmap_region_ctx_lacks_block
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, "
   "required for the satisfaction of .CtxAdmitsMapping<Ctx, Prot, Share, Modifiers \\.\\.\\.>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >")
 
+# The PROT_* word of a tag is a row of a closed table, so no class of a
+# caller brings bits of its own, and a specialization of a variable
+# template of protection words names nothing.
+fixy_neg_compile_test(neg_owned_mmap_foreign_prot_row
+  "expected initializer before .<. token"
+  "neg_owned_mmap_foreign_prot_row\\.cpp:17:45: error:")
+
 # ── A descriptor comes only from a gated mint ────────────────────────
 #
 # OwnedFd had three public static factories, and each opened a descriptor
@@ -4186,6 +4205,11 @@ fixy_neg_compile_test(neg_os_socket_unmapped_kind
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")
+# The bits of a flag are a row of a closed table, so a specialization of
+# a variable template of flag bits names nothing.
+fixy_neg_compile_test(neg_os_fs_foreign_flag_row
+  "expected initializer before .<. token"
+  "neg_os_fs_foreign_flag_row\\.cpp:17:43: error:")
 
 fixy_neg_compile_test(neg_os_fs_mint_file_empty_atoms
   "no matching function for call"

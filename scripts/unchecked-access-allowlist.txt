@@ -19,9 +19,6 @@ include/fixy/Corpus.h — walks the secret-policy namespace to derive the corpus
 include/fixy/Secret.h — walks the admitted declassification policies to seal the policy relation
 include/fixy/Tagged.h — walks the admitted retags to seal the retag relation
 include/fixy/atoms/Os.h — walks the OS atom namespaces to derive their rosters
-include/fixy/os/Fs.h — walks the file-flag namespace to derive its closed flag set
-include/fixy/os/Io.h — walks the ring-flag namespace to derive its closed flag set
-include/fixy/os/Mmap.h — walks the mapping and advice namespaces to derive their closed sets
 include/foundation/algebra/Transition.h — walks a transition registry to derive its edges
 include/foundation/contracts/Armed.h — walks a scope to derive the armed-predicate roster
 include/foundation/diag/Catalog.h — walks the diagnostic namespace to derive the catalog

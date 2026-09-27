@@ -324,24 +324,12 @@ struct foundation::contracts::armed_instances<^^fp::detail::can_each_body_take_i
         fp::detail::can_each_body_take_its_child<w::BgCtx, w::SpawnBrand, int, int>>;
 };
 
-// ── fixy: the throws atom, spawn and io ─────────────────────────────
+// ── fixy: the throws atom ───────────────────────────────────────────
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::detail::is_throws_atom> {
     using accepts = witnesses<at::ctrl::throws<>, at::ctrl::throws<w::Plain> const&>;
     using refuses = witnesses<int, std::tuple<at::ctrl::throws<>>, at::ctrl::any_exception>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::io::engine_is_io_uring> {
-    using accepts = witnesses<::fixy::io::engine::IoUring>;
-    using refuses = witnesses<void, int, ::fixy::io::zerocopy::Sendfile>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::io::zerocopy_is_simple_transfer> {
-    using accepts = witnesses<::fixy::io::zerocopy::Sendfile, ::fixy::io::zerocopy::CopyFileRange>;
-    using refuses = witnesses<void, int, ::fixy::io::engine::IoUring>;
 };
 
 // ── fixy: the grade readers of the collision rules ──────────────────

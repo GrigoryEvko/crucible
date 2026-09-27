@@ -1,8 +1,7 @@
-// mint_socket opens only a kind that has a specialization of
-// socket_triple.  A kind tag with no triple has no domain, type or
-// protocol, so the mint refuses it and ::socket never sees a guessed
-// triple.  The context here admits the full row, so the kind is the only
-// reason for the refusal.
+// mint_socket opens only a kind that has a row in socket_table.  A kind
+// tag with no row has no domain, type or protocol, so the mint refuses it
+// and ::socket never sees a guessed triple.  The context here admits the
+// full row, so the kind is the only reason for the refusal.
 
 #include <fixy/os/Socket.h>
 

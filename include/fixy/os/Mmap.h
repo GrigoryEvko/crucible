@@ -55,10 +55,10 @@
 #include <fixy/OwnedMmap.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
+#include <fixy/os/AtomPack.h>
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
-#include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
@@ -91,52 +91,53 @@
 
 namespace fixy::mmap {
 
-// DontNeed is the one that has to be handled apart from the rest: it
-// zeros the pages, which races any concurrent reader of the region.  The
-// plain advise surface refuses it and the release-aware one takes a
-// witness.
+// The advice that discards the contents of the pages is handled apart
+// from the rest.  DontNeed drops the pages at once, and Free lets the
+// kernel drop them when memory is short, before the next write.  A read
+// of a dropped page gives zeros, so each of the two races each reader of
+// the region.  The plain advise surface refuses both, and the
+// release-aware one takes a witness.
 //
 // The advice tags are declared in fixy/atoms/Os.h with the other nine tag
-// namespaces.  What is here is what only this header can express: each
-// tag's MADV_* value, and the clause that every tag declared there has
-// one.
+// namespaces.  What is here is what only this header can express: the
+// MADV_* value of each tag, and the walk that asks each declared tag for
+// a row.
 //
-// The PROT_* and MAP_* bit maps are in fixy/OwnedMmap.h, beside the one
+// The PROT_* and MAP_* tables are in fixy/OwnedMmap.h, beside the one
 // door that maps, because that door calculates its bits from the type of
-// the region it builds.
+// the region that it builds.
+
+// The MADV_* value of each advice tag.  A tag reaches madvise only
+// through a row of this table, and fixy/os/AtomPack.h says why a table
+// is closed.  A class template map took a specialization for a class of
+// the caller, and the plain surface then discarded pages under a tag that
+// it did not know.
+inline constexpr ::fixy::atom_pack::tag_row<int> advice_table[] = {
+    {^^advice::HugePage, MADV_HUGEPAGE},     {^^advice::NoHugePage, MADV_NOHUGEPAGE},
+    {^^advice::Collapse, MADV_COLLAPSE},     {^^advice::Sequential, MADV_SEQUENTIAL},
+    {^^advice::Random, MADV_RANDOM},         {^^advice::WillNeed, MADV_WILLNEED},
+    {^^advice::DontNeed, MADV_DONTNEED},     {^^advice::Free, MADV_FREE},
+    {^^advice::WipeOnFork, MADV_WIPEONFORK}, {^^advice::DontDump, MADV_DONTDUMP},
+};
 
 template <typename Advice>
-struct advice_value : std::integral_constant<int, -1> {};
-template <>
-struct advice_value<advice::HugePage> : std::integral_constant<int, MADV_HUGEPAGE> {};
-template <>
-struct advice_value<advice::NoHugePage> : std::integral_constant<int, MADV_NOHUGEPAGE> {};
-template <>
-struct advice_value<advice::Collapse> : std::integral_constant<int, MADV_COLLAPSE> {};
-template <>
-struct advice_value<advice::Sequential> : std::integral_constant<int, MADV_SEQUENTIAL> {};
-template <>
-struct advice_value<advice::Random> : std::integral_constant<int, MADV_RANDOM> {};
-template <>
-struct advice_value<advice::WillNeed> : std::integral_constant<int, MADV_WILLNEED> {};
-template <>
-struct advice_value<advice::DontNeed> : std::integral_constant<int, MADV_DONTNEED> {};
-template <>
-struct advice_value<advice::Free> : std::integral_constant<int, MADV_FREE> {};
-template <>
-struct advice_value<advice::WipeOnFork> : std::integral_constant<int, MADV_WIPEONFORK> {};
-template <>
-struct advice_value<advice::DontDump> : std::integral_constant<int, MADV_DONTDUMP> {};
+concept KnownAdvice = ::fixy::atom_pack::has_row(advice_table, ^^Advice);
+
+// The value of a tag that has a row.  The lookup is a function and not a
+// variable template, for the reason fixy/OwnedMmap.h gives for its bits.
+[[nodiscard]] consteval int advice_value_of(std::meta::info advice_tag) noexcept {
+    return ::fixy::atom_pack::value_for(advice_table, advice_tag);
+}
+
+// Whether a MADV_* value lets the kernel discard the contents of the
+// pages.  The rule reads the value and not the tag, so it holds for each
+// row of the table.  MADV_REMOVE frees the backing store as well.
+[[nodiscard]] consteval bool discards_pages(int madvise_value) noexcept {
+    return madvise_value == MADV_DONTNEED || madvise_value == MADV_FREE || madvise_value == MADV_REMOVE;
+}
 
 template <typename Advice>
-inline constexpr int advice_value_v = advice_value<Advice>::value;
-
-// A named predicate rather than an inline comparison, because the set
-// can grow: a kernel that starts discarding eagerly where it discards
-// lazily today moves that advice into this set.
-
-template <typename Advice>
-inline constexpr bool is_dangerous_advice_v = std::is_same_v<Advice, advice::DontNeed>;
+concept DiscardsPages = KnownAdvice<Advice> && discards_pages(advice_value_of(^^Advice));
 
 namespace detail {
 
@@ -144,10 +145,10 @@ namespace atom_mmap = ::fixy::atom::mmap;
 namespace eff = ::foundation::effects;
 
 template <typename A>
-inline constexpr bool is_with_prot_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::mmap::with_prot>;
+inline constexpr bool is_with_prot_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::mmap::with_prot>;
 
 template <typename A>
-inline constexpr bool is_with_share_v = ::foundation::reflect::is_instance_of_v<A, ^^::fixy::atom::mmap::with_share>;
+inline constexpr bool is_with_share_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::mmap::with_share>;
 
 // The tag an atom was given.  void where the atom is of another kind,
 // which is what lets the fold below skip it.
@@ -175,33 +176,25 @@ using extract_share_t = typename extract_share<A>::type;
 
 template <typename A>
 inline constexpr bool is_primary_with_share_v =
-    is_with_share_v<A> && is_primary_share_v<extract_share_t<std::remove_cvref_t<A>>>;
+    is_with_share_v<A> && PrimaryShare<extract_share_t<std::remove_cvref_t<A>>>;
 
 // An atom of another kind is not a prot or share atom, so it answers
 // true here and the fold below is a conjunction over the whole pack.
 template <typename A>
-inline constexpr bool prot_atom_is_known_v =
-    !is_with_prot_v<A> || is_known_prot_v<extract_prot_t<std::remove_cvref_t<A>>>;
+inline constexpr bool prot_atom_is_known_v = !is_with_prot_v<A> || MappedProt<extract_prot_t<std::remove_cvref_t<A>>>;
 
 template <typename A>
 inline constexpr bool share_atom_is_known_v =
-    !is_with_share_v<A> || is_known_share_v<extract_share_t<std::remove_cvref_t<A>>>;
+    !is_with_share_v<A> || MappedShare<extract_share_t<std::remove_cvref_t<A>>>;
 
 template <typename... Atoms>
 inline constexpr bool all_atom_tags_known_v =
     ((prot_atom_is_known_v<Atoms> && share_atom_is_known_v<Atoms>) && ... && true);
 
+// A pack names exactly one primary share atom.  The other share atoms are
+// modifiers, and any number of them stack on the primary.
 template <typename... Atoms>
-inline constexpr bool has_prot_atom_v = (is_with_prot_v<Atoms> || ...);
-
-template <typename... Atoms>
-inline constexpr bool has_primary_share_atom_v = (is_primary_with_share_v<Atoms> || ...);
-
-template <typename... Atoms>
-inline constexpr bool has_duplicate_prot_v = (static_cast<int>(is_with_prot_v<Atoms>) + ... + 0) > 1;
-
-template <typename... Atoms>
-inline constexpr bool has_duplicate_primary_share_v = (static_cast<int>(is_primary_with_share_v<Atoms>) + ... + 0) > 1;
+concept HasOnePrimaryShareAtom = ((std::size_t{is_primary_with_share_v<Atoms>} + ... + std::size_t{0}) == 1);
 
 template <typename... Atoms>
 struct prot_of {
@@ -238,7 +231,7 @@ struct push_modifier {
     using type = List;
 };
 template <typename... Modifiers, typename Share>
-    requires(!is_primary_share_v<Share>)
+    requires(!PrimaryShare<Share>)
 struct push_modifier<region_modifiers<Modifiers...>, atom_mmap::with_share<Share>> {
     using type = region_modifiers<Modifiers..., Share>;
 };
@@ -281,40 +274,23 @@ inline constexpr bool is_anonymous_share_v =
 template <typename... Atoms>
 inline constexpr bool pack_has_anonymous_v = (is_anonymous_share_v<Atoms> || ...);
 
-// The row a pack exercises is the union of the rows its atoms lift to.
-// The old header named IO and Block at the gate; this reads them off
-// the pack, so an atom whose row is wider tightens the gate rather than
-// passing through a check written before it existed.
-template <typename... Atoms>
-struct atoms_row {
-    using type = eff::Row<>;
-};
-template <typename First, typename... Rest>
-struct atoms_row<First, Rest...> {
-    using type = eff::row_union_t<eff::lift_row_t<std::remove_cvref_t<First>>, typename atoms_row<Rest...>::type>;
-};
-template <typename... Atoms>
-using atoms_row_t = typename atoms_row<Atoms...>::type;
-
 }  // namespace detail
 
 // Mapping and unmapping can both park the caller — on page-cache
 // pressure, on a NUMA-remote page fault, on write-back — so the atoms
-// lift to IO and Block, and this is what makes the context carry them.
-template <typename Ctx, typename... Atoms>
-concept CtxAdmitsAtomRow = ::foundation::effects::IsExecCtx<Ctx>
-                        && (::fixy::atom::IsAtom<std::remove_cvref_t<Atoms>> && ...)
-                        && (::foundation::effects::LiftsToRow<std::remove_cvref_t<Atoms>> && ...)
-                        && ::foundation::effects::CtxAdmits<Ctx, detail::atoms_row_t<Atoms...>>;
-
+// lift to IO and Block.  The first clause reads the row off the pack, so
+// an atom whose row is wider tightens the gate rather than passing
+// through a check written before it existed.
+//
 // The last clause is the gate of OwnedMmap::mint_region, read over the
 // region type and the modifiers of the pack.  So the licence of an
 // executable page and the row of a mapping are one rule, stated once, in
 // fixy/OwnedMmap.h.
 template <typename Ctx, typename... Atoms>
-concept CtxFitsMmapMint = CtxAdmitsAtomRow<Ctx, Atoms...> && detail::all_atom_tags_known_v<Atoms...>
-                       && detail::has_prot_atom_v<Atoms...> && detail::has_primary_share_atom_v<Atoms...>
-                       && !detail::has_duplicate_prot_v<Atoms...> && !detail::has_duplicate_primary_share_v<Atoms...>
+concept CtxFitsMmapMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...>
+                       && detail::all_atom_tags_known_v<Atoms...>
+                       && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, Atoms...>
+                       && detail::HasOnePrimaryShareAtom<Atoms...>
                        && detail::region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>,
                                                        detail::primary_share_of_t<Atoms...>,
                                                        detail::region_modifiers_t<Atoms...>>;
@@ -336,7 +312,7 @@ concept CtxAdmitsAdvise =
     ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
 template <typename Ctx, typename Advice>
-concept CtxFitsSafeAdvise = CtxAdmitsAdvise<Ctx> && (advice_value_v<Advice> >= 0) && !is_dangerous_advice_v<Advice>;
+concept CtxFitsSafeAdvise = CtxAdmitsAdvise<Ctx> && KnownAdvice<Advice> && !DiscardsPages<Advice>;
 
 // A release names the mapping it acts on, by the tag and the brand of the
 // mapping.  Each clause is its own concept, so a refusal names the clause
@@ -362,8 +338,8 @@ concept ProofNamesMappingBrand = ::foundation::brand::SameBrand<Proof, Region>;
 
 template <typename Ctx, typename Advice, typename Region, typename Proof>
 concept CtxFitsReleaseAwareAdvise =
-    CtxAdmitsAdvise<Ctx> && (advice_value_v<Advice> >= 0) && is_dangerous_advice_v<Advice>
-    && ProofNamesMappingTag<Proof, Region> && MappingIsBranded<Region> && ProofNamesMappingBrand<Proof, Region>;
+    CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice> && ProofNamesMappingTag<Proof, Region> && MappingIsBranded<Region>
+    && ProofNamesMappingBrand<Proof, Region>;
 
 // The mapping takes its tag and its brand from the exclusive permission
 // the caller presents.  The mint reads the permission and does not
@@ -422,7 +398,7 @@ template <typename Advice, typename Tag, typename Prot, typename Share, typename
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_v<Advice>)
+    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice))
         < 0) {  // SYSCALL-CAP-OK: advise ctx-gate (CtxFitsSafeAdvise: CtxAdmitsAdvise, effects::IO+Block)
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -464,7 +440,7 @@ advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_v<Advice>)
+    if (::madvise(region.data(), region.size(), advice_value_of(^^Advice))
         < 0) {  // SYSCALL-CAP-OK: advise_release_aware ctx-gate (CtxFitsReleaseAwareAdvise: IO+Block + the Permission of this mapping)
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -475,20 +451,22 @@ advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
 
 namespace fixy::mmap::detail::mmap_surface_invariants {
 
-static_assert(advice_value_v<advice::DontNeed> == MADV_DONTNEED);
-static_assert(advice_value_v<advice::HugePage> == MADV_HUGEPAGE);
-static_assert(advice_value_v<advice::Free> == MADV_FREE);
+static_assert(advice_value_of(^^advice::DontNeed) == MADV_DONTNEED);
+static_assert(advice_value_of(^^advice::HugePage) == MADV_HUGEPAGE);
+static_assert(advice_value_of(^^advice::Free) == MADV_FREE);
 
-static_assert(is_dangerous_advice_v<advice::DontNeed>);
-static_assert(!is_dangerous_advice_v<advice::HugePage>);
-static_assert(!is_dangerous_advice_v<advice::Sequential>);
+static_assert(DiscardsPages<advice::DontNeed>);
+static_assert(DiscardsPages<advice::Free>, "Free lets the kernel drop the pages before the next write.");
+static_assert(!DiscardsPages<advice::HugePage>);
+static_assert(!DiscardsPages<advice::Sequential>);
+static_assert(!DiscardsPages<advice::WipeOnFork>, "WipeOnFork zeros the pages of a child, not of this process.");
 
-static_assert(is_primary_share_v<share::Private>);
-static_assert(is_primary_share_v<share::Shared>);
-static_assert(is_primary_share_v<share::Anonymous>);
-static_assert(!is_primary_share_v<share::Locked>);
-static_assert(!is_primary_share_v<share::Populate>);
-static_assert(!is_primary_share_v<share::HugeTLB>);
+static_assert(PrimaryShare<share::Private>);
+static_assert(PrimaryShare<share::Shared>);
+static_assert(PrimaryShare<share::Anonymous>);
+static_assert(!PrimaryShare<share::Locked>);
+static_assert(!PrimaryShare<share::Populate>);
+static_assert(!PrimaryShare<share::HugeTLB>);
 
 using A_RO = ::fixy::atom::mmap::with_prot<prot::ReadOnly>;
 using A_Shared = ::fixy::atom::mmap::with_share<share::Shared>;
@@ -498,23 +476,20 @@ using A_Locked = ::fixy::atom::mmap::with_share<share::Locked>;
 using A_Exec = ::fixy::atom::mmap::with_prot<prot::Exec>;
 using A_Jit = ::fixy::atom::mmap::trusted_jit;
 
-static_assert(has_prot_atom_v<A_RO, A_Shared>);
-static_assert(!has_prot_atom_v<A_Shared>);
-static_assert(has_primary_share_atom_v<A_RO, A_Shared>);
-static_assert(has_primary_share_atom_v<A_RO, A_Anon>);
-static_assert(!has_primary_share_atom_v<A_RO, A_Locked>);
-static_assert(has_duplicate_prot_v<A_RO, A_RO>);
-static_assert(!has_duplicate_prot_v<A_RO, A_Shared>);
-static_assert(has_duplicate_primary_share_v<A_Shared, A_Private>);
-static_assert(!has_duplicate_primary_share_v<A_Shared, A_Locked>);
+static_assert(::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, A_RO, A_Shared>);
+static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, A_Shared>);
+static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, A_RO, A_RO>);
+static_assert(HasOnePrimaryShareAtom<A_RO, A_Shared>);
+static_assert(HasOnePrimaryShareAtom<A_RO, A_Anon, A_Locked>);
+static_assert(!HasOnePrimaryShareAtom<A_RO, A_Locked>);
+static_assert(!HasOnePrimaryShareAtom<A_Shared, A_Private>);
 static_assert(pack_has_anonymous_v<A_RO, A_Anon>);
 static_assert(!pack_has_anonymous_v<A_RO, A_Shared>);
 
 // The empty pack answers false rather than failing to compile, which is
 // what lets the mint gate reject it instead of hard-erroring.
-static_assert(!has_prot_atom_v<>);
-static_assert(!has_primary_share_atom_v<>);
-static_assert(!has_duplicate_prot_v<>);
+static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot>);
+static_assert(!HasOnePrimaryShareAtom<>);
 
 static_assert(std::is_same_v<prot_of_t<A_RO, A_Shared>, prot::ReadOnly>);
 static_assert(std::is_same_v<prot_of_t<A_Shared, A_Exec, A_Jit>, prot::Exec>);
@@ -532,9 +507,8 @@ static_assert(std::is_same_v<region_modifiers_t<A_Shared, A_Exec, A_Locked, A_Ji
 // stops lifting to IO and Block, which is a decision somebody has to
 // make rather than discover.
 using ExpectedMmapRow = eff::Row<eff::Effect::IO, eff::Effect::Block>;
-static_assert(std::is_same_v<atoms_row_t<A_RO, A_Shared>, ExpectedMmapRow>);
-static_assert(std::is_same_v<atoms_row_t<A_Exec, A_Private, A_Jit>, ExpectedMmapRow>);
-static_assert(std::is_same_v<atoms_row_t<>, eff::Row<>>);
+static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_RO, A_Shared>, ExpectedMmapRow>);
+static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_Exec, A_Private, A_Jit>, ExpectedMmapRow>);
 
 using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
 using IoOnlyCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO>>;
@@ -558,6 +532,8 @@ static_assert(CtxFitsSafeAdvise<IoBlockCtx, advice::HugePage>);
 static_assert(CtxFitsSafeAdvise<IoBlockCtx, advice::Sequential>);
 static_assert(!CtxFitsSafeAdvise<IoBlockCtx, advice::DontNeed>,
               "DontNeed zeroes the pages, so it must go through the release-aware door.");
+static_assert(!CtxFitsSafeAdvise<IoBlockCtx, advice::Free>,
+              "Free lets the kernel zero the pages, so it must go through the release-aware door.");
 static_assert(!CtxFitsSafeAdvise<IoOnlyCtx, advice::HugePage>);
 
 // The release gate, read against one probe mapping and each proof a
@@ -584,8 +560,9 @@ using ShareProof = ::foundation::permissions::SharedPermission<ProbeRegion, Prob
 struct LookAlikeProof : OwnProof {};
 
 static_assert(CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::DontNeed, ProbeMapping, OwnProof>);
+static_assert(CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::Free, ProbeMapping, OwnProof>);
 static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::HugePage, ProbeMapping, OwnProof>,
-              "the release-aware door is for the dangerous advice only.  The rest go through advise.");
+              "the release-aware door is for the advice that discards pages.  The rest go through advise.");
 static_assert(!CtxFitsReleaseAwareAdvise<IoOnlyCtx, advice::DontNeed, ProbeMapping, OwnProof>);
 
 static_assert(ProofNamesMappingTag<OwnProof, ProbeMapping> && MappingIsBranded<ProbeMapping>
@@ -615,88 +592,55 @@ static_assert(!CanRelease<ProbeMapping, ShareProof>);
 static_assert(!CanRelease<ProbeMapping, OtherBrandProof>);
 static_assert(!CanRelease<ErasedMapping, OwnProof>);
 
-// A tag with no entry in a bit map has no bits, and a read of them is a
+// A tag with no row in a table has no bits, and a read of them is a
 // compile error.  These cells are the witness: an atom over a tag with
-// no entry is refused at the gate, and it cannot fold into PROT_NONE.
+// no row is refused at the gate, and it cannot fold into PROT_NONE.
 struct NotAProt final {};
 struct NotAShare final {};
 using A_UnknownProt = ::fixy::atom::mmap::with_prot<NotAProt>;
 using A_UnknownShare = ::fixy::atom::mmap::with_share<NotAShare>;
 
-static_assert(!MappedProt<NotAProt>, "a prot tag with no entry must have no bits, not PROT_NONE.");
-static_assert(!MappedShare<NotAShare>, "a share tag with no entry must have no bits, not zero.");
+static_assert(!MappedProt<NotAProt>, "a prot tag with no row must have no bits, not PROT_NONE.");
+static_assert(!MappedShare<NotAShare>, "a share tag with no row must have no bits, not zero.");
 static_assert(!MappedProt<void> && !MappedShare<void>);
 static_assert(MappedProt<prot::ReadOnly> && MappedShare<share::Private>);
-static_assert(!is_known_prot_v<NotAProt>);
-static_assert(!is_known_share_v<NotAShare>);
 static_assert(all_atom_tags_known_v<A_RO, A_Shared>);
 static_assert(!all_atom_tags_known_v<A_UnknownProt, A_Shared>);
 static_assert(!all_atom_tags_known_v<A_RO, A_Shared, A_UnknownShare>);
 static_assert(!CtxFitsMmapMint<IoBlockCtx, A_UnknownProt, A_Shared>,
-              "a prot tag with no PROT_* mapping must be refused at the gate, not mapped as PROT_NONE.");
+              "a prot tag with no PROT_* row must be refused at the gate, not mapped as PROT_NONE.");
 
-// Every tag fixy::mmap::prot and fixy::mmap::share declare has an entry
-// in its bit map.  The known-tag predicates are the maps, so this walk
-// is the check that no declared tag is missing from them.
-template <std::meta::info Ns, bool IsProt>
-[[nodiscard]] consteval bool every_tag_in_is_known_() noexcept {
-    static constexpr auto members = std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
-                      && std::meta::is_class_type(member)) {
-            using T = [:member:];
-            if constexpr (IsProt) {
-                if (!is_known_prot_v<T>) return false;
-            } else {
-                if (!is_known_share_v<T>) return false;
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
-static_assert(every_tag_in_is_known_<^^::fixy::mmap::prot, true>(),
-              "fixy/os/Mmap.h: a tag declared in fixy::mmap::prot has no entry in prot_bits, so the gate "
+// Every tag fixy::mmap::prot and fixy::mmap::share declare has a row in
+// its table.  The known-tag concepts read the tables, so this walk is the
+// check that no declared tag is missing from them.
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::prot, [](std::meta::info prot_tag) consteval {
+                  return ::fixy::atom_pack::has_row(prot_table, prot_tag);
+              }>(),
+              "fixy/os/Mmap.h: a tag declared in fixy::mmap::prot has no row in prot_table, so the gate "
               "refuses every mapping that names it.");
-static_assert(every_tag_in_is_known_<^^::fixy::mmap::share, false>(),
-              "fixy/os/Mmap.h: a tag declared in fixy::mmap::share has no entry in share_flags, so the "
-              "gate refuses every mapping that names it.");
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::share, [](std::meta::info share_tag) consteval {
+                  return ::fixy::atom_pack::has_row(share_table, share_tag);
+              }>(),
+              "fixy/os/Mmap.h: a tag declared in fixy::mmap::share has no row in share_table, so the gate "
+              "refuses every mapping that names it.");
 
-// A type that is not an advice tag has no value, and the gate reads
-// that rather than instantiating madvise with -1.
+// A type that is not an advice tag has no row, and the gate refuses it
+// rather than instantiating madvise with a guessed value.
 struct NotAnAdvice final {};
-static_assert(advice_value_v<NotAnAdvice> == -1);
+static_assert(!KnownAdvice<NotAnAdvice>);
 static_assert(!CtxFitsSafeAdvise<IoBlockCtx, NotAnAdvice>);
 static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice, ProbeMapping, OwnProof>);
 
 // The shape of every class in fixy::mmap::advice — empty, final, not an
 // atom — is checked by the one walk in fixy/atoms/Os.h, which covers all
 // ten tag namespaces.  What that walk cannot check is the clause below:
-// advice_value_v is declared here, so only here can a walk ask whether
-// every tag has a MADV_* value rather than the -1 sentinel.
-[[nodiscard]] consteval bool every_advice_class_has_a_value_() noexcept {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^::fixy::mmap::advice, std::meta::access_context::unchecked()));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
-                      && std::meta::is_class_type(member)) {
-            using T = [:member:];
-            if (advice_value_v<T> < 0) return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
-static_assert(every_advice_class_has_a_value_(),
-              "fixy/os/Mmap.h: a tag declared in fixy::mmap::advice has no MADV_* value, so advice_value_v "
-              "answers the -1 sentinel for it and every gate refuses it.  Add its value to advice_value "
-              "below, or delete the tag from fixy/atoms/Os.h.");
+// the advice table is here, so only here can a walk ask whether every tag
+// has a row.
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::advice, [](std::meta::info advice_tag) consteval {
+                  return ::fixy::atom_pack::has_row(advice_table, advice_tag);
+              }>(),
+              "fixy/os/Mmap.h: a tag declared in fixy::mmap::advice has no row in advice_table, so every gate "
+              "refuses it.  Add its value to the table, or delete the tag from fixy/atoms/Os.h.");
 
 // The count of tags in this namespace is pinned with the other nine in
 // fixy/atoms/Os.h, because a walk cannot notice a tag that was deleted and

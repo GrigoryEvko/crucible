@@ -91,9 +91,8 @@ concept DurableStance = std::is_empty_v<S> && requires {
     typename S::flag_type;
     typename S::sync_op_type;
     typename S::atomicity_type;
-} && ::fixy::fs::is_known_open_mode_v<typename S::mode_type> && ::fixy::fs::is_known_flag_v<typename S::flag_type>
-    && ::fixy::fs::is_known_sync_op_v<typename S::sync_op_type>
-    && ::fixy::fs::is_known_atomicity_v<typename S::atomicity_type>;
+} && ::fixy::fs::MappedOpenMode<typename S::mode_type> && ::fixy::fs::MappedFlag<typename S::flag_type>
+    && ::fixy::fs::KnownSyncOp<typename S::sync_op_type> && ::fixy::fs::KnownAtomicity<typename S::atomicity_type>;
 
 // A stance pins the mode, durability and atomicity axes, so
 // caller-supplied extras must not engage them.  Composing a shadowing

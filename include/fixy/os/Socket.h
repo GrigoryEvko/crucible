@@ -9,12 +9,12 @@
 // returned to a gated mint.
 //
 // One kind is declared, because one production site opens a socket.
-// A new kind is a tag in fixy::net::socket_kind and a specialization of
-// socket_triple.  The walk at the foot of this header fails if the tag
-// has no specialization.
+// A new kind is a tag in fixy::net::socket_kind and a row of socket_table.
+// The walk at the foot of this header fails if the tag has no row.
 
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Syscall.h>
+#include <fixy/os/AtomPack.h>
 #include <fixy/os/Fs.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
@@ -25,7 +25,6 @@
 #include <sys/socket.h>
 
 #include <cerrno>
-#include <concepts>
 #include <expected>
 #include <meta>
 #include <system_error>
@@ -45,24 +44,36 @@ struct NetlinkRoute final {};
 
 }  // namespace socket_kind
 
-// The primary has no members.  A kind with no specialization has no
-// domain, so the mint refuses it and ::socket never sees a guessed triple.
-template <typename Kind>
-struct socket_triple {};
+namespace detail {
 
-template <>
-struct socket_triple<socket_kind::NetlinkRoute> {
-    static constexpr int domain = AF_NETLINK;
-    static constexpr int type = SOCK_RAW;
-    static constexpr int protocol = NETLINK_ROUTE;
+// The three arguments of ::socket for one kind.
+struct socket_triple final {
+    int domain = -1;
+    int type = -1;
+    int protocol = -1;
+};
+
+}  // namespace detail
+
+// The domain, type and protocol of each kind.  A kind reaches ::socket
+// only through a row of this table, and fixy/os/AtomPack.h says why a
+// table is closed: a class template map took a specialization for a
+// class of the caller, and the gated mint then opened a raw packet socket
+// as a known kind.  A kind with no row has no triple, so the mint refuses
+// it and ::socket never sees a guessed triple.
+inline constexpr ::fixy::atom_pack::tag_row<detail::socket_triple> socket_table[] = {
+    {^^socket_kind::NetlinkRoute, {AF_NETLINK, SOCK_RAW, NETLINK_ROUTE}},
 };
 
 template <typename Kind>
-concept MappedSocketKind = requires {
-    { socket_triple<Kind>::domain } -> std::convertible_to<int>;
-    { socket_triple<Kind>::type } -> std::convertible_to<int>;
-    { socket_triple<Kind>::protocol } -> std::convertible_to<int>;
-};
+concept MappedSocketKind = ::fixy::atom_pack::has_row(socket_table, ^^Kind);
+
+// The triple of a kind that has a row.  The lookup is a function and not
+// a variable template, because a caller can specialize a variable
+// template for one kind and give it a triple of its own.
+[[nodiscard]] consteval detail::socket_triple socket_triple_of(std::meta::info kind_tag) noexcept {
+    return ::fixy::atom_pack::value_for(socket_table, kind_tag);
+}
 
 // The row comes from the syscall atom, so the gate and the catalog in
 // fixy/atoms/Syscall.h cannot disagree.  The catalog puts socket in the
@@ -89,7 +100,7 @@ template <typename Kind, eff::IsExecCtx Ctx>
 // reads the triple of the kind, so no caller gives it a domain, a type or
 // a protocol.
 class SocketDoor final {
-    SocketDoor() = delete("the socket door holds static members only; no object of it exists");
+    SocketDoor() = delete("the socket door holds static members only, and no object of it exists");
     SocketDoor(const SocketDoor&) = delete("the socket door holds static members only");
     SocketDoor& operator=(const SocketDoor&) = delete("the socket door holds static members only");
     SocketDoor(SocketDoor&&) = delete("the socket door holds static members only");
@@ -105,8 +116,8 @@ class SocketDoor final {
     // handle.
     template <MappedSocketKind Kind>
     [[nodiscard]] static std::expected<::fixy::fs::OwnedFd, int> open_() noexcept {
-        using triple = socket_triple<Kind>;
-        const int fd = ::socket(triple::domain, triple::type | SOCK_CLOEXEC, triple::protocol);  // SYSCALL-CAP-OK: SocketDoor::open_, sole caller mint_socket ctx-gate (CtxFitsSocketMint)
+        constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
+        const int fd = ::socket(triple.domain, triple.type | SOCK_CLOEXEC, triple.protocol);  // SYSCALL-CAP-OK: SocketDoor::open_, sole caller mint_socket ctx-gate (CtxFitsSocketMint)
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -128,14 +139,15 @@ template <typename Kind, eff::IsExecCtx Ctx>
 
 namespace fixy::net::detail::socket_surface_invariants {
 
-static_assert(socket_triple<socket_kind::NetlinkRoute>::domain == AF_NETLINK);
-static_assert(socket_triple<socket_kind::NetlinkRoute>::type == SOCK_RAW);
-static_assert(socket_triple<socket_kind::NetlinkRoute>::protocol == NETLINK_ROUTE);
+static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).domain == AF_NETLINK);
+static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).type == SOCK_RAW);
+static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).protocol == NETLINK_ROUTE);
 
 struct NotASocketKind final {};
 static_assert(MappedSocketKind<socket_kind::NetlinkRoute>);
-static_assert(!MappedSocketKind<NotASocketKind>, "a kind with no specialization must have no triple.");
+static_assert(!MappedSocketKind<NotASocketKind>, "a kind with no row must have no triple.");
 static_assert(!MappedSocketKind<void>);
+static_assert(!MappedSocketKind<const socket_kind::NetlinkRoute>, "a kind with a cv-qualifier is another type.");
 
 // The row that the catalog gives to socket, stated here as a pin.
 static_assert(std::is_same_v<socket_row_t, eff::Row<eff::Effect::IO, eff::Effect::Block>>);
@@ -151,25 +163,11 @@ static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_cons
                   && !std::is_move_constructible_v<SocketDoor>,
               "No object of the socket door exists.  Its private member is the only call to ::socket.");
 
-// Every tag in fixy::net::socket_kind has a triple.  The walk is the
-// check that a new tag also has its specialization.
-[[nodiscard]] consteval bool every_socket_kind_is_mapped_() noexcept {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^::fixy::net::socket_kind, std::meta::access_context::current()));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
-                      && std::meta::is_class_type(member)) {
-            using T = [:member:];
-            if (!MappedSocketKind<T>) return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-
-static_assert(every_socket_kind_is_mapped_(),
-              "fixy/os/Socket.h: a tag in fixy::net::socket_kind has no specialization of socket_triple.");
+// Every tag in fixy::net::socket_kind has a row.  The walk is the check
+// that a new tag also has its row.
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::net::socket_kind, [](std::meta::info kind_tag) consteval {
+                  return ::fixy::atom_pack::has_row(socket_table, kind_tag);
+              }>(),
+              "fixy/os/Socket.h: a tag in fixy::net::socket_kind has no row in socket_table.");
 
 }  // namespace fixy::net::detail::socket_surface_invariants
