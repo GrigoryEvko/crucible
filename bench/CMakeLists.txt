@@ -124,19 +124,42 @@ target_compile_definitions(bench_record_leaf PRIVATE
 # The only `add_test` in bench/.  The rest of the tree is a compile
 # gate; this one runs, compares against a committed ceiling and fails.
 #
-# It is registered unconditionally rather than behind a host check
-# because the binary decides for itself: a sample whose coefficient of
+# The ceiling is the latency of a Release build with no instrumentation.
+# Each configuration below measures a different program, so the test is
+# registered there as disabled, and ctest lists it as not run with no red.
+# The list names the configurations that do not apply, and every other
+# configuration runs the gate, so a new latency configuration cannot skip it.
+#
+# The binary also decides for itself: a sample whose coefficient of
 # variation is past the code guide's 5% bar reports SKIP and passes,
 # so on a loaded box or a shared runner this reports rather than
 # flaps.  A real regression on a quiet box is what turns it red.
 #
 # Pinning is left to the harness, which routes through
 # warden::select_hot_cpu and already prefers an isolated core.
+set(_record_leaf_not_measured "")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+  list(APPEND _record_leaf_not_measured "the build type is '${CMAKE_BUILD_TYPE}', not Release")
+endif()
+if(CRUCIBLE_UBSAN_STRICT)
+  list(APPEND _record_leaf_not_measured "CRUCIBLE_UBSAN_STRICT puts UBSan on every target")
+endif()
+if(CRUCIBLE_PGO STREQUAL "generate")
+  list(APPEND _record_leaf_not_measured "CRUCIBLE_PGO=generate instruments every branch")
+endif()
+if(CRUCIBLE_VERIFY)
+  list(APPEND _record_leaf_not_measured "CRUCIBLE_VERIFY arms the contract families that Release leaves out")
+endif()
 add_test(NAME bench_record_leaf COMMAND bench_record_leaf)
 set_tests_properties(bench_record_leaf PROPERTIES
   TIMEOUT 300
   ENVIRONMENT "CRUCIBLE_BENCH_JSON=0"
   LABELS "bench;latency")
+if(_record_leaf_not_measured)
+  string(JOIN ", and " _record_leaf_reasons ${_record_leaf_not_measured})
+  message(STATUS "bench_record_leaf is disabled in this configuration, because ${_record_leaf_reasons}.")
+  set_tests_properties(bench_record_leaf PROPERTIES DISABLED TRUE)
+endif()
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
