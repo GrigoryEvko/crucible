@@ -197,9 +197,9 @@ template <class Field>
 // empty view means that the table is sealed, and the names then stay out.
 template <::fixy::CtxFitsFileOpen Ctx>
 [[nodiscard]] inline std::unique_ptr<LoadedTrace>
-load_trace_(Ctx const&, const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
+load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
             bool should_register_names) {
-    auto opened = ::fixy::OwnedFile::open_path(path, "rb");
+    auto opened = ::fixy::mint_owned_file(io, path, "rb");
     if (!opened) {
         std::fprintf(stderr, "load_trace: cannot open %s: %s\n", path, std::strerror(opened.error()));
         return nullptr;

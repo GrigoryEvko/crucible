@@ -58,12 +58,12 @@ namespace crucible::warden {
 namespace detail {
 
 template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::string read_small_file(Ctx const&, const char* path) noexcept {
+[[nodiscard]] inline std::string read_small_file(Ctx const& ctx, const char* path) noexcept {
     std::string out;
     // The close is discharged by the handle on every exit path. Its
     // result is ignored because a failure to close a sysfs read offers
     // nothing to act on. A file that does not open reads as empty.
-    auto opened = ::fixy::OwnedFile::open_path(path, "r");
+    auto opened = ::fixy::mint_owned_file(ctx, path, "r");
     if (!opened) return out;
     const ::fixy::OwnedFile& f = *opened;
     char buf[512];

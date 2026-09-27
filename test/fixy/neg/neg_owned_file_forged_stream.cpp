@@ -5,8 +5,8 @@
 // a stream another handle already owns, both read as a file.
 //
 // This fixture is the standing witness on the direct route.  The
-// constructor is private and the two static doors perform the open
-// themselves, so a handle exists only over a stream libc returned.  Its
+// constructor is private, and OwnedFileDoor performs the open for the two
+// mints, so a handle exists only over a stream libc returned.  Its
 // sibling, neg_owned_file_forged_through_mint_linear.cpp, covers the
 // route that goes through the generic Linear forwarder.
 //

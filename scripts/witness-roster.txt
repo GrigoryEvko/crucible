@@ -193,10 +193,12 @@ fixy::sched::SchedPriority<5> | fixy/os/Sched.h | fixy::sched::SchedPriority<5>{
 fixy::sched::SchedProofDoor | fixy/os/Sched.h | fixy::sched::SchedProofDoor{} | deleted | closed
 fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy/OwnedMmap.h | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}} | private | closed
 # OwnedFile fcloses what it holds, so a public FILE* constructor let
-# `OwnedFile{stdin}` close standard input.  The constructor is private;
-# open_path and open_temporary do the fopen and the tmpfile themselves,
-# so a handle exists only over a stream libc returned.
+# `OwnedFile{stdin}` close standard input.  The constructor is private.
+# OwnedFileDoor does the fopen and the tmpfile for the two mints, so a
+# handle exists only over a stream libc returned.  No object of the door
+# exists.
 fixy::OwnedFile | fixy/OwnedFile.h | fixy::OwnedFile{stdout} | private | closed
+fixy::OwnedFileDoor | fixy/OwnedFile.h | fixy::OwnedFileDoor{} | deleted | closed
 fixy::io::IoUringRing | fixy/os/Io.h | fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}} | private | closed
 fixy::fs::OwnedFd | fixy/os/Fs.h | fixy::fs::OwnedFd{3} | private | closed
 # The three doors of OwnedFd.  No object of a door exists, its members

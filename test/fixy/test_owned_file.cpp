@@ -1,14 +1,16 @@
 // Sentinel TU for fixy/OwnedFile.h: the handle is move-only, the empty
 // state answers every query, close_explicit reports the flush result the
 // destructor cannot, and the only way to a live handle is one of the two
-// doors that perform the open.
+// mints that perform the open.
 //
 // The empty state is the only one reachable without a file, so it is
-// checked first.  Then this TU takes real streams through open_temporary
-// and open_path, so the close path, the release path and the
-// move-assign-over-a-live-handle path all run for real.  No cell here
-// holds a raw FILE* it did not first receive back through release.
+// checked first.  Then this TU takes real streams through
+// mint_temporary_file and mint_owned_file, so the close path, the release
+// path and the move-assign-over-a-live-handle path all run for real.  No
+// cell here holds a raw FILE* it did not first receive back through
+// release.
 
+#include <fixy/Ctx.h>
 #include <fixy/OwnedFile.h>
 
 #include <cerrno>
@@ -19,6 +21,9 @@
 namespace {
 
 using ::fixy::OwnedFile;
+
+// Each open takes a context that owns IO and Block.
+constexpr ::fixy::TestRunnerCtx kTestIo{::foundation::effects::testing::test()};
 
 static_assert(sizeof(OwnedFile) == sizeof(std::FILE*));
 static_assert(!std::is_copy_constructible_v<OwnedFile>);
@@ -36,7 +41,7 @@ static_assert(!std::is_constructible_v<OwnedFile, int>);
 static_assert(std::is_default_constructible_v<OwnedFile>);
 
 int check_live_stream() {
-    auto opened = OwnedFile::open_temporary();
+    auto opened = ::fixy::mint_temporary_file(kTestIo);
     if (!opened) return 0;  // no temp file available; nothing to check
 
     OwnedFile f = std::move(*opened);
@@ -54,7 +59,7 @@ int check_live_stream() {
 }
 
 int check_move_transfers_ownership() {
-    auto opened = OwnedFile::open_temporary();
+    auto opened = ::fixy::mint_temporary_file(kTestIo);
     if (!opened) return 0;
 
     OwnedFile src = std::move(*opened);
@@ -65,7 +70,7 @@ int check_move_transfers_ownership() {
     if (dst.get() != raw) return 22;
 
     // Move-assigning over a live handle closes the one being replaced.
-    auto second = OwnedFile::open_temporary();
+    auto second = ::fixy::mint_temporary_file(kTestIo);
     if (!second) return 0;
     OwnedFile other = std::move(*second);
     other = std::move(dst);
@@ -81,7 +86,7 @@ struct ClosedByTheTest final {};
 using ReleaseWitness = ::fixy::atom::leak::resource<ClosedByTheTest>;
 
 int check_release_hands_the_handle_back() {
-    auto opened = OwnedFile::open_temporary();
+    auto opened = ::fixy::mint_temporary_file(kTestIo);
     if (!opened) return 0;
 
     OwnedFile f = std::move(*opened);
@@ -96,14 +101,14 @@ int check_release_hands_the_handle_back() {
     return 0;
 }
 
-// The named-path door hands back the errno when the open fails and a
+// The named-path mint hands back the errno when the open fails and a
 // live handle when it succeeds, and no handle is built on failure.
 int check_open_path() {
-    auto missing = OwnedFile::open_path("/nonexistent-owned-file-test-dir/none", "r");
+    auto missing = ::fixy::mint_owned_file(kTestIo, "/nonexistent-owned-file-test-dir/none", "r");
     if (missing) return 50;
     if (missing.error() != ENOENT) return 51;
 
-    auto null_device = OwnedFile::open_path("/dev/null", "r");
+    auto null_device = ::fixy::mint_owned_file(kTestIo, "/dev/null", "r");
     if (!null_device) return 0;  // no /dev/null on this host; nothing to check
     OwnedFile f = std::move(*null_device);
     if (!f.is_open()) return 52;

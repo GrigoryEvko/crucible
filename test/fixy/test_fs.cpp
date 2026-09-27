@@ -97,10 +97,11 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
 // Reads a file back through OwnedFile, the stdio handle, so the two
 // handle families meet at the byte level.  The handle comes through
-// open_path, the door that does the fopen itself; a value means the
-// stream is open.
+// mint_owned_file, the mint that does the fopen under a context that owns
+// IO and Block.  A value means the stream is open.
 [[nodiscard]] bool file_holds(const std::string& path, const std::uint8_t* expected) {
-    auto in = fixy::OwnedFile::open_path(path.c_str(), "rb");
+    IoBlockCtx const ctx{eff::testing::test()};
+    auto in = fixy::mint_owned_file(ctx, path.c_str(), "rb");
     if (!in) return false;
     std::uint8_t readback[kPayloadBytes];
     if (std::fread(readback, 1, kPayloadBytes, in->get()) != kPayloadBytes) return false;

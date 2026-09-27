@@ -55,7 +55,7 @@ THE WALK
       - a static member function returns `std::expected<Self, ...>`, in
         the leading or the trailing return type.  That is where the
         system call went when the constructor was closed
-        (OwnedMmap::mint_region, OwnedFile::open_path).
+        (OwnedMmap::mint_region).
       - it befriends a named function that is not an operator or swap
       - it befriends a type other than itself.  A template that befriends
         its own other specializations does not count.

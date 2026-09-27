@@ -4163,8 +4163,9 @@ fixy_neg_compile_test(neg_os_ptp_device_door_is_private
 #
 # The same defect as OwnedMmap, over a FILE*: the constructor was public
 # and the destructor fcloses whatever it holds, so `OwnedFile{stdin}`
-# closed standard input on scope exit.  The constructor is private now
-# and OwnedFile::open_path / open_temporary perform the open themselves.
+# closed standard input on scope exit.  The constructor is private now,
+# and OwnedFileDoor performs the open for mint_owned_file and
+# mint_temporary_file.
 #
 # Two routes, for the reason given above the mmap pair: the generic
 # mint_linear forwarder sits between any mint and the object, so the
@@ -4190,6 +4191,25 @@ fixy_neg_compile_test(neg_owned_file_release_without_leak_atom
 fixy_neg_compile_test(neg_owned_file_release_from_an_lvalue
   "passing .fixy::OwnedFile. as .this. argument discards qualifiers"
   "in call to .FILE\\* fixy::OwnedFile::release\\(LeakAtom\\) &&")
+
+# Each open enters the kernel and can wait on the file system, so the two
+# mints ask for a context that owns IO and Block.  One fixture for each
+# missing atom, for each mint.
+fixy_neg_compile_test(neg_owned_file_mint_without_block
+  "no matching function for call to .mint_owned_file\\(const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >&"
+  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
+
+fixy_neg_compile_test(neg_owned_file_mint_without_io
+  "no matching function for call to .mint_owned_file\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >&"
+  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
+
+fixy_neg_compile_test(neg_owned_file_temporary_without_block
+  "no matching function for call to .mint_temporary_file\\(const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >&\\)"
+  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
+
+fixy_neg_compile_test(neg_owned_file_temporary_without_io
+  "no matching function for call to .mint_temporary_file\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&\\)"
+  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
 
 # ── The file surface and the three durable writers ───────────────────
 #

@@ -1091,6 +1091,8 @@ inline constexpr StatedZero kZeros[] = {
                            "site; each member folds on its own"},
     {^^::fixy::split_parts_for_, kMetafunction},
     {^^::fixy::OwnedFile, kDescriptor},
+    {^^::fixy::OwnedFileDoor, "the door of the two file mints: it has static members only, no object of it exists, "
+                              "and it is never a value"},
     {^^::fixy::VersionSource, "the owner of the versions of one kind of value: only a context that owns Init mints "
                               "it, it stays beside the values it stamps, and it is never a template argument of a "
                               "kernel signature"},

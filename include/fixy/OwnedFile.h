@@ -2,24 +2,33 @@
 
 // Exclusive ownership of one stdio stream, closed on destruction.
 //
-// Old spelling: include/crucible/safety/OwnedFile.h.  Two deviations: the
-// construction door, and the release door.
+// Old spelling: include/crucible/safety/OwnedFile.h.  Three deviations:
+// the construction door, the context that the door asks for, and the
+// release door.
 //
 // The old constructor took a FILE* and was public, and the destructor
 // calls std::fclose on whatever it holds.  So `OwnedFile f{stdin};` was
 // one line of ordinary-looking code that closed the process's standard
 // input on scope exit, and a stream owned by some other handle could be
 // closed twice.  That is the same defect fixy/OwnedMmap.h had over an
-// address, and it takes the same repair: the constructor is private, and
-// the two doors below perform the open themselves, so a stream that
-// exists is one std::fopen or std::tmpfile returned to this class.
+// address, and it takes the same repair: the constructor is private.
+// OwnedFileDoor below is its one caller, and the door performs the open
+// itself, so a stream that exists is one std::fopen or std::tmpfile
+// returned to this class.
 //
-// There is no token in that arrangement, which is the point.  A passkey
-// would have had to travel through fixy::mint_linear, a generic variadic
-// forwarder that Qtt befriends for every T, so the key's reach would be
-// every type in the tree.  Putting the open next to the constructor
-// leaves nothing to forward to: is_constructible_v<OwnedFile, FILE*> is
-// false, and mint_linear's own requires-clause refuses the call.
+// The opens are in a door class, and no passkey gates them.  A passkey
+// would have to go through fixy::mint_linear, a variadic forwarder that
+// Qtt befriends for every T, so the key would reach every type in the
+// tree.  is_constructible_v<OwnedFile, FILE*> is false, and the
+// constraint of mint_linear refuses the call.
+//
+// An open enters the kernel, and it can wait there on the file system,
+// so each open is a mint that asks for a context that owns IO and Block.
+// The two mints are mint_owned_file for a named path and
+// mint_temporary_file for an anonymous stream.  The door class is not a
+// template, and only the two mints are its friends.  An explicit
+// specialization of a mint still has to satisfy the context gate, and
+// through the door it reaches only a real open.
 //
 // The old release took no argument and bound to any handle.  The new one
 // has the two gates of OwnedMmap::release: a leak atom that names why the
@@ -29,10 +38,8 @@
 // region does: it claims nothing and closes nothing.  A failed open is
 // not an empty handle.  It is the errno, handed back with no handle built.
 //
-// What the doors do NOT decide is who may open.  They take no context,
-// and reaching one mints no false claim, because what it hands back is
-// what libc returned.  The stdio calls are not in the syscall-capability
-// guard's name set, so they carry no allowlist line.
+// The stdio calls are not in the syscall-capability guard's name set, so
+// they carry no allowlist line.
 
 #include <fixy/atoms/Os.h>
 #include <foundation/Platform.h>
@@ -47,48 +54,29 @@
 
 namespace fixy {
 
-// The gate of a caller that reads or writes a file through this class.  An
-// open enters the kernel, and it can wait there on the file system, so the
-// context must own IO and Block.  fixy/os/Fs.h asks for the same two atoms
-// when it opens a descriptor.
+// The gate of the two opening mints below.  An open enters the kernel, and
+// it can wait there on the file system, so the context must own IO and
+// Block.  fixy/os/Fs.h asks for the same two atoms when it opens a
+// descriptor.
 template <typename Ctx>
 concept CtxFitsFileOpen =
     ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
+class OwnedFileDoor;
+
 class [[nodiscard]] OwnedFile {
     std::FILE* fp_ = nullptr;
 
-    // Private, and the two doors below are its only callers.  A public
-    // one let any stream be claimed, and the destructor closes whatever
-    // was claimed.
+    // Private, and OwnedFileDoor is its one caller.  A public one let any
+    // stream be claimed, and the destructor closes whatever was claimed.
     explicit OwnedFile(std::FILE* fp) noexcept : fp_{fp} {}
+
+    friend class OwnedFileDoor;
 
 public:
     // The empty handle owns nothing and closes nothing, so it stays
     // public.
     OwnedFile() noexcept = default;
-
-    // The door for a named path.  The mode string is std::fopen's own,
-    // passed through unchanged; a typed spelling of it belongs to the
-    // layer that would gate the open.  Returns the errno on failure and
-    // no handle.
-    [[nodiscard]] static std::expected<OwnedFile, int> open_path(const char* path, const char* mode) noexcept {
-        std::FILE* const fp = std::fopen(path, mode);
-        if (fp == nullptr) {
-            return std::unexpected{errno};
-        }
-        return OwnedFile{fp};
-    }
-
-    // The door for an anonymous stream, which std::tmpfile creates and
-    // the OS unlinks, so it has no path to open by name.
-    [[nodiscard]] static std::expected<OwnedFile, int> open_temporary() noexcept {
-        std::FILE* const fp = std::tmpfile();
-        if (fp == nullptr) {
-            return std::unexpected{errno};
-        }
-        return OwnedFile{fp};
-    }
 
     ~OwnedFile() noexcept {
         // A close failure here is unactionable, so the result is discarded.
@@ -141,6 +129,62 @@ public:
 
 static_assert(sizeof(OwnedFile) == sizeof(std::FILE*), "OwnedFile must be a zero-cost FILE* wrapper");
 
+// The two opens.  No object of the door exists, and its members are
+// private, so the mints below are the only callers.
+class OwnedFileDoor final {
+    OwnedFileDoor() = delete("the file door holds static members only, and no object of it exists");
+    OwnedFileDoor(const OwnedFileDoor&) = delete("the file door holds static members only");
+    OwnedFileDoor& operator=(const OwnedFileDoor&) = delete("the file door holds static members only");
+    OwnedFileDoor(OwnedFileDoor&&) = delete("the file door holds static members only");
+    OwnedFileDoor& operator=(OwnedFileDoor&&) = delete("the file door holds static members only");
+    constexpr ~OwnedFileDoor() noexcept {}
+
+    // The mode string is std::fopen's own, passed through unchanged.
+    [[nodiscard]] static std::expected<OwnedFile, int> open_path_(const char* path, const char* mode) noexcept {
+        std::FILE* const fp = std::fopen(path, mode);
+        if (fp == nullptr) {
+            return std::unexpected{errno};
+        }
+        return OwnedFile{fp};
+    }
+
+    // std::tmpfile creates the stream and the OS unlinks it, so it has no
+    // path to open by name.
+    [[nodiscard]] static std::expected<OwnedFile, int> open_temporary_() noexcept {
+        std::FILE* const fp = std::tmpfile();
+        if (fp == nullptr) {
+            return std::unexpected{errno};
+        }
+        return OwnedFile{fp};
+    }
+
+    template <typename Ctx>
+        requires CtxFitsFileOpen<Ctx>
+    friend std::expected<OwnedFile, int> mint_owned_file(Ctx const& ctx, const char* path, const char* mode) noexcept;
+
+    template <typename Ctx>
+        requires CtxFitsFileOpen<Ctx>
+    friend std::expected<OwnedFile, int> mint_temporary_file(Ctx const& ctx) noexcept;
+};
+
+// Opens the named path with the std::fopen mode.  Returns the errno on
+// failure and no handle.
+// §XXI carve-out: cx=alloc — opening a stream invokes the kernel.
+template <typename Ctx>
+    requires CtxFitsFileOpen<Ctx>
+[[nodiscard]] std::expected<OwnedFile, int> mint_owned_file(Ctx const&, const char* path, const char* mode) noexcept {
+    return OwnedFileDoor::open_path_(path, mode);
+}
+
+// Opens an anonymous stream that the OS unlinks.  Returns the errno on
+// failure and no handle.
+// §XXI carve-out: cx=alloc — opening a stream invokes the kernel.
+template <typename Ctx>
+    requires CtxFitsFileOpen<Ctx>
+[[nodiscard]] std::expected<OwnedFile, int> mint_temporary_file(Ctx const&) noexcept {
+    return OwnedFileDoor::open_temporary_();
+}
+
 namespace detail::owned_file_self_test {
 
 static_assert(!std::is_copy_constructible_v<OwnedFile>, "OwnedFile must be move-only — copy would double-close");
@@ -154,12 +198,12 @@ static_assert(std::is_nothrow_destructible_v<OwnedFile>);
 // befriend.  A public constructor over a FILE* let a caller claim a
 // stream it never opened, and the destructor closes whatever it holds,
 // so `OwnedFile{stdin}` closed standard input on scope exit.  The two
-// doors are the only way to a live handle, and each builds one only
-// from what libc returned.
+// mints are the only way to a live handle, and each builds one only from
+// what libc returned.
 static_assert(!std::is_constructible_v<OwnedFile, std::FILE*>,
               "The constructor that claims a stream must not be public.  A caller could hand it stdin, or a "
-              "stream another handle owns, and the destructor would fclose it.  Take a handle from open_path "
-              "or open_temporary.");
+              "stream another handle owns, and the destructor would fclose it.  Take a handle from "
+              "mint_owned_file or mint_temporary_file.");
 static_assert(!std::is_constructible_v<OwnedFile, int>,
               "There is no descriptor form either: fdopen over a descriptor owned elsewhere would fclose that "
               "descriptor.  A descriptor is OwnedFd's business, in fixy/os/Fs.h.");
@@ -191,6 +235,12 @@ static_assert(!CtxFitsFileOpen<fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::E
               "The drain context owns no IO.");
 static_assert(!CtxFitsFileOpen<fe::ExecCtx<fe::ctx_cap::Fg, fe::Row<>>>, "The foreground context owns no IO.");
 static_assert(!CtxFitsFileOpen<int>, "Only an execution context passes the gate.");
+
+// The door has no object, and its opens are not reachable from here.
+static_assert(!std::is_default_constructible_v<OwnedFileDoor>);
+template <typename Door>
+concept CanOpenThroughTheDoor = requires { Door::open_temporary_(); };
+static_assert(!CanOpenThroughTheDoor<OwnedFileDoor>, "Only the two mints reach the opens of the door.");
 
 }  // namespace detail::owned_file_self_test
 

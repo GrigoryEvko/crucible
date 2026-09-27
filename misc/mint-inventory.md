@@ -220,6 +220,7 @@ apply to the row.
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
+| `mint_owned_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 16 |
 | `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
@@ -231,6 +232,7 @@ apply to the row.
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 7 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 4 |
 | `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | · | HS14: 21 |
+| `mint_temporary_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_witnessed_at` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
@@ -356,4 +358,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 111 | 51 | 57 | 3 | 0 | · | 5 |
+| new (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | · | 5 |
