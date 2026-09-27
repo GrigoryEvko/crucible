@@ -833,6 +833,39 @@ def cpp_files(*roots: str | Path, include_unparseable: bool = False) -> list[Pat
     return sorted(found)
 
 
+_WALK_SKIPPED = (".git", ".tools", "build", "cmake-build-", "third_party", "external", "vendor")
+
+
+def tracked_files(root: Path) -> list[str]:
+    """Return the files that git tracks under a root, repo-relative and sorted.
+
+    A guard reads what the commit holds.  An untracked file is out of scope:
+    the export and the build of a guard run, or the scratch file of a CMake
+    check, can appear under the root while a guard runs and vanish before it
+    reads them.  Outside a work tree, for example in the scratch tree of a
+    self-test, the walk takes every file and skips each version control,
+    tool, build and vendor directory.
+
+    Complexity: linear in the number of files under the root.
+
+    Args:
+        root: The root of the tree
+
+    Returns:
+        The paths relative to the root, in sorted order
+    """
+    try:
+        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached"],
+                             check=True, capture_output=True).stdout.decode(errors="replace")
+        return sorted(path for path in out.split("\0") if path)
+    except (OSError, subprocess.CalledProcessError):
+        found: list[str] = []
+        for directory, dirs, names in os.walk(root):
+            dirs[:] = sorted(d for d in dirs if not d.startswith(_WALK_SKIPPED))
+            found += [(Path(directory) / name).relative_to(root).as_posix() for name in names]
+        return sorted(found)
+
+
 # ── Tokens and spellings ─────────────────────────────────────────────────────
 
 # The node types that the kit does not split, with the token kind each one is.
@@ -1989,6 +2022,456 @@ def specializations(tree: Tree) -> Iterator[TemplateDecl]:
         yield TemplateDecl(name, kind, is_specialization, is_specialization and has_params, template, scope)
 
 
+class SpecializedName(NamedTuple):
+    """The template that one specialization specializes, as the declaration spells it.
+
+    kind is class, variable, function or member.  A member is an explicit
+    specialization of one member of a class template, such as
+    `template <> int X<Fake>::value = 1;`, and its template is the class
+    template in the qualifier nearest the member.  target holds the spelled
+    parts of the name to that template, with the template as the last part,
+    and is_global says whether they start at `::`.
+
+    through_alias is true for an explicit specialization of a member whose
+    qualifier holds no template-id, such as `using XF = X<Fake>;` and then
+    `template <> int XF::value = 1;`.  Only a specialization of a class
+    template has a member to specialize, so the qualifier names one through
+    an alias, and target holds the qualifier as spelled.
+    """
+
+    template: Node
+    kind: str
+    is_explicit: bool
+    is_global: bool
+    target: tuple[str, ...]
+    through_alias: bool = False
+
+
+def _name_chain(node: Node) -> tuple[bool, list[Node]]:
+    """Return whether a name starts at `::` and the node of each of its parts, outermost first."""
+    parts: list[Node] = []
+    is_global = False
+    while node.type == "qualified_identifier":
+        scope = node.child_by_field("scope")
+        if scope is None:
+            is_global = True
+        else:
+            parts.append(scope)
+        inner = node.child_by_field("name")
+        if inner is None:
+            break
+        node = inner
+    parts.append(node)
+    return is_global, parts
+
+
+def _declared_name(item: Node) -> tuple[str, Node | None]:
+    """Return the kind and the declared name of the declaration that a template_declaration introduces."""
+    if item.type in (*_CLASS_SPECIFIERS, "enum_specifier"):
+        return "class", item.child_by_field("name")
+    if item.type in ("declaration", "function_definition", "field_declaration"):
+        function = _function_declarator(item)
+        if function is not None:
+            return "function", function.child_by_field("declarator")
+        name = item.child_by_field("declarator")
+        while name is not None and name.type in ("init_declarator", "attributed_declarator"):
+            name = name.child_by_field("declarator")
+        return "variable", name
+    return "other", None
+
+
+def specialized_names(root: Node) -> Iterator[SpecializedName]:
+    """Yield each explicit or partial specialization under a node, with the template it specializes.
+
+    A declaration with two template headers, such as `template <> template <>
+    void X<int>::f<char>()`, is reported once, for the inner header.  A
+    partial specialization of a member is not reported, because only an
+    explicit specialization can declare a member of a class template.
+
+    Complexity: linear in the number of nodes under the root.
+
+    Args:
+        root: The root of a file, or of a macro body
+
+    Yields:
+        One SpecializedName for each specialization, in source order
+    """
+    for template in root.descendants("template_declaration"):
+        item = _template_item(template)
+        if item is None or item.type == "template_declaration":
+            continue
+        params = template.child_by_field("parameters")
+        is_explicit = params is None or not non_comment_children(params)
+        kind, name = _declared_name(item)
+        if name is None or kind == "other":
+            continue
+        is_global, chain = _name_chain(name)
+        texts = [leaf_name(part) or "" for part in chain]
+        if chain[-1].type in _TEMPLATE_NAMES:
+            yield SpecializedName(template, kind, is_explicit, is_global, tuple(texts))
+            continue
+        if not is_explicit or len(chain) < 2:
+            continue
+        for position in range(len(chain) - 2, -1, -1):
+            if chain[position].type in _TEMPLATE_NAMES:
+                yield SpecializedName(template, "member", True, is_global, tuple(texts[:position + 1]))
+                break
+        else:
+            yield SpecializedName(template, "member", True, is_global, tuple(texts[:-1]), through_alias=True)
+
+
+class TemplatePrimary(NamedTuple):
+    """One declaration of a primary class template or variable template.
+
+    is_definition is true for a class with a body and for a variable with an
+    initializer.  A forward declaration defines nothing.
+    """
+
+    template: Node
+    kind: str
+    name: str
+    is_definition: bool
+
+
+def template_primaries(root: Node) -> Iterator[TemplatePrimary]:
+    """Yield each declaration of a primary class template or variable template under a node.
+
+    Complexity: linear in the number of nodes under the root.
+
+    Args:
+        root: The root of a file
+
+    Yields:
+        One TemplatePrimary for each declaration, in source order
+    """
+    for template in root.descendants("template_declaration"):
+        params = template.child_by_field("parameters")
+        item = _template_item(template)
+        if params is None or not non_comment_children(params) or item is None:
+            continue
+        kind, name = _declared_name(item)
+        if name is None or name.type not in ("type_identifier", "identifier") or kind not in ("class", "variable"):
+            continue
+        if kind == "class":
+            yield TemplatePrimary(template, kind, _leaf_text(name), item.child_by_field("body") is not None)
+        else:
+            declarator = item.child_by_field("declarator")
+            yield TemplatePrimary(template, kind, _leaf_text(name),
+                                  declarator is not None and declarator.type == "init_declarator")
+
+
+# ── Name lookup ──────────────────────────────────────────────────────────────
+#
+# A guard that asks which declaration a spelled name refers to cannot compare
+# the last part of the name alone: fixy::session::Borrowed and fixy::Borrowed
+# are two templates.  The helpers below model the part of C++ name lookup that
+# a type name at namespace scope needs.  The kit does not preprocess, so a
+# name that a macro of another file forms stays out of reach.
+#
+#   * A qualified name is a tuple of parts: the enclosing namespaces with no
+#     inline namespace, the enclosing classes, and the declared name.
+#   * A spelled name is looked up in its enclosing scopes, innermost first.
+#     The first scope that declares it gives the answer, so an inner
+#     declaration hides an outer one.
+#   * A using-declaration adds its name to the scope that holds it.  A
+#     using-directive adds the names of its namespace to the innermost
+#     namespace that encloses both the directive and that namespace.
+#   * A namespace alias of the file resolves first.  A namespace alias at
+#     namespace scope of a header resolves when the head of the name is not
+#     known in any scope, because each file that includes the header sees it.
+
+_LOCAL_SCOPES = ("compound_statement", "lambda_expression", "requires_expression")
+_NAMESPACE_SCOPES = ("translation_unit", "declaration_list")
+
+
+def qualified_path(node: Node) -> tuple[bool, tuple[str, ...]] | None:
+    """Return the parts of the qualified name that ends at a node, and whether it starts at `::`.
+
+    The node can sit anywhere in a qualified name.  In `fixy::Region<int>::wrap`
+    the template-id Region<int> is the qualifier of wrap, and its path is
+    ("fixy", "Region"): the qualifiers before the node, then the node.
+
+    Args:
+        node: A name node: an identifier, a template-id or a qualified name
+
+    Returns:
+        (is_global, parts), or None when the node is not a name
+    """
+    own = qualified_parts(node)
+    if own is None:
+        return None
+    is_global, parts = own[0], list(own[1])
+    child, parent = node, node.parent
+    while parent is not None and parent.type == "qualified_identifier" and child.field in ("name", "scope"):
+        if child.field == "name":
+            scope = parent.child_by_field("scope")
+            if scope is None:
+                is_global = True
+            else:
+                prefix = qualified_parts(scope)
+                if prefix is None:
+                    return None
+                parts[0:0] = prefix[1]
+        child, parent = parent, parent.parent
+    return is_global, tuple(parts)
+
+
+class LookupSite(NamedTuple):
+    """The facts that lookup needs about one spelled name, taken from its tree.
+
+    levels holds the scopes that enclose the name, innermost first, down to
+    the global scope (). parts is the spelled name with each namespace alias
+    of its own file resolved.  usings holds each using-declaration and
+    using-directive in force at the name, as (level, is_directive, target).
+    """
+
+    levels: tuple[tuple[str, ...], ...]
+    parts: tuple[str, ...]
+    is_global: bool
+    usings: tuple[tuple[tuple[str, ...], bool, tuple[str, ...]], ...]
+
+
+def _is_local(node: Node) -> bool:
+    """Say whether a node lies in a function body, a lambda or a requires-expression."""
+    return node.ancestor_of_type(*_LOCAL_SCOPES) is not None
+
+
+def scope_levels(node: Node) -> tuple[tuple[str, ...], ...]:
+    """Return the scopes that enclose a node, innermost first, down to the global scope.
+
+    A scope is a namespace with no inline namespace, or a named class inside
+    one.  An unnamed class adds no scope.  The node itself is not a scope of
+    its own, so the levels of a class head are the scopes around the class.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The qualified name of each enclosing scope, innermost first.  The last
+        one is ()
+    """
+    classes: list[tuple[str, ...]] = []
+    owner = node.ancestor_of_type(*_CLASS_SPECIFIERS, "namespace_definition")
+    while owner is not None and owner.type != "namespace_definition":
+        named = owner.child_by_field("name")
+        parts = None if named is None else qualified_parts(named)
+        if parts is not None:
+            classes.append(parts[1])
+        owner = owner.ancestor_of_type(*_CLASS_SPECIFIERS, "namespace_definition")
+    full = namespace_path(node, skip_inline=True) + tuple(part for group in reversed(classes) for part in group)
+    return tuple(full[:count] for count in range(len(full), -1, -1))
+
+
+def _common_prefix(left: Sequence[str], right: Sequence[str]) -> tuple[str, ...]:
+    """Return the longest common prefix of two qualified names."""
+    count = 0
+    while count < min(len(left), len(right)) and left[count] == right[count]:
+        count += 1
+    return tuple(left[:count])
+
+
+def lookup_site(
+    node: Node,
+    name: Node,
+    aliases: Sequence[NamespaceAlias],
+    usings: Sequence[UsingDecl],
+) -> LookupSite | None:
+    """Take the facts that lookup needs about one spelled name.
+
+    Args:
+        node: The node where lookup starts, for example the declaration that
+            holds the name.  Its enclosing scopes are the levels.
+        name: The name node: an identifier, a template-id or a qualified name
+        aliases: The namespace aliases of the tree, from namespace_aliases()
+        usings: The using-declarations and using-directives of the tree, from
+            using_names()
+
+    Returns:
+        The facts, or None when the node is not a name
+    """
+    spelled_parts = qualified_parts(name)
+    if spelled_parts is None or not spelled_parts[1]:
+        return None
+    return lookup_site_of_parts(node, spelled_parts[0], spelled_parts[1], aliases, usings)
+
+
+def lookup_site_of_parts(
+    node: Node,
+    is_global: bool,
+    parts: tuple[str, ...],
+    aliases: Sequence[NamespaceAlias],
+    usings: Sequence[UsingDecl],
+    levels: tuple[tuple[str, ...], ...] | None = None,
+) -> LookupSite:
+    """Take the facts that lookup needs about a name given as its parts.
+
+    Use it for a prefix of a qualified name, for example the class template
+    in the qualifier of an out-of-line member.
+
+    Args:
+        node: The node where lookup starts
+        is_global: True when the name starts at `::`
+        parts: The spelled parts of the name
+        aliases: The namespace aliases of the tree, from namespace_aliases()
+        usings: The using-declarations and using-directives of the tree, from
+            using_names()
+        levels: The enclosing scopes, innermost first, when the tree of the
+            node does not hold them, as for a macro body.  None reads them
+            from the node.
+
+    Returns:
+        The facts
+    """
+    parts = resolve_namespace(parts, node, aliases, is_global=is_global)
+    levels = scope_levels(node) if levels is None else levels
+    in_force: list[tuple[tuple[str, ...], bool, tuple[str, ...]]] = []
+    for using in usings:
+        if not _encloses(using.scope, node) or using.node.end > node.start or using.kind == "enum":
+            continue
+        target = resolve_namespace(using.target, using.node, aliases, is_global=using.is_global)
+        if using.is_directive:
+            level = _common_prefix(namespace_path(using.node, skip_inline=True), target)
+        elif using.scope.type in _NAMESPACE_SCOPES or using.scope.type == "field_declaration_list":
+            level = scope_levels(using.node)[0]
+        else:
+            level = levels[0]
+        in_force.append((level, using.is_directive, target))
+    return LookupSite(levels, parts, is_global, tuple(in_force))
+
+
+class NameIndex:
+    """The qualified names that the declarations of many files introduce.
+
+    Each namespace and each prefix of it is a name.  So is each class, enum,
+    alias, typedef, concept and variable at namespace or class scope, and
+    each class template and variable template.  A function is not a name
+    here, because the guards that read this index ask about types.  A
+    declaration in a function body is local, so it is not a name either.
+    """
+
+    def __init__(self) -> None:
+        """Start an index that knows only the namespaces of the standard library.
+
+        No guard parses the standard headers, so a name under std is known to
+        be foreign rather than unknown.
+        """
+        self.names: set[tuple[str, ...]] = {("std",), ("__gnu_cxx",)}
+        self.aliases: list[NamespaceAlias] = []
+
+    def add(self, tree: Tree, *, share_aliases: bool = False) -> None:
+        """Add the names that one tree declares.
+
+        Complexity: linear in the number of nodes of the tree.
+
+        Args:
+            tree: A parsed file
+            share_aliases: True for a header, whose namespace aliases at
+                namespace scope reach each file that includes it
+        """
+        for node in tree.find("namespace_definition"):
+            if _is_local(node):
+                continue
+            own = namespace_path(node, skip_inline=True)
+            named = node.child_by_field("name")
+            if named is not None and "inline" not in node.gap_tokens():
+                segments: list[str] = []
+                is_inline = False
+                for text in named.tokens():
+                    if text == "inline":
+                        is_inline = True
+                    elif text != "::":
+                        if not is_inline:
+                            segments.append(text)
+                        is_inline = False
+                own = own + tuple(segments)
+            for count in range(1, len(own) + 1):
+                self.names.add(own[:count])
+        # A specialization declares no name of its own, so a template-id at
+        # the end of a declared name adds nothing.  Otherwise a forged
+        # `mystery::X<Fake>` would make `mystery::X` known.
+        for node in tree.find(*_CLASS_SPECIFIERS, "enum_specifier", "alias_declaration", "concept_definition"):
+            named = node.child_by_field("name")
+            parts = None if named is None or _is_template_id(named) else qualified_parts(named)
+            if parts is not None and parts[1] and not _is_local(node):
+                self.names.add(parts[1] if parts[0] else scope_levels(node)[0] + parts[1])
+        for node in tree.find("type_definition"):
+            if _is_local(node):
+                continue
+            for declarator in node.children:
+                if declarator.field == "declarator" and declarator.type == "type_identifier":
+                    self.names.add(scope_levels(node)[0] + (_leaf_text(declarator),))
+        for template in tree.find("template_declaration"):
+            item = _template_item(template)
+            if item is None or item.type != "declaration" or _is_local(template) or _function_declarator(item):
+                continue
+            declarator = item.child_by_field("declarator")
+            if declarator is not None and declarator.type == "init_declarator":
+                declarator = declarator.child_by_field("declarator")
+            parts = None if declarator is None or _is_template_id(declarator) else qualified_parts(declarator)
+            if parts is not None and parts[1]:
+                self.names.add(parts[1] if parts[0] else scope_levels(template)[0] + parts[1])
+        if share_aliases:
+            self.aliases += [alias for alias in namespace_aliases(tree) if alias.scope.type in _NAMESPACE_SCOPES]
+
+    def resolve(self, site: LookupSite, extra: frozenset[tuple[str, ...]] = frozenset()) -> tuple[list[tuple[str, ...]], bool]:
+        """Return the declarations that a spelled name refers to, and whether its qualifier is known.
+
+        The first scope, innermost first, that declares the name gives the
+        answer.  When two using-directives bring two declarations into that
+        scope, both are returned.  A qualifier is known when its head names a
+        namespace or a class in some scope.  An unknown qualifier means that
+        the name can refer to a declaration that this index does not hold,
+        and a guard that fails closed treats it as a match.
+
+        Complexity: linear in the number of levels times the using count.
+
+        Args:
+            site: The facts from lookup_site()
+            extra: More names, for example the declarations of the file itself
+
+        Returns:
+            (the qualified names it refers to, whether the qualifier is known)
+        """
+        found, known = self._resolve_parts(site, site.parts, extra)
+        if not found and not known and not site.is_global:
+            shared = resolve_namespace(site.parts, None, self.aliases)
+            if shared != site.parts:
+                found, known = self._resolve_parts(site, shared, extra)
+        return found, known
+
+    def _resolve_parts(
+        self, site: LookupSite, parts: tuple[str, ...], extra: frozenset[tuple[str, ...]],
+    ) -> tuple[list[tuple[str, ...]], bool]:
+        """Resolve one spelling of the name through the levels and the usings of a site."""
+        def declared(name: tuple[str, ...]) -> bool:
+            return name in self.names or name in extra
+
+        if site.is_global:
+            return ([parts] if declared(parts) else []), len(parts) == 1 or declared(parts[:1])
+        known = len(parts) == 1
+        for level in site.levels:
+            hits: list[tuple[str, ...]] = []
+            if declared(level + parts):
+                hits.append(level + parts)
+            if len(parts) > 1 and declared(level + parts[:1]):
+                known = True
+            for using_level, is_directive, target in site.usings:
+                if using_level != level:
+                    continue
+                if is_directive:
+                    if declared(target + parts):
+                        hits.append(target + parts)
+                    if len(parts) > 1 and declared(target + parts[:1]):
+                        known = True
+                elif target and target[-1] == parts[0]:
+                    known = True
+                    if declared(target + parts[1:]):
+                        hits.append(target + parts[1:])
+            if hits:
+                return hits, True
+        return [], known
+
+
 # ── In-memory parses and macro bodies ────────────────────────────────────────
 
 def parse_texts(items: Sequence[tuple[str, str]], *, strict: bool = False) -> Iterator[Tree]:
@@ -2476,6 +2959,7 @@ def _self_test() -> int:
 
         _self_test_helpers(check, parse_text, Path(work))
         _self_test_macros(check, parse_text)
+        _self_test_lookup(check, parse_text)
 
     # Negative control: a rostered file is admitted, and it really does carry an
     # error, so the roster entry is not stale.
@@ -3096,6 +3580,119 @@ def _self_test_macros(check: Callable[..., None], parse_text: Callable[[str, str
         not any(is_global and parts == ("z",) for is_global, parts, _row in names),
         negative=True,
     )
+
+
+def _self_test_lookup(check: Callable[..., None], parse_text: Callable[[str, str], Tree]) -> None:
+    """Check NameIndex and lookup_site against the lookup rules, positive and negative.
+
+    Args:
+        check: The recorder of the enclosing self-test
+        parse_text: Parses one source text into a Tree
+    """
+    header = parse_text(
+        "lookup_header.h",
+        "namespace fixy {\n"
+        "template <class T, class S, class Brand = int> class Borrowed;\n"
+        "namespace session { template <class T, class S> class Borrowed; }\n"
+        "inline namespace v1 { template <class T> struct Versioned {}; }\n"
+        "struct Outer { template <class T> struct Inner {}; };\n"
+        "template <class T> inline constexpr bool is_thing_v = false;\n"
+        "}\n"
+        "namespace fx = ::fixy;\n",
+    )
+    index = NameIndex()
+    index.add(header, share_aliases=True)
+    check(
+        "the index holds a nested template, a class member template, a variable template and a namespace",
+        {("fixy", "Borrowed"), ("fixy", "session", "Borrowed"), ("fixy", "Outer", "Inner"),
+         ("fixy", "is_thing_v"), ("fixy", "session")} <= index.names,
+    )
+    check("an inline namespace adds no part", ("fixy", "Versioned") in index.names
+          and ("fixy", "v1", "Versioned") not in index.names)
+    forged = NameIndex()
+    forged.add(parse_text("lookup_forged.cpp", "template <> struct mystery::Planted<int> {};\n"
+                                               "template <> inline constexpr bool mystery::planted_v<int> = true;\n"))
+    check("a specialization declares no name, so its qualifier stays unknown",
+          not any(name[:1] == ("mystery",) for name in forged.names), negative=True)
+
+    user = parse_text(
+        "lookup_user.cpp",
+        "namespace fixy::session { Borrowed<int, int> inner; }\n"
+        "namespace fixy { Borrowed<int, int> outer; }\n"
+        "namespace t { using namespace fixy; Borrowed<int, int> directive; }\n"
+        "namespace u { using fixy::session::Borrowed; Borrowed<int, int> declared; }\n"
+        "namespace fs = fixy::session;\n"
+        "fs::Borrowed<int, int> aliased;\n"
+        "fx::Borrowed<int, int> shared_alias;\n"
+        "mystery::Borrowed<int, int> unknown_head;\n"
+        "std::Borrowed<int, int> foreign;\n"
+        "::fixy::Versioned<int> versioned;\n",
+    )
+    aliases = namespace_aliases(user)
+    usings = using_names(user)
+    found: dict[int, tuple[list[tuple[str, ...]], bool]] = {}
+    for node in user.find("template_type"):
+        named = node.child_by_field("name")
+        if named is None or leaf_name(named) not in ("Borrowed", "Versioned"):
+            continue
+        holder = node.parent if node.parent is not None and node.parent.type == "qualified_identifier" else node
+        site = lookup_site(holder, holder, aliases, usings)
+        if site is not None:
+            found[node.line] = index.resolve(site)
+    check("an inner declaration hides the outer one", found.get(1) == ([("fixy", "session", "Borrowed")], True))
+    check("the enclosing namespace declares the outer one", found.get(2) == ([("fixy", "Borrowed")], True))
+    check("a using-directive at namespace scope reaches the nominated namespace",
+          found.get(3) == ([("fixy", "Borrowed")], True))
+    check("a using-declaration names the one it declares",
+          found.get(4) == ([("fixy", "session", "Borrowed")], True))
+    check("a namespace alias of the file resolves", found.get(6) == ([("fixy", "session", "Borrowed")], True))
+    check("a namespace alias of a header resolves", found.get(7) == ([("fixy", "Borrowed")], True))
+    check("an unknown qualifier head resolves to nothing and says so", found.get(8) == ([], False), negative=True)
+    check("a name under std resolves to nothing, with a known qualifier", found.get(9) == ([], True), negative=True)
+    check("a global name finds a template in an inline namespace", found.get(10) == ([("fixy", "Versioned")], True))
+    levels = scope_levels(next(header.find("template_declaration")))
+    check("the levels of a namespace member end at the global scope", levels == (("fixy",), ()))
+    paths = parse_text("qualified_path.cpp", "auto a = fixy::Region<int>::wrap(1);\n"
+                                             "::fixy::session::Borrowed<int> b;\n")
+    found_paths = [qualified_path(node) for node in paths.find("template_type")]
+    check("qualified_path reads the qualifiers before a template-id in the scope and in the name of a qualified name",
+          found_paths == [(False, ("fixy", "Region")), (True, ("fixy", "session", "Borrowed"))])
+
+    shapes = parse_text(
+        "specialized.cpp",
+        "template <class T> struct Primary { static constexpr bool value = false; };\n"
+        "template <class T> struct Declared;\n"
+        "template <class T> inline constexpr bool gate_v = false;\n"
+        "template <> struct ::ns::Primary<int> {};\n"
+        "template <class T> struct ns::Primary<T*> {};\n"
+        "template <> inline constexpr bool ns::gate_v<Fake> = true;\n"
+        "template <class T> inline constexpr bool gate_v<T*> = true;\n"
+        "template <> constexpr bool ns::Primary<Fake>::value = true;\n"
+        "template <> void ns::Primary<Fake>::run() {}\n"
+        "template <> template <> void ns::Outer<int>::run<char>() {}\n"
+        "template <> void mint_door<Tag>() {}\n"
+        "template <> const bool FakeGate::value = true;\n"
+        "template <> bool ns::FakeGate::admits() { return true; }\n",
+    )
+    found_names = [(name.template.line, name.kind, name.is_explicit, name.is_global, name.target, name.through_alias)
+                   for name in specialized_names(shapes.root)]
+    check("specialized_names reads a class, a variable, a member, a function and a member through an alias",
+          found_names == [(4, "class", True, True, ("ns", "Primary"), False),
+                          (5, "class", False, False, ("ns", "Primary"), False),
+                          (6, "variable", True, False, ("ns", "gate_v"), False),
+                          (7, "variable", False, False, ("gate_v",), False),
+                          (8, "member", True, False, ("ns", "Primary"), False),
+                          (9, "member", True, False, ("ns", "Primary"), False),
+                          (10, "function", True, False, ("ns", "Outer", "run"), False),
+                          (11, "function", True, False, ("mint_door",), False),
+                          (12, "member", True, False, ("FakeGate",), True),
+                          (13, "member", True, False, ("ns", "FakeGate"), True)])
+    primaries = [(item.template.line, item.kind, item.name, item.is_definition)
+                 for item in template_primaries(shapes.root)]
+    check("template_primaries reads a class body and a variable initializer as definitions, and a forward "
+          "declaration as none",
+          primaries == [(1, "class", "Primary", True), (2, "class", "Declared", False),
+                        (3, "variable", "gate_v", True)], negative=True)
 
 
 if __name__ == "__main__":

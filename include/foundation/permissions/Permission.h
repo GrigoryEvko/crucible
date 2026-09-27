@@ -204,7 +204,9 @@ inline constexpr bool all_distinct_tags_v = detail::is_each_tag_distinct<Childre
 //
 // Three sources, in this order of precedence:
 //   1. an edge `edge<Tag, Row<...>>` in permission_rows, the enumerable
-//      form, which every_class_in_has_edge audits for the canonical tags;
+//      form, which every_class_in_has_edge audits for the canonical tags.
+//      Only this header, ReadView.h and test/ may open the namespace, and
+//      scripts/check-trait-injection.py refuses it in any other file;
 //   2. `using permission_row = Row<...>;` inside the tag, for a tag
 //      template such as a channel's Whole<UserTag>, whose instances
 //      cannot each be an edge;
@@ -274,10 +276,9 @@ template <typename Tag>
 struct permission_row_lookup {
     static_assert(permission_row_source<Tag>() != ^^void,
                   "permission_row: no effect row is declared for this permission tag, so no token for it can "
-                  "be minted.  Declare one of: `inline constexpr foundation::fail_closed::edge<Tag, "
-                  "foundation::effects::Row<...>> name{};` in namespace foundation::permissions::permission_rows, "
-                  "or `using permission_row = foundation::effects::Row<...>;` inside the tag.  A pure tag "
-                  "declares Row<> explicitly.  Declare it before the first mint of the tag.");
+                  "be minted.  Declare `using permission_row = foundation::effects::Row<...>;` inside the tag.  "
+                  "A pure tag declares Row<> explicitly.  The edge namespace "
+                  "foundation::permissions::permission_rows is for the tags of Permission.h and ReadView.h.");
     using type = typename[:permission_row_source<Tag>():];
     static_assert(std::is_void_v<type> || ::foundation::reflect::IsInstanceOf<type, ^^::foundation::effects::Row>,
                   "permission_row: the row declared for this permission tag is not a foundation::effects::Row.");
@@ -732,9 +733,9 @@ template <typename Tag, typename... Args, typename Brand>
     requires PermissionRootArgs<Tag, Args...>
 [[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept {
     static_assert(has_permission_row_v<Tag>, "mint_permission_root<Tag>: no effect row is declared for Tag, so "
-                                             "nothing says which contexts may own its region.  Declare an edge "
-                                             "in foundation::permissions::permission_rows or a permission_row "
-                                             "member on the tag; a pure tag declares Row<> explicitly.");
+                                             "nothing says which contexts may own its region.  Declare a "
+                                             "permission_row member on the tag.  A pure tag declares Row<> "
+                                             "explicitly.");
     // A missing row is reported once, by the assertion above.
     static_assert(!has_permission_row_v<Tag> || sizeof...(Args) == 1 || permission_row_empty_v<Tag>,
                   "mint_permission_root<Tag>() without an ExecCtx is only valid for "

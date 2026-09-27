@@ -1108,9 +1108,11 @@ struct OpenRelation {
 
 inline constexpr OpenRelation open_relations[] = {
     {^^::foundation::permissions::permission_rows,
-     "the effect row of each permission tag, which a tag registers beside its own declaration.  A tag has one "
-     "row: unique_target refuses a second edge from one tag, an edge beside a permission_row member is refused, "
-     "and a derived tag, which has its parent's row, may declare neither"},
+     "the effect row of each tag of Permission.h and ReadView.h.  scripts/check-trait-injection.py refuses the "
+     "namespace in every other file outside test/, so another header states the row of its tag with a "
+     "permission_row member.  A tag has one row: unique_target refuses a second edge from one tag, an edge "
+     "beside a permission_row member is refused, and a derived tag, which has its parent's row, may declare "
+     "neither"},
 };
 
 consteval void collect_relations(std::meta::info ns, std::vector<std::meta::info>& found) {
