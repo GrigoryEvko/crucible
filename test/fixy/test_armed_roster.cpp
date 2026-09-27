@@ -121,20 +121,11 @@ using EnRouteAfterMsg = gl::Msg<RoleQ, RoleR, LabelB, int, EnRoutePQ>;
 using StarvesR = gl::Rec<gl::Comm<RoleP, RoleQ, gl::Branch<LabelA, int, gl::Var>,
                                   gl::Branch<LabelB, int, gl::Msg<RoleP, RoleR, LabelA, int, gl::End>>>>;
 
-// Local protocols for the crash-stop walks.
+// A local protocol and a delegated endpoint for the session cells.
 namespace sn = ::fixy::session;
-using CrashGuarded = sn::Offer<sn::Recv<int, sn::End>, sn::Recv<sn::Crash<RoleQ>, sn::End>>;
 using BareRecv = sn::Recv<int, sn::End>;
-using BareCrashRecv = sn::Recv<sn::Crash<RoleQ>, sn::End>;
-using PureCrashOffer = sn::Offer<BareCrashRecv>;
-using CrashFirstOffer = sn::Offer<BareCrashRecv, BareRecv>;
-using SendsCrash = sn::Send<sn::Crash<RoleQ>, sn::End>;
 struct DelegatedWire {};
 using DelegatedRecv = sn::DelegatedSession<BareRecv, DelegatedWire, sn::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
-using Delegates = sn::Send<DelegatedRecv, sn::End>;
-using NotedGuardedSelect = sn::Select<sn::Sender<RoleP>, sn::Send<int, CrashGuarded>>;
-using UnwatchedRelay = sn::Select<sn::Sender<RoleP>, sn::Send<int, sn::Offer<sn::Sender<RoleR>, BareRecv,
-                                                                              sn::Recv<sn::Crash<RoleR>, sn::End>>>>;
 
 // A stage type that claims to run inline, and one that makes no claim.
 struct InlineClaimed {};
@@ -769,102 +760,6 @@ struct foundation::contracts::armed_instances<^^gd::has_en_route_pair> {
                               gd::has_en_route_pair<w::RoleP, w::RoleQ, w::OneMsg>>;
 };
 
-// ── fixy: the crash-stop walks ──────────────────────────────────────
-
-namespace cr = ::fixy::session::detail::crash;
-
-// A crash label is never sent, a choice is never all crash branches, and
-// crash branches trail the message branches.
-template <>
-struct foundation::contracts::armed_cell<cr::is_crash_well_structured> {
-    using accepts = witnesses<w::CrashGuarded, w::BareRecv, w::sn::End>;
-    using refuses = witnesses<w::SendsCrash, w::PureCrashOffer, w::CrashFirstOffer, w::BareCrashRecv, int>;
-};
-
-// A crash branch is a structured branch when what follows it is.
-template <>
-struct foundation::contracts::armed_cell<cr::is_branch_well_structured> {
-    using accepts = witnesses<w::BareCrashRecv, w::BareRecv>;
-    using refuses = witnesses<w::SendsCrash, int>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<cr::is_offer_well_structured> {
-    using accepts = witnesses<w::BareRecv>;
-    using refuses = witnesses<w::BareCrashRecv, w::SendsCrash>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<cr::is_delegation_free> {
-    using accepts = witnesses<w::CrashGuarded, w::BareRecv, w::sn::End>;
-    using refuses = witnesses<w::Delegates, int>;
-};
-
-// Rule 5 makes a crash branch for a reliable sender untypable, so the
-// guarded offer is covered only while its sender is unreliable.
-template <>
-struct foundation::contracts::armed_instances<^^cr::is_crash_covered> {
-    using accepts = witnesses<cr::is_crash_covered<w::CrashGuarded, w::RoleQ, w::sn::ReliableSet<>>,
-                              cr::is_crash_covered<w::BareRecv, w::RoleQ, w::sn::ReliableSet<w::RoleQ>>>;
-    using refuses = witnesses<cr::is_crash_covered<w::BareRecv, w::RoleQ, w::sn::ReliableSet<>>,
-                              cr::is_crash_covered<w::CrashGuarded, w::RoleQ, w::sn::ReliableSet<w::RoleQ>>>;
-};
-
-// The head of a message branch travels with its label, and the payload
-// after it does not.
-template <>
-struct foundation::contracts::armed_instances<^^cr::is_branch_crash_covered> {
-    using accepts = witnesses<cr::is_branch_crash_covered<w::BareRecv, w::RoleQ, w::sn::ReliableSet<>>>;
-    using refuses =
-        witnesses<cr::is_branch_crash_covered<w::sn::Recv<int, w::BareRecv>, w::RoleQ, w::sn::ReliableSet<>>>;
-};
-
-template <>
-struct foundation::contracts::armed_instances<^^cr::is_offer_crash_covered> {
-    using accepts = witnesses<
-        cr::is_offer_crash_covered<w::RoleQ, w::RoleQ, w::sn::ReliableSet<>, w::BareRecv, w::BareCrashRecv>>;
-    using refuses = witnesses<
-        cr::is_offer_crash_covered<w::RoleQ, w::RoleQ, w::sn::ReliableSet<>, w::BareRecv>,
-        cr::is_offer_crash_covered<w::RoleQ, w::RoleQ, w::sn::ReliableSet<>, w::BareRecv,
-                                   w::sn::Recv<w::sn::Crash<w::RoleR>, w::sn::End>>>;
-};
-
-template <>
-struct foundation::contracts::armed_instances<^^cr::is_in_reliable_set> {
-    using accepts = witnesses<cr::is_in_reliable_set<w::sn::ReliableSet<w::RoleQ>, w::RoleQ>>;
-    using refuses = witnesses<cr::is_in_reliable_set<w::sn::ReliableSet<>, w::RoleQ>,
-                              cr::is_in_reliable_set<w::sn::ReliableSet<w::RoleP>, w::RoleQ>>;
-};
-
-template <>
-struct foundation::contracts::armed_instances<^^cr::is_in_tuple> {
-    using accepts = witnesses<cr::is_in_tuple<w::RoleQ, std::tuple<w::RoleP, w::RoleQ>>>;
-    using refuses =
-        witnesses<cr::is_in_tuple<w::RoleR, std::tuple<w::RoleP, w::RoleQ>>, cr::is_in_tuple<w::RoleQ, std::tuple<>>>;
-};
-
-template <>
-struct foundation::contracts::armed_instances<^^cr::is_crash_peer_set_included> {
-    using accepts = witnesses<cr::is_crash_peer_set_included<std::tuple<w::RoleQ>, std::tuple<w::RoleP, w::RoleQ>>,
-                              cr::is_crash_peer_set_included<std::tuple<>, std::tuple<>>>;
-    using refuses = witnesses<cr::is_crash_peer_set_included<std::tuple<w::RoleR>, std::tuple<w::RoleP, w::RoleQ>>>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<cr::is_pure_crash_offer> {
-    using accepts = witnesses<w::PureCrashOffer, w::sn::Offer<w::sn::Sender<w::RoleQ>, w::BareCrashRecv>>;
-    using refuses = witnesses<w::CrashGuarded, int>;
-};
-
-// A relay that receives from a third role must watch that role too.
-template <>
-struct foundation::contracts::armed_instances<^^::fixy::session::detail::crash_transport::is_every_sender_watched> {
-    using accepts = witnesses<::fixy::session::detail::crash_transport::is_every_sender_watched<
-        w::NotedGuardedSelect, w::RoleQ, w::sn::ReliableSet<>>>;
-    using refuses = witnesses<::fixy::session::detail::crash_transport::is_every_sender_watched<
-        w::UnwatchedRelay, w::RoleQ, w::sn::ReliableSet<>>>;
-};
-
 // ── fixy: the shapes the recorder reads ─────────────────────────────
 
 namespace rec = ::fixy::session::detail::recording;
@@ -1110,11 +1005,9 @@ struct OpenRelation {
 
 inline constexpr OpenRelation open_relations[] = {
     {^^::foundation::permissions::permission_rows,
-     "the effect row of each tag of Permission.h and ReadView.h.  scripts/check-trait-injection.py refuses the "
-     "namespace in every other file outside test/, so another header states the row of its tag with a "
-     "permission_row member.  A tag has one row: unique_target refuses a second edge from one tag, an edge "
-     "beside a permission_row member is refused, and a derived tag, which has its parent's row, may declare "
-     "neither"},
+     "the effect row of each permission tag, which a tag registers beside its own declaration.  A tag has one "
+     "row: unique_target refuses a second edge from one tag, an edge beside a permission_row member is refused, "
+     "and a derived tag, which has its parent's row, may declare neither"},
 };
 
 consteval void collect_relations(std::meta::info ns, std::vector<std::meta::info>& found) {

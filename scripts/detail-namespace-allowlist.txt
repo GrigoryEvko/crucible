@@ -17,7 +17,7 @@ test/fixy/test_armed_roster.cpp ::fixy::concurrent::detail x26 — names each ar
 test/fixy/test_armed_roster.cpp ::fixy::corpus::detail x11 — names each armed predicate of the corpus
 test/fixy/test_armed_roster.cpp ::fixy::detail x2 — names each armed predicate of the fixy root
 test/fixy/test_armed_roster.cpp ::fixy::mach::detail x6 — names each armed predicate of the machine transitions
-test/fixy/test_armed_roster.cpp ::fixy::session::detail x43 — names each armed predicate of the session core and the crash walk
+test/fixy/test_armed_roster.cpp ::fixy::session::detail x10 — names each armed predicate of the session core and the crash walk
 test/fixy/test_armed_roster.cpp ::fixy::session::global::detail x24 — names each armed predicate of the global types, the live en-route walk too
 test/fixy/test_armed_roster.cpp ::fixy::spawn::detail x6 — names each armed predicate of the spawn fit
 test/fixy/test_armed_roster.cpp ::foundation::effects::detail x5 — names each armed predicate of the effects layer
@@ -39,7 +39,7 @@ test/foundation/test_host_owner_attacks.cpp ::foundation::effects::detail x4 —
 test/fixy/test_session_async_channel.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_bridges.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_crash_attack.cpp ::foundation::effects::detail x1 — builds a background context from its witness
-test/fixy/test_session_crash_stop.cpp ::fixy::session::detail x11 — walks the crash projection helpers
+test/fixy/test_session_crash_stop.cpp ::fixy::session::detail x5 — walks the crash projection helpers
 test/fixy/test_session_crash_stop.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_entry.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_global_attack.cpp ::fixy::session::detail x1 — reads the projection check of each role
@@ -52,7 +52,6 @@ test/fixy/test_session_handle_attacks.cpp ::foundation::effects::detail x1 — b
 test/fixy/test_session_ownership_attacks.cpp ::fixy::session::detail x2 — reads the payload refusal of the ownership check
 test/fixy/test_session_payload_seal.cpp ::fixy::session::detail x8 — specializes each gate and cache cell of the payload walk to show that no verdict changes
 test/fixy/test_session_recording.cpp ::foundation::effects::detail x1 — builds a background context from its witness
-test/fixy/test_session_rollback.cpp ::fixy::session::detail x2 — pins the checkpoint erasure of a protocol
 test/fixy/test_session_rollback.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_subtype.cpp ::fixy::session::detail x1 — pins the bound of the async subtype search
 test/fixy/test_session_wire_word.cpp ::foundation::effects::detail x1 — builds a background context from its witness

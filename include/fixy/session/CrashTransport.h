@@ -72,9 +72,10 @@
 // arm could not receive a label, it had no arm for delegation or
 // checkpoints, and its stop_class_compatible walk admitted an unknown
 // combinator through a true primary.  Here one class handles every head,
-// the crash branch is what runs on a crash, and every walk that gates
-// the mint has a false primary.  The crash class is no longer in the
-// type, so no counterpart of stop_class_compatible is needed.
+// the crash branch is what runs on a crash, and the one crash walk that
+// gates the mint refuses a combinator that it does not know.  The crash
+// class is no longer in the type, so no counterpart of
+// stop_class_compatible is needed.
 //
 // ── What the transport is trusted with ──────────────────────────────
 //
@@ -272,43 +273,23 @@ struct LocalCrashStop : tag_base {};
 
 // ── The sender watch ─────────────────────────────────────────────────
 //
-// One cell watches one role.  An Offer whose sender is unreliable and is
-// not the watched peer has a crash branch that no detector can trigger,
-// so the mint refuses it.
+// One cell watches one role.  The crash walk of fixy/session/Crash.h
+// refuses a protocol that names an unreliable role other than the watched
+// peer: the sender of an Offer, or the role of a keyed step.
 
 namespace detail::crash_transport {
 
-template <typename P, typename Peer, typename Reliable>
-struct is_every_sender_watched : std::false_type {};
+// The role that sends a keyed reception: the role that its payload names,
+// or the channel peer.  The mint admits the named role only when it is
+// the peer or reliable.
+[[nodiscard]] consteval std::meta::info sender_of_step(std::meta::info step, std::meta::info peer) {
+    const std::meta::info role = crash::named_role(
+        crash::tr::decompose(protocol_registry, crash::tr::strip_wrappers(protocol_registry, step)));
+    return role == std::meta::info{} ? peer : role;
+}
 
-template <typename OfferSender, typename Peer, typename Reliable, typename... Bs>
-inline constexpr bool offer_watched_v =
-    (std::is_same_v<OfferSender, Peer> || reliable_set_contains_v<Reliable, OfferSender>)
-    && (is_every_sender_watched<Bs, Peer, Reliable>::value && ...);
-
-template <typename Peer, typename Reliable>
-struct is_every_sender_watched<End, Peer, Reliable> : std::true_type {};
-template <typename Peer, typename Reliable>
-struct is_every_sender_watched<Continue, Peer, Reliable> : std::true_type {};
-template <typename T, typename K, typename Peer, typename Reliable>
-struct is_every_sender_watched<Send<T, K>, Peer, Reliable> : is_every_sender_watched<K, Peer, Reliable> {};
-template <typename T, typename K, typename Peer, typename Reliable>
-struct is_every_sender_watched<Recv<T, K>, Peer, Reliable> : is_every_sender_watched<K, Peer, Reliable> {};
-template <typename... Bs, typename Peer, typename Reliable>
-struct is_every_sender_watched<Select<Bs...>, Peer, Reliable>
-    : std::bool_constant<(is_every_sender_watched<Bs, Peer, Reliable>::value && ...)> {};
-template <typename... Bs, typename Peer, typename Reliable>
-struct is_every_sender_watched<Offer<Bs...>, Peer, Reliable> : std::bool_constant<offer_watched_v<Peer, Peer, Reliable, Bs...>> {
-};
-template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct is_every_sender_watched<Offer<Sender<Role>, Bs...>, Peer, Reliable>
-    : std::bool_constant<offer_watched_v<Role, Peer, Reliable, Bs...>> {};
-// The note of a Select names the endpoint itself, which sends and is not
-// watched, so the walk reads the branches alone.
-template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct is_every_sender_watched<Select<Sender<Role>, Bs...>, Peer, Reliable> : is_every_sender_watched<Select<Bs...>, Peer, Reliable> {};
-template <typename B, typename Peer, typename Reliable>
-struct is_every_sender_watched<Loop<B>, Peer, Reliable> : is_every_sender_watched<B, Peer, Reliable> {};
+template <typename P, typename Peer>
+using keyed_sender_t = typename[:sender_of_step(^^P, ^^Peer):];
 
 // The number of message branches of an Offer.  Rule 6 puts the crash
 // branches last, so this is also the index of the first crash branch.
@@ -413,16 +394,17 @@ struct message_counts {
 // Crash_Splits_A_Message.
 //
 // A payload from a role that the cell does not watch waits without the
-// check: the mint admits such a role only when it is reliable.
+// check: the mint admits such a role only when it is reliable.  Sender is
+// the role that sends the payload: the sender of the label for a payload,
+// the role that a keyed reception names, and the channel peer otherwise.
 //
 // The first read that finds nothing opens a watch::wait_scope on the
 // endpoint of the session, so the watch sees the wait and checks it
 // against the priority order.  A read that finds its payload at once
 // never touches the watch.
-template <typename Position, typename Peer, typename Reliable, typename Read, typename Resource>
+template <typename Position, typename Peer, typename Sender, typename Read, typename Resource>
 [[nodiscard]] constexpr auto await_payload(Read& read, Resource& resource, const PeerCrashCell& cell,
                                            std::uint64_t received, watch::endpoint_id endpoint) {
-    using Sender = typename payload_sender<Position, Peer>::type;
     constexpr bool is_new_message = std::is_same_v<Position, between_messages>;
     std::optional<watch::wait_scope> wait;
     for (;;) {
@@ -471,10 +453,9 @@ template <typename Proto, typename Self, typename Peer, typename Reliable>
 concept CrashSessionAdmissible = is_reliable_set<Reliable>::value && !std::is_same_v<Self, Peer>
                               && WellFormedRunnableProtocol<Proto>
                               && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
-                              && is_crash_well_formed_v<Proto>
-                              && every_reception_handles_crash_v<Proto, Peer, Reliable>
-                              && detail::crash_transport::is_every_sender_watched<Proto, Peer, Reliable>::value
-                              && detail::crash::is_delegation_free<Proto>::value;
+                              && is_crash_well_formed_v<Proto> && every_reception_handles_crash_v<Proto, Peer, Reliable>
+                              && detail::crash::is_every_sender_watched_v<Proto, Peer, Reliable>
+                              && detail::crash::is_delegation_free_v<Proto>;
 
 // The whole gate of mint_crash_session: an admissible crash session, a
 // Resource that a mint admits, and a context that admits the effect row of
@@ -709,7 +690,8 @@ public:
                       "std::optional<T>(Resource&).  A read of another shape waits inside the transport, where no "
                       "crash is seen, so a dead peer blocks it for ever.  Return the payload when one is queued, and "
                       "no value otherwise.");
-        std::optional<T> payload = detail::crash_transport::await_payload<Position, Peer, Reliable>(
+        using Sender = typename detail::crash_transport::payload_sender<Position, Peer>::type;
+        std::optional<T> payload = detail::crash_transport::await_payload<Position, Peer, Sender>(
             read, watched.inner_.resource(), *watched.peer_cell_, watched.counts_.received,
             watched.inner_.watch_endpoint());
         auto [value, next] = std::move(watched.inner_).recv(
@@ -736,14 +718,16 @@ public:
                       "fixy::session::diagnostic [Crash_Read_Must_Poll]: recv(): the read of a keyed message is not "
                       "a polling read, std::optional<std::size_t>(Resource&).  A read of another shape waits inside "
                       "the transport, where no crash is seen, so a dead peer blocks it for ever.");
-        const std::optional<std::size_t> word = detail::crash_transport::await_payload<Position, Peer, Reliable>(
+        // The word and the value come from the role that the message names.
+        using Sender = detail::crash_transport::keyed_sender_t<P, Peer>;
+        const std::optional<std::size_t> word = detail::crash_transport::await_payload<Position, Peer, Sender>(
             poll, watched.inner_.resource(), *watched.peer_cell_, watched.counts_.received,
             watched.inner_.watch_endpoint());
         auto next =
             std::move(watched.inner_).recv([&word](Resource&) noexcept -> std::optional<std::size_t> { return word; });
         const detail::crash_transport::message_counts counts = detail::crash_transport::one_more_received(watched.counts_);
         if constexpr (keyed_step_has_value_v<P>) {
-            return wrap_<detail::crash_transport::payload_to_receive<Peer>>(watched, std::move(next), counts);
+            return wrap_<detail::crash_transport::payload_to_receive<Sender>>(watched, std::move(next), counts);
         } else {
             return wrap_(watched, std::move(next), counts);
         }
@@ -843,8 +827,9 @@ public:
         }
         if (word) return take_word(*word);
         if constexpr (is_watched) {
-            return std::invoke(handler, wrap_(watched, std::move(watched.inner_).template pick_local<crash_branch_index_v<P, Peer>>(),
-                                              counts));
+            constexpr std::size_t crash_branch = detail::crash::crash_branch_position(^^P, ^^Peer);
+            return std::invoke(handler,
+                               wrap_(watched, std::move(watched.inner_).template pick_local<crash_branch>(), counts));
         } else {
             detail::crash_transport::abort_on_reliable_peer_crash();
         }

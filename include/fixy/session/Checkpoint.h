@@ -123,83 +123,39 @@ namespace fixy::session {
 // is not compliant by that fact alone, because the imposed flag can still
 // make a Roll fail, so the mint checks the pair.
 
+// Each trait of this header is an alias and each _v form is a concept, so
+// no program can specialize one to change its answer.
+
+namespace detail::checkpoint {
+
+// A primitive at the head of P, with no wrapper around it.
+[[nodiscard]] consteval bool is_primitive_type(std::meta::info type) {
+    const std::meta::info shape = ::foundation::algebra::transition::shape_of(type);
+    return shape == ^^Commit || shape == ^^Roll || shape == ^^Abort;
+}
+
+}  // namespace detail::checkpoint
+
 template <typename P>
-struct is_checkpoint_primitive : std::false_type {};
-template <typename K>
-struct is_checkpoint_primitive<Commit<K>> : std::true_type {};
-template <>
-struct is_checkpoint_primitive<Roll> : std::true_type {};
-template <>
-struct is_checkpoint_primitive<Abort> : std::true_type {};
+using is_checkpoint_primitive = std::bool_constant<detail::checkpoint::is_primitive_type(^^P)>;
 
 // ── Erasure to the plain protocol ───────────────────────────────────
 //
 // A checkpoint session runs over a plain handle.  The handle steps the
-// erased protocol, in which Commit<K> is K and Roll and Abort are End.
-// The branch count of every choice is unchanged, so a label index means
-// the same branch in both protocols.  An unknown combinator has no
-// erasure, so it stops the build.
+// erased protocol, in which Commit<K> is K and Roll and Abort are End: the
+// checkpoint erasure of the one erase walk of fixy/session/Crash.h.  The
+// branch count of every choice is unchanged, so a label index means the
+// same branch in both protocols.  An unknown combinator has no erasure,
+// so it stops the build.
+
+template <typename P>
+using checkpoint_erase_t = typename[:detail::erased(^^P, detail::erasure::checkpoints):];
 
 namespace detail::checkpoint {
 
-template <typename P>
-struct erase;
-
-template <typename P>
-using erase_t = typename erase<P>::type;
-
-template <>
-struct erase<End> {
-    using type = End;
-};
-template <>
-struct erase<Continue> {
-    using type = Continue;
-};
-template <typename T, typename K>
-struct erase<Send<T, K>> {
-    using type = Send<T, erase_t<K>>;
-};
-template <typename T, typename K>
-struct erase<Recv<T, K>> {
-    using type = Recv<T, erase_t<K>>;
-};
-template <typename... Bs>
-struct erase<Select<Bs...>> {
-    using type = Select<erase_t<Bs>...>;
-};
-template <typename... Bs>
-struct erase<Offer<Bs...>> {
-    using type = Offer<erase_t<Bs>...>;
-};
-template <typename Role, typename... Bs>
-struct erase<Offer<Sender<Role>, Bs...>> {
-    using type = Offer<Sender<Role>, erase_t<Bs>...>;
-};
-template <typename Role, typename... Bs>
-struct erase<Select<Sender<Role>, Bs...>> {
-    using type = Select<Sender<Role>, erase_t<Bs>...>;
-};
-template <typename B>
-struct erase<Loop<B>> {
-    using type = Loop<erase_t<B>>;
-};
-template <typename K>
-struct erase<Commit<K>> {
-    using type = erase_t<K>;
-};
-template <>
-struct erase<Roll> {
-    using type = End;
-};
-template <>
-struct erase<Abort> {
-    using type = End;
-};
-
 template <typename LoopCtx>
 struct erase_loop {
-    using type = erase_t<LoopCtx>;
+    using type = checkpoint_erase_t<LoopCtx>;
 };
 template <>
 struct erase_loop<void> {
@@ -222,9 +178,6 @@ template <typename B, typename LoopCtx>
 struct resolve<Loop<B>, LoopCtx> : resolve<B, Loop<B>> {};
 
 }  // namespace detail::checkpoint
-
-template <typename P>
-using checkpoint_erase_t = detail::checkpoint::erase_t<P>;
 
 // ── The compliance check (Def. 4.1 over Fig. 11) ────────────────────
 
@@ -303,11 +256,13 @@ consteval std::vector<info> branches_of(info type) {
 
 // A rollback cannot recall a delegated endpoint that the peer already
 // holds, so a checkpoint session carries no delegation either.  The
-// question is the one a crash session asks, in fixy/session/Payload.h.
+// question is the one a crash session asks, through the same walk of
+// fixy/session/Crash.h.  The walk takes a reflection, so it reaches the
+// plain-payload concept through a substitution, which also keeps the
+// named diagnostic of a payload that it cannot read.
 consteval bool payload_admitted(info payload) {
     return std::meta::extract<bool>(std::meta::substitute(^^is_plain_payload_v, {payload}))
-        && !std::meta::extract<bool>(std::meta::substitute(^^is_crash_payload_v, {payload}))
-        && !std::meta::extract<bool>(std::meta::substitute(^^payload_conveys_delegation_v, {payload}));
+        && !crash::is_crash_payload_type(payload) && !crash::conveys_delegation(payload);
 }
 
 consteval bool is_primitive(Kind kind) { return kind == Kind::Commit || kind == Kind::Roll || kind == Kind::Abort; }
@@ -522,9 +477,19 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) 
     return run.verdict;
 }
 
+// The verdict that the gate reads.  It is computed once for each pair.
+template <typename P1, typename P2>
+inline constexpr CheckpointVerdict verdict_v = verdict_of(^^P1, ^^P2);
+
+// True when the question is a CheckpointPair whose verdict is Compliant.
+// Any other type answers false.
+[[nodiscard]] consteval bool pair_is_compliant(info question);
+
 }  // namespace detail::checkpoint
 
 // The verdict for a pair of checkpoint protocols, one for each endpoint.
+// The gate reads the walk and not this spelling, so a specialization of it
+// changes only what its author reads.
 template <typename P1, typename P2>
 inline constexpr CheckpointVerdict checkpoint_verdict_v = detail::checkpoint::verdict_of(^^P1, ^^P2);
 
@@ -533,14 +498,21 @@ inline constexpr CheckpointVerdict checkpoint_verdict_v = detail::checkpoint::ve
 template <typename P1, typename P2>
 struct CheckpointPair {};
 
+consteval bool detail::checkpoint::pair_is_compliant(info question) {
+    const info asked = std::meta::dealias(question);
+    if (!std::meta::is_type(asked) || !std::meta::has_template_arguments(asked)
+        || std::meta::template_of(asked) != ^^CheckpointPair) {
+        return false;
+    }
+    const std::vector<info> sides = std::meta::template_arguments_of(asked);
+    return verdict_of(sides[0], sides[1]) == CheckpointVerdict::Compliant;
+}
+
 template <typename Q>
-struct is_checkpoint_compliant : std::false_type {};
-template <typename P1, typename P2>
-struct is_checkpoint_compliant<CheckpointPair<P1, P2>>
-    : std::bool_constant<checkpoint_verdict_v<P1, P2> == CheckpointVerdict::Compliant> {};
+using is_checkpoint_compliant = std::bool_constant<detail::checkpoint::pair_is_compliant(^^Q)>;
 
 template <typename P1, typename P2>
-inline constexpr bool checkpoint_compliant_v = is_checkpoint_compliant<CheckpointPair<P1, P2>>::value;
+concept checkpoint_compliant_v = detail::checkpoint::verdict_v<P1, P2> == CheckpointVerdict::Compliant;
 
 // Whether Proto can run on one endpoint of a checkpoint session whose
 // other endpoint runs PeerProto.  Each refusal is its own atomic
@@ -549,13 +521,13 @@ inline constexpr bool checkpoint_compliant_v = is_checkpoint_compliant<Checkpoin
 // here still refuses.
 template <typename Proto, typename PeerProto>
 concept CheckpointSessionAdmissible =
-    checkpoint_verdict_v<Proto, PeerProto> != CheckpointVerdict::NotCheckpointShaped
-    && checkpoint_verdict_v<Proto, PeerProto> != CheckpointVerdict::Stuck
-    && checkpoint_verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelOutOfRange
-    && checkpoint_verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelsDisagree
-    && checkpoint_verdict_v<Proto, PeerProto> != CheckpointVerdict::RollToImposedCheckpoint
-    && checkpoint_verdict_v<Proto, PeerProto> != CheckpointVerdict::LoopUnresolved
-    && checkpoint_verdict_v<Proto, PeerProto> != CheckpointVerdict::TooManyConfigurations
+    detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::NotCheckpointShaped
+    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::Stuck
+    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelOutOfRange
+    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelsDisagree
+    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::RollToImposedCheckpoint
+    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LoopUnresolved
+    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::TooManyConfigurations
     && checkpoint_compliant_v<Proto, PeerProto> && WellFormedRunnableProtocol<checkpoint_erase_t<Proto>>
     && WellFormedRunnableProtocol<checkpoint_erase_t<PeerProto>>;
 
@@ -921,3 +893,9 @@ struct foundation::contracts::armed_cell<::fixy::session::is_checkpoint_complian
                   ::fixy::session::CheckpointPair<::fixy::session::Send<int, ::fixy::session::Roll>,
                                                   ::fixy::session::Recv<int, ::fixy::session::Roll>>>;
 };
+
+// The two traits are aliases, and the roster walk of
+// foundation/contracts/Armed.h finds class templates only.  These two
+// assertions read the two cells.
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_checkpoint_primitive>);
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_checkpoint_compliant>);

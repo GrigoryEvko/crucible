@@ -134,9 +134,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <tuple>
 #include <type_traits>
-#include <utility>
+#include <vector>
 
 namespace fixy::session {
 
@@ -146,14 +147,16 @@ namespace fixy::session {
 // seal of the registry.  The registration gives its dual, its terminal
 // kind that absorbs a suffix, and its place in refinement, and it marks
 // Stop as not plain, so no design-time protocol holds it.
+//
+// Each trait of this header is an alias, and each _v form is a concept, so
+// no program can specialize one to change its answer.  The registry and
+// the crash walk below give every answer.
 
 template <typename P>
-struct is_stop : std::bool_constant<std::is_same_v<P, Stop>> {};
-template <VendorBackend V, typename P>
-struct is_stop<VendorPinned<V, P>> : is_stop<P> {};
+using is_stop = std::bool_constant<detail::head_is(^^P, ^^Stop)>;
 
 template <typename P>
-inline constexpr bool is_stop_v = is_stop<P>::value;
+concept is_stop_v = detail::head_is(^^P, ^^Stop);
 
 // ── The crash label and its metadata ─────────────────────────────────
 
@@ -179,13 +182,21 @@ struct Crash {
     CrashCause cause = CrashCause::Unknown;
 };
 
-template <typename T>
-struct is_crash_payload : std::false_type {};
-template <typename Peer>
-struct is_crash_payload<Crash<Peer>> : std::true_type {};
+namespace detail::crash {
+
+namespace tr = ::foundation::algebra::transition;
+
+[[nodiscard]] consteval bool is_crash_payload_type(std::meta::info type) {
+    return std::meta::is_type(std::meta::dealias(type)) && tr::shape_of(type) == ^^Crash;
+}
+
+}  // namespace detail::crash
 
 template <typename T>
-inline constexpr bool is_crash_payload_v = is_crash_payload<T>::value;
+using is_crash_payload = std::bool_constant<detail::crash::is_crash_payload_type(^^T)>;
+
+template <typename T>
+concept is_crash_payload_v = detail::crash::is_crash_payload_type(^^T);
 
 // ── The payload rule of the crash label ──────────────────────────────
 //
@@ -198,21 +209,29 @@ inline constexpr bool is_crash_payload_v = is_crash_payload<T>::value;
 // fixy/session/Protocol.h, because every registration stands under the
 // seal of that header.
 
-// A crash branch of an Offer.
-template <typename B>
-struct is_crash_branch : std::false_type {};
-template <typename Peer, typename K>
-struct is_crash_branch<Recv<Crash<Peer>, K>> : std::true_type {};
-
-template <typename B>
-inline constexpr bool is_crash_branch_v = is_crash_branch<B>::value;
-
 namespace detail::crash {
 
-template <typename... Bs>
-inline constexpr bool every_branch_is_crash_v = (is_crash_branch_v<Bs> && ...);
+// A reception at the head of a branch: a plain input step whose payload
+// is no protocol.
+[[nodiscard]] consteval bool is_branch_reception(const tr::node& head) {
+    return head.is_registered && head.entry.kind == tr::shape_kind::step
+        && head.entry.direction == tr::polarity::input && head.entry.is_plain && !head.entry.payload_is_protocol;
+}
+
+// A crash branch of an Offer: a reception of the crash label, with no
+// wrapper around it.
+[[nodiscard]] consteval bool is_crash_branch_type(std::meta::info branch) {
+    const tr::node head = tr::decompose(protocol_registry, branch);
+    return is_branch_reception(head) && is_crash_payload_type(head.payload);
+}
 
 }  // namespace detail::crash
+
+template <typename B>
+using is_crash_branch = std::bool_constant<detail::crash::is_crash_branch_type(^^B)>;
+
+template <typename B>
+concept is_crash_branch_v = detail::crash::is_crash_branch_type(^^B);
 
 // ── Reliable roles and unavailable queues ────────────────────────────
 
@@ -225,22 +244,31 @@ struct ReliableSet {
 
 using NoReliableRoles = ReliableSet<>;
 
-template <typename T>
-struct is_reliable_set : std::false_type {};
-template <typename... Roles>
-struct is_reliable_set<ReliableSet<Roles...>> : std::true_type {};
-
 namespace detail::crash {
 
-template <typename Reliable, typename Role>
-struct is_in_reliable_set;
-template <typename... Roles, typename Role>
-struct is_in_reliable_set<ReliableSet<Roles...>, Role> : std::bool_constant<(std::is_same_v<Roles, Role> || ...)> {};
+[[nodiscard]] consteval bool is_reliable_set_type(std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    return std::meta::is_type(dealiased) && std::meta::has_template_arguments(dealiased)
+        && std::meta::template_of(dealiased) == ^^ReliableSet;
+}
+
+// True when `role` is a role of the reliable set.  A type that is no
+// ReliableSet holds no role.  Complexity: linear in the roles of the set.
+[[nodiscard]] consteval bool holds_role(std::meta::info reliable, std::meta::info role) {
+    if (!is_reliable_set_type(reliable)) return false;
+    for (const std::meta::info member : std::meta::template_arguments_of(std::meta::dealias(reliable))) {
+        if (std::meta::dealias(member) == std::meta::dealias(role)) return true;
+    }
+    return false;
+}
 
 }  // namespace detail::crash
 
+template <typename T>
+using is_reliable_set = std::bool_constant<detail::crash::is_reliable_set_type(^^T)>;
+
 template <typename Reliable, typename Role>
-inline constexpr bool reliable_set_contains_v = detail::crash::is_in_reliable_set<Reliable, Role>::value;
+concept reliable_set_contains_v = detail::crash::holds_role(^^Reliable, ^^Role);
 
 // The queue into a crashed recipient (⊘ in LMCS 2025 Fig. 2).  A send
 // into it is dropped rather than delivered (rule r-send-↯).  The type
@@ -256,106 +284,39 @@ struct is_unavailable_queue : std::false_type {};
 template <typename Peer>
 struct is_unavailable_queue<UnavailableQueue<Peer>> : std::true_type {};
 
-// ── Crash well-formedness: rules 1, 2, 4, 6 and 7 ────────────────────
+// ── The crash walk ───────────────────────────────────────────────────
 //
-// The walk refuses a combinator it does not know.  A header that adds a
-// combinator adds its specialization here, or every crash-aware session
-// refuses a protocol that holds the combinator.
-
-namespace detail::crash {
-
-template <typename B>
-struct branch_crash_peer {
-    using type = void;
-};
-template <typename Peer, typename K>
-struct branch_crash_peer<Recv<Crash<Peer>, K>> {
-    using type = Peer;
-};
-
-template <typename B>
-using branch_crash_peer_t = typename branch_crash_peer<B>::type;
-
-template <typename P>
-struct is_crash_well_structured : std::false_type {};
-
-template <typename B>
-struct is_branch_well_structured : is_crash_well_structured<B> {};
-template <typename Peer, typename K>
-struct is_branch_well_structured<Recv<Crash<Peer>, K>> : is_crash_well_structured<K> {};
-
-// Rule 6: no message branch follows a crash branch.
-template <typename... Bs>
-consteval bool crash_branches_trail() {
-    constexpr bool crash_at[] = {false, is_crash_branch_v<Bs>...};
-    bool crash_seen = false;
-    for (std::size_t i = 1; i < std::size(crash_at); ++i) {
-        if (crash_at[i]) {
-            crash_seen = true;
-        } else if (crash_seen) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// Rule 7: one crash branch for each peer.
-template <typename Peer, typename... Bs>
-inline constexpr std::size_t crash_branches_for_v = (std::size_t{std::is_same_v<branch_crash_peer_t<Bs>, Peer>} + ...
-                                                     + std::size_t{0});
-
-template <typename... Bs>
-inline constexpr bool crash_peers_distinct_v =
-    ((!is_crash_branch_v<Bs> || crash_branches_for_v<branch_crash_peer_t<Bs>, Bs...> == 1) && ...);
-
-template <typename... Bs>
-struct is_offer_well_structured
-    : std::bool_constant<(is_branch_well_structured<Bs>::value && ...) && !every_branch_is_crash_v<Bs...>
-                         && crash_branches_trail<Bs...>() && crash_peers_distinct_v<Bs...>> {};
-
-template <>
-struct is_crash_well_structured<End> : std::true_type {};
-template <>
-struct is_crash_well_structured<Continue> : std::true_type {};
-template <typename T, typename K>
-struct is_crash_well_structured<Send<T, K>> : std::bool_constant<!is_crash_payload_v<T> && is_crash_well_structured<K>::value> {};
-// Rule 4: a bare reception of the crash label is refused.
-template <typename T, typename K>
-struct is_crash_well_structured<Recv<T, K>> : std::bool_constant<!is_crash_payload_v<T> && is_crash_well_structured<K>::value> {};
-template <typename... Bs>
-struct is_crash_well_structured<Select<Bs...>> : std::bool_constant<(is_crash_well_structured<Bs>::value && ...)> {};
-template <typename... Bs>
-struct is_crash_well_structured<Offer<Bs...>> : is_offer_well_structured<Bs...> {};
-template <typename Role, typename... Bs>
-struct is_crash_well_structured<Offer<Sender<Role>, Bs...>> : is_offer_well_structured<Bs...> {};
-// A Sender note on a Select names the role that picks, which is the
-// endpoint itself.  The note is not a branch, so each walk in this
-// header reads a noted Select as the Select of its branches.
-template <typename Role, typename... Bs>
-struct is_crash_well_structured<Select<Sender<Role>, Bs...>> : is_crash_well_structured<Select<Bs...>> {};
-template <typename B>
-struct is_crash_well_structured<Loop<B>> : is_crash_well_structured<B> {};
-template <VendorBackend V, typename P>
-struct is_crash_well_structured<VendorPinned<V, P>> : is_crash_well_structured<P> {};
-
-}  // namespace detail::crash
-
-// True when P is well-formed and obeys rules 1, 2, 4, 6 and 7.  Rules 3
-// and 5 need the reliable roles, which is_crash_covered reads.
-template <typename P>
-struct is_crash_well_formed : std::bool_constant<is_well_formed_v<P> && detail::crash::is_crash_well_structured<P>::value> {};
-
-template <typename P>
-inline constexpr bool is_crash_well_formed_v = is_crash_well_formed<P>::value;
-
+// One fold over the protocol registry answers each crash question of a
+// protocol.  The four answers of a node come from the answers of its
+// children, so the walk visits each node once.
+//
+//   is_structured       Rules 1, 2, 4, 6 and 7.  They need no peer.
+//   is_covered          Rules 3 and 5, against the channel peer and the
+//                       reliable roles.
+//   is_watched          Each role that the protocol names is the channel
+//                       peer or reliable.  One cell watches one role, so a
+//                       crash of another unreliable role reaches no
+//                       detector, and its crash branch never runs.  The
+//                       roles are the sender of each Offer and the role
+//                       that the payload rule of a keyed step names: the
+//                       sender of a keyed reception and the receiver of a
+//                       keyed send.  Rule 3 makes each crash branch name
+//                       the sender of its Offer.
+//   is_delegation_free  No payload conveys a session endpoint.
+//
+// The walk refuses a combinator that the registry does not know, a
+// combinator that is not plain, and a step whose payload is a protocol.
+// Each wrapper passes to what it wraps, so a VendorPinned protocol gets
+// the answers of its inner protocol.  On a binary channel the sender of a
+// Recv or of an Offer with no note is the channel peer.
+//
 // ── Delegation ───────────────────────────────────────────────────────
 //
 // The crash-stop theory that these rules follow has no delegation (LMCS
 // 2025, footnote 2 on p. 11).  A delegated endpoint has peers of its
 // own, and no detector of this session watches them, so the crash of
-// such a peer leaves the holder waiting for ever.  The coverage walk
-// below does not look inside a payload.  A crash-aware session refuses
-// each payload that payload_conveys_delegation_v of
+// such a peer leaves the holder waiting for ever.  A crash-aware session
+// refuses each payload that payload_conveys_delegation_v of
 // fixy/session/Payload.h accepts: the hand-off marker, a session handle
 // or a pointer to one, and a carrier with content that the query cannot
 // read.  Barwell, Scalas, Yoshida and Zhou (CONCUR 2022) type delegation
@@ -363,158 +324,344 @@ inline constexpr bool is_crash_well_formed_v = is_crash_well_formed<P>::value;
 
 namespace detail::crash {
 
-// The primary refuses, so a combinator this walk does not know is not
-// admitted.
-template <typename P>
-struct is_delegation_free : std::false_type {};
-template <>
-struct is_delegation_free<End> : std::true_type {};
-template <>
-struct is_delegation_free<Continue> : std::true_type {};
-template <typename T, typename K>
-struct is_delegation_free<Send<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && is_delegation_free<K>::value> {};
-template <typename T, typename K>
-struct is_delegation_free<Recv<T, K>> : std::bool_constant<!payload_conveys_delegation_v<T> && is_delegation_free<K>::value> {};
-template <typename... Bs>
-struct is_delegation_free<Select<Bs...>> : std::bool_constant<(is_delegation_free<Bs>::value && ...)> {};
-template <typename... Bs>
-struct is_delegation_free<Offer<Bs...>> : std::bool_constant<(is_delegation_free<Bs>::value && ...)> {};
-template <typename Role, typename... Bs>
-struct is_delegation_free<Offer<Sender<Role>, Bs...>> : std::bool_constant<(is_delegation_free<Bs>::value && ...)> {};
-template <typename Role, typename... Bs>
-struct is_delegation_free<Select<Sender<Role>, Bs...>> : is_delegation_free<Select<Bs...>> {};
-template <typename B>
-struct is_delegation_free<Loop<B>> : is_delegation_free<B> {};
-template <VendorBackend V, typename P>
-struct is_delegation_free<VendorPinned<V, P>> : is_delegation_free<P> {};
+struct verdict {
+    bool is_structured = false;
+    bool is_covered = false;
+    bool is_watched = false;
+    bool is_delegation_free = false;
+};
+
+inline constexpr verdict refused{};
+inline constexpr verdict admitted{.is_structured = true, .is_covered = true, .is_watched = true,
+                                  .is_delegation_free = true};
+
+[[nodiscard]] consteval verdict both(const verdict& lhs, const verdict& rhs) {
+    return {lhs.is_structured && rhs.is_structured, lhs.is_covered && rhs.is_covered,
+            lhs.is_watched && rhs.is_watched, lhs.is_delegation_free && rhs.is_delegation_free};
+}
+
+// The channel of the walk: the peer that the cell watches and the set of
+// reliable roles.
+struct channel {
+    std::meta::info peer{};
+    std::meta::info reliable{};
+};
+
+// The role of a note Sender<Role>, or of a crash payload Crash<Peer>.
+[[nodiscard]] consteval std::meta::info first_argument(std::meta::info type) {
+    return std::meta::dealias(std::meta::template_arguments_of(std::meta::dealias(type))[0]);
+}
+
+// The role that the payload rule of a keyed step names, in either
+// direction, or null.
+[[nodiscard]] consteval std::meta::info named_role(const tr::node& step) {
+    const tr::payload_lookup rule = tr::lookup_payload_rule(protocol_registry, step.payload);
+    if (!rule.is_found || rule.entry.input_note == std::meta::info{}) return {};
+    if (!std::meta::can_substitute(rule.entry.input_note, {step.payload})) return {};
+    return first_argument(std::meta::substitute(rule.entry.input_note, {step.payload}));
+}
+
+[[nodiscard]] consteval bool is_watched_role(const channel& on, std::meta::info role) {
+    return role == std::meta::info{} || std::meta::dealias(role) == std::meta::dealias(on.peer)
+        || holds_role(on.reliable, role);
+}
+
+// A payload that the delegation query cannot read stops the build: the
+// instantiation of payload_conveys_delegation_v names the component that
+// it cannot read.  The walk then answers false, so the gate that reads it
+// adds no second error to that one.
+[[nodiscard]] consteval bool conveys_delegation(std::meta::info payload) {
+    const ::fixy::session::detail::PayloadFacts facts = ::fixy::session::detail::payload_facts_of(payload);
+    if (!facts.is_carrier_readable) {
+        static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^payload_conveys_delegation_v, {payload})));
+        return false;
+    }
+    return facts.carrier != DelegationCarrier::None;
+}
+
+// The answers of a plain step whose continuation has the answers `after`.
+// A reception at the head of a message branch travels with the label of
+// its Offer, so the Offer covers it and rule 3 continues after it.
+[[nodiscard]] consteval verdict step_verdict(const tr::node& view, const verdict& after, const channel& on,
+                                             bool travels_with_a_label) {
+    const std::meta::info role = named_role(view);
+    const std::meta::info sender = role == std::meta::info{} ? on.peer : role;
+    const bool is_bare_reception = view.entry.direction == tr::polarity::input && !travels_with_a_label;
+    verdict result{};
+    result.is_structured = !is_crash_payload_type(view.payload) && after.is_structured;
+    result.is_covered = (!is_bare_reception || holds_role(on.reliable, sender)) && after.is_covered;
+    result.is_watched = is_watched_role(on, role) && after.is_watched;
+    result.is_delegation_free = !conveys_delegation(view.payload) && after.is_delegation_free;
+    return result;
+}
+
+struct crash_algebra {
+    using result = verdict;
+    using context = channel;
+
+    template <class Child>
+    consteval verdict terminal(const tr::node& view, context, const Child&) const {
+        return view.entry.is_plain ? admitted : refused;
+    }
+    template <class Child>
+    consteval verdict back(const tr::node& view, context, const Child&) const {
+        return view.entry.is_plain ? admitted : refused;
+    }
+    // Rule 1 for a send and rule 4 for a bare reception: no step carries
+    // the crash label.
+    template <class Child>
+    consteval verdict step(const tr::node& view, context on, const Child& child) const {
+        if (!view.entry.is_plain || view.entry.payload_is_protocol) return refused;
+        return step_verdict(view, child(view.next, on), on, false);
+    }
+    // A Sender note on a Select names the role that picks, which is the
+    // endpoint itself, so the walk reads a noted Select as the Select of
+    // its branches.
+    template <class Child>
+    consteval verdict choice(const tr::node& view, context on, const Child& child) const {
+        if (!view.entry.is_plain) return refused;
+        if (view.entry.direction != tr::polarity::input) {
+            verdict answer = admitted;
+            for (const std::meta::info branch : view.branches) answer = both(answer, child(branch, on));
+            return answer;
+        }
+        return offer(view, on, child);
+    }
+    template <class Child>
+    consteval verdict binder(const tr::node& view, context on, const Child& child) const {
+        return view.entry.is_plain ? child(view.next, on) : refused;
+    }
+    template <class Child>
+    consteval verdict wrapper(const tr::node& view, context on, const Child& child) const {
+        return view.entry.is_plain ? child(view.next, on) : refused;
+    }
+    template <class Child>
+    consteval verdict marker(const tr::node&, context, const Child&) const {
+        return refused;
+    }
+    consteval verdict unregistered(const tr::node&, context) const { return refused; }
+
+private:
+    // An Offer.  Rule 2: it has a message branch.  Rule 6: its crash
+    // branches trail.  Rule 7: one crash branch for each peer.  Rule 3: an
+    // unreliable sender has a crash branch, and each crash branch names
+    // the sender.  Rule 5: no crash branch names a reliable role.
+    // Complexity: quadratic in the crash branches, linear in the others.
+    template <class Child>
+    static consteval verdict offer(const tr::node& view, const channel& on, const Child& child) {
+        const std::meta::info sender =
+            std::meta::dealias(view.annotation == std::meta::info{} ? on.peer : first_argument(view.annotation));
+        verdict answer = admitted;
+        std::vector<std::meta::info> crashed;
+        bool has_message = false;
+        bool trails = true;
+        bool is_distinct = true;
+        bool names_sender = true;
+        bool spares_reliable = true;
+        for (const std::meta::info branch : view.branches) {
+            const tr::node head = tr::decompose(protocol_registry, branch);
+            if (is_branch_reception(head) && is_crash_payload_type(head.payload)) {
+                const std::meta::info peer = first_argument(head.payload);
+                for (const std::meta::info seen : crashed) {
+                    if (seen == peer) is_distinct = false;
+                }
+                crashed.push_back(peer);
+                names_sender = names_sender && peer == sender;
+                spares_reliable = spares_reliable && !holds_role(on.reliable, peer);
+                answer = both(answer, child(head.next, on));
+                continue;
+            }
+            has_message = true;
+            trails = trails && crashed.empty();
+            answer = both(answer, is_branch_reception(head) ? step_verdict(head, child(head.next, on), on, true)
+                                                            : child(branch, on));
+        }
+        bool has_crash_for_sender = false;
+        for (const std::meta::info peer : crashed) {
+            if (peer == sender) has_crash_for_sender = true;
+        }
+        answer.is_structured = answer.is_structured && has_message && trails && is_distinct;
+        answer.is_covered = answer.is_covered && (holds_role(on.reliable, sender) || has_crash_for_sender)
+                         && names_sender && spares_reliable;
+        answer.is_watched = answer.is_watched && is_watched_role(on, sender);
+        return answer;
+    }
+};
+
+// The answers for Proto on a channel to Peer with the reliable roles.
+// Complexity: linear in the size of the protocol.
+[[nodiscard]] consteval verdict verdict_of(std::meta::info proto, std::meta::info peer, std::meta::info reliable) {
+    return tr::fold(protocol_registry, proto, crash_algebra{}, channel{peer, reliable});
+}
+
+// The structure needs no channel, so the walk takes the anonymous peer
+// and no reliable role.
+[[nodiscard]] consteval bool is_structured(std::meta::info proto) {
+    return verdict_of(proto, ^^AnonymousPeer, ^^ReliableSet<>).is_structured;
+}
+
+// Each clause of the mint of a crash session reads one answer of the
+// walk, so a refusal names the answer that failed.
+template <typename Proto>
+concept is_delegation_free_v = verdict_of(^^Proto, ^^AnonymousPeer, ^^ReliableSet<>).is_delegation_free;
+
+template <typename Proto, typename Peer, typename Reliable>
+concept is_every_sender_watched_v = verdict_of(^^Proto, ^^Peer, ^^Reliable).is_watched;
 
 }  // namespace detail::crash
+
+// True when P is well-formed and obeys rules 1, 2, 4, 6 and 7.  Rules 3
+// and 5 need the reliable roles, which every_reception_handles_crash_v
+// reads.
+template <typename P>
+concept is_crash_well_formed_v = is_well_formed_v<P> && detail::crash::is_structured(^^P);
+
+template <typename P>
+using is_crash_well_formed = std::bool_constant<is_crash_well_formed_v<P>>;
 
 // ── Crash coverage: rules 3 and 5 ────────────────────────────────────
-//
-// On a binary channel the sender of a Recv or of an unannotated Offer is
-// the channel peer.  An Offer that names its sender with Sender<Role> is
-// checked against that role.
 
-namespace detail::crash {
+// True when Proto, on a channel to Peer and with the reliable roles,
+// handles each crash it can see and no crash it cannot.
+template <typename Proto, typename Peer, typename Reliable>
+concept every_reception_handles_crash_v =
+    detail::crash::is_reliable_set_type(^^Reliable) && detail::crash::verdict_of(^^Proto, ^^Peer, ^^Reliable).is_covered;
 
-template <typename Peer, typename... Bs>
-inline constexpr bool offers_crash_branch_for_v = (std::is_same_v<branch_crash_peer_t<Bs>, Peer> || ...);
-
-// Rule 5, per branch: a crash branch names an unreliable role.
-template <typename Reliable, typename... Bs>
-inline constexpr bool no_crash_branch_for_reliable_v =
-    ((!is_crash_branch_v<Bs> || !is_in_reliable_set<Reliable, branch_crash_peer_t<Bs>>::value) && ...);
-
-// Rule 3, per branch: a crash branch names the sender of its Offer.
-template <typename OfferSender, typename... Bs>
-inline constexpr bool crash_branches_name_sender_v =
-    ((!is_crash_branch_v<Bs> || std::is_same_v<branch_crash_peer_t<Bs>, OfferSender>) && ...);
-
-template <typename P, typename Peer, typename Reliable>
-struct is_crash_covered : std::false_type {};
-
-// A message branch whose head is a reception is one message with the
-// label, so the Offer's crash branch covers the head.
-template <typename B, typename Peer, typename Reliable>
-struct is_branch_crash_covered : is_crash_covered<B, Peer, Reliable> {};
-template <typename T, typename K, typename Peer, typename Reliable>
-struct is_branch_crash_covered<Recv<T, K>, Peer, Reliable> : is_crash_covered<K, Peer, Reliable> {};
-
-template <typename OfferSender, typename Peer, typename Reliable, typename... Bs>
-struct is_offer_crash_covered
-    : std::bool_constant<(is_in_reliable_set<Reliable, OfferSender>::value || offers_crash_branch_for_v<OfferSender, Bs...>)
-                         && crash_branches_name_sender_v<OfferSender, Bs...>
-                         && no_crash_branch_for_reliable_v<Reliable, Bs...>
-                         && (is_branch_crash_covered<Bs, Peer, Reliable>::value && ...)> {};
-
-template <typename Peer, typename Reliable>
-struct is_crash_covered<End, Peer, Reliable> : std::true_type {};
-template <typename Peer, typename Reliable>
-struct is_crash_covered<Continue, Peer, Reliable> : std::true_type {};
-template <typename T, typename K, typename Peer, typename Reliable>
-struct is_crash_covered<Send<T, K>, Peer, Reliable> : is_crash_covered<K, Peer, Reliable> {};
-// Rule 3: a bare reception needs a reliable sender.
-template <typename T, typename K, typename Peer, typename Reliable>
-struct is_crash_covered<Recv<T, K>, Peer, Reliable>
-    : std::bool_constant<is_in_reliable_set<Reliable, Peer>::value && is_crash_covered<K, Peer, Reliable>::value> {};
-template <typename... Bs, typename Peer, typename Reliable>
-struct is_crash_covered<Select<Bs...>, Peer, Reliable> : std::bool_constant<(is_crash_covered<Bs, Peer, Reliable>::value && ...)> {};
-template <typename... Bs, typename Peer, typename Reliable>
-struct is_crash_covered<Offer<Bs...>, Peer, Reliable> : is_offer_crash_covered<Peer, Peer, Reliable, Bs...> {};
-template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct is_crash_covered<Offer<Sender<Role>, Bs...>, Peer, Reliable> : is_offer_crash_covered<Role, Peer, Reliable, Bs...> {};
-template <typename Role, typename... Bs, typename Peer, typename Reliable>
-struct is_crash_covered<Select<Sender<Role>, Bs...>, Peer, Reliable> : is_crash_covered<Select<Bs...>, Peer, Reliable> {};
-template <typename B, typename Peer, typename Reliable>
-struct is_crash_covered<Loop<B>, Peer, Reliable> : is_crash_covered<B, Peer, Reliable> {};
-template <VendorBackend V, typename P, typename Peer, typename Reliable>
-struct is_crash_covered<VendorPinned<V, P>, Peer, Reliable> : is_crash_covered<P, Peer, Reliable> {};
-
-}  // namespace detail::crash
-
-// The question "does Proto, on a channel to Peer and with these
-// reliable roles, handle each crash it can see and no crash it cannot".
-// It is a type so that the predicate below takes one argument and can
-// hold an armed cell.
+// The same question as one type, so that the predicate below takes one
+// argument and can hold an armed cell.
 template <typename Proto, typename Peer, typename Reliable>
 struct CrashCoverage {};
 
-template <typename Q>
-struct is_crash_covered : std::false_type {};
-template <typename Proto, typename Peer, typename... Roles>
-struct is_crash_covered<CrashCoverage<Proto, Peer, ReliableSet<Roles...>>>
-    : std::bool_constant<detail::crash::is_crash_covered<Proto, Peer, ReliableSet<Roles...>>::value> {};
+namespace detail::crash {
 
-template <typename Proto, typename Peer, typename Reliable>
-inline constexpr bool every_reception_handles_crash_v = is_crash_covered<CrashCoverage<Proto, Peer, Reliable>>::value;
+// True when the question is a CrashCoverage over a reliable set, and the
+// walk covers it.  Any other type answers false.
+[[nodiscard]] consteval bool coverage_holds(std::meta::info question) {
+    const std::meta::info asked = std::meta::dealias(question);
+    if (!std::meta::is_type(asked) || !std::meta::has_template_arguments(asked)
+        || std::meta::template_of(asked) != ^^CrashCoverage) {
+        return false;
+    }
+    const std::vector<std::meta::info> parts = std::meta::template_arguments_of(asked);
+    return is_reliable_set_type(parts[2]) && verdict_of(parts[0], parts[1], parts[2]).is_covered;
+}
+
+}  // namespace detail::crash
+
+template <typename Q>
+using is_crash_covered = std::bool_constant<detail::crash::coverage_holds(^^Q)>;
 
 // ── Crash branch index ───────────────────────────────────────────────
 
 namespace detail::crash {
 
-template <typename Peer, typename... Bs>
-consteval std::size_t crash_branch_index_of() {
-    constexpr bool hits[] = {false, std::is_same_v<branch_crash_peer_t<Bs>, Peer>...};
-    for (std::size_t i = 1; i < std::size(hits); ++i) {
-        if (hits[i]) return i - 1;
+// The position of the crash branch for Peer among the branches of the
+// Offer under its wrappers, or the branch count when there is none.  A
+// Sender note is not a branch, so this is the index that the handle
+// reads.  Complexity: linear in the branches.
+[[nodiscard]] consteval std::size_t crash_branch_position(std::meta::info offer, std::meta::info peer) {
+    const tr::node view = tr::decompose(protocol_registry, tr::strip_wrappers(protocol_registry, offer));
+    for (std::size_t index = 0; index < view.branches.size(); ++index) {
+        const std::meta::info branch = view.branches[index];
+        if (is_crash_branch_type(branch)
+            && first_argument(tr::decompose(protocol_registry, branch).payload) == std::meta::dealias(peer)) {
+            return index;
+        }
     }
-    return sizeof...(Bs);
+    return view.branches.size();
 }
 
-template <typename OfferType, typename Peer>
-struct crash_branch_index;
-template <typename... Bs, typename Peer>
-struct crash_branch_index<Offer<Bs...>, Peer>
-    : std::integral_constant<std::size_t, crash_branch_index_of<Peer, Bs...>()> {
-    static constexpr std::size_t branch_count = sizeof...(Bs);
-};
-template <typename Role, typename... Bs, typename Peer>
-struct crash_branch_index<Offer<Sender<Role>, Bs...>, Peer>
-    : std::integral_constant<std::size_t, crash_branch_index_of<Peer, Bs...>()> {
-    static constexpr std::size_t branch_count = sizeof...(Bs);
-};
-template <VendorBackend V, typename P, typename Peer>
-struct crash_branch_index<VendorPinned<V, P>, Peer> : crash_branch_index<P, Peer> {};
+[[nodiscard]] consteval bool has_crash_branch(std::meta::info offer, std::meta::info peer) {
+    const tr::node view = tr::decompose(protocol_registry, tr::strip_wrappers(protocol_registry, offer));
+    return view.is_registered && view.entry.kind == tr::shape_kind::choice
+        && view.entry.direction == tr::polarity::input && crash_branch_position(offer, peer) < view.branches.size();
+}
 
 }  // namespace detail::crash
 
 // True when the Offer has a crash branch for Peer.
 template <typename OfferType, typename Peer>
-inline constexpr bool offer_has_crash_branch_v = detail::crash::crash_branch_index<OfferType, Peer>::value
-                                              < detail::crash::crash_branch_index<OfferType, Peer>::branch_count;
+concept offer_has_crash_branch_v = detail::crash::has_crash_branch(^^OfferType, ^^Peer);
 
 // The position, among the real branches, of the crash branch for Peer.
-// A Sender tag is not a branch, so this is the index that branch() and
-// pick_local() read.
+// The decorators read detail::crash::crash_branch_position, so a
+// specialization of this spelling changes only what its author reads.
 template <typename OfferType, typename Peer>
 inline constexpr std::size_t crash_branch_index_v = [] {
     static_assert(offer_has_crash_branch_v<OfferType, Peer>,
                   "fixy::session::diagnostic [Crash_Branch_Missing]: crash_branch_index_v<Offer, Peer>: the "
                   "Offer has no Recv<Crash<Peer>, K> branch.  Add one for the peer whose crash this "
                   "reception must survive, or declare the peer reliable.");
-    return detail::crash::crash_branch_index<OfferType, Peer>::value;
+    return detail::crash::crash_branch_position(^^OfferType, ^^Peer);
 }();
+
+// ── Erasure ──────────────────────────────────────────────────────────
+//
+// One walk erases a protocol for a plain handle.  The crash erasure drops
+// the crash branches of each Offer, because the peer cannot select the
+// crash label.  The checkpoint erasure of fixy/session/Checkpoint.h reads
+// Commit<K> as K, and Roll and Abort as End.  Every other node keeps its
+// shape, and the Sender note of a choice stays.  A node that the registry
+// does not know erases to the null reflection, so the splice of the
+// result stops the build.
+
+namespace detail {
+
+enum class erasure : std::uint8_t { crash_branches, checkpoints };
+
+struct erase_algebra {
+    using result = std::meta::info;
+    using context = int;
+    erasure removes = erasure::crash_branches;
+
+    template <class Child>
+    consteval std::meta::info terminal(const crash::tr::node& view, context, const Child&) const {
+        if (removes == erasure::checkpoints && (view.entry.shape == ^^Roll || view.entry.shape == ^^Abort)) {
+            return ^^End;
+        }
+        return view.type;
+    }
+    template <class Child>
+    consteval std::meta::info back(const crash::tr::node& view, context, const Child&) const {
+        return view.type;
+    }
+    template <class Child>
+    consteval std::meta::info step(const crash::tr::node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {view.payload, child(view.next, ctx)});
+    }
+    template <class Child>
+    consteval std::meta::info choice(const crash::tr::node& view, context ctx, const Child& child) const {
+        std::vector<std::meta::info> kept;
+        for (const std::meta::info branch : view.branches) {
+            const bool drops = removes == erasure::crash_branches
+                            && view.entry.direction == crash::tr::polarity::input && crash::is_crash_branch_type(branch);
+            if (!drops) kept.push_back(child(branch, ctx));
+        }
+        return std::meta::substitute(
+            view.entry.shape, crash::tr::detail::choice_arguments(protocol_registry, view, view.entry.shape, kept));
+    }
+    template <class Child>
+    consteval std::meta::info binder(const crash::tr::node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
+    }
+    template <class Child>
+    consteval std::meta::info wrapper(const crash::tr::node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {view.value, child(view.next, ctx)});
+    }
+    template <class Child>
+    consteval std::meta::info marker(const crash::tr::node& view, context ctx, const Child& child) const {
+        if (removes == erasure::checkpoints) return child(view.next, ctx);
+        return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
+    }
+    consteval std::meta::info unregistered(const crash::tr::node&, context) const { return {}; }
+};
+
+// Complexity: linear in the size of the protocol.
+[[nodiscard]] consteval std::meta::info erased(std::meta::info proto, erasure removes) {
+    return crash::tr::fold(protocol_registry, proto, erase_algebra{removes}, 0);
+}
+
+}  // namespace detail
 
 // ── Duality modulo crash branches ────────────────────────────────────
 //
@@ -525,160 +672,22 @@ inline constexpr std::size_t crash_branch_index_v = [] {
 // keeps its own recovery.  Rule 6 keeps the message branches at the same
 // indices on both sides.
 
-namespace detail::crash {
-
 template <typename P>
-struct erase;
-
-template <typename P>
-using erase_t = typename erase<P>::type;
-
-template <typename B>
-using kept_branch_t = std::conditional_t<is_crash_branch_v<B>, std::tuple<>, std::tuple<erase_t<B>>>;
-
-template <typename Tuple, typename Prefix>
-struct rebuild_offer;
-template <typename... Bs>
-struct rebuild_offer<std::tuple<Bs...>, void> {
-    using type = Offer<Bs...>;
-};
-template <typename... Bs, typename Role>
-struct rebuild_offer<std::tuple<Bs...>, Sender<Role>> {
-    using type = Offer<Sender<Role>, Bs...>;
-};
-
-template <typename Prefix, typename... Bs>
-using erased_offer_t =
-    typename rebuild_offer<decltype(std::tuple_cat(std::declval<kept_branch_t<Bs>>()...)), Prefix>::type;
-
-template <>
-struct erase<End> {
-    using type = End;
-};
-template <>
-struct erase<Continue> {
-    using type = Continue;
-};
-template <typename T, typename K>
-struct erase<Send<T, K>> {
-    using type = Send<T, erase_t<K>>;
-};
-template <typename T, typename K>
-struct erase<Recv<T, K>> {
-    using type = Recv<T, erase_t<K>>;
-};
-template <typename... Bs>
-struct erase<Select<Bs...>> {
-    using type = Select<erase_t<Bs>...>;
-};
-template <typename... Bs>
-struct erase<Offer<Bs...>> {
-    using type = erased_offer_t<void, Bs...>;
-};
-template <typename Role, typename... Bs>
-struct erase<Offer<Sender<Role>, Bs...>> {
-    using type = erased_offer_t<Sender<Role>, Bs...>;
-};
-template <typename Role, typename... Bs>
-struct erase<Select<Sender<Role>, Bs...>> {
-    using type = Select<Sender<Role>, erase_t<Bs>...>;
-};
-template <typename B>
-struct erase<Loop<B>> {
-    using type = Loop<erase_t<B>>;
-};
-template <VendorBackend V, typename P>
-struct erase<VendorPinned<V, P>> {
-    using type = VendorPinned<V, erase_t<P>>;
-};
-
-}  // namespace detail::crash
-
-template <typename P>
-using erase_crash_t = detail::crash::erase_t<P>;
+using erase_crash_t = typename[:detail::erased(^^P, detail::erasure::crash_branches):];
 
 template <typename P>
 using crash_dual_t = dual_of_t<erase_crash_t<P>>;
 
 template <typename P1, typename P2>
-inline constexpr bool is_crash_dual_v = is_dual_v<erase_crash_t<P1>, erase_crash_t<P2>>;
+concept is_crash_dual_v = is_dual_v<erase_crash_t<P1>, erase_crash_t<P2>>;
 
 // ── Subtyping side conditions (LMCS 2025 Def. 4.4) ───────────────────
 //
-// A subtype relation over crash-aware protocols conjoins these at each
-// pair of positions it compares:
-//
-//   Sub-stop  Stop relates only to Stop.
-//   Sub-&     The subtype Offer may have more branches than the
-//             supertype.  The supertype Offer is not a pure crash
-//             choice, and a crash branch of the subtype has a crash
-//             branch for the same peer in the supertype.
-//
-// No other pair of shapes carries a condition that is special to
-// crashes.  The side conditions are not a subtype relation.  They are
-// what a relation owes the calculus in addition to its own rules.
-
-namespace detail::crash {
-
-template <typename P>
-struct offer_crash_peers {
-    using type = std::tuple<>;
-};
-template <typename... Bs>
-struct offer_crash_peers<Offer<Bs...>> {
-    using type = decltype(std::tuple_cat(
-        std::declval<std::conditional_t<is_crash_branch_v<Bs>, std::tuple<branch_crash_peer_t<Bs>>, std::tuple<>>>()...));
-};
-template <typename Role, typename... Bs>
-struct offer_crash_peers<Offer<Sender<Role>, Bs...>> : offer_crash_peers<Offer<Bs...>> {};
-
-template <typename Peer, typename Tuple>
-struct is_in_tuple;
-template <typename Peer, typename... Ts>
-struct is_in_tuple<Peer, std::tuple<Ts...>> : std::bool_constant<(std::is_same_v<Peer, Ts> || ...)> {};
-
-template <typename SubPeers, typename SuperPeers>
-struct is_crash_peer_set_included;
-template <typename... SubPs, typename SuperPeers>
-struct is_crash_peer_set_included<std::tuple<SubPs...>, SuperPeers>
-    : std::bool_constant<(is_in_tuple<SubPs, SuperPeers>::value && ...)> {};
-
-template <typename P>
-struct is_pure_crash_offer : std::false_type {};
-template <typename... Bs>
-struct is_pure_crash_offer<Offer<Bs...>> : std::bool_constant<every_branch_is_crash_v<Bs...>> {};
-template <typename Role, typename... Bs>
-struct is_pure_crash_offer<Offer<Sender<Role>, Bs...>> : std::bool_constant<every_branch_is_crash_v<Bs...>> {};
-
-template <typename Sub, typename Super>
-consteval bool refinement_side_conditions_hold() {
-    using SubInner = protocol_inner_t<Sub>;
-    using SuperInner = protocol_inner_t<Super>;
-    if constexpr (is_stop_v<SubInner> || is_stop_v<SuperInner>) {
-        return is_stop_v<SubInner> && is_stop_v<SuperInner>;
-    } else if constexpr (is_offer_v<SubInner> && is_offer_v<SuperInner>) {
-        return is_crash_peer_set_included<typename offer_crash_peers<SubInner>::type,
-                                    typename offer_crash_peers<SuperInner>::type>::value
-            && !is_pure_crash_offer<SuperInner>::value;
-    } else {
-        return true;
-    }
-}
-
-}  // namespace detail::crash
-
-template <typename Sub, typename Super>
-struct CrashRefinement {};
-
-template <typename Q>
-struct is_crash_refinement_admissible : std::false_type {};
-template <typename Sub, typename Super>
-struct is_crash_refinement_admissible<CrashRefinement<Sub, Super>>
-    : std::bool_constant<detail::crash::refinement_side_conditions_hold<Sub, Super>()> {};
-
-template <typename Sub, typename Super>
-inline constexpr bool crash_refinement_admissible_v =
-    is_crash_refinement_admissible<CrashRefinement<Sub, Super>>::value;
+// The rules Sub-stop and Sub-& hold in the refinement of
+// fixy/session/Subtype.h through the registry.  Stop is registered to
+// refine only Stop.  The crash label is no label and is not sendable, so
+// a subtype Offer adds no crash branch that its supertype lacks, and a
+// pure crash Offer is an empty choice that refines nothing.
 
 }  // namespace fixy::session
 
@@ -764,17 +773,45 @@ struct foundation::contracts::armed_cell<::fixy::session::is_crash_covered> {
                                        ::fixy::session::ReliableSet<::fixy::session::detail::crash::armed_witness::Alice>>>;
 };
 
-template <>
-struct foundation::contracts::armed_cell<::fixy::session::is_crash_refinement_admissible> {
-    using accepts = witnesses<::fixy::session::CrashRefinement<::fixy::session::Stop, ::fixy::session::Stop>,
-                              ::fixy::session::CrashRefinement<::fixy::session::detail::crash::armed_witness::Guarded,
-                                                               ::fixy::session::detail::crash::armed_witness::Guarded>>;
-    using refuses = witnesses<
-        int, ::fixy::session::CrashRefinement<::fixy::session::Stop, ::fixy::session::End>,
-        ::fixy::session::CrashRefinement<
-            ::fixy::session::detail::crash::armed_witness::Guarded,
-            ::fixy::session::Offer<::fixy::session::Recv<::fixy::session::detail::crash::armed_witness::Msg,
-                                                         ::fixy::session::End>>>,
-        ::fixy::session::CrashRefinement<::fixy::session::detail::crash::armed_witness::Guarded,
-                                         ::fixy::session::detail::crash::armed_witness::PureCrash>>;
-};
+// The traits above are aliases, and the roster walk of
+// foundation/contracts/Armed.h finds class templates only.  These
+// assertions read their cells.
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_stop>);
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_payload>);
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_branch>);
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_reliable_set>);
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_well_formed>);
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_covered>);
+
+// ── The walk, checked ────────────────────────────────────────────────
+//
+// Each answer of the walk, against a protocol that obeys and one that
+// breaks the rule.  The keyed payloads are defined in
+// fixy/session/Projection.h, so test/fixy/test_session_crash_stop.cpp
+// checks the role of a keyed step.
+
+namespace fixy::session::detail::crash::walk_self_test {
+using armed_witness::Alice;
+using armed_witness::Bob;
+using armed_witness::Guarded;
+using armed_witness::Msg;
+template <typename Proto, typename Peer, typename Reliable>
+inline constexpr verdict answers = verdict_of(^^Proto, ^^Peer, ^^Reliable);
+
+// The watch reads the sender of an Offer.
+static_assert(answers<Guarded, Alice, ReliableSet<>>.is_watched);
+static_assert(!answers<Offer<Sender<Bob>, Recv<Msg, End>, Recv<Crash<Bob>, End>>, Alice, ReliableSet<>>.is_watched);
+static_assert(answers<Offer<Sender<Bob>, Recv<Msg, End>>, Alice, ReliableSet<Bob>>.is_watched);
+
+// A vendor pin passes each answer to the protocol it pins.
+using Pinned = VendorPinned<VendorBackend::NV, Guarded>;
+static_assert(answers<Pinned, Alice, ReliableSet<>>.is_structured && answers<Pinned, Alice, ReliableSet<>>.is_covered
+              && answers<Pinned, Alice, ReliableSet<>>.is_watched && answers<Pinned, Alice, ReliableSet<>>.is_delegation_free);
+
+// A step whose payload is a protocol, and a combinator that is not plain,
+// fail every answer.
+static_assert(!answers<Delegate<End, End>, Alice, ReliableSet<>>.is_delegation_free);
+static_assert(!answers<Delegate<End, End>, Alice, ReliableSet<>>.is_structured);
+static_assert(!answers<Commit<End>, Alice, ReliableSet<>>.is_structured);
+static_assert(!answers<int, Alice, ReliableSet<>>.is_structured);
+}  // namespace fixy::session::detail::crash::walk_self_test

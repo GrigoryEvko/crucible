@@ -410,7 +410,8 @@ public:
             if constexpr (detail::recording::is_crash_watched_shape<Inner>::value) {
                 using Head = typename decltype(next)::protocol;
                 if constexpr (is_crash_branch_v<Head>) {
-                    taken = crash_branch_index_v<P, typename Inner::peer_role>;
+                    using PeerRole = typename Inner::peer_role;
+                    taken = detail::crash::crash_branch_position(^^P, ^^PeerRole);
                     label = LabelWord{};
                 }
             }

@@ -13,6 +13,8 @@
 // sender takes it with a Select of one branch, so the label travels.
 
 #include <fixy/session/CrashTransport.h>
+#include <fixy/session/Projection.h>
+#include <fixy/session/Subtype.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
@@ -24,6 +26,7 @@
 #include <cstdio>
 #include <deque>
 #include <memory>
+#include <meta>
 #include <optional>
 #include <string_view>
 #include <thread>
@@ -50,6 +53,15 @@ struct Text {
     const char* value = "";
     [[nodiscard]] std::string_view view() const noexcept { return value; }
 };
+
+// ── Each verdict is a concept ────────────────────────────────────────
+//
+// A concept has no specialization, so no declaration of a program can
+// change the answer of one of these verdicts.
+static_assert(std::meta::is_concept(^^s::every_reception_handles_crash_v),
+              "every_reception_handles_crash_v must stay a concept, so that no specialization hides a bare reception");
+static_assert(std::meta::is_concept(^^s::is_crash_well_formed_v),
+              "is_crash_well_formed_v must stay a concept, so that no specialization admits a crash label that is sent");
 
 // ── Rule 1: the crash label is never sent ───────────────────────────
 static_assert(!s::is_well_formed_v<s::Send<s::Crash<Q>, s::End>>);
@@ -118,11 +130,10 @@ static_assert(!s::is_well_formed_v<s::dual_of_t<Guarded>>);
 
 // ── A Select with a Sender note ─────────────────────────────────────
 //
-// The note names the endpoint that picks, and it is not a branch.  Each
+// The note names the endpoint that picks, and it is not a branch.  The
 // walk reads a noted Select as the Select of its branches, so the note
 // hides neither a sound branch nor a defect in one.
 namespace walk = s::detail::crash;
-namespace transport_walk = s::detail::crash_transport;
 using NotedSelect = s::Select<s::Sender<P>, s::Send<int, Guarded>>;
 using NotedSelectSendsCrash = s::Select<s::Sender<P>, s::Send<s::Crash<Q>, s::End>>;
 using NotedSelectThenBare = s::Select<s::Sender<P>, s::Send<int, Bare>>;
@@ -131,17 +142,32 @@ using NotedSelectDelegates =
     s::Select<s::Sender<P>, s::Send<s::DelegatedSession<Bare, DelegatedWire, s::DefaultAbandonmentPolicy,
                                                         ::foundation::permissions::EmptyPermSet>,
                                     s::End>>;
-static_assert(walk::is_crash_well_structured<NotedSelect>::value);
-static_assert(!walk::is_crash_well_structured<NotedSelectSendsCrash>::value);
-static_assert(walk::is_delegation_free<NotedSelect>::value);
-static_assert(!walk::is_delegation_free<NotedSelectDelegates>::value);
-static_assert(walk::is_crash_covered<NotedSelect, Q, s::ReliableSet<>>::value);
-static_assert(!walk::is_crash_covered<NotedSelectThenBare, Q, s::ReliableSet<>>::value);
-static_assert(std::is_same_v<walk::erase_t<NotedSelect>, s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Recv<int, s::End>>>>>);
-static_assert(transport_walk::is_every_sender_watched<NotedSelect, Q, s::ReliableSet<>>::value);
-static_assert(!transport_walk::is_every_sender_watched<s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Sender<R>, s::Recv<int, s::End>,
-                                                                                        s::Recv<s::Crash<R>, s::End>>>>,
-                                               Q, s::ReliableSet<>>::value);
+static_assert(s::is_crash_well_formed_v<NotedSelect>);
+static_assert(!s::is_crash_well_formed_v<NotedSelectSendsCrash>);
+static_assert(walk::is_delegation_free_v<NotedSelect>);
+static_assert(!walk::is_delegation_free_v<NotedSelectDelegates>);
+static_assert(s::every_reception_handles_crash_v<NotedSelect, Q, s::ReliableSet<>>);
+static_assert(!s::every_reception_handles_crash_v<NotedSelectThenBare, Q, s::ReliableSet<>>);
+static_assert(std::is_same_v<s::erase_crash_t<NotedSelect>, s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Recv<int, s::End>>>>>);
+static_assert(walk::is_every_sender_watched_v<NotedSelect, Q, s::ReliableSet<>>);
+static_assert(!walk::is_every_sender_watched_v<
+              s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Sender<R>, s::Recv<int, s::End>, s::Recv<s::Crash<R>, s::End>>>>,
+              Q, s::ReliableSet<>>);
+
+// ── The roles that a keyed message names ────────────────────────────
+//
+// One cell watches one role.  A keyed reception comes from the role that
+// its PeerMsg names, and a keyed send goes to that role, so each named
+// role is the watched peer or reliable, as the sender of an Offer is.
+struct Hello {};
+using FromQ = s::Recv<s::PeerMsg<Q, Hello, int>, s::End>;
+using ToQ = s::Send<s::PeerMsg<Q, Hello, int>, s::End>;
+static_assert(!s::CrashSessionAdmissible<FromQ, P, R, s::ReliableSet<R>>,
+              "the message comes from q, which is unreliable and not the watched peer r");
+static_assert(s::CrashSessionAdmissible<FromQ, P, R, s::ReliableSet<Q>>, "a reliable q needs no watch");
+static_assert(s::CrashSessionAdmissible<FromQ, P, Q, s::ReliableSet<Q>>);
+static_assert(!s::CrashSessionAdmissible<ToQ, P, R, s::ReliableSet<>>, "the send goes to an unwatched q");
+static_assert(s::CrashSessionAdmissible<ToQ, P, Q, s::ReliableSet<>>);
 
 // ── Example 3.2, as local protocols ─────────────────────────────────
 //
@@ -158,17 +184,29 @@ static_assert(s::CrashSessionAdmissible<ProtoQ, Q, P, s::ReliableSet<>>);
 static_assert(!s::CrashSessionAdmissible<ProtoP, P, Q, s::ReliableSet<Q>>);
 static_assert(!s::CrashSessionAdmissible<ProtoP, P, P, s::ReliableSet<>>);
 
+// ── A vendor pin passes to what it pins ─────────────────────────────
+using PinnedP = s::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, ProtoP>;
+static_assert(s::CrashSessionAdmissible<PinnedP, P, Q, s::ReliableSet<>>);
+static_assert(!s::CrashSessionAdmissible<s::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, FromQ>, P,
+                                         R, s::ReliableSet<R>>);
+
 // ── Subtyping side conditions ───────────────────────────────────────
-static_assert(s::crash_refinement_admissible_v<s::Stop, s::Stop>);
-static_assert(!s::crash_refinement_admissible_v<s::Stop, s::End>);
-static_assert(!s::crash_refinement_admissible_v<s::End, s::Stop>);
+//
+// The refinement of fixy/session/Subtype.h holds rules Sub-stop and Sub-&
+// through the registry.  Stop is not plain, so it is no operand of the
+// relation at all, which is stricter than stop ⩽ stop and needs no
+// design-time protocol to hold it.  The crash label is no label and is
+// not sendable.
+static_assert(!s::is_subtype_sync_v<s::Stop, s::Stop>);
+static_assert(!s::is_subtype_sync_v<s::Stop, s::End>);
+static_assert(!s::is_subtype_sync_v<s::End, s::Stop>);
 // The subtype Offer may have more message branches.
-static_assert(s::crash_refinement_admissible_v<s::Offer<s::Recv<int, s::End>, s::Recv<long, s::End>, s::Recv<s::Crash<Q>, s::End>>,
-                                               Guarded>);
+static_assert(s::is_subtype_sync_v<s::Offer<s::Recv<int, s::End>, s::Recv<long, s::End>, s::Recv<s::Crash<Q>, s::End>>,
+                                   Guarded>);
 // It may not add a crash branch the supertype lacks.
-static_assert(!s::crash_refinement_admissible_v<Guarded, s::Offer<s::Recv<int, s::End>>>);
+static_assert(!s::is_subtype_sync_v<Guarded, s::Offer<s::Recv<int, s::End>>>);
 // The supertype may not be a pure crash choice.
-static_assert(!s::crash_refinement_admissible_v<Guarded, PureCrash>);
+static_assert(!s::is_subtype_sync_v<Guarded, PureCrash>);
 
 // ── The mint ────────────────────────────────────────────────────────
 

@@ -1852,11 +1852,11 @@ fixy_neg_compile_test(neg_sess_combinator_outside_seal
   "a_registration_stands_outside_its_seal"
   "expansion of .foundation::algebra::transition::read_combinator\\(\\^\\^fixy::session::combinators, \\^\\^.*Emit\\)")
 
-# No trait of fixy/session/Protocol.h or fixy/session/Delegate.h is a
-# template that a user can specialize.  A class spelling is an alias
-# template, so each specialization below is a compile error, and the
-# verdicts of the registry stand.  test_session_protocol.cpp checks that
-# each boolean spelling is a concept.
+# No trait of fixy/session/Protocol.h, Delegate.h, Crash.h or
+# Checkpoint.h is a template that a user can specialize.  A class
+# spelling is an alias template, so each specialization below is a
+# compile error, and the verdicts of the registry stand.  The protocol,
+# crash and rollback tests check that each boolean spelling is a concept.
 fixy_neg_compile_test(neg_sess_trait_spec_is_send
   "specialization of alias template .template<class P> using fixy::session::is_send = "
   "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Send\\)>")
@@ -1908,6 +1908,15 @@ fixy_neg_compile_test(neg_sess_trait_spec_is_delegate
 fixy_neg_compile_test(neg_sess_trait_spec_is_accept
   "specialization of alias template .template<class P> using fixy::session::is_accept = "
   "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Accept\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_reliable_set
+  "specialization of alias template .template<class T> using fixy::session::is_reliable_set = "
+  "= std::bool_constant<fixy::session::detail::crash::is_reliable_set_type\\(\\^\\^T\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_crash_well_formed
+  "specialization of alias template .template<class P> using fixy::session::is_crash_well_formed = "
+  "= std::bool_constant<is_crash_well_formed_v<P> >")
+fixy_neg_compile_test(neg_sess_trait_spec_is_checkpoint_compliant
+  "specialization of alias template .template<class Q> using fixy::session::is_checkpoint_compliant = "
+  "= std::bool_constant<fixy::session::detail::checkpoint::pair_is_compliant\\(\\^\\^Q\\)>")
 
 # Commit is a marker that the registry marks as not plain.  The
 # well-formedness algebra refuses it at every depth, so a plain mint
@@ -2428,11 +2437,11 @@ fixy_test(test_session_crash_stop)
 # session, so a temporary cell is refused.
 fixy_neg_compile_test(neg_sess_crash_bare_recv_unreliable
   "no matching function for call to .mint_crash_session"
-  "every_reception_handles_crash_v<Proto, Peer, Reliable> \\[with Proto = fixy::session::Send<int, fixy::session::Recv<int")
+  "every_reception_handles_crash_v<Proto, Peer, Reliable>. \\[with Proto = fixy::session::Send<int, fixy::session::Recv<int")
 
 fixy_neg_compile_test(neg_sess_crash_hidden_in_loop
   "no matching function for call to .mint_crash_session"
-  "every_reception_handles_crash_v<Proto, Peer, Reliable> \\[with Proto = fixy::session::Loop<")
+  "every_reception_handles_crash_v<Proto, Peer, Reliable>. \\[with Proto = fixy::session::Loop<")
 
 fixy_neg_compile_test(neg_sess_crash_branch_for_reliable
   "no matching function for call to .mint_crash_session"
@@ -2454,7 +2463,7 @@ fixy_neg_compile_test(neg_sess_crash_ctx_row_refused
 # the decorator reaches no constructor of another.
 fixy_neg_compile_test(neg_sess_crash_door_states_the_gate
   "no matching function for call to .fixy::session::CrashSessionDoor::open<fixy::session::Recv<int, fixy::session::End>,"
-  "the expression .every_reception_handles_crash_v<Proto, Peer, Reliable> \\[with Proto = fixy::session::Recv<int, fixy::session::End>")
+  "satisfaction of .every_reception_handles_crash_v<Proto, Peer, Reliable>. \\[with Proto = fixy::session::Recv<int, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_crash_door_derived_look_alike
   "cannot derive from .final. base"
   "CrashSessionDoor")
@@ -2495,10 +2504,10 @@ fixy_neg_compile_test(neg_sess_crash_branch_index_missing
 # empty set, so a token it never received cannot be sent.
 fixy_neg_compile_test(neg_sess_crash_hidden_in_delegation
   "no matching function for call to .mint_crash_session"
-  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::DelegatedSession")
+  "satisfaction of .is_delegation_free_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::DelegatedSession")
 fixy_neg_compile_test(neg_sess_crash_delegation_in_a_member
   "no matching function for call to .mint_crash_session"
-  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
+  "satisfaction of .is_delegation_free_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
 # A handle and a pointer to one delegate as the hand-off marker does.  The
 # payload walk refuses each in every session, so the permission flow of
 # the crash mint does not close.  A pointer to void names no endpoint, and
@@ -2511,10 +2520,18 @@ fixy_neg_compile_test(neg_sess_crash_delegation_behind_pointer
   "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. .with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
 fixy_neg_compile_test(neg_sess_crash_delegation_opaque_pointer
   "no matching function for call to .mint_crash_session"
-  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
+  "satisfaction of .is_delegation_free_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_crash_token_not_held
   "no matching function for call to .mint_crash_session"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::Transferable<")
+# A keyed message names its sender or its target, and the crash gate
+# refuses one that is not the watched peer and not reliable.
+fixy_neg_compile_test(neg_sess_crash_keyed_sender_unwatched
+  "no matching function for call to .mint_crash_session<neg_sess_crash_keyed_sender_unwatched_types::FromQ,"
+  "required for the satisfaction of .every_reception_handles_crash_v<Proto, Peer, Reliable>. \\[with Proto = fixy::session::Recv<fixy::session::PeerMsg<neg_sess_crash_keyed_sender_unwatched_types::Q,")
+fixy_neg_compile_test(neg_sess_crash_keyed_target_unwatched
+  "no matching function for call to .mint_crash_session<neg_sess_crash_keyed_target_unwatched_types::ToQ,"
+  "required for the satisfaction of .is_every_sender_watched_v<Proto, Peer, Reliable>. \\[with Proto = fixy::session::Send<fixy::session::PeerMsg<neg_sess_crash_keyed_target_unwatched_types::Q,")
 fixy_neg_compile_test(neg_sess_crash_between_label_and_payload
   "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
   "CrashWatched<Handle, Self, Peer, Reliable, Position>::crash\\(")
@@ -2598,7 +2615,7 @@ fixy_neg_compile_test(neg_sess_checkpoint_delegation_owned_handle
 # payload.
 fixy_neg_compile_test(neg_sess_checkpoint_ctx_row_refused
   "no matching function for call to .mint_checkpoint_session<Decide, Follow>"
-  "satisfaction of .CtxAdmitsProtocolRow<Ctx, typename fixy::session::detail::checkpoint::erase<K>::type>.")
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, .: fixy::session::detail::erased\\(\\^\\^[A-Za-z]+, fixy::session::detail::erasure::checkpoints\\) :.>.")
 
 # The checkpoint door builds each checkpoint handle and does each step.
 # Its opening member states the whole gate of the mint, and the class is

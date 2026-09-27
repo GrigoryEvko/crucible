@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <meta>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -29,6 +30,29 @@
 
 namespace s = fixy::session;
 namespace eff = ::foundation::effects;
+
+// checkpoint_verdict_v is a value, and a program can specialize it.  The
+// gate reads the walk and not this spelling, so the forged verdict below
+// changes only what this file reads through it.
+namespace forged_verdict {
+using Left = s::Select<s::Commit<s::Send<long, s::End>>, s::Roll>;
+using Right = s::Offer<s::Roll, s::Commit<s::Recv<long, s::End>>>;
+}  // namespace forged_verdict
+
+namespace fixy::session {
+template <>
+inline constexpr CheckpointVerdict checkpoint_verdict_v<forged_verdict::Left, forged_verdict::Right> =
+    CheckpointVerdict::Compliant;
+}  // namespace fixy::session
+
+static_assert(s::checkpoint_verdict_v<forged_verdict::Left, forged_verdict::Right> == s::CheckpointVerdict::Compliant,
+              "the specialization answers for its author");
+static_assert(!s::CheckpointSessionAdmissible<forged_verdict::Left, forged_verdict::Right>,
+              "the gate reads the walk, and the walk finds that the labels disagree");
+
+// The boolean verdict is a concept, and a concept has no specialization.
+static_assert(std::meta::is_concept(^^s::checkpoint_compliant_v),
+              "checkpoint_compliant_v must stay a concept, so that no specialization admits a pair that is not compliant");
 
 namespace {
 
@@ -136,10 +160,9 @@ static_assert(s::checkpoint_verdict_v<s::Offer<s::Commit<s::Select<s::End, s::Ro
 
 // A Sender note on a Select names the endpoint that picks.  The erasure
 // keeps the note and erases the branches only, as it does for an Offer.
-static_assert(std::is_same_v<s::detail::checkpoint::erase_t<s::Select<s::Sender<Peer>, s::Commit<s::Send<int, s::End>>, s::Roll>>,
+static_assert(std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s::Commit<s::Send<int, s::End>>, s::Roll>>,
                              s::Select<s::Sender<Peer>, s::Send<int, s::End>, s::End>>);
-static_assert(std::is_same_v<s::detail::checkpoint::erase_t<s::Select<s::Sender<Peer>, s::End>>,
-                             s::Select<s::Sender<Peer>, s::End>>);
+static_assert(std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s::End>>, s::Select<s::Sender<Peer>, s::End>>);
 
 // A loop that rolls back to a checkpoint inside it.
 using LoopDecide = s::Loop<s::Select<s::Commit<s::Send<int, s::Continue>>, s::Roll, s::End>>;
