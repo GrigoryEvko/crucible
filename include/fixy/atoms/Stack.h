@@ -6,6 +6,11 @@
 // with -Wframe-larger-than=4096. A binding needs an atom here only once it
 // exceeds that budget.
 //
+// The family has no atom for a variable-length array or for alloca.
+// The build refuses both constructs with -Wvla and -Walloca under
+// -Werror, whatever a binding states.  An atom that names one would state
+// a thing that the build forbids.
+//
 // Old spelling: include/crucible/fixy/grant/Stack.h.
 
 #include <fixy/Atom.h>
@@ -22,17 +27,11 @@ inline constexpr atom_seal atom_namespace_seal{};
 template <std::size_t MaxBytes>
 struct alloc final : atom_of<Axis::StackUse> {};
 
-// -Werror=vla rejects a variable-length array whether or not the binding
-// carries this atom. The tag records a reviewed exception, it does not
-// re-enable the construct.
-struct vla_ok final : atom_of<Axis::StackUse> {};
-struct alloca_ok final : atom_of<Axis::StackUse> {};
-
 }  // namespace fixy::atom::stack
 
 namespace fixy::atom::detail {
 
-using stack_atom_roster = std::tuple<stack::alloc<64>, stack::alloc<4096>, stack::vla_ok, stack::alloca_ok>;
+using stack_atom_roster = std::tuple<stack::alloc<64>, stack::alloc<4096>>;
 
 }  // namespace fixy::atom::detail
 

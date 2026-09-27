@@ -37,19 +37,12 @@ struct write final
     : lifting_atom_of<Axis::Stdio,
                       ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>> {};
 
-// A read of standard input waits for whoever is at the terminal, with no
-// bound on the wait, so it lifts Block as well as IO.  Old spelling: the
-// InteractiveRead tier of crucible::algebra::lattices::Stdio.
-struct read_stdin final
-    : lifting_atom_of<Axis::Stdio,
-                      ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>> {};
-
 }  // namespace fixy::atom::stdio
 
 namespace fixy::atom::detail {
 
 using stdio_atom_roster = std::tuple<stdio::write<stdio::streams::Stderr>, stdio::write<stdio::streams::Stdout>,
-                                     stdio::write<stdio::streams::Debug>, stdio::read_stdin>;
+                                     stdio::write<stdio::streams::Debug>>;
 
 }  // namespace fixy::atom::detail
 
@@ -75,9 +68,6 @@ static_assert(std::is_same_v<::foundation::effects::lift_row_t<stdio::write<stdi
                                                         ::foundation::effects::Effect::Block>>);
 static_assert(std::is_same_v<::foundation::effects::lift_row_t<stdio::write<stdio::streams::Debug>>,
                              ::foundation::effects::lift_row_t<stdio::write<stdio::streams::Stdout>>>);
-static_assert(std::is_same_v<::foundation::effects::lift_row_t<stdio::read_stdin>,
-                             ::foundation::effects::Row<::foundation::effects::Effect::IO,
-                                                        ::foundation::effects::Effect::Block>>);
 
 // The stream tags are arguments, never atoms, and the stream is part of
 // the type.

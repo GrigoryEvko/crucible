@@ -19,16 +19,14 @@ namespace fixy::atom::global {
 
 inline constexpr atom_seal atom_namespace_seal{};
 
+// The singleton init graph reads the tag, and walks the graph of the
+// tags for an init cycle.
 template <class GlobalTag>
 struct singleton final : atom_of<Axis::GlobalState> {};
 
+// Rule G002 reads a thread-local slot together with its representation.
 template <class TLSTag>
 struct thread_local_ final : atom_of<Axis::GlobalState> {};
-
-template <class StaticTag>
-struct namespace_static final : atom_of<Axis::GlobalState> {};
-
-struct atexit_handler final : atom_of<Axis::GlobalState> {};
 
 }  // namespace fixy::atom::global
 
@@ -36,8 +34,7 @@ namespace fixy::atom::detail {
 
 struct global_sample_tag final {};
 
-using global_atom_roster = std::tuple<global::singleton<global_sample_tag>, global::thread_local_<global_sample_tag>,
-                                      global::namespace_static<global_sample_tag>, global::atexit_handler>;
+using global_atom_roster = std::tuple<global::singleton<global_sample_tag>, global::thread_local_<global_sample_tag>>;
 
 }  // namespace fixy::atom::detail
 
@@ -55,11 +52,10 @@ static_assert(every_roster_member_is_atom_<global_atom_roster>(),
 static_assert(every_roster_member_on_axis_<global_atom_roster, Axis::GlobalState>(),
               "fixy/atoms/Global.h: every global-state atom engages Axis::GlobalState.");
 
-// The tag is part of the type, and the three parametric atoms stay
+// The tag is part of the type, and the two parametric atoms stay
 // distinct over one tag.
 struct other_tag final {};
 static_assert(!std::is_same_v<global::singleton<global_sample_tag>, global::singleton<other_tag>>);
 static_assert(!std::is_same_v<global::singleton<global_sample_tag>, global::thread_local_<global_sample_tag>>);
-static_assert(!std::is_same_v<global::thread_local_<global_sample_tag>, global::namespace_static<global_sample_tag>>);
 
 }  // namespace fixy::atom::detail::global_atom_self_test

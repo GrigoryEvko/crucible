@@ -762,7 +762,6 @@ static_assert(!live_rules<at::dispatch::indirect_call<opaque_family>>::D001_ok,
 static_assert(live_rules<at::dispatch::indirect_call<stated_family>>::valid,
               "a tag class that names a noexcept signature is admitted");
 static_assert(!live_rules<at::dispatch::indirect_call<stated_throwing_family>>::D001_ok);
-static_assert(live_rules<at::dispatch::tail_call>::valid);
 
 // L003 a borrow x a spawn no structured join reaches.  A detached child
 // and a raw clone trip it; a subprocess runs in its own copy of the

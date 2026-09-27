@@ -955,7 +955,7 @@ crucible/handles/_FileHandle.h:open_write_truncate  → include/fixy/os/Fs.h  �
 # carries that axis as an atom of fixy/atoms/, so the lattice type, its
 # At<T> singletons and its name function have no successor.  Where an
 # atom family needs the enumerators, it restates them verbatim.
-crucible/algebra/lattices/_CallShapeLattice.h:CallShape  → include/fixy/atoms/Dispatch.h  — The five call shapes became atoms: Direct is the strict default, and indirect_call, virtual_call and recurses name the shapes above it.
+crucible/algebra/lattices/_CallShapeLattice.h:CallShape  → include/fixy/atoms/Dispatch.h  — The call shapes that a rule reads became atoms: Direct is the strict default, and indirect_call and recurses name the shapes above it. A virtual call and a tail call have no atom, because no rule reads one.
 crucible/algebra/lattices/_CallShapeLattice.h:CallShapeLattice  → include/fixy/atoms/Dispatch.h  — The chain over call shapes has no successor, because a binding names its call shape with a dispatch atom and a collision rule reads the atom.
 crucible/algebra/lattices/_CallShapeLattice.h:call_shape_name  — A name function for the old enum, and the enum has no successor.
 crucible/algebra/lattices/_ControlFlowLattice.h:ControlFlow  → include/fixy/atoms/Ctrl.h  — The five escape tiers became atoms: Pure is the strict default, and abort, throws, longjmp_unsafe and raises_signal name the tiers above it.
@@ -993,7 +993,7 @@ crucible/algebra/lattices/_FpModeLattice.h:fp_rounding_name  — A name function
 crucible/algebra/lattices/_FpModeLattice.h:FpTrapMask  → include/fixy/atoms/Fp.h  — One of the seven settings no collision rule reads; the head comment of fixy/atoms/Fp.h names it and records why it is not restated.
 crucible/algebra/lattices/_FpModeLattice.h:FpTrapMaskLattice  → include/fixy/atoms/Fp.h  — The sub-lattice of a setting that fixy/atoms/Fp.h does not restate.
 crucible/algebra/lattices/_FpModeLattice.h:fp_trap_mask_name  — A name function for an enum that has no successor.
-crucible/algebra/lattices/_GlobalStateLattice.h:GlobalState  → include/fixy/atoms/Global.h  — The four tiers became atoms: Stateless is the strict default, and singleton, thread_local_, namespace_static and atexit_handler name each global a binding touches.
+crucible/algebra/lattices/_GlobalStateLattice.h:GlobalState  → include/fixy/atoms/Global.h  — The tiers that a reader reads became atoms: Stateless is the strict default, and singleton and thread_local_ name each global a binding touches. A namespace static and an atexit handler have no atom, because nothing reads one.
 crucible/algebra/lattices/_GlobalStateLattice.h:GlobalStateLattice  → include/fixy/atoms/Global.h  — The chain over global state has no successor, because a binding names each global with its own global atom.
 crucible/algebra/lattices/_GlobalStateLattice.h:global_state_name  — A name function for the old enum, and the enum has no successor.
 crucible/algebra/lattices/_HwInstructionLattice.h:HwInstruction  → include/fixy/atoms/Hw.h  — fixy/atoms/Hw.h restates the five enumerators verbatim, same names and same values, in namespace fixy::atom::hw for its atom family.
@@ -1021,10 +1021,10 @@ crucible/algebra/lattices/_SimdIsaLattice.h:Sse42Isa  → include/fixy/atoms/Sim
 crucible/algebra/lattices/_SimdIsaLattice.h:Ssse3Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::ssse3.
 crucible/algebra/lattices/_SimdIsaLattice.h:Sve2Isa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sve2.
 crucible/algebra/lattices/_SimdIsaLattice.h:SveIsa  → include/fixy/atoms/Simd.h  — The At<T> alias of one tier became the atom simd::sve.
-crucible/algebra/lattices/_StackUseLattice.h:StackUse  → include/fixy/atoms/Stack.h  — The four tiers became atoms: ConstantFrame is the strict default, and alloc, vla_ok and alloca_ok name the stack use above the frame budget.
+crucible/algebra/lattices/_StackUseLattice.h:StackUse  → include/fixy/atoms/Stack.h  — The tiers became atoms: ConstantFrame is the strict default, and alloc names the stack use above the frame budget. A variable-length array and alloca have no atom, because the build refuses both constructs.
 crucible/algebra/lattices/_StackUseLattice.h:StackUseLattice  → include/fixy/atoms/Stack.h  — The chain has no successor, because a binding names its stack use with a stack atom.
 crucible/algebra/lattices/_StackUseLattice.h:stack_use_name  — A name function for the old enum, and the enum has no successor.
-crucible/algebra/lattices/_StdioLattice.h:Stdio  → include/fixy/atoms/Stdio.h  — The four tiers became atoms: NoStdio is the strict default, write names a stream write, and read_stdin names the interactive read.
+crucible/algebra/lattices/_StdioLattice.h:Stdio  → include/fixy/atoms/Stdio.h  — The tiers became atoms: NoStdio is the strict default, and write names a stream write. The interactive read has no atom, because no binding reads standard input.
 crucible/algebra/lattices/_StdioLattice.h:StdioLattice  → include/fixy/atoms/Stdio.h  — The chain has no successor, because a binding names each stream it touches with a stdio atom, and each atom lifts IO and Block.
 crucible/algebra/lattices/_StdioLattice.h:stdio_name  — A name function for the old enum, and the enum has no successor.
 crucible/algebra/lattices/_SyscallFamilyLattice.h:SyscallFamily  → include/fixy/atoms/Syscall.h  — fixy/atoms/Syscall.h restates all nine families verbatim, same names and same values, and maps each family to its effect row.
@@ -1406,13 +1406,13 @@ crucible/safety/_CallShape.h:CallShapeLattice  — A re-export of the old lattic
 crucible/safety/_CallShape.h:CallShapePinned  — The value wrapper, which the port did not carry. Axis::CallShape is the atom family of fixy/atoms/Dispatch.h on a binding, and the only includers of the wrapper were the old crucible/fixy/Wrap.h and tests.
 crucible/safety/_CallShape.h:Indirect  — An alias that pinned the Indirect tier on a value. indirect_call<FnPtrFamily> in fixy/atoms/Dispatch.h states an indirect call on a binding.
 crucible/safety/_CallShape.h:mint_call_shape  — The factory of the value wrapper, which the port did not carry. A binding states its call shape with the atoms of fixy/atoms/Dispatch.h, so no factory applies.
-crucible/safety/_CallShape.h:Virtual  — An alias that pinned the Virtual tier on a value. virtual_call<BaseClass> in fixy/atoms/Dispatch.h states a virtual call on a binding.
+crucible/safety/_CallShape.h:Virtual  — An alias that pinned the Virtual tier on a value. No Crucible type dispatches virtually and no rule reads a virtual call, so fixy/atoms/Dispatch.h has no atom for it.
 crucible/safety/_GlobalState.h:ConstGlobal  — An alias that pinned the ConstGlobal tier on a value. The port re-modelled global state as the atom family of fixy/atoms/Global.h, which carries no alias for this tier.
 crucible/safety/_GlobalState.h:GlobalStateLattice  — A re-export of the old lattice. The port re-modelled global state as the atom family of fixy/atoms/Global.h, and no new header re-exports a lattice for it.
 crucible/safety/_GlobalState.h:GlobalStatePinned  — The value wrapper, which the port did not carry. Axis::GlobalState is the atom family of fixy/atoms/Global.h on a binding, and the only includers of the wrapper were the old crucible/fixy/Wrap.h and tests.
 crucible/safety/_GlobalState.h:InitOrderHazard  — An alias that pinned the InitOrderHazard tier on a value. The port re-modelled global state as the atom family of fixy/atoms/Global.h, which carries no alias for this tier.
 crucible/safety/_GlobalState.h:mint_global_state  — The factory of the value wrapper, which the port did not carry. A binding states its global state with the atoms of fixy/atoms/Global.h, so no factory applies.
-crucible/safety/_GlobalState.h:MutableGlobal  — An alias that pinned the MutableGlobal tier on a value. The atoms singleton, thread_local_ and namespace_static of fixy/atoms/Global.h state mutable global state on a binding.
+crucible/safety/_GlobalState.h:MutableGlobal  — An alias that pinned the MutableGlobal tier on a value. The atoms singleton and thread_local_ of fixy/atoms/Global.h state mutable global state on a binding.
 crucible/safety/_GlobalState.h:Stateless  — An alias that pinned the Stateless tier on a value. The port re-modelled global state as the atom family of fixy/atoms/Global.h, which carries no alias for this tier.
 crucible/safety/_IsConsumerHandle.h:is_consumer_handle_smoke_test  — An inline smoke test in a public namespace, retired with the old recogniser header, whose recogniser fixy/concurrent/HandleTraits.h carries.
 crucible/safety/_IsProducerHandle.h:is_producer_handle_smoke_test  — An inline smoke test in a public namespace, retired with the old recogniser header, whose recogniser fixy/concurrent/HandleTraits.h carries.
@@ -1491,7 +1491,7 @@ crucible/safety/_SimdWidthPinned.h:SimdIsaLattice  — A re-export of the old la
 crucible/safety/_SimdWidthPinned.h:SimdIsa_v  — A re-export of the old ISA enum. fixy/atoms/Simd.h restates the fifteen enumerators and their trunk nibble verbatim.
 crucible/safety/_SimdWidthPinned.h:SimdWidthPinned  — The value wrapper, which the port did not carry. Axis::SimdIsa is the atom family of fixy/atoms/Simd.h on a binding, and V101 and V402 in fixy/Collision.h read the ISA from the grade of that binding.
 crucible/safety/_Stdio.h:BufferedWrite  — An alias that pinned the BufferedWrite tier on a value. write<Stream> in fixy/atoms/Stdio.h states a write on a binding, and the atom does not separate a buffered write from an unbuffered one.
-crucible/safety/_Stdio.h:InteractiveRead  — An alias that pinned the InteractiveRead tier on a value. read_stdin in fixy/atoms/Stdio.h states a read of standard input on a binding and lifts it to Block.
+crucible/safety/_Stdio.h:InteractiveRead  — An alias that pinned the InteractiveRead tier on a value. No binding reads standard input, so fixy/atoms/Stdio.h has no atom for it.
 crucible/safety/_Stdio.h:mint_stdio  — The factory of the value wrapper, which the port did not carry. A binding states its console I/O with the atoms of fixy/atoms/Stdio.h, so no factory applies.
 crucible/safety/_Stdio.h:NoStdio  — An alias that pinned the NoStdio tier on a value. The port re-modelled console I/O as the atom family of fixy/atoms/Stdio.h, which carries no alias for this tier.
 crucible/safety/_Stdio.h:StdioLattice  — A re-export of the old lattice. The port re-modelled console I/O as the atom family of fixy/atoms/Stdio.h, and no new header re-exports a lattice for it.
