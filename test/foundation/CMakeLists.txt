@@ -199,19 +199,29 @@ foundation_neg_compile_test(neg_strong_counter_from_integer
   "element_type::element_type\\(uint64_t\\) .with Tag = foundation::algebra::lattices::counter_tags::epoch.* is private within this context"
   "StrongCounterLattice<Tag>::element_type::element_type")
 
-# A concurrent row admits resource tags only, a pair whose sum wraps on
-# one axis is not schedulable together, and a tag whose kind names no
-# axis is not a tag.  The second regex of each names the constraint
-# that refused.
+# A concurrent row admits resource tags only, and it refuses a pack whose
+# sum on one axis wraps.  A pair whose sum wraps on one axis is not
+# schedulable together and has no sum type.  A tag whose kind names no
+# axis is not a tag, and neither is a lookalike of a real axis.  The
+# second regex of each names the constraint that refused.
 foundation_neg_compile_test(neg_concurrent_row_refuses_a_non_tag
-  "template constraint failure for .template<class ... Tags>"
-  "requires \\(\\.\\.\\. && ResourceTag<Tags>\\) struct foundation::effects::ConcurrentRow")
+  "template constraint failure for .template<class ... Tags> +requires"
+  "the expression .\\(\\.\\.\\. && ResourceTag<Tags>\\) \\[with Tags = \\{int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_concurrent_row_that_wraps_on_one_axis
+  "template constraint failure for .template<class ... Tags> +requires"
+  "the expression .\\(pack_sums_fit_<Tags \\.\\.\\.>\\)\\(\\) \\[with Tags = \\{foundation::effects::resource::SmBudget<18446744073709551615>, foundation::effects::resource::SmBudget<2>\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_concurrent_rows_that_wrap_are_not_schedulable
   "constraints not satisfied"
   "satisfaction of .ConcurrentlySchedulable<First, Second>.")
+foundation_neg_compile_test(neg_concurrent_row_sum_that_wraps
+  "template constraint failure for .template<class R1, class R2> +requires +ConcurrentlySchedulable<R1, R2> using foundation::effects::concurrent_row_sum_t"
+  "the expression .\\(sums_fit_pairwise_<R1, R2>\\)\\(\\) .with R1 = foundation::effects::ConcurrentRow<foundation::effects::resource::HbmBytes<18446744073709551615> >")
 foundation_neg_compile_test(neg_resource_tag_refuses_a_forged_kind
   "constraints not satisfied"
   "nested requirement .IsResourceKind<.*>. is not satisfied")
+foundation_neg_compile_test(neg_resource_tag_refuses_a_lookalike
+  "no matching function for call to .admit_tag<LookalikeSmBudget>\\(\\)."
+  "nested requirement .is_axis_tag_<T>\\(\\). is not satisfied")
 
 # A mask built during constant evaluation from a bit that names no
 # effect atom reaches the trap in from_raw.  The location regex proves

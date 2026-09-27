@@ -30,7 +30,7 @@ test/fixy/test_tagged.cpp ::fixy::detail x4 — uses the retag policy probes of 
 # Proof and context audits: a test that walks the proof types, the mint keys
 # and the context witnesses, or attacks them.
 test/fixy/test_contexts.cpp ::foundation::effects::detail x5 — pins each context witness to the context it stands for
-test/fixy/test_forgeable_proofs.cpp ::foundation::effects::detail x35 — walks the context base, the mint keys and the open effect templates for a forgeable proof
+test/fixy/test_forgeable_proofs.cpp ::foundation::effects::detail x30 — walks the context base, the mint keys and the open effect templates for a forgeable proof
 test/fixy/test_forgeable_proofs.cpp ::foundation::permissions::detail x9 — lists the open permission templates of the proof walk
 test/foundation/test_ctx.cpp ::foundation::effects::detail x5 — builds a context from a context witness
 test/foundation/test_host_owner_attacks.cpp ::foundation::effects::detail x4 — pins that no mint key has a default constructor or a trivial copy

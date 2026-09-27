@@ -5,11 +5,69 @@
 
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Resources.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
 #include <type_traits>
+
+// Attacks on the tag gate that are legal C++.  Each explicit
+// specialization lives in this translation unit only.  A type that
+// inherits a real tag, a template of the same shape in another
+// namespace, and a specialization of a real tag template that states
+// another axis, another budget or another name are each refused.
+namespace tag_gate_attacks {
+
+namespace fe = ::foundation::effects;
+
+struct DerivedSm : fe::resource::SmBudget<5> {};
+
+template <std::uint64_t N>
+struct SmBudget {
+    static constexpr fe::ResourceKind kind = fe::ResourceKind::Sm;
+    static constexpr std::uint64_t value = N;
+    static constexpr std::string_view name = "SmBudget";
+};
+
+}  // namespace tag_gate_attacks
+
+template <>
+struct foundation::effects::resource::SmBudget<7> {
+    static constexpr ResourceKind kind = ResourceKind::NicQp;
+    static constexpr std::uint64_t value = 7;
+    static constexpr std::string_view name = "SmBudget";
+};
+
+template <>
+struct foundation::effects::resource::SmBudget<9> {
+    static constexpr ResourceKind kind = ResourceKind::Sm;
+    static constexpr std::uint64_t value = 0;
+    static constexpr std::string_view name = "SmBudget";
+};
+
+template <>
+struct foundation::effects::resource::SmBudget<11> {
+    static constexpr ResourceKind kind = ResourceKind::Sm;
+    static constexpr std::uint64_t value = 11;
+    static constexpr std::string_view name = "HbmBytes";
+};
+
+namespace tag_gate_attacks {
+
+static_assert(!fe::ResourceTag<DerivedSm>);
+static_assert(!fe::ResourceTag<SmBudget<5>>);
+static_assert(!fe::ResourceTag<fe::resource::SmBudget<7>>);
+static_assert(!fe::ResourceTag<fe::resource::SmBudget<9>>);
+static_assert(!fe::ResourceTag<fe::resource::SmBudget<11>>);
+static_assert(!fe::ResourceTag<const fe::resource::SmBudget<5>>);
+static_assert(!fe::ResourceTag<fe::resource::SmBudget<5>&>);
+
+// The controls: the unspecialized neighbours are tags.
+static_assert(fe::ResourceTag<fe::resource::SmBudget<5>>);
+static_assert(fe::ResourceTag<fe::resource::SmBudget<12>>);
+
+}  // namespace tag_gate_attacks
 
 namespace {
 
@@ -50,10 +108,12 @@ static_assert(sizeof(every_kind) / sizeof(every_kind[0]) == fe::resource_kind_co
 [[nodiscard]] bool every_kind_has_a_name_at_run_time() noexcept {
     for (fe::ResourceKind kind : every_kind) {
         volatile fe::ResourceKind loaded = kind;
-        std::string_view const name = fe::resource_kind_name(loaded);
+        std::string_view const name = ::foundation::reflect::enum_name(static_cast<fe::ResourceKind>(loaded));
         if (name.empty() || name == std::string_view{"<unknown ResourceKind>"}) return false;
     }
-    return true;
+    volatile std::uint8_t unnamed = 99;
+    return ::foundation::reflect::enum_name(static_cast<fe::ResourceKind>(unnamed))
+        == std::string_view{"<unknown ResourceKind>"};
 }
 
 // A tag is one empty byte on its own, and it carries its kind and its

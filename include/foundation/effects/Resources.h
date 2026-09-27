@@ -16,15 +16,22 @@
 // bandwidth.  uint32_t would silently truncate those, and the tag is an
 // empty type either way.
 //
-// Old spelling: include/crucible/effects/_Resources.h.
-//
 // Each tag names itself as its row discipline and has no payload, so the
 // discipline fold in foundation/diag/RowHash.h gives every tag a slot of
 // its own.  The identity is the reflected name of the tag type, which
 // holds both the axis and the budget.
+//
+// The catalog is the enum below, and everything else is read from it by
+// reflection: the name of an axis, the tag template of an axis, and the
+// gate that admits an axis.  A new axis is an enumerator, a tag template
+// in namespace resource and a top-level alias.  The checks at the foot of
+// this header refuse an axis that lacks one of them.
 
 #include <foundation/diag/RowHash.h>
+#include <foundation/reflect/EnumName.h>
 
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -64,66 +71,11 @@ enum class ResourceKind : std::uint8_t {
 
 inline constexpr std::size_t resource_kind_count = std::meta::enumerators_of(^^ResourceKind).size();
 
-// constexpr rather than consteval so the runtime smoke test can call
-// this with a non-constant argument.  Consteval contexts still fold it.
-[[nodiscard]] constexpr std::string_view resource_kind_name(ResourceKind k) noexcept {
-    switch (k) {
-        case ResourceKind::Sm:
-            return "Sm";
-        case ResourceKind::WarpScheduler:
-            return "WarpScheduler";
-        case ResourceKind::RegistersPerWarp:
-            return "RegistersPerWarp";
-        case ResourceKind::Smem:
-            return "Smem";
-        case ResourceKind::L2:
-            return "L2";
-        case ResourceKind::HbmBytes:
-            return "HbmBytes";
-        case ResourceKind::HbmBw:
-            return "HbmBw";
-        case ResourceKind::NvlinkBw:
-            return "NvlinkBw";
-        case ResourceKind::PcieBw:
-            return "PcieBw";
-        case ResourceKind::NicQ:
-            return "NicQ";
-        case ResourceKind::NicRing:
-            return "NicRing";
-        case ResourceKind::NicQp:
-            return "NicQp";
-        case ResourceKind::NicCq:
-            return "NicCq";
-        case ResourceKind::NicMr:
-            return "NicMr";
-        case ResourceKind::SwitchEgressBw:
-            return "SwitchEgressBw";
-        case ResourceKind::SwitchBuffer:
-            return "SwitchBuffer";
-        case ResourceKind::Tcam:
-            return "Tcam";
-        case ResourceKind::CpuCore:
-            return "CpuCore";
-        case ResourceKind::Llc:
-            return "Llc";
-        case ResourceKind::PowerWatts:
-            return "PowerWatts";
-        case ResourceKind::ThermalCelsius:
-            return "ThermalCelsius";
-        case ResourceKind::RackPowerKw:
-            return "RackPowerKw";
-        case ResourceKind::CarbonGramsPerKwh:
-            return "CarbonGramsPerKwh";
-        default:
-            return std::string_view{"<unknown ResourceKind>"};
-    }
-}
-
-// The gate reads the catalog through reflection so that a new axis
-// satisfies it without an edit here.  A hand-written disjunction would
-// reject every future axis until someone remembered to extend it.
 namespace detail {
 
+// True when an enumerator of the catalog holds K.  A value cast from an
+// integer that no enumerator holds is a well-formed ResourceKind, and
+// the gate refuses it.
 template <ResourceKind K>
 [[nodiscard]] consteval bool is_resource_kind_atom_() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
@@ -234,15 +186,65 @@ using RackPowerKw = resource::RackPowerKw<N>;
 template <std::uint64_t N>
 using CarbonGramsPerKwh = resource::CarbonGramsPerKwh<N>;
 
-// The shape check and the catalog-membership check together, so that a
-// type that merely happens to carry the three members is still
-// rejected unless its kind is a real axis.
+namespace detail {
+
+// A budget of zero, the one argument that reads a tag template.
+inline constexpr std::meta::info zero_budget_ = std::meta::reflect_constant(std::uint64_t{0});
+
+// The one class template in namespace resource whose tags name axis K,
+// or a reflection of void when no template or more than one template
+// names K.  A member that takes no uint64_t budget, or whose tags carry
+// no kind, names no axis.  Complexity: linear in the number of members
+// of the namespace.
+template <ResourceKind K>
+[[nodiscard]] consteval std::meta::info tag_template_of_() noexcept {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^resource, std::meta::access_context::current()));
+    std::meta::info found = ^^void;
+    std::size_t matches = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_class_template(member) && std::meta::can_substitute(member, {zero_budget_})) {
+            using probe = typename[:std::meta::substitute(member, {zero_budget_}):];
+            if constexpr (requires {
+                              { probe::kind } -> std::convertible_to<ResourceKind>;
+                          }) {
+                if constexpr (probe::kind == K) {
+                    found = member;
+                    ++matches;
+                }
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return matches == 1 ? found : ^^void;
+}
+
+// True when T is a specialization of the tag template of its own axis,
+// and its value and name are the budget and the template it spells.  A
+// type that copies the three members of a tag is not one, and neither is
+// an explicit specialization that states another budget.
 template <typename T>
-concept ResourceTag = requires {
+[[nodiscard]] consteval bool is_axis_tag_() noexcept {
+    return std::meta::has_template_arguments(^^T) && std::meta::template_of(^^T) == tag_template_of_<T::kind>()
+        && std::meta::extract<std::uint64_t>(std::meta::template_arguments_of(^^T)[0]) == T::value
+        && std::meta::identifier_of(std::meta::template_of(^^T)) == T::name;
+}
+
+}  // namespace detail
+
+// A resource tag is an unqualified specialization of the tag template of
+// a catalog axis, so one budget has one spelling.  The kind is read
+// first, so a kind that names no axis is refused before the template
+// check reads it.
+template <typename T>
+concept ResourceTag = std::same_as<T, std::remove_cv_t<T>> && requires {
     { T::kind } -> std::convertible_to<ResourceKind>;
     { T::value } -> std::convertible_to<std::uint64_t>;
     { T::name } -> std::convertible_to<std::string_view>;
     requires IsResourceKind<T::kind>;
+    requires detail::is_axis_tag_<T>();
 };
 
 // A tag carries its three facts as static members, which reach only
@@ -270,26 +272,53 @@ template <ResourceTag T>
 namespace detail::resources_self_test {
 
 static_assert(resource_kind_count == 23,
-              "The ResourceKind catalog has grown or shrunk.  Confirm the change is intended, give a new "
-              "axis the next free underlying value rather than renumbering an existing one, and add its "
-              "name arm, its tag template, and its top-level alias.");
+              "The ResourceKind catalog has grown or shrunk.  Confirm the change is intended.  Give a new "
+              "axis the next free underlying value, a tag template in namespace resource and a top-level "
+              "alias.  Do not renumber an existing axis.");
 
-[[nodiscard]] consteval bool every_resource_kind_has_name() noexcept {
+// Each axis has exactly one tag template, and its tags are resource
+// tags.  Each tag template has a top-level alias of its own name.
+[[nodiscard]] consteval bool every_axis_has_one_tag_template() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
-    // -Wshadow fires spuriously on the expansion-statement induction variable.
+    bool all_found = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (resource_kind_name([:en:]) == std::string_view{"<unknown ResourceKind>"}) {
-            return false;
+        constexpr ResourceKind kind = [:en:];
+        constexpr std::meta::info tag = tag_template_of_<kind>();
+        if constexpr (tag == ^^void) {
+            all_found = false;
+        } else {
+            all_found = all_found && ResourceTag<typename[:std::meta::substitute(tag, {zero_budget_}):]>;
         }
     }
 #pragma GCC diagnostic pop
+    return all_found;
+}
+static_assert(every_axis_has_one_tag_template(),
+              "An axis of ResourceKind has no tag template in namespace resource, it has two, or its tags are "
+              "no resource tags.  Define exactly one with CRUCIBLE_DEFINE_RESOURCE_TAG.");
+
+// The alias must name the tag it is spelled after, at a budget of zero.
+[[nodiscard]] consteval bool every_tag_template_has_an_alias() noexcept {
+    const auto context = std::meta::access_context::current();
+    for (const auto tag : std::meta::members_of(^^resource, context)) {
+        if (!std::meta::is_class_template(tag)) continue;
+        const auto zero_tag = std::meta::substitute(tag, {zero_budget_});
+        bool aliased = false;
+        for (const auto alias : std::meta::members_of(^^::foundation::effects, context)) {
+            if (!std::meta::is_alias_template(alias) || std::meta::identifier_of(alias) != std::meta::identifier_of(tag)) {
+                continue;
+            }
+            aliased = aliased || std::meta::dealias(std::meta::substitute(alias, {zero_budget_})) == zero_tag;
+        }
+        if (!aliased) return false;
+    }
     return true;
 }
-static_assert(every_resource_kind_has_name(),
-              "The resource_kind_name switch is missing an arm for at least one ResourceKind atom, so "
-              "that atom reports the unknown-axis sentinel in diagnostics.");
+static_assert(every_tag_template_has_an_alias(),
+              "A tag template in namespace resource has no top-level alias of its name in "
+              "foundation::effects.  Add the alias beside the others.");
 
 static_assert(static_cast<std::uint8_t>(ResourceKind::Sm) == 0,
               "The value of ResourceKind::Sm changed, which invalidates every federation cache key that "
@@ -323,30 +352,6 @@ static_assert(static_cast<std::uint8_t>(ResourceKind::CarbonGramsPerKwh) == 22);
 static_assert(std::is_same_v<std::underlying_type_t<ResourceKind>, std::uint8_t>,
               "The ResourceKind underlying type is no longer uint8_t, which changes the ABI.");
 
-static_assert(IsResourceKind<ResourceKind::Sm>);
-static_assert(IsResourceKind<ResourceKind::WarpScheduler>);
-static_assert(IsResourceKind<ResourceKind::RegistersPerWarp>);
-static_assert(IsResourceKind<ResourceKind::Smem>);
-static_assert(IsResourceKind<ResourceKind::L2>);
-static_assert(IsResourceKind<ResourceKind::HbmBytes>);
-static_assert(IsResourceKind<ResourceKind::HbmBw>);
-static_assert(IsResourceKind<ResourceKind::NvlinkBw>);
-static_assert(IsResourceKind<ResourceKind::PcieBw>);
-static_assert(IsResourceKind<ResourceKind::NicQ>);
-static_assert(IsResourceKind<ResourceKind::NicRing>);
-static_assert(IsResourceKind<ResourceKind::NicQp>);
-static_assert(IsResourceKind<ResourceKind::NicCq>);
-static_assert(IsResourceKind<ResourceKind::NicMr>);
-static_assert(IsResourceKind<ResourceKind::SwitchEgressBw>);
-static_assert(IsResourceKind<ResourceKind::SwitchBuffer>);
-static_assert(IsResourceKind<ResourceKind::Tcam>);
-static_assert(IsResourceKind<ResourceKind::CpuCore>);
-static_assert(IsResourceKind<ResourceKind::Llc>);
-static_assert(IsResourceKind<ResourceKind::PowerWatts>);
-static_assert(IsResourceKind<ResourceKind::ThermalCelsius>);
-static_assert(IsResourceKind<ResourceKind::RackPowerKw>);
-static_assert(IsResourceKind<ResourceKind::CarbonGramsPerKwh>);
-
 [[nodiscard]] consteval std::size_t count_accepted_kinds_() noexcept {
     static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
     std::size_t n = 0;
@@ -369,32 +374,13 @@ static_assert(!IsResourceKind<static_cast<ResourceKind>(99)>);
 static_assert(!IsResourceKind<static_cast<ResourceKind>(255)>);
 static_assert(!IsResourceKind<static_cast<ResourceKind>(23)>);
 
-// Pairwise distinctness of the names is not asserted.  A duplicate
-// would mean the same string literal typed twice in the switch, which
-// review catches.
-static_assert(!resource_kind_name(ResourceKind::Sm).empty());
-static_assert(!resource_kind_name(ResourceKind::WarpScheduler).empty());
-static_assert(!resource_kind_name(ResourceKind::RegistersPerWarp).empty());
-static_assert(!resource_kind_name(ResourceKind::Smem).empty());
-static_assert(!resource_kind_name(ResourceKind::L2).empty());
-static_assert(!resource_kind_name(ResourceKind::HbmBytes).empty());
-static_assert(!resource_kind_name(ResourceKind::HbmBw).empty());
-static_assert(!resource_kind_name(ResourceKind::NvlinkBw).empty());
-static_assert(!resource_kind_name(ResourceKind::PcieBw).empty());
-static_assert(!resource_kind_name(ResourceKind::NicQ).empty());
-static_assert(!resource_kind_name(ResourceKind::NicRing).empty());
-static_assert(!resource_kind_name(ResourceKind::NicQp).empty());
-static_assert(!resource_kind_name(ResourceKind::NicCq).empty());
-static_assert(!resource_kind_name(ResourceKind::NicMr).empty());
-static_assert(!resource_kind_name(ResourceKind::SwitchEgressBw).empty());
-static_assert(!resource_kind_name(ResourceKind::SwitchBuffer).empty());
-static_assert(!resource_kind_name(ResourceKind::Tcam).empty());
-static_assert(!resource_kind_name(ResourceKind::CpuCore).empty());
-static_assert(!resource_kind_name(ResourceKind::Llc).empty());
-static_assert(!resource_kind_name(ResourceKind::PowerWatts).empty());
-static_assert(!resource_kind_name(ResourceKind::ThermalCelsius).empty());
-static_assert(!resource_kind_name(ResourceKind::RackPowerKw).empty());
-static_assert(!resource_kind_name(ResourceKind::CarbonGramsPerKwh).empty());
+// The name of an axis is the identifier of its enumerator.  A value
+// that no enumerator holds reads as the sentinel.
+static_assert(::foundation::reflect::enum_name(ResourceKind::Sm) == std::string_view{"Sm"});
+static_assert(::foundation::reflect::enum_name(ResourceKind::CarbonGramsPerKwh)
+              == std::string_view{"CarbonGramsPerKwh"});
+static_assert(::foundation::reflect::enum_name(static_cast<ResourceKind>(99))
+              == std::string_view{"<unknown ResourceKind>"});
 
 static_assert(std::is_default_constructible_v<resource::SmBudget<32>>);
 static_assert(std::is_trivially_copyable_v<resource::SmBudget<32>>);
@@ -415,44 +401,35 @@ static_assert(resource::HbmBytes<80000000000ULL>::kind == ResourceKind::HbmBytes
 static_assert(resource::HbmBytes<80000000000ULL>::value == 80000000000ULL);
 static_assert(resource::HbmBytes<80000000000ULL>::name == std::string_view{"HbmBytes"});
 
-static_assert(resource::NicQp<4>::kind == ResourceKind::NicQp);
-static_assert(resource::NicQp<4>::value == 4);
-static_assert(resource::NicQp<4>::name == std::string_view{"NicQp"});
-
 // One literal past the reach of uint32_t, so that a narrowing of the
 // budget parameter cannot pass unnoticed.
 static_assert(resource::HbmBandwidth<8000000000000ULL>::value == 8000000000000ULL,
               "A budget value was silently truncated.  The parameter must stay uint64_t.");
 
+// The first and the last axis of the catalog, and one past the reach of
+// uint32_t.  The walk above admits a tag of every axis.
 static_assert(ResourceTag<resource::SmBudget<32>>);
-static_assert(ResourceTag<resource::WarpSchedulerSlots<8>>);
-static_assert(ResourceTag<resource::RegistersPerWarp<256>>);
-static_assert(ResourceTag<resource::SmemBytes<48 * 1024>>);
-static_assert(ResourceTag<resource::L2Bytes<128 * 1024 * 1024>>);
-static_assert(ResourceTag<resource::HbmBytes<80000000000ULL>>);
-static_assert(ResourceTag<resource::HbmBandwidth<3350000000000ULL>>);
-static_assert(ResourceTag<resource::NvlinkBandwidth<900000000000ULL>>);
-static_assert(ResourceTag<resource::PcieBandwidth<32000000000ULL>>);
-static_assert(ResourceTag<resource::NicQueueBudget<256>>);
-static_assert(ResourceTag<resource::NicRingDepth<4096>>);
-static_assert(ResourceTag<resource::NicQp<4>>);
-static_assert(ResourceTag<resource::NicCq<4>>);
-static_assert(ResourceTag<resource::NicMr<8>>);
-static_assert(ResourceTag<resource::SwitchEgressBw<400000000000ULL>>);
-static_assert(ResourceTag<resource::SwitchBufferCells<32 * 1024>>);
-static_assert(ResourceTag<resource::TcamEntries<8 * 1024>>);
-static_assert(ResourceTag<resource::CpuCoreBudget<128>>);
-static_assert(ResourceTag<resource::LlcBytes<256 * 1024 * 1024>>);
-static_assert(ResourceTag<resource::PowerWatts<700>>);
-static_assert(ResourceTag<resource::ThermalCelsius<85>>);
-static_assert(ResourceTag<resource::RackPowerKw<60>>);
 static_assert(ResourceTag<resource::CarbonGramsPerKwh<400>>);
+static_assert(ResourceTag<HbmBytes<80000000000ULL>>);
 
 // These prove the concept rejects rather than accepting vacuously.
 static_assert(!ResourceTag<int>);
 static_assert(!ResourceTag<float>);
 static_assert(!ResourceTag<void*>);
 static_assert(!ResourceTag<ResourceKind>);
+
+// A type with the three members of a tag and a real axis is still no
+// tag, because it is no specialization of the tag template of its axis.
+struct lookalike_tag {
+    static constexpr ResourceKind kind = ResourceKind::Sm;
+    static constexpr std::uint64_t value = 32;
+    static constexpr std::string_view name = "SmBudget";
+};
+static_assert(!ResourceTag<lookalike_tag>);
+
+// A qualified tag would be a second spelling of one budget.
+static_assert(!ResourceTag<const resource::SmBudget<32>>);
+static_assert(!ResourceTag<volatile resource::SmBudget<32>>);
 
 // The three tags below sit at the start of the catalog, at the far end
 // of the value range, and at the end of the catalog.

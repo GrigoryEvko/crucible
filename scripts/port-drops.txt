@@ -99,6 +99,11 @@ crucible/effects/_Capability.h:cap_of  — The trait struct is gone; only cap_of
 crucible/effects/_Capability.h:is_capability  — The trait struct is gone; only is_capability_v survives, an is_instance_of_v query.
 crucible/effects/_Capability.h:source_of  — The trait struct is gone; only source_of_t survives, spliced from the template argument.
 crucible/effects/_Capability.h:runtime_smoke_test_capability  — An inline smoke test in a public namespace; its body moved to test/foundation/test_capability.cpp.
+crucible/effects/_Concurrent.h:CRUCIBLE_KIND_TO_TAG  — The hand table of one specialization per axis is gone; the sum reads the tag template of each axis from namespace resource by reflection.
+crucible/effects/_Concurrent.h:IntraRowOverflowSafe  — ConcurrentRow refuses a pack whose sum on one axis wraps, so each row is safe on its own and the concept had nothing left to refuse.
+crucible/effects/_Concurrent.h:intra_row_overflow_safe_v  — ConcurrentRow refuses a pack whose sum on one axis wraps, so each row is safe on its own and the trait had nothing left to refuse.
+crucible/effects/_Concurrent.h:is_canonical_concurrent_row_v  — The concept IsCanonicalConcurrentRow reads the axis walk directly, and no caller read the variable.
+crucible/effects/_Resources.h:resource_kind_name  → include/foundation/reflect/EnumName.h  — The name of an axis is the identifier of its enumerator, which foundation::reflect::enum_name reads by reflection.
 
 # ── effects: the six policy axes ExecCtx dropped at 8fd50215 ────────────
 # The commit records the drop at the axis level.  No production site read
