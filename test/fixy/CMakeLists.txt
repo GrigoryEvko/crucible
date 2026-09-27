@@ -92,6 +92,17 @@ fixy_neg_compile_test(neg_axis_unclassified_axis
   "required by the constraints of .template<fixy::Axis A> concept fixy::AxisIsClassified."
   "the expression .\\(TakesDefaultTraits<A>\\) == \\(axis_takes_defaults<A>\\) \\[with A = \\(fixy::Axis\\)33\\]. evaluated to .false.")
 
+# The strict pole of each axis is its weakest claim.  A Fact pole that
+# states a fact, and a Right pole that claims nothing, are refused.
+fixy_neg_compile_test(neg_axis_fact_pole_claims_a_fact
+  "static assertion failed: a Fact pole that names an internal source is the weakest claim"
+  "required by the constraints of .template<fixy::Claim C, class Pole> concept fixy::PoleFitsClaim."
+  "\\[with C = fixy::Claim::Fact. Pole = fixy::tags::source::FromInternal\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_axis_right_pole_grants_every_right
+  "static assertion failed: a Right pole that claims nothing is the weakest claim"
+  "required by the constraints of .template<fixy::Claim C, class Pole> concept fixy::PoleFitsClaim."
+  "\\[with C = fixy::Claim::Right. Pole = fixy::pole::Unconstrained<fixy::Axis::Effect>\\]. evaluated to .false.")
+
 # The copy constructor of Qtt is deleted with a reason; the compiler
 # names the constructor and repeats the reason.
 fixy_neg_compile_test(neg_qtt_copy_a_linear
@@ -314,6 +325,10 @@ fixy_neg_compile_test(neg_rule_t001_capability_unverified
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) T001:"
   "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_t001_capability_strict_trust_pole
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) T001:"
+  "fixy::fn<int, fixy::atom::capability_usage>::tier5_composition_ok_.+ evaluates to false")
 fixy_neg_compile_test(neg_rule_l006_linear_longjmp
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) L006:"
@@ -433,6 +448,10 @@ fixy_neg_compile_test(neg_rule_b001_bg_surface_unbounded
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) B001:"
   "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_b001_bg_surface_unstated_space
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) B001:"
+  "fixy::fn<int, fixy::atom::with<foundation::effects::Effect::Bg>, fixy::atom::observe::surface<foundation::effects::Effect::Bg>, fixy::atom::cost_linear<8>, fixy::atom::as_public>::tier5_composition_ok_.+ evaluates to false")
 
 # ── The hardware-instruction family ───────────────────────────────────
 #

@@ -91,9 +91,9 @@ template <Axis A>
 static_assert(expected_pole_name<Axis::Usage>() == "One");
 static_assert(expected_pole_name<Axis::Security>() == "Secret");
 static_assert(expected_pole_name<Axis::Overflow>() == "Trap");
-static_assert(expected_pole_name<Axis::Version>() == "1");
+static_assert(expected_pole_name<Axis::Version>() == "Unconstrained");
 static_assert(expected_pole_name<Axis::Refinement>() == "True");
-static_assert(expected_pole_name<Axis::Lifetime>() == "Static");
+static_assert(expected_pole_name<Axis::Lifetime>() == "Unconstrained");
 static_assert(expected_pole_name<Axis::Trust>() == "Unverified");
 static_assert(expected_pole_name<Axis::Effect>() == "Row");
 static_assert(expected_pole_name<Axis::Observability>() == "Row");

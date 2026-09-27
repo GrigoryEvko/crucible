@@ -1,8 +1,8 @@
 # foundation row_hash cross-build witness
 # format-version:  1
-# matrix-size:     55
+# matrix-size:     56
 # fold-seed:       0xf0117a11eda11a5e
-# fold-anchor:     0x78a9de9a2a89fd19
+# fold-anchor:     0x9519eba651644517
 # toolchain-tag:   0x531f2bb4b45652c8
 # (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
 # (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
@@ -25,22 +25,23 @@ R05_RowIoBg              0x3a57703490bfba7f
 C01_CompEmpty            0x49a55be1cfc23fb0
 C02_CompBg               0x3ace35615f0f9243
 C03_CompNested           0x44ae5b8b654b243f
-B01_FnStrictPole         0x50cf5f8eb1021e2a
-B02_FnClassified         0x50cf5f8eb1021e2a
-B03_FnSecret             0x681cc6f6ac42ce5a
-B04_FnInternal           0x273e71893171a1af
-B05_FnPublic             0x7ce7afc684f6c933
-B06_FnUnverified         0x4eb0efe0aa437e53
-B07_FnDoublePayload      0x50cf5f8eb1021e2a
-S01_PureLinear           0x50cf5f8eb1021e2a
-S02_PureCopy             0x681be1f418caea7c
-S03_IoFunction           0xc2a733647dd4efeb
-S04_BgWorker             0xe381c6d98dab4734
-S05_CtCrypto             0x2a38de8fea98bf21
-L01_FnFutexCall          0xcdcff3397db58cc3
-L02_FnPark               0x7189c396ab3b5988
-L03_FnProcessStateRead   0x218bbd448d09c7c8
-L04_FnStderrWrite        0x97a5c8277cc23dfa
+B01_FnStrictPole         0x23f9d7254276c536
+B02_FnClassified         0x23f9d7254276c536
+B03_FnSecret             0x97d867fa4bce8121
+B04_FnInternal           0x3bc609d7b6ced783
+B05_FnPublic             0x498bf0863cc2386d
+B06_FnUnverified         0x23f9d7254276c536
+B07_FnDoublePayload      0x23f9d7254276c536
+B08_FnVerified           0x647222a361e160bf
+S01_PureLinear           0x23f9d7254276c536
+S02_PureCopy             0xa02da8e7d07c6fcc
+S03_IoFunction           0xb80889bfaee25caa
+S04_BgWorker             0xfb09186c392590e8
+S05_CtCrypto             0xd93b858ef7913d76
+L01_FnFutexCall          0xe7537d36eb539822
+L02_FnPark               0x4aaa19843f09cbb3
+L03_FnProcessStateRead   0x5a0c5e091a36155e
+L04_FnStderrWrite        0xa0fe4f9f6c49785b
 G10_EpochVersioned       0xe3543c60534b7736
 G11_Budgeted             0xdefcdb2e9f0ea002
 K02_OnDualGeneration     0x9e071212337c3790

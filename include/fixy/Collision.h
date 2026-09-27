@@ -82,8 +82,10 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <meta>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -1414,6 +1416,53 @@ struct control_flow_has_suspension_<::fixy::atom::ctrl::coroutine<SuspensionPoli
 }  // namespace detail
 
 // ---------------------------------------------------------------------
+// What a Trust grade says, as one closed relation.
+//
+// T001 asks one question of the Trust grade: did anything verify the
+// provenance of the binding?  The strict pole of Trust is
+// tags::trust::Unverified, and trust_unverified names that pole, so the
+// two give the same answer.  A binding that says nothing about Trust is
+// unverified, and T001 reads it so.
+//
+// The relation is a function over reflections and not a template, so no
+// other file can add a grade to it.  A Trust grade that it does not name
+// has no class, and T001 stops the build on that grade.  The walk in the
+// self-tests below makes sure that every Trust atom of the roster has a
+// class.
+enum class TrustClass : std::uint8_t {
+    Unverified = 0,  // the strict pole, trust_unverified: nothing verified the provenance
+    Tested = 1,  // trust_tested: a test shows it, and no proof does
+    Verified = 2,  // trust_verified: the binding discharged the proof
+    Assumed = 3,  // trust_assumed<Rationale>: a named assumption, with a rationale for the audit
+    External = 4,  // trust_external: a foreign source states it
+};
+
+namespace detail {
+
+[[nodiscard]] consteval std::optional<TrustClass> trust_class_of_(std::meta::info grade) noexcept {
+    const std::meta::info named = std::meta::dealias(grade);
+    if (named == std::meta::dealias(^^typename axis_traits<Axis::Trust>::strict)
+        || named == ^^::fixy::atom::trust_unverified) {
+        return TrustClass::Unverified;
+    }
+    if (named == ^^::fixy::atom::trust_tested) return TrustClass::Tested;
+    if (named == ^^::fixy::atom::trust_verified) return TrustClass::Verified;
+    if (named == ^^::fixy::atom::trust_external) return TrustClass::External;
+    if (std::meta::has_template_arguments(named) && std::meta::template_of(named) == ^^::fixy::atom::trust_assumed) {
+        return TrustClass::Assumed;
+    }
+    return std::nullopt;
+}
+
+}  // namespace detail
+
+template <class Grade>
+concept IsTrustGrade = detail::trust_class_of_(^^Grade).has_value();
+
+template <IsTrustGrade Grade>
+inline constexpr TrustClass trust_class_of_v = *detail::trust_class_of_(^^Grade);
+
+// ---------------------------------------------------------------------
 // The live rules.
 //
 // Each reads grades<Atoms...> and nothing else.  The message is the
@@ -1449,8 +1498,7 @@ struct rules_of {
         std::is_same_v<typename G::template on<Axis::Reentrancy>, ::fixy::atom::coroutine>;
     static constexpr bool monotonic =
         std::is_same_v<typename G::template on<Axis::Mutation>, ::fixy::atom::mut_monotonic>;
-    static constexpr bool unverified =
-        std::is_same_v<typename G::template on<Axis::Trust>, ::fixy::atom::trust_unverified>;
+    static constexpr bool unverified = trust_class_of_v<typename G::template on<Axis::Trust>> == TrustClass::Unverified;
     static constexpr bool unbounded_cost =
         std::is_same_v<typename G::template on<Axis::Complexity>, ::fixy::atom::cost_unbounded>;
 
@@ -1608,14 +1656,16 @@ struct rules_of {
     static constexpr bool observes_something = G::template mentions<Axis::Observability>;
     static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, binding_row>;
 
-    // "May run unbounded" reads three ways on this pack, and B001 refuses
-    // all three: an explicit unbounded cost, an unstated cost, or an
-    // explicit unbounded space grade.  The remedy the theorem names is
-    // the pair space::Bounded plus cost::Linear, so a binding that states
-    // neither is exactly the trap.
+    // "May run unbounded" reads four ways on this pack, and B001 refuses
+    // all four: an unstated cost, an explicit unbounded cost, an unstated
+    // space, or an explicit unbounded space.  A cost and a space are facts
+    // about the binding, and fixy/Axis.h gives each axis a pole that states
+    // nothing, so an unstated grade puts no bound on the binding.  The
+    // remedy the theorem names is the pair space_bounded plus cost_linear.
+    static constexpr bool space_unstated = !G::template mentions<Axis::Space>;
     static constexpr bool space_unbounded =
         std::is_same_v<typename G::template on<Axis::Space>, ::fixy::atom::space_unbounded>;
-    static constexpr bool may_run_unbounded = cost_unstated || unbounded_cost || space_unbounded;
+    static constexpr bool may_run_unbounded = cost_unstated || unbounded_cost || space_unstated || space_unbounded;
     static constexpr bool B001_ok = !(row_bg && observes_something && may_run_unbounded);
 
     // ── The hardware-instruction family, live since fixy/atoms/Hw.h ──
@@ -1965,8 +2015,8 @@ struct rules_of {
                                "that lift an effect through the row of the binding. A call through the vDSO lifts "
                                "the empty row, and these two axes are the door that catches it.");
         static_assert(H001_ok, "H001: hot x an unstated or unbounded cost. The hot path must justify its compute "
-                               "envelope, so declare cost::Constant or cost::Linear. An unstated cost is the "
-                               "Complexity strict pole, which on a hot binding is a claim nobody made.");
+                               "envelope, so declare atom::cost_constant or atom::cost_linear<N>. An unstated cost "
+                               "is the Complexity strict pole, which states no cost, and a hot binding must state one.");
         static_assert(H002_ok, "H002: hot x no refinement witness. A hot body buys its nanoseconds by assuming an "
                                "invariant instead of checking it, so something upstream must have proved it. Attach "
                                "a Refined input that carries the proof.");
@@ -1992,7 +2042,8 @@ struct rules_of {
                                "the core instead of spinning it.");
         static_assert(B001_ok, "B001: a Bg observable surface that may run unbounded is a back-pressure trap. The "
                                "producer cannot see the consumer fall behind, because the surface exists to report "
-                               "facts and not to apply back pressure. Declare space::Bounded and cost::Linear.");
+                               "facts and not to apply back pressure. Declare atom::space_bounded<N> and "
+                               "atom::cost_linear<N>.");
         static_assert(B002_ok, "B002: an observability surface names an effect outside the binding's effect row. "
                                "Observability names which PART of the declared row is observation; it is not a "
                                "second row and cannot widen the first. Add the effect to the Effect grade if the "
@@ -2254,9 +2305,49 @@ static_assert(live_rules<::fixy::atom::coroutine>::L002_ok);
 static_assert(!live_rules<::fixy::atom::ghost, ::fixy::atom::with<::foundation::effects::Effect::Alloc>>::P010_ok);
 static_assert(live_rules<::fixy::atom::ghost>::P010_ok);
 
+// A binding that says nothing about Trust sits at the strict pole, which is
+// unverified, so T001 refuses a capability alone, as it refuses the pack
+// with trust_unverified.  A trust grade that is not Unverified admits it.
 static_assert(!live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_unverified>::T001_ok);
-static_assert(live_rules<::fixy::atom::capability_usage>::T001_ok);
+static_assert(!live_rules<::fixy::atom::capability_usage>::T001_ok);
+static_assert(live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_verified>::T001_ok);
 static_assert(live_rules<::fixy::atom::trust_unverified>::T001_ok);
+static_assert(live_rules<>::T001_ok);
+
+// Every Trust atom of the roster has a class.  The walk names each Trust
+// atom that the closed relation does not answer for.  A walk that sees no
+// Trust atom proves nothing, so the walk refuses that roster too.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+[[nodiscard]] consteval std::string trust_atoms_without_a_class_() {
+    std::size_t seen = 0;
+    std::string offenders;
+    template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<::fixy::collision::all_atom_roster>) {
+        using Atom = [:member:];
+        if constexpr (Atom::axis == Axis::Trust) {
+            ++seen;
+            if (!::fixy::collision::detail::trust_class_of_(member)) {
+                if (!offenders.empty()) offenders += ", ";
+                offenders += std::meta::display_string_of(member);
+            }
+        }
+    }
+    return seen == 0 ? std::string{"(the roster has no Trust atom)"} : offenders;
+}
+
+#pragma GCC diagnostic pop
+
+static_assert(trust_atoms_without_a_class_().empty(),
+              std::string_view{std::define_static_string(
+                  "fixy/Collision.h: these Trust atoms have no class in fixy::collision::TrustClass: "
+                  + trust_atoms_without_a_class_()
+                  + ".  Name each one in the closed relation trust_class_of_, and decide if T001 reads it as "
+                    "unverified.")});
+static_assert(::fixy::collision::IsTrustGrade<typename axis_traits<Axis::Trust>::strict>,
+              "the strict Trust pole must have a class, because a binding that says nothing about Trust reads it");
+static_assert(!::fixy::collision::IsTrustGrade<int>, "a type that is not a Trust grade has no class");
+static_assert(!::fixy::collision::IsTrustGrade<::fixy::atom::copy>, "an atom on another axis has no Trust class");
 
 static_assert(!live_rules<::fixy::atom::coroutine, ::fixy::atom::borrow>::R002_ok);
 static_assert(!live_rules<::fixy::atom::borrow, ::fixy::atom::with<::foundation::effects::Effect::Bg>>::L007_ok);

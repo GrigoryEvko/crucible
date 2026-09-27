@@ -12,9 +12,30 @@
 // reflection, or by measurement.
 //
 // The table rejects by default.  Each axis has a strict pole, and a
-// binding that says nothing about an axis sits at that pole; a
+// binding that says nothing about an axis sits at that pole.  A
 // relaxation is explicit.  There is no engagement tier: fn<T> is legal
 // and strictest on every axis.
+//
+// The strict pole is the weakest claim.  A grade is a claim of one of two
+// kinds, and axis_traits<A>::claim says which:
+//
+//   - A Right is a right that the binding claims for its body: to cause
+//     an effect, to be copied or dropped, to release a secret, to hold a
+//     protocol, to mutate, to self-call, to wrap, to read a stale value.
+//     The weakest claim of a right is no right.
+//   - A Fact is a fact that the binding states about its value or its
+//     body: a predicate, a lifetime, a source, a verification, a layout, a
+//     cost, a precision, a space, a depth, a version, a latency tier.
+//     The weakest claim of a fact is no fact.
+//
+// A gate that must have a fact refuses a binding that does not state it.  An
+// atom that describes what the body does, such as a system call or a
+// park, states a fact.  The right for the action is in the Effect row,
+// and the lift of the atom puts it there.  So the pole of a Fact axis
+// claims nothing, and the pole of a Right axis grants no right.
+// every_pole_is_the_weakest_claim() refuses a Fact axis whose pole claims
+// a fact.  It also refuses a Right axis whose pole claims nothing,
+// because on a Right axis that pole puts no bound on the body.
 //
 // The enumerators are append-only.  A trait cites an axis by value, so
 // an enumerator inserted in the middle renumbers every axis after it.
@@ -40,6 +61,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -189,11 +211,13 @@ static_assert(!text_contains("", "a"));
 }  // namespace detail
 
 // The strict poles that are not a point of a foundation lattice.  Each
-// is the claim a binding makes when it says nothing, and the relaxed
-// spellings beside it are what a binding names to say more.
+// is the claim a binding makes when it says nothing.  The atoms of
+// fixy/Atom.h are what a binding names to say more.
 namespace pole {
 
 namespace pred {
+// The predicate that is true for each value: the Refinement pole, which
+// states no fact.
 struct True {
     template <typename T>
     [[nodiscard]] static constexpr bool check(const T&) noexcept {
@@ -203,14 +227,8 @@ struct True {
 }  // namespace pred
 
 namespace proto {
-struct None {};  // no protocol obligation
+struct None {};  // no protocol obligation, so no right to hold a live protocol
 }  // namespace proto
-
-namespace lifetime {
-struct Static {};  // valid for the entire program
-template <auto RegionTag>
-struct In {};  // valid within a named region
-}  // namespace lifetime
 
 enum class ReprKind : std::uint8_t {
     Opaque = 0,  // layout opaque
@@ -220,31 +238,6 @@ enum class ReprKind : std::uint8_t {
     Simd = 4,  // SIMD-vector layout
     Atomic = 5,  // atomic representation, CAS-capable carrier
 };
-
-namespace cost {
-struct Unstated {};  // no claim, and an unbounded cost must be declared
-struct Constant {};  // O(1)
-template <auto N>
-struct Linear {};  // O(N)
-template <auto N>
-struct Quadratic {};  // O(N^2)
-struct Unbounded {};  // explicit unbounded
-}  // namespace cost
-
-namespace precision {
-struct Exact {};  // bit-exact
-struct F32 {};
-struct F64 {};
-template <auto Bound>
-struct Higham {};  // Higham bound
-}  // namespace precision
-
-namespace space {
-struct Zero {};  // stack only
-struct Unbounded {};
-template <auto N>
-struct Bounded {};
-}  // namespace space
 
 enum class OverflowMode : std::uint8_t {
     Trap = 0,  // abort on overflow
@@ -266,49 +259,68 @@ enum class ReentrancyMode : std::uint8_t {
     Coroutine = 2,  // suspendable, resumable
 };
 
-// Codata observation depth.
-namespace size_pol {
-struct Unstated {};  // no claim, and a depth must be declared
-template <auto Depth>
-struct Sized {};
-struct Productive {};  // codata
-}  // namespace size_pol
-
 namespace stale {
-struct Fresh {};  // no staleness admitted
-template <auto TauMax>
-struct Stale {};
+struct Fresh {};  // no staleness admitted, so no right to read a stale value
 }  // namespace stale
 
-// The axes below are wrapper-only: the claim is per value rather than
-// per binding, and the wrapper that carries it goes on the value at
-// the call site.  Unconstrained is the strict pole of each: the
-// binding makes no claim at all.
+// The pole of a Fact axis whose vocabulary has no point of its own that
+// states nothing: the binding states no fact on that axis.  A gate that
+// must have the fact refuses it.
 //
 // The axis is the template argument, so one template gives each of
 // those axes a pole type of its own and two axes still cannot share
-// one.  Thirteen namespaces holding one empty struct each said the
-// same thing thirteen times, and a fourteenth axis had to remember to
-// add the fourteenth.
+// one.
 template <Axis A>
 struct Unconstrained {};
 
 }  // namespace pole
 
-// Twelve axes are wrapper-only and say exactly the same thing: a
-// lattice discharged at the type level, no wrapper on the binding, and
-// the unconstrained pole.  The primary below is that sentence, and
-// this roster is the opt-in to it.
+// What a grade claims, and so what the weakest claim is.  The header
+// comment states the rule, and every_pole_is_the_weakest_claim() reads it.
+enum class Claim : std::uint8_t {
+    Right = 0,  // a right that the binding claims for its body. The weakest claim is no right
+    Fact = 1,  // a fact that the binding states about its value or its body. The weakest claim is no fact
+};
+
+// The function tells if a pole claims nothing.  pole::Unconstrained<A>
+// claims nothing on its axis by construction.  The other three are the
+// points of their vocabularies that state nothing: a predicate that is
+// true for each value, a trust that nothing verified, and a layout that
+// says nothing.
+//
+// The function is not a template, so no other file can add a pole to the
+// set.  A trait or a variable template is open, because an explicit
+// specialization in any translation unit changes the answer there.
+[[nodiscard]] consteval bool pole_claims_nothing(std::meta::info candidate) noexcept {
+    const std::meta::info named = std::meta::dealias(candidate);
+    if (std::meta::has_template_arguments(named) && std::meta::template_of(named) == ^^pole::Unconstrained) {
+        return true;
+    }
+    return named == ^^pole::pred::True || named == ^^tags::trust::Unverified
+        || named == ^^std::integral_constant<pole::ReprKind, pole::ReprKind::Opaque>;
+}
+
+// The rule, as a check on one pole.  The pole of a Fact axis claims
+// nothing.  The pole of a Right axis grants no right, so it is never a
+// pole that claims nothing: on a Right axis that pole puts no bound
+// on the body.
+template <Claim C, class Pole>
+concept PoleFitsClaim = (C == Claim::Fact) == pole_claims_nothing(^^Pole);
+
+// Thirteen axes say the same thing: a Fact lattice discharged at
+// the type level, no wrapper on the binding, and the pole that claims
+// nothing.  The primary below is that sentence, and this roster is the
+// opt-in to it.
 //
 // The roster is what keeps a defined primary from failing open.  An
 // undefined primary used to reject a new axis by being incomplete at
 // the walk's sizeof; a defined one would hand that axis a claim nobody
-// gave it.  Naming the twelve here restores the rejection and costs
-// one line per axis instead of seven.
+// gave it.  Naming the thirteen here restores the rejection and costs
+// one line per axis instead of eight.
 inline constexpr Axis defaulted_axes[] = {
-    Axis::Synchronization, Axis::FpMode,          Axis::SyscallSurface, Axis::ControlFlow,
-    Axis::CallShape,       Axis::StackUse,        Axis::GlobalState,    Axis::Stdio,
-    Axis::HwInstruction,   Axis::BarrierStrength, Axis::SimdIsa,        Axis::MemoryScope,
+    Axis::Size,          Axis::Synchronization, Axis::FpMode,          Axis::SyscallSurface, Axis::ControlFlow,
+    Axis::CallShape,     Axis::StackUse,        Axis::GlobalState,     Axis::Stdio,          Axis::HwInstruction,
+    Axis::BarrierStrength, Axis::SimdIsa,       Axis::MemoryScope,
 };
 
 [[nodiscard]] consteval bool axis_is_on_default_roster(Axis axis) noexcept {
@@ -325,7 +337,8 @@ inline constexpr bool axis_takes_defaults = axis_is_on_default_roster(A);
 // not.  A specialisation exposes exactly one of three pole markers:
 // `strict`, the strict pole as a type (a value pole is an
 // integral_constant); `derived_from`, the axis whose pole this one
-// takes; or `caller_supplied`, for the one axis with no pole.
+// takes; or `caller_supplied`, for the one axis with no pole.  Every
+// axis with a pole also states its `claim`.
 //
 // `defaulted` is how the walk tells the primary apart from a
 // specialisation.  A specialisation does not declare that member, so
@@ -336,6 +349,7 @@ struct axis_traits {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::None;
+    static constexpr Claim claim = Claim::Fact;
     using strict = pole::Unconstrained<A>;
 };
 
@@ -353,6 +367,7 @@ struct axis_traits<Axis::Refinement> {
     static constexpr Shape shape = Shape::Structural;
     static constexpr Discharge discharge = Discharge::Contract;
     static constexpr Wrapper wrapper = Wrapper::Refined;
+    static constexpr Claim claim = Claim::Fact;
     using strict = pole::pred::True;
 };
 
@@ -361,7 +376,8 @@ struct axis_traits<Axis::Usage> {
     static constexpr Shape shape = Shape::Semiring;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::Qtt;
-    // The linear grade: consumed exactly once.
+    static constexpr Claim claim = Claim::Right;
+    // The linear grade: consumed exactly once, so no right to copy or drop.
     using strict = std::integral_constant<::foundation::algebra::lattices::QttGrade,
                                           ::foundation::algebra::lattices::QttGrade::One>;
 };
@@ -371,6 +387,7 @@ struct axis_traits<Axis::Effect> {
     static constexpr Shape shape = Shape::Row;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::Computation;
+    static constexpr Claim claim = Claim::Right;
     using strict = ::foundation::effects::Row<>;
 };
 
@@ -379,6 +396,7 @@ struct axis_traits<Axis::Security> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::Secret;
+    static constexpr Claim claim = Claim::Right;
     // Classified: observation requires a named declassification.  The
     // old five-level SecLevel collapsed into the two points of
     // ConfLattice when Secret was extracted, and this is its top.
@@ -391,15 +409,22 @@ struct axis_traits<Axis::Protocol> {
     static constexpr Shape shape = Shape::Transition;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::None;
+    static constexpr Claim claim = Claim::Right;
     using strict = pole::proto::None;
 };
 
+// A lifetime, a source, a precision, a space and a cost are facts about
+// the value.  A pole that states one gives each binding that says nothing
+// a fact that nothing proved: a value that lives for the whole program,
+// an internal source, a bit-exact result, no heap use.  So each pole
+// states nothing, and a gate that must have the fact refuses it.
 template <>
 struct axis_traits<Axis::Lifetime> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::OwnedRegion;
-    using strict = pole::lifetime::Static;
+    static constexpr Claim claim = Claim::Fact;
+    using strict = pole::Unconstrained<Axis::Lifetime>;
 };
 
 template <>
@@ -407,7 +432,8 @@ struct axis_traits<Axis::Provenance> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::Tagged;
-    using strict = tags::source::FromInternal;
+    static constexpr Claim claim = Claim::Fact;
+    using strict = pole::Unconstrained<Axis::Provenance>;
 };
 
 // Unverified is the bottom of the integrity lattice.  Defaulting to
@@ -420,6 +446,7 @@ struct axis_traits<Axis::Trust> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::Tagged;
+    static constexpr Claim claim = Claim::Fact;
     using strict = tags::trust::Unverified;
 };
 
@@ -428,19 +455,21 @@ struct axis_traits<Axis::Representation> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::Reflection;
     static constexpr Wrapper wrapper = Wrapper::None;
+    static constexpr Claim claim = Claim::Fact;
     using strict = std::integral_constant<pole::ReprKind, pole::ReprKind::Opaque>;
 };
 
 // Observability carries no independent payload.  Its pole is Effect's,
 // so a binding that accepts the strict pole for both resolves to the
 // same type.  The `strict` alias lets a consumer read the resolved
-// pole without going through `derived_from`.
+// pole without going through `derived_from`, and the claim is Effect's.
 template <>
 struct axis_traits<Axis::Observability> {
     static constexpr Shape shape = Shape::Row;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::None;
     using derived_from = axis_traits<Axis::Effect>;
+    static constexpr Claim claim = derived_from::claim;
     using strict = derived_from::strict;
 };
 
@@ -449,7 +478,8 @@ struct axis_traits<Axis::Complexity> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::Measurement;
     static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::cost::Unstated;
+    static constexpr Claim claim = Claim::Fact;
+    using strict = pole::Unconstrained<Axis::Complexity>;
 };
 
 template <>
@@ -457,7 +487,8 @@ struct axis_traits<Axis::Precision> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::Measurement;
     static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::precision::Exact;
+    static constexpr Claim claim = Claim::Fact;
+    using strict = pole::Unconstrained<Axis::Precision>;
 };
 
 template <>
@@ -465,7 +496,8 @@ struct axis_traits<Axis::Space> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::Contract;
     static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::space::Zero;
+    static constexpr Claim claim = Claim::Fact;
+    using strict = pole::Unconstrained<Axis::Space>;
 };
 
 template <>
@@ -473,6 +505,7 @@ struct axis_traits<Axis::Overflow> {
     static constexpr Shape shape = Shape::Structural;
     static constexpr Discharge discharge = Discharge::Contract;
     static constexpr Wrapper wrapper = Wrapper::None;
+    static constexpr Claim claim = Claim::Right;
     using strict = std::integral_constant<pole::OverflowMode, pole::OverflowMode::Trap>;
 };
 
@@ -481,6 +514,7 @@ struct axis_traits<Axis::Mutation> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::Contract;
     static constexpr Wrapper wrapper = Wrapper::Monotonic;
+    static constexpr Claim claim = Claim::Right;
     using strict = std::integral_constant<pole::MutationMode, pole::MutationMode::Immutable>;
 };
 
@@ -489,23 +523,20 @@ struct axis_traits<Axis::Reentrancy> {
     static constexpr Shape shape = Shape::Structural;
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::None;
+    static constexpr Claim claim = Claim::Right;
     using strict = std::integral_constant<pole::ReentrancyMode, pole::ReentrancyMode::NonReentrant>;
 };
 
-template <>
-struct axis_traits<Axis::Size> {
-    static constexpr Shape shape = Shape::Lattice;
-    static constexpr Discharge discharge = Discharge::TypeLevel;
-    static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = pole::size_pol::Unstated;
-};
-
+// A version is a fact about the interface of the binding.  A pole that
+// names version 1 gives each binding that says nothing that version, so
+// the pole states no version.
 template <>
 struct axis_traits<Axis::Version> {
     static constexpr Shape shape = Shape::Structural;
     static constexpr Discharge discharge = Discharge::Contract;
     static constexpr Wrapper wrapper = Wrapper::None;
-    using strict = std::integral_constant<std::uint32_t, 1u>;
+    static constexpr Claim claim = Claim::Fact;
+    using strict = pole::Unconstrained<Axis::Version>;
 };
 
 template <>
@@ -513,10 +544,11 @@ struct axis_traits<Axis::Staleness> {
     static constexpr Shape shape = Shape::Semiring;
     static constexpr Discharge discharge = Discharge::Contract;
     static constexpr Wrapper wrapper = Wrapper::Stale;
+    static constexpr Claim claim = Claim::Right;
     using strict = pole::stale::Fresh;
 };
 
-// Regime shares the pole of the twelve above but not their discharge:
+// Regime shares the pole of the thirteen on the roster but not their discharge:
 // where in the latency budget a function runs is settled by the bench,
 // not by the type.  That one difference is why it keeps a
 // specialisation and stays off the roster.
@@ -525,6 +557,7 @@ struct axis_traits<Axis::Regime> {
     static constexpr Shape shape = Shape::Lattice;
     static constexpr Discharge discharge = Discharge::Measurement;
     static constexpr Wrapper wrapper = Wrapper::None;
+    static constexpr Claim claim = Claim::Fact;
     using strict = pole::Unconstrained<Axis::Regime>;
 };
 
@@ -612,9 +645,74 @@ concept AxisIsClassified = (TakesDefaultTraits<A> == axis_takes_defaults<A>);
 static_assert(every_axis_has_traits(),
               "fixy::Axis: an axis is neither on defaulted_axes nor carries an axis_traits "
               "specialisation, or it carries both, or the one it carries does not classify as "
-              "exactly one of caller-supplied, strict or derived.  A wrapper-only axis whose claim "
-              "is a lattice discharged at the type level joins defaulted_axes and needs nothing "
-              "else.  Any other axis needs a specialisation next to the others above.");
+              "exactly one of caller-supplied, strict or derived.  An axis whose grade is a Fact "
+              "lattice discharged at the type level, with no wrapper, joins defaulted_axes and needs "
+              "nothing else.  Any other axis needs a specialisation next to the others above.");
+
+// The rule of the header comment, over the table.  Each axis with a pole
+// states its claim, and its pole must be the weakest claim of that kind.
+// The walk answers with the names of the axes that break the rule, so
+// the diagnostic names each one.
+template <Axis A>
+concept StatesItsClaim = requires {
+    { axis_traits<A>::claim } -> std::convertible_to<Claim>;
+};
+
+namespace detail {
+
+[[nodiscard]] consteval std::string axes_whose_pole_is_not_the_weakest_claim_() {
+    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
+    std::string offenders;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : axes) {
+        constexpr Axis axis = [:en:];
+        if constexpr (!IsCallerSupplied<axis>) {
+            bool is_weakest = false;
+            if constexpr (StatesItsClaim<axis>) {
+                is_weakest = PoleFitsClaim<axis_traits<axis>::claim, typename axis_traits<axis>::strict>;
+            }
+            if (!is_weakest) {
+                if (!offenders.empty()) offenders += ", ";
+                offenders += axis_name(axis);
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return offenders;
+}
+
+[[nodiscard]] consteval std::string_view weakest_claim_diagnostic_() {
+    std::string message =
+        "fixy/Axis.h: the strict pole of each axis must be its weakest claim, and these axes break the rule: ";
+    message += axes_whose_pole_is_not_the_weakest_claim_();
+    message +=
+        ".  An axis states its claim in axis_traits<A>::claim.  The pole of a Fact axis must claim nothing: "
+        "pole::Unconstrained<A>, or the point of its vocabulary that states nothing.  The pole of a Right axis "
+        "must grant no right, so it is never a pole that claims nothing.";
+    return std::define_static_string(message);
+}
+
+}  // namespace detail
+
+[[nodiscard]] consteval bool every_pole_is_the_weakest_claim() {
+    return detail::axes_whose_pole_is_not_the_weakest_claim_().empty();
+}
+
+static_assert(every_pole_is_the_weakest_claim(), detail::weakest_claim_diagnostic_());
+
+// The check has the two answers, so the walk above cannot pass through a
+// rule that always says yes.
+static_assert(PoleFitsClaim<Claim::Fact, pole::Unconstrained<Axis::Lifetime>>);
+static_assert(PoleFitsClaim<Claim::Fact, tags::trust::Unverified>);
+static_assert(PoleFitsClaim<Claim::Right, ::foundation::effects::Row<>>);
+static_assert(PoleFitsClaim<Claim::Right, pole::stale::Fresh>);
+static_assert(!PoleFitsClaim<Claim::Right, pole::Unconstrained<Axis::Effect>>,
+              "on a Right axis a pole that claims nothing would grant every right");
+static_assert(!PoleFitsClaim<Claim::Fact, tags::source::FromInternal>,
+              "on a Fact axis a pole that names a source would give every binding that source");
+static_assert(!PoleFitsClaim<Claim::Fact, std::integral_constant<std::uint32_t, 1u>>,
+              "on a Fact axis a pole that names a version would give every binding that version");
 
 // The walk above rejects an axis only if the comparison it rests on can
 // answer no.  A value one past the enum stands in for the next

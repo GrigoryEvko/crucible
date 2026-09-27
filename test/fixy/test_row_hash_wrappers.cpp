@@ -386,34 +386,33 @@ static_assert(row_hash_contribution_v<SecretAtomInt> != row_hash_contribution_v<
 static_assert(row_hash_contribution_v<SecretAtomInt> != row_hash_contribution_v<InternalInt>);
 
 // ---------------------------------------------------------------------
-// The load-bearing cell: an axis that reads exactly like Security and
-// decides the other way.
+// The Trust axis merges one pair too, for the same reason.
 //
 // atom::trust_unverified names the strict Trust pole, tags::trust::
 // Unverified, the same way as_classified names the strict Security pole.
-// The naming invites the same merge.  The code refuses it: rule T001 in
-// fixy/Collision.h reads the Trust grade as is_same_v against the atom
-// alone, so writing the atom out makes the rule fire and taking the
-// default leaves it standing down.  Collision.h pins both halves of that
-// asymmetry with its own self-tests, so the two spellings are separable
-// by a consumer and are therefore two claims, whatever the names suggest.
-//
-// Whether that asymmetry is right is T001's question and not this fold's.
-// Either way the two must not share a slot while it holds, and this cell
-// is what stops a later author reading the Security merge as a pattern
-// and applying it across the axis table.
+// Rule T001 in fixy/Collision.h, the one rule that reads the Trust axis,
+// reads the grade through the closed relation trust_class_of_, which
+// gives the two spellings the class Unverified.  So T001 gives them one
+// verdict on every pack, and this is the establishment, asserted.
+static_assert(::fixy::collision::trust_class_of_v<::fixy::atom::trust_unverified>
+              == ::fixy::collision::trust_class_of_v<typename ::fixy::axis_traits<::fixy::Axis::Trust>::strict>);
 static_assert(!::fixy::collision::live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_unverified>::T001_ok,
               "T001 must fire on a capability at the written-out unverified atom");
-static_assert(::fixy::collision::live_rules<::fixy::atom::capability_usage>::T001_ok,
-              "T001 must stand down on a capability at the strict Trust pole");
-static_assert(
-    std::is_same_v<typename ::fixy::axis_traits<::fixy::Axis::Trust>::strict, ::fixy::tags::trust::Unverified>,
-    "the cell below is only about the pole while the pole is Unverified");
+static_assert(!::fixy::collision::live_rules<::fixy::atom::capability_usage>::T001_ok,
+              "T001 must fire on a capability at the strict Trust pole");
 static_assert(!std::is_same_v<::fixy::atom::trust_unverified, ::fixy::tags::trust::Unverified>,
               "the atom and the pole must stay distinct types for this cell to have content");
-static_assert(row_hash_contribution_v<UnverifiedInt> != row_hash_contribution_v<StrictPoleInt>,
-              "T001 separates the written-out unverified atom from the strict Trust pole, so the two are two "
-              "claims and must not be canonicalised together");
+static_assert(row_hash_contribution_v<UnverifiedInt> == row_hash_contribution_v<StrictPoleInt>,
+              "trust_unverified names the strict Trust pole, so the two spellings must reach one cache slot");
+
+// The merge is one pair and not the axis.  A Trust grade that T001 reads
+// as verified admits a capability that the pole refuses, so it keeps its
+// own slot.  A merge there gives a caller under one verdict the kernel
+// that the other verdict admitted.
+using VerifiedInt = ::fixy::fn<int, ::fixy::atom::trust_verified>;
+static_assert(::fixy::collision::live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_verified>::T001_ok);
+static_assert(row_hash_contribution_v<VerifiedInt> != row_hash_contribution_v<StrictPoleInt>,
+              "T001 separates trust_verified from the strict Trust pole, so the two are two claims");
 
 // ---------------------------------------------------------------------
 // Every carrier in the tree is off the zero slot, or says why it is not.
@@ -651,11 +650,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::pole, kGradeVocabulary},
     {^^::fixy::pole::pred, kGradeVocabulary},
     {^^::fixy::pole::proto, kGradeVocabulary},
-    {^^::fixy::pole::lifetime, kGradeVocabulary},
-    {^^::fixy::pole::cost, kGradeVocabulary},
-    {^^::fixy::pole::precision, kGradeVocabulary},
-    {^^::fixy::pole::space, kGradeVocabulary},
-    {^^::fixy::pole::size_pol, kGradeVocabulary},
     {^^::fixy::pole::stale, kGradeVocabulary},
     {^^::fixy::atom, kGradeVocabulary},
     {^^::fixy::atom::barrier, kGradeVocabulary},
@@ -1498,6 +1492,9 @@ void test_one_claim_reaches_one_slot() {
     check(internal_tier != strict_pole, "the internal tier shares the classified carrier's slot at run time");
     check(public_tier != strict_pole, "the public tier shares the classified carrier's slot at run time");
     check(internal_tier != public_tier, "two Security points below the carrier share one slot at run time");
+    std::uint64_t const unverified = row_hash_contribution_v<UnverifiedInt>;
+    check(unverified == strict_pole, "trust_unverified names the strict Trust pole, and the two spellings take two "
+                                     "slots at run time");
 }
 
 // The other direction, and the reason it is a separate test: a merge
@@ -1505,10 +1502,10 @@ void test_one_claim_reaches_one_slot() {
 // hit, and a wrong hit is the one way this key must never fail.
 void test_two_claims_keep_two_slots() {
     std::uint64_t const strict_pole = row_hash_contribution_v<StrictPoleInt>;
-    std::uint64_t const unverified = row_hash_contribution_v<UnverifiedInt>;
-    check(unverified != 0, "the unverified binding contributes nothing at run time");
-    check(unverified != strict_pole, "T001 separates the written-out unverified atom from the strict Trust pole, "
-                                     "and the two share one slot at run time");
+    std::uint64_t const verified = row_hash_contribution_v<VerifiedInt>;
+    check(verified != 0, "the verified binding contributes nothing at run time");
+    check(verified != strict_pole, "T001 separates trust_verified from the strict Trust pole, and the two share one "
+                                   "slot at run time");
 }
 
 // The roster is read out of the role namespace, so a role added there is

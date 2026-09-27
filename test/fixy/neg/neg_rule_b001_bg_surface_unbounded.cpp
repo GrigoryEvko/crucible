@@ -4,8 +4,8 @@
 // The producer cannot see the consumer fall behind, because the surface
 // exists to report facts and not to apply back pressure — that is what
 // makes it a trap rather than merely slow.  The remedy the theorem names
-// is the pair space::Bounded plus cost::Linear: a bound on what the
-// surface may hold and a bound on what it may spend.
+// is the pair space_bounded plus cost_linear: a bound on what the surface
+// can hold and a bound on what it can spend.
 //
 // This is the theorem the catalog recorded for Axis::Observability before
 // the axis had any atom, and it is NOT the containment rule.  B002 is the
@@ -14,10 +14,10 @@
 // remedy.  The pack below satisfies B002 — Bg is in the effect row — and
 // trips only B001, which is what shows the two are independent.
 //
-// "May run unbounded" reads three ways and the rule refuses all three: an
-// explicit unbounded cost, an unstated cost, or an explicit unbounded
-// space.  This pack uses the second, which is the one a caller reaches by
-// writing nothing.
+// "May run unbounded" reads four ways, and the rule refuses all four: an
+// unstated cost, an explicit unbounded cost, an unstated space, or an
+// explicit unbounded space.  This pack states no cost and no space.  A
+// caller gets this pack when the caller writes nothing.
 
 #include <fixy/Fn.h>
 

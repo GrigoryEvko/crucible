@@ -55,13 +55,33 @@ static_assert(static_cast<std::size_t>(Axis::MemoryScope) + 1 == ::fixy::axis_co
 
 // The poles the header comment promises.
 static_assert(std::is_same_v<axis_traits<Axis::Trust>::strict, ::fixy::tags::trust::Unverified>);
-static_assert(std::is_same_v<axis_traits<Axis::Provenance>::strict, ::fixy::tags::source::FromInternal>);
 static_assert(std::is_same_v<axis_traits<Axis::Effect>::strict, ::foundation::effects::Row<>>);
 static_assert(axis_traits<Axis::Usage>::strict::value == ::foundation::algebra::lattices::QttGrade::One);
-static_assert(axis_traits<Axis::Version>::strict::value == 1u);
 static_assert(std::is_same_v<axis_traits<Axis::Refinement>::strict, ::fixy::pole::pred::True>);
-static_assert(std::is_same_v<axis_traits<Axis::Complexity>::strict, ::fixy::pole::cost::Unstated>);
 static_assert(std::is_same_v<axis_traits<Axis::MemoryScope>::strict, ::fixy::pole::Unconstrained<Axis::MemoryScope>>);
+
+// A Fact axis states no fact at its pole.  A pole that names a fact gives
+// that fact to each binding that says nothing: a value that lives for the
+// whole program, an internal source, a bit-exact result, no heap use,
+// version 1.
+static_assert(std::is_same_v<axis_traits<Axis::Lifetime>::strict, ::fixy::pole::Unconstrained<Axis::Lifetime>>);
+static_assert(std::is_same_v<axis_traits<Axis::Provenance>::strict, ::fixy::pole::Unconstrained<Axis::Provenance>>);
+static_assert(std::is_same_v<axis_traits<Axis::Precision>::strict, ::fixy::pole::Unconstrained<Axis::Precision>>);
+static_assert(std::is_same_v<axis_traits<Axis::Space>::strict, ::fixy::pole::Unconstrained<Axis::Space>>);
+static_assert(std::is_same_v<axis_traits<Axis::Complexity>::strict, ::fixy::pole::Unconstrained<Axis::Complexity>>);
+static_assert(std::is_same_v<axis_traits<Axis::Size>::strict, ::fixy::pole::Unconstrained<Axis::Size>>);
+static_assert(std::is_same_v<axis_traits<Axis::Version>::strict, ::fixy::pole::Unconstrained<Axis::Version>>);
+
+// Each axis states its claim, and the rule of the header comment holds
+// over the whole table.
+static_assert(axis_traits<Axis::Effect>::claim == ::fixy::Claim::Right);
+static_assert(axis_traits<Axis::Observability>::claim == ::fixy::Claim::Right,
+              "Observability takes the claim of the axis it derives from");
+static_assert(axis_traits<Axis::Staleness>::claim == ::fixy::Claim::Right);
+static_assert(axis_traits<Axis::Trust>::claim == ::fixy::Claim::Fact);
+static_assert(axis_traits<Axis::Space>::claim == ::fixy::Claim::Fact);
+static_assert(axis_traits<Axis::MemoryScope>::claim == ::fixy::Claim::Fact);
+static_assert(::fixy::every_pole_is_the_weakest_claim());
 static_assert(axis_traits<Axis::Type>::caller_supplied);
 static_assert(::fixy::IsCallerSupplied<Axis::Type>);
 static_assert(!::fixy::HasStrictPole<Axis::Type>);
@@ -76,17 +96,17 @@ static_assert(
 static_assert(!std::is_same_v<axis_traits<Axis::Stdio>::strict, axis_traits<Axis::GlobalState>::strict>);
 static_assert(std::is_empty_v<::fixy::pole::Unconstrained<Axis::Stdio>>);
 
-// The roster and the specialisations partition the enum. Twelve axes
-// take the primary's defaults; the other twenty-one say something the
+// The roster and the specializations partition the enum. Thirteen axes
+// take the primary's defaults, and the other twenty say something the
 // primary does not.
-static_assert(std::size(::fixy::defaulted_axes) == 12);
-static_assert(::fixy::axis_count - std::size(::fixy::defaulted_axes) == 21);
+static_assert(std::size(::fixy::defaulted_axes) == 13);
+static_assert(::fixy::axis_count - std::size(::fixy::defaulted_axes) == 20);
 static_assert(::fixy::TakesDefaultTraits<Axis::MemoryScope>);
 static_assert(::fixy::axis_takes_defaults<Axis::MemoryScope>);
 static_assert(!::fixy::TakesDefaultTraits<Axis::Trust>);
 static_assert(!::fixy::axis_takes_defaults<Axis::Trust>);
 
-// Regime shares the pole of the twelve but not their discharge, so it
+// Regime shares the pole of the thirteen but not their discharge, so it
 // stays off the roster.
 static_assert(!::fixy::axis_takes_defaults<Axis::Regime>);
 static_assert(!::fixy::TakesDefaultTraits<Axis::Regime>);
@@ -104,6 +124,7 @@ static_assert(std::is_same_v<axis_traits<Axis::Regime>::strict, ::fixy::pole::Un
             if (axis_traits<axis>::shape != Shape::Lattice) return false;
             if (axis_traits<axis>::discharge != Discharge::TypeLevel) return false;
             if (axis_traits<axis>::wrapper != Wrapper::None) return false;
+            if (axis_traits<axis>::claim != ::fixy::Claim::Fact) return false;
             if (!std::is_same_v<typename axis_traits<axis>::strict, ::fixy::pole::Unconstrained<axis>>) return false;
         }
     }

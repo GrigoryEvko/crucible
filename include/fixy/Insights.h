@@ -254,7 +254,7 @@ static_assert(every_axis_has_a_provider_(),
 // supplied axis.
 static_assert(strict_pole_name_<Axis::Usage>() == "One");
 static_assert(strict_pole_name_<Axis::Security>() == "Secret");
-static_assert(strict_pole_name_<Axis::Version>() == "1");
+static_assert(strict_pole_name_<Axis::Version>() == "Unconstrained");
 static_assert(strict_pole_name_<Axis::Refinement>() == "True");
 static_assert(strict_pole_name_<Axis::Effect>() == "Row");
 static_assert(strict_pole_name_<Axis::Regime>() == "Unconstrained");

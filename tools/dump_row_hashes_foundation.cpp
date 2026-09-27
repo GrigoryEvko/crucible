@@ -227,7 +227,9 @@ using C03_CompNested = fe::Computation<fe::Row<fe::Effect::Bg>, fe::Computation<
 // spells the Security pole out, and the two are one claim under two
 // spellings, so they must print one value. B03 pins the top of the same
 // lattice and keeps a residual claim the pole does not carry, so it must
-// differ. B06 moves a different axis.
+// differ. B06 spells the Trust pole out, and T001 reads the two spellings
+// alike, so B06 prints B01's value too. B08 moves the Trust axis to a
+// verified grade, which T001 separates from the pole, so it must differ.
 //
 // B07 moves the payload and must NOT move the hash. The Type axis folds
 // the payload through row_hash_contribution, and a bare type contributes
@@ -242,6 +244,7 @@ using B04_FnInternal = ::fixy::fn<int, ::fixy::atom::as_internal>;
 using B05_FnPublic = ::fixy::fn<int, ::fixy::atom::as_public>;
 using B06_FnUnverified = ::fixy::fn<int, ::fixy::atom::trust_unverified>;
 using B07_FnDoublePayload = ::fixy::fn<double>;
+using B08_FnVerified = ::fixy::fn<int, ::fixy::atom::trust_verified>;
 
 // ── The role compositions ──────────────────────────────────────────
 //
@@ -301,7 +304,7 @@ struct LabeledEntry {
     std::uint64_t value;
 };
 
-inline constexpr std::array<LabeledEntry, 55> kEntries = {{
+inline constexpr std::array<LabeledEntry, 56> kEntries = {{
     {"G01_Linear", row_hash_contribution_v<G01_Linear>},
     {"G02_Affine", row_hash_contribution_v<G02_Affine>},
     {"G03_TaggedVerified", row_hash_contribution_v<G03_TaggedVerified>},
@@ -328,6 +331,7 @@ inline constexpr std::array<LabeledEntry, 55> kEntries = {{
     {"B05_FnPublic", row_hash_contribution_v<B05_FnPublic>},
     {"B06_FnUnverified", row_hash_contribution_v<B06_FnUnverified>},
     {"B07_FnDoublePayload", row_hash_contribution_v<B07_FnDoublePayload>},
+    {"B08_FnVerified", row_hash_contribution_v<B08_FnVerified>},
     {"S01_PureLinear", row_hash_contribution_v<S01_PureLinear>},
     {"S02_PureCopy", row_hash_contribution_v<S02_PureCopy>},
     {"S03_IoFunction", row_hash_contribution_v<S03_IoFunction>},
@@ -367,7 +371,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x78a9de9a2a89fd19ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x9519eba651644517ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -414,6 +418,13 @@ static_assert(row_hash_contribution_v<B01_FnStrictPole> == row_hash_contribution
 static_assert(row_hash_contribution_v<B01_FnStrictPole> != row_hash_contribution_v<B03_FnSecret>,
               "as_secret keeps a residual claim the pole does not carry");
 
+// The Trust pole and the atom that spells it out are one claim too, and
+// a verified grade is another claim.
+static_assert(row_hash_contribution_v<B01_FnStrictPole> == row_hash_contribution_v<B06_FnUnverified>,
+              "the strict Trust pole and trust_unverified must take one slot");
+static_assert(row_hash_contribution_v<B01_FnStrictPole> != row_hash_contribution_v<B08_FnVerified>,
+              "T001 separates trust_verified from the strict Trust pole, so the two must take two slots");
+
 // A carrier does not collapse over a payload that carries a row.
 static_assert(row_hash_contribution_v<C03_CompNested> != row_hash_contribution_v<C02_CompBg>,
               "a nested carrier must keep the inner row in the outer hash");
@@ -427,9 +438,11 @@ static_assert(row_hash_contribution_v<P03_SharePure> != row_hash_contribution_v<
 static_assert(row_hash_contribution_v<P03_SharePure> != row_hash_contribution_v<P01_PermissionPure>,
               "a share and an exclusive token over one region must take two slots");
 
-// The three intended repeats in the golden. Each one is a property of the
-// fold, and naming it here is what keeps a later reader from filing a
-// collision against a line that is doing its job.
+// The intended repeats in the golden are B02, B06, B07 and S01, and each
+// prints B01's value. The asserts above hold B02 and B06, and these hold
+// the other two. Each one is a property of the fold, and naming it here is
+// what keeps a later reader from filing a collision against a line that is
+// doing its job.
 static_assert(row_hash_contribution_v<B07_FnDoublePayload> == row_hash_contribution_v<B01_FnStrictPole>,
               "the binding is blind to a bare payload, which belongs to the content "
               "half of the cache key");
@@ -501,10 +514,10 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
     return distinct;
 }
 
-// Fifty-five entries carry fifty-one distinct values. Four entries repeat
-// one that stands above them: R05 repeats R04, and B02, B07 and S01 each
-// repeat B01. Every one of those four has its own assert above, with the
-// property that makes the repeat correct.
+// Fifty-six entries carry fifty-one distinct values. Five entries repeat
+// one that stands above them: R05 repeats R04, and B02, B06, B07 and S01
+// each repeat B01. Every one of those five has its own assert above, with
+// the property that makes the repeat correct.
 static_assert(distinct_value_count() == 51,
               "the number of distinct values moved. Every repeat in this matrix is "
               "named by an assert above, so a new one is a collision between two "

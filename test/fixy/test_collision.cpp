@@ -120,11 +120,14 @@ static_assert(!live_rules<at::borrow, at::with<Eff::Bg>>::L007_ok);
 static_assert(live_rules<at::borrow>::L007_ok);
 static_assert(live_rules<at::with<Eff::Bg>>::L007_ok);
 
-// T001 capability x unverified provenance
+// T001 capability x unverified provenance.  The strict Trust pole is
+// unverified, so the rule refuses a capability with no trust grade.
 static_assert(!live_rules<at::capability_usage, at::trust_unverified>::T001_ok);
-static_assert(live_rules<at::capability_usage>::T001_ok);
+static_assert(!live_rules<at::capability_usage>::T001_ok);
 static_assert(live_rules<at::trust_unverified>::T001_ok);
 static_assert(live_rules<at::capability_usage, at::trust_verified>::T001_ok);
+static_assert(live_rules<at::capability_usage, at::trust_tested>::T001_ok);
+static_assert(live_rules<at::capability_usage, at::trust_external>::T001_ok);
 
 // R002 / R003 coroutine x borrow, coroutine x Bg row
 static_assert(!live_rules<at::coroutine, at::borrow>::R002_ok);
@@ -414,9 +417,11 @@ static_assert(col::grades<at::observe::surface<Eff::IO>>::mentions<Axis::Observa
 // B001, the back-pressure trap, which is the theorem this catalog already
 // recorded for the axis.  It is a different premise from B002's: a
 // background observable surface whose resource use is unbounded, where the
-// remedy the theorem names is space::Bounded plus cost::Linear.
+// remedy the theorem names is space_bounded plus cost_linear.
 static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B001_ok,
-              "no cost grade at all is an unstated envelope, which is one of the three unbounded readings");
+              "no cost grade at all is an unstated envelope, which is one of the four unbounded readings");
+static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>>::B001_ok,
+              "a stated cost with no space grade states no bound on what the surface holds");
 static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_unbounded>::B001_ok);
 static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>,
                           at::space_unbounded>::B001_ok);

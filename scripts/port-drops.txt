@@ -169,6 +169,7 @@ crucible/effects/_ExecCtx.h:L3  — One of the six policy axes (residency) ExecC
 crucible/effects/_ExecCtx.h:MayDiverge  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:numa_policy_of_t  — One of the six policy axes (NUMA) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:ProducerOnlyChannel  — One of the six policy axes (workload) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
+crucible/effects/_ExecCtx.h:Productive  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:progress_class_of_t  — One of the six policy axes (progress) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
 crucible/effects/_ExecCtx.h:rebuild_ctx_to  — Dropped at 8fd50215; every consumer asks IsExecCtx, CtxAdmits, CtxOwnsCapability or row_type_of_t, and nothing asked this.
 crucible/effects/_ExecCtx.h:residency_of_t  — One of the six policy axes (residency) ExecCtx dropped at 8fd50215. No production site used it, and foundation/effects/Ctx.h lists its readers inside the old substrate.
@@ -1203,6 +1204,7 @@ crucible/safety/_NotInherited.h:assert_not_inherited  — Dropped with NotInheri
 crucible/safety/_NotInherited.h:FinalBy  — Dropped, because the final keyword closes a class where its author writes it. No production file derives from FinalBy.
 crucible/safety/_NotInherited.h:NotInherited  — Dropped, because the final keyword carries the fact. The concept only asked std::is_final_v, and no production file names it.
 crucible/safety/_Progress.h:MayDiverge  — An alias of the dropped Progress wrapper at the divergent class.
+crucible/safety/_Progress.h:Productive  — An alias of the dropped Progress wrapper at the productive class.
 crucible/safety/_Progress.h:Progress  — Dropped, because no production file reads a termination class. Block in the effect row spells divergence, and W001 refuses it on a hot binding.
 crucible/safety/_Progress.h:ProgressClass_v  — A local alias of the dropped termination enum.
 crucible/safety/_Progress.h:ProgressLattice  — A local alias of the dropped termination lattice.
@@ -1488,6 +1490,7 @@ crucible/safety/_CallShape.h:CallShapeLattice  — A re-export of the old lattic
 crucible/safety/_CallShape.h:CallShapePinned  — The value wrapper, which the port did not carry. Axis::CallShape is the atom family of fixy/atoms/Dispatch.h on a binding, and the only includers of the wrapper were the old crucible/fixy/Wrap.h and tests.
 crucible/safety/_CallShape.h:Indirect  — An alias that pinned the Indirect tier on a value. indirect_call<FnPtrFamily> in fixy/atoms/Dispatch.h states an indirect call on a binding.
 crucible/safety/_CallShape.h:mint_call_shape  — The factory of the value wrapper, which the port did not carry. A binding states its call shape with the atoms of fixy/atoms/Dispatch.h, so no factory applies.
+crucible/safety/_CallShape.h:Unbounded  — An alias that pinned the Unbounded tier on a value. The port re-modelled call shape as the atom family of fixy/atoms/Dispatch.h, which carries no alias for this tier.
 crucible/safety/_CallShape.h:Virtual  — An alias that pinned the Virtual tier on a value. No Crucible type dispatches virtually and no rule reads a virtual call, so fixy/atoms/Dispatch.h has no atom for it.
 crucible/safety/_GlobalState.h:ConstGlobal  — An alias that pinned the ConstGlobal tier on a value. The port re-modelled global state as the atom family of fixy/atoms/Global.h, which carries no alias for this tier.
 crucible/safety/_GlobalState.h:GlobalStateLattice  — A re-export of the old lattice. The port re-modelled global state as the atom family of fixy/atoms/Global.h, and no new header re-exports a lattice for it.
@@ -1509,6 +1512,7 @@ crucible/safety/_StackUse.h:ConstantFrame  — An alias that pinned the Constant
 crucible/safety/_StackUse.h:mint_stack_use  — The factory of the value wrapper, which the port did not carry. A binding states its stack use with the atoms of fixy/atoms/Stack.h, so no factory applies.
 crucible/safety/_StackUse.h:StackUseLattice  — A re-export of the old lattice. The port re-modelled stack use as the atom family of fixy/atoms/Stack.h, and no new header re-exports a lattice for it.
 crucible/safety/_StackUse.h:StackUsePinned  — The value wrapper, which the port did not carry. Axis::StackUse is the atom family of fixy/atoms/Stack.h on a binding, and the only includers of the wrapper were the old crucible/fixy/Wrap.h and tests.
+crucible/safety/_StackUse.h:Unbounded  — An alias that pinned the Unbounded tier on a value. The port re-modelled stack use as the atom family of fixy/atoms/Stack.h, which carries no alias for this tier.
 crucible/safety/_BarrierGuarded.h:BarrierGuarded  — The value wrapper, which the port did not carry. Axis::BarrierStrength is the atom family of fixy/atoms/Barrier.h on a binding, and V301 in fixy/Collision.h reads the strength from the grade of that binding.
 crucible/safety/_BarrierGuarded.h:BarrierStrength_v  — A re-export of the strength enum. The new tree names foundation::algebra::lattices::BarrierStrength directly, as fixy/atoms/Barrier.h does.
 crucible/safety/_BarrierGuarded.h:mint_barrier_guarded  — The factory of the value wrapper, which the port did not carry. A binding states its barrier strength with the atoms of fixy/atoms/Barrier.h, so no factory applies.
@@ -1607,9 +1611,20 @@ crucible/safety/diag/_RowHashGrade.h:HasRowHashGradeExtractor  — The gate of r
 
 # ── safety: the Fn aggregator ───────────────────────────────────────────
 crucible/safety/_Fn.h:CollisionRules  → include/fixy/Collision.h  — The per-binding rule check became fixy::collision::rules_of<T, Atoms...> in fixy/Collision.h, which fixy::fn reads at tier 5 through fixy/Reject.h.
+crucible/safety/_Fn.h:Constant  — The cost sentinel is not carried. A binding states a constant cost with atom::cost_constant in fixy/Atom.h.
 crucible/safety/_Fn.h:CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION  — The include-order handshake between the old Fn.h and CollisionCatalog.h has no successor, because fixy/Reject.h includes fixy/Collision.h before fixy/Fn.h names the rules.
+crucible/safety/_Fn.h:Exact  — The precision sentinel is not carried. The Precision pole is pole::Unconstrained<Axis::Precision>, because a bit-exact pole gave each binding that said nothing a fact that nobody earned.
+crucible/safety/_Fn.h:F32  — The precision sentinel is not carried. A binding states it with atom::precision_f32 in fixy/Atom.h.
+crucible/safety/_Fn.h:F64  — The precision sentinel is not carried. A binding states it with atom::precision_f64 in fixy/Atom.h.
 crucible/safety/_Fn.h:Fn  — Renamed fixy::fn<Type, Atoms...> in fixy/Fn.h. The nineteen positional grade parameters became a pack of atoms, and an axis the pack does not name takes its strict pole.
+crucible/safety/_Fn.h:Higham  — The precision sentinel is not carried. A binding states the bound with atom::precision_higham<Bound> in fixy/Atom.h.
+crucible/safety/_Fn.h:In  — The lifetime sentinel is not carried. A binding states a region with atom::in_region<RegionTag> in fixy/Atom.h.
+crucible/safety/_Fn.h:Productive  — The depth sentinel is not carried. A binding states codata with atom::productive in fixy/Atom.h.
+crucible/safety/_Fn.h:Quadratic  — The cost sentinel is not carried. A binding states a quadratic cost with atom::cost_quadratic<N> in fixy/Atom.h.
 crucible/safety/_Fn.h:SecLevel  — The five-level enum is not carried. The atoms as_unclassified, as_public, as_internal, as_classified, as_secret, constant_time and declassify<Policy> in fixy/Atom.h grade the Security axis.
+crucible/safety/_Fn.h:Static  — The lifetime sentinel is not carried. The Lifetime pole is pole::Unconstrained<Axis::Lifetime>, because a pole of the whole program gave each binding that said nothing a fact that nobody earned.
+crucible/safety/_Fn.h:Unbounded  — The cost and space sentinels are not carried. A binding states them with atom::cost_unbounded and atom::space_unbounded in fixy/Atom.h.
+crucible/safety/_Fn.h:Unstated  — The cost and depth sentinels are not carried. The Complexity and Size poles are pole::Unconstrained<A>, which states no fact on the axis.
 crucible/safety/_Fn.h:UsageMode  — The enum is not carried. The atoms affine, copy, ghost, borrow and capability_usage in fixy/Atom.h grade the Usage axis, and its strict pole is the linear QttGrade::One.
 
 # ── safety: the dimension table ─────────────────────────────────────────

@@ -96,23 +96,23 @@ namespace detail::resolve {
 
 // The silent default is only honest while every axis is classified.
 //
-// Twelve axes take axis_traits' defaulted primary, whose pole is
-// pole::Unconstrained<A>.  For those twelve that IS the strict pole:
-// they are wrapper-only, the claim rides on the value rather than on
-// the binding, and a binding that says nothing about them is making no
-// claim rather than granting one.  What makes that safe is the roster
-// in Axis.h: an axis reaches the primary only by being named there.
+// Thirteen axes take axis_traits' defaulted primary, whose pole is
+// pole::Unconstrained<A>.  For those thirteen that IS the strict pole:
+// each is a Fact axis, and a binding that says nothing about it states
+// no fact.  What makes that safe is the roster in Axis.h: an axis
+// reaches the primary only by being named there.
 //
 // An axis added to the enum and classified neither way would reach the
-// primary anyway and collect Unconstrained without anyone granting it —
-// a silent free pass on a new axis, in every binding in the tree.
+// primary anyway and collect a Fact pole without anyone classifying it.
+// On an axis that carries a right, that pole would be a free pass in
+// every binding in the tree.
 // Axis.h refuses that, and this assertion is where the resolver says it
 // depends on the refusal, because this is the file that would hand the
 // pass out.
 static_assert(::fixy::every_axis_has_traits(),
               "fixy::fn resolves an unmentioned axis to axis_traits<A>::strict, so every axis "
               "must be classified: either it carries a hand-written specialisation, or it is "
-              "named on Axis.h's defaulted_axes roster as wrapper-only.");
+              "named on Axis.h's defaulted_axes roster as a Fact axis whose pole claims nothing.");
 
 // The grade an axis takes when the pack says nothing about it.  Every
 // axis but one has a strict pole.  Type is the exception: there is no
@@ -120,13 +120,13 @@ static_assert(::fixy::every_axis_has_traits(),
 template <Axis A, class T>
 [[nodiscard]] consteval std::meta::info default_grade_() noexcept {
     // A value outside the enum reaches axis_traits' primary and would
-    // come back Unconstrained, which reads as a granted claim on an
-    // axis that does not exist.  Only a cast produces such a value, and
-    // a cast into this resolver is a mistake rather than a question.
+    // come back Unconstrained, which reads as a grade on an axis that
+    // does not exist.  Only a cast produces such a value, and a cast
+    // into this resolver is a mistake rather than a question.
     static_assert(std::to_underlying(A) < ::fixy::axis_count,
                   "fixy::fn::grade_on<A>: A is not an Axis enumerator.  A value outside the enum "
                   "reaches the defaulted axis_traits primary and would resolve to an unconstrained "
-                  "pole, granting a claim on an axis that does not exist.");
+                  "pole, a grade on an axis that does not exist.");
     if constexpr (requires { axis_traits<A>::caller_supplied; }) {
         return ^^T;
     } else {
@@ -524,6 +524,19 @@ template <>
 struct lattice_canonical_id<::fixy::atom::as_classified> {
     static constexpr std::uint64_t value =
         lattice_canonical_id_v<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>;
+};
+
+// `trust_unverified` and the strict Trust pole are one claim under two
+// spellings, as `as_classified` and the strict Security pole are.  The
+// consumer that establishes it is rule T001 in fixy/Collision.h, the one
+// rule that reads the Trust axis.  It reads the grade through the closed
+// relation `trust_class_of_`, which gives the two spellings the class
+// Unverified.  The other Trust atoms keep their own slots, because each
+// of them admits a capability that the pole refuses.
+template <>
+struct lattice_canonical_id<::fixy::atom::trust_unverified> {
+    static constexpr std::uint64_t value =
+        lattice_canonical_id_v<typename ::fixy::axis_traits<::fixy::Axis::Trust>::strict>;
 };
 
 template <class Type, class... Atoms>
