@@ -1457,8 +1457,8 @@ foundation_neg_compile_test(neg_aligned_buffer_copied
 # value the cell type is assignable from.
 foundation_test(test_thread_local_ref)
 
-foundation_neg_compile_test(neg_thread_local_ref_mint_needs_a_default
-  "no matching function for call to .mint_thread_local_ref<\\{anonymous\\}::CounterTag, \\{anonymous\\}::NeedsSeed>\\(\\)."
+foundation_neg_compile_test(neg_thread_local_ref_needs_a_default
+  "template constraint failure for .template<class Tag, class T>  requires  is_default_constructible_v<T> class foundation::ThreadLocalRef."
   "the expression .is_default_constructible_v<T> \\[with T = <unnamed>::NeedsSeed\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
   "no matching function for call to .foundation::ThreadLocalRef<\\{anonymous\\}::CounterTag, \\{anonymous\\}::Counter>::store\\(\\{anonymous\\}::Label\\) const."

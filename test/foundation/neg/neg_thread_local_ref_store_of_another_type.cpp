@@ -14,7 +14,7 @@ struct CounterTag {};
 }  // namespace
 
 int main() {
-    const auto cell = ::foundation::mint_thread_local_ref<CounterTag, Counter>();
+    const ::foundation::ThreadLocalRef<CounterTag, Counter> cell{};
     cell.store(Label{});
     return cell.peek().value;
 }

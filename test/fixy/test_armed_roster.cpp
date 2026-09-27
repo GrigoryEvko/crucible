@@ -181,12 +181,6 @@ namespace w = armed_roster_witness;
 // ── foundation ──────────────────────────────────────────────────────
 
 template <>
-struct foundation::contracts::armed_cell<::foundation::reflect::detail::is_noexcept_function> {
-    using accepts = witnesses<void() noexcept, int(char) noexcept>;
-    using refuses = witnesses<void(), int, void (*)() noexcept>;
-};
-
-template <>
 struct foundation::contracts::armed_cell<::foundation::algebra::is_graded_specialization> {
     using accepts = witnesses<fe::ComputationGraded<Row<>, int>, fe::ComputationGraded<Row<Effect::Bg>, double>>;
     using refuses = witnesses<int, fe::Computation<Row<>, int>>;

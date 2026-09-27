@@ -23,33 +23,11 @@
 
 namespace foundation::reflect {
 
-// The standard library shipped here exposes no reflection query for
-// noexcept-ness, so this falls back to partial specialization on the
-// function type.  Strip the pointer at the call site.
-
-namespace detail {
-
-template <typename F>
-struct is_noexcept_function : std::false_type {};
-
-// Two specializations cover the whole matrix.  A free function type is
-// either noexcept or it is not, and neither reference nor cv
-// qualification applies to one.
-
-template <typename R, typename... Args>
-struct is_noexcept_function<R(Args...) noexcept> : std::true_type {};
-
-template <typename R, typename... Args>
-struct is_noexcept_function<R(Args...)> : std::false_type {};
-
-template <typename F>
-inline constexpr bool is_noexcept_function_v = is_noexcept_function<F>::value;
-
-}  // namespace detail
-
 template <auto FnPtr>
 struct signature_traits {
-    static constexpr auto function_reflection = ^^std::remove_pointer_t<decltype(FnPtr)>;
+    using function_type = std::remove_pointer_t<decltype(FnPtr)>;
+
+    static constexpr auto function_reflection = ^^function_type;
 
     // The query returns a vector, whose allocation is not a constant
     // expression in the context an expansion statement needs.  Landing it
@@ -71,9 +49,9 @@ struct signature_traits {
 
     using return_type = typename[:std::meta::return_type_of(function_reflection):];
 
-    using function_type = typename[:^^std::remove_pointer_t<decltype(FnPtr)>:];
-
-    static constexpr bool is_noexcept = detail::is_noexcept_function_v<function_type>;
+    // The query reads the exception specification of the function type,
+    // so a variadic function type answers as a named one does.
+    static constexpr bool is_noexcept = std::meta::is_noexcept(function_reflection);
 };
 
 template <auto FnPtr, std::size_t I>
@@ -162,6 +140,14 @@ static_assert(!is_noexcept_v<&witness_throwing>);
 static_assert(signature_traits<&witness_unary_int>::is_noexcept);
 static_assert(is_noexcept_v<&witness_unary_int>);
 static_assert(is_noexcept_v<&witness_nullary>);
+
+// A variadic function type carries its exception specification too.
+inline int witness_variadic_nothrowing(int, ...) noexcept { return 0; }
+inline int witness_variadic_throwing(int, ...) { return 0; }
+
+static_assert(is_noexcept_v<&witness_variadic_nothrowing>);
+static_assert(!is_noexcept_v<&witness_variadic_throwing>);
+static_assert(arity_v<&witness_variadic_nothrowing> == 1, "the query returns only the named parameters");
 
 static_assert(std::is_same_v<function_type_t<&witness_unary_int>, void(int) noexcept>);
 static_assert(std::is_same_v<function_type_t<&witness_throwing>, void(int)>);

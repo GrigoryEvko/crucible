@@ -49,9 +49,11 @@ enum class ModalityKind : std::uint8_t {
 
 inline constexpr std::size_t modality_kind_count = std::meta::enumerators_of(^^ModalityKind).size();
 
+// A kind is a modality when an enumerator holds it.  The test reads the
+// enumerators by reflection, so a new enumerator is admitted the moment
+// it is declared, and a value cast from a byte outside the enum is not.
 template <ModalityKind K>
-concept IsModality = K == ModalityKind::Comonad || K == ModalityKind::RelativeMonad || K == ModalityKind::Absolute
-                  || K == ModalityKind::Relative || K == ModalityKind::Stepping;
+concept IsModality = !::foundation::reflect::enumerator_name(K).empty();
 
 template <ModalityKind K>
 concept ComonadModality = (K == ModalityKind::Comonad);
@@ -139,6 +141,8 @@ static_assert(IsModality<ModalityKind::RelativeMonad>);
 static_assert(IsModality<ModalityKind::Absolute>);
 static_assert(IsModality<ModalityKind::Relative>);
 static_assert(IsModality<ModalityKind::Stepping>);
+static_assert(!IsModality<static_cast<ModalityKind>(5)> && !IsModality<static_cast<ModalityKind>(200)>,
+              "a byte that no enumerator holds is not a modality");
 
 static_assert(ComonadModality<ModalityKind::Comonad>);
 static_assert(!ComonadModality<ModalityKind::Absolute>);

@@ -652,12 +652,20 @@ crucible/safety/_ClockSource.h:mint_clock_source  — Removed, not ported, for t
 # runtime check in a public namespace, moved to a registered test.
 crucible/safety/_PipelineStage.h:pipeline_stage_smoke_test  — An inline smoke test in a public namespace; its body moved to test/fixy/test_stage_shape.cpp, which adds a real channel-handle cell the old fakes could not state.
 crucible/safety/_SignatureTraits.h:signature_traits_smoke_test  — An inline smoke test in a public namespace; its body moved to test/foundation/test_signature.cpp, which checks each result rather than returning a bool no caller consumed.
+crucible/safety/_ThreadLocalRef.h:mint_thread_local_ref  — Removed, not ported, because the handle authorizes nothing that its type does not name, so the public default constructor of foundation::ThreadLocalRef is its one door.
 #
 # The huge-page buffer was the aligned buffer at one alignment, so it folds
 # into foundation::AlignedBuffer<T, huge_page_bytes>, and its abort path
 # into the one abort of that buffer.
 crucible/safety/_HugePageBuffer.h:HugePageBuffer  → include/foundation/AlignedBuffer.h  — Folded into AlignedBuffer<T, huge_page_bytes>, which rounds to the same page, keeps the same abort, and starts each element's lifetime where the old buffer cast raw storage.
 crucible/safety/_HugePageBuffer.h:huge_page_allocation_failed_abort_  → include/foundation/AlignedBuffer.h  — Folded into detail::aligned_allocation_failed_abort_, which prints the HugePageAllocationFailed diagnostic at huge-page alignment.
+#
+# The SIMD facade derives its raw vector type from one primary, and it
+# drops the helpers that no code read.
+crucible/safety/_Simd.h:CRUCIBLE_SIMD_RAW  — The macro wrote one raw_vector specialisation for each pair of element and lane count, and foundation/Simd.h has one primary whose member alias carries the vector-size attribute on its own declaration.
+crucible/safety/_Simd.h:native_bytes  — The constant existed only for native_lane_count, which no code read.
+crucible/safety/_Simd.h:native_lane_count  — No code read it, because the lane count of each vector is its template argument.
+crucible/safety/_Simd.h:partial_load  — Removed, not ported, because its one caller was its own test and its loop wrote past the vector for a count above the lane count.
 
 # ── bridges: the machine bridge and the Vigil mode cell ─────────────────
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.

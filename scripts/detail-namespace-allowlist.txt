@@ -22,7 +22,6 @@ test/fixy/test_armed_roster.cpp ::fixy::session::global::detail x24 — names ea
 test/fixy/test_armed_roster.cpp ::fixy::spawn::detail x6 — names each armed predicate of the spawn fit
 test/fixy/test_armed_roster.cpp ::foundation::effects::detail x5 — names each armed predicate of the effects layer
 test/fixy/test_armed_roster.cpp ::foundation::permissions::detail x17 — names each armed predicate of the permissions layer
-test/fixy/test_armed_roster.cpp ::foundation::reflect::detail x1 — names the armed predicate of the reflection layer
 test/fixy/test_payload_row.cpp ::fixy::concurrent::detail x3 — pins the list of payload families that carry a row
 test/fixy/test_refined.cpp ::fixy::detail x1 — runs the edge self-test of the sealed implication relation
 test/fixy/test_tagged.cpp ::fixy::detail x4 — uses the retag policy probes of the sealed retag relation

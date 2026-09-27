@@ -310,12 +310,6 @@ apply to the row.
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
 
-## include/foundation/
-
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_thread_local_ref` | `include/foundation/ThreadLocalRef.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-
 ## include/foundation/algebra/
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
@@ -363,4 +357,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 113 | 47 | 63 | 3 | 0 | · | 13 |
+| new (`include/foundation/`, `include/fixy/`) | 112 | 47 | 62 | 3 | 0 | · | 13 |

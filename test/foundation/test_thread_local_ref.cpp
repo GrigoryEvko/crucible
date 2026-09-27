@@ -33,7 +33,7 @@ using DoubleOther = fnd::ThreadLocalRef<OtherTag, double>;
 }
 
 // Same T, different Tag: a write to one does not reach the other.  Same
-// Tag: two handles and a minted one reach one cell.
+// Tag: every handle, a copy among them, reaches one cell.
 [[nodiscard]] int tags_select_cells() {
     const IntCounter counter{};
     const IntAccumulator accumulator{};
@@ -43,8 +43,8 @@ using DoubleOther = fnd::ThreadLocalRef<OtherTag, double>;
     const IntCounter second{};
     second.store(17);
     if (counter.peek() != 17) return 2;
-    const auto minted = fnd::mint_thread_local_ref<CounterTag, int>();
-    if (minted.peek() != 17) return 3;
+    const IntCounter copied = second;
+    if (copied.peek() != 17) return 3;
     counter.reset();
     accumulator.reset();
     return 0;

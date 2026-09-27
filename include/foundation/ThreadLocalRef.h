@@ -7,6 +7,10 @@
 // distinct Tag buys a distinct cell.  Nothing here can check that a
 // Tag is unique to one logical slot, so choosing it is the caller's
 // obligation.
+//
+// The handle grants nothing that its type does not name, so building
+// one authorizes nothing, and the public default constructor is the one
+// door.  There is no mint.
 
 #include <foundation/Platform.h>
 
@@ -65,12 +69,6 @@ public:
     }
 };
 
-template <typename Tag, typename T>
-    requires std::is_default_constructible_v<T>
-[[nodiscard]] constexpr ThreadLocalRef<Tag, T> mint_thread_local_ref() noexcept {
-    return ThreadLocalRef<Tag, T>{};
-}
-
 namespace detail::thread_local_ref_self_test {
 
 struct CounterTag {};
@@ -99,9 +97,6 @@ static_assert(!std::is_same_v<IntCounter, DoubleOther>);
 
 static_assert(std::is_copy_constructible_v<IntCounter> && std::is_copy_assignable_v<IntCounter>);
 static_assert(std::is_move_constructible_v<IntCounter> && std::is_move_assignable_v<IntCounter>);
-
-inline constexpr auto minted_counter = mint_thread_local_ref<CounterTag, int>();
-static_assert(std::is_same_v<decltype(minted_counter), const IntCounter>);
 
 static_assert(IntCounter::value_type_name() == "int");
 static_assert(DoubleOther::value_type_name() == "double");

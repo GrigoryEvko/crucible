@@ -13,6 +13,6 @@ struct CounterTag {};
 }  // namespace
 
 int main() {
-    auto cell = ::foundation::mint_thread_local_ref<CounterTag, NeedsSeed>();
-    return cell.peek().value;
+    [[maybe_unused]] const ::foundation::ThreadLocalRef<CounterTag, NeedsSeed> cell{};
+    return 0;
 }

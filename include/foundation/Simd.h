@@ -27,92 +27,39 @@
 
 namespace foundation::simd {
 
-// The widest register of the build target.  A 128-bit register is the
-// floor on every supported target, so the last branch is 16 bytes.
-#if defined(__AVX512F__)
-inline constexpr std::size_t native_bytes = 64;
-#elif defined(__AVX2__)
-inline constexpr std::size_t native_bytes = 32;
-#else
-inline constexpr std::size_t native_bytes = 16;
-#endif
-
-template <typename ElementType>
-inline constexpr int native_lane_count = static_cast<int>(native_bytes / sizeof(ElementType));
-
-// The vector-size attribute is silently dropped when applied to a
-// dependent alias, so each element-and-lane pair needs a concrete
-// typedef behind a trait rather than one alias template.
-
 namespace detail {
 
+// The element types that GCC accepts in a vector: an arithmetic type
+// other than bool, without cv qualification.  The lane count is a power
+// of two, and a vector of one lane is a scalar, so the least is two.
 template <typename ElementType, int Lanes>
-struct raw_vector;
+concept VectorShape = std::is_arithmetic_v<ElementType> && !std::is_same_v<ElementType, bool>
+                   && std::is_same_v<ElementType, std::remove_cv_t<ElementType>> && Lanes >= 2
+                   && std::has_single_bit(static_cast<unsigned>(Lanes));
 
-#define CRUCIBLE_SIMD_RAW(ElementType, Lanes)                                                   \
-    template <>                                                                                 \
-    struct raw_vector<ElementType, Lanes> {                                                     \
-        typedef ElementType type __attribute__((__vector_size__(Lanes * sizeof(ElementType)))); \
-    }
+// GCC keeps the vector-size attribute on the declaration of a member
+// alias with a dependent element type, so one primary template gives
+// every element-and-lane pair.  Written after the type, as in
+// `using V = E __attribute__((vector_size(N)))`, the attribute has no
+// declaration to attach to, and GCC drops it with a warning.
+template <typename ElementType, int Lanes>
+    requires VectorShape<ElementType, Lanes>
+struct raw_vector {
+    using type [[gnu::vector_size(static_cast<std::size_t>(Lanes) * sizeof(ElementType))]] = ElementType;
+};
 
-CRUCIBLE_SIMD_RAW(std::int64_t, 4);
-CRUCIBLE_SIMD_RAW(std::int64_t, 8);
-CRUCIBLE_SIMD_RAW(std::uint64_t, 4);
-CRUCIBLE_SIMD_RAW(std::uint64_t, 8);
-CRUCIBLE_SIMD_RAW(std::int32_t, 8);
-CRUCIBLE_SIMD_RAW(std::int32_t, 16);
-CRUCIBLE_SIMD_RAW(std::uint32_t, 8);
-CRUCIBLE_SIMD_RAW(std::uint32_t, 16);
-CRUCIBLE_SIMD_RAW(std::uint8_t, 16);
-CRUCIBLE_SIMD_RAW(std::uint8_t, 32);
-CRUCIBLE_SIMD_RAW(std::int8_t, 16);
-CRUCIBLE_SIMD_RAW(std::int8_t, 32);
-// The floating-point lanes serve element-wise work and stand as the
-// witnesses that the reduction concept rejects.
-CRUCIBLE_SIMD_RAW(float, 8);
-CRUCIBLE_SIMD_RAW(float, 16);
-CRUCIBLE_SIMD_RAW(double, 4);
-CRUCIBLE_SIMD_RAW(double, 8);
+template <typename ElementType, int Lanes>
+using raw_vector_t = typename raw_vector<ElementType, Lanes>::type;
 
-#undef CRUCIBLE_SIMD_RAW
+// A vector comparison yields a signed-integer vector of the lane byte
+// width of its operands.  The lane type of a mask is the element of that
+// result, read from the comparison itself.
+template <typename ElementType, int Lanes>
+using comparison_t =
+    decltype(std::declval<raw_vector_t<ElementType, Lanes>>() == std::declval<raw_vector_t<ElementType, Lanes>>());
 
-// A vector comparison yields a signed-integer vector of the same lane
-// byte width as its operands.  This maps each element type onto that
-// companion type.
-template <typename ElementType>
-struct mask_element;
-template <>
-struct mask_element<std::int64_t> {
-    using type = std::int64_t;
-};
-template <>
-struct mask_element<std::uint64_t> {
-    using type = std::int64_t;
-};
-template <>
-struct mask_element<std::int32_t> {
-    using type = std::int32_t;
-};
-template <>
-struct mask_element<std::uint32_t> {
-    using type = std::int32_t;
-};
-template <>
-struct mask_element<std::uint8_t> {
-    using type = std::int8_t;
-};
-template <>
-struct mask_element<std::int8_t> {
-    using type = std::int8_t;
-};
-template <>
-struct mask_element<float> {
-    using type = std::int32_t;
-};
-template <>
-struct mask_element<double> {
-    using type = std::int64_t;
-};
+template <typename ElementType, int Lanes>
+using comparison_lane_t = std::remove_cvref_t<decltype(std::declval<comparison_t<ElementType, Lanes>>()[0])>;
 
 }  // namespace detail
 
@@ -121,8 +68,9 @@ struct mask_element<double> {
 // it is what keeps a mask out of the reduction concept below.
 
 template <typename MaskElement, int Lanes>
+    requires std::signed_integral<MaskElement> && detail::VectorShape<MaskElement, Lanes>
 struct mask {
-    using raw_type = typename detail::raw_vector<MaskElement, Lanes>::type;
+    using raw_type = detail::raw_vector_t<MaskElement, Lanes>;
     raw_type m_{};
 
     constexpr mask() noexcept = default;
@@ -163,10 +111,11 @@ template <typename MaskElement, int Lanes>
 }
 
 template <typename ElementType, int Lanes>
+    requires detail::VectorShape<ElementType, Lanes>
 struct vec {
     using value_type = ElementType;
-    using raw_type = typename detail::raw_vector<ElementType, Lanes>::type;
-    using mask_type = mask<typename detail::mask_element<ElementType>::type, Lanes>;
+    using raw_type = detail::raw_vector_t<ElementType, Lanes>;
+    using mask_type = mask<detail::comparison_lane_t<ElementType, Lanes>, Lanes>;
 
     raw_type v_{};
 
@@ -261,16 +210,6 @@ template <typename V>
     typename V::raw_type raw;
     std::memcpy(&raw, aligned, sizeof(raw));
     return V{raw};
-}
-
-// The caller owes count no greater than the lane count.  Lanes past
-// count stay zero.
-template <typename V>
-[[nodiscard]] CRUCIBLE_INLINE V partial_load(const typename V::value_type* ptr, int count) noexcept {
-    V result{};
-    for (int lane = 0; lane < count; ++lane)
-        result.v_[lane] = ptr[lane];
-    return result;
 }
 
 template <typename V>
@@ -421,5 +360,41 @@ inline constexpr bool kNeonAvailable = false;
 [[nodiscard]] constexpr bool runtime_supports_avx2() noexcept { return false; }
 [[nodiscard]] constexpr bool runtime_supports_sse42() noexcept { return false; }
 #endif
+
+namespace detail::simd_self_test {
+
+// Each mask lane is the signed integer of the lane width of its value.
+static_assert(std::is_same_v<i64x8::mask_type, mask<std::int64_t, 8>>);
+static_assert(std::is_same_v<u64x4::mask_type, mask<std::int64_t, 4>>);
+static_assert(std::is_same_v<u32x8::mask_type, mask<std::int32_t, 8>>);
+static_assert(std::is_same_v<u8x32::mask_type, mask<std::int8_t, 32>>);
+static_assert(std::is_same_v<vec<float, 8>::mask_type, mask<std::int32_t, 8>>);
+static_assert(std::is_same_v<vec<double, 4>::mask_type, mask<std::int64_t, 4>>);
+
+// A register holds exactly its lanes.
+static_assert(sizeof(i64x8) == 64 && sizeof(u32x8) == 32 && sizeof(u8x16) == 16);
+static_assert(sizeof(i64x8_mask) == sizeof(i64x8));
+
+// The shapes that GCC refuses as a vector are refused by the constraint.
+static_assert(VectorShape<std::int16_t, 8> && VectorShape<double, 2>);
+static_assert(!VectorShape<bool, 8>, "a vector of bool is not a GCC vector type");
+static_assert(!VectorShape<const int, 8>, "a lane is not cv-qualified");
+static_assert(!VectorShape<int, 3>, "the lane count is a power of two");
+static_assert(!VectorShape<int, 1> && !VectorShape<int, 0> && !VectorShape<int, -4>, "a vector has two lanes or more");
+static_assert(!VectorShape<int*, 4>, "a pointer is not a vector element");
+
+// A mask lane is the signed integer that a comparison writes, and a shape
+// off the constraint is refused at the head of each template.
+template <typename MaskElement, int Lanes>
+concept can_mask = requires { typename mask<MaskElement, Lanes>; };
+template <typename ElementType, int Lanes>
+concept can_vec = requires { typename vec<ElementType, Lanes>; };
+static_assert(can_mask<std::int64_t, 8> && can_mask<std::int8_t, 32>);
+static_assert(!can_mask<float, 8> && !can_mask<std::uint64_t, 8>, "a mask lane is a signed integer");
+static_assert(!can_mask<std::int32_t, 3>, "a mask has the shape of a vector");
+static_assert(can_vec<char, 16> && can_vec<double, 2>);
+static_assert(!can_vec<bool, 8> && !can_vec<int, 6> && !can_vec<volatile int, 8>);
+
+}  // namespace detail::simd_self_test
 
 }  // namespace foundation::simd

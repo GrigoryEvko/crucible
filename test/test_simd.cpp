@@ -81,26 +81,6 @@ static void test_load() {
     std::printf("  test_load: PASSED\n");
 }
 
-static void test_partial_load() {
-    std::array<int64_t, 8> source{10, 20, 30, 40, 50, 60, 70, 80};
-
-    // The lanes past the count read zero rather than whatever follows
-    // in memory, which is what makes a partial load usable as an
-    // operand of an identity-0 reduction.
-    auto v = simd::partial_load<simd::i64x8>(source.data(), 3);
-    assert(v[0] == 10);
-    assert(v[1] == 20);
-    assert(v[2] == 30);
-    assert(v[3] == 0);
-    assert(v[7] == 0);
-
-    auto vfull = simd::partial_load<simd::i64x8>(source.data(), 8);
-    for (int lane = 0; lane < 8; ++lane) {
-        assert(vfull[lane] == source[static_cast<size_t>(lane)]);
-    }
-    std::printf("  test_partial_load: PASSED\n");
-}
-
 static void test_reduce_xor_sum() {
     std::array<int64_t, 8> values{0, 1, 2, 3, 4, 5, 6, 7};
     auto input = simd::load<simd::i64x8>(values.data());
@@ -301,7 +281,6 @@ int main() {
     test_prefix_mask();
     test_det_safe_simd_concept();
     test_load();
-    test_partial_load();
     test_reduce_xor_sum();
     test_reduce_or_and();
     test_reduce_max_min();
