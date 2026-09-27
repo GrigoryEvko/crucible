@@ -1,7 +1,7 @@
 // A pointer to a session handle hides in a member of the payload.  The
 // recipient can step the handle through the pointer.  The pointer then
-// delegates the endpoint, as the handle itself does.  The mint refuses
-// it.
+// delegates the endpoint, as the handle itself does.  The payload walk
+// refuses it, so the permission flow of the mint does not close.
 
 #include <fixy/session/CrashTransport.h>
 

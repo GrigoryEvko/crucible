@@ -2208,7 +2208,7 @@ fixy_neg_compile_test(neg_sess_cancel_policy_without_channel
 # open, also when no run selects that arm.
 fixy_neg_compile_test(neg_sess_end_with_open_loan
   "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: the protocol reaches End"
-  "perm_set_admits_close_v<foundation::permissions::PermSet<fixy::session::LentOut<.anonymous.::Region> > >")
+  "the expression .!.perm_set_has_open_loan_v<PS>. .with PS = foundation::permissions::PermSet<fixy::session::LentOut<.unnamed.::Region> >")
 fixy_neg_compile_test(neg_sess_send_unheld_permission
   "no matching function for call to .mint_session_handle"
   "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Send<foundation::permissions::Permission<")
@@ -2281,11 +2281,11 @@ fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
 fixy_neg_compile_test(neg_sess_mint_session_receives_region_outside_ctx
   "no matching function for call to .mint_session<receives_region_fixture::Proto>"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>."
-  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<typename fixy::session::protocol_delivered_regions<Proto>::type>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
+  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<.*>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_mint_session_delegated_region_outside_ctx
   "no matching function for call to .mint_session<delegated_region_fixture::Proto>"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::DelegatedSession<fixy::session::End, delegated_region_fixture::Wire, "
-  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<typename fixy::session::protocol_delivered_regions<Proto>::type>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
+  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<.*>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
 fixy_neg_compile_test(neg_sess_mint_session_delivered_region_without_row
   "static assertion failed: fixy::session::diagnostic \\[Delivered_Region_Without_Row\\]: a receive of the protocol delivers a permission of the region region_without_row_fixture::BareRegion, and its tag declares no permission row"
   "In instantiation of .struct fixy::session::detail::union_of_permission_rows<foundation::effects::Row<>, region_without_row_fixture::BareRegion>.")
@@ -2440,15 +2440,16 @@ fixy_neg_compile_test(neg_sess_crash_hidden_in_delegation
 fixy_neg_compile_test(neg_sess_crash_delegation_in_a_member
   "no matching function for call to .mint_crash_session"
   "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
-# A handle, a pointer to one, and a pointer to void delegate as the
-# hand-off marker does.  Each compiled while the rule looked for the
-# marker alone.
+# A handle and a pointer to one delegate as the hand-off marker does.  The
+# payload walk refuses each in every session, so the permission flow of
+# the crash mint does not close.  A pointer to void names no endpoint, and
+# only the crash theory, which has no delegation, refuses it.
 fixy_neg_compile_test(neg_sess_crash_delegation_by_handle
   "no matching function for call to .mint_crash_session"
-  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::SessionHandle<")
+  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. .with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::SessionHandle<")
 fixy_neg_compile_test(neg_sess_crash_delegation_behind_pointer
   "no matching function for call to .mint_crash_session"
-  "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
+  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. .with Proto = fixy::session::Offer<fixy::session::Recv<.*Envelope")
 fixy_neg_compile_test(neg_sess_crash_delegation_opaque_pointer
   "no matching function for call to .mint_crash_session"
   "detail::crash::is_delegation_free<[A-Za-z]+>::value \\[with Proto = fixy::session::Offer<fixy::session::Recv<void\\*, fixy::session::End>")
@@ -2484,11 +2485,11 @@ fixy_neg_compile_test(neg_sess_crash_recorded_send_transport_result
   ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
   "use of deleted function .void fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_delegation_undefined_template
-  "fixy::session::diagnostic \\[Payload_Delegation_Unreadable\\]: the payload reaches .anonymous.::OpaqueChannel<int>,"
-  "required from .struct fixy::session::detail::crash::is_delegation_free<")
+  "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a class or a template that is only declared"
+  "In instantiation of .struct fixy::session::detail::payload_readable_gate<.anonymous.::Names<.anonymous.::OpaqueChannel<int> > >.")
 fixy_neg_compile_test(neg_sess_crash_delegation_declared_class
   "fixy::session::diagnostic \\[Payload_Delegation_Unreadable\\]: the payload reaches .anonymous.::OpaqueChannel,"
-  "required from .constexpr const bool fixy::session::payload_conveys_delegation_v<.anonymous.::Frame>.")
+  "In instantiation of .struct fixy::session::detail::delegation_readable_gate<.anonymous.::Frame>.")
 fixy_neg_compile_test(neg_sess_crash_delegation_specialized_after_query
   "specialization of ..anonymous.::Frame<int>. after instantiation"
   "redefinition of .struct .anonymous.::Frame<int>.")
@@ -3008,6 +3009,10 @@ target_include_directories(test_forgeable_proofs PRIVATE ${CMAKE_CURRENT_BINARY_
 # anything under the tsan preset.
 fixy_test(test_session_ownership_attacks)
 
+# A user specialization of each view, gate and cache cell of the payload
+# walk changes no verdict of the session layer.
+fixy_test(test_session_payload_seal)
+
 # A hold used after a move, and a hold dropped with a loan open, each
 # abort with a named diagnostic.  Each attack runs in a child process,
 # and each test passes only on its diagnostic.
@@ -3030,7 +3035,51 @@ fixy_neg_compile_test(neg_session_payload_token_in_boxed_pointee
   "payload_perm_delta<std::unique_ptr<.anonymous.::Box<int> > >")
 fixy_neg_compile_test(neg_session_payload_declared_template_behind_pointer
   "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a class or a template that is only declared"
-  "payload_verdict_of\\(\\) \\[with P = .anonymous.::OpaqueFrame<int>\\*\\]")
+  "In instantiation of .struct fixy::session::detail::payload_readable_gate<.anonymous.::OpaqueFrame<int>\\*>.")
+
+# An endpoint travels only as a DelegatedSession held by value.  A bare
+# endpoint and a hand-off behind a pointer are refused in every session,
+# and a plain mint refuses a protocol that carries a bare handle.
+fixy_neg_compile_test(neg_sess_payload_bare_endpoint
+  "Payload_Refused.: the payload cannot travel on a session channel, because it holds, points at or names a session endpoint outside DelegatedSession"
+  "payload_perm_delta<neg_sess_payload_bare_endpoint_types::Envelope>")
+fixy_neg_compile_test(neg_sess_payload_bare_endpoint_mint
+  "no matching function for call to .mint_session_handle<neg_sess_payload_bare_endpoint_mint_types::Carrier"
+  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. .with Proto = fixy::session::Send<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>")
+# Each verdict of the payload walk is a concept, so a user specialization
+# of one no longer compiles.  Each of these specializations compiled while
+# the verdict was a variable template, and it flipped a send, a receive,
+# a close, a delegation or a classification.
+fixy_neg_compile_test(neg_sess_seal_is_permission_classified
+  "template-id .is_permission_classified_v<neg_sess_seal_is_permission_classified_types::Evil>. used as a declarator"
+  "too many template headers for .fixy::session::is_permission_classified_v.")
+fixy_neg_compile_test(neg_sess_seal_is_plain_payload
+  "template-id .is_plain_payload_v<fixy::session::Transferable<int, neg_sess_seal_is_plain_payload_types::Region> >. used as a declarator"
+  "too many template headers for .fixy::session::is_plain_payload_v.")
+fixy_neg_compile_test(neg_sess_seal_payload_conveys_delegation
+  "template-id .payload_conveys_delegation_v<fixy::session::DelegatedSession<fixy::session::End, neg_sess_seal_payload_conveys_delegation_types::Wire"
+  "too many template headers for .fixy::session::payload_conveys_delegation_v.")
+fixy_neg_compile_test(neg_sess_seal_delegates_to_own_peer
+  "template-id .delegates_to_own_peer_v<fixy::session::Send<fixy::session::PeerMsg<neg_sess_seal_delegates_to_own_peer_types::Bob"
+  "too many template headers for .fixy::session::delegates_to_own_peer_v.")
+fixy_neg_compile_test(neg_sess_seal_perm_set_has_open_loan
+  "template-id .perm_set_has_open_loan_v<foundation::permissions::PermSet<fixy::session::LentOut<neg_sess_seal_perm_set_has_open_loan_types::Region> > >. used as a declarator"
+  "too many template headers for .fixy::session::perm_set_has_open_loan_v.")
+fixy_neg_compile_test(neg_sess_seal_plain_tag
+  "template-id .PlainTag<fixy::session::LentOut<neg_sess_seal_plain_tag_types::Region> >. used as a declarator"
+  "too many template headers for .fixy::session::detail::PlainTag.")
+fixy_neg_compile_test(neg_sess_seal_handle_admits_send
+  "template-id .handle_admits_send_v<foundation::permissions::PermSet<>, fixy::session::Transferable<int, neg_sess_seal_handle_admits_send_types::Region> >. used as a declarator"
+  "too many template headers for .fixy::session::detail::handle_admits_send_v.")
+fixy_neg_compile_test(neg_sess_seal_handle_admits_recv
+  "template-id .handle_admits_recv_v<foundation::permissions::PermSet<neg_sess_seal_handle_admits_recv_types::Region>, fixy::session::Transferable<int, neg_sess_seal_handle_admits_recv_types::Region"
+  "too many template headers for .fixy::session::detail::handle_admits_recv_v.")
+fixy_neg_compile_test(neg_sess_seal_perm_set_admits_close
+  "template-id .perm_set_admits_close_v<foundation::permissions::PermSet<fixy::session::LentOut<neg_sess_seal_perm_set_admits_close_types::Region> > >. used as a declarator"
+  "too many template headers for .fixy::session::detail::perm_set_admits_close_v.")
+fixy_neg_compile_test(neg_sess_payload_hand_off_behind_pointer
+  "Payload_Refused.: the payload cannot travel on a session channel, because it reaches a DelegatedSession through a pointer"
+  "The refused type: fixy::session::DelegatedSession<fixy::session::End, neg_sess_payload_hand_off_behind_pointer_types::Wire")
 
 # A token reaches a hold once: never by name, and never twice by tag.
 fixy_neg_compile_test(neg_session_hold_lvalue_token
@@ -3039,6 +3088,20 @@ fixy_neg_compile_test(neg_session_hold_lvalue_token
 fixy_neg_compile_test(neg_session_hold_duplicate_tag
   "no matching function for call to .mint_permission_hold\\("
   "perm_tags_unique_v<Tags ...> .with Tags = .<unnamed>::Region, <unnamed>::Region.*evaluated to .false")
+
+# A hold and the loan markers befriend only HoldFactory, which the header
+# defines and which is not a template.  A specialization of PermHold reads
+# neither the tokens of a hold nor the loan of a marker, and a second
+# definition of the factory is a redefinition.
+fixy_neg_compile_test(neg_sess_hold_friend_specialized
+  "is private within this context"
+  "fixy::session::PermHold<foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::Region> >::slots_")
+fixy_neg_compile_test(neg_sess_hold_loan_by_specialization
+  "is private within this context"
+  "fixy::session::Borrowed<int, neg_sess_hold_loan_by_specialization_types::Region>::loan_")
+fixy_neg_compile_test(neg_sess_hold_factory_redefined
+  "redefinition of .class fixy::session::HoldFactory."
+  "previous definition of .class fixy::session::HoldFactory.")
 
 # A read loan carries a read proof of its own region, and a hold lends
 # only a region it holds.

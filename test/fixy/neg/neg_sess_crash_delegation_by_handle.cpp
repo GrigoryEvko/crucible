@@ -1,7 +1,8 @@
 // A session handle arrives in a crash-aware session.  The handle has a
 // peer of its own that no detector of this session watches.  A crash of
-// that peer leaves the holder waiting.  The old rule looked for the
-// hand-off marker alone and admitted the handle.  The mint refuses it.
+// that peer leaves the holder waiting.  The payload walk refuses a bare
+// endpoint in every session, so the permission flow of the mint does not
+// close, and the mint refuses the protocol.
 
 #include <fixy/session/CrashTransport.h>
 

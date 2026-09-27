@@ -59,12 +59,15 @@
 // foundation/reflect/TypeComponents.h defines a component, and it knows
 // how each component was reached:
 //
-//   owned      the root, a base, a by-value member of an owned class
+//   owned      the root, a base, a by-value member of an owned class, and
+//              the value that a marker carries
 //   aliased    through a pointer, a reference, a reference member, or a
 //              root that is itself a reference type
 //   in union   a member of a union, which covers std::optional and
 //              std::variant, whose storage is a union
 //   in array   an element of an array
+//   named      a template argument.  The value holds no object of it, so
+//              the walk reads it for delegation only
 //
 // A token counts only when the walk reaches it owned.  A token reached
 // aliased is a second name for a token that stays with the sender.  A
@@ -72,15 +75,18 @@
 // several tokens of one tag, which a set cannot hold.  The walk refuses
 // each of these, and it refuses these shapes too:
 //
-//   * a read proof, a share or a pool outside its marker;
+//   * a read proof, a share or a pool outside its marker
+//   * a session endpoint that the payload holds, points at or names, and
+//     a hand-off that it does not hold by value (the section on
+//     delegation below)
 //   * a type-erasure family: std::function, std::move_only_function,
 //     std::copyable_function, std::function_ref and std::any, because
-//     the static type does not name what they hold;
+//     the static type does not name what they hold
 //   * a class whose state the walk cannot read, which is the shape of a
-//     lambda with captures;
-//   * a class or a template that is only declared, behind a pointer or a
-//     reference;
-//   * one tag twice in one payload;
+//     lambda with captures
+//   * a class or a template that is only declared, behind a pointer, a
+//     reference or a template argument
+//   * one tag twice in one payload
 //   * a fixy::Secret outside DeclassifyOnSend, and a type marked
 //     constant_time_value outside CTPayload, as fixy/session/Classified.h
 //     states.
@@ -95,12 +101,40 @@
 // declared is complete in a different unit, so the verdict on it is a
 // compile error of every trait here and never a value.
 //
+// One walk gives every answer of this header for a payload: the four
+// sets, the refusal, the delegation and the hand-offs.  A sealed cache
+// (the section of that name below) holds the result, so a translation
+// unit walks each payload one time, and no user specialization changes
+// a verdict.
+//
+// The walk enters each type one time for each reach.  A type that it
+// reaches owned a second time is a second copy of the tokens it holds.
+// The walk refuses that copy as one tag twice, and it does not read the
+// type again.  So a struct of 1,024 members of one type reads that type
+// one time, and a binary tree of by-value members reads each level one
+// time.
+//
 // ── Delegation ──────────────────────────────────────────────────────
 //
 // A payload delegates when it gives the recipient authority over a
-// session endpoint.  Crash sessions and checkpoint sessions refuse
-// delegation.  Each of them reads it through payload_conveys_delegation_v.
-// The two sessions then use one definition of delegation.
+// session endpoint.  One form of delegation travels: the hand-off
+// DelegatedSession<P, R, Pol, PS>, held by value.  Its tags move with it,
+// and fixy/session/Delegate.h states the rules that it obeys.  In every
+// session the walk refuses an endpoint that a type names outside that
+// hand-off.  An endpoint that travels bare carries its permission set with
+// no set change, and it skips the rules of the hand-off: the handle
+// outside every Loop, with no brand, and no hand-off to a peer of its own
+// session.  A hand-off that a template argument names holds no endpoint,
+// and it changes no set.  The walk also refuses the carriers whose content
+// it cannot read: a type-erasure family and a lambda with captures.
+//
+// A pointer to void and a pointer to a function name no endpoint type.
+// They are in the class of an integer that holds an address, which the
+// list below states no type can refuse.  A plain session admits them, as
+// data.  Crash sessions and checkpoint sessions refuse them, and the
+// hand-off too, because their theories have no delegation.  Each of them
+// reads payload_conveys_delegation_v, so the two sessions use one
+// definition of delegation.
 //
 // The query reads every component of the payload, and every reach
 // counts.  A pointer or a reference to an endpoint counts too.  The
@@ -124,25 +158,26 @@
 // specialization that cannot be instantiated here stops the build with
 // the diagnostic of its own template.
 //
-// The query also refuses a component with content that it cannot read.
+// The query also counts a component with content that it cannot read.
 // Each of these can hold an endpoint that the static type does not name:
 // a type-erasure family, a class with state that the walk cannot read (a
 // lambda with captures), and a pointer to void.  A class or a template
-// that is only declared stops the build with
+// that is only declared stops the build.  The permission verdicts stop it
+// with [Payload_Refused], and the delegation query with
 // [Payload_Delegation_Unreadable].  A value would say different things in
 // a unit that defines the class and in a unit that only declares it.
 //
 // A pointer or a reference to a function, and a pointer to a member
 // function, delegate too.  The recipient runs the target, and the target
 // can step an endpoint that the sender put in state the target reaches.
-// The query cannot read the target, so it refuses the pointer.
+// The query cannot read the target, so it counts the pointer.
 //
 // What the query cannot see:
 //
 //   * an integer that holds the address of an endpoint, or an index
 //     into a table of endpoints.  An integer has no type provenance, and
 //     the query reads types.  std::uintptr_t is also the type of each
-//     plain 64-bit count, so no type can name the address form;
+//     plain 64-bit count, so no type can name the address form
 //   * a copy of the Resource of a live session.  A Resource of raw
 //     pointers is a channel held as plain data, and no type marks it.
 //
@@ -191,6 +226,10 @@ struct LentOut {};
 
 template <class Tag>
 struct BorrowedIn {};
+
+// The door that does each transition of a PermHold, defined below.  It is
+// the one friend of the hold and of the loan markers.
+class HoldFactory;
 
 // ── The markers ─────────────────────────────────────────────────────
 //
@@ -262,8 +301,7 @@ struct [[nodiscard]] Borrowed {
     ~Borrowed() = default;
 
 private:
-    template <class>
-    friend class PermHold;
+    friend class HoldFactory;
 
     [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
 };
@@ -291,8 +329,7 @@ struct [[nodiscard]] Released {
     ~Released() = default;
 
 private:
-    template <class>
-    friend class PermHold;
+    friend class HoldFactory;
 
     [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
 };
@@ -381,6 +418,8 @@ enum class PayloadRefusal : std::uint8_t {
     IncompleteType,
     ClassifiedBare,
     ConstantTimeBare,
+    BareEndpoint,
+    HandOffNotOwned,
 };
 
 enum class PayloadReach : std::uint8_t {
@@ -388,6 +427,7 @@ enum class PayloadReach : std::uint8_t {
     Aliased,
     InUnion,
     InArray,
+    Named,
 };
 
 // The families the walk classifies by name.  Each entry reflects a class
@@ -428,408 +468,14 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
     return false;
 }
 
-// A class that is complete and not empty, and that reflects no base and
-// no data member.  GCC 16 reflects no capture, so this is the shape of a
-// lambda with captures.
-[[nodiscard]] consteval bool payload_holds_unreadable_state(std::meta::info type) {
-    if (!std::meta::is_class_type(type) || payload_is_specialization(type)) return false;
-    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
-    const auto unchecked = std::meta::access_context::unchecked();
-    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
-}
-
-// The account of one payload: the tags it moves, lends and releases.
-// This form holds vectors, so it lives only inside a constant
-// evaluation.  The results cross into types through the reflections of
-// PermSet specializations below.
-struct PayloadAccount {
-    std::vector<std::meta::info> moved;
-    std::vector<std::meta::info> lent;
-    std::vector<std::meta::info> released;
-    bool carries_share = false;
-    PayloadRefusal refusal = PayloadRefusal::None;
-    std::meta::info refused_type{};
-};
-
-[[nodiscard]] consteval PayloadRefusal payload_refusal_for_reach(PayloadReach reach) noexcept {
-    switch (reach) {
-        case PayloadReach::Aliased:
-            return PayloadRefusal::TokenBehindPointer;
-        case PayloadReach::InUnion:
-            return PayloadRefusal::TokenInUnion;
-        case PayloadReach::InArray:
-            return PayloadRefusal::TokenInArray;
-        case PayloadReach::Owned:
-            return PayloadRefusal::None;
-        default:
-            break;
+[[nodiscard]] consteval bool holds_type(const std::vector<std::meta::info>& types, std::meta::info type) {
+    for (const std::meta::info held : types) {
+        if (held == type) return true;
     }
-    return PayloadRefusal::None;
+    return false;
 }
 
-// The walk.  Each node is a type, a flag that says if the walk can read
-// its members, and how the walk reached it.  Complexity: linear in the number of distinct
-// nodes, times the cost of the visited-list scan.
-[[nodiscard]] consteval PayloadAccount account_payload(std::meta::info root) {
-    namespace refl = ::foundation::reflect;
-    namespace fp = ::foundation::permissions;
-    // A class behind a pointer or a reference is read for its members, a
-    // specialization too, so a token that no argument names is seen.
-    constexpr refl::SpecializationRead instantiating = refl::SpecializationRead::Instantiating;
-
-    struct Node {
-        std::meta::info type{};
-        bool readable = false;
-        PayloadReach reach = PayloadReach::Owned;
-        // Set on the value that a CTPayload carries and on its parts,
-        // which is the one place a constant-time value may travel.
-        bool in_ct_carrier = false;
-    };
-
-    PayloadAccount account;
-    std::vector<Node> pending;
-    std::vector<Node> visited;
-    // A payload typed as a reference names an object that stays with the
-    // sender, so its tokens are reached aliased, as through a reference
-    // member.
-    if (std::meta::is_reference_type(std::meta::dealias(root))) {
-        const refl::TypeNode reached = refl::node_reached_indirectly(root, instantiating);
-        pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
-    } else {
-        pending.push_back(Node{refl::bare_type(root), true, PayloadReach::Owned});
-    }
-
-    auto refuse = [&account](PayloadRefusal why, std::meta::info type) consteval {
-        if (account.refusal != PayloadRefusal::None) return;
-        account.refusal = why;
-        account.refused_type = type;
-    };
-    auto names_tag = [&account](std::meta::info tag) consteval {
-        for (const std::meta::info held : account.moved) {
-            if (held == tag) return true;
-        }
-        for (const std::meta::info held : account.lent) {
-            if (held == tag) return true;
-        }
-        for (const std::meta::info held : account.released) {
-            if (held == tag) return true;
-        }
-        return false;
-    };
-    auto record = [&](std::vector<std::meta::info>& into, std::meta::info tag, std::meta::info at) consteval {
-        const std::meta::info bare_tag = std::meta::dealias(tag);
-        if (names_tag(bare_tag)) {
-            refuse(PayloadRefusal::DuplicateTag, at);
-            return;
-        }
-        into.push_back(bare_tag);
-    };
-    // A marker or a token counts only when the walk reaches it owned.
-    auto owned_or_refuse = [&refuse](const Node& node) consteval {
-        if (node.reach == PayloadReach::Owned) return true;
-        refuse(payload_refusal_for_reach(node.reach), node.type);
-        return false;
-    };
-    // The value a marker carries is a by-value member of the marker.
-    auto push_carried_value = [&pending](std::meta::info value_type) consteval {
-        pending.push_back(Node{refl::bare_type(value_type), true, PayloadReach::Owned});
-    };
-
-    while (!pending.empty() && account.refusal == PayloadRefusal::None) {
-        const Node node = pending.back();
-        pending.pop_back();
-
-        // An owned node is not deduplicated.  A class can hold one type
-        // twice by value, and each copy holds its own tokens, so each copy
-        // counts.  A type cannot hold itself by value, so an owned path
-        // has no cycle.  A path through a pointer can, and there the walk
-        // visits each node once.
-        if (node.reach != PayloadReach::Owned) {
-            bool was_visited = false;
-            for (const Node& seen : visited) {
-                if (seen.type == node.type && seen.reach == node.reach && seen.readable == node.readable) {
-                    was_visited = true;
-                    break;
-                }
-            }
-            if (was_visited) continue;
-            visited.push_back(node);
-        }
-
-        const std::meta::info type = node.type;
-
-        if (payload_is_specialization(type)) {
-            const std::meta::info family = std::meta::template_of(type);
-            const auto arguments = std::meta::template_arguments_of(type);
-            if (family == ^^fp::Permission) {
-                if (owned_or_refuse(node)) record(account.moved, arguments[0], type);
-                continue;
-            }
-            if (family == ^^Transferable || family == ^^Returned) {
-                if (owned_or_refuse(node)) {
-                    record(account.moved, arguments[1], type);
-                    push_carried_value(arguments[0]);
-                }
-                continue;
-            }
-            if (family == ^^Borrowed) {
-                if (owned_or_refuse(node)) {
-                    record(account.lent, arguments[1], type);
-                    push_carried_value(arguments[0]);
-                }
-                continue;
-            }
-            if (family == ^^Released) {
-                if (owned_or_refuse(node)) {
-                    record(account.released, arguments[1], type);
-                    push_carried_value(arguments[0]);
-                }
-                continue;
-            }
-            if (family == ^^DelegatedSession) {
-                if (owned_or_refuse(node)) {
-                    for (const std::meta::info tag : std::meta::template_arguments_of(arguments[3])) {
-                        record(account.moved, tag, type);
-                    }
-                }
-                continue;
-            }
-            if (family == ^^SharedReader) {
-                if (owned_or_refuse(node)) account.carries_share = true;
-                continue;
-            }
-            // A keyed message is its label word and then the value of its
-            // payload, which the value step of the handle moves.  The
-            // payload counts as a member of the message.  A payload of
-            // void is no class, so it adds nothing.
-            if (family == ^^PeerMsg || family == ^^Labelled) {
-                pending.push_back(Node{refl::bare_type(arguments.back()), true, node.reach, node.in_ct_carrier});
-                continue;
-            }
-            // The carrier declassifies at the transport, so the Secret it
-            // holds is not walked.  The value it will hand over is, for
-            // the tokens inside it.
-            if (family == ^^DeclassifyOnSend) {
-                const refl::TypeNode carried{refl::bare_type(arguments[0]), true};
-                pending.push_back(Node{carried.type, carried.may_read_members, node.reach});
-                continue;
-            }
-            if (family == ^^CTPayload) {
-                pending.push_back(Node{refl::bare_type(arguments[0]), true, node.reach, true});
-                continue;
-            }
-            if (family == ^^::fixy::Secret) {
-                refuse(PayloadRefusal::ClassifiedBare, type);
-                continue;
-            }
-            if (payload_family_is_on(type, payload_proof_families)) {
-                refuse(PayloadRefusal::BareBorrowOrShare, type);
-                continue;
-            }
-            if (payload_family_is_on(type, payload_type_erasure_families)) {
-                refuse(PayloadRefusal::TypeErasure, type);
-                continue;
-            }
-        }
-        if (type == ^^std::any) {
-            refuse(PayloadRefusal::TypeErasure, type);
-            continue;
-        }
-        if (!node.in_ct_carrier && carries_constant_time_mark(type)) {
-            refuse(PayloadRefusal::ConstantTimeBare, type);
-            continue;
-        }
-
-        if (std::meta::is_pointer_type(type) || std::meta::is_reference_type(type)) {
-            const std::meta::info element =
-                std::meta::is_pointer_type(type) ? std::meta::remove_pointer(type) : std::meta::remove_reference(type);
-            const refl::TypeNode reached = refl::node_reached_indirectly(element, instantiating);
-            pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
-            continue;
-        }
-        if (std::meta::is_array_type(type)) {
-            const PayloadReach reach = node.reach == PayloadReach::Owned ? PayloadReach::InArray : node.reach;
-            pending.push_back(
-                Node{refl::bare_type(std::meta::remove_all_extents(type)), node.readable, reach, node.in_ct_carrier});
-            continue;
-        }
-        const bool is_union = std::meta::is_union_type(type);
-        if (!std::meta::is_class_type(type) && !is_union) continue;
-
-        // Only a class behind a pointer or a reference can be unreadable,
-        // and then it has no definition here.
-        if (!node.readable) {
-            refuse(PayloadRefusal::IncompleteType, type);
-            continue;
-        }
-        if (payload_holds_unreadable_state(type)) {
-            refuse(PayloadRefusal::UnreadableState, type);
-            continue;
-        }
-
-        const PayloadReach member_reach =
-            is_union && node.reach == PayloadReach::Owned ? PayloadReach::InUnion : node.reach;
-        const auto unchecked = std::meta::access_context::unchecked();
-        for (const std::meta::info base : std::meta::bases_of(type, unchecked)) {
-            pending.push_back(Node{refl::bare_type(std::meta::type_of(base)), true, member_reach, node.in_ct_carrier});
-        }
-        for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, unchecked)) {
-            const std::meta::info member_type = std::meta::type_of(member);
-            if (std::meta::is_reference_type(member_type)) {
-                const refl::TypeNode reached = refl::node_reached_indirectly(member_type, instantiating);
-                pending.push_back(Node{reached.type, reached.may_read_members, PayloadReach::Aliased});
-            } else {
-                pending.push_back(Node{refl::bare_type(member_type), true, member_reach, node.in_ct_carrier});
-            }
-        }
-    }
-    return account;
-}
-
-// The refusal and its type, without the vectors, so it can sit in a
-// static data member.
-struct PayloadVerdict {
-    PayloadRefusal refusal = PayloadRefusal::None;
-    std::meta::info refused_type{};
-};
-
-[[nodiscard]] consteval PayloadVerdict payload_verdict(std::meta::info payload) {
-    const PayloadAccount account = account_payload(payload);
-    return PayloadVerdict{account.refusal, account.refused_type};
-}
-
-[[nodiscard]] consteval std::string_view payload_refusal_reason(PayloadRefusal why) noexcept {
-    switch (why) {
-        case PayloadRefusal::None:
-            return "";
-        case PayloadRefusal::TokenBehindPointer:
-            return "it reaches a permission token through a pointer or a reference.  The token stays with the sender, "
-                   "so the recipient would hold a second name for it.  Move the token by value";
-        case PayloadRefusal::TokenInUnion:
-            return "it holds a permission token in a union, a std::optional or a std::variant.  The token can be "
-                   "absent at run time, and the set change cannot depend on a value";
-        case PayloadRefusal::TokenInArray:
-            return "it holds a permission token in an array.  That is several tokens of one tag, and a permission "
-                   "set holds each tag once";
-        case PayloadRefusal::DuplicateTag:
-            return "it names one permission tag twice.  A permission set holds each tag once";
-        case PayloadRefusal::BareBorrowOrShare:
-            return "it holds a read proof, a share or a pool outside its marker.  A read proof travels only as "
-                   "Borrowed<T, Tag>, and a share only as SharedReader<Tag>, so that a set records the loan";
-        case PayloadRefusal::TypeErasure:
-            return "it holds a type-erasure family.  The static type does not name what it holds, so a token "
-                   "inside it would move with no set change";
-        case PayloadRefusal::UnreadableState:
-            return "it holds a class whose state the walk cannot read, such as a lambda with captures";
-        case PayloadRefusal::IncompleteType:
-            return "it reaches a class or a template that is only declared, so nothing says what it holds";
-        case PayloadRefusal::ClassifiedBare:
-            return "it holds a fixy::Secret outside DeclassifyOnSend.  A classified value on a channel leaves "
-                   "classification, and that needs a named policy.  Carry it as DeclassifyOnSend<T, Policy>";
-        case PayloadRefusal::ConstantTimeBare:
-            return "it holds a constant-time value outside CTPayload.  A bare value offers == and element access, "
-                   "which can branch on the content.  Carry it as CTPayload<T>";
-        default:
-            break;
-    }
-    return "";
-}
-
-[[nodiscard]] consteval std::string_view payload_refusal_text(PayloadVerdict verdict) {
-    if (verdict.refusal == PayloadRefusal::None) return {};
-    std::string text{"fixy::session::diagnostic [Payload_Refused]: the payload cannot travel on a session channel, "
-                     "because "};
-    text += payload_refusal_reason(verdict.refusal);
-    text += ".  The refused type: ";
-    text += std::meta::display_string_of(verdict.refused_type);
-    return std::define_static_string(text);
-}
-
-// The verdict on P, as every trait below reads it.  A class that is only
-// declared is a compile error here and not a refusal value.  A unit that
-// defines the class gives a different verdict, and a program must not
-// hold two verdicts on one type.
-template <class P>
-[[nodiscard]] consteval PayloadVerdict payload_verdict_of() {
-    constexpr PayloadVerdict verdict = payload_verdict(^^P);
-    static_assert(verdict.refusal != PayloadRefusal::IncompleteType, payload_refusal_text(verdict));
-    return verdict;
-}
-
-// ── From the account to permission sets ─────────────────────────────
-
-enum class PayloadSet : std::uint8_t {
-    SenderRequires,
-    SenderGains,
-    ReceiverRequires,
-    ReceiverGains,
-};
-
-[[nodiscard]] consteval std::meta::info payload_wrap_each(std::meta::info wrapper,
-                                                          const std::vector<std::meta::info>& tags) {
-    std::vector<std::meta::info> wrapped;
-    for (const std::meta::info tag : tags) wrapped.push_back(std::meta::substitute(wrapper, {tag}));
-    return std::meta::substitute(^^::foundation::permissions::PermSet, wrapped);
-}
-
-// The four sets.  The sender loses what it must hold, and the recipient
-// loses what it must hold, so two sets name each side's loss too.
-//
-//   sender requires   moved, lent, and BorrowedIn<t> for each released t
-//   sender gains      LentOut<t> for each lent t
-//   receiver requires LentOut<t> for each released t
-//   receiver gains    moved, BorrowedIn<t> for each lent t, and released
-[[nodiscard]] consteval std::meta::info payload_set(std::meta::info payload, PayloadSet which) {
-    const PayloadAccount account = account_payload(payload);
-    std::vector<std::meta::info> tags;
-    switch (which) {
-        case PayloadSet::SenderRequires:
-            for (const std::meta::info tag : account.moved) tags.push_back(tag);
-            for (const std::meta::info tag : account.lent) tags.push_back(tag);
-            for (const std::meta::info tag : account.released) tags.push_back(std::meta::substitute(^^BorrowedIn, {tag}));
-            break;
-        case PayloadSet::SenderGains:
-            return payload_wrap_each(^^LentOut, account.lent);
-        case PayloadSet::ReceiverRequires:
-            return payload_wrap_each(^^LentOut, account.released);
-        case PayloadSet::ReceiverGains:
-            for (const std::meta::info tag : account.moved) tags.push_back(tag);
-            for (const std::meta::info tag : account.lent) tags.push_back(std::meta::substitute(^^BorrowedIn, {tag}));
-            for (const std::meta::info tag : account.released) tags.push_back(tag);
-            break;
-        default:
-            break;
-    }
-    return std::meta::substitute(^^::foundation::permissions::PermSet, tags);
-}
-
-[[nodiscard]] consteval bool payload_carries_share(std::meta::info payload) {
-    return account_payload(payload).carries_share;
-}
-
-// The region a set element names: Tag for LentOut<Tag> and BorrowedIn<Tag>,
-// and the element itself for any other tag.
-[[nodiscard]] consteval std::meta::info region_of(std::meta::info element) {
-    const std::meta::info bare = std::meta::dealias(element);
-    if (payload_family_is(bare, ^^LentOut) || payload_family_is(bare, ^^BorrowedIn)) {
-        return std::meta::dealias(std::meta::template_arguments_of(bare)[0]);
-    }
-    return bare;
-}
-
-// True when no element of `gains` names a region that an element of
-// `kept` already names.  One region in two states at once is two claims
-// on it, which a set must not hold.
-[[nodiscard]] consteval bool regions_disjoint(std::meta::info kept, std::meta::info gains) {
-    for (const std::meta::info gained : std::meta::template_arguments_of(std::meta::dealias(gains))) {
-        for (const std::meta::info held : std::meta::template_arguments_of(std::meta::dealias(kept))) {
-            if (region_of(gained) == region_of(held)) return false;
-        }
-    }
-    return true;
-}
-
-// ── Delegation ──────────────────────────────────────────────────────
+// ── What delegates ──────────────────────────────────────────────────
 
 // True when the type is a session protocol: its head is a combinator
 // that fixy/session/Protocol.h, or a header that extends it, registers.
@@ -871,28 +517,657 @@ enum class PayloadSet : std::uint8_t {
     }
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return DelegationCarrier::None;
     if (!node.may_read_members) return std::nullopt;
-    if (payload_holds_unreadable_state(type)) return DelegationCarrier::UnreadableState;
+    if (::foundation::reflect::holds_unreadable_state(node)) return DelegationCarrier::UnreadableState;
     // A protocol is a type that names a conversation.  It is not an
     // endpoint of one, although VendorPinned declares a member protocol.
     if (has_protocol_member(type) && !is_session_protocol_type(type)) return DelegationCarrier::Endpoint;
     return DelegationCarrier::None;
 }
 
-// A component stops the walk when it delegates or cannot be read.
-inline constexpr auto stops_delegation_walk = [](::foundation::reflect::TypeNode node) consteval {
-    const std::optional<DelegationCarrier> carrier = delegation_carrier_of(node);
-    return !carrier.has_value() || *carrier != DelegationCarrier::None;
+// ── The walk ────────────────────────────────────────────────────────
+
+// The families that the walk reads by name.  The walk does not read the
+// members of such a family, so a family that another header defines needs
+// no definition here.  None of them is an endpoint.
+enum class PayloadFamily : std::uint8_t {
+    Other,
+    Token,         // Permission<Tag>
+    Moves,         // Transferable<T, Tag>, Returned<T, Tag>
+    Lends,         // Borrowed<T, Tag>
+    Releases,      // Released<T, Tag>
+    Share,         // SharedReader<Tag, Brand>
+    Keyed,         // PeerMsg<Q, L, U>, Labelled<L, U>
+    Declassified,  // DeclassifyOnSend<T, Policy>
+    ConstantTime,  // CTPayload<T>
+    Classified,    // fixy::Secret<T>
+    Proof,         // a family of payload_proof_families
 };
 
-// The first component of the payload that delegates or cannot be read,
-// in the order of the component walk.  The walk reads every class it
-// reaches, whether the payload holds it, points at it, or names it in a
-// template argument.  Complexity: the walk of TypeComponents.h, with a
-// scan of the members of each class it reaches.
-[[nodiscard]] consteval ::foundation::reflect::TypeNode payload_delegation_stop(std::meta::info payload) {
-    return ::foundation::reflect::first_component_satisfying<stops_delegation_walk,
-                                                             ::foundation::reflect::SpecializationRead::Instantiating>(
-        payload);
+[[nodiscard]] consteval PayloadFamily payload_family_of(std::meta::info type) {
+    if (!payload_is_specialization(type)) return PayloadFamily::Other;
+    const std::meta::info family = std::meta::template_of(std::meta::dealias(type));
+    if (family == ^^::foundation::permissions::Permission) return PayloadFamily::Token;
+    if (family == ^^Transferable || family == ^^Returned) return PayloadFamily::Moves;
+    if (family == ^^Borrowed) return PayloadFamily::Lends;
+    if (family == ^^Released) return PayloadFamily::Releases;
+    if (family == ^^SharedReader) return PayloadFamily::Share;
+    if (family == ^^PeerMsg || family == ^^Labelled) return PayloadFamily::Keyed;
+    if (family == ^^DeclassifyOnSend) return PayloadFamily::Declassified;
+    if (family == ^^CTPayload) return PayloadFamily::ConstantTime;
+    if (family == ^^::fixy::Secret) return PayloadFamily::Classified;
+    if (payload_family_is_on(type, payload_proof_families)) return PayloadFamily::Proof;
+    return PayloadFamily::Other;
+}
+
+// One component: its type, a flag that says if the walk can read its
+// members, how the walk reached it, and a flag set on the value that a
+// CTPayload carries and on its parts, the one place where a constant-time
+// value can travel.
+struct PayloadNode {
+    std::meta::info type{};
+    bool readable = false;
+    PayloadReach reach = PayloadReach::Owned;
+    bool in_ct_carrier = false;
+};
+
+[[nodiscard]] consteval bool is_same_payload_node(const PayloadNode& lhs, const PayloadNode& rhs) noexcept {
+    return lhs.type == rhs.type && lhs.readable == rhs.readable && lhs.reach == rhs.reach
+        && lhs.in_ct_carrier == rhs.in_ct_carrier;
+}
+
+// What the walk found in one payload.  This form holds vectors, so it
+// lives only inside a constant evaluation.  payload_facts below keeps the
+// results in a form that a static data member can hold.
+struct PayloadCensus {
+    // The tags that the payload moves, lends and releases.
+    std::vector<std::meta::info> moved;
+    std::vector<std::meta::info> lent;
+    std::vector<std::meta::info> released;
+    // Each DelegatedSession that the payload holds by value.
+    std::vector<std::meta::info> hand_offs;
+    bool carries_share = false;
+    PayloadRefusal refusal = PayloadRefusal::None;
+    std::meta::info refused_type{};
+    // The first component that delegates or that the walk cannot read.
+    bool has_carrier = false;
+    DelegationCarrier carrier = DelegationCarrier::None;
+    bool is_carrier_readable = true;
+    std::meta::info carrier_type{};
+};
+
+// A node that the walk entered, and the first token that it found owned
+// below that node, or null.
+struct PayloadVisit {
+    PayloadNode node{};
+    std::meta::info first_token{};
+};
+
+struct PayloadWalk {
+    PayloadCensus census;
+    std::vector<PayloadVisit> visits;
+};
+
+// The walk stops when it has a refusal and knows the first carrier.
+[[nodiscard]] consteval bool is_walk_settled(const PayloadWalk& walk) noexcept {
+    return walk.census.refusal != PayloadRefusal::None && walk.census.has_carrier;
+}
+
+consteval void refuse_payload(PayloadWalk& walk, PayloadRefusal why, std::meta::info type) noexcept {
+    if (walk.census.refusal != PayloadRefusal::None) return;
+    walk.census.refusal = why;
+    walk.census.refused_type = type;
+}
+
+consteval void note_carrier(PayloadWalk& walk, std::optional<DelegationCarrier> carrier, std::meta::info type) noexcept {
+    if (walk.census.has_carrier) return;
+    if (carrier.has_value() && *carrier == DelegationCarrier::None) return;
+    walk.census.has_carrier = true;
+    walk.census.is_carrier_readable = carrier.has_value();
+    walk.census.carrier = carrier.value_or(DelegationCarrier::None);
+    walk.census.carrier_type = type;
+}
+
+// Records one tag that the payload moves, lends or releases, and refuses
+// a tag that the payload names already.  A refused payload changes no
+// set, so the walk records nothing after a refusal.
+consteval void record_payload_tag(PayloadWalk& walk, std::vector<std::meta::info> PayloadCensus::*into,
+                                  std::meta::info tag, std::meta::info at) {
+    if (walk.census.refusal != PayloadRefusal::None) return;
+    const std::meta::info bare_tag = std::meta::dealias(tag);
+    for (const auto held : {&PayloadCensus::moved, &PayloadCensus::lent, &PayloadCensus::released}) {
+        if (holds_type(walk.census.*held, bare_tag)) {
+            refuse_payload(walk, PayloadRefusal::DuplicateTag, at);
+            return;
+        }
+    }
+    (walk.census.*into).push_back(bare_tag);
+}
+
+[[nodiscard]] consteval PayloadRefusal payload_refusal_for_reach(PayloadReach reach) noexcept {
+    switch (reach) {
+        case PayloadReach::Aliased:
+            return PayloadRefusal::TokenBehindPointer;
+        case PayloadReach::InUnion:
+            return PayloadRefusal::TokenInUnion;
+        case PayloadReach::InArray:
+            return PayloadRefusal::TokenInArray;
+        case PayloadReach::Owned:
+        case PayloadReach::Named:
+            return PayloadRefusal::None;
+        default:
+            break;
+    }
+    return PayloadRefusal::None;
+}
+
+[[nodiscard]] consteval PayloadRefusal payload_refusal_for_carrier(DelegationCarrier carrier) noexcept {
+    switch (carrier) {
+        case DelegationCarrier::Endpoint:
+            return PayloadRefusal::BareEndpoint;
+        case DelegationCarrier::TypeErasure:
+            return PayloadRefusal::TypeErasure;
+        case DelegationCarrier::UnreadableState:
+            return PayloadRefusal::UnreadableState;
+        // An opaque pointer and a function pointer name no endpoint type.
+        // They are in the class of an integer that holds an address, which
+        // no type can refuse, so a plain session admits them.  A crash and a
+        // checkpoint session refuse them through payload_conveys_delegation_v.
+        case DelegationCarrier::OpaquePointer:
+        case DelegationCarrier::FunctionPointer:
+        case DelegationCarrier::None:
+        case DelegationCarrier::HandOff:
+            return PayloadRefusal::None;
+        default:
+            break;
+    }
+    return PayloadRefusal::None;
+}
+
+// A marker or a token counts only when the walk reaches it owned.
+[[nodiscard]] consteval bool is_owned_or_refused(PayloadWalk& walk, const PayloadNode& node) noexcept {
+    if (node.reach == PayloadReach::Owned) return true;
+    refuse_payload(walk, payload_refusal_for_reach(node.reach), node.type);
+    return false;
+}
+
+consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node);
+
+// A hand-off moves the tags of the set of its endpoint.  A hand-off that
+// a template argument names holds no endpoint.  A hand-off behind a
+// pointer, in a union or in an array is refused: it travels by value, one
+// time, so that one recipient holds the endpoint and its tokens.  The
+// first token of a hand-off is the hand-off, when its set holds a tag.
+[[nodiscard]] consteval std::meta::info take_hand_off(PayloadWalk& walk, const PayloadNode& node) {
+    if (node.reach == PayloadReach::Named) return {};
+    if (node.reach != PayloadReach::Owned) {
+        refuse_payload(walk, PayloadRefusal::HandOffNotOwned, node.type);
+        return {};
+    }
+    const std::meta::info inner_set = std::meta::dealias(std::meta::template_arguments_of(node.type)[3]);
+    const std::vector<std::meta::info> inner_tags = std::meta::template_arguments_of(inner_set);
+    for (const std::meta::info tag : inner_tags) record_payload_tag(walk, &PayloadCensus::moved, tag, node.type);
+    if (walk.census.refusal == PayloadRefusal::None) walk.census.hand_offs.push_back(node.type);
+    return inner_tags.empty() ? std::meta::info{} : node.type;
+}
+
+// A marker records its tag, and the value that it carries is a by-value
+// member of the marker.
+[[nodiscard]] consteval std::meta::info take_marker(PayloadWalk& walk, const PayloadNode& node,
+                                                    std::vector<std::meta::info> PayloadCensus::*into) {
+    if (!is_owned_or_refused(walk, node)) return {};
+    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(node.type);
+    record_payload_tag(walk, into, arguments[1], node.type);
+    static_cast<void>(visit_payload_node(
+        walk, PayloadNode{::foundation::reflect::bare_type(arguments[0]), true, PayloadReach::Owned}));
+    return node.type;
+}
+
+// The nodes one step below a class: each base and each non-static data
+// member, in declaration order.
+[[nodiscard]] consteval std::vector<PayloadNode> payload_parts_of(const PayloadNode& node) {
+    namespace refl = ::foundation::reflect;
+    const bool is_union = std::meta::is_union_type(node.type);
+    const PayloadReach part_reach = is_union && node.reach == PayloadReach::Owned ? PayloadReach::InUnion : node.reach;
+    const PayloadReach alias_reach = node.reach == PayloadReach::Named ? PayloadReach::Named : PayloadReach::Aliased;
+    const auto unchecked = std::meta::access_context::unchecked();
+    std::vector<PayloadNode> parts;
+    for (const std::meta::info base : std::meta::bases_of(node.type, unchecked)) {
+        parts.push_back(PayloadNode{refl::bare_type(std::meta::type_of(base)), true, part_reach, node.in_ct_carrier});
+    }
+    for (const std::meta::info member : std::meta::nonstatic_data_members_of(node.type, unchecked)) {
+        const std::meta::info member_type = std::meta::type_of(member);
+        if (std::meta::is_reference_type(member_type)) {
+            const refl::TypeNode reached =
+                refl::node_reached_indirectly(member_type, refl::SpecializationRead::Instantiating);
+            parts.push_back(PayloadNode{reached.type, reached.may_read_members, alias_reach});
+        } else {
+            parts.push_back(PayloadNode{refl::bare_type(member_type), true, part_reach, node.in_ct_carrier});
+        }
+    }
+    return parts;
+}
+
+// The argument that names the value a family carries, or no argument.
+// A token, a share and a proof carry no value that can hold an endpoint.
+[[nodiscard]] consteval std::optional<std::size_t> carried_value_argument(PayloadFamily family,
+                                                                          std::size_t argument_count) noexcept {
+    switch (family) {
+        case PayloadFamily::Moves:
+        case PayloadFamily::Lends:
+        case PayloadFamily::Releases:
+        case PayloadFamily::Declassified:
+        case PayloadFamily::ConstantTime:
+        case PayloadFamily::Classified:
+            return 0;
+        case PayloadFamily::Keyed:
+            return argument_count - 1;
+        case PayloadFamily::Other:
+        case PayloadFamily::Token:
+        case PayloadFamily::Share:
+        case PayloadFamily::Proof:
+            return std::nullopt;
+        default:
+            break;
+    }
+    return std::nullopt;
+}
+
+// Reads one template argument as a type that the value names, for
+// delegation only.  The value holds no object of it.
+consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument) {
+    namespace refl = ::foundation::reflect;
+    std::meta::info argument_type{};
+    if (std::meta::is_type(argument)) {
+        argument_type = argument;
+    } else if (std::meta::is_value(argument) || std::meta::is_object(argument)) {
+        argument_type = std::meta::type_of(argument);
+    } else {
+        return;
+    }
+    const refl::TypeNode reached = refl::node_reached_indirectly(argument_type, refl::SpecializationRead::Instantiating);
+    static_cast<void>(visit_payload_node(walk, PayloadNode{reached.type, reached.may_read_members, PayloadReach::Named}));
+}
+
+// Reads one node: its delegation, its template arguments, its family,
+// and the nodes below it.  The walk reads the arguments and the parts
+// from the last to the first, which is the order of the component walk of
+// foundation/reflect/TypeComponents.h.  It returns the first token that
+// the node holds owned, or null.
+[[nodiscard]] consteval std::meta::info enter_payload_node(PayloadWalk& walk, const PayloadNode& node) {
+    namespace refl = ::foundation::reflect;
+    constexpr refl::SpecializationRead instantiating = refl::SpecializationRead::Instantiating;
+    const std::meta::info type = node.type;
+    const PayloadReach reach = node.reach;
+    const PayloadFamily family = payload_family_of(type);
+    std::vector<std::meta::info> arguments;
+    if (payload_is_specialization(type)) arguments = std::meta::template_arguments_of(type);
+
+    if (family != PayloadFamily::Other) {
+        // A family that the walk reads by name is no endpoint.  A named one
+        // is read for the value that it carries, and for nothing else.
+        const std::optional<std::size_t> carried = carried_value_argument(family, arguments.size());
+        if (reach == PayloadReach::Named) {
+            if (carried.has_value()) visit_named_argument(walk, arguments[*carried]);
+            return {};
+        }
+    } else {
+        // Each other component says what it delegates, at every reach.
+        const std::optional<DelegationCarrier> carrier = delegation_carrier_of(refl::TypeNode{type, node.readable});
+        note_carrier(walk, carrier, type);
+        if (!carrier.has_value()) {
+            refuse_payload(walk, PayloadRefusal::IncompleteType, type);
+            return {};
+        }
+        if (*carrier == DelegationCarrier::HandOff) return take_hand_off(walk, node);
+        if (*carrier != DelegationCarrier::None) {
+            const PayloadRefusal refusal = payload_refusal_for_carrier(*carrier);
+            if (refusal != PayloadRefusal::None) refuse_payload(walk, refusal, type);
+            return {};
+        }
+        for (std::size_t index = arguments.size(); index-- > 0;) {
+            visit_named_argument(walk, arguments[index]);
+            if (is_walk_settled(walk)) return {};
+        }
+    }
+
+    switch (family) {
+        case PayloadFamily::Token:
+            if (!is_owned_or_refused(walk, node)) return {};
+            record_payload_tag(walk, &PayloadCensus::moved, arguments[0], type);
+            return type;
+        case PayloadFamily::Moves:
+            return take_marker(walk, node, &PayloadCensus::moved);
+        case PayloadFamily::Lends:
+            return take_marker(walk, node, &PayloadCensus::lent);
+        case PayloadFamily::Releases:
+            return take_marker(walk, node, &PayloadCensus::released);
+        case PayloadFamily::Share:
+            if (is_owned_or_refused(walk, node)) walk.census.carries_share = true;
+            return {};
+        // A keyed message is its label word and then the value of its
+        // payload, which the value step of the handle moves.  The payload
+        // counts as a member of the message.  A payload of void is no
+        // class, so it adds nothing.
+        case PayloadFamily::Keyed:
+            return visit_payload_node(
+                walk, PayloadNode{refl::bare_type(arguments.back()), true, reach, node.in_ct_carrier});
+        // The carrier declassifies at the transport, so the Secret it holds
+        // is not read.  The value it will hand over is, for the tokens in
+        // it.
+        case PayloadFamily::Declassified:
+            return visit_payload_node(walk, PayloadNode{refl::bare_type(arguments[0]), true, reach});
+        case PayloadFamily::ConstantTime:
+            return visit_payload_node(walk, PayloadNode{refl::bare_type(arguments[0]), true, reach, true});
+        // The walk still reads the classified value for delegation, so the
+        // carrier of the payload stays exact.
+        case PayloadFamily::Classified:
+            refuse_payload(walk, PayloadRefusal::ClassifiedBare, type);
+            visit_named_argument(walk, arguments[0]);
+            return {};
+        case PayloadFamily::Proof:
+            refuse_payload(walk, PayloadRefusal::BareBorrowOrShare, type);
+            return {};
+        case PayloadFamily::Other:
+            break;
+        default:
+            break;
+    }
+    if (reach != PayloadReach::Named && !node.in_ct_carrier && carries_constant_time_mark(type)) {
+        refuse_payload(walk, PayloadRefusal::ConstantTimeBare, type);
+        return {};
+    }
+
+    // A pointer to a data member names its class and its member type.  The
+    // value holds an offset and no object of either, so the walk reads each
+    // for delegation only.  A pointer to a member function is a carrier,
+    // and the walk stopped on it above.
+    if (std::meta::is_member_pointer_type(type)) {
+        visit_named_argument(walk, refl::member_pointer_member_of(type));
+        visit_named_argument(walk, refl::member_pointer_class_of(type));
+        return {};
+    }
+    if (std::meta::is_pointer_type(type) || std::meta::is_reference_type(type)) {
+        const std::meta::info element =
+            std::meta::is_pointer_type(type) ? std::meta::remove_pointer(type) : std::meta::remove_reference(type);
+        const refl::TypeNode reached = refl::node_reached_indirectly(element, instantiating);
+        const PayloadReach element_reach = reach == PayloadReach::Named ? PayloadReach::Named : PayloadReach::Aliased;
+        static_cast<void>(visit_payload_node(walk, PayloadNode{reached.type, reached.may_read_members, element_reach}));
+        return {};
+    }
+    if (std::meta::is_array_type(type)) {
+        const PayloadReach element_reach = reach == PayloadReach::Owned ? PayloadReach::InArray : reach;
+        static_cast<void>(visit_payload_node(
+            walk, PayloadNode{refl::bare_type(std::meta::remove_all_extents(type)), node.readable, element_reach,
+                              node.in_ct_carrier}));
+        return {};
+    }
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return {};
+
+    const std::vector<PayloadNode> parts = payload_parts_of(node);
+    std::meta::info first_token{};
+    for (std::size_t index = parts.size(); index-- > 0;) {
+        const std::meta::info found = visit_payload_node(walk, parts[index]);
+        if (first_token == std::meta::info{}) first_token = found;
+        if (is_walk_settled(walk)) break;
+    }
+    return first_token;
+}
+
+// Enters a node one time for each reach.  A node that the walk reached
+// owned before is a second copy of what it holds: a second copy of a
+// token is one tag twice, and a second copy of a node with no token adds
+// nothing.  A type cannot hold itself by value, so an owned node is never
+// entered while the walk is inside it.  A path through a pointer can come
+// back to a node, and the walk does not enter it again.  Complexity: one
+// entry for each distinct node, times the scan of the entered nodes.
+consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node) {
+    if (is_walk_settled(walk)) return {};
+    if (node.reach == PayloadReach::Named) node.in_ct_carrier = false;
+    for (const PayloadVisit& seen : walk.visits) {
+        if (!is_same_payload_node(seen.node, node)) continue;
+        if (node.reach == PayloadReach::Owned && seen.first_token != std::meta::info{}) {
+            refuse_payload(walk, PayloadRefusal::DuplicateTag, seen.first_token);
+        }
+        return seen.first_token;
+    }
+    const std::size_t index = walk.visits.size();
+    walk.visits.push_back(PayloadVisit{node, {}});
+    const std::meta::info first_token = enter_payload_node(walk, node);
+    walk.visits[index].first_token = first_token;
+    return first_token;
+}
+
+// ── The facts of one payload ────────────────────────────────────────
+
+// Each result of the walk, in a form that a static data member can hold.
+// The type is structural, so it is the value argument of the cell of the
+// sealed cache below.  The four sets are reflections of
+// PermSet specializations.  A refused payload changes no set and hands
+// off nothing.
+struct PayloadFacts {
+    PayloadRefusal refusal = PayloadRefusal::None;
+    std::meta::info refused_type{};
+    DelegationCarrier carrier = DelegationCarrier::None;
+    bool is_carrier_readable = true;
+    std::meta::info carrier_type{};
+    std::meta::info sender_requires{};
+    std::meta::info sender_gains{};
+    std::meta::info receiver_requires{};
+    std::meta::info receiver_gains{};
+    bool carries_share = false;
+    // Each DelegatedSession that the payload holds by value, in a static
+    // array.
+    const std::meta::info* hand_off_data = nullptr;
+    std::size_t hand_off_count = 0;
+
+    [[nodiscard]] consteval std::span<const std::meta::info> hand_offs() const noexcept {
+        return {hand_off_data, hand_off_count};
+    }
+};
+
+[[nodiscard]] consteval std::meta::info payload_wrap_each(std::meta::info wrapper,
+                                                          const std::vector<std::meta::info>& tags) {
+    std::vector<std::meta::info> wrapped;
+    for (const std::meta::info tag : tags) wrapped.push_back(std::meta::substitute(wrapper, {tag}));
+    return std::meta::substitute(^^::foundation::permissions::PermSet, wrapped);
+}
+
+// The walk of one payload, and its four sets.  The sender loses what it
+// must hold, and the recipient loses what it must hold, so two sets name
+// each side's loss too:
+//
+//   sender requires   moved, lent, and BorrowedIn<t> for each released t
+//   sender gains      LentOut<t> for each lent t
+//   receiver requires LentOut<t> for each released t
+//   receiver gains    moved, BorrowedIn<t> for each lent t, and released
+[[nodiscard]] consteval PayloadFacts payload_facts(std::meta::info payload) {
+    namespace refl = ::foundation::reflect;
+    PayloadWalk walk;
+    // A payload typed as a reference names an object that stays with the
+    // sender, so its tokens are reached aliased, as through a reference
+    // member.
+    if (std::meta::is_reference_type(std::meta::dealias(payload))) {
+        const refl::TypeNode reached = refl::node_reached_indirectly(payload, refl::SpecializationRead::Instantiating);
+        static_cast<void>(visit_payload_node(walk, PayloadNode{reached.type, reached.may_read_members, PayloadReach::Aliased}));
+    } else {
+        static_cast<void>(visit_payload_node(walk, PayloadNode{refl::bare_type(payload), true, PayloadReach::Owned}));
+    }
+    const PayloadCensus& census = walk.census;
+    PayloadFacts facts{census.refusal, census.refused_type, census.carrier, census.is_carrier_readable,
+                       census.carrier_type};
+    if (census.refusal != PayloadRefusal::None) {
+        const std::meta::info empty = std::meta::dealias(^^::foundation::permissions::EmptyPermSet);
+        facts.sender_requires = facts.sender_gains = facts.receiver_requires = facts.receiver_gains = empty;
+        return facts;
+    }
+    std::vector<std::meta::info> sender_requires = census.moved;
+    std::vector<std::meta::info> receiver_gains = census.moved;
+    for (const std::meta::info tag : census.lent) {
+        sender_requires.push_back(tag);
+        receiver_gains.push_back(std::meta::substitute(^^BorrowedIn, {tag}));
+    }
+    for (const std::meta::info tag : census.released) {
+        sender_requires.push_back(std::meta::substitute(^^BorrowedIn, {tag}));
+        receiver_gains.push_back(tag);
+    }
+    facts.sender_requires = std::meta::substitute(^^::foundation::permissions::PermSet, sender_requires);
+    facts.sender_gains = payload_wrap_each(^^LentOut, census.lent);
+    facts.receiver_requires = payload_wrap_each(^^LentOut, census.released);
+    facts.receiver_gains = std::meta::substitute(^^::foundation::permissions::PermSet, receiver_gains);
+    facts.carries_share = census.carries_share;
+    const std::span<const std::meta::info> hand_offs = std::define_static_array(census.hand_offs);
+    facts.hand_off_data = hand_offs.data();
+    facts.hand_off_count = hand_offs.size();
+    return facts;
+}
+
+// ── The sealed cache ────────────────────────────────────────────────
+//
+// Every verdict of this header comes from payload_facts_of, and a user
+// cannot change what it returns.  payload_facts is not a template, so no
+// explicit specialization of it exists.  The cache is an alias template,
+// which cannot be specialized either, and the reader takes the facts from
+// the value argument of the cell that the alias names.  A specialization
+// of the cell class changes its body, which no reader reads.  GCC keeps
+// one specialization of an alias template for each argument, so a
+// translation unit walks each payload type one time.
+
+// The cell of the facts of one payload.  It holds nothing.
+template <PayloadFacts Facts>
+struct payload_facts_cell {};
+
+template <class P>
+using payload_facts_cached = payload_facts_cell<payload_facts(^^P)>;
+
+// The facts of a payload.  Complexity: one walk for each payload type in
+// a translation unit, and a lookup after that.
+[[nodiscard]] consteval PayloadFacts payload_facts_of(std::meta::info payload) {
+    const std::meta::info cell = std::meta::dealias(std::meta::substitute(^^payload_facts_cached, {payload}));
+    return std::meta::extract<PayloadFacts>(std::meta::template_arguments_of(cell)[0]);
+}
+
+// The refusal and its type, for the text of a diagnostic.
+struct PayloadVerdict {
+    PayloadRefusal refusal = PayloadRefusal::None;
+    std::meta::info refused_type{};
+};
+
+[[nodiscard]] consteval std::string_view payload_refusal_reason(PayloadRefusal why) noexcept {
+    switch (why) {
+        case PayloadRefusal::None:
+            return "";
+        case PayloadRefusal::TokenBehindPointer:
+            return "it reaches a permission token through a pointer or a reference.  The token stays with the sender, "
+                   "so the recipient would hold a second name for it.  Move the token by value";
+        case PayloadRefusal::TokenInUnion:
+            return "it holds a permission token in a union, a std::optional or a std::variant.  The token can be "
+                   "absent at run time, and the set change cannot depend on a value";
+        case PayloadRefusal::TokenInArray:
+            return "it holds a permission token in an array.  That is several tokens of one tag, and a permission "
+                   "set holds each tag once";
+        case PayloadRefusal::DuplicateTag:
+            return "it names one permission tag twice.  A permission set holds each tag once";
+        case PayloadRefusal::BareBorrowOrShare:
+            return "it holds a read proof, a share or a pool outside its marker.  A read proof travels only as "
+                   "Borrowed<T, Tag>, and a share only as SharedReader<Tag>, so that a set records the loan";
+        case PayloadRefusal::TypeErasure:
+            return "it holds a type-erasure family.  The static type does not name what it holds, so a token "
+                   "inside it would move with no set change";
+        case PayloadRefusal::UnreadableState:
+            return "it holds a class whose state the walk cannot read, such as a lambda with captures";
+        case PayloadRefusal::IncompleteType:
+            return "it reaches a class or a template that is only declared, so nothing says what it holds";
+        case PayloadRefusal::ClassifiedBare:
+            return "it holds a fixy::Secret outside DeclassifyOnSend.  A classified value on a channel leaves "
+                   "classification, and that needs a named policy.  Carry it as DeclassifyOnSend<T, Policy>";
+        case PayloadRefusal::ConstantTimeBare:
+            return "it holds a constant-time value outside CTPayload.  A bare value offers == and element access, "
+                   "which can branch on the content.  Carry it as CTPayload<T>";
+        case PayloadRefusal::BareEndpoint:
+            return "it holds, points at or names a session endpoint outside DelegatedSession.  A bare endpoint "
+                   "moves its permission set with no set change, and the rules of fixy/session/Delegate.h do not "
+                   "run.  Hand the endpoint over with mint_delegated_session";
+        case PayloadRefusal::HandOffNotOwned:
+            return "it reaches a DelegatedSession through a pointer, a reference, a union or an array.  A hand-off "
+                   "travels by value, one time, so that one recipient holds the endpoint and its tokens";
+        default:
+            break;
+    }
+    return "";
+}
+
+[[nodiscard]] consteval std::string_view payload_refusal_text(PayloadVerdict verdict) {
+    if (verdict.refusal == PayloadRefusal::None) return {};
+    std::string text{"fixy::session::diagnostic [Payload_Refused]: the payload cannot travel on a session channel, "
+                     "because "};
+    text += payload_refusal_reason(verdict.refusal);
+    text += ".  The refused type: ";
+    text += std::meta::display_string_of(verdict.refused_type);
+    return std::define_static_string(text);
+}
+
+// ── The gates ───────────────────────────────────────────────────────
+//
+// A gate holds the text of a compile error, and a public spelling reads
+// its member holds beside the facts.  A specialization of a gate can drop
+// the text, or set holds to false, which refuses more.  It cannot admit a
+// payload, because each verdict reads the facts.
+
+// A class that is only declared is a compile error and not a refusal
+// value.  A unit that defines the class gives a different verdict, and a
+// program must not hold two verdicts on one type.
+template <class P>
+struct payload_readable_gate {
+    static constexpr PayloadFacts facts = payload_facts_of(^^P);
+    static_assert(facts.refusal != PayloadRefusal::IncompleteType,
+                  payload_refusal_text(PayloadVerdict{facts.refusal, facts.refused_type}));
+    static constexpr bool holds = true;
+};
+
+// A payload that the walk refuses is a compile error where a caller needs
+// its sets.
+template <class P>
+struct payload_admitted_gate {
+    static constexpr PayloadFacts facts = payload_facts_of(^^P);
+    static_assert(payload_readable_gate<P>::holds);
+    static_assert(facts.refusal == PayloadRefusal::None,
+                  payload_refusal_text(PayloadVerdict{facts.refusal, facts.refused_type}));
+    static constexpr bool holds = true;
+};
+
+// True when the walk accepts the payload.
+[[nodiscard]] consteval bool payload_is_admitted(std::meta::info payload) {
+    return payload_facts_of(payload).refusal == PayloadRefusal::None;
+}
+
+// True when the walk accepts the payload, and it moves, lends or releases
+// nothing and carries no share.
+[[nodiscard]] consteval bool payload_is_plain(std::meta::info payload) {
+    const PayloadFacts facts = payload_facts_of(payload);
+    return facts.refusal == PayloadRefusal::None && std::meta::template_arguments_of(facts.sender_requires).empty()
+        && std::meta::template_arguments_of(facts.receiver_gains).empty() && !facts.carries_share;
+}
+
+// The region a set element names: Tag for LentOut<Tag> and BorrowedIn<Tag>,
+// and the element itself for any other tag.
+[[nodiscard]] consteval std::meta::info region_of(std::meta::info element) {
+    const std::meta::info bare = std::meta::dealias(element);
+    if (payload_family_is(bare, ^^LentOut) || payload_family_is(bare, ^^BorrowedIn)) {
+        return std::meta::dealias(std::meta::template_arguments_of(bare)[0]);
+    }
+    return bare;
+}
+
+// True when no element of `gains` names a region that an element of
+// `kept` already names.  One region in two states at once is two claims
+// on it, which a set must not hold.
+[[nodiscard]] consteval bool regions_disjoint(std::meta::info kept, std::meta::info gains) {
+    for (const std::meta::info gained : std::meta::template_arguments_of(std::meta::dealias(gains))) {
+        for (const std::meta::info held : std::meta::template_arguments_of(std::meta::dealias(kept))) {
+            if (region_of(gained) == region_of(held)) return false;
+        }
+    }
+    return true;
 }
 
 [[nodiscard]] consteval std::string_view unreadable_component_text(std::meta::info type) {
@@ -903,30 +1178,45 @@ inline constexpr auto stops_delegation_walk = [](::foundation::reflect::TypeNode
     return std::define_static_string(text);
 }
 
-// The carrier of P.  A class that the walk cannot read is a compile error
-// and not a value.  A class can be complete in one translation unit and
-// only declared in a different one, and a value would then differ between
-// two units of one program.
+// A class that the delegation query cannot read is a compile error and
+// not a value.  A class can be complete in one translation unit and only
+// declared in a different one, and a value would then differ between two
+// units of one program.
 template <class P>
-[[nodiscard]] consteval DelegationCarrier payload_delegation() {
-    constexpr ::foundation::reflect::TypeNode stop = payload_delegation_stop(^^P);
-    constexpr std::optional<DelegationCarrier> carrier = delegation_carrier_of(stop);
-    static_assert(carrier.has_value(), unreadable_component_text(stop.type));
-    return carrier.value_or(DelegationCarrier::None);
-}
+struct delegation_readable_gate {
+    static constexpr PayloadFacts facts = payload_facts_of(^^P);
+    static_assert(facts.is_carrier_readable, unreadable_component_text(facts.carrier_type));
+    static constexpr bool holds = true;
+};
+
+// The sets of an admitted payload, for the handle.  Each reads the facts,
+// and no class template stands between the facts and the handle.
+template <class P>
+using sender_requires_t = [:payload_facts_of(^^P).sender_requires:];
+template <class P>
+using sender_gains_t = [:payload_facts_of(^^P).sender_gains:];
+template <class P>
+using receiver_requires_t = [:payload_facts_of(^^P).receiver_requires:];
+template <class P>
+using receiver_gains_t = [:payload_facts_of(^^P).receiver_gains:];
 
 }  // namespace detail
 
 // ── The classification predicates ───────────────────────────────────
+//
+// Each predicate is a concept over the facts, so no user specialization
+// changes it.  A class template of the same name is the one-argument
+// form that an armed cell reads.  It reads the concept, and no verdict of
+// the session layer reads it.
 
 // True when the walk accepts the payload.  A refused payload answers
 // false here, and the refusal text comes from payload_perm_delta.
 template <class P>
-struct is_permission_classified
-    : std::bool_constant<detail::payload_verdict_of<P>().refusal == detail::PayloadRefusal::None> {};
+concept is_permission_classified_v =
+    detail::payload_readable_gate<P>::holds && detail::payload_is_admitted(^^P);
 
 template <class P>
-inline constexpr bool is_permission_classified_v = is_permission_classified<P>::value;
+struct is_permission_classified : std::bool_constant<is_permission_classified_v<P>> {};
 
 // ── The delta ───────────────────────────────────────────────────────
 //
@@ -935,56 +1225,91 @@ inline constexpr bool is_permission_classified_v = is_permission_classified<P>::
 //   (set minus sender_requires) plus sender_gains.
 // Recv<P, K> takes receiver_requires from the set, and leaves
 //   (set minus receiver_requires) plus receiver_gains.
+//
+// This class is the view of the delta for a reader.  The handle reads
+// perm_set_after_send_t and perm_set_after_recv_t below, which read the
+// facts, so a specialization of this class changes no step.
 template <class P>
 struct payload_perm_delta {
-    static constexpr detail::PayloadVerdict verdict = detail::payload_verdict_of<P>();
-    static_assert(verdict.refusal == detail::PayloadRefusal::None, detail::payload_refusal_text(verdict));
+    static_assert(detail::payload_admitted_gate<P>::holds);
 
-    using sender_requires = [:detail::payload_set(^^P, detail::PayloadSet::SenderRequires):];
+    using sender_requires = detail::sender_requires_t<P>;
     using sender_loses = sender_requires;
-    using sender_gains = [:detail::payload_set(^^P, detail::PayloadSet::SenderGains):];
-    using receiver_requires = [:detail::payload_set(^^P, detail::PayloadSet::ReceiverRequires):];
+    using sender_gains = detail::sender_gains_t<P>;
+    using receiver_requires = detail::receiver_requires_t<P>;
     using receiver_loses = receiver_requires;
-    using receiver_gains = [:detail::payload_set(^^P, detail::PayloadSet::ReceiverGains):];
+    using receiver_gains = detail::receiver_gains_t<P>;
 
     // A share moves no tag, so it changes no set.  The flag is here for
     // a handle that wants to know a share went by.
-    static constexpr bool carries_share = detail::payload_carries_share(^^P);
+    static constexpr bool carries_share = detail::payload_facts_of(^^P).carries_share;
 };
 
 // True when the payload moves, lends or releases nothing and carries no
 // share.  Such a payload leaves both sets as they were.
 template <class P>
-struct is_plain_payload
-    : std::bool_constant<[] consteval {
-          if (detail::payload_verdict_of<P>().refusal != detail::PayloadRefusal::None) return false;
-          return std::meta::template_arguments_of(detail::payload_set(^^P, detail::PayloadSet::SenderRequires)).empty()
-              && std::meta::template_arguments_of(detail::payload_set(^^P, detail::PayloadSet::ReceiverGains)).empty()
-              && !detail::payload_carries_share(^^P);
-      }()> {};
+concept is_plain_payload_v = detail::payload_readable_gate<P>::holds && detail::payload_is_plain(^^P);
 
 template <class P>
-inline constexpr bool is_plain_payload_v = is_plain_payload<P>::value;
+struct is_plain_payload : std::bool_constant<is_plain_payload_v<P>> {};
 
 // ── Delegation ──────────────────────────────────────────────────────
 //
 // The component of P that delegates first, in the order of the walk, or
-// None.  The head of this header states which components delegate.
+// None.  The head of this header states which components delegate.  This
+// value is the view for a reader.  No verdict reads it.
 template <class P>
-inline constexpr DelegationCarrier payload_delegation_carrier_v = detail::payload_delegation<P>();
+inline constexpr DelegationCarrier payload_delegation_carrier_v =
+    detail::delegation_readable_gate<P>::holds ? detail::payload_facts_of(^^P).carrier
+                                                : DelegationCarrier::UnreadableState;
+
+// True when P gives the recipient authority over a session endpoint.  A
+// crash session and a checkpoint session refuse such a payload.  A gate
+// that does not hold answers true here, which refuses more.
+template <class P>
+concept payload_conveys_delegation_v =
+    !detail::delegation_readable_gate<P>::holds || detail::payload_facts_of(^^P).carrier != DelegationCarrier::None;
 
 namespace detail {
 
 // The one-argument form of the query, so that it can hold an armed cell.
 template <class P>
-struct payload_conveys_delegation : std::bool_constant<payload_delegation_carrier_v<P> != DelegationCarrier::None> {};
+struct payload_conveys_delegation : std::bool_constant<payload_conveys_delegation_v<P>> {};
 
 }  // namespace detail
 
-// True when P gives the recipient authority over a session endpoint.  A
-// crash session and a checkpoint session refuse such a payload.
-template <class P>
-inline constexpr bool payload_conveys_delegation_v = detail::payload_conveys_delegation<P>::value;
+// ── The protocol walk ───────────────────────────────────────────────
+//
+// The walks below read a protocol through the registry of
+// fixy/session/Protocol.h: each node of the spine one time, the node
+// first, then its continuation, then each branch.  A payload is not a
+// node.  Each walk reads a payload through payload_facts_of, so a payload
+// has one walk.
+
+namespace detail {
+
+// Calls visit on each node of the spine of `protocol` that `visited` does
+// not hold, and adds the node to `visited`.  A node that the registry does
+// not know goes to visit and is not entered.  visit returns false to stop
+// the walk, and then the function returns false.  Complexity: one visit
+// for each distinct node, times the scan of `visited`.
+template <class Visitor>
+consteval bool walk_protocol_spine(std::meta::info protocol, std::vector<std::meta::info>& visited, Visitor& visit) {
+    namespace tr = ::foundation::algebra::transition;
+    const std::meta::info type = std::meta::dealias(protocol);
+    if (holds_type(visited, type)) return true;
+    visited.push_back(type);
+    const tr::node view = tr::decompose(protocol_registry, type);
+    if (!visit(view)) return false;
+    if (!view.is_registered) return true;
+    if (view.next != std::meta::info{} && !walk_protocol_spine(view.next, visited, visit)) return false;
+    for (const std::meta::info branch : view.branches) {
+        if (!walk_protocol_spine(branch, visited, visit)) return false;
+    }
+    return true;
+}
+
+}  // namespace detail
 
 // ── Delegation to a peer of the delegated session ───────────────────
 //
@@ -996,95 +1321,66 @@ inline constexpr bool payload_conveys_delegation_v = detail::payload_conveys_del
 //
 // A local type names the receiver of each message with a PeerMsg.  So
 // the check reads each Send of a PeerMsg<Q, L, U>, and each
-// DelegatedSession<Inner, ...> that U holds, and refuses the protocol
+// DelegatedSession<Inner, ...> that U hands off, and refuses the protocol
 // when Inner names Q as a peer.  The peers of Inner are the peer of each
 // PeerMsg and the role of each Sender note in it.  A binary step names
 // no receiver, so the check cannot see a delegation over it.  There the
 // watch of fixy/session/Watch.h refuses the wait of a thread that holds
 // the peer of the endpoint it waits on.
 //
-// Each walk reads the template arguments of each type, and the members
-// of each complete class in a payload.  It stops at a nested
-// DelegatedSession, because the protocol of that endpoint is a different
-// session, and its own mint checks it.  Complexity: linear in the number
-// of distinct types that the walk reaches.
+// The walk does not go into a payload, so the protocol of a delegated
+// endpoint is a different session, and its own mint checks it.
 
 namespace detail {
 
-// The types that one step of a walk reaches from `type`: its type
-// arguments, and for a complete class its bases and data members.
-consteval void push_reached_types(std::meta::info type, std::vector<std::meta::info>& pending) {
-    if (payload_is_specialization(type)) {
-        for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
-            if (std::meta::is_type(argument)) pending.push_back(std::meta::dealias(argument));
-        }
-    }
-    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return;
-    const auto unchecked = std::meta::access_context::unchecked();
-    for (const std::meta::info base : std::meta::bases_of(type, unchecked)) {
-        pending.push_back(std::meta::dealias(std::meta::type_of(base)));
-    }
-    for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, unchecked)) {
-        pending.push_back(std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(member))));
-    }
-}
-
-[[nodiscard]] consteval bool holds_type(const std::vector<std::meta::info>& types, std::meta::info type) {
-    for (const std::meta::info held : types) {
-        if (held == type) return true;
-    }
-    return false;
-}
-
-// Each type that the walk reaches from `root` once, in the order of the
-// walk.  The walk does not go past a DelegatedSession, but it lists it.
-[[nodiscard]] consteval std::vector<std::meta::info> reached_before_delegation(std::meta::info root) {
-    std::vector<std::meta::info> visited;
-    std::vector<std::meta::info> pending{std::meta::dealias(root)};
-    while (!pending.empty()) {
-        const std::meta::info type = pending.back();
-        pending.pop_back();
-        if (!std::meta::is_type(type) || holds_type(visited, type)) continue;
-        visited.push_back(type);
-        if (payload_family_is(type, ^^DelegatedSession)) continue;
-        push_reached_types(type, pending);
-    }
-    return visited;
-}
-
-// The roles that a protocol names as peers.
+// The roles that a protocol names as peers: the peer of each PeerMsg that
+// a step carries, and the role of each Sender note of a choice.
 [[nodiscard]] consteval std::vector<std::meta::info> named_peers_of(std::meta::info protocol) {
+    namespace tr = ::foundation::algebra::transition;
     std::vector<std::meta::info> peers;
-    for (const std::meta::info type : reached_before_delegation(protocol)) {
-        if (payload_family_is(type, ^^PeerMsg) || payload_family_is(type, ^^Sender)) {
-            peers.push_back(std::meta::dealias(std::meta::template_arguments_of(type)[0]));
+    std::vector<std::meta::info> visited;
+    auto collect = [&peers](const tr::node& view) consteval {
+        if (!view.is_registered) return true;
+        if (view.entry.kind == tr::shape_kind::step && payload_family_is(view.payload, ^^PeerMsg)) {
+            peers.push_back(std::meta::dealias(std::meta::template_arguments_of(view.payload)[0]));
         }
-    }
+        if (view.annotation != std::meta::info{} && payload_family_is(view.annotation, ^^Sender)) {
+            peers.push_back(std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]));
+        }
+        return true;
+    };
+    static_cast<void>(walk_protocol_spine(protocol, visited, collect));
     return peers;
 }
 
 // True when a Send of the protocol hands an endpoint of a session to a
 // role that the protocol of that session names as a peer.
 [[nodiscard]] consteval bool delegates_to_own_peer(std::meta::info protocol) {
-    for (const std::meta::info step : reached_before_delegation(protocol)) {
-        if (!payload_family_is(step, ^^Send)) continue;
-        const std::meta::info message = std::meta::dealias(std::meta::template_arguments_of(step)[0]);
-        if (!payload_family_is(message, ^^PeerMsg)) continue;
-        const auto parts = std::meta::template_arguments_of(message);
+    namespace tr = ::foundation::algebra::transition;
+    bool is_found = false;
+    std::vector<std::meta::info> visited;
+    auto check = [&is_found](const tr::node& view) consteval {
+        const bool is_send = view.is_registered && view.entry.kind == tr::shape_kind::step
+                          && view.entry.direction == tr::polarity::output;
+        if (!is_send || !payload_family_is(view.payload, ^^PeerMsg)) return true;
+        const std::vector<std::meta::info> parts = std::meta::template_arguments_of(view.payload);
         const std::meta::info receiver = std::meta::dealias(parts[0]);
-        for (const std::meta::info carried : reached_before_delegation(parts[2])) {
-            if (!payload_family_is(carried, ^^DelegatedSession)) continue;
-            const std::meta::info inner = std::meta::template_arguments_of(carried)[0];
-            if (holds_type(named_peers_of(inner), receiver)) return true;
+        for (const std::meta::info carried : payload_facts_of(parts[2]).hand_offs()) {
+            if (holds_type(named_peers_of(std::meta::template_arguments_of(carried)[0]), receiver)) {
+                is_found = true;
+                return false;
+            }
         }
-    }
-    return false;
+        return true;
+    };
+    static_cast<void>(walk_protocol_spine(protocol, visited, check));
+    return is_found;
 }
 
 }  // namespace detail
 
 template <class Proto>
-inline constexpr bool delegates_to_own_peer_v = detail::delegates_to_own_peer(^^Proto);
+concept delegates_to_own_peer_v = detail::delegates_to_own_peer(^^Proto);
 
 // The gate that each mint of fixy/session/Handle.h reads.
 template <class Proto>
@@ -1093,7 +1389,7 @@ concept DelegatesToNoOwnPeer = !delegates_to_own_peer_v<Proto>;
 // ── The regions that a protocol delivers ────────────────────────────
 //
 // A receive adds to the set of the receiver each region that its payload
-// moves, lends or releases (receiver_gains of payload_perm_delta below).
+// moves, lends or releases (receiver_gains of payload_perm_delta above).
 // The receiver then holds a token, a read loan or a returned token of
 // that region.  The row of the tag of a region names the effects that a
 // touch of the region incurs (foundation/permissions/Permission.h).  So
@@ -1112,7 +1408,7 @@ concept DelegatesToNoOwnPeer = !delegates_to_own_peer_v<Proto>;
 // A node that the registry does not know, and a payload that the payload
 // walk refuses, stop the build.  Complexity: one visit for each distinct
 // node of the protocol and of each delegated protocol, and one payload
-// walk for each received payload.
+// walk for each distinct received payload.
 
 namespace detail {
 
@@ -1135,56 +1431,63 @@ struct DeliveryWalk {
 }
 
 // A node gives the same regions on every path that reaches it, so the
-// walk visits each node one time.
+// walk visits each node one time, also across the delegated protocols.
 consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& walk) {
     namespace tr = ::foundation::algebra::transition;
-    if (delivery_is_refused(walk.verdict)) return;
-    const std::meta::info type = std::meta::dealias(protocol);
-    if (holds_type(walk.visited, type)) return;
-    walk.visited.push_back(type);
-    const tr::node view = tr::decompose(protocol_registry, type);
-    if (!view.is_registered) {
-        walk.verdict.unregistered_node = type;
-        return;
-    }
-    const bool is_receive = view.entry.kind == tr::shape_kind::step && view.entry.direction == tr::polarity::input;
-    if (is_receive) {
-        const PayloadAccount account = account_payload(view.payload);
-        if (account.refusal != PayloadRefusal::None) {
-            walk.verdict.payload = PayloadVerdict{account.refusal, account.refused_type};
-            return;
+    auto deliver = [&walk](const tr::node& view) consteval {
+        if (!view.is_registered) {
+            walk.verdict.unregistered_node = view.type;
+            return false;
+        }
+        if (view.entry.kind != tr::shape_kind::step || view.entry.direction != tr::polarity::input) return true;
+        const PayloadFacts facts = payload_facts_of(view.payload);
+        if (facts.refusal != PayloadRefusal::None) {
+            walk.verdict.payload = PayloadVerdict{facts.refusal, facts.refused_type};
+            return false;
         }
         // The set of a delegated endpoint can hold a loan state, and the
         // region of LentOut<Tag> or BorrowedIn<Tag> is Tag.
-        for (const std::vector<std::meta::info>* gained : {&account.moved, &account.lent, &account.released}) {
-            for (const std::meta::info element : *gained) {
-                const std::meta::info region = region_of(element);
-                if (!holds_type(walk.regions, region)) walk.regions.push_back(region);
-            }
+        for (const std::meta::info element : std::meta::template_arguments_of(facts.receiver_gains)) {
+            const std::meta::info region = region_of(element);
+            if (!holds_type(walk.regions, region)) walk.regions.push_back(region);
         }
-        for (const std::meta::info carried : reached_before_delegation(view.payload)) {
-            if (payload_family_is(carried, ^^DelegatedSession)) {
-                walk_delivered_regions(std::meta::template_arguments_of(carried)[0], walk);
-            }
+        for (const std::meta::info carried : facts.hand_offs()) {
+            walk_delivered_regions(std::meta::template_arguments_of(carried)[0], walk);
         }
-    }
-    if (view.next != std::meta::info{}) walk_delivered_regions(view.next, walk);
-    for (const std::meta::info branch : view.branches) walk_delivered_regions(branch, walk);
+        return !delivery_is_refused(walk.verdict);
+    };
+    static_cast<void>(walk_protocol_spine(protocol, walk.visited, deliver));
 }
 
-[[nodiscard]] consteval DeliveryWalk delivery_walk_of(std::meta::info protocol) {
+// The result of the walk over one protocol: why it stopped, or the
+// regions as a PermSet in the order that the walk finds them.  The type is
+// structural, so it is the value argument of the cell of its sealed cache,
+// as the facts of a payload are.
+struct DeliveryFacts {
+    DeliveryVerdict verdict{};
+    std::meta::info regions{};
+};
+
+[[nodiscard]] consteval DeliveryFacts delivery_facts(std::meta::info protocol) {
     DeliveryWalk walk;
     walk_delivered_regions(protocol, walk);
-    return walk;
+    const std::meta::info regions = delivery_is_refused(walk.verdict)
+                                        ? std::meta::dealias(^^::foundation::permissions::EmptyPermSet)
+                                        : std::meta::substitute(^^::foundation::permissions::PermSet, walk.regions);
+    return DeliveryFacts{walk.verdict, regions};
 }
 
-[[nodiscard]] consteval DeliveryVerdict delivery_verdict(std::meta::info protocol) {
-    return delivery_walk_of(protocol).verdict;
-}
+template <DeliveryFacts Facts>
+struct delivery_facts_cell {};
 
-// The regions as a PermSet, in the order that the walk finds them.
-[[nodiscard]] consteval std::meta::info delivered_region_set(std::meta::info protocol) {
-    return std::meta::substitute(^^::foundation::permissions::PermSet, delivery_walk_of(protocol).regions);
+template <class Proto>
+using delivery_facts_cached = delivery_facts_cell<delivery_facts(^^Proto)>;
+
+// The result of the walk over one protocol.  Complexity: one walk for each
+// protocol type in a translation unit, and a lookup after that.
+[[nodiscard]] consteval DeliveryFacts delivery_facts_of(std::meta::info protocol) {
+    const std::meta::info cell = std::meta::dealias(std::meta::substitute(^^delivery_facts_cached, {protocol}));
+    return std::meta::extract<DeliveryFacts>(std::meta::template_arguments_of(cell)[0]);
 }
 
 [[nodiscard]] consteval std::string_view delivery_refusal_text(DeliveryVerdict verdict) {
@@ -1193,32 +1496,56 @@ consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& wa
     return ::foundation::algebra::transition::unregistered_message(unregistered_prefix, verdict.unregistered_node);
 }
 
+// A protocol that the walk stops on is a compile error.  The gate has the
+// shape of the payload gates above.
+template <class Proto>
+struct delivery_gate {
+    static constexpr DeliveryVerdict verdict = delivery_facts_of(^^Proto).verdict;
+    static_assert(!delivery_is_refused(verdict), delivery_refusal_text(verdict));
+    static constexpr bool holds = true;
+};
+
+// The regions of a protocol whose gate holds.  A gate that does not hold
+// gives void, which no reader accepts as a set.
+[[nodiscard]] consteval std::meta::info delivered_regions_if(bool is_gate_held, std::meta::info protocol) {
+    return is_gate_held ? delivery_facts_of(protocol).regions : ^^void;
+}
+
+// True when the set holds an open loan: a LentOut or a BorrowedIn.
+// Complexity: linear in the size of the set.
+[[nodiscard]] consteval bool holds_open_loan(std::meta::info set) {
+    for (const std::meta::info element : std::meta::template_arguments_of(std::meta::dealias(set))) {
+        const std::meta::info bare = std::meta::dealias(element);
+        if (payload_family_is(bare, ^^LentOut) || payload_family_is(bare, ^^BorrowedIn)) return true;
+    }
+    return false;
+}
+
 }  // namespace detail
 
 // The regions that Proto can deliver to the endpoint that runs it: each
 // region that a Recv of Proto, or of a protocol that Proto receives in a
-// DelegatedSession, moves, lends or releases to the receiver.
+// DelegatedSession, moves, lends or releases to the receiver.  The alias
+// is the spelling that the context gate of fixy/session/Handle.h reads.
+// The class of the same name is the view for a reader.
 template <class Proto>
-struct protocol_delivered_regions {
-    static constexpr detail::DeliveryVerdict verdict = detail::delivery_verdict(^^Proto);
-    static_assert(!detail::delivery_is_refused(verdict), detail::delivery_refusal_text(verdict));
-    using type = [:detail::delivered_region_set(^^Proto):];
-};
+using protocol_delivered_regions_t = [:detail::delivered_regions_if(detail::delivery_gate<Proto>::holds, ^^Proto):];
 
 template <class Proto>
-using protocol_delivered_regions_t = typename protocol_delivered_regions<Proto>::type;
+struct protocol_delivered_regions {
+    static constexpr detail::DeliveryVerdict verdict = detail::delivery_facts_of(^^Proto).verdict;
+    using type = protocol_delivered_regions_t<Proto>;
+};
 
 // ── The set after one step ──────────────────────────────────────────
 
 template <class PS, class P>
 using perm_set_after_send_t = ::foundation::permissions::perm_set_union_t<
-    ::foundation::permissions::perm_set_difference_t<PS, typename payload_perm_delta<P>::sender_loses>,
-    typename payload_perm_delta<P>::sender_gains>;
+    ::foundation::permissions::perm_set_difference_t<PS, detail::sender_requires_t<P>>, detail::sender_gains_t<P>>;
 
 template <class PS, class P>
 using perm_set_after_recv_t = ::foundation::permissions::perm_set_union_t<
-    ::foundation::permissions::perm_set_difference_t<PS, typename payload_perm_delta<P>::receiver_loses>,
-    typename payload_perm_delta<P>::receiver_gains>;
+    ::foundation::permissions::perm_set_difference_t<PS, detail::receiver_requires_t<P>>, detail::receiver_gains_t<P>>;
 
 // A sender can send a payload when the walk accepts it, the sender holds
 // what the payload takes, and no gained loan state names a region the sender
@@ -1226,10 +1553,10 @@ using perm_set_after_recv_t = ::foundation::permissions::perm_set_union_t<
 template <class P, class PS>
 concept SendablePayload =
     is_permission_classified_v<P>
-    && ::foundation::permissions::perm_set_subset_v<typename payload_perm_delta<P>::sender_requires, PS>
+    && ::foundation::permissions::perm_set_subset_v<detail::sender_requires_t<P>, PS>
     && detail::regions_disjoint(
-        ^^::foundation::permissions::perm_set_difference_t<PS, typename payload_perm_delta<P>::sender_loses>,
-        ^^typename payload_perm_delta<P>::sender_gains);
+        ^^::foundation::permissions::perm_set_difference_t<PS, detail::sender_requires_t<P>>,
+        ^^detail::sender_gains_t<P>);
 
 // A recipient can receive a payload when the walk accepts it, the
 // recipient holds what the payload closes, and nothing it gains names a region
@@ -1238,21 +1565,15 @@ concept SendablePayload =
 template <class P, class PS>
 concept ReceivablePayload =
     is_permission_classified_v<P>
-    && ::foundation::permissions::perm_set_subset_v<typename payload_perm_delta<P>::receiver_requires, PS>
+    && ::foundation::permissions::perm_set_subset_v<detail::receiver_requires_t<P>, PS>
     && detail::regions_disjoint(
-        ^^::foundation::permissions::perm_set_difference_t<PS, typename payload_perm_delta<P>::receiver_loses>,
-        ^^typename payload_perm_delta<P>::receiver_gains);
+        ^^::foundation::permissions::perm_set_difference_t<PS, detail::receiver_requires_t<P>>,
+        ^^detail::receiver_gains_t<P>);
 
 // True when the set holds an open loan: a LentOut or a BorrowedIn.  A
 // handle must not close while one is open.
 template <class PS>
-inline constexpr bool perm_set_has_open_loan_v = [] consteval {
-    for (const std::meta::info element : std::meta::template_arguments_of(std::meta::dealias(^^PS))) {
-        const std::meta::info bare = std::meta::dealias(element);
-        if (detail::payload_family_is(bare, ^^LentOut) || detail::payload_family_is(bare, ^^BorrowedIn)) return true;
-    }
-    return false;
-}();
+concept perm_set_has_open_loan_v = detail::holds_open_loan(^^PS);
 
 
 // ── The tokens of a set, held ───────────────────────────────────────
@@ -1280,6 +1601,12 @@ inline constexpr bool perm_set_has_open_loan_v = [] consteval {
 // drops its hold leaves the lender waiting for a release that never
 // comes.  That is the silent drop that LinearActris (Jacobs, Hinrichsen,
 // Krebbers, POPL 2024) forbids.
+//
+// Each transition that builds the next hold is a member of HoldFactory,
+// and the member of the hold calls it.  HoldFactory is the one friend of
+// the hold and of the loan markers.  It is not a template, and this
+// header defines it, so no specialization of a template and no class of
+// another translation unit reaches the tokens that a hold keeps.
 
 template <class PS>
 class PermHold;
@@ -1305,9 +1632,22 @@ using hold_slot_t = [:hold_slot_of(^^Element):];
 
 // True when the element is a plain tag, and not a loan state.
 template <class Element>
-inline constexpr bool is_plain_tag_v =
-    !payload_family_is(std::meta::dealias(^^Element), ^^LentOut)
-    && !payload_family_is(std::meta::dealias(^^Element), ^^BorrowedIn);
+concept PlainTag = !payload_family_is(std::meta::dealias(^^Element), ^^LentOut)
+                   && !payload_family_is(std::meta::dealias(^^Element), ^^BorrowedIn);
+
+// True when the message moves its token to the recipient: a Transferable
+// or a Returned, received as an rvalue.
+template <class Message>
+concept MovesAToken = payload_family_is(^^Message, ^^Transferable) || payload_family_is(^^Message, ^^Returned);
+
+// The gate of a read loan that a hold of Set lends as a Borrowed of T,
+// and of a read loan that a hold of Set accepts.  HoldFactory and each
+// member of PermHold read the same gate.
+template <class Set, class Tag, class T>
+concept HoldCanLend = SendablePayload<Borrowed<T, Tag>, Set> && ::foundation::permissions::ReadViewNeedsNoCtx<Tag>;
+
+template <class Set, class T, class Tag>
+concept HoldCanAcceptLoan = ReceivablePayload<Borrowed<T, Tag>, Set>;
 
 [[noreturn]] CRUCIBLE_COLD inline void hold_consumed_abort_() noexcept {
     std::fputs("fixy::session::diagnostic [Hold_Consumed]: a PermHold was used after a move or a transition "
@@ -1328,6 +1668,147 @@ struct hold_from_slots {};
 
 }  // namespace detail
 
+// The door that builds every hold.  Each public member takes live tokens
+// or a live hold and does one complete transition, with the gate of the
+// member of the hold that calls it, so a direct call is no weaker than
+// that member.  The class is final, and no object of it exists.  Every
+// constructor is deleted and the destructor is user-provided, so no byte
+// route makes one.
+class HoldFactory final {
+    HoldFactory() = delete("the hold factory holds static members only; no object of it exists");
+    HoldFactory(const HoldFactory&) = delete("the hold factory holds static members only");
+    HoldFactory& operator=(const HoldFactory&) = delete("the hold factory holds static members only");
+    HoldFactory(HoldFactory&&) = delete("the hold factory holds static members only");
+    HoldFactory& operator=(HoldFactory&&) = delete("the hold factory holds static members only");
+    constexpr ~HoldFactory() noexcept {}
+
+    struct no_incoming {};
+
+    // The slot that a hold keeps for one element of its set.
+    template <class Element, class Set>
+    [[nodiscard]] static constexpr auto& slot_(PermHold<Set>& hold) noexcept {
+        return std::get<PermHold<Set>::template index_of_<Element>>(hold.slots_);
+    }
+
+    // The slot of one element of the next set: the slot that the hold
+    // keeps for it, or the incoming object when the element is new.  A
+    // transition adds at most one element, so at most one element takes
+    // the incoming object.
+    template <class Element, class Set, class Incoming>
+    [[nodiscard]] static constexpr detail::hold_slot_t<Element> pick_(PermHold<Set>& from,
+                                                                     Incoming&& incoming) noexcept {
+        if constexpr (::foundation::permissions::perm_set_contains_v<Set, Element>) {
+            return std::move(slot_<Element>(from));
+        } else {
+            return detail::hold_slot_t<Element>{std::forward<Incoming>(incoming)};
+        }
+    }
+
+    // Consumes the hold and builds the hold of the set Next from its slots
+    // and the incoming object.
+    template <class Next, class Set, class Incoming = no_incoming>
+    [[nodiscard]] static constexpr PermHold<Next> transition_(PermHold<Set>& from, Incoming&& incoming = {}) noexcept {
+        from.live_ = false;
+        return [&]<class... Following>(std::type_identity<::foundation::permissions::PermSet<Following...>>) {
+            return PermHold<Next>{detail::hold_from_slots{}, pick_<Following>(from, std::forward<Incoming>(incoming))...};
+        }(std::type_identity<Next>{});
+    }
+
+public:
+    // Consumes the tokens and builds the hold of their set.  The gate is
+    // the gate of mint_permission_hold.
+    template <class... Tags, class... Brands>
+        requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
+    [[nodiscard]] static constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
+    from_tokens(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
+        return PermHold<::foundation::permissions::PermSet<Tags...>>{
+            detail::hold_from_slots{}, ::foundation::permissions::Permission<Tags>{std::move(tokens)}...};
+    }
+
+    template <class Tag, class Set>
+        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::PlainTag<Tag>)
+    [[nodiscard]] static constexpr auto take(PermHold<Set>&& hold) noexcept
+        -> std::pair<::foundation::permissions::Permission<Tag>,
+                     PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
+        hold.require_live_();
+        ::foundation::permissions::Permission<Tag> token = std::move(slot_<Tag>(hold));
+        auto rest = transition_<::foundation::permissions::perm_set_remove_t<Set, Tag>>(hold);
+        return {std::move(token), std::move(rest)};
+    }
+
+    template <class Set, class Tag, class Brand>
+        requires(detail::PlainTag<Tag>
+                 && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
+    [[nodiscard]] static constexpr auto put(PermHold<Set>&& hold,
+                                            ::foundation::permissions::Permission<Tag, Brand> token) noexcept
+        -> PermHold<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
+        hold.require_live_();
+        return transition_<::foundation::permissions::perm_set_insert_t<Set, Tag>>(
+            hold, ::foundation::permissions::Permission<Tag>{std::move(token)});
+    }
+
+    template <class Set, class Message>
+        requires detail::MovesAToken<Message> && ReceivablePayload<Message, Set>
+    [[nodiscard]] static constexpr auto unpack(PermHold<Set>&& hold, Message&& message) noexcept(
+        std::is_nothrow_move_constructible_v<typename Message::payload_type>)
+        -> std::pair<typename Message::payload_type, PermHold<perm_set_after_recv_t<Set, Message>>> {
+        hold.require_live_();
+        typename Message::payload_type value = std::move(message.value);
+        auto next = transition_<perm_set_after_recv_t<Set, Message>>(hold, std::move(message.perm));
+        return {std::move(value), std::move(next)};
+    }
+
+    // The token parks in the LentOut slot, where take cannot reach it,
+    // and the loan leaves inside the Borrowed.  Only a release that
+    // carries the same loan back unparks the token.
+    template <class Tag, class Set, class T>
+        requires detail::HoldCanLend<Set, Tag, T>
+    [[nodiscard]] static constexpr auto lend(PermHold<Set>&& hold, T value) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
+        hold.require_live_();
+        auto [loan, parked] = ::foundation::permissions::mint_read_loan(std::move(slot_<Tag>(hold)));
+        Borrowed<T, Tag> message{std::move(value), std::move(loan)};
+        auto next = transition_<perm_set_after_send_t<Set, Borrowed<T, Tag>>>(hold, std::move(parked));
+        return {std::move(message), std::move(next)};
+    }
+
+    template <class Set, class T, class Tag>
+        requires ReceivablePayload<Released<T, Tag>, Set>
+    [[nodiscard]] static constexpr auto end_loan(PermHold<Set>&& hold, Released<T, Tag>&& message) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag>>>> {
+        hold.require_live_();
+        T value = std::move(message.value);
+        ::foundation::permissions::LentPermission<Tag>& parked = slot_<LentOut<Tag>>(hold);
+        auto next = transition_<perm_set_after_recv_t<Set, Released<T, Tag>>>(
+            hold, ::foundation::permissions::mint_permission_after_loan(std::move(parked), std::move(message.loan_)));
+        return {std::move(value), std::move(next)};
+    }
+
+    template <class Set, class T, class Tag>
+        requires detail::HoldCanAcceptLoan<Set, T, Tag>
+    [[nodiscard]] static constexpr auto accept_loan(PermHold<Set>&& hold, Borrowed<T, Tag>&& message) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>> {
+        hold.require_live_();
+        T value = std::move(message.value);
+        auto next = transition_<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>(hold, std::move(message.loan_));
+        return {std::move(value), std::move(next)};
+    }
+
+    template <class Tag, class Set, class T>
+        requires SendablePayload<Released<T, Tag>, Set>
+    [[nodiscard]] static constexpr auto release(PermHold<Set>&& hold, T value) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        -> std::pair<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
+        hold.require_live_();
+        Released<T, Tag> message{std::move(value), std::move(slot_<BorrowedIn<Tag>>(hold))};
+        auto next = transition_<perm_set_after_send_t<Set, Released<T, Tag>>>(hold);
+        return {std::move(message), std::move(next)};
+    }
+};
+
 // Consumes the tokens and returns the hold of their set.  Each token is
 // a parameter by value, so an lvalue token is refused: it would leave a
 // second name for a token that the hold now owns.  One tag twice is
@@ -1336,7 +1817,9 @@ struct hold_from_slots {};
 template <class... Tags, class... Brands>
     requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
 [[nodiscard]] constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
-mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept;
+mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
+    return HoldFactory::from_tokens(std::move(tokens)...);
+}
 
 template <class... Elems>
 class [[nodiscard]] PermHold<::foundation::permissions::PermSet<Elems...>> {
@@ -1362,103 +1845,58 @@ public:
     // ── A token leaves or enters the hold ──────────────────────────
 
     template <class Tag>
-        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::is_plain_tag_v<Tag>)
-    [[nodiscard]] constexpr auto take() && noexcept
-        -> std::pair<::foundation::permissions::Permission<Tag>,
-                     PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
-        require_live_();
-        ::foundation::permissions::Permission<Tag> token = std::move(std::get<index_of_<Tag>>(slots_));
-        auto rest = std::move(*this).template transition_<::foundation::permissions::perm_set_remove_t<Set, Tag>>();
-        return {std::move(token), std::move(rest)};
+        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::PlainTag<Tag>)
+    [[nodiscard]] constexpr auto take() && noexcept {
+        return HoldFactory::take<Tag>(std::move(*this));
     }
 
     template <class Tag, class Brand>
-        requires(detail::is_plain_tag_v<Tag>
+        requires(detail::PlainTag<Tag>
                  && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
-    [[nodiscard]] constexpr auto put(::foundation::permissions::Permission<Tag, Brand> token) && noexcept
-        -> PermHold<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
-        require_live_();
-        return std::move(*this).template transition_<::foundation::permissions::perm_set_insert_t<Set, Tag>>(
-            ::foundation::permissions::Permission<Tag>{std::move(token)});
+    [[nodiscard]] constexpr auto put(::foundation::permissions::Permission<Tag, Brand> token) && noexcept {
+        return HoldFactory::put(std::move(*this), std::move(token));
     }
 
     // ── Moves inside a message ─────────────────────────────────────
 
     template <class Tag, class T>
-        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::is_plain_tag_v<Tag>)
+        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::PlainTag<Tag>)
     [[nodiscard]] constexpr auto pack(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<Transferable<T, Tag>, PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
         auto [token, rest] = std::move(*this).template take<Tag>();
         return {Transferable<T, Tag>{std::move(value), std::move(token)}, std::move(rest)};
     }
 
-    template <class T, class Tag>
-        requires ReceivablePayload<Transferable<T, Tag>, Set>
-    [[nodiscard]] constexpr auto unpack(Transferable<T, Tag>&& message) && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Transferable<T, Tag>>>> {
-        require_live_();
-        T value = std::move(message.value);
-        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Transferable<T, Tag>>>(
-            std::move(message.perm));
-        return {std::move(value), std::move(next)};
-    }
-
-    template <class T, class Tag>
-        requires ReceivablePayload<Returned<T, Tag>, Set>
-    [[nodiscard]] constexpr auto unpack(Returned<T, Tag>&& message) && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Returned<T, Tag>>>> {
-        require_live_();
-        T value = std::move(message.value);
-        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Returned<T, Tag>>>(
-            std::move(message.perm));
-        return {std::move(value), std::move(next)};
+    // Receives a Transferable or a Returned, as an rvalue.
+    template <class Message>
+        requires detail::MovesAToken<Message> && ReceivablePayload<Message, Set>
+    [[nodiscard]] constexpr auto unpack(Message&& message) && noexcept(
+        std::is_nothrow_move_constructible_v<typename Message::payload_type>) {
+        return HoldFactory::unpack(std::move(*this), std::move(message));
     }
 
     // ── A read loan, lender side ───────────────────────────────────
 
-    // The token parks in the LentOut slot, where take cannot reach it,
-    // and the loan leaves inside the Borrowed.  Only a release that
-    // carries the same loan back unparks the token.
     template <class Tag, class T>
-        requires SendablePayload<Borrowed<T, Tag>, Set>
-                 && ::foundation::permissions::ReadViewNeedsNoCtx<Tag>
-    [[nodiscard]] constexpr auto lend(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
-        require_live_();
-        auto [loan, parked] = ::foundation::permissions::mint_read_loan(std::move(std::get<index_of_<Tag>>(slots_)));
-        Borrowed<T, Tag> message{std::move(value), std::move(loan)};
-        auto next = std::move(*this).template transition_<perm_set_after_send_t<Set, Borrowed<T, Tag>>>(
-            std::move(parked));
-        return {std::move(message), std::move(next)};
+        requires detail::HoldCanLend<Set, Tag, T>
+    [[nodiscard]] constexpr auto lend(T value) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return HoldFactory::lend<Tag>(std::move(*this), std::move(value));
     }
 
     template <class T, class Tag>
         requires ReceivablePayload<Released<T, Tag>, Set>
     [[nodiscard]] constexpr auto end_loan(Released<T, Tag>&& message) && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag>>>> {
-        require_live_();
-        T value = std::move(message.value);
-        ::foundation::permissions::LentPermission<Tag>& parked = std::get<index_of_<LentOut<Tag>>>(slots_);
-        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Released<T, Tag>>>(
-            ::foundation::permissions::mint_permission_after_loan(std::move(parked), std::move(message.loan_)));
-        return {std::move(value), std::move(next)};
+        std::is_nothrow_move_constructible_v<T>) {
+        return HoldFactory::end_loan(std::move(*this), std::move(message));
     }
 
     // ── A read loan, borrower side ─────────────────────────────────
 
     template <class T, class Tag>
-        requires ReceivablePayload<Borrowed<T, Tag>, Set>
+        requires detail::HoldCanAcceptLoan<Set, T, Tag>
     [[nodiscard]] constexpr auto accept_loan(Borrowed<T, Tag>&& message) && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>> {
-        require_live_();
-        T value = std::move(message.value);
-        auto next = std::move(*this).template transition_<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>(
-            std::move(message.loan_));
-        return {std::move(value), std::move(next)};
+        std::is_nothrow_move_constructible_v<T>) {
+        return HoldFactory::accept_loan(std::move(*this), std::move(message));
     }
 
     // Runs the body with a read view of a region that this hold borrows,
@@ -1487,13 +1925,8 @@ public:
 
     template <class Tag, class T>
         requires SendablePayload<Released<T, Tag>, Set>
-    [[nodiscard]] constexpr auto release(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
-        require_live_();
-        ::foundation::permissions::ReadLoan<Tag>& loan = std::get<index_of_<BorrowedIn<Tag>>>(slots_);
-        Released<T, Tag> message{std::move(value), std::move(loan)};
-        auto next = std::move(*this).template transition_<perm_set_after_send_t<Set, Released<T, Tag>>>();
-        return {std::move(message), std::move(next)};
+    [[nodiscard]] constexpr auto release(T value) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return HoldFactory::release<Tag>(std::move(*this), std::move(value));
     }
 
     // ── The end of the hold ────────────────────────────────────────
@@ -1513,13 +1946,7 @@ public:
     }
 
 private:
-    template <class>
-    friend class PermHold;
-
-    template <class... Tags, class... Brands>
-        requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
-    friend constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
-    mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept;
+    friend class HoldFactory;
 
     template <class... Slots>
     constexpr explicit PermHold(detail::hold_from_slots, Slots&&... slots) noexcept
@@ -1541,41 +1968,9 @@ private:
         return index;
     }();
 
-    // The slot of one element of the next set: the slot this hold keeps
-    // for it, or the incoming object when the element is new.  A step
-    // adds at most one element, so at most one element takes the
-    // incoming object.
-    template <class Element, class Incoming>
-    constexpr detail::hold_slot_t<Element> pick_(Incoming&& incoming) noexcept {
-        if constexpr (::foundation::permissions::perm_set_contains_v<Set, Element>) {
-            return std::move(std::get<index_of_<Element>>(slots_));
-        } else {
-            return detail::hold_slot_t<Element>{std::forward<Incoming>(incoming)};
-        }
-    }
-
-    struct no_incoming {};
-
-    template <class Next, class Incoming = no_incoming>
-    constexpr PermHold<Next> transition_(Incoming&& incoming = {}) && noexcept {
-        live_ = false;
-        return [&]<class... Following>(std::type_identity<::foundation::permissions::PermSet<Following...>>) {
-            return PermHold<Next>{detail::hold_from_slots{},
-                                  pick_<Following>(std::forward<Incoming>(incoming))...};
-        }(std::type_identity<Next>{});
-    }
-
     std::tuple<detail::hold_slot_t<Elems>...> slots_;
     bool live_ = true;
 };
-
-template <class... Tags, class... Brands>
-    requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
-[[nodiscard]] constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
-mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
-    return PermHold<::foundation::permissions::PermSet<Tags...>>{
-        detail::hold_from_slots{}, ::foundation::permissions::Permission<Tags>{std::move(tokens)}...};
-}
 
 }  // namespace fixy::session
 

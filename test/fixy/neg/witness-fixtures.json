@@ -402,6 +402,11 @@
       "constructor": "\\bHandleKey\\("
     },
     {
+      "name": "neg_witness_session_holdfactory_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bHoldFactory\\("
+    },
+    {
       "name": "neg_witness_session_permhold_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bPermHold\\("

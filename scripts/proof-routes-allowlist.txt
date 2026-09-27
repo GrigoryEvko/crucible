@@ -84,12 +84,10 @@ include/crucible/sessions/_Session.h:friend-template-specialization:template<typ
 include/crucible/sessions/_Session.h:friend-template-specialization:template<typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
 include/crucible/sessions/_Session.h:friend-template-specialization:template<typename T,typename R,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
 
-# The session handle and the permission hold of fixy::session: each primary
-# is declared with no body, and the same header gives one partial
-# specialization for each protocol shape or for PermSet.  The declaration
-# alone does not make the header the owner of the template, so each shape
-# needs its entry.
+# The session handle of fixy::session: the primary is declared with no
+# body, and the same header gives one partial specialization for each
+# protocol shape.  The declaration alone does not make the header the owner
+# of the template, so each shape needs its entry.
 include/fixy/session/Handle.h:friend-template-specialization:template<typename...Branches,typename Resource,typename LoopCtx,AbandonmentPolicy Policy,typename PS>class[[nodiscard]]SessionHandle< x2
 include/fixy/session/Handle.h:friend-template-specialization:template<typename Resource,typename LoopCtx,AbandonmentPolicy Policy,typename PS>class[[nodiscard]]SessionHandle<
 include/fixy/session/Handle.h:friend-template-specialization:template<typename T,typename R,typename Resource,typename LoopCtx,AbandonmentPolicy Policy,typename PS>class[[nodiscard]]SessionHandle< x2
-include/fixy/session/Payload.h:friend-template-specialization:template<class...Elems>class[[nodiscard]]PermHold<

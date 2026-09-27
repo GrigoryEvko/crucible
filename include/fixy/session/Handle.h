@@ -548,11 +548,12 @@ namespace detail {
 // with a walk over every component of the payload: a send needs what the
 // payload takes, and the matching receive gains it.  A payload that the
 // walk refuses, for example a token behind a pointer, is refused here.
+// Each name is a concept, so no user specialization changes a step.
 template <typename PS, typename T>
-inline constexpr bool handle_admits_send_v = SendablePayload<T, PS>;
+concept handle_admits_send_v = SendablePayload<T, PS>;
 
 template <typename PS, typename T>
-inline constexpr bool handle_admits_recv_v = ReceivablePayload<T, PS>;
+concept handle_admits_recv_v = ReceivablePayload<T, PS>;
 
 template <typename PS, typename T>
 using perm_set_after_send_t = ::fixy::session::perm_set_after_send_t<PS, T>;
@@ -565,7 +566,7 @@ using perm_set_after_recv_t = ::fixy::session::perm_set_after_recv_t<PS, T>;
 // so the set must hold none.  An owned tag travelled in a payload, and
 // its token is held by the value that carried it.
 template <typename PS>
-inline constexpr bool perm_set_admits_close_v = !perm_set_has_open_loan_v<PS>;
+concept perm_set_admits_close_v = !perm_set_has_open_loan_v<PS>;
 
 // True when the set is empty, so a loop frame is the Loop itself.
 template <typename PS>

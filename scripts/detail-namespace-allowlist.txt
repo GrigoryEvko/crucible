@@ -46,6 +46,7 @@ test/fixy/test_session_handle.cpp ::foundation::effects::detail x5 — builds a 
 test/fixy/test_session_handle_attacks.cpp ::fixy::session::detail x3 — builds the forked head type that the attack uses
 test/fixy/test_session_handle_attacks.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_ownership_attacks.cpp ::fixy::session::detail x2 — reads the payload refusal of the ownership check
+test/fixy/test_session_payload_seal.cpp ::fixy::session::detail x8 — specializes each gate and cache cell of the payload walk to show that no verdict changes
 test/fixy/test_session_rollback.cpp ::fixy::session::detail x2 — pins the checkpoint erasure of a protocol
 test/fixy/test_session_subtype.cpp ::fixy::session::detail x1 — pins the bound of the async subtype search
 

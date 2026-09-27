@@ -1185,6 +1185,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::PermHold,
      "the hold of the tokens that one session endpoint owns: it stays on the thread of that endpoint beside the "
      "handle, and it is never a template argument of a kernel signature"},
+    {^^::fixy::session::HoldFactory,
+     "the builder of every hold and of each of its transitions: it has static members only, no object of it "
+     "exists, and it is never a value"},
     {^^::fixy::session::is_permission_classified, kMetafunction},
     {^^::fixy::session::payload_perm_delta, kMetafunction},
     {^^::fixy::session::keyed_value, kMetafunction},

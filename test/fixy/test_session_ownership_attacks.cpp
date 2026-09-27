@@ -64,7 +64,7 @@ using RX = sess::Released<int, X>;
 using Refusal = sess::detail::PayloadRefusal;
 
 template <class P>
-inline constexpr Refusal refusal_of = sess::detail::payload_verdict(^^P).refusal;
+inline constexpr Refusal refusal_of = sess::detail::payload_facts_of(^^P).refusal;
 
 template <class P, class... Tags>
 inline constexpr bool sender_requires_exactly =
@@ -245,6 +245,87 @@ static_assert(sess::is_plain_payload_v<std::vector<int>>);
 static_assert(sess::is_plain_payload_v<std::array<int, 4>>);
 static_assert(sess::is_plain_payload_v<HoldsStatic>, "a static member does not travel with the value");
 static_assert(sess::is_plain_payload_v<int*>);
+
+// ── An endpoint travels only as a hand-off ──────────────────────────
+//
+// A bare endpoint in a payload would move its permission set with no set
+// change, and the rules of fixy/session/Delegate.h would not run: the
+// handle outside every Loop, with no brand, and no hand-off to a peer of
+// its own session.  The walk refuses each component that delegates, other
+// than a DelegatedSession that the payload holds by value.
+struct EndpointWire {
+    [[no_unique_address]] sess::MoveOnlyResource one_holder{};
+};
+using LoopedEndpoint = sess::SessionHandle<sess::Send<int, sess::Continue>, EndpointWire,
+                                           sess::Loop<sess::Send<int, sess::Continue>>, sess::check::Enforced,
+                                           fp::PermSet<X>>;
+using PlainEndpoint = sess::SessionHandle<sess::Recv<int, sess::End>, EndpointWire>;
+struct HoldsEndpoint {
+    int sequence = 0;
+    PlainEndpoint endpoint;
+};
+template <class T>
+struct Mentions {};
+using Handed = sess::DelegatedSession<sess::End, EndpointWire, sess::DefaultAbandonmentPolicy, fp::PermSet<X>>;
+struct Stepper {
+    void step() noexcept {}
+};
+
+static_assert(refusal_of<LoopedEndpoint> == Refusal::BareEndpoint);
+static_assert(refusal_of<HoldsEndpoint> == Refusal::BareEndpoint);
+static_assert(refusal_of<PlainEndpoint*> == Refusal::BareEndpoint, "a pointer to an endpoint is a second name for it");
+static_assert(refusal_of<std::unique_ptr<PlainEndpoint>> == Refusal::BareEndpoint);
+static_assert(refusal_of<Mentions<PlainEndpoint>> == Refusal::BareEndpoint, "a type that names an endpoint can hold one");
+static_assert(refusal_of<std::pair<TX, PlainEndpoint>> == Refusal::BareEndpoint, "a token beside an endpoint does not hide it");
+// A pointer to void and a pointer to a function name no endpoint type, as
+// an integer that holds an address names none.  A plain session admits
+// them as data, and a crash or a checkpoint session refuses them.
+static_assert(sess::is_plain_payload_v<void*>
+              && sess::payload_delegation_carrier_v<void*> == sess::DelegationCarrier::OpaquePointer);
+static_assert(sess::is_plain_payload_v<std::pair<int, void (*)()>>
+              && sess::payload_delegation_carrier_v<std::pair<int, void (*)()>>
+                     == sess::DelegationCarrier::FunctionPointer);
+static_assert(sess::is_plain_payload_v<void (Stepper::*)() noexcept>);
+static_assert(refusal_of<Handed*> == Refusal::HandOffNotOwned);
+static_assert(refusal_of<std::optional<Handed>> == Refusal::HandOffNotOwned);
+static_assert(refusal_of<std::vector<Handed>> == Refusal::HandOffNotOwned);
+static_assert(refusal_of<Handed[1]> == Refusal::HandOffNotOwned);
+static_assert(sender_requires_exactly<Handed, X> && receiver_gains_exactly<Handed, X>,
+              "a hand-off by value moves the tags of its endpoint");
+static_assert(sess::is_plain_payload_v<Mentions<Handed>>, "a type that names a hand-off holds no endpoint");
+static_assert(!sess::SendablePayload<LoopedEndpoint, fp::PermSet<>>
+              && !sess::SendablePayload<LoopedEndpoint, fp::PermSet<X>>);
+static_assert(!sess::PermissionFlowCloses<sess::Send<LoopedEndpoint, sess::End>, fp::PermSet<>>);
+static_assert(!sess::PermissionFlowCloses<sess::Recv<HoldsEndpoint, sess::End>, fp::PermSet<>>);
+
+// ── The walk reads each type one time ───────────────────────────────
+//
+// A payload that holds one type many times by value costs one read of
+// that type.  A binary tree of by-value members has 2^24 leaves here, and
+// one type for each level.  Two owned copies of a type that holds a token
+// are one tag twice, however deep they sit.
+template <int Depth>
+struct Tree {
+    Tree<Depth - 1> left;
+    Tree<Depth - 1> right;
+};
+template <>
+struct Tree<0> {
+    int leaf = 0;
+};
+template <int Depth>
+struct TokenTree {
+    TokenTree<Depth - 1> left;
+    TokenTree<Depth - 1> right;
+};
+template <>
+struct TokenTree<0> {
+    TX token;
+};
+static_assert(sess::is_plain_payload_v<Tree<24>>);
+static_assert(sess::PermissionFlowCloses<sess::Send<Tree<24>, sess::Recv<Tree<24>, sess::End>>, fp::PermSet<>>);
+static_assert(refusal_of<TokenTree<24>> == Refusal::DuplicateTag);
+static_assert(refusal_of<TokenTree<0>> == Refusal::None);
 
 // ── Classified values on the channel ────────────────────────────────
 //

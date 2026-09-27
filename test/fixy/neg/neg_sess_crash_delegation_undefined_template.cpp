@@ -1,10 +1,10 @@
 // A crash session whose payload names a specialization of a template that
-// is only declared here.  The delegation query reads a class that a
-// template argument names, and it cannot read this one.  A unit that
-// defines the template would read it, so the query stops the build
-// instead of giving a value.  The payload holds nothing behind a pointer,
-// so the permission walk admits it and the delegation query is the gate
-// that refuses.
+// is only declared here.  The payload walk reads a class that a template
+// argument names, and it cannot read this one.  A unit that defines the
+// template would read it, so the walk stops the build instead of giving a
+// value.  The walk answers the permission question and the delegation
+// question at one time, so the permission flow of the mint is where the
+// build stops.
 
 #include <fixy/session/CrashTransport.h>
 
