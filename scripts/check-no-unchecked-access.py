@@ -11,6 +11,9 @@ that may open the door, with the reason, and the guard refuses the door
 anywhere else.
 
 HOW THE GUARD READS A FILE
+    The guard reads each C++ file that git tracks under the scan roots.  An
+    untracked file is out of scope, because the export of a guard run or the
+    scratch file of another tool can appear under the tree while it runs.
     The guard reads the parse tree of scripts/tsast.py, so white space, a
     line break or a comment between two tokens changes nothing, and a mention
     in a comment or a string is not a use.  The body of each #define is
@@ -31,8 +34,11 @@ WHAT COUNTS AS THE DOOR
          access, `obj.[:m:]` and `p->[:m:]`, or the operand of a unary `&`.
          This is the write itself, so it closes every route to the
          reflection, such as a walk of ^^decltype(access_context::current())
-         that finds unchecked by a string compare.  A binary `&` before a
-         splice, as in `mask & [:field:]`, is not a door.
+         that finds unchecked by a string compare.  A walk with
+         access_context::current() does not clear the refusal, because the
+         guard cannot tell which walk gave the reflection, and the report
+         says so.  A binary `&` before a splice, as in `mask & [:field:]`, is
+         not a door.
       5. A use of a macro whose body opens the door, directly or through
          another macro.  The use opens the door where it expands.
 
@@ -135,6 +141,8 @@ NAMES = frozenset({"field_identifier", "identifier", "qualified_identifier", "op
 # Declarators that change neither the object that a name declares nor its
 # constness: an array has the constness of its element.
 TRANSPARENT = frozenset({"init_declarator", "parenthesized_declarator", "array_declarator", "attributed_declarator"})
+# The shape of rule 4, which the advice of a report reads.
+SPLICE_DOOR = "a splice that names a member of an object"
 
 Door = tuple[int, str]
 Target = tuple[str, int, str, str]
@@ -165,14 +173,14 @@ def read_allowlist(root: Path) -> list[tuple[int, str]]:
 
 
 def scope_files(root: Path) -> list[str]:
-    """Return the C++ files under the scan roots that git does not ignore."""
-    listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard",
-                             "--", *SCAN_ROOTS], capture_output=True, check=False)
-    if listed.returncode == 0:
-        paths = {p for p in listed.stdout.decode().split("\0") if p}
-    else:
-        paths = {str(p.relative_to(root)) for r in SCAN_ROOTS for p in (root / r).rglob("*") if p.is_file()}
-    return sorted(p for p in paths if tsast.is_in_cpp_scope(p) and (root / p).is_file())
+    """Return the tracked C++ files under the scan roots (tsast.tracked_files).
+
+    An untracked file is out of scope, because a guard run or another tool
+    can write one under the tree while this guard reads it.
+    """
+    return sorted(p for p in tsast.tracked_files(root)
+                  if p.startswith(tuple(f"{r}/" for r in SCAN_ROOTS)) and tsast.is_in_cpp_scope(p)
+                  and (root / p).is_file())
 
 
 def name_parts(node: tsast.Node) -> tuple[str, ...] | None:
@@ -249,9 +257,9 @@ def node_doors(root: tsast.Node, line_of: Callable[[tsast.Node], int],
         if parent is None:
             continue
         if parent.type == "field_expression" and node.field == "field":
-            found.append((line_of(node), "a splice that names a member of an object"))
+            found.append((line_of(node), SPLICE_DOOR))
         elif parent.type == "pointer_expression" and node.field == "argument" and leading_operator(parent) == "&":
-            found.append((line_of(node), "a splice that names a member of an object"))
+            found.append((line_of(node), SPLICE_DOOR))
     return found
 
 
@@ -289,7 +297,7 @@ def token_doors(tokens: Sequence[tsast.Token], door_macros: frozenset[str] = fro
         elif token.kind == "identifier" and token.text in door_macros:
             found.append((token.row + 1, f"a use of the macro {token.text}, which opens the door"))
         elif token.text == "[:" and previous in (".", "->", "&"):
-            found.append((token.row + 1, "a splice that names a member of an object"))
+            found.append((token.row + 1, SPLICE_DOOR))
         elif token.text == "^^":
             parts = name_after(tokens, index + 1)
             if parts and (parts in (("std",), ("std", "meta")) or parts[-1] == "access_context"):
@@ -585,6 +593,21 @@ def expanded(root: Path, compile_db: Path, scope: frozenset[str],
     return doors, targets
 
 
+def remedy(shape: str) -> str:
+    """Return the advice for one refused door.
+
+    A member splice is refused whatever walk gave its reflection, because
+    the reflection can come from any walk, so a walk with
+    access_context::current() does not clear it.
+    """
+    if shape.startswith(SPLICE_DOOR):
+        return (f"A splice of a member of an object has no access check, whatever walk gave its reflection, so it "
+                f"can write a proof's private state.  Read or write the member by its name or its accessor, or "
+                f"add a reviewed row to {ALLOWLIST}.")
+    return (f"A reflection of a private member lets a splice write a proof's private state.  Walk with "
+            f"access_context::current(), or add a reviewed row to {ALLOWLIST}.")
+
+
 def check(root: Path, compile_db: Path | None = None) -> int:
     """Compare the doors in the tree with the allowlist, and report to stderr.
 
@@ -616,9 +639,7 @@ def check(root: Path, compile_db: Path | None = None) -> int:
         if found:
             opened.add(rel)
         if found and rel not in admitted:
-            problems += [f"REFUSED   {rel}:{line} — {shape}.  A reflection of a private member lets a splice "
-                         f"write a proof's private state.  Walk with access_context::current(), or add a "
-                         f"reviewed row to {ALLOWLIST}." for line, shape in sorted(set(found))]
+            problems += [f"REFUSED   {rel}:{line} — {shape}.  {remedy(shape)}" for line, shape in sorted(set(found))]
     for number, path in rows:
         if path not in opened:
             problems.append(f"STALE     {ALLOWLIST}:{number}: {path} — does not open the door.  Remove the row.")
@@ -647,7 +668,8 @@ def self_test() -> int:
         (root / rel).write_text(text, encoding="utf-8")
 
     def captured(root: Path, cwd: Path | None = None, compile_db: Path | None = None) -> tuple[int, str]:
-        """Run the check on the planted repository and keep its report."""
+        """Track each planted file, run the check on the planted repository and keep its report."""
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
         buffer = io.StringIO()
         previous = Path.cwd()
         if cwd is not None:
@@ -734,6 +756,36 @@ def self_test() -> int:
             write(root, rel, text)
             expect(root, 1, f"REFUSED   {rel}", f"a door outside the allowlist: {rel}", True)
             (root / rel).unlink()
+
+        # A member splice is refused whatever walk gave its reflection, so its
+        # advice does not send the writer to access_context::current().
+        write(root, "src/CurrentWalk.cpp",
+              "constexpr auto m = std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::current())[0];\n"
+              "void w(S& s) { s.[:m:] = 1; }\n")
+        expect(root, 1, "REFUSED   src/CurrentWalk.cpp:2 — a splice that names a member of an object.  A splice of a "
+                        "member of an object has no access check, whatever walk gave its reflection",
+               "a member splice after a walk with current() is refused, with advice that does not name current()",
+               True, absent="Walk with access_context::current()")
+        (root / "src/CurrentWalk.cpp").unlink()
+        write(root, "src/UncheckedWalk.cpp", "auto c = std::meta::access_context::unchecked();\n")
+        expect(root, 1, "a use of unchecked.  A reflection of a private member lets a splice write a proof's private "
+                        "state.  Walk with access_context::current()",
+               "a use of unchecked gets the advice to walk with current()", True)
+        (root / "src/UncheckedWalk.cpp").unlink()
+
+        # An untracked file is out of scope, because the export of a guard run
+        # can appear under the tree while the guard reads it.
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        write(root, "src/Untracked.cpp", "auto c = std::meta::access_context::unchecked();\n")
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            untracked_code = check(root)
+        ok = untracked_code == 0 and "Untracked.cpp" not in buffer.getvalue()
+        negatives += 1
+        print(f"  {'ok  ' if ok else 'FAIL'} an untracked file is out of scope")
+        if not ok:
+            failures.append(f"an untracked file was read:\n{buffer.getvalue()}")
+        (root / "src/Untracked.cpp").unlink()
 
         # The write through a bare splice takes no door token, so the guard
         # refuses the member it writes.
