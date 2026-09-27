@@ -104,6 +104,7 @@
 #include <fixy/SelfContained.h>
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/session/ContentAddressed.h>
+#include <fixy/session/NetworkModel.h>
 #include <fixy/session/Payload.h>
 #include <fixy/session/Stepping.h>
 #include <fixy/session/Subtype.h>
@@ -168,9 +169,9 @@ consteval std::string_view next_method_hint() noexcept {
     } else if constexpr (is_recv_v<Proto>) {
         return "recv(transport_callable)";
     } else if constexpr (is_select_v<Proto>) {
-        return "select<branch_index>(transport_callable) or select_local<branch_index>()";
+        return "select<branch_index>(transport_callable), or select<branch_index>(no_label) on a Local carrier";
     } else if constexpr (is_offer_v<Proto>) {
-        return "branch(transport_callable, handler) or pick_local<branch_index>()";
+        return "branch(transport_callable, handler)";
     } else if constexpr (is_loop_v<Proto>) {
         // Unreachable: a Loop is unrolled before a handle is built.
         return "the loop body's appropriate consumer method "
@@ -915,6 +916,12 @@ template <typename T, typename Resource, typename Write, typename Taken>
 // the payload of a keyed message, so the permission flow of the whole
 // protocol changes the set at the same message.
 
+// The two metafunctions live in detail, so no program specializes them:
+// the handle, the crash transport and the checkpoint read the landing of
+// a keyed step here, and a specialization would move one end past a value
+// that the peer sends.
+namespace detail {
+
 // The payload of a keyed message.  Only PeerMsg and Labelled are keyed,
 // because the payload rules of fixy/session/Protocol.h are sealed.  The
 // primary has no definition, so a message of another shape stops the
@@ -930,9 +937,6 @@ struct keyed_value<Labelled<Label, Payload>> {
     using type = Payload;
 };
 
-template <typename Message>
-using keyed_value_t = typename keyed_value<Message>::type;
-
 // The position after the label word of a keyed step: the value step, or
 // the continuation when the payload is void.  The template parameters of
 // the partial specializations have the names that the handle classes use,
@@ -942,19 +946,26 @@ template <typename Step>
 struct keyed_landing;
 template <typename T, typename R>
 struct keyed_landing<Send<T, R>> {
-    using type = std::conditional_t<std::is_void_v<keyed_value_t<T>>, R, Send<keyed_value_t<T>, R>>;
+    using type = std::conditional_t<std::is_void_v<typename keyed_value<T>::type>, R,
+                                    Send<typename keyed_value<T>::type, R>>;
 };
 template <typename T, typename R>
 struct keyed_landing<Recv<T, R>> {
-    using type = std::conditional_t<std::is_void_v<keyed_value_t<T>>, R, Recv<keyed_value_t<T>, R>>;
+    using type = std::conditional_t<std::is_void_v<typename keyed_value<T>::type>, R,
+                                    Recv<typename keyed_value<T>::type, R>>;
 };
 
+}  // namespace detail
+
+template <typename Message>
+using keyed_value_t = typename detail::keyed_value<Message>::type;
+
 template <typename Step>
-using keyed_landing_t = typename keyed_landing<Step>::type;
+using keyed_landing_t = typename detail::keyed_landing<Step>::type;
 
 // True when the message of a keyed step has a value.
 template <typename Step>
-inline constexpr bool keyed_step_has_value_v = !std::is_void_v<keyed_value_t<typename Step::message_type>>;
+concept keyed_step_has_value_v = !std::is_void_v<keyed_value_t<typename Step::message_type>>;
 
 // ── Wire words ───────────────────────────────────────────────────────
 //
@@ -965,9 +976,10 @@ static_assert(sizeof(std::size_t) == sizeof(std::uint64_t),
               "a label word has 64 bits, and the Transport carries it as std::size_t");
 
 // True when each label branch of the Select or the Offer names a label
-// key, so its wire words are label words.
+// key, so its wire words are label words.  It is a concept, so no program
+// specializes it: branch_of_wire_word reads it to decode a received word.
 template <typename Choice>
-inline constexpr bool is_keyed_choice_v =
+concept is_keyed_choice_v =
     ::foundation::algebra::transition::is_keyed_choice_type(detail::protocol_registry, ^^Choice);
 
 namespace detail {
@@ -999,7 +1011,9 @@ inline constexpr auto wire_words_v = wire_words_of<Choice, Choice::branch_count>
 
 }  // namespace detail
 
-// The word that select<I>() sends for branch I of Choice.
+// The word that select<I>() sends for branch I of Choice.  The handle reads
+// the registry and not this spelling, so a specialization of it changes
+// only what its author reads.
 template <typename Choice, std::size_t I>
 inline constexpr std::uint64_t branch_wire_word_v = detail::branch_wire_word_of<Choice, I>();
 
@@ -1010,7 +1024,8 @@ inline constexpr std::size_t no_branch = static_cast<std::size_t>(-1);
 // a word that no label of Choice has names no branch.  A positional
 // choice reads the word as a position.  In either kind a branch that is
 // no label has no word, so the wire never enters it: the crash transport
-// of fixy/session/CrashTransport.h enters a crash branch with pick_local.
+// of fixy/session/CrashTransport.h enters a crash branch with
+// HandleFactory::recover.
 // Complexity: linear in the branches, each step a compare with a
 // constant.
 template <typename Choice>
@@ -1233,6 +1248,55 @@ template <typename R, typename LoopCtx, typename EndLoopCtx>
 concept RewindableTo =
     ResumablePosition<R, LoopCtx> && std::is_void_v<typename detail::session_brand_of<EndLoopCtx>::type>;
 
+// ── Local choices ────────────────────────────────────────────────────
+//
+// A choice that puts no label on a wire is sound only where no peer
+// reads a label.  Two forms exist, and each is refused elsewhere:
+//
+//   - select<I>(no_label) on a session whose Resource states the Local
+//     network of fixy/session/NetworkModel.h and whose protocol names no
+//     peer.  A log or an atomic cell has no peer, so its choice is its
+//     own.  A Resource that states no network, or another one, is
+//     refused, because on a channel the peer would read the next payload
+//     as a label.
+//   - select_local<I>(ctx) and pick_local<I>(ctx), with a context that
+//     holds the Test capability, as mint_test_channel asks.  A test that
+//     drives the two ends of a channel on one thread picks each branch on
+//     both ends.  A production context has no Test capability.
+
+// The trying write of a local choice.  It takes the wire word and writes
+// nothing.
+struct no_label_t {
+    template <typename Resource>
+    constexpr bool operator()(Resource&, std::size_t&) const noexcept {
+        return true;
+    }
+};
+
+inline constexpr no_label_t no_label{};
+
+// True when a choice of Proto in the loop context LoopCtx may put no label
+// on a wire: the Resource states the Local network, and the protocol names
+// no peer.
+template <typename Resource, typename Proto, typename LoopCtx>
+concept AdmitsLocalChoice = LocalCarrier<Resource> && detail::distinct_peer_count({^^Proto, ^^LoopCtx}) == 0;
+
+// True when the Transport of a select may write the word of the branch:
+// every write except no_label, and no_label where a local choice is
+// admitted.
+template <typename Transport, typename Resource, typename Proto, typename LoopCtx>
+concept WritesTheLabel = !std::is_same_v<Transport, no_label_t> || AdmitsLocalChoice<Resource, Proto, LoopCtx>;
+
+// The context of select_local and pick_local.
+template <typename Ctx>
+concept CtxPicksLocally = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Test>;
+
+namespace detail {
+// The gate of HandleFactory::recover, defined after CtxAdmitsProtocolRow.
+template <typename Ctx, typename Choice, std::size_t I, typename LoopCtx, typename PS>
+struct recover_gate;
+}  // namespace detail
+
 namespace detail {
 template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class handle_core;
@@ -1308,12 +1372,25 @@ class HandleFactory final {
     }
 
     // Calls the handler with the handle that the choice enters for branch
-    // idx.  The handler is invoked once per branch type, and every branch
-    // must give the handler the same return type, or all of them void.
-    template <typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
-              typename Handler, std::size_t... Is>
+    // idx, and first with the index as a constant when PassesIndex holds.
+    // The handler is invoked once per branch type, and every branch must
+    // give the handler the same return type, or all of them void.
+    template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
+              typename PS, typename Handler, std::size_t... Is>
     static constexpr auto dispatch_(std::size_t idx, Resource res, watch::session_ref session, Handler handler,
                                     std::index_sequence<Is...>);
+
+    // Calls the handler for branch I, with the index first when PassesIndex
+    // holds.
+    template <bool PassesIndex, std::size_t I, typename Handler, typename BranchHandle>
+    static constexpr decltype(auto) call_branch_(Handler&& handler, BranchHandle&& branch_handle) {
+        if constexpr (PassesIndex) {
+            return std::invoke(std::forward<Handler>(handler), std::integral_constant<std::size_t, I>{},
+                               std::forward<BranchHandle>(branch_handle));
+        } else {
+            return std::invoke(std::forward<Handler>(handler), std::forward<BranchHandle>(branch_handle));
+        }
+    }
 
 public:
     // Opens a session with a new record, or on a record that a channel
@@ -1347,6 +1424,27 @@ public:
     [[nodiscard]] static constexpr auto
     rewind(SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
            std::source_location loc = std::source_location::current()) noexcept;
+
+    // Enters branch I of an Offer, a branch that is no label, with no word
+    // read.  The crash transport of fixy/session/CrashTransport.h enters a
+    // crash branch with it.  It gives nothing that a detach of the handle
+    // and a mint of a session at branch I do not give: branch I is no
+    // label, so no peer picks it; the permission set is empty; RewindableTo
+    // admits the branch in the loop context, as a mint admits a protocol
+    // at its start; and the context admits the effect row of the branch, as
+    // the context of mint_session admits the row of its protocol.  The
+    // handle keeps the record of the session.
+    template <std::size_t I, typename Ctx, typename... Branches, typename Resource, typename LoopCtx,
+              AbandonmentPolicy Policy, typename PS>
+        requires detail::recover_gate<Ctx, Offer<Branches...>, I, LoopCtx, PS>::value
+    [[nodiscard]] static constexpr auto
+    recover(Ctx const&, SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&& handle) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) {
+        auto& core = core_(handle);
+        core.require_live_();
+        const watch::session_ref session = core.session_();
+        return enter_<Offer<Branches...>, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), session);
+    }
 
     // ── The steps ─────────────────────────────────────────────────────
 
@@ -1448,6 +1546,7 @@ public:
     template <std::size_t I, typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS, typename Transport>
         requires WriteTransport<Transport, Resource, std::size_t>
+              && WritesTheLabel<Transport, Resource, Select<Branches...>, LoopCtx>
     [[nodiscard]] static constexpr auto select(SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>&& handle,
                                                Transport transport) noexcept(detail::write_is_nothrow<Transport, Resource,
                                                                                                       std::size_t>()
@@ -1460,18 +1559,21 @@ public:
                                                 "verify I < branch_count at the call site (decltype("
                                                 "handle)::branch_count is exposed for compile-time queries).");
         auto& core = core_(handle);
-        std::size_t word = static_cast<std::size_t>(branch_wire_word_v<Choice, I>);
+        // The word comes from the registry and not from branch_wire_word_v,
+        // so a specialization of the public spelling never reaches the wire.
+        std::size_t word = detail::branch_wire_word_of<Choice, I>();
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
         const watch::session_ref session = core.session_();
         return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), session);
     }
 
     // Enters branch I of a Select WITHOUT telling the peer which branch was
-    // picked.
-    template <std::size_t I, typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
-              typename PS>
+    // picked.  The context holds the Test capability.
+    template <std::size_t I, typename Ctx, typename... Branches, typename Resource, typename LoopCtx,
+              AbandonmentPolicy Policy, typename PS>
+        requires CtxPicksLocally<Ctx>
     [[nodiscard]] static constexpr auto
-    select_local(SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>&& handle) noexcept(
+    select_local(Ctx const&, SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy, PS>&& handle) noexcept(
         std::is_nothrow_move_constructible_v<Resource>) {
         using Choice = Select<Branches...>;
         static_assert(I < Choice::branch_count, "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
@@ -1502,16 +1604,35 @@ public:
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const watch::session_ref session = core.session_();
-        return dispatch_<Choice, Resource, LoopCtx, Policy, PS>(branch_of_wire_word<Choice>(word),
-                                                                core.take_resource_(), session, std::move(handler),
-                                                                std::make_index_sequence<Choice::branch_count>{});
+        return dispatch_<false, Choice, Resource, LoopCtx, Policy, PS>(
+            branch_of_wire_word<Choice>(word), core.take_resource_(), session, std::move(handler),
+            std::make_index_sequence<Choice::branch_count>{});
     }
 
-    // Enters branch I of an Offer WITHOUT receiving the peer's label.
-    template <std::size_t I, typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
-              typename PS>
+    // The step of branch, with the index of the branch given to the
+    // handler first, as std::integral_constant<std::size_t, I>.
+    template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Transport, typename Handler>
+        requires ReadTransport<Transport, Resource, std::size_t>
+    static constexpr auto branch_indexed(SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&& handle,
+                                         Transport transport, Handler handler) {
+        using Choice = Offer<Branches...>;
+        auto& core = core_(handle);
+        const std::size_t word =
+            detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
+        const watch::session_ref session = core.session_();
+        return dispatch_<true, Choice, Resource, LoopCtx, Policy, PS>(
+            branch_of_wire_word<Choice>(word), core.take_resource_(), session, std::move(handler),
+            std::make_index_sequence<Choice::branch_count>{});
+    }
+
+    // Enters branch I of an Offer WITHOUT receiving the peer's label.  The
+    // context holds the Test capability.
+    template <std::size_t I, typename Ctx, typename... Branches, typename Resource, typename LoopCtx,
+              AbandonmentPolicy Policy, typename PS>
+        requires CtxPicksLocally<Ctx>
     [[nodiscard]] static constexpr auto
-    pick_local(SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&& handle) noexcept(
+    pick_local(Ctx const&, SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&& handle) noexcept(
         std::is_nothrow_move_constructible_v<Resource>) {
         using Choice = Offer<Branches...>;
         static_assert(I < Choice::branch_count, "fixy::session::diagnostic [Branch_Index_Out_Of_Range]: "
@@ -1823,8 +1944,11 @@ public:
     // requires-clause so that an out-of-range index reports the named
     // diagnostic instead of a bare unsatisfied-constraint message.
     // Transport still gates overload resolution.
+    // A carrier with no peer passes no_label as the Transport, so the
+    // choice puts no word on a wire (Local choices, above).
     template <std::size_t I, typename Transport>
         requires WriteTransport<Transport, Resource, std::size_t>
+              && WritesTheLabel<Transport, Resource, Select<Branches...>, LoopCtx>
     [[nodiscard]] constexpr auto
     select(Transport transport) && noexcept(detail::write_is_nothrow<Transport, Resource, std::size_t>()
                                             && std::is_nothrow_move_constructible_v<Resource>) {
@@ -1839,15 +1963,23 @@ public:
                                        "another shape can wait where the watch of fixy/session/Watch.h does not see "
                                        "it.");
 
+    template <std::size_t I, typename Transport>
+        requires WriteTransport<Transport, Resource, std::size_t>
+              && (!WritesTheLabel<Transport, Resource, Select<Branches...>, LoopCtx>)
+    void select(Transport) && = delete("[Local_Choice_Needs_A_Local_Carrier] select<I>(no_label) puts no word on "
+                                       "the wire, and a peer then reads the next payload as a label.  Only a "
+                                       "Resource that states session_network = Network::Local, over a protocol that "
+                                       "names no peer, takes no_label.  Give the peer the word with a write, or use "
+                                       "select_local<I>(ctx) with a test context.");
+
     // Advances the local handle WITHOUT telling the peer which branch
-    // was picked.  The name carries the omission so it is visible at
-    // every call site.  On a wire-based session the peer never learns
-    // the choice and the two endpoints drift apart, so this is for an
-    // in-memory channel, a mocked transport, or a pipeline whose branch
-    // is fixed at compile time on both sides.
-    template <std::size_t I>
-    [[nodiscard]] constexpr auto select_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        return HandleFactory::template select_local<I>(std::move(*this));
+    // was picked.  The context holds the Test capability: a test that
+    // drives the two ends of a channel on one thread picks the branch on
+    // each end.
+    template <std::size_t I, typename Ctx>
+        requires CtxPicksLocally<Ctx>
+    [[nodiscard]] constexpr auto select_local(Ctx const& ctx) && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        return HandleFactory::template select_local<I>(ctx, std::move(*this));
     }
 
     // Deleting the zero-argument form forces every call site to state
@@ -1858,10 +1990,8 @@ public:
                               "without arguments is not allowed.  Choose one: "
                               "(a) `select<I>(transport)` to signal the branch choice over "
                               "the wire (the peer sees the I-th branch and stays in sync), "
-                              "OR (b) `select_local<I>()` to advance the local handle WITHOUT "
-                              "signalling the peer (in-memory channels and unit tests only — "
-                              "wire-based sessions where the peer doesn't observe the "
-                              "choice will silently drift off-protocol).  The framework "
+                              "(b) `select<I>(no_label)` on a carrier that states the Local network, "
+                              "OR (c) `select_local<I>(ctx)` with a test context.  The framework "
                               "refuses to guess which one you meant.");
 };
 
@@ -1922,6 +2052,16 @@ public:
         return HandleFactory::branch(std::move(*this), std::move(transport), std::move(handler));
     }
 
+    // The same step, and the handler also takes the index of the branch as
+    // std::integral_constant<std::size_t, I>, first.  In a keyed choice two
+    // branches can enter at the same handle type, and the index tells them
+    // apart.
+    template <typename Transport, typename Handler>
+        requires ReadTransport<Transport, Resource, std::size_t>
+    constexpr auto branch_indexed(Transport transport, Handler handler) && {
+        return HandleFactory::branch_indexed(std::move(*this), std::move(transport), std::move(handler));
+    }
+
     template <typename Transport, typename Handler>
         requires(!ReadTransport<Transport, Resource, std::size_t>)
     void branch(Transport, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
@@ -1930,27 +2070,21 @@ public:
                                                 "of another shape can wait where the watch of fixy/session/Watch.h "
                                                 "does not see it.");
 
-    // Assumes branch I WITHOUT receiving the peer's label.  The name
-    // carries the omission so it is visible at every call site.  If the
-    // peer signals a different branch the two endpoints diverge, so
-    // this is for an in-memory channel, a mocked transport, or a
-    // pipeline whose branch is fixed at compile time on both sides.
-    template <std::size_t I>
-    [[nodiscard]] constexpr auto pick_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        return HandleFactory::template pick_local<I>(std::move(*this));
+    // Assumes branch I WITHOUT receiving the peer's label.  The context
+    // holds the Test capability: a test that drives the two ends of a
+    // channel on one thread picks the branch on each end.
+    template <std::size_t I, typename Ctx>
+        requires CtxPicksLocally<Ctx>
+    [[nodiscard]] constexpr auto pick_local(Ctx const& ctx) && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        return HandleFactory::template pick_local<I>(ctx, std::move(*this));
     }
 
     // Deleting the zero-argument form forces every call site to state
     // whether the peer's label is read.
     template <std::size_t I>
     void pick() && = delete("[Wire_Variant_Required] SessionHandle<Offer<...>>::pick<I>() "
-                            "without arguments is not allowed.  Use "
-                            "`pick_local<I>()` to advance the local handle WITHOUT "
-                            "receiving a peer label (in-memory channels and unit tests "
-                            "only — wire-based sessions where the peer's actual choice "
-                            "differs from I will silently drift off-protocol).  The "
-                            "framework refuses to guess that the peer-skipping "
-                            "variant was what you meant.");
+                            "without arguments is not allowed.  Use branch(transport, handler) to read "
+                            "the label of the peer, or `pick_local<I>(ctx)` with a test context.");
 };
 
 // ── The builders of the handle factory ───────────────────────────────
@@ -2035,23 +2169,24 @@ constexpr auto HandleFactory::enter_(Resource r, watch::session_ref session) noe
 // 0.  A branch whose handler returns a different type then fails to
 // convert into the single optional below, which is what enforces the
 // same-return-type rule.
-template <typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
-          typename Handler, std::size_t... Is>
+template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
+          typename PS, typename Handler, std::size_t... Is>
 constexpr auto HandleFactory::dispatch_(std::size_t idx, Resource res, watch::session_ref session, Handler handler,
                                         std::index_sequence<Is...>) {
     if (idx >= Choice::branch_count) [[unlikely]] {
         std::abort();
     }
     using FirstHandle = decltype(enter_<Choice, 0, Resource, LoopCtx, Policy, PS>(std::declval<Resource>(), session));
-    using Result = std::invoke_result_t<Handler&&, FirstHandle>;
+    using Result = decltype(call_branch_<PassesIndex, 0>(std::declval<Handler&&>(), std::declval<FirstHandle>()));
 
     if constexpr (std::is_void_v<Result>) {
         bool dispatched = false;
         (
             [&]() {
                 if (!dispatched && idx == Is) {
-                    std::invoke(std::move(handler),
-                                enter_<Choice, Is, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(res), session));
+                    call_branch_<PassesIndex, Is>(
+                        std::move(handler),
+                        enter_<Choice, Is, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(res), session));
                     dispatched = true;
                 }
             }(),
@@ -2062,7 +2197,7 @@ constexpr auto HandleFactory::dispatch_(std::size_t idx, Resource res, watch::se
         (
             [&]() {
                 if (!dispatched && idx == Is) {
-                    result.emplace(std::invoke(
+                    result.emplace(call_branch_<PassesIndex, Is>(
                         std::move(handler),
                         enter_<Choice, Is, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(res), session)));
                     dispatched = true;
@@ -2587,6 +2722,25 @@ concept CtxAdmitsProtocolRow =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::is_subrow_v<protocol_payload_row_t<Proto>, typename Ctx::row_type>
     && ::foundation::effects::is_subrow_v<protocol_delivered_permission_row_t<Proto>, typename Ctx::row_type>;
+
+namespace detail {
+
+// The gate of HandleFactory::recover: branch I of the Offer exists and is
+// no label, the permission set is empty, a session can start at the branch
+// in the loop context, and the context admits the effect row of the branch.
+template <typename Ctx, typename Choice, std::size_t I, typename LoopCtx, typename PS>
+struct recover_gate : std::false_type {};
+
+template <typename Ctx, typename... Branches, std::size_t I, typename LoopCtx, typename PS>
+    requires(I < Offer<Branches...>::branch_count)
+struct recover_gate<Ctx, Offer<Branches...>, I, LoopCtx, PS>
+    : std::bool_constant<!wire_words_v<Offer<Branches...>>[I].is_wired && perm_set_is_empty_v<PS>
+                         && RewindableTo<std::tuple_element_t<I, typename Offer<Branches...>::branches_tuple>,
+                                         LoopCtx, LoopCtx>
+                         && CtxAdmitsProtocolRow<
+                             Ctx, std::tuple_element_t<I, typename Offer<Branches...>::branches_tuple>>> {};
+
+}  // namespace detail
 
 template <typename Ctx, typename Proto, typename Resource, typename... Tags>
 concept CtxFitsSessionFrom =

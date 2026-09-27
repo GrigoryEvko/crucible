@@ -34,11 +34,16 @@
 namespace fixy::session {
 
 // The semantics of the message buffers of a carrier (Definition 4.1 of
-// Li and Wies).
+// Li and Wies), and one value for a carrier with no peer.
 enum class Network : std::uint8_t {
     PerPairFifo,
     Mailbox,
     Bag,
+    // A carrier with no peer, such as a log or an atomic cell.  A session
+    // over it makes each choice alone and gives each message to the
+    // carrier, not to a role, so a choice puts no label on a wire.  It
+    // implements no global type with two roles (fixy/session/Network.h).
+    Local,
 };
 
 // ── The declaration of a carrier ─────────────────────────────────────
@@ -76,6 +81,13 @@ template <typename Resource>
     requires has_session_network_v<Resource>
 inline constexpr Network session_network_v = std::remove_cvref_t<Resource>::session_network;
 
+// True when the carrier states the Local network, so it has no peer.  The
+// concept reads the member of the carrier itself, so a carrier that states
+// no network, or another one, answers false.
+template <typename Resource>
+concept LocalCarrier = detail::network::states_a_typed_network<Resource>()
+                    && std::remove_cvref_t<Resource>::session_network == Network::Local;
+
 namespace detail::network::witness {
 
 struct FifoCarrier {
@@ -86,6 +98,9 @@ struct MailboxCarrier {
 };
 struct BagCarrier {
     static constexpr Network session_network = Network::Bag;
+};
+struct LocalCarrier {
+    static constexpr Network session_network = Network::Local;
 };
 struct SilentCarrier {};
 struct IntegerCarrier {
@@ -101,6 +116,7 @@ struct foundation::contracts::armed_cell<::fixy::session::has_session_network> {
     using accepts = witnesses<::fixy::session::detail::network::witness::FifoCarrier,
                               ::fixy::session::detail::network::witness::MailboxCarrier,
                               ::fixy::session::detail::network::witness::BagCarrier,
+                              ::fixy::session::detail::network::witness::LocalCarrier,
                               ::fixy::session::detail::network::witness::FifoCarrier&>;
     using refuses = witnesses<int, ::fixy::session::detail::network::witness::SilentCarrier,
                               ::fixy::session::detail::network::witness::IntegerCarrier>;

@@ -2469,7 +2469,7 @@ fixy_neg_compile_test(neg_sess_crash_door_derived_look_alike
   "CrashSessionDoor")
 fixy_neg_compile_test(neg_sess_crash_watched_friend_specialized
   "is private within this context"
-  "fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::CrashWatched\\(Handle, const fixy::session::PeerCrashCell&")
+  "fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::CrashWatched\\(Handle, const fixy::session::PeerCrashCell&")
 
 # Rules 1 and 2, and Stop as runtime syntax, hold in every session, so
 # the plain handle factory refuses them.
@@ -2534,29 +2534,29 @@ fixy_neg_compile_test(neg_sess_crash_keyed_target_unwatched
   "required for the satisfaction of .is_every_sender_watched_v<Proto, Peer, Reliable>. \\[with Proto = fixy::session::Send<fixy::session::PeerMsg<neg_sess_crash_keyed_target_unwatched_types::Q,")
 fixy_neg_compile_test(neg_sess_crash_between_label_and_payload
   "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
-  "CrashWatched<Handle, Self, Peer, Reliable, Position>::crash\\(")
+  "CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::crash\\(")
 # The label word of a keyed message and its value are one message too.
 fixy_neg_compile_test(neg_sess_crash_between_keyed_label_and_value
   "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
-  "CrashWatched<Handle, Self, Peer, Reliable, Position>::crash\\(.*\\[with P = fixy::session::Send<int, fixy::session::End>. Handle = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_crash_between_keyed_label_and_value_types::Wire")
+  "CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::crash\\(.*\\[with P = fixy::session::Send<int, fixy::session::End>. Handle = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_crash_between_keyed_label_and_value_types::Wire")
 fixy_neg_compile_test(neg_sess_crash_recorded_between_label_and_payload
   "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
   "required from .fixy::session::Recorded<Inner>::resource_type fixy::session::Recorded<Inner>::crash\\(")
 fixy_neg_compile_test(neg_sess_crash_recv_blocking_read
   "fixy::session::diagnostic \\[Crash_Read_Must_Poll\\]: recv\\(\\)"
-  "CrashWatched<Handle, Self, Peer, Reliable, Position>::recv\\(Read\\)")
+  "CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::recv\\(Read\\)")
 fixy_neg_compile_test(neg_sess_crash_branch_blocking_poll
   "fixy::session::diagnostic \\[Crash_Read_Must_Poll\\]: branch\\(\\)"
-  "CrashWatched<Handle, Self, Peer, Reliable, Position>::branch\\(Poll, Handler\\)")
+  "CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::branch\\(Poll, Handler\\)")
 fixy_neg_compile_test(neg_sess_crash_token_send_without_refusal
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
-  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::send\\(typename P::message_type, Transport\\)")
+  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(typename P::message_type, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_token_send_without_refusal
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
   "In instantiation of .static constexpr auto fixy::session::RecordingDoor::send\\(fixy::session::Recorded<Inner>&&, T, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_send_transport_result
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
-  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::send\\(typename P::message_type, Transport\\)")
+  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(typename P::message_type, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_send_transport_result
   ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
   "use of deleted function .void fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
@@ -2995,6 +2995,23 @@ fixy_neg_compile_test(neg_sess_mint_local_names_two_peers
 fixy_neg_compile_test(neg_sess_with_session_local_names_two_peers
   "no matching function for call to .with_session"
   "satisfaction of .NamesAtMostOnePeer<Proto>.")
+
+# A choice that puts no label on the wire needs a carrier that states the
+# Local network, and a Local carrier refuses a protocol with a peer.  The
+# crash transport enters a crash branch through recover, which refuses a
+# label branch and a held permission.
+fixy_neg_compile_test(neg_sess_select_no_label_on_a_channel
+  "\\[Local_Choice_Needs_A_Local_Carrier\\] select<I>\\(no_label\\) puts no word on the wire"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Select<Branches ...>, Resource, LoopCtx, Policy, PS>::select\\(Transport\\) && \\[with long unsigned int I = 1. Transport = fixy::session::no_label_t")
+fixy_neg_compile_test(neg_sess_network_local_two_roles
+  "fixy::session::diagnostic \\[Network_Local_Has_A_Peer\\]"
+  "the carrier states the Local network, so it has no peer")
+fixy_neg_compile_test(neg_sess_recover_label_branch
+  "no matching function for call to .fixy::session::HandleFactory::recover<0>"
+  "I = 0. LoopCtx = void. PS = foundation::permissions::PermSet<>.. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_recover_permission_held
+  "no matching function for call to .fixy::session::HandleFactory::recover<1>"
+  "I = 1. LoopCtx = void. PS = foundation::permissions::PermSet<neg_sess_recover_permission_held_types::Region>.. evaluated to .false.")
 
 fixy_neg_compile_test(neg_sess_strip_peers_not_a_local_type
   "invalid use of incomplete type .struct fixy::session::detail::proj::peer_walk<"

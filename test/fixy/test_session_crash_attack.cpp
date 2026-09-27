@@ -143,7 +143,7 @@ struct ForeignBox {
 }
 using CapturesEndpoint = decltype(capture_endpoint(std::declval<Endpoint>()));
 
-using WatchedEndpoint = s::CrashWatched<Endpoint, Q, P, s::NoReliableRoles>;
+using WatchedEndpoint = s::CrashWatched<Endpoint, Q, P, s::NoReliableRoles, BgCtx>;
 using RecordedEndpoint = s::Recorded<Endpoint>;
 
 // A class that the payload holds, points at, or names in a template

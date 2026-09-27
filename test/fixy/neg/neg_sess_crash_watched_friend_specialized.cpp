@@ -22,12 +22,14 @@ namespace fixy::session {
 template <>
 class CrashWatched<neg_sess_crash_watched_friend_specialized_types::Tag, neg_sess_crash_watched_friend_specialized_types::Tag,
                    neg_sess_crash_watched_friend_specialized_types::Tag, ReliableSet<>,
-                   detail::crash_transport::between_messages> {
+                   neg_sess_crash_watched_friend_specialized_types::Tag, detail::crash_transport::between_messages> {
 public:
     template <typename H>
     static auto forge(H inner, const PeerCrashCell& cell) {
         return CrashWatched<H, neg_sess_crash_watched_friend_specialized_types::Alice,
-                            neg_sess_crash_watched_friend_specialized_types::Bob, ReliableSet<>>{std::move(inner), cell};
+                            neg_sess_crash_watched_friend_specialized_types::Bob, ReliableSet<>,
+                            neg_sess_crash_watched_friend_specialized_types::Tag>{
+            std::move(inner), cell, neg_sess_crash_watched_friend_specialized_types::Tag{}};
     }
 };
 }  // namespace fixy::session
@@ -37,7 +39,7 @@ int main() {
     using namespace neg_sess_crash_watched_friend_specialized_types;
     s::PeerCrashCell cell;
     auto plain = s::mint_session_handle<s::Recv<int, s::End>>(Wire{});
-    auto forged = s::CrashWatched<Tag, Tag, Tag, s::ReliableSet<>>::forge(std::move(plain), cell);
+    auto forged = s::CrashWatched<Tag, Tag, Tag, s::ReliableSet<>, Tag>::forge(std::move(plain), cell);
     std::move(forged).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

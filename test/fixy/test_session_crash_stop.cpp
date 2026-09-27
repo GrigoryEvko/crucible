@@ -271,6 +271,31 @@ static_assert(!s::CtxFitsCrashSession<int, ProtoQ, Q, P, s::ReliableSet<>, Port>
 static_assert(!std::is_copy_constructible_v<CheckedP>);
 static_assert(std::is_move_constructible_v<CheckedP>);
 
+// ── The entry of a crash branch ─────────────────────────────────────
+//
+// The decorator enters a crash branch through HandleFactory::recover,
+// with the context of the mint.  The gate admits a branch that is no
+// label, from the empty set, with a context that admits its row.
+struct Region {
+    using permission_row = eff::Row<>;
+};
+using Waits = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
+using ReceivesIoOnCrash = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::Recv<IoPayload, s::End>>>;
+template <std::size_t I, typename PS, typename Ctx = BgCtx, typename Choice = Waits>
+constexpr bool recovers =
+    requires(Ctx const& ctx, s::SessionHandle<Choice, Port, void, s::DefaultAbandonmentPolicy, PS>&& handle) {
+        s::HandleFactory::recover<I>(ctx, std::move(handle));
+    };
+static_assert(recovers<1, ::foundation::permissions::EmptyPermSet>);
+static_assert(!recovers<0, ::foundation::permissions::EmptyPermSet>, "branch 0 is a label, which the peer picks");
+static_assert(!recovers<1, ::foundation::permissions::PermSet<Region>>, "the handle holds a token");
+static_assert(!recovers<2, ::foundation::permissions::EmptyPermSet>, "the Offer has two branches");
+static_assert(!recovers<1, ::foundation::permissions::EmptyPermSet, int>, "an int is not an execution context");
+static_assert(!recovers<1, ::foundation::permissions::EmptyPermSet, BgCtx, ReceivesIoOnCrash>,
+              "the background context holds no IO");
+static_assert(recovers<1, ::foundation::permissions::EmptyPermSet, BgIoCtx, ReceivesIoOnCrash>);
+static_assert(std::is_same_v<typename CheckedP::context_type, BgCtx>, "the decorator keeps the context of the mint");
+
 int fail(const char* what) {
     std::fprintf(stderr, "test_session_crash_stop: %s\n", what);
     return 1;

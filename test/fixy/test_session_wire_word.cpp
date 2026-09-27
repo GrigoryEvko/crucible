@@ -7,7 +7,8 @@
 // the stable type id of the label key, and the label key is a function of
 // the payload type alone.  main compares the words of the two files.
 //
-// This file also specializes step_wire_word_v for one keyed step.  The
+// This file also specializes step_wire_word_v for one keyed step, and
+// branch_wire_word_v for one branch of a keyed choice.  Each
 // specialization changes what this file reads through that spelling, and
 // the handle still sends the word of the registry, so no user spelling
 // reaches the wire.
@@ -39,12 +40,16 @@ using Menu = ::fixy::session::Select<
 [[nodiscard]] std::array<std::uint64_t, 2> words_of_the_peer_unit() noexcept;
 
 using KeyedHello = ::fixy::session::Send<::fixy::session::Labelled<Hello, int>, ::fixy::session::End>;
+using KeyedPick = ::fixy::session::Select<::fixy::session::Send<::fixy::session::Labelled<Hello, void>, ::fixy::session::End>,
+                                          ::fixy::session::Send<::fixy::session::Labelled<Bye, void>, ::fixy::session::End>>;
 inline constexpr std::uint64_t forged_word = 7;
 }  // namespace wire_word_probe
 
 namespace fixy::session {
 template <>
 inline constexpr std::uint64_t step_wire_word_v<wire_word_probe::KeyedHello> = wire_word_probe::forged_word;
+template <>
+inline constexpr std::uint64_t branch_wire_word_v<wire_word_probe::KeyedPick, 0> = wire_word_probe::forged_word;
 }  // namespace fixy::session
 
 namespace {
@@ -53,10 +58,13 @@ using wire_word_probe::Alice;
 using wire_word_probe::Bye;
 using wire_word_probe::Hello;
 using wire_word_probe::KeyedHello;
+using wire_word_probe::KeyedPick;
 using wire_word_probe::Menu;
 
 static_assert(s::is_keyed_choice_v<Menu>);
 static_assert(s::step_wire_word_v<KeyedHello> == wire_word_probe::forged_word,
+              "the specialization answers for its author");
+static_assert(s::branch_wire_word_v<KeyedPick, 0> == wire_word_probe::forged_word,
               "the specialization answers for its author");
 
 // The Resource of the keyed send: the word that the transport took.
@@ -65,10 +73,11 @@ struct WordWire {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
+using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+
 // Sends the keyed message of KeyedHello and returns the word that the
 // handle wrote.
 [[nodiscard]] std::uint64_t word_the_handle_sends() {
-    using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
     const BgCtx ctx{::foundation::effects::testing::bg()};
     std::uint64_t written = 0;
     auto head = s::mint_session<KeyedHello>(ctx, WordWire{&written});
@@ -77,6 +86,19 @@ struct WordWire {
         return true;
     });
     auto at_end = std::move(at_value).send(1, [](WordWire&, int&) noexcept { return true; });
+    static_cast<void>(std::move(at_end).close());
+    return written;
+}
+
+// Picks branch 0 of KeyedPick and returns the word that the handle wrote.
+[[nodiscard]] std::uint64_t word_the_select_sends() {
+    const BgCtx ctx{::foundation::effects::testing::bg()};
+    std::uint64_t written = 0;
+    auto head = s::mint_session<KeyedPick>(ctx, WordWire{&written});
+    auto at_end = std::move(head).select<0>([](WordWire& wire, std::size_t& word) noexcept {
+        *wire.written = word;
+        return true;
+    });
     static_cast<void>(std::move(at_end).close());
     return written;
 }
@@ -119,6 +141,14 @@ int main() {
                      "test_session_wire_word: the handle sent %016llx, and a specialization of step_wire_word_v "
                      "reached the wire\n",
                      static_cast<unsigned long long>(sent));
+        return 1;
+    }
+    const std::uint64_t picked = word_the_select_sends();
+    if (picked != tr::label_word_of(^^s::Labelled<Hello, void>) || picked == wire_word_probe::forged_word) {
+        std::fprintf(stderr,
+                     "test_session_wire_word: the select sent %016llx, and a specialization of branch_wire_word_v "
+                     "reached the wire\n",
+                     static_cast<unsigned long long>(picked));
         return 1;
     }
     return 0;

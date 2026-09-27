@@ -83,8 +83,8 @@ namespace detail::recording {
 
 template <typename H>
 struct is_crash_watched_shape : std::false_type {};
-template <typename H, typename Self, typename Peer, typename Reliable, typename Position>
-struct is_crash_watched_shape<CrashWatched<H, Self, Peer, Reliable, Position>> : std::true_type {};
+template <typename H, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
+struct is_crash_watched_shape<CrashWatched<H, Self, Peer, Reliable, Ctx, Position>> : std::true_type {};
 
 template <typename H>
 struct is_checkpoint_shape : std::false_type {};
@@ -100,8 +100,8 @@ template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy
 struct wire_protocol<SessionHandle<Proto, Resource, LoopCtx, Policy, PS>> {
     using type = Proto;
 };
-template <typename H, typename Self, typename Peer, typename Reliable, typename Position>
-struct wire_protocol<CrashWatched<H, Self, Peer, Reliable, Position>> : wire_protocol<H> {};
+template <typename H, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
+struct wire_protocol<CrashWatched<H, Self, Peer, Reliable, Ctx, Position>> : wire_protocol<H> {};
 template <typename Inner, typename Head, typename Loop, typename Frame>
 struct wire_protocol<CheckpointHandle<Inner, Head, Loop, Frame>> : wire_protocol<Inner> {};
 
@@ -116,7 +116,7 @@ inline constexpr std::size_t recordable_branch_limit = 256;
 template <typename Choice, std::size_t I>
 [[nodiscard]] consteval LabelWord label_word_for_select() noexcept {
     if constexpr (is_keyed_choice_v<Choice>) {
-        return LabelWord{branch_wire_word_v<Choice, I>};
+        return LabelWord{::fixy::session::detail::branch_wire_word_of<Choice, I>()};
     } else {
         return LabelWord{};
     }

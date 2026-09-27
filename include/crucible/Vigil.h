@@ -318,15 +318,15 @@ public:
         return assert_producer_thread_();
     }
 
-    // Relaxed suffices: only the foreground writes the mode, at each
-    // activation and deactivation of the replay context, and a cross-thread
-    // reader needs only eventual visibility.  The real synchronization is
-    // the pending-region observe.
+    // Only the foreground writes the mode, at each activation and
+    // deactivation of the replay context.  The cell loads with acquire
+    // order, so a reader on another thread that reads a mode also sees what
+    // the foreground wrote before it published that mode.
     //
     // Not gnu::pure, despite reading nothing else: another thread can change
     // the value between two loads, so common-subexpression elimination would
     // be wrong.
-    [[nodiscard]] Mode mode() const noexcept { return mode_.load(std::memory_order_relaxed); }
+    [[nodiscard]] Mode mode() const noexcept { return mode_.load(); }
 
     // True while the foreground replays a region.  The mode follows the
     // context: every path that activates or deactivates it publishes the

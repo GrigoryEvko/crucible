@@ -22,8 +22,10 @@ namespace eff = ::foundation::effects;
 using BgCtx = eff::detail::ctx_witnesses::BgWitness;
 
 // A move-only Resource that counts the values it carries.  The member
-// makes it move-only, so it is an owned SessionResource.
+// makes it move-only, so it is an owned SessionResource.  It has no peer,
+// so it states the Local network, and a choice over it puts no label.
 struct Counter {
+    static constexpr s::Network session_network = s::Network::Local;
     [[no_unique_address]] s::MoveOnlyResource move_only{};
     int sent = 0;
 };
@@ -168,7 +170,7 @@ static_assert(s::CtxAdmitsChannelRow<BgIoCtx, s::Send<s::Transferable<int, IoReg
     auto head = s::mint_session<Stream>(ctx, Counter{});
     static_assert(std::is_same_v<typename decltype(head)::protocol, s::Select<s::Send<int, s::Continue>, s::End>>,
                   "a Loop at the head is unrolled one iteration");
-    auto at_end = std::move(head).select_local<1>();
+    auto at_end = std::move(head).select<1>(s::no_label);
     const Counter back = std::move(at_end).close();
     if (back.sent != 0) {
         std::fprintf(stderr, "loop_head_is_the_choice: sent %d values, want 0\n", back.sent);
@@ -181,9 +183,9 @@ static_assert(s::CtxAdmitsChannelRow<BgIoCtx, s::Send<s::Transferable<int, IoReg
     const BgCtx ctx{eff::testing::bg()};
     const Counter back = s::with_session<Stream>(ctx, Counter{}, [](auto head) noexcept {
         for (int value = 0; value < 3; ++value) {
-            head = std::move(head).template select_local<0>().send(value, count_one);
+            head = std::move(head).template select<0>(s::no_label).send(value, count_one);
         }
-        return std::move(head).template select_local<1>();
+        return std::move(head).template select<1>(s::no_label);
     });
     if (back.sent != 3) {
         std::fprintf(stderr, "callback_lends_the_resource: sent %d values, want 3\n", back.sent);

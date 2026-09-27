@@ -93,8 +93,8 @@ void exercise_metalog_pair() {
         std::declval<FgCtx const&>(), std::declval<MetaLog::ProducerHandle&&>())));
     static_assert(noexcept(ms::mint_metalog_consumer_session<MetaLog>(
         std::declval<FgCtx const&>(), std::declval<MetaLog::ConsumerHandle&&>())));
-    (void)std::move(producer).select_local<1>().close();
-    (void)std::move(consumer).select_local<1>().close();
+    (void)std::move(producer).select<1>(::fixy::session::no_label).close();
+    (void)std::move(consumer).select<1>(::fixy::session::no_label).close();
 }
 
 void exercise_swmr_writer() {

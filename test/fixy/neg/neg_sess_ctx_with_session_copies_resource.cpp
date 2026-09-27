@@ -13,6 +13,7 @@
 namespace copies_resource_fixture {
 namespace s = ::fixy::session;
 struct Channel {
+    static constexpr s::Network session_network = s::Network::Local;
     Channel() = default;
     Channel(Channel&&) noexcept = default;
     Channel& operator=(Channel&&) noexcept = default;
@@ -28,7 +29,7 @@ int main() {
     const BgCtx ctx{::foundation::effects::testing::bg()};
     copies_resource_fixture::Channel channel{};
     auto back = ::fixy::session::with_session<copies_resource_fixture::Stream>(
-        ctx, channel, [](auto head) noexcept { return std::move(head).template select_local<1>(); });
+        ctx, channel, [](auto head) noexcept { return std::move(head).template select<1>(::fixy::session::no_label); });
     (void)back;
     return 0;
 }

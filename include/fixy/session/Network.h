@@ -130,6 +130,8 @@ enum class NetworkRefusal : std::uint8_t {
     ReceiverHasTwoSenders,
     ChoiceOnBag,
     RepeatedWordOnBag,
+    // A carrier with no peer implements no exchange between two roles.
+    PeerOnLocal,
 };
 
 namespace detail::network {
@@ -360,6 +362,10 @@ consteval NetworkRefusal refusal_of() noexcept {
         return NetworkRefusal::NotBalancedPlus;
     } else if constexpr (!proj::each_role_crash_projects<G, Reliable, g::roles_t<G>>::value) {
         return NetworkRefusal::RoleNotProjectable;
+    } else if constexpr (N == Network::Local) {
+        return std::meta::template_arguments_of(std::meta::dealias(^^g::roles_t<G>)).size() < 2
+                   ? NetworkRefusal::None
+                   : NetworkRefusal::PeerOnLocal;
     } else if constexpr (N == Network::PerPairFifo) {
         return NetworkRefusal::None;
     } else if constexpr (!std::is_same_v<Reliable, EveryRoleReliable>) {
@@ -446,6 +452,12 @@ consteval void ensure_implementable_on() noexcept {
     } else if constexpr (refusal == NetworkRefusal::RepeatedWordOnBag) {
         static_assert(detail::network::dependent_false_v<G, Reliable>,
                       detail::network::repeated_word_message<G>());
+    } else if constexpr (refusal == NetworkRefusal::PeerOnLocal) {
+        static_assert(detail::network::dependent_false_v<G, Reliable>,
+                      "fixy::session::diagnostic [Network_Local_Has_A_Peer]: the carrier states the Local network, "
+                      "so it has no peer, and the global type exchanges messages between two roles.  A local "
+                      "carrier makes each choice alone and puts no label on a wire.  Bind the protocol to a "
+                      "carrier that states the network of its channel.");
     }
 }
 
@@ -522,5 +534,11 @@ struct foundation::contracts::armed_cell<::fixy::session::is_implementable_on> {
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,
                                           ::fixy::session::Network::Mailbox, ::fixy::session::NoReliableRoles>,
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,
-                                          ::fixy::session::Network::PerPairFifo, int>>;
+                                          ::fixy::session::Network::PerPairFifo, int>,
+        ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,
+                                          ::fixy::session::Network::Local>>;
 };
+
+static_assert(::fixy::session::network_refusal_v<::fixy::session::detail::network::witness::OneMessage,
+                                                 ::fixy::session::Network::Local>
+              == ::fixy::session::NetworkRefusal::PeerOnLocal);

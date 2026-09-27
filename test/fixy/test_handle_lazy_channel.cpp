@@ -24,7 +24,10 @@ namespace eff = ::foundation::effects;
 
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 
+// The channel is a sink with no peer, so it states the Local network, and
+// a choice over it puts no label.
 struct VesselChannel : ::foundation::Pinned<VesselChannel> {
+    static constexpr s::Network session_network = s::Network::Local;
     int sentinel = 0;
     int call_count = 0;
 };
@@ -72,9 +75,9 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
     if (!head.has_value()) return 2;
     if (&head->resource() != &storage || head->resource().sentinel != 42) return 3;
 
-    auto next = std::move(*head).select_local<0>().send(99, write_value);
+    auto next = std::move(*head).select<0>(s::no_label).send(99, write_value);
     if (storage.sentinel != 99 || storage.call_count != 1) return 4;
-    VesselChannel& back = std::move(next).select_local<1>().close();
+    VesselChannel& back = std::move(next).select<1>(s::no_label).close();
     if (&back != &storage) return 5;
     return 0;
 }
@@ -159,8 +162,8 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
-            auto next = std::move(*head).select_local<0>().send(1, write_value);
-            static_cast<void>(std::move(next).select_local<1>().close());
+            auto next = std::move(*head).select<0>(s::no_label).send(1, write_value);
+            static_cast<void>(std::move(next).select<1>(s::no_label).close());
             processed.fetch_add(1, std::memory_order_release);
             return;
         }

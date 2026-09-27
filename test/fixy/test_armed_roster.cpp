@@ -766,14 +766,14 @@ namespace rec = ::fixy::session::detail::recording;
 
 template <>
 struct foundation::contracts::armed_cell<rec::is_crash_watched_shape> {
-    using accepts = witnesses<w::sn::CrashWatched<int, w::RoleP, w::RoleQ, w::sn::ReliableSet<>>>;
+    using accepts = witnesses<w::sn::CrashWatched<int, w::RoleP, w::RoleQ, w::sn::ReliableSet<>, w::BgCtx>>;
     using refuses = witnesses<int, w::sn::CrashSend<int, int>>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<rec::is_checkpoint_shape> {
     using accepts = witnesses<w::sn::CheckpointHandle<int, int, int, int>>;
-    using refuses = witnesses<int, w::sn::CrashWatched<int, w::RoleP, w::RoleQ, w::sn::ReliableSet<>>>;
+    using refuses = witnesses<int, w::sn::CrashWatched<int, w::RoleP, w::RoleQ, w::sn::ReliableSet<>, w::BgCtx>>;
 };
 
 template <>

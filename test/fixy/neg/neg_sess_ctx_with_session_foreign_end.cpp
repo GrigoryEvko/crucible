@@ -14,6 +14,7 @@
 namespace foreign_end_fixture {
 namespace s = ::fixy::session;
 struct Channel {
+    static constexpr s::Network session_network = s::Network::Local;
     [[no_unique_address]] s::MoveOnlyResource move_only{};
 };
 using Stream = s::Loop<s::Select<s::Send<int, s::Continue>, s::End>>;
@@ -27,7 +28,7 @@ int main() {
             std::move(head).detach(::fixy::session::detach_reason::TestInstrumentation{});
             auto other =
                 ::fixy::session::mint_session<foreign_end_fixture::Stream>(ctx, foreign_end_fixture::Channel{});
-            return std::move(other).template select_local<1>();
+            return std::move(other).template select<1>(::fixy::session::no_label);
         });
     (void)back;
     return 0;

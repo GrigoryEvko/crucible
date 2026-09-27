@@ -88,6 +88,10 @@ public:
     using row_discipline = ::fixy::row_discipline::session_from_machine<Proto>;
     using row_payload = machine_type;
 
+    // A view drives the machine of this bridge and no peer, so each choice
+    // of a view puts no label (Local choices in fixy/session/Handle.h).
+    static constexpr Network session_network = Network::Local;
+
     ~SessionFromMachine() = default;
 
     [[nodiscard]] constexpr machine_type& machine() & noexcept { return machine_; }
@@ -148,7 +152,8 @@ using session_view_t = decltype(std::declval<Bridge&>().session_view(std::declva
 // atomic form therefore borrows the cell rather than owning a machine,
 // and the session view is the observation and replay surface over it.
 //
-// Reads are uniform, so the concept below fixes their shape.  Writes
+// Reads are uniform, so the concept below fixes their shape: a load with
+// no argument, which the cell does with acquire order.  Writes
 // are not: each cell decides which transitions are legal and can delete
 // the illegal ones under its own diagnostic, so the write helper only
 // forwards to the cell's own publish step.
@@ -160,9 +165,9 @@ using session_view_t = decltype(std::declval<Bridge&>().session_view(std::declva
 template <typename Cell>
 concept AtomicMachineCell =
     std::derived_from<std::remove_cvref_t<Cell>, ::foundation::Pinned<std::remove_cvref_t<Cell>>>
-    && requires(const std::remove_cvref_t<Cell>& cell, std::memory_order order) {
+    && requires(const std::remove_cvref_t<Cell>& cell) {
            typename std::remove_cvref_t<Cell>::state_type;
-           { cell.load(order) } -> std::same_as<typename std::remove_cvref_t<Cell>::state_type>;
+           { cell.load() } -> std::same_as<typename std::remove_cvref_t<Cell>::state_type>;
        };
 
 // The cell is taken by non-const reference on purpose.  A protocol over
@@ -186,8 +191,8 @@ template <typename Proto, typename Ctx, typename Cell>
 template <typename Cell>
     requires AtomicMachineCell<Cell>
 [[nodiscard]] constexpr typename std::remove_cvref_t<Cell>::state_type
-atomic_machine_state(const Cell& cell, std::memory_order order = std::memory_order_acquire) noexcept {
-    return cell.load(order);
+atomic_machine_state(const Cell& cell) noexcept {
+    return cell.load();
 }
 
 // The transport for a Send step over an atomic cell.  The signature is
@@ -196,15 +201,16 @@ atomic_machine_state(const Cell& cell, std::memory_order order = std::memory_ord
 // result is the answer of the cell: true when the cell took the event.
 // A cell that answers false makes the handle wait through the watch and
 // try again, so a cell must answer false only when a later try can
-// succeed.
+// succeed.  The cell chooses the memory order of its publication, because
+// the order is part of what the cell promises its observers.
 template <typename Event, AtomicMachineCell Cell>
 [[nodiscard]] constexpr bool publish_atomic_machine_transition(Cell& cell, Event& event) noexcept(
-    noexcept(cell.publish_from_session(std::move(event), std::memory_order_release)))
+    noexcept(cell.publish_from_session(std::move(event))))
     requires requires {
-        { cell.publish_from_session(std::move(event), std::memory_order_release) } -> std::same_as<bool>;
+        { cell.publish_from_session(std::move(event)) } -> std::same_as<bool>;
     }
 {
-    return cell.publish_from_session(std::move(event), std::memory_order_release);
+    return cell.publish_from_session(std::move(event));
 }
 
 }  // namespace fixy::session

@@ -15,11 +15,13 @@
 
 #include <fixy/session/VigilMode.h>
 
+#include <foundation/Platform.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 
 #include <cstdio>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -106,9 +108,7 @@ static_assert(std::is_base_of_v<::foundation::Pinned<vm::ModeCell>, vm::ModeCell
 // such a cell is a second cell, and a pointer to it is a second holder.
 struct LoosePhaseCell {
     using state_type = vm::Mode;
-    [[nodiscard]] vm::Mode load(std::memory_order = std::memory_order_relaxed) const noexcept {
-        return vm::Mode::RECORDING;
-    }
+    [[nodiscard]] vm::Mode load() const noexcept { return vm::Mode::RECORDING; }
 };
 static_assert(!s::AtomicMachineCell<LoosePhaseCell>);
 
@@ -142,9 +142,7 @@ static_assert(vm::ModeCompiledToRecording::to == vm::Mode::RECORDING);
 // protocol by accident.
 struct LookalikeCell : ::foundation::Pinned<LookalikeCell> {
     using state_type = vm::Mode;
-    [[nodiscard]] vm::Mode load(std::memory_order = std::memory_order_relaxed) const noexcept {
-        return vm::Mode::RECORDING;
-    }
+    [[nodiscard]] vm::Mode load() const noexcept { return vm::Mode::RECORDING; }
 };
 static_assert(s::AtomicMachineCell<LookalikeCell>);
 static_assert(vm::CtxFitsVigilModeBridge<BgCtx, vm::ModeCell>);
@@ -171,7 +169,7 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
     }
 
     // A step reaches the machine through the bridge that the handle holds.
-    auto sending = std::move(view).select_local<0>();
+    auto sending = std::move(view).select<0>(s::no_label);
     auto again = std::move(sending).send(7, [](Bridge& held, int& value) noexcept {
         held.state_mut().ticks = value;
         return true;
@@ -236,14 +234,14 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
     const BgCtx ctx{eff::testing::bg()};
     auto session = vm::mint_vigil_mode_bridge(ctx, cell);
 
-    auto to_compiled = std::move(session).select_local<0>();
+    auto to_compiled = std::move(session).select<0>(s::no_label);
     auto after_compiled = std::move(to_compiled).send(vm::ModeRecordingToCompiled{}, apply);
     if (s::atomic_machine_state(cell) != vm::Mode::COMPILED) {
         std::fprintf(stderr, "the RECORDING -> COMPILED send did not reach the cell\n");
         return 1;
     }
 
-    auto to_recording = std::move(after_compiled).select_local<1>();
+    auto to_recording = std::move(after_compiled).select<1>(s::no_label);
     auto after_recording = std::move(to_recording).send(vm::ModeCompiledToRecording{}, apply);
     if (s::atomic_machine_state(cell) != vm::Mode::RECORDING) {
         std::fprintf(stderr, "the COMPILED -> RECORDING send did not reach the cell\n");
@@ -251,7 +249,7 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
     }
 
     // Branch 2 is End, which is the protocol's only exit.
-    auto terminal = std::move(after_recording).select_local<2>();
+    auto terminal = std::move(after_recording).select<2>(s::no_label);
     vm::ModeCell& recovered = std::move(terminal).close();
     if (&recovered != &cell) {
         std::fprintf(stderr, "close returned a different cell\n");
@@ -259,8 +257,7 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
     }
 
     // The direct publishers stay available to the thread that owns the
-    // cell; they are relaxed because that thread needs no ordering
-    // against itself.
+    // cell.  They publish with release stores.
     cell.publish_compiled();
     if (s::atomic_machine_state(cell) != vm::Mode::COMPILED) {
         std::fprintf(stderr, "publish_compiled did not take\n");
@@ -274,11 +271,38 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
     return 0;
 }
 
+// ── Runtime: a published mode orders the writes before it ────────────
+//
+// The owner writes a plain value and then publishes COMPILED.  The
+// observer waits for COMPILED with the default load and then reads the
+// value.  The release store and the acquire load order the two accesses.
+// With relaxed accesses the read is a data race, and the tsan preset
+// reports it.
+[[nodiscard]] int published_mode_orders_the_owner_writes() {
+    vm::ModeCell cell{};
+    int written_before_publish = 0;
+    int observed = 0;
+    {
+        std::jthread observer{[&cell, &written_before_publish, &observed] {
+            while (cell.load() != vm::Mode::COMPILED) CRUCIBLE_SPIN_PAUSE;
+            observed = written_before_publish;
+        }};
+        written_before_publish = 42;
+        cell.publish_compiled();
+    }
+    if (observed != 42) {
+        std::fprintf(stderr, "the observer read %d, not the value written before the publish\n", observed);
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (const int rc = bridge_owns_and_lends(); rc != 0) return rc;
     if (const int rc = terminal_view_closes(); rc != 0) return rc;
     if (const int rc = mode_protocol_round_trip(); rc != 0) return rc;
+    if (const int rc = published_mode_orders_the_owner_writes(); rc != 0) return rc;
     return 0;
 }

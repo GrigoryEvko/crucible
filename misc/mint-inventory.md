@@ -303,12 +303,12 @@ apply to the row.
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
-| `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
+| `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 9 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
-| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 12 |
+| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 13 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 44 |
-| `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
+| `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 
 ## include/foundation/algebra/
@@ -347,7 +347,7 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 159 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 160 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 27 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |

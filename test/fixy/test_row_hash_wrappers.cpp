@@ -850,8 +850,8 @@ using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;
 
 // The decorators of a session handle, each over one plain handle at End.
 using PlainHandle = ::fixy::session::SessionHandle<::fixy::session::End, int>;
-using CrashWatchedHandle =
-    ::fixy::session::CrashWatched<PlainHandle, SelfRole, PeerRole, ::fixy::session::ReliableSet<>>;
+using CrashWatchedHandle = ::fixy::session::CrashWatched<PlainHandle, SelfRole, PeerRole, ::fixy::session::ReliableSet<>,
+                                                         fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg>>>;
 using RecordedHandle = ::fixy::session::Recorded<PlainHandle>;
 using RecordedCrashWatchedHandle = ::fixy::session::Recorded<CrashWatchedHandle>;
 using CheckpointAtEnd =
@@ -1182,8 +1182,9 @@ inline constexpr StatedZero kZeros[] = {
      "exists, and it is never a value"},
     {^^::fixy::session::is_permission_classified, kMetafunction},
     {^^::fixy::session::payload_perm_delta, kMetafunction},
-    {^^::fixy::session::keyed_value, kMetafunction},
-    {^^::fixy::session::keyed_landing, kMetafunction},
+    {^^::fixy::session::no_label_t,
+     "the trying write of a local choice: it writes nothing and holds nothing, and it is a transport argument, never "
+     "a value in a kernel signature"},
     {^^::fixy::session::is_plain_payload, kMetafunction},
     {^^::fixy::session::protocol_delivered_regions, kMetafunction},
     {^^::fixy::session::MoveOnlyResource,

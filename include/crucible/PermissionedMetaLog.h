@@ -19,6 +19,7 @@
 #include <crucible/MetaLog.h>
 
 #include <fixy/Aliases.h>
+#include <fixy/session/NetworkModel.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
@@ -86,6 +87,11 @@ public:
         using value_type = ::crucible::TensorMeta;
         using tag_type = producer_tag;
 
+        // The producer picks alone when it appends and when it stops, and no
+        // peer reads a label, so a session over the handle states the Local
+        // network (fixy/session/NetworkModel.h).
+        static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::Local;
+
         ProducerHandle(const ProducerHandle&) =
             delete("MetaLog ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
         ProducerHandle& operator=(const ProducerHandle&) =
@@ -130,6 +136,10 @@ public:
     public:
         using value_type = ::crucible::TensorMeta;
         using tag_type = consumer_tag;
+
+        // The consumer picks alone when it drains and when it stops, so a
+        // session over the handle states the Local network.
+        static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::Local;
 
         ConsumerHandle(const ConsumerHandle&) =
             delete("MetaLog ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");

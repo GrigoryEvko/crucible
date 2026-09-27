@@ -3,10 +3,10 @@
 // Crash transport: one decorator that runs a session handle under the
 // crash-stop semantics of fixy/session/Crash.h.
 //
-// CrashWatched<Handle, Self, Peer, Reliable> wraps any session handle.
-// Each operation forwards to the handle and wraps the successor, so the
-// crash semantics hold at every step.  The operations follow LMCS 2025
-// Fig. 4:
+// CrashWatched<Handle, Self, Peer, Reliable, Ctx> wraps any session
+// handle, and keeps the context of its mint.  Each operation forwards to
+// the handle and wraps the successor, so the crash semantics hold at every
+// step.  The operations follow LMCS 2025 Fig. 4:
 //
 //   send, select  If the peer has crashed, the message is lost (rule
 //                 r-send-↯).  The decorator does not call the transport.
@@ -460,10 +460,12 @@ concept CrashSessionAdmissible = is_reliable_set<Reliable>::value && !std::is_sa
 // The whole gate of mint_crash_session: an admissible crash session, a
 // Resource that a mint admits, and a context that admits the effect row of
 // the protocol (CtxAdmitsProtocolRow of fixy/session/Handle.h), as the
-// context of mint_session does.
+// context of mint_session does.  The decorator keeps a copy of the
+// context, and enters each crash branch with it through
+// HandleFactory::recover, so the context has a copy that cannot fail.
 template <typename Ctx, typename Proto, typename Self, typename Peer, typename Reliable, typename Resource>
 concept CtxFitsCrashSession = CrashSessionAdmissible<Proto, Self, Peer, Reliable> && SessionResource<Resource>
-                           && CtxAdmitsProtocolRow<Ctx, Proto>;
+                           && CtxAdmitsProtocolRow<Ctx, Proto> && std::is_nothrow_copy_constructible_v<Ctx>;
 
 // The same question as a one-argument trait, so that it can hold an
 // armed cell.
@@ -478,7 +480,7 @@ struct is_crash_session_admissible<CrashSession<Proto, Self, Peer, Reliable>>
 
 // ── The decorator ────────────────────────────────────────────────────
 
-template <typename Handle, typename Self, typename Peer, typename Reliable,
+template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx,
           typename Position = detail::crash_transport::between_messages>
 class CrashWatched;
 
@@ -499,25 +501,6 @@ namespace detail::crash_transport {
 }
 [[nodiscard]] constexpr message_counts one_more_received(message_counts counts) noexcept {
     return {counts.received + 1, counts.sent};
-}
-
-// Calls `enter` for the label branch at `index`, with the index as a
-// constant.  Each branch gives one result type, as the handler of
-// SessionHandle<Offer>::branch must.  Complexity: linear in the label
-// branches.
-template <typename Enter, std::size_t... Is>
-constexpr auto enter_label(std::size_t index, const Enter& enter, std::index_sequence<Is...>) {
-    using Result = decltype(enter(std::integral_constant<std::size_t, 0>{}));
-    if constexpr (std::is_void_v<Result>) {
-        static_cast<void>(((index == Is ? (enter(std::integral_constant<std::size_t, Is>{}), true) : false) || ...));
-    } else {
-        std::optional<Result> result;
-        static_cast<void>(
-            ((index == Is ? (result.emplace(enter(std::integral_constant<std::size_t, Is>{})), true) : false) || ...));
-        if (!result) [[unlikely]]
-            std::abort();
-        return std::move(*result);
-    }
 }
 
 // A trying write of a word, guarded by the peer cell.  To a crashed peer
@@ -561,10 +544,11 @@ class CrashSessionDoor final {
     // Wraps the successor of `from` with the counts after the step, and
     // records where it stands inside a message.
     template <typename NextPosition = detail::crash_transport::between_messages, typename Next, typename Handle,
-              typename Self, typename Peer, typename Reliable, typename Position>
-    [[nodiscard]] static constexpr auto wrap_(const CrashWatched<Handle, Self, Peer, Reliable, Position>& from, Next next,
-                                              detail::crash_transport::message_counts counts) noexcept {
-        return CrashWatched<Next, Self, Peer, Reliable, NextPosition>{std::move(next), *from.peer_cell_, counts};
+              typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
+    [[nodiscard]] static constexpr auto wrap_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& from,
+                                              Next next, detail::crash_transport::message_counts counts) noexcept {
+        return CrashWatched<Next, Self, Peer, Reliable, Ctx, NextPosition>{std::move(next), *from.peer_cell_,
+                                                                           from.ctx_, counts};
     }
 
 public:
@@ -573,10 +557,10 @@ public:
     template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy, typename Ctx,
               typename Resource>
         requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource>
-    [[nodiscard]] static constexpr auto open(Ctx const&, Resource resource, const PeerCrashCell& peer_cell,
+    [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, const PeerCrashCell& peer_cell,
                                              std::source_location loc) noexcept {
         auto inner = mint_session_handle<Proto, Resource, Policy>(std::forward<Resource>(resource), loc);
-        return CrashWatched<decltype(inner), Self, Peer, Reliable>{std::move(inner), peer_cell};
+        return CrashWatched<decltype(inner), Self, Peer, Reliable, Ctx>{std::move(inner), peer_cell, ctx};
     }
 
     template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy, typename Ctx,
@@ -590,10 +574,10 @@ public:
     // The decorator gives the inner handle a trying write that checks the
     // peer before each try.  When the peer has crashed, the payload goes
     // back to the caller as `undelivered`, so a token in it is not lost.
-    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position, typename Transport>
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position, typename Transport>
         requires is_send_v<typename Handle::protocol> && (!is_keyed_step_v<typename Handle::protocol>)
               && TryWrite<Transport, typename Handle::resource_type, typename Handle::protocol::message_type>
-    [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Position>&& watched,
+    [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              typename Handle::protocol::message_type value, Transport transport) {
         using T = typename Handle::protocol::message_type;
         using Resource = typename Handle::resource_type;
@@ -622,10 +606,10 @@ public:
     // A keyed Send writes its label word.  The successor then stands at the
     // value step, inside the message.  The word to a crashed peer is lost,
     // and `undelivered` then holds the empty message.
-    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position, typename Transport>
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position, typename Transport>
         requires is_send_v<typename Handle::protocol> && is_keyed_step_v<typename Handle::protocol>
               && TryWrite<Transport, typename Handle::resource_type, std::size_t>
-    [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Position>&& watched,
+    [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              Transport transport) {
         using P = typename Handle::protocol;
         using T = typename P::message_type;
@@ -647,10 +631,10 @@ public:
     }
 
     // ── select ───────────────────────────────────────────────────────
-    template <std::size_t I, typename Handle, typename Self, typename Peer, typename Reliable, typename Position,
+    template <std::size_t I, typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position,
               typename Transport>
         requires is_select_v<typename Handle::protocol> && TryWrite<Transport, typename Handle::resource_type, std::size_t>
-    [[nodiscard]] static constexpr auto select(CrashWatched<Handle, Self, Peer, Reliable, Position>&& watched,
+    [[nodiscard]] static constexpr auto select(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                                Transport transport) {
         using P = typename Handle::protocol;
         bool is_written = false;
@@ -679,10 +663,10 @@ public:
     // A read is a polling read, std::optional<T>(Resource&).  A read of
     // another shape waits inside the transport, where no crash is seen, so
     // each reception refuses it.
-    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position, typename Read>
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position, typename Read>
         requires is_recv_v<typename Handle::protocol> && (!is_keyed_step_v<typename Handle::protocol>)
               && (!is_crash_payload_v<typename Handle::protocol::message_type>)
-    [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Position>&& watched, Read read) {
+    [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched, Read read) {
         using T = typename Handle::protocol::message_type;
         using Resource = typename Handle::resource_type;
         static_assert(PollRead<Read, Resource, T>,
@@ -709,9 +693,9 @@ public:
 
     // A keyed Recv reads its label word.  The successor then stands at the
     // value step, inside the message, and its recv reads the value.
-    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position, typename Poll>
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position, typename Poll>
         requires is_recv_v<typename Handle::protocol> && is_keyed_step_v<typename Handle::protocol>
-    [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Position>&& watched, Poll poll) {
+    [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched, Poll poll) {
         using P = typename Handle::protocol;
         using Resource = typename Handle::resource_type;
         static_assert(PollRead<Poll, Resource, std::size_t>,
@@ -734,9 +718,9 @@ public:
     }
 
     // A crash branch head gives the crash record.  No transport runs.
-    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position>
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
         requires is_recv_v<typename Handle::protocol> && is_crash_payload_v<typename Handle::protocol::message_type>
-    [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Position>&& watched) {
+    [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched) {
         using Record = typename Handle::protocol::message_type;
         using Resource = typename Handle::resource_type;
         static_assert(std::is_same_v<typename Record::peer, Peer>,
@@ -755,10 +739,10 @@ public:
     // branch can stand at the value step Recv<U, K> while another branch
     // with a payload of void continues with the same Recv<U, K> as a new
     // message.
-    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position, typename Poll,
+    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position, typename Poll,
               typename Handler>
         requires is_offer_v<typename Handle::protocol>
-    static constexpr auto branch(CrashWatched<Handle, Self, Peer, Reliable, Position>&& watched, Poll poll,
+    static constexpr auto branch(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched, Poll poll,
                                  Handler handler) {
         using P = typename Handle::protocol;
         static_assert(PollRead<Poll, typename Handle::resource_type, std::size_t>,
@@ -775,35 +759,40 @@ public:
 
         // A word is one more message received.  The crash branch receives
         // none: it runs because the count of the report was reached.
-        detail::crash_transport::message_counts counts = watched.counts_;
-        // Enters label branch I.  A positional branch that opens with a
-        // reception, and a keyed branch whose payload is not void, still
-        // wait for the rest of the message of the label.
-        const auto enter = [&watched, &handler, &counts]<std::size_t I>(std::integral_constant<std::size_t, I>) {
-            auto branch_handle = std::move(watched.inner_).template pick_local<I>();
-            using Head = typename decltype(branch_handle)::protocol;
-            constexpr bool is_inside_message = [] {
-                if constexpr (is_keyed_choice_v<P>) {
-                    return keyed_step_has_value_v<std::tuple_element_t<I, typename P::branches_tuple>>;
-                } else if constexpr (is_recv_v<Head>) {
-                    return !is_crash_payload_v<typename Head::message_type>;
-                } else {
-                    return false;
-                }
-            }();
-            if constexpr (is_inside_message) {
-                return std::invoke(handler, wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(
-                                                watched, std::move(branch_handle), counts));
-            } else {
-                return std::invoke(handler, wrap_(watched, std::move(branch_handle), counts));
-            }
-        };
-        const auto take_word = [&watched, &enter, &counts](std::size_t word) {
+        const auto take_word = [&watched, &handler](std::size_t word) {
             if (!detail::crash_transport::names_message_branch<P>(word)) [[unlikely]]
                 detail::crash_transport::abort_on_crash_label(word, message_branches);
-            counts = detail::crash_transport::one_more_received(watched.counts_);
-            return detail::crash_transport::enter_label(branch_of_wire_word<P>(word), enter,
-                                                        std::make_index_sequence<message_branches>{});
+            const detail::crash_transport::message_counts counts =
+                detail::crash_transport::one_more_received(watched.counts_);
+            // The inner handle takes the word that the poll read, and enters
+            // the label branch that it names.  A positional branch that opens
+            // with a reception, and a keyed branch whose payload is not void,
+            // still wait for the rest of the message of the label.
+            return std::move(watched.inner_)
+                .branch_indexed([word](typename Handle::resource_type&) noexcept -> std::optional<std::size_t> {
+                    return word;
+                },
+                                [&watched, &handler, counts]<std::size_t I>(std::integral_constant<std::size_t, I>,
+                                                                            auto branch_handle) {
+                                    using Head = typename decltype(branch_handle)::protocol;
+                                    constexpr bool is_inside_message = [] {
+                                        if constexpr (is_keyed_choice_v<P>) {
+                                            return keyed_step_has_value_v<
+                                                std::tuple_element_t<I, typename P::branches_tuple>>;
+                                        } else if constexpr (is_recv_v<Head>) {
+                                            return !is_crash_payload_v<typename Head::message_type>;
+                                        } else {
+                                            return false;
+                                        }
+                                    }();
+                                    if constexpr (is_inside_message) {
+                                        return std::invoke(
+                                            handler, wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(
+                                                         watched, std::move(branch_handle), counts));
+                                    } else {
+                                        return std::invoke(handler, wrap_(watched, std::move(branch_handle), counts));
+                                    }
+                                });
         };
         auto& resource = watched.inner_.resource();
         std::optional<std::size_t> word;
@@ -827,16 +816,20 @@ public:
         }
         if (word) return take_word(*word);
         if constexpr (is_watched) {
+            // The crash branch is no label, so no word names it.  The handle
+            // enters it through recover, with the context of the mint.
             constexpr std::size_t crash_branch = detail::crash::crash_branch_position(^^P, ^^Peer);
-            return std::invoke(handler,
-                               wrap_(watched, std::move(watched.inner_).template pick_local<crash_branch>(), counts));
+            return std::invoke(handler, wrap_(watched,
+                                              HandleFactory::template recover<crash_branch>(
+                                                  watched.ctx_, std::move(watched.inner_)),
+                                              watched.counts_));
         } else {
             detail::crash_transport::abort_on_reliable_peer_crash();
         }
     }
 };
 
-template <typename Handle, typename Self, typename Peer, typename Reliable, typename Position>
+template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
 class [[nodiscard]] CrashWatched {
     static_assert(is_reliable_set<Reliable>::value,
                   "fixy::session::diagnostic [Crash_Reliable_Set_Required]: CrashWatched<H, Self, Peer, Reliable>: "
@@ -844,18 +837,21 @@ class [[nodiscard]] CrashWatched {
 
     Handle inner_;
     const PeerCrashCell* peer_cell_;
+    // The context of the mint.  The door enters a crash branch with it.
+    [[no_unique_address]] Ctx ctx_;
     detail::crash_transport::message_counts counts_{};
 
     // The one friend.  The door builds each decorator and does each step,
     // so no specialization of this template reaches another.
     friend class CrashSessionDoor;
 
-    constexpr CrashWatched(Handle inner, const PeerCrashCell& cell,
+    constexpr CrashWatched(Handle inner, const PeerCrashCell& cell, const Ctx& ctx,
                            detail::crash_transport::message_counts counts = {}) noexcept
-        : inner_{std::move(inner)}, peer_cell_{&cell}, counts_{counts} {}
+        : inner_{std::move(inner)}, peer_cell_{&cell}, ctx_{ctx}, counts_{counts} {}
 
 public:
     using handle_type = Handle;
+    using context_type = Ctx;
     using protocol = typename Handle::protocol;
     using resource_type = typename Handle::resource_type;
     using loop_ctx = typename Handle::loop_ctx;
@@ -992,11 +988,12 @@ public:
     // and checks the peer.  A declared read would wait inside the transport,
     // where no crash is seen, so the decorator refuses it.
     //
-    // The decorator reads the word, finds the branch that it names
-    // (branch_of_wire_word in fixy/session/Handle.h), and enters that
-    // branch of the inner handle with pick_local.  A crash branch is no
+    // The decorator polls the word and gives it to branch_indexed of the
+    // inner handle, which enters the branch that the word names
+    // (branch_of_wire_word in fixy/session/Handle.h).  A crash branch is no
     // label, so no word names it.  On a crash the decorator enters the crash
-    // branch with pick_local, and no word is read.  A positional branch that
+    // branch through HandleFactory::recover, with the context of the mint,
+    // and no word is read.  A positional branch that
     // opens with a reception waits for the payload of the label, from the
     // sender of the Offer.  A keyed branch whose payload is not void waits
     // for the value of its payload, from the same sender.

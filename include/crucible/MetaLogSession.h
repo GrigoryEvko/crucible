@@ -17,7 +17,8 @@
 // Each protocol loops and ends by a local choice: the producer picks when
 // to stop appending, and the consumer picks when to stop draining.  The
 // two sides are not one channel.  The log carries records, not labels, so
-// each side picks its branch with select_local.
+// each handle states the Local network, and each side picks its branch
+// with select<I>(fixy::session::no_label).
 //
 // A transport of this facade tries once and reports whether it took or
 // found a record.  When the log is full, or holds nothing, the handle
@@ -135,6 +136,9 @@ static_assert(sizeof(Log::ProducerHandle) == sizeof(::crucible::MetaLog*),
               "metalog_session: ProducerHandle must stay pointer-sized; the Permission token collapses through EBO.");
 static_assert(sizeof(Log::ConsumerHandle) == sizeof(::crucible::MetaLog*),
               "metalog_session: ConsumerHandle must stay pointer-sized; the Permission token collapses through EBO.");
+
+static_assert(::fixy::session::AdmitsLocalChoice<Log::ProducerHandle, ProducerProto, void>);
+static_assert(::fixy::session::AdmitsLocalChoice<Log::ConsumerHandle, ConsumerProto, void>);
 
 }  // namespace detail::metalog_session_self_test
 

@@ -263,9 +263,9 @@ void test_typed_session_round_trip() {
         const FgCtx ctx = ::foundation::effects::testing::foreground();
         std::optional head{ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(producer))};
         for (int i = 0; i < kCount; ++i) {
-            head.emplace(std::move(*head).select_local<0>().send(make_meta(i + 10), ms::append_one));
+            head.emplace(std::move(*head).select<0>(::fixy::session::no_label).send(make_meta(i + 10), ms::append_one));
         }
-        auto back = std::move(*head).select_local<1>().close();
+        auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
         producer_handle_back.store(back.size_approx() <= static_cast<std::uint32_t>(kCount),
                                    std::memory_order_release);
         producer_done.store(true, std::memory_order_release);
@@ -277,11 +277,11 @@ void test_typed_session_round_trip() {
             ctx, std::move(consumer), [&received](auto first) noexcept {
                 std::optional head{std::move(first)};
                 for (int i = 0; i < kCount; ++i) {
-                    auto [meta, next] = std::move(*head).template select_local<0>().recv(ms::drain_one);
+                    auto [meta, next] = std::move(*head).template select<0>(::fixy::session::no_label).recv(ms::drain_one);
                     received[static_cast<std::size_t>(i)] = meta;
                     head.emplace(std::move(next));
                 }
-                return std::move(*head).template select_local<1>();
+                return std::move(*head).template select<1>(::fixy::session::no_label);
             });
         consumer_handle_back = back.tail_index() == static_cast<std::uint32_t>(kCount);
     }};
@@ -307,8 +307,8 @@ void test_session_gives_the_handle_back() {
 
     auto producer_head = ms::mint_metalog_producer_session<PermissionedLog>(fg, std::move(producer));
     auto consumer_head = ms::mint_metalog_consumer_session<PermissionedLog>(fg, std::move(consumer));
-    auto producer_back = std::move(producer_head).select_local<1>().close();
-    auto consumer_back = std::move(consumer_head).select_local<1>().close();
+    auto producer_back = std::move(producer_head).select<1>(::fixy::session::no_label).close();
+    auto consumer_back = std::move(consumer_head).select<1>(::fixy::session::no_label).close();
 
     CRUCIBLE_TEST_REQUIRE(producer_back.try_append_one(make_meta(7)));
     auto drained = consumer_back.try_drain_one();
