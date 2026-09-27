@@ -62,7 +62,7 @@ test/fixy/test_row_hash_wrappers.cpp ::fixy::corpus::detail x3 — hashes the ro
 test/fixy/test_row_hash_wrappers.cpp ::fixy::detail x8 — hashes the row of the pinned-core invariants
 test/foundation/test_algebra_core.cpp ::foundation::algebra::detail x6 — runs the lattice self-test namespace
 test/foundation/test_computation.cpp ::foundation::effects::detail x30 — pins the graded capabilities of the computation carrier
-test/foundation/test_diag.cpp ::foundation::diag::detail x3 — pins the counts of the diagnostic self-test
+test/foundation/test_diag.cpp ::foundation::diag::detail x2 — pins the counts of the diagnostic self-test, and makes sure that a failed write poisons the stream sink of the JSON emitter
 test/foundation/test_effects_core.cpp ::foundation::effects::detail x14 — runs the effect-row self-test namespaces
 test/foundation/test_lattices_bands.cpp ::foundation::algebra::lattices::detail x18 — runs the band lattice self-test namespaces
 test/foundation/test_lattices_core.cpp ::foundation::algebra::lattices::detail x8 — runs the core lattice self-test namespaces

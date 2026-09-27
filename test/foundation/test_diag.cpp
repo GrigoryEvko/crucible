@@ -725,40 +725,81 @@ void test_json_record_escapes() {
     EXPECT(fallback.find("\"suggestion\":\"" + std::string{diag::DetSafeLeak::remediation}) != std::string::npos);
 }
 
-// The record is built in a 32 KiB fixed buffer.  A record that does not
-// fit is refused whole: nothing reaches the stream.
-void test_json_fixed_buffer_bounds() {
+// A record of exactly json_record_max_bytes is written.  One byte more
+// and the record is refused whole: nothing reaches the stream.
+void test_json_record_bound() {
+    constexpr diag::Category cat = diag::Category::BudgetExceeded;
+    std::FILE* frame = std::tmpfile();
+    EXPECT(frame != nullptr);
+    if (frame == nullptr) return;
+    EXPECT(diag::emit_json_violation(frame, cat, "fn", ""));
+    const std::size_t frame_bytes = read_tmp_file(frame).size();
+    std::fclose(frame);
+    EXPECT(frame_bytes > 0 && frame_bytes < diag::json_record_max_bytes);
+
+    std::FILE* exact = std::tmpfile();
+    EXPECT(exact != nullptr);
+    if (exact == nullptr) return;
+    const std::string exact_gap(diag::json_record_max_bytes - frame_bytes, 'g');
+    EXPECT(diag::emit_json_violation(exact, cat, "fn", exact_gap));
+    EXPECT(read_tmp_file(exact).size() == diag::json_record_max_bytes);
+    std::fclose(exact);
+
+    std::FILE* over = std::tmpfile();
+    EXPECT(over != nullptr);
+    if (over == nullptr) return;
+    const std::string over_gap(exact_gap.size() + 1, 'g');
+    EXPECT(!diag::emit_json_violation(over, cat, "fn", over_gap));
+    EXPECT(read_tmp_file(over).empty());
+    std::fclose(over);
+
+    EXPECT(!diag::emit_json_violation(nullptr, cat, "fn", "d"));
+}
+
+// A record goes to the stream through a buffer much shorter than the
+// record.  The escapes cross each boundary of that buffer, and the output
+// is compared byte for byte.
+void test_json_record_longer_than_the_stream_buffer() {
     std::FILE* f = std::tmpfile();
     EXPECT(f != nullptr);
     if (f == nullptr) return;
 
-    const std::string too_long(40000, 'g');
-    EXPECT(!diag::emit_json_violation(f, diag::Category::BudgetExceeded, "fn", too_long));
-    EXPECT(read_tmp_file(f).empty());
-
-    const std::string fits(1000, 'g');
-    EXPECT(diag::emit_json_violation(f, diag::Category::BudgetExceeded, "fn", fits));
-    EXPECT(read_tmp_file(f).find(fits) != std::string::npos);
-    std::fclose(f);
-
-    EXPECT(!diag::emit_json_violation(nullptr, diag::Category::BudgetExceeded, "fn", "d"));
-
-    // The buffer itself: a full buffer refuses one more byte, an
-    // over-long append is refused whole, and a failed write poisons the
-    // flush.
-    diag::detail::fixed_json_buffer<8> buf;
-    EXPECT(buf.append("12345678"));
-    EXPECT(!buf.push('9'));
-    std::FILE* g = std::tmpfile();
-    EXPECT(g != nullptr);
-    if (g != nullptr) {
-        EXPECT(!buf.flush(g));
-        std::fclose(g);
+    std::string gap;
+    std::string escaped_gap;
+    for (int index = 0; index < 1500; ++index) {
+        gap += "ab\"\n";
+        escaped_gap += R"(ab\"\n)";
     }
+    constexpr diag::Category cat = diag::Category::EffectRowMismatch;
+    EXPECT(diag::emit_json_violation(f, cat, "long.cpp:3:4@long_fn", gap));
+    const std::string expected = std::string{"{\"format_version\":1,\"source_position\":{\"file\":\"long.cpp\","
+                                             "\"line\":3,\"column\":4,\"function\":\"long_fn\"},"
+                                             "\"error_code\":\"EffectRowMismatch\",\"goal\":\""}
+                               + std::string{diag::description_of(cat)} + "\",\"have\":\"long_fn\",\"gap\":\""
+                               + escaped_gap + "\",\"suggestion\":\"" + std::string{diag::remediation_of(cat)}
+                               + "\",\"related_snippets\":[]}\n";
+    EXPECT(read_tmp_file(f) == expected);
+    std::fclose(f);
+}
 
-    diag::detail::fixed_json_buffer<8> fresh;
-    EXPECT(!fresh.append("123456789"));
-    EXPECT(!fresh.append("1"));
+// A stream that refuses the write poisons the sink: the flush answers
+// false, and so does each later push and flush.
+void test_json_stream_sink_poisons_on_a_failed_write() {
+    std::FILE* read_only = std::fopen("/dev/null", "r");
+    EXPECT(read_only != nullptr);
+    if (read_only == nullptr) return;
+    diag::detail::file_json_sink sink{read_only};
+    EXPECT(sink.push('x'));
+    EXPECT(!sink.flush());
+    EXPECT(!sink.push('y'));
+    EXPECT(!sink.flush());
+    std::fclose(read_only);
+
+    std::FILE* also_read_only = std::fopen("/dev/null", "r");
+    EXPECT(also_read_only != nullptr);
+    if (also_read_only == nullptr) return;
+    EXPECT(!diag::emit_json_violation(also_read_only, diag::Category::DetSafeLeak, "fn", "d"));
+    std::fclose(also_read_only);
 }
 
 void test_source_position_parser() {
@@ -814,7 +855,9 @@ int main() {
     test_json_shape_through_sink();
     test_json_violation_record_shape();
     test_json_record_escapes();
-    test_json_fixed_buffer_bounds();
+    test_json_record_bound();
+    test_json_record_longer_than_the_stream_buffer();
+    test_json_stream_sink_poisons_on_a_failed_write();
     test_source_position_parser();
 
     if (g_failures > 0) {

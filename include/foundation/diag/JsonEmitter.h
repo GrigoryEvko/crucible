@@ -3,6 +3,11 @@
 // The record this emits is read by editor tooling, so the field names,
 // their nesting and the version number are an external contract. Adding
 // a field is safe. Renaming or removing one is not.
+//
+// The emitter writes through stdio, so it is not async-signal-safe.  It
+// keeps its stack frame small: a record goes to the stream through a
+// buffer of a few hundred bytes, so a thread with a small stack can emit
+// one.
 
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
@@ -14,7 +19,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <meta>
 #include <string_view>
@@ -42,6 +46,10 @@ struct JsonDiagnosticRecord {
     std::string_view suggestion{};
     std::string_view related_snippet{};
 };
+
+// A record longer than this is refused whole: nothing of it reaches the
+// stream.
+inline constexpr std::size_t json_record_max_bytes = 32768;
 
 namespace detail {
 
@@ -89,11 +97,11 @@ template <typename Record, std::size_t N>
 
 static_assert(record_fields_are<SourcePosition>(source_position_fields),
               "SourcePosition gained, lost or renamed a field.  The nested source_position object in "
-              "emit_json_record writes each field by name, so a new one is absent from the output until "
+              "write_json_record writes each field by name, so a new one is absent from the output until "
               "it is written there and added to source_position_fields.");
 
 static_assert(record_fields_are<JsonDiagnosticRecord>(json_record_fields),
-              "JsonDiagnosticRecord gained, lost or renamed a field.  emit_json_record writes each field "
+              "JsonDiagnosticRecord gained, lost or renamed a field.  write_json_record writes each field "
               "by name, so a new one is absent from the output until it is written there and added to "
               "json_record_fields.  Renaming or removing one changes an external contract and needs a "
               "format version.");
@@ -126,17 +134,6 @@ static_assert(!record_fields_are<Probe>(too_long), "A roster entry no field answ
 
 }  // namespace record_roster_self_test
 
-[[nodiscard]] inline bool write_all(FILE* out, std::string_view s) noexcept {
-    if (out == nullptr) return false;
-    if (s.empty()) return true;
-    return std::fwrite(s.data(), 1, s.size(), out) == s.size();
-}
-
-[[nodiscard]] inline bool write_char(FILE* out, char c) noexcept {
-    if (out == nullptr) return false;
-    return std::fputc(static_cast<unsigned char>(c), out) != EOF;
-}
-
 [[nodiscard]] inline bool parse_u32(std::string_view s, std::uint_least32_t& out) noexcept {
     if (s.empty()) return false;
     unsigned long value = 0;
@@ -159,21 +156,72 @@ static_assert(!record_fields_are<Probe>(too_long), "A roster entry no field answ
     return true;
 }
 
-// A sink is whatever the escaper hands bytes to: the fixed buffer
-// below, or a FILE* through file_json_sink.  Both answer false on a
-// failed write, and the escaper stops at the first false.  One escaper
-// and one field writer then serve both emitters, so an escape the
-// format reserves is spelled once.
+// A sink takes the bytes of a record: the counter below, or a stream
+// through file_json_sink.  Each answers false when it refuses a byte, and
+// the writer stops at the first false.  One writer then serves the count
+// and the output, so an escape the format reserves is spelled once.
 template <class S>
 concept JsonSink = requires(S& sink, std::string_view text, char c) {
     { sink.append(text) } -> std::same_as<bool>;
     { sink.push(c) } -> std::same_as<bool>;
 };
 
-struct file_json_sink {
-    FILE* out = nullptr;
-    [[nodiscard]] bool append(std::string_view s) noexcept { return write_all(out, s); }
-    [[nodiscard]] bool push(char c) noexcept { return write_char(out, c); }
+// Counts the bytes of a record and writes none.  It refuses the first
+// byte past json_record_max_bytes, so a record over the bound is refused
+// before any of it is written.
+class counting_json_sink {
+public:
+    [[nodiscard]] bool append(std::string_view text) noexcept {
+        if (text.size() > json_record_max_bytes - bytes_) return false;
+        bytes_ += text.size();
+        return true;
+    }
+
+    [[nodiscard]] bool push(char /*byte*/) noexcept { return append(std::string_view{" ", 1}); }
+
+private:
+    // bytes_ <= json_record_max_bytes is an invariant, so the subtraction
+    // in append cannot wrap.
+    std::size_t bytes_ = 0;
+};
+
+// Writes a record to a stream through a small buffer on the stack.  A full
+// buffer goes to the stream in one fwrite.  The caller holds the lock of
+// the stream for the whole record, so the records of two threads do not
+// mix.
+class file_json_sink {
+public:
+    explicit file_json_sink(FILE* out) noexcept : out_{out} {}
+    file_json_sink(const file_json_sink&) = delete("a sink owns the unwritten bytes of one record");
+    file_json_sink& operator=(const file_json_sink&) = delete("a sink owns the unwritten bytes of one record");
+
+    [[nodiscard]] bool append(std::string_view text) noexcept {
+        for (const char byte : text) {
+            if (!push(byte)) return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool push(char byte) noexcept {
+        if (!ok_ || (length_ == buffer_.size() && !flush())) return false;
+        buffer_[length_] = byte;
+        ++length_;
+        return true;
+    }
+
+    // Writes the bytes that the buffer holds.  A failed write poisons the
+    // sink, so each later push and flush answers false.
+    [[nodiscard]] bool flush() noexcept {
+        if (length_ > 0 && ok_) ok_ = std::fwrite(buffer_.data(), 1, length_, out_) == length_;
+        length_ = 0;
+        return ok_;
+    }
+
+private:
+    FILE* out_ = nullptr;
+    std::array<char, 512> buffer_{};
+    std::size_t length_ = 0;
+    bool ok_ = true;
 };
 
 // Writes s with every byte JSON reserves escaped: the quote, the
@@ -230,87 +278,45 @@ template <JsonSink S>
         && sink.push('"') && (!comma || sink.push(','));
 }
 
-// `data`, `size` and `ok` used to be public members of an aggregate, so
-// any caller could store a size past Capacity.  Both writers then went
-// out of bounds, and neither guard could see it:
-//
-//   push()   `size == Capacity` is false for size > Capacity, so
-//            data[size++] wrote past the array.
-//   append() `Capacity - size` wraps in std::size_t when size >
-//            Capacity, giving a bound near 2^64, so the memcpy landed
-//            at data + size.
-//
-// They are private now and the mutators below are the only writers, so
-// `size_ <= Capacity` is an invariant of the class and the subtraction
-// in append() cannot wrap.  Nothing outside this header ever touched
-// the members, so this costs no call site anything.
-//
-// A contract would have reached production here -- none of this
-// header's three consumers is on CRUCIBLE_CONTRACT_IGNORE_TUS, and
-// Release compiles contracts as `observe` onto a handler that aborts.
-// The access specifier is still the better answer: it costs nothing,
-// it cannot be switched off by a build flag, and it refuses the bad
-// value at the assignment rather than one call later at the use.
-template <std::size_t Capacity>
-    requires(Capacity > 0)
-class fixed_json_buffer {
-public:
-    fixed_json_buffer() noexcept = default;
+template <JsonSink S>
+[[nodiscard]] bool append_json_uint(S& sink, unsigned long value) noexcept {
+    char digits[32];
+    const auto [ptr, ec] = std::to_chars(digits, digits + sizeof(digits), value);
+    if (ec != std::errc{}) return false;
+    return sink.append({digits, static_cast<std::size_t>(ptr - digits)});
+}
 
-    bool append(std::string_view s) noexcept {
-        // size_ <= Capacity is an invariant, so this cannot wrap.
-        if (!ok_ || s.size() > Capacity - size_) {
-            ok_ = false;
+// The one writer of a record, for the count and for the output.
+template <JsonSink S>
+[[nodiscard]] bool write_json_record(S& sink, JsonDiagnosticRecord const& rec) noexcept {
+    const std::string_view code = rec.error_code.empty() ? name_of(rec.category) : rec.error_code;
+    const std::string_view goal = rec.goal.empty() ? description_of(rec.category) : rec.goal;
+    const std::string_view suggestion = rec.suggestion.empty() ? remediation_of(rec.category) : rec.suggestion;
+
+    if (!sink.append("{\"format_version\":")) return false;
+    if (!append_json_uint(sink, static_cast<unsigned long>(CRUCIBLE_DIAG_FORMAT_VERSION))) return false;
+    if (!sink.append(",\"source_position\":{")) return false;
+    if (!append_json_string_field(sink, "file", rec.source.file)) return false;
+    if (!sink.append("\"line\":")) return false;
+    if (!append_json_uint(sink, static_cast<unsigned long>(rec.source.line))) return false;
+    if (!sink.append(",\"column\":")) return false;
+    if (!append_json_uint(sink, static_cast<unsigned long>(rec.source.column))) return false;
+    if (!sink.push(',')) return false;
+    if (!append_json_string_field(sink, "function", rec.source.function, false)) return false;
+    if (!sink.append("},")) return false;
+    if (!append_json_string_field(sink, "error_code", code)) return false;
+    if (!append_json_string_field(sink, "goal", goal)) return false;
+    if (!append_json_string_field(sink, "have", rec.have)) return false;
+    if (!append_json_string_field(sink, "gap", rec.gap)) return false;
+    if (!append_json_string_field(sink, "suggestion", suggestion)) return false;
+    if (!sink.append("\"related_snippets\":[")) return false;
+    if (!rec.related_snippet.empty()) {
+        if (!sink.push('"') || !append_json_escaped(sink, rec.related_snippet) || !sink.push('"')) {
             return false;
         }
-        if (!s.empty()) {
-            std::memcpy(data_.data() + size_, s.data(), s.size());
-            size_ += s.size();
-        }
-        return true;
     }
-
-    bool push(char c) noexcept {
-        if (!ok_ || size_ >= Capacity) {
-            ok_ = false;
-            return false;
-        }
-        data_[size_] = c;
-        ++size_;
-        return true;
-    }
-
-    bool append_uint(unsigned long value) noexcept {
-        char tmp[32];
-        const auto [ptr, ec] = std::to_chars(tmp, tmp + sizeof(tmp), value);
-        if (ec != std::errc{}) {
-            ok_ = false;
-            return false;
-        }
-        return append({tmp, static_cast<std::size_t>(ptr - tmp)});
-    }
-
-    bool append_escaped(std::string_view s) noexcept { return append_json_escaped(*this, s); }
-
-    bool string_field(std::string_view key, std::string_view value, bool comma = true) noexcept {
-        return append_json_string_field(*this, key, value, comma);
-    }
-
-    bool flush(FILE* out) noexcept {
-        return ok_ && out != nullptr && std::fwrite(data_.data(), 1, size_, out) == size_;
-    }
-
-private:
-    // No initializer, deliberately.  Only data_[0, size_) is ever read,
-    // and every byte in that range was written by append() or push()
-    // first, so the tail is never observed.  Zero-filling it would put a
-    // Capacity-byte memset on the emission path that bench_diag_emission
-    // measures, and buy nothing.  A standard array, so the subscript in
-    // push() is checked by the standard library's debug assertions.
-    std::array<char, Capacity> data_;
-    std::size_t size_ = 0;
-    bool ok_ = true;
-};
+    return sink.append("]}\n");
+}
 
 }  // namespace detail
 
@@ -365,19 +371,6 @@ private:
     return pos;
 }
 
-// The unbuffered writers: the same escaper and field writer, over a
-// FILE* sink.
-[[nodiscard]] inline bool write_json_escaped(FILE* out, std::string_view s) noexcept {
-    detail::file_json_sink sink{out};
-    return detail::append_json_escaped(sink, s);
-}
-
-[[nodiscard]] inline bool write_json_string_field(FILE* out, std::string_view key, std::string_view value,
-                                                  bool comma = true) noexcept {
-    detail::file_json_sink sink{out};
-    return detail::append_json_string_field(sink, key, value, comma);
-}
-
 [[nodiscard]] inline JsonDiagnosticRecord record_from_violation(Category cat, std::string_view context,
                                                                 std::string_view detail) noexcept {
     const SourcePosition source = parse_source_position(context);
@@ -393,40 +386,19 @@ private:
     };
 }
 
+// Two passes over one writer.  The first counts the bytes and refuses a
+// record past json_record_max_bytes, so an over-long record leaves the
+// stream untouched.  The second writes the record under the lock of the
+// stream.  Complexity: linear in the length of the record, twice.
 [[nodiscard]] inline bool emit_json_record(FILE* out, JsonDiagnosticRecord const& rec) noexcept {
     if (out == nullptr) return false;
-    detail::fixed_json_buffer<32768> buf;
-    const std::string_view code = rec.error_code.empty() ? name_of(rec.category) : rec.error_code;
-    const std::string_view goal = rec.goal.empty() ? description_of(rec.category) : rec.goal;
-    const std::string_view suggestion = rec.suggestion.empty() ? remediation_of(rec.category) : rec.suggestion;
-
-    if (!buf.append("{\"format_version\":")) return false;
-    if (!buf.append_uint(static_cast<unsigned long>(CRUCIBLE_DIAG_FORMAT_VERSION))) return false;
-    if (!buf.append(",\"source_position\":{")) return false;
-    if (!buf.string_field("file", rec.source.file)) return false;
-    if (!buf.append("\"line\":")) return false;
-    if (!buf.append_uint(static_cast<unsigned long>(rec.source.line))) {
-        return false;
-    }
-    if (!buf.append(",\"column\":")) return false;
-    if (!buf.append_uint(static_cast<unsigned long>(rec.source.column))) {
-        return false;
-    }
-    if (!buf.push(',')) return false;
-    if (!buf.string_field("function", rec.source.function, false)) return false;
-    if (!buf.append("},")) return false;
-    if (!buf.string_field("error_code", code)) return false;
-    if (!buf.string_field("goal", goal)) return false;
-    if (!buf.string_field("have", rec.have)) return false;
-    if (!buf.string_field("gap", rec.gap)) return false;
-    if (!buf.string_field("suggestion", suggestion)) return false;
-    if (!buf.append("\"related_snippets\":[")) return false;
-    if (!rec.related_snippet.empty()) {
-        if (!buf.push('"') || !buf.append_escaped(rec.related_snippet) || !buf.push('"')) {
-            return false;
-        }
-    }
-    return buf.append("]}\n") && buf.flush(out);
+    detail::counting_json_sink counter;
+    if (!detail::write_json_record(counter, rec)) return false;
+    ::flockfile(out);
+    detail::file_json_sink sink{out};
+    const bool written = detail::write_json_record(sink, rec) && sink.flush();
+    ::funlockfile(out);
+    return written;
 }
 
 [[nodiscard]] inline bool emit_json_violation(FILE* out, Category cat, std::string_view context,
@@ -446,10 +418,6 @@ private:
     return std::fprintf(out, "crucible-violation: category=%.*s fn=%.*s detail=%.*s\n", cat_n, cat_name.data(), fn_n,
                         fn.data(), dt_n, detail.data())
         >= 0;
-}
-
-inline void json_violation_sink(Category cat, std::string_view fn, std::string_view detail) noexcept {
-    (void)emit_json_violation(stderr, cat, fn, detail);
 }
 
 }  // namespace foundation::diag

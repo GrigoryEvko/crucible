@@ -18,13 +18,15 @@
 
 namespace foundation::diag {
 
-// The runtime can invoke a sink from a signal handler, so a sink written
-// for that case has to stay async-signal-safe.
+// report_violation is async-signal-safe only when its sink is.  The
+// default sink is not, because it writes through stdio in each format.
+// report_violation_at is not async-signal-safe with any sink, because it
+// formats the position with snprintf.
 
 using violation_sink_t = void (*)(Category, std::string_view, std::string_view) noexcept;
 
 // The caller keeps the detail free of newlines. One violation is one
-// line. This sink uses fprintf, which is not signal-safe.
+// line.
 [[gnu::cold]]
 void default_violation_sink(Category cat, std::string_view fn, std::string_view detail) noexcept;
 

@@ -43,6 +43,10 @@ foundation_test(test_ctx)
 foundation_test(test_capability)
 foundation_test(test_computation)
 foundation_test(test_diag)
+# The JSON emitter keeps a small stack frame.  A frame larger than 8 KiB in
+# a function that the test instantiates stops the build of the test.
+foundation_test(test_json_emitter_frame)
+target_compile_options(test_json_emitter_frame PRIVATE -Werror=frame-larger-than=8192)
 foundation_test(test_pinned)
 foundation_test(test_brand)
 
