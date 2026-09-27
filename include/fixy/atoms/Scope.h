@@ -37,9 +37,7 @@
 #include <fixy/Axis.h>
 
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
-#include <foundation/effects/Lift.h>
 
-#include <cstddef>
 #include <meta>
 #include <tuple>
 #include <type_traits>
@@ -123,46 +121,13 @@ static_assert(every_roster_member_is_atom_<scope_atom_roster>(),
 static_assert(every_roster_member_on_axis_<scope_atom_roster, Axis::MemoryScope>(),
               "fixy/atoms/Scope.h: every scope atom engages Axis::MemoryScope.");
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-
-template <fal::MemoryScope S>
-[[nodiscard]] consteval std::size_t atoms_claiming_() noexcept {
-    std::size_t claims = 0;
-    template for (constexpr auto member : roster_members_v<scope_atom_roster>) {
-        using A = [:member:];
-        if constexpr (A::scope == S) ++claims;
-    }
-    return claims;
-}
-
-[[nodiscard]] consteval bool every_scope_has_exactly_one_atom_() noexcept {
-    bool exact = true;
-    static constexpr auto scopes = std::define_static_array(std::meta::enumerators_of(^^fal::MemoryScope));
-    template for (constexpr auto scope_member : scopes) {
-        constexpr fal::MemoryScope scope = [:scope_member:];
-        exact = exact && (atoms_claiming_<scope>() == 1);
-    }
-    return exact;
-}
-
-[[nodiscard]] consteval bool no_member_lifts_() noexcept {
-    bool none_lift = true;
-    template for (constexpr auto member : roster_members_v<scope_atom_roster>) {
-        using A = [:member:];
-        none_lift = none_lift && !::foundation::effects::LiftsToRow<A>;
-    }
-    return none_lift;
-}
-
-#pragma GCC diagnostic pop
-
-static_assert(every_scope_has_exactly_one_atom_(),
+static_assert(every_enumerator_has_exactly_one_atom_<scope_atom_roster, fal::MemoryScope>(),
               "fixy/atoms/Scope.h: every MemoryScope enumerator must be claimed by exactly one atom in "
               "fixy::atom::scope.  A scope with no atom cannot be written, and one with two is unreachable.");
 
-static_assert(no_member_lifts_(), "fixy/atoms/Scope.h: a visibility scope names no operation, so no atom here "
-                                  "declares lifts_to.  The head of this file says why.");
+static_assert(no_roster_member_lifts_<scope_atom_roster>(),
+              "fixy/atoms/Scope.h: a visibility scope names no operation, so no atom here declares lifts_to.  "
+              "The head of this file says why.");
 
 // The order the rules read, including the cross-trunk cell that makes
 // V401 a two-trunk rule rather than a threshold: Inner is incomparable

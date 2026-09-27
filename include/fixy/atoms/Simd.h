@@ -214,35 +214,6 @@ static_assert(every_roster_member_on_axis_<simd_atom_roster, Axis::SimdIsa>(),
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
-template <simd::SimdIsa I>
-[[nodiscard]] consteval std::size_t atoms_claiming_() noexcept {
-    std::size_t claims = 0;
-    template for (constexpr auto member : roster_members_v<simd_atom_roster>) {
-        using A = [:member:];
-        if constexpr (A::isa == I) ++claims;
-    }
-    return claims;
-}
-
-[[nodiscard]] consteval bool every_isa_has_exactly_one_atom_() noexcept {
-    bool exact = true;
-    static constexpr auto isas = std::define_static_array(std::meta::enumerators_of(^^simd::SimdIsa));
-    template for (constexpr auto isa_member : isas) {
-        constexpr simd::SimdIsa isa = [:isa_member:];
-        exact = exact && (atoms_claiming_<isa>() == 1);
-    }
-    return exact;
-}
-
-[[nodiscard]] consteval bool no_member_lifts_() noexcept {
-    bool none_lift = true;
-    template for (constexpr auto member : roster_members_v<simd_atom_roster>) {
-        using A = [:member:];
-        none_lift = none_lift && !::foundation::effects::LiftsToRow<A>;
-    }
-    return none_lift;
-}
-
 // Every pinned rung is on exactly one of the two trunks, and the two
 // shared points are on neither.  This is what keeps the nibble encoding
 // honest the day an enumerator is added.
@@ -306,12 +277,13 @@ static_assert(!names_register_bits_<simd::SimdIsa::Sve>);
 static_assert(!names_register_bits_<simd::SimdIsa::Sve2>);
 static_assert(!names_register_bits_<simd::SimdIsa::Portable>);
 
-static_assert(every_isa_has_exactly_one_atom_(),
+static_assert(every_enumerator_has_exactly_one_atom_<simd_atom_roster, simd::SimdIsa>(),
               "fixy/atoms/Simd.h: every SimdIsa enumerator must be claimed by exactly one atom in "
               "fixy::atom::simd.  A rung with no atom cannot be written, and one with two is unreachable.");
 
-static_assert(no_member_lifts_(), "fixy/atoms/Simd.h: an ISA pin names no operation, so no atom here declares "
-                                  "lifts_to.  The head of this file says why.");
+static_assert(no_roster_member_lifts_<simd_atom_roster>(),
+              "fixy/atoms/Simd.h: an ISA pin names no operation, so no atom here declares lifts_to.  The head "
+              "of this file says why.");
 
 static_assert(trunks_partition_the_pinned_rungs_(),
               "fixy/atoms/Simd.h: a pinned rung must be on exactly one vendor trunk and the two shared points on "

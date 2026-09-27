@@ -47,9 +47,6 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 
-#include <foundation/effects/Lift.h>
-
-#include <cstddef>
 #include <cstdint>
 #include <meta>
 #include <tuple>
@@ -113,47 +110,14 @@ static_assert(every_roster_member_is_atom_<hw_atom_roster>(),
 static_assert(every_roster_member_on_axis_<hw_atom_roster, Axis::HwInstruction>(),
               "fixy/atoms/Hw.h: every hardware-instruction atom engages Axis::HwInstruction.");
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-
-template <hw::HwInstruction T>
-[[nodiscard]] consteval std::size_t atoms_claiming_() noexcept {
-    std::size_t claims = 0;
-    template for (constexpr auto member : roster_members_v<hw_atom_roster>) {
-        using A = [:member:];
-        if constexpr (A::tier == T) ++claims;
-    }
-    return claims;
-}
-
-[[nodiscard]] consteval bool every_tier_has_exactly_one_atom_() noexcept {
-    bool exact = true;
-    static constexpr auto tiers = std::define_static_array(std::meta::enumerators_of(^^hw::HwInstruction));
-    template for (constexpr auto tier_member : tiers) {
-        constexpr hw::HwInstruction tier = [:tier_member:];
-        exact = exact && (atoms_claiming_<tier>() == 1);
-    }
-    return exact;
-}
-
-[[nodiscard]] consteval bool no_member_lifts_() noexcept {
-    bool none = true;
-    template for (constexpr auto member : roster_members_v<hw_atom_roster>) {
-        using A = [:member:];
-        none = none && !::foundation::effects::LiftsToRow<A>;
-    }
-    return none;
-}
-
-#pragma GCC diagnostic pop
-
-static_assert(every_tier_has_exactly_one_atom_(),
+static_assert(every_enumerator_has_exactly_one_atom_<hw_atom_roster, hw::HwInstruction>(),
               "fixy/atoms/Hw.h: every HwInstruction enumerator must be claimed by exactly one atom in "
               "fixy::atom::hw.  A tier with no atom cannot be written by a caller, and a tier with two means "
               "one of them is unreachable.");
 
-static_assert(no_member_lifts_(), "fixy/atoms/Hw.h: an instruction class admits a set of operations and names none, "
-                                  "so no atom here declares lifts_to.  The head of this file says why.");
+static_assert(no_roster_member_lifts_<hw_atom_roster>(),
+              "fixy/atoms/Hw.h: an instruction class admits a set of operations and names none, so no atom "
+              "here declares lifts_to.  The head of this file says why.");
 
 // The chain, read at both ends and across the one boundary V201 cares
 // about: a tier at or above NonDeterministicTsc is one the hot path

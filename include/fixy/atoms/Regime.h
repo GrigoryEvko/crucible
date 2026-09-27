@@ -47,7 +47,6 @@
 
 #include <foundation/algebra/lattices/HotPathLattice.h>
 
-#include <cstddef>
 #include <meta>
 #include <tuple>
 #include <type_traits>
@@ -95,39 +94,9 @@ static_assert(every_roster_member_is_atom_<regime_atom_roster>(),
 static_assert(every_roster_member_on_axis_<regime_atom_roster, Axis::Regime>(),
               "fixy/atoms/Regime.h: every regime atom engages Axis::Regime.");
 
-// The pin: the family covers HotPathTier exactly.  A count would pass
-// against three atoms all claiming Hot, so this asks each ENUMERATOR
-// which atom claims it and requires exactly one.
-// The pragma matches fixy/Atom.h's roster walks: an expansion
-// statement's binding shadows itself across expansions, which -Wshadow
-// reports once per expansion and which is not a finding.
-template <fal::HotPathTier T>
-[[nodiscard]] consteval std::size_t atoms_claiming_() noexcept {
-    std::size_t claims = 0;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : roster_members_v<regime_atom_roster>) {
-        using A = [:member:];
-        if constexpr (A::tier == T) ++claims;
-    }
-#pragma GCC diagnostic pop
-    return claims;
-}
-
-[[nodiscard]] consteval bool every_tier_has_exactly_one_atom_() noexcept {
-    bool exact = true;
-    static constexpr auto tiers = std::define_static_array(std::meta::enumerators_of(^^fal::HotPathTier));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto tier_member : tiers) {
-        constexpr fal::HotPathTier tier = [:tier_member:];
-        exact = exact && (atoms_claiming_<tier>() == 1);
-    }
-#pragma GCC diagnostic pop
-    return exact;
-}
-
-static_assert(every_tier_has_exactly_one_atom_(),
+// The pin: the family covers HotPathTier exactly, one atom per
+// enumerator.  fixy/Atom.h holds the walk.
+static_assert(every_enumerator_has_exactly_one_atom_<regime_atom_roster, fal::HotPathTier>(),
               "fixy/atoms/Regime.h: every HotPathTier enumerator must be claimed by exactly one atom in "
               "fixy::atom::regime.  A tier with no atom cannot be written by a caller, and a tier with two "
               "means one of them is unreachable.");
@@ -139,10 +108,9 @@ static_assert(!std::is_same_v<regime::hot, regime::warm>);
 static_assert(!std::is_same_v<regime::hot, regime::cold>);
 static_assert(!std::is_same_v<regime::warm, regime::cold>);
 
-// No regime atom lifts.  The comment at the head of this file says why;
-// this is the assertion that keeps the comment true.
-static_assert(!::foundation::effects::LiftsToRow<regime::hot>);
-static_assert(!::foundation::effects::LiftsToRow<regime::warm>);
-static_assert(!::foundation::effects::LiftsToRow<regime::cold>);
+// No regime atom lifts.  The comment at the head of this file says why,
+// and this assertion keeps the comment true.
+static_assert(no_roster_member_lifts_<regime_atom_roster>(),
+              "fixy/atoms/Regime.h: a latency budget names no operation, so no atom here declares lifts_to.");
 
 }  // namespace fixy::atom::detail::regime_atom_self_test

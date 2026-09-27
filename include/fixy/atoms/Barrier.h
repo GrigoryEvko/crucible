@@ -38,9 +38,7 @@
 #include <fixy/Axis.h>
 
 #include <foundation/algebra/lattices/BarrierStrengthLattice.h>
-#include <foundation/effects/Lift.h>
 
-#include <cstddef>
 #include <meta>
 #include <tuple>
 #include <type_traits>
@@ -108,46 +106,13 @@ static_assert(every_roster_member_is_atom_<barrier_atom_roster>(),
 static_assert(every_roster_member_on_axis_<barrier_atom_roster, Axis::BarrierStrength>(),
               "fixy/atoms/Barrier.h: every barrier atom engages Axis::BarrierStrength.");
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-
-template <fal::BarrierStrength T>
-[[nodiscard]] consteval std::size_t atoms_claiming_() noexcept {
-    std::size_t claims = 0;
-    template for (constexpr auto member : roster_members_v<barrier_atom_roster>) {
-        using A = [:member:];
-        if constexpr (A::tier == T) ++claims;
-    }
-    return claims;
-}
-
-[[nodiscard]] consteval bool every_tier_has_exactly_one_atom_() noexcept {
-    bool exact = true;
-    static constexpr auto tiers = std::define_static_array(std::meta::enumerators_of(^^fal::BarrierStrength));
-    template for (constexpr auto tier_member : tiers) {
-        constexpr fal::BarrierStrength tier = [:tier_member:];
-        exact = exact && (atoms_claiming_<tier>() == 1);
-    }
-    return exact;
-}
-
-[[nodiscard]] consteval bool no_member_lifts_() noexcept {
-    bool none_lift = true;
-    template for (constexpr auto member : roster_members_v<barrier_atom_roster>) {
-        using A = [:member:];
-        none_lift = none_lift && !::foundation::effects::LiftsToRow<A>;
-    }
-    return none_lift;
-}
-
-#pragma GCC diagnostic pop
-
-static_assert(every_tier_has_exactly_one_atom_(),
+static_assert(every_enumerator_has_exactly_one_atom_<barrier_atom_roster, fal::BarrierStrength>(),
               "fixy/atoms/Barrier.h: every BarrierStrength enumerator must be claimed by exactly one atom in "
               "fixy::atom::barrier.  A rung with no atom cannot be written, and one with two is unreachable.");
 
-static_assert(no_member_lifts_(), "fixy/atoms/Barrier.h: a provided strength names no operation, so no atom here "
-                                  "declares lifts_to.  The head of this file says why.");
+static_assert(no_roster_member_lifts_<barrier_atom_roster>(),
+              "fixy/atoms/Barrier.h: a provided strength names no operation, so no atom here declares "
+              "lifts_to.  The head of this file says why.");
 
 // The order at the two boundaries the rules read.  V301 refuses SeqCst or
 // above on the hot path, and V401 wants AcqRel or above for a wide scope.

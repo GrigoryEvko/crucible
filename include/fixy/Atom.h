@@ -737,6 +737,102 @@ template <class Roster>
     return true;
 }
 
+// No member of the roster lifts to an effect row.
+template <class Roster>
+[[nodiscard]] consteval bool no_roster_member_lifts_() noexcept {
+    bool none_lift = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : roster_members_v<Roster>) {
+        using A = [:member:];
+        none_lift = none_lift && !::foundation::effects::LiftsToRow<A>;
+    }
+#pragma GCC diagnostic pop
+    return none_lift;
+}
+
+// ── The ladder families ─────────────────────────────────────────────
+//
+// A ladder family gives one atom to each enumerator of an enum: the
+// regime tiers, the instruction tiers, the barrier strengths, the memory
+// scopes, the wait strategies and the SIMD instruction sets.  Each atom
+// names its enumerator in one static data member of the enum type.  The
+// walk below reads that member by reflection, so a family states its
+// roster and its enum and writes no walk of its own.
+
+// How many static data members of Atom have the type Enum.
+template <class Atom, class Enum>
+[[nodiscard]] consteval std::size_t ladder_members_of_() noexcept {
+    std::size_t found = 0;
+    for (const std::meta::info member :
+         std::meta::static_data_members_of(^^Atom, std::meta::access_context::current())) {
+        if (std::meta::remove_cv(std::meta::type_of(member)) == ^^Enum) ++found;
+    }
+    return found;
+}
+
+// The enumerator that Atom names.  The walk reads it only after
+// ladder_members_of_ finds exactly one member of the enum type.
+template <class Atom, class Enum>
+[[nodiscard]] consteval Enum ladder_grade_of_() noexcept {
+    Enum grade{};
+    for (const std::meta::info member :
+         std::meta::static_data_members_of(^^Atom, std::meta::access_context::current())) {
+        if (std::meta::remove_cv(std::meta::type_of(member)) == ^^Enum) grade = std::meta::extract<Enum>(member);
+    }
+    return grade;
+}
+
+// Whether a value of Enum is one of its enumerators.  A cast from an
+// integer can make a value that is not.
+template <class Enum>
+[[nodiscard]] consteval bool is_enumerator_of_(Enum value) noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Enum));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto enumerator : enumerators) {
+        if (value == [:enumerator:]) return true;
+    }
+#pragma GCC diagnostic pop
+    return false;
+}
+
+// Each member of the roster names exactly one enumerator of Enum, and each
+// enumerator is named by exactly one member.  A count of atoms would pass
+// against two atoms that name one enumerator, so the walk asks each
+// enumerator.  An enumerator with no atom cannot be written, and one with
+// two makes one of them unreachable.  A member that names a value outside
+// the enumerators is refused too.  Complexity: the roster size times the
+// number of enumerators.
+template <class Roster, class Enum>
+    requires std::is_scoped_enum_v<Enum>
+[[nodiscard]] consteval bool every_enumerator_has_exactly_one_atom_() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Enum));
+    bool exact = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : roster_members_v<Roster>) {
+        using A = [:member:];
+        if constexpr (ladder_members_of_<A, Enum>() == 1) {
+            exact = exact && is_enumerator_of_(ladder_grade_of_<A, Enum>());
+        } else {
+            exact = false;
+        }
+    }
+    template for (constexpr auto enumerator : enumerators) {
+        std::size_t claims = 0;
+        template for (constexpr auto member : roster_members_v<Roster>) {
+            using A = [:member:];
+            if constexpr (ladder_members_of_<A, Enum>() == 1) {
+                if (ladder_grade_of_<A, Enum>() == [:enumerator:]) ++claims;
+            }
+        }
+        exact = exact && claims == 1;
+    }
+#pragma GCC diagnostic pop
+    return exact;
+}
+
 // Joins rosters, so a sentinel TU can walk every family as one list.
 template <class... Rosters>
 struct roster_cat;
@@ -844,6 +940,46 @@ namespace detail::atom_self_test {
 static_assert(every_roster_member_is_atom_<core_atom_roster>(),
               "fixy/Atom.h: a member of core_atom_roster is not an atom, is not one empty byte, or names "
               "an axis that is not a fixy::Axis enumerator.");
+
+// ── The ladder walk refuses each broken roster ───────────────────────
+//
+// The families pass the walk, so these samples show that it can answer
+// no.  The walk reads a static data member by type, so plain classes
+// stand in for atoms here.
+namespace ladder_walk_witness {
+enum class rung : std::uint8_t {
+    low = 0,
+    high = 1,
+};
+struct low_rung {
+    static constexpr rung grade = rung::low;
+};
+struct high_rung {
+    static constexpr rung grade = rung::high;
+};
+struct low_rung_again {
+    static constexpr rung grade = rung::low;
+};
+struct two_rungs {
+    static constexpr rung first = rung::low;
+    static constexpr rung second = rung::high;
+};
+struct forged_rung {
+    static constexpr rung grade = static_cast<rung>(7);
+};
+struct no_rung {};
+
+static_assert(every_enumerator_has_exactly_one_atom_<std::tuple<low_rung, high_rung>, rung>());
+static_assert(!every_enumerator_has_exactly_one_atom_<std::tuple<low_rung>, rung>(), "an enumerator with no atom");
+static_assert(!every_enumerator_has_exactly_one_atom_<std::tuple<low_rung, high_rung, low_rung_again>, rung>(),
+              "an enumerator with two atoms");
+static_assert(!every_enumerator_has_exactly_one_atom_<std::tuple<two_rungs, high_rung>, rung>(),
+              "a member that names two enumerators");
+static_assert(!every_enumerator_has_exactly_one_atom_<std::tuple<low_rung, high_rung, forged_rung>, rung>(),
+              "a member that names a value outside the enumerators");
+static_assert(!every_enumerator_has_exactly_one_atom_<std::tuple<low_rung, high_rung, no_rung>, rung>(),
+              "a member that names no enumerator");
+}  // namespace ladder_walk_witness
 
 // ── Every Security atom has a class ──────────────────────────────────
 //

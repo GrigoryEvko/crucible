@@ -52,7 +52,6 @@
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 
-#include <cstddef>
 #include <meta>
 #include <tuple>
 #include <type_traits>
@@ -138,31 +137,8 @@ static_assert(every_roster_member_is_atom_<sync_atom_roster>(),
 static_assert(every_roster_member_on_axis_<sync_atom_roster, Axis::Synchronization>(),
               "fixy/atoms/Sync.h: every synchronization atom engages Axis::Synchronization.");
 
-// The pin: the family covers WaitStrategy exactly, one atom per
-// enumerator.  Asking each ENUMERATOR rather than counting atoms is what
-// catches two atoms claiming one grade.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-
-template <fal::WaitStrategy S>
-[[nodiscard]] consteval std::size_t atoms_claiming_() noexcept {
-    std::size_t claims = 0;
-    template for (constexpr auto member : roster_members_v<sync_atom_roster>) {
-        using A = [:member:];
-        if constexpr (A::strategy == S) ++claims;
-    }
-    return claims;
-}
-
-[[nodiscard]] consteval bool every_strategy_has_exactly_one_atom_() noexcept {
-    bool exact = true;
-    static constexpr auto strategies = std::define_static_array(std::meta::enumerators_of(^^fal::WaitStrategy));
-    template for (constexpr auto strategy_member : strategies) {
-        constexpr fal::WaitStrategy strategy = [:strategy_member:];
-        exact = exact && (atoms_claiming_<strategy>() == 1);
-    }
-    return exact;
-}
 
 // The lift agrees with the division: an atom lifts to Row<Block> exactly
 // when its strategy enters the kernel.  This is the assertion that keeps
@@ -179,22 +155,11 @@ template <fal::WaitStrategy S>
     return agrees;
 }
 
-// Every atom here lifts, including the spins.  An atom with no lift is
-// invisible to the effect gates; one that lifts to the empty row is
-// visible and requires nothing.  The head of this file says why the spins
-// want the second.
-[[nodiscard]] consteval bool every_member_lifts_() noexcept {
-    bool all_lift = true;
-    template for (constexpr auto member : roster_members_v<sync_atom_roster>) {
-        using A = [:member:];
-        all_lift = all_lift && fe::LiftsToRow<A>;
-    }
-    return all_lift;
-}
-
 #pragma GCC diagnostic pop
 
-static_assert(every_strategy_has_exactly_one_atom_(),
+// The pin: the family covers WaitStrategy exactly, one atom per
+// enumerator.  fixy/Atom.h holds the walk.
+static_assert(every_enumerator_has_exactly_one_atom_<sync_atom_roster, fal::WaitStrategy>(),
               "fixy/atoms/Sync.h: every WaitStrategy enumerator must be claimed by exactly one atom in "
               "fixy::atom::sync.  A grade with no atom cannot be written by a caller, and a grade with two "
               "means one of them is unreachable.");
@@ -204,7 +169,11 @@ static_assert(every_lift_matches_the_division_(),
               "kernel without lifting to Row<Block>.  The lift and enters_the_kernel must draw the same "
               "line, or a kernel wait reaches a context that never admitted Block.");
 
-static_assert(every_member_lifts_(),
+// Every atom here lifts, and the spins lift too.  An atom with no lift is
+// invisible to the effect gates, and one that lifts to the empty row is
+// visible and requires nothing.  The head of this file says why the spins
+// want the second.
+static_assert(every_roster_member_lifts_<sync_atom_roster>(),
               "fixy/atoms/Sync.h: every synchronization atom must declare lifts_to, the spins included.  An "
               "atom with no lift is skipped by the effect gates rather than admitted by them.");
 
