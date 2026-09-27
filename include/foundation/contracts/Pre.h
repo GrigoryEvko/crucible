@@ -49,8 +49,6 @@
 // `foundation` contains them.  The macro names keep their CRUCIBLE_
 // prefix for the reason foundation/Platform.h gives: macros have no
 // namespace, and the layer rule is stated over namespace roots.
-//
-// Old spelling: include/crucible/safety/Pre.h.
 
 #pragma once
 
@@ -59,9 +57,9 @@
 namespace foundation::detail {
 
 // Writes the predicate text, the source location and the message of the
-// caller to stderr.  Then it writes a stack trace if the standard library
-// supplies one, stops at a breakpoint if a debugger is attached, and
-// aborts.
+// caller to file descriptor 2 with async-signal-safe calls only.  Then it
+// stops at a breakpoint if a debugger is attached, and aborts.  A second
+// violation on the thread while it reports aborts at once.
 [[noreturn, gnu::cold]]
 void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept;
 

@@ -511,6 +511,12 @@ foundation_test(test_contracts_decide test_decide.cpp)
 foundation_test(test_contracts_decide_fuzz test_decide_fuzz.cpp)
 foundation_test(test_contracts_pre_post test_pre_post.cpp)
 
+# The contract handler of src/foundation/ContractHandler.cpp, in child
+# processes.  A report names the condition, its position and the note of a
+# message form.  A second violation that interrupts a blocked report on the
+# same thread aborts at once.
+foundation_test(test_contract_handler)
+
 # CRUCIBLE_PRE under the ignore semantic must compile to the same machine
 # code as a bare [[assume]].  This target is built with -O3 and
 # CRUCIBLE_CONTRACT_IGNORE_OPTIONS instead of the preset's debug flags,

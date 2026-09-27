@@ -799,13 +799,17 @@ else()
   target_compile_definitions(crucible PUBLIC CRUCIBLE_FIXY_STRICT=0)
 endif()
 
-# `<stacktrace>` (C++23, libstdc++ 16) — used by src/foundation/ContractHandler.cpp
-# to emit a 16-frame stack trace on contract violations.  The header
-# pulls symbols from `libstdc++exp.a` (libstdc++'s experimental archive,
-# which also hosts contracts runtime + observable_checkpoint + a few
-# other C++26 lib features).  Propagated PUBLIC so every consumer
-# (test binaries, vessel adapters, bench TUs) auto-links it without
-# an extra target_link_libraries call.
+# `libstdc++exp.a` holds the parts of libstdc++ 16 that libstdc++.so does
+# not have: the contract runtime, and parts of <print>, <debugging>,
+# <stacktrace> and <text_encoding>.  Each consumer of the dialect links it,
+# so a test binary, a vessel adapter or a bench TU that names one of them
+# links without a target_link_libraries call of its own.
+#
+# The contract runtime includes a weak default handle_contract_violation.
+# The weak handler of src/foundation/ContractHandler.cpp wins over it,
+# because an object file with a contract check names handle_contract_violation
+# under each semantic that does a check.  So the linker takes the foundation
+# handler from libfoundation.a before it reads this archive.
 target_link_libraries(crucible_dialect INTERFACE stdc++exp)
 
 # Re `-fno-ipa-modref`: we considered it as a workaround for a GCC 16
