@@ -270,14 +270,16 @@ std::uintptr_t byte_offset_of(Shard const& shard, T const* base) noexcept {
 
 // One shard count over every total from 0 to 64.  The storage is a heap
 // block of exactly `total` elements, so AddressSanitizer reports a write
-// past its end.  A total of zero also runs over a null base, which is the
-// region that an arena gives for a request of zero elements.
+// past its end.  At a total of zero the block has one element, because the
+// optimizer refuses an allocation of zero (-Werror=alloc-zero) and the empty
+// region writes nothing.  A total of zero also runs over a null base, which
+// is the region that an arena gives for a request of zero elements.
 template <std::size_t N>
 void split_and_recombine_every_total() {
     for (std::size_t total = 0; total <= 64; ++total) {
         const bool also_null_base = total == 0;
         for (int pass = 0; pass < (also_null_base ? 2 : 1); ++pass) {
-            auto storage = std::make_unique<std::uint32_t[]>(total);
+            auto storage = std::make_unique<std::uint32_t[]>(total == 0 ? 1 : total);
             std::uint32_t* const base = pass == 0 ? storage.get() : nullptr;
             auto region = ::fixy::mint_owned_region(base, total, mint_permission_root<DataA>());
             using Region = decltype(region);
