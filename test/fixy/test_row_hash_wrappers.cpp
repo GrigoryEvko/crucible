@@ -830,7 +830,7 @@ struct PeerRole {};
 
 struct LazyChannelWire : ::foundation::Pinned<LazyChannelWire> {};
 
-// The tags and the reader brand of the single-writer many-reader witness.
+// The tags and the two brands of the single-writer many-reader witness.
 struct SwmrWriterTag {
     using permission_row = ::foundation::effects::Row<>;
 };
@@ -838,8 +838,10 @@ struct SwmrReaderTag {
     using permission_row = ::foundation::effects::Row<>;
 };
 struct SwmrReaderBrand {};
+struct SwmrWriterBrand {};
 struct PureRegionBrand {};
-using SwmrWitness = ::fixy::concurrent::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand>;
+using SwmrWitness =
+    ::fixy::concurrent::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
 
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
 using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;

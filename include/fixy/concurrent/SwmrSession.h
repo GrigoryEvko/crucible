@@ -14,10 +14,10 @@
 // detach.
 //
 // Old spelling: include/crucible/sessions/_SwmrSession.h.  Six
-// deviations.  The writer handle is a template over the brand of the
-// writer permission it holds, and the caller mints the reader root and
-// names its brand in the session type, so no spelling here names the
-// erased brand.  The handles bind their session through
+// deviations.  The caller mints the writer root and the reader root and
+// names both brands in the session type, so no spelling here names the
+// erased brand, and a writer permission of another brand does not make a
+// second writer.  The handles bind their session through
 // foundation::ChannelBinding, so a moved-from handle cannot publish or
 // load.  The session mints take the handle by move, because
 // fixy/session/Handle.h refuses a raw pointer to a handle as a session
@@ -63,51 +63,49 @@ using WriterRuntimeProto = ::fixy::session::Loop<::fixy::session::Send<T, ::fixy
 template <typename T>
 using ReaderRuntimeProto = ::fixy::session::Loop<::fixy::session::Recv<T, ::fixy::session::Continue>>;
 
-namespace detail {
-
-// A brand the surface concept probes the writer handle with.  Any
-// brand of a writer permission gives a handle of the same shape.
-struct probe_brand {};
-
-}  // namespace detail
-
 template <typename S>
 concept SwmrSessionSurface =
     requires {
         typename S::value_type;
         typename S::writer_tag;
+        typename S::writer_brand;
         typename S::reader_tag;
         typename S::reader_brand;
-        typename S::template WriterHandle<detail::probe_brand>;
+        typename S::WriterHandle;
         typename S::ReaderHandle;
         {
-            std::declval<S&>().writer(
-                std::declval<::foundation::permissions::Permission<typename S::writer_tag, detail::probe_brand>&&>())
-        } -> std::same_as<typename S::template WriterHandle<detail::probe_brand>>;
+            std::declval<S&>().writer(std::declval<::foundation::permissions::Permission<
+                                          typename S::writer_tag, typename S::writer_brand>&&>())
+        } -> std::same_as<typename S::WriterHandle>;
         { std::declval<S&>().reader() } -> std::same_as<std::optional<typename S::ReaderHandle>>;
-    } && ::fixy::concurrent::IsSwmrWriter<typename S::template WriterHandle<detail::probe_brand>>
+    } && ::fixy::concurrent::IsSwmrWriter<typename S::WriterHandle>
     && ::fixy::concurrent::IsSwmrReader<typename S::ReaderHandle>
-    && std::is_same_v<::fixy::concurrent::swmr_writer_value_t<typename S::template WriterHandle<detail::probe_brand>>,
-                      typename S::value_type>
+    && std::is_same_v<::fixy::concurrent::swmr_writer_value_t<typename S::WriterHandle>, typename S::value_type>
     && std::is_same_v<::fixy::concurrent::swmr_reader_value_t<typename S::ReaderHandle>, typename S::value_type>;
 
-// A writer handle of the channel, with the brand of the permission it
-// holds.  A reference to a handle is not a handle, so an lvalue fails.
+// The writer handle of the channel.  A reference to a handle is not a
+// handle, so an lvalue fails.
 template <typename Swmr, typename Handle>
-concept SwmrWriterHandleOf = requires { typename Handle::brand_type; }
-                             && std::same_as<Handle, typename Swmr::template WriterHandle<typename Handle::brand_type>>;
+concept SwmrWriterHandleOf = std::same_as<Handle, typename Swmr::WriterHandle>;
 
 // The caller mints the reader root and hands it to the constructor, and
 // the pool that holds it is the root of trust for the reader tag.  The
-// brand of the root is a parameter of the session type, because a
-// member cannot carry a brand that a header mints.  The caller mints
-// and keeps the writer permission.
+// caller mints and keeps the writer permission.  The brand of each root
+// is a parameter of the session type, because a member cannot carry a
+// brand that a header mints.  The writer brand is what keeps one writer:
+// a root minted at another site has another brand, and writer() refuses
+// it, so a second publisher does not compile.  One site that runs twice
+// mints two tokens of one brand, which no type can tell apart, so each
+// root is minted once per program, as foundation/permissions/Permission.h
+// says of every root.  The writer brand is never the erased brand, because
+// a token of every brand converts to that brand and would open the writer.
 template <::fixy::concurrent::SnapshotValue T, typename WriterTag, typename ReaderTag,
-          ::foundation::brand::IsBrand ReaderBrand>
-class SwmrSession : public ::foundation::Pinned<SwmrSession<T, WriterTag, ReaderTag, ReaderBrand>> {
+          ::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsFreshBrand WriterBrand>
+class SwmrSession : public ::foundation::Pinned<SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>> {
 public:
     using value_type = T;
     using writer_tag = WriterTag;
+    using writer_brand = WriterBrand;
     using reader_tag = ReaderTag;
     using reader_brand = ReaderBrand;
     using row_discipline = ::fixy::row_discipline::swmr_session;
@@ -120,15 +118,14 @@ public:
                 T const& initial) noexcept
         : snapshot_{initial}, reader_pool_{std::move(reader_root)} {}
 
-    template <::foundation::brand::IsBrand Brand>
     class WriterHandle {
         // The move clears the binding, so a moved-from writer cannot
         // publish while the permission lives in the handle it moved to.
         ::foundation::ChannelBinding<SwmrSession> session_;
-        [[no_unique_address]] ::foundation::permissions::Permission<writer_tag, Brand> perm_;
+        [[no_unique_address]] ::foundation::permissions::Permission<writer_tag, writer_brand> perm_;
 
         constexpr WriterHandle(SwmrSession& session,
-                               ::foundation::permissions::Permission<writer_tag, Brand>&& perm) noexcept
+                               ::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept
             : session_{session}, perm_{std::move(perm)} {}
 
         friend class SwmrSession;
@@ -136,7 +133,7 @@ public:
     public:
         using value_type = T;
         using tag_type = writer_tag;
-        using brand_type = Brand;
+        using brand_type = writer_brand;
         using row_discipline = ::fixy::row_discipline::swmr_writer;
         using row_payload = T;
 
@@ -188,10 +185,9 @@ public:
         }
     };
 
-    template <::foundation::brand::IsBrand Brand>
-    [[nodiscard]] constexpr WriterHandle<Brand>
-    writer(::foundation::permissions::Permission<writer_tag, Brand>&& perm) noexcept {
-        return WriterHandle<Brand>{*this, std::move(perm)};
+    [[nodiscard]] constexpr WriterHandle
+    writer(::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept {
+        return WriterHandle{*this, std::move(perm)};
     }
 
     [[nodiscard]] std::optional<ReaderHandle> reader() noexcept {
@@ -221,9 +217,10 @@ private:
     ::foundation::permissions::SharedPermissionPool<reader_tag, reader_brand> reader_pool_;
 };
 
-template <SwmrSessionSurface Swmr, ::foundation::brand::IsBrand Brand>
+template <SwmrSessionSurface Swmr>
 [[nodiscard]] constexpr auto mint_swmr_writer(
-    Swmr& session, ::foundation::permissions::Permission<typename Swmr::writer_tag, Brand>&& perm) noexcept {
+    Swmr& session,
+    ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& perm) noexcept {
     return session.writer(std::move(perm));
 }
 
@@ -282,13 +279,29 @@ struct ReaderTag {
     using permission_row = ::foundation::effects::Row<>;
 };
 struct WriterBrand {};
+struct OtherWriterBrand {};
 struct ReaderBrand {};
-using SmallSession = SwmrSession<int, WriterTag, ReaderTag, ReaderBrand>;
-using WriterHandle = SmallSession::WriterHandle<WriterBrand>;
+using SmallSession = SwmrSession<int, WriterTag, ReaderTag, ReaderBrand, WriterBrand>;
+using WriterHandle = SmallSession::WriterHandle;
 using ReaderHandle = SmallSession::ReaderHandle;
 
 static_assert(SwmrSessionSurface<SmallSession>);
 static_assert(!SwmrSessionSurface<int>, "an int is not a channel");
+
+// The session takes the writer permission of its own brand, and no other.
+template <typename Session, typename Brand>
+concept TakesWriterOfBrand = requires(Session& session) {
+    session.writer(std::declval<::foundation::permissions::Permission<typename Session::writer_tag, Brand>&&>());
+};
+static_assert(TakesWriterOfBrand<SmallSession, WriterBrand>);
+static_assert(!TakesWriterOfBrand<SmallSession, OtherWriterBrand>,
+              "a writer permission of another brand would make a second writer");
+
+// No session names the erased brand as its writer brand.
+template <typename Brand>
+concept NamesSessionOverWriterBrand = requires { typename SwmrSession<int, WriterTag, ReaderTag, ReaderBrand, Brand>; };
+static_assert(NamesSessionOverWriterBrand<WriterBrand>);
+static_assert(!NamesSessionOverWriterBrand<::foundation::brand::DefaultBrand>);
 
 static_assert(sizeof(WriterHandle) == sizeof(SmallSession*),
               "SwmrSession::WriterHandle must EBO-collapse the writer Permission.");

@@ -14,11 +14,15 @@ namespace {
 [[nodiscard]] auto reader_root() noexcept {
     return ::foundation::permissions::mint_permission_root<crucible::observe::RuntimeMetricsReaderTag>();
 }
+[[nodiscard]] auto writer_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<crucible::observe::RuntimeMetricsWriterTag>();
+}
 }  // namespace
 
 int main() {
-    crucible::observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(reader_root())>> channel{
-        reader_root()};
+    crucible::observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(reader_root())>,
+                                             ::foundation::brand::brand_of_t<decltype(writer_root())>>
+        channel{reader_root()};
     auto reader_permission =
         ::foundation::permissions::mint_permission_root<crucible::observe::RuntimeMetricsReaderTag>();
     auto writer = crucible::observe::mint_metrics_writer(channel, std::move(reader_permission));

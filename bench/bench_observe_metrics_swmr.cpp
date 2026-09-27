@@ -13,7 +13,9 @@ namespace perm = ::foundation::permissions;
 
 namespace {
 [[nodiscard]] auto metrics_reader_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>(); }
-using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>>;
+[[nodiscard]] auto metrics_writer_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsWriterTag>(); }
+using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>,
+                                               ::foundation::brand::brand_of_t<decltype(metrics_writer_root())>>;
 }  // namespace
 
 int main() {
@@ -22,8 +24,7 @@ int main() {
     metrics.delta_g[0] = 1.0;
 
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(metrics)};
-    auto writer_perm = perm::mint_permission_root<observe::RuntimeMetricsWriterTag>();
-    auto writer = observe::mint_metrics_writer(channel, std::move(writer_perm));
+    auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
     auto reader = observe::mint_keeper_metrics_reader(channel);
     if (!reader) {
         std::fprintf(stderr, "failed to mint runtime metrics reader\n");

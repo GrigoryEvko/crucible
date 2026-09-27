@@ -3209,8 +3209,13 @@ fixy_test(test_concurrent_swmr_session)
 # The writer mint takes the writer permission of a channel of the SWMR
 # shape, and the reader mint lends from a channel that can change.
 fixy_neg_compile_test(neg_swmr_session_writer_wrong_permission_tag
-  "no matching function for call to .mint_swmr_writer<swmr_writer_tag_fixture::Swmr>"
-  "mismatched types .swmr_writer_tag_fixture::WriterTag. and .swmr_writer_tag_fixture::ReaderTag.")
+  "invalid initialization of reference of type .foundation::permissions::Permission<swmr_writer_tag_fixture::WriterTag"
+  "from expression of type .foundation::permissions::Permission<swmr_writer_tag_fixture::ReaderTag")
+# The session names the brand of its writer root, so a writer root minted
+# at another site does not become a second writer.
+fixy_neg_compile_test(neg_swmr_session_writer_other_brand
+  "cannot convert .foundation::permissions::Permission<swmr_writer_brand_fixture::WriterTag"
+  "initializing argument 1 of .*SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>::writer\\(")
 fixy_neg_compile_test(neg_swmr_session_writer_non_surface
   "no matching function for call to .mint_swmr_writer<swmr_writer_surface_fixture::NotAChannel>"
   "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = swmr_writer_surface_fixture::NotAChannel.")

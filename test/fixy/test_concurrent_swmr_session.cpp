@@ -41,7 +41,12 @@ struct ReaderTag {
 // session of the type carries the brand of that one site.
 [[nodiscard]] auto reader_root() noexcept { return perm::mint_permission_root<ReaderTag>(); }
 
-using Swmr = ses::SwmrSession<int, WriterTag, ReaderTag, ::foundation::brand::brand_of_t<decltype(reader_root())>>;
+// The same holds for the writer root.  The session type names the brand
+// of this one site, so a writer root from another site is refused.
+[[nodiscard]] auto writer_root() noexcept { return perm::mint_permission_root<WriterTag>(); }
+
+using Swmr = ses::SwmrSession<int, WriterTag, ReaderTag, ::foundation::brand::brand_of_t<decltype(reader_root())>,
+                              ::foundation::brand::brand_of_t<decltype(writer_root())>>;
 
 struct PayloadTag {
     using permission_row = ::foundation::effects::Row<>;
@@ -58,9 +63,11 @@ struct SnapshotPayload {
 };
 
 [[nodiscard]] auto payload_reader_root() noexcept { return perm::mint_permission_root<PayloadReaderTag>(); }
+[[nodiscard]] auto payload_writer_root() noexcept { return perm::mint_permission_root<PayloadTag>(); }
 
 using PayloadSwmr = ses::SwmrSession<SnapshotPayload, PayloadTag, PayloadReaderTag,
-                                     ::foundation::brand::brand_of_t<decltype(payload_reader_root())>>;
+                                     ::foundation::brand::brand_of_t<decltype(payload_reader_root())>,
+                                     ::foundation::brand::brand_of_t<decltype(payload_writer_root())>>;
 
 [[nodiscard]] constexpr SnapshotPayload payload_at(std::uint64_t seq) noexcept {
     return SnapshotPayload{.seq = seq, .checksum = ~seq};
@@ -93,7 +100,7 @@ void run_test(char const* name, Body body) {
 
 void test_writer_publish_reader_loads_latest() {
     Swmr swmr{reader_root(), 7};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, perm::mint_permission_root<Swmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
 
     writer.publish(42);
 
@@ -128,7 +135,7 @@ void test_multiple_readers_track_pool_lifetime() {
 
 void test_late_reader_observes_latest_publish() {
     Swmr swmr{reader_root(), 3};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, perm::mint_permission_root<Swmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
 
     auto early = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(early.has_value());
@@ -146,7 +153,7 @@ void test_late_reader_observes_latest_publish() {
 // only one that reaches the channel.
 void test_moved_handles_keep_their_channel() {
     Swmr swmr{reader_root(), 5};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, perm::mint_permission_root<Swmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
     auto moved_writer = std::move(writer);
     moved_writer.publish(6);
 
@@ -160,7 +167,7 @@ void test_moved_handles_keep_their_channel() {
 void test_session_send_recv() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     Swmr swmr{reader_root(), 0};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, perm::mint_permission_root<Swmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(reader.has_value());
 
@@ -181,7 +188,7 @@ void test_writer_publishes_1000_values_four_readers_observe_sequence() {
     constexpr std::size_t kReaders = 4;
 
     PayloadSwmr swmr{payload_reader_root(), payload_at(0)};
-    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, perm::mint_permission_root<PayloadSwmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, payload_writer_root());
 
     std::array<std::optional<PayloadSwmr::ReaderHandle>, kReaders> readers{};
     for (auto& reader : readers) {
@@ -206,7 +213,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
     constexpr std::size_t kReaders = 4;
 
     PayloadSwmr swmr{payload_reader_root(), payload_at(0)};
-    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, perm::mint_permission_root<PayloadSwmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, payload_writer_root());
 
     std::atomic<bool> start{false};
     std::atomic<bool> done{false};
@@ -261,7 +268,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
 
 void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
     PayloadSwmr swmr{payload_reader_root(), payload_at(0)};
-    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, perm::mint_permission_root<PayloadSwmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, payload_writer_root());
 
     auto reader = ses::mint_swmr_reader<PayloadSwmr>(swmr);
     CRUCIBLE_REQUIRE(reader.has_value());
@@ -295,7 +302,7 @@ void test_sixteen_readers_stress_latest_snapshot() {
     constexpr std::size_t kReaders = 16;
 
     PayloadSwmr swmr{payload_reader_root(), payload_at(0)};
-    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, perm::mint_permission_root<PayloadSwmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, payload_writer_root());
 
     std::atomic<bool> start{false};
     std::atomic<bool> done{false};
@@ -341,18 +348,26 @@ void test_sixteen_readers_stress_latest_snapshot() {
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 0);
 }
 
+// The writer takes a permission of the brand the session names, and a
+// permission of another brand makes no writer.
+template <typename Session, typename Brand>
+concept MintsWriterOfBrand = requires(Session& session) {
+    ses::mint_swmr_writer<Session>(session, std::declval<perm::Permission<typename Session::writer_tag, Brand>&&>());
+};
+
 void test_static_shape_witnesses() {
-    struct ShapeBrand {};
     struct OtherBrand {};
-    using WriterHandle = Swmr::WriterHandle<ShapeBrand>;
+    using WriterHandle = Swmr::WriterHandle;
     using ReaderHandle = Swmr::ReaderHandle;
 
-    static_assert(!std::is_same_v<WriterHandle, Swmr::WriterHandle<OtherBrand>>,
-                  "the writer handle carries the brand of the permission it holds");
+    static_assert(std::is_same_v<WriterHandle::brand_type, Swmr::writer_brand>,
+                  "the writer handle carries the brand the session names");
     static_assert(std::is_same_v<decltype(ses::mint_swmr_writer<Swmr>(
                                      std::declval<Swmr&>(),
-                                     std::declval<perm::Permission<Swmr::writer_tag, ShapeBrand>&&>())),
+                                     std::declval<perm::Permission<Swmr::writer_tag, Swmr::writer_brand>&&>())),
                                  WriterHandle>);
+    static_assert(MintsWriterOfBrand<Swmr, Swmr::writer_brand>);
+    static_assert(!MintsWriterOfBrand<Swmr, OtherBrand>, "a second root makes no second writer");
 
     static_assert(::fixy::concurrent::is_swmr_writer_v<WriterHandle>);
     static_assert(::fixy::concurrent::is_swmr_reader_v<ReaderHandle>);

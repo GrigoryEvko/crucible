@@ -48,21 +48,21 @@
 // refuses a C array data member.  The three memory-order overlays
 // (load_mo_pinned, try_load_mo_pinned, version_mo_pinned) are not
 // carried: the new tree has no memory-order band, and nothing called
-// them.
+// them.  load_pinned is not carried either, because only tests read it.
 
-#include <fixy/Bands.h>
 #include <fixy/Mutation.h>
 
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/diag/Catalog.h>
+#include <foundation/diag/Runtime.h>
 
 #include <array>
 #include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <type_traits>
@@ -105,14 +105,15 @@ public:
 
     // The caller guarantees no concurrent publish.
     //
-    // The first increment has to carry acquire as well as release.
-    // Release is a one-way barrier: earlier operations cannot move
-    // after it, but later ones may move before it.  Under release
-    // alone the copy is free to be hoisted above both increments, and
-    // a reader then reads the in-flight bytes while the counter still
-    // reads even.  Both of that reader's samples agree, so the retry
-    // never fires and the torn read is returned.  Acquire on this
-    // increment is what brackets the copy between the two of them.
+    // The copy must not become visible before the odd counter does, or a
+    // reader reads the in-flight bytes while the counter still reads even.
+    // Both of its samples agree, so the retry never fires and the torn
+    // read is returned.  The acquire half of the increment does not order
+    // the later stores after its store half: on a weakly ordered machine
+    // the plain stores of the copy can become visible first.  The release
+    // fence after the increment orders them, and it pairs with the acquire
+    // fence of the reader (Boehm, "Can seqlocks get along with programming
+    // language memory models?", 2012).  On x86 the fence emits nothing.
     void publish(const T& value) noexcept {
         const std::uint64_t old_seq = seq_.bump_by(1);
         // The single-writer contract is checked on every build rather
@@ -126,8 +127,9 @@ public:
         // rejected because it collapses to nothing in the hot-path
         // translation units, which is where the check has to hold.
         if ((old_seq & 1u) != 0u) [[unlikely]] {
-            std::abort();
+            two_writers_abort_();
         }
+        std::atomic_thread_fence(std::memory_order_release);
 
         std::memcpy(storage_.data(), &value, sizeof(T));
 
@@ -194,22 +196,19 @@ public:
         return ::foundation::lifetime::start_as_array<T>(buf.data(), 1).front();
     }
 
-    // The reader spins with a pause instruction, so its wait strategy
-    // is the top of the wait lattice.  This overlay pins that at the
-    // type level for a consumer that wants to state the constraint.
-    // It is additive because existing callers take a bare T, and it
-    // costs nothing beyond load itself.
-
-    [[nodiscard]] ::fixy::Wait<::fixy::WaitStrategy_v::SpinPause, T> load_pinned() const noexcept {
-        return ::fixy::mint_band<::fixy::Wait<::fixy::WaitStrategy_v::SpinPause, T>>(load());
-    }
-
     // Counts completed publishes, and never wraps at this width.  A
     // caller that caches the value can tell whether anything changed
     // since it last looked.
     [[nodiscard]] std::uint64_t version() const noexcept { return seq_.get() >> 1; }
 
 private:
+    // A second writer entered publish while the first one was inside it.
+    [[noreturn]] CRUCIBLE_COLD static void two_writers_abort_() noexcept {
+        ::foundation::diag::report_violation_at_and_abort(
+            ::foundation::diag::Category::LinearityViolation,
+            "two writers published into one AtomicSnapshot at the same time. The snapshot takes one writer.");
+    }
+
     // Every thread reads the counter, and the writer writes both it and
     // the payload.  Each takes a cache line of its own so a publish
     // does not invalidate the other's line.

@@ -18,8 +18,10 @@ struct ReaderTag {
     using permission_row = ::foundation::effects::Row<>;
 };
 inline auto reader_root() noexcept { return ::foundation::permissions::mint_permission_root<ReaderTag>(); }
+inline auto writer_root() noexcept { return ::foundation::permissions::mint_permission_root<WriterTag>(); }
 using Swmr = ::fixy::concurrent::swmr_session::SwmrSession<int, WriterTag, ReaderTag,
-                                                           ::foundation::brand::brand_of_t<decltype(reader_root())>>;
+                                                           ::foundation::brand::brand_of_t<decltype(reader_root())>,
+                                                           ::foundation::brand::brand_of_t<decltype(writer_root())>>;
 }  // namespace swmr_reader_session_lvalue_fixture
 
 int main() {

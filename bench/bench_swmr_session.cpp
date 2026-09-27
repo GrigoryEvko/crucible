@@ -50,8 +50,10 @@ struct ReaderTag {
 // One call site mints every reader root, so every channel of the type
 // carries the brand of that one site.
 [[nodiscard]] auto reader_root() noexcept { return perm::mint_permission_root<ReaderTag>(); }
+[[nodiscard]] auto writer_root() noexcept { return perm::mint_permission_root<WriterTag>(); }
 
-using Swmr = ses::SwmrSession<Payload, WriterTag, ReaderTag, ::foundation::brand::brand_of_t<decltype(reader_root())>>;
+using Swmr = ses::SwmrSession<Payload, WriterTag, ReaderTag, ::foundation::brand::brand_of_t<decltype(reader_root())>,
+                              ::foundation::brand::brand_of_t<decltype(writer_root())>>;
 
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
@@ -78,7 +80,7 @@ template <typename Body>
 
 [[nodiscard]] bench::Report handle_publish() {
     Swmr swmr{reader_root(), payload_at(0)};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, perm::mint_permission_root<Swmr::writer_tag>());
+    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
     std::uint64_t seq = 0;
     return measure("SwmrSession.WriterHandle.publish", [&] {
         writer.publish(payload_at(++seq));
@@ -89,7 +91,7 @@ template <typename Body>
 [[nodiscard]] bench::Report session_send() {
     Swmr swmr{reader_root(), payload_at(0)};
     std::optional session{ses::mint_writer_runtime_session<Swmr>(
-        kForeground, ses::mint_swmr_writer<Swmr>(swmr, perm::mint_permission_root<Swmr::writer_tag>()))};
+        kForeground, ses::mint_swmr_writer<Swmr>(swmr, writer_root()))};
     std::uint64_t seq = 0;
     auto report = measure("SwmrSession session send", [&] {
         session.emplace(std::move(*session).send(payload_at(++seq), ses::publish_value));

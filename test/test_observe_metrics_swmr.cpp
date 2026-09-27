@@ -18,7 +18,12 @@ namespace perm = ::foundation::permissions;
 // channel of the type carries the brand of that one site.
 [[nodiscard]] auto metrics_reader_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>(); }
 
-using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>>;
+// The writer root has one call site too, and the channel type names its
+// brand, so the channel takes a writer of that site and no other.
+[[nodiscard]] auto metrics_writer_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsWriterTag>(); }
+
+using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>,
+                                               ::foundation::brand::brand_of_t<decltype(metrics_writer_root())>>;
 
 int total_passed = 0;
 int total_failed = 0;
@@ -78,8 +83,7 @@ void test_writer_publish_keeper_and_canopy_readers() {
     auto initial = observe::fresh_metrics_sample(make_metrics(0.0));
     Channel channel{metrics_reader_root(), initial};
 
-    auto writer_perm = perm::mint_permission_root<observe::RuntimeMetricsWriterTag>();
-    auto writer = observe::mint_metrics_writer(channel, std::move(writer_perm));
+    auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
 
     auto keeper = observe::mint_keeper_metrics_reader(channel);
     auto canopy = observe::mint_canopy_metrics_reader(channel);

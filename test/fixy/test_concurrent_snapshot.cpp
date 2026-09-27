@@ -8,12 +8,17 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/diag/Runtime.h>
+
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -145,17 +150,6 @@ void test_version_monotonicity() {
         CRUCIBLE_REQUIRE(new_version > prev_version);
         prev_version = new_version;
     }
-}
-
-// The wait band pins the reader's strategy at the type and carries the
-// same value that load returns.
-void test_load_pinned_carries_the_value() {
-    AtomicSnapshot<TestPayload> snap{TestPayload::from(7)};
-    const auto pinned = snap.load_pinned();
-    static_assert(std::is_same_v<std::remove_cvref_t<decltype(pinned)>,
-                                 ::fixy::Wait<::fixy::WaitStrategy_v::SpinPause, TestPayload>>);
-    CRUCIBLE_REQUIRE(pinned.peek().value == 7);
-    CRUCIBLE_REQUIRE(pinned.peek().is_consistent());
 }
 
 // The window is sized so that continuous pressure from one writer and
@@ -295,6 +289,44 @@ void test_try_load_rejects_in_progress() {
     CRUCIBLE_REQUIRE(total.load(std::memory_order_acquire) > 100);
 }
 
+// Two writers that publish at the same time break the single-writer
+// contract, and the snapshot ends the process through the diagnostic
+// catalog.  The child process installs a sink that exits with a known
+// status when it receives LinearityViolation, so the parent sees that the
+// violation went through the catalog and not through a bare abort.
+constexpr int kLinearityViolationSeen = 42;
+constexpr int kOtherViolationSeen = 43;
+
+void exit_on_linearity_violation(::foundation::diag::Category category, std::string_view,
+                                 std::string_view) noexcept {
+    std::_Exit(category == ::foundation::diag::Category::LinearityViolation ? kLinearityViolationSeen
+                                                                            : kOtherViolationSeen);
+}
+
+void test_two_writers_end_through_the_catalog() {
+    // SPAWN-PROCESS-OK: the child exists to die.  The two-writer check ends
+    // the process that runs it, so only a parent can observe the route.
+    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: death test, see above
+    CRUCIBLE_REQUIRE(pid >= 0);
+    if (pid == 0) {
+        (void)::foundation::diag::set_violation_sink(&exit_on_linearity_violation);
+        AtomicSnapshot<TestPayload> snap{TestPayload::from(0)};
+        auto hammer = [&snap] {
+            for (std::uint64_t i = 1; i < 50'000'000; ++i) snap.publish(TestPayload::from(i));
+        };
+        std::jthread first(hammer);
+        std::jthread second(hammer);
+        first.join();
+        second.join();
+        std::_Exit(0);
+    }
+    int status = 0;
+    // SPAWN-PROCESS-OK: the wait belongs to the fork above.
+    CRUCIBLE_REQUIRE(::waitpid(pid, &status, 0) == pid);  // SPAWN-PROCESS-OK: death test, see above
+    CRUCIBLE_REQUIRE(WIFEXITED(status));
+    CRUCIBLE_REQUIRE(WEXITSTATUS(status) == kLinearityViolationSeen);
+}
+
 }  // namespace
 
 int main() {
@@ -303,9 +335,9 @@ int main() {
     run_test("initial_value_ctor", test_initial_value_ctor);
     run_test("roundtrip_single_thread", test_roundtrip_single_thread);
     run_test("version_monotonicity", test_version_monotonicity);
-    run_test("load_pinned_carries_the_value", test_load_pinned_carries_the_value);
     run_test("stress_multithread", test_stress_multithread);
     run_test("try_load_rejects_in_progress", test_try_load_rejects_in_progress);
+    run_test("two_writers_end_through_the_catalog", test_two_writers_end_through_the_catalog);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
