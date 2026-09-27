@@ -75,13 +75,18 @@ int check_move_transfers_ownership() {
     return 0;
 }
 
+// The tag that names why a stream leaves a handle without a close here:
+// this test closes it by hand.
+struct ClosedByTheTest final {};
+using ReleaseWitness = ::fixy::atom::leak::resource<ClosedByTheTest>;
+
 int check_release_hands_the_handle_back() {
     auto opened = OwnedFile::open_temporary();
     if (!opened) return 0;
 
     OwnedFile f = std::move(*opened);
     std::FILE* const raw = f.get();
-    std::FILE* out = f.release();
+    std::FILE* out = std::move(f).release(ReleaseWitness{});
     if (out != raw) return 30;
     if (f.is_open()) return 31;
 
@@ -114,8 +119,9 @@ int check_empty_state() {
     if (empty.is_open()) return 40;
     if (static_cast<bool>(empty)) return 41;
     if (empty.get() != nullptr) return 42;
-    if (empty.release() != nullptr) return 43;
     if (empty.close_explicit() != 0) return 44;
+    OwnedFile released{};
+    if (std::move(released).release(ReleaseWitness{}) != nullptr) return 43;
 
     OwnedFile moved = std::move(empty);
     if (moved.is_open()) return 45;

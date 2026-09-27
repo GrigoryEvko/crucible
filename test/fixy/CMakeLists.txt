@@ -3901,6 +3901,17 @@ fixy_neg_compile_test(neg_owned_file_forged_through_mint_linear
   "no matching function for call"
   "mint_linear<fixy::OwnedFile>\\(FILE\\*&\\)")
 
+# OwnedFile::release has the two gates of OwnedMmap::release: a leak atom
+# as the witness, and an rvalue handle.
+fixy_neg_compile_test(neg_owned_file_release_without_leak_atom
+  "no matching function for call to .fixy::OwnedFile::release\\("
+  "required for the satisfaction of .IsLeakAtom<LeakAtom>."
+  "the expression .is_leak_atom_v<G> \\[with G = <unnamed>::NotALeakAtom\\]. evaluated to .false.")
+
+fixy_neg_compile_test(neg_owned_file_release_from_an_lvalue
+  "passing .fixy::OwnedFile. as .this. argument discards qualifiers"
+  "in call to .FILE\\* fixy::OwnedFile::release\\(LeakAtom\\) &&")
+
 # ── The file surface and the three durable writers ───────────────────
 #
 # Neither header, nor the two they were ported from, ever had a

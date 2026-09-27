@@ -56,10 +56,11 @@ test/fixy/test_owned_mmap.cpp:check_live_mapping:r
 test/fixy/test_owned_mmap.cpp:check_move_assign_unmaps_the_replaced_region:b
 test/fixy/test_owned_mmap.cpp:check_release_hands_the_region_back:r
 
-# Probe: a moved-from file handle is closed, so the descriptor has one
-# owner and closes one time.
+# Probe: a moved-from or released file handle is closed, so the
+# descriptor has one owner and closes one time.
 test/fixy/test_owned_file.cpp:check_move_transfers_ownership:dst
 test/fixy/test_owned_file.cpp:check_move_transfers_ownership:src
+test/fixy/test_owned_file.cpp:check_release_hands_the_handle_back:f
 test/test_fixy_handle.cpp:main:a
 test/test_safety.cpp:test_file_handle:a
 

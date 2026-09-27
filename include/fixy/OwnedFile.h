@@ -2,8 +2,8 @@
 
 // Exclusive ownership of one stdio stream, closed on destruction.
 //
-// Old spelling: include/crucible/safety/OwnedFile.h.  One deviation: the
-// construction door.
+// Old spelling: include/crucible/safety/OwnedFile.h.  Two deviations: the
+// construction door, and the release door.
 //
 // The old constructor took a FILE* and was public, and the destructor
 // calls std::fclose on whatever it holds.  So `OwnedFile f{stdin};` was
@@ -21,18 +21,20 @@
 // leaves nothing to forward to: is_constructible_v<OwnedFile, FILE*> is
 // false, and mint_linear's own requires-clause refuses the call.
 //
+// The old release took no argument and bound to any handle.  The new one
+// has the two gates of OwnedMmap::release: a leak atom that names why the
+// stream leaves without a close, and an rvalue handle.
+//
 // The empty handle stays default-constructible for the reason the empty
 // region does: it claims nothing and closes nothing.  A failed open is
-// not an empty handle; it is the errno, handed back with no handle built.
+// not an empty handle.  It is the errno, handed back with no handle built.
 //
-// What the doors do NOT decide is who may open.  They are reachable
-// without a context, like OwnedMmap::map_region and OwnedFd::open_path,
+// What the doors do NOT decide is who may open.  They take no context,
 // and reaching one mints no false claim, because what it hands back is
-// what libc returned.  A caller that wants a gate on the open stands one
-// layer up, where fixy/os/Fs.h gates OwnedFd; nothing there mints an
-// OwnedFile today.  The stdio calls are not in the syscall-capability
+// what libc returned.  The stdio calls are not in the syscall-capability
 // guard's name set, so they carry no allowlist line.
 
+#include <fixy/atoms/Os.h>
 #include <foundation/Platform.h>
 
 #include <cerrno>
@@ -108,7 +110,15 @@ public:
 
     // The inverse door: ownership leaves with the pointer, and the close
     // becomes the caller's.  Only what this handle owns can leave it.
-    [[nodiscard]] std::FILE* release() noexcept { return std::exchange(fp_, nullptr); }
+    //
+    // The witness has to be a leak atom, whose tag names why the stream
+    // leaves without a close here, so each such site is in the source and
+    // a search finds it.  The method binds only to an rvalue, so a second
+    // release needs a second explicit move of the same handle.
+    template <atom::IsLeakAtom LeakAtom>
+    [[nodiscard]] std::FILE* release(LeakAtom) && noexcept {
+        return std::exchange(fp_, nullptr);
+    }
 
     // Close early when the flush result matters, since the destructor
     // cannot report one.  Returns 0 on success, otherwise errno.
@@ -144,6 +154,24 @@ static_assert(!std::is_constructible_v<OwnedFile, int>,
               "There is no descriptor form either: fdopen over a descriptor owned elsewhere would fclose that "
               "descriptor.  A descriptor is OwnedFd's business, in fixy/os/Fs.h.");
 static_assert(std::is_default_constructible_v<OwnedFile>, "The empty handle claims nothing, so it stays reachable.");
+
+// The release door admits a leak atom on an rvalue handle and nothing
+// else.  An unrelated type is not a witness, and an lvalue handle keeps
+// its stream.
+struct NotALeakAtom final {};
+struct release_rationale final {};
+using SampleLeak = atom::leak::resource<release_rationale>;
+
+template <typename Witness>
+concept can_release = requires(OwnedFile handle, Witness witness) { std::move(handle).release(witness); };
+template <typename Witness>
+concept can_release_lvalue = requires(OwnedFile& handle, Witness witness) { handle.release(witness); };
+
+static_assert(can_release<SampleLeak>);
+static_assert(!can_release<NotALeakAtom>);
+static_assert(!can_release<int>);
+static_assert(!can_release<std::FILE*>);
+static_assert(!can_release_lvalue<SampleLeak>, "A release binds only to an rvalue handle.");
 
 }  // namespace detail::owned_file_self_test
 
