@@ -12,12 +12,24 @@ WHICH TEMPLATES ARE BRANDED
     script names no template.  A class template or an alias template is
     branded when one of its template parameters is named Brand, or has a
     default that names DefaultBrand.  The position of that parameter is the
-    count of arguments that a spelling with no brand holds.  A superseded
-    `_Name.h` header is out of scope.  Two primary templates of one name
-    with the brand at two positions fail, because a spelling of that name
-    then has no one reading.  A list that did not derive its templates
-    missed OwnedMmap and NumaPlacement when each gained a brand, so a
-    spelling of either on the erased identity was never counted.
+    count of arguments that a spelling with no brand holds.  A template is
+    known by its qualified name, so fixy::Borrowed is branded and
+    fixy::session::Borrowed is a template of its own.  A superseded
+    `_Name.h` header is out of scope.  Two primary declarations of one
+    qualified name with the brand at two positions fail, because a spelling
+    of that name then has no one reading.  A list that did not derive its
+    templates missed OwnedMmap and NumaPlacement when each gained a brand, so
+    a spelling of either on the erased identity was never counted.
+
+WHICH TEMPLATE A SPELLING NAMES
+    Name lookup of scripts/tsast.py (NameIndex) decides: the innermost
+    enclosing scope that declares the name, with the using-declarations,
+    using-directives and namespace aliases in force at the spelling.  The
+    index holds the declarations of include/ and of the file itself.  A
+    qualifier whose head no scope knows can name a branded template that
+    the index does not see, so the guard then counts the spelling for each
+    branded template of that last name.  A macro body has no enclosing
+    scope until it expands, so a spelling in a body counts the same way.
 
 THE RULE
     A site is a spelling of a branded template whose argument list stops at
@@ -147,14 +159,32 @@ def declared_template(declaration: tsast.Node) -> str | None:
     return None
 
 
-def branded_templates(root: Path) -> tuple[dict[str, int], list[str]]:
+QualifiedName = tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Branded:
+    """The branded templates of include/, and the index that name lookup reads.
+
+    Attributes:
+        position: The position of the brand for each qualified name
+        by_last_name: The qualified names of the branded templates for each last name
+        index: The declarations of include/
+    """
+
+    position: dict[QualifiedName, int]
+    by_last_name: dict[str, tuple[QualifiedName, ...]]
+    index: tsast.NameIndex
+
+
+def branded_templates(root: Path) -> tuple[Branded, list[str]]:
     """Derive each branded template under include/ and the position of its brand.
 
     Complexity: linear in the size of the headers under include/.
 
     Returns:
-        The position of the brand for each template name, and one line for
-        each name the guard cannot read, or reads with two positions
+        The branded templates, and one line for each file the guard cannot
+        read, or each qualified name it reads with two positions
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -163,48 +193,98 @@ def branded_templates(root: Path) -> tuple[dict[str, int], list[str]]:
     files = sorted(path for path in base.rglob("*") if path.is_file() and path.suffix in SUFFIXES
                    and not path.name.startswith(SUPERSEDED_PREFIX) and tsast.is_in_cpp_scope(path.relative_to(root))) \
         if base.is_dir() else []
-    positions: dict[str, set[int]] = {}
+    positions: dict[QualifiedName, set[int]] = {}
     failures: list[str] = []
+    index = tsast.NameIndex()
     for tree in tsast.parse(files, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
             failures.append(f"{rel}: the parser cannot read this file.  Its branded templates are unknown")
             continue
+        index.add(tree, share_aliases=True)
         for declaration in tree.find("template_declaration"):
             name = declared_template(declaration)
             parameters = declaration.child_by_field("parameters")
             if name is None or parameters is None:
                 continue
+            qualified = tsast.scope_levels(declaration)[0] + (name,)
             listed = [child for child in parameters.children if not tsast.is_comment(child)]
-            for index, parameter in enumerate(listed):
+            for position, parameter in enumerate(listed):
                 if parameter_name(parameter) == BRAND_PARAMETER or defaults_to_erased_brand(parameter):
-                    positions.setdefault(name, set()).add(index)
+                    positions.setdefault(qualified, set()).add(position)
                     break
-    branded: dict[str, int] = {}
-    for name in sorted(positions):
-        if len(positions[name]) != 1:
-            failures.append(f"{name}: two primary templates of this name carry the brand at positions "
-                            f"{sorted(positions[name])}, so a spelling of the name has no one reading.  Rename one")
+    position_of: dict[QualifiedName, int] = {}
+    for qualified in sorted(positions):
+        if len(positions[qualified]) != 1:
+            failures.append(f"{'::'.join(qualified)}: two primary declarations of this template carry the brand at "
+                            f"positions {sorted(positions[qualified])}, so a spelling of it has no one reading.  "
+                            "Make them agree")
             continue
-        branded[name] = next(iter(positions[name]))
-    return branded, failures
+        position_of[qualified] = next(iter(positions[qualified]))
+    by_last_name: dict[str, list[QualifiedName]] = {}
+    for qualified in position_of:
+        by_last_name.setdefault(qualified[-1], []).append(qualified)
+    return Branded(position_of, {name: tuple(sorted(found)) for name, found in by_last_name.items()}, index), failures
 
 
-def tree_site_nodes(tree: tsast.Tree, branded: dict[str, int]) -> list[tuple[tsast.Node, str]]:
-    """Return each spelling of a branded template in one tree that stops at or before the brand or names DefaultBrand."""
+def referents(node: tsast.Node, branded: Branded, lookup: tuple[list, list, frozenset] | None) -> tuple[QualifiedName, ...]:
+    """Return the branded templates that one template-id can name.
+
+    A spelling that lookup cannot resolve counts for each branded template of
+    its last name, so an unknown case is counted.  A spelling that resolves
+    to a template with no brand is no site.
+
+    Args:
+        node: A template_type or template_function node
+        branded: The branded templates
+        lookup: (the namespace aliases, the usings, the local names) of the
+            tree, or None for a macro body, whose scope is unknown
+
+    Returns:
+        The qualified names of the branded templates it names
+    """
+    name = node.child_by_field("name")
+    candidates = branded.by_last_name.get(name.text, ()) if name is not None else ()
+    path = tsast.qualified_path(node)
+    if not candidates or lookup is None or path is None:
+        return candidates
+    aliases, usings, local = lookup
+    site = tsast.lookup_site_of_parts(node, path[0], path[1], aliases, usings)
+    found, _known = branded.index.resolve(site, local)
+    if not found:
+        return candidates
+    return tuple(qualified for qualified in found if qualified in branded.position)
+
+
+def tree_site_nodes(tree: tsast.Tree, branded: Branded, *, is_macro_body: bool = False) -> list[tuple[tsast.Node, str]]:
+    """Return each spelling of a branded template in one tree that stops at or before the brand or names DefaultBrand.
+
+    Args:
+        tree: A parsed file, or the tree of a macro body
+        branded: The branded templates
+        is_macro_body: True for a macro body, whose spellings count for each
+            branded template of their last name
+    """
+    lookup = None
+    if not is_macro_body:
+        local = tsast.NameIndex()
+        local.add(tree)
+        lookup = (tsast.namespace_aliases(tree), tsast.using_names(tree), frozenset(local.names))
     found = []
     for node in tree.find("template_type", "template_function"):
         name = node.child_by_field("name")
         arguments = node.child_by_field("arguments")
-        if name is None or arguments is None or name.text not in branded:
+        if name is None or arguments is None or name.text not in branded.by_last_name:
             continue
         named = [child for child in arguments.children if not tsast.is_comment(child)]
-        if len(named) <= branded[name.text] or any(names_erased_brand(child) for child in named):
+        erased = any(names_erased_brand(child) for child in named)
+        if any(len(named) <= branded.position[qualified] or erased
+               for qualified in referents(node, branded, lookup)):
             found.append((node, name.text))
     return found
 
 
-def unreadable_body(body: tsast.MacroBody, branded: dict[str, int]) -> str | None:
+def unreadable_body(body: tsast.MacroBody, branded: Branded) -> str | None:
     """Return a branded name that a macro body spells before `<` without a template node in its parse, or None.
 
     A body is a fragment, so `Permission<x` can parse as a comparison.  When
@@ -217,13 +297,13 @@ def unreadable_body(body: tsast.MacroBody, branded: dict[str, int]) -> str | Non
     tokens = tsast.pp_tokens(body.text, body.first_row)
     spelled: dict[str, int] = {}
     for token, following in zip(tokens, tokens[1:]):
-        if token.kind == "identifier" and token.text in branded and following.text == "<":
+        if token.kind == "identifier" and token.text in branded.by_last_name and following.text == "<":
             spelled[token.text] = spelled.get(token.text, 0) + 1
     read: dict[str, int] = {}
     if body.is_parsed:
         for node in body.root.descendants("template_type", "template_function"):
             name = node.child_by_field("name")
-            if name is not None and name.text in branded:
+            if name is not None and name.text in branded.by_last_name:
                 read[name.text] = read.get(name.text, 0) + 1
     for name in sorted(spelled):
         if spelled[name] > read.get(name, 0):
@@ -256,7 +336,8 @@ def scan(root: Path, roots: tuple[str, ...] = ROOTS) -> tuple[list[Site], list[S
         if name is not None:
             unreadable.append(Site(rel, body.define.start[0] + 1, name))
         elif body.is_parsed:
-            sites += [Site(rel, body.origin(node)[0] + 1, name) for node, name in tree_site_nodes(body.tree, branded)]
+            sites += [Site(rel, body.origin(node)[0] + 1, name)
+                      for node, name in tree_site_nodes(body.tree, branded, is_macro_body=True)]
     return sites, unreadable, failures
 
 
@@ -395,6 +476,23 @@ def self_test() -> int:
         "template <class Tag, class Extra = int, class Brand = ::foundation::brand::DefaultBrand> class Late;\n"
         "template <class Tag, class Brand> class Permission<Tag*, Brand> {};\n"
         "struct Holder { template <class U, class Brand> friend class Plain; };\n"
+        "namespace fixy {\n"
+        "template <class T, class S, class Brand = ::foundation::brand::DefaultBrand> class Carried;\n"
+        "namespace session { template <class T, class S> class Carried; }\n"
+        "}\n"
+    )
+    # Two templates share the last name Carried.  Only fixy::Carried has a
+    # brand, so a spelling that names fixy::session::Carried is no site.
+    qualified = (
+        "namespace fixy::session { Carried<int, int> inner_unbranded; }\n"
+        "namespace fixy { Carried<int, int> outer_erased; }\n"                         # site
+        "namespace fixy::session { fixy::Carried<int, int> qualified_outer; }\n"       # site
+        "namespace fixy::session { ::fixy::session::Carried<int, int> qualified_inner; }\n"
+        "namespace other { using namespace fixy::session; Carried<int, int> via_directive; }\n"
+        "namespace other { using fixy::Carried; Carried<int, int> via_declaration; }\n"  # site
+        "mystery::Carried<int, int> unknown_head;\n"                                    # site
+        "auto scoped = fixy::Carried<int, int>::make();\n"                             # site
+        "namespace elsewhere { Carried<int, int> unresolved; }\n"                      # site
     )
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -409,11 +507,14 @@ def self_test() -> int:
         ledger.parent.mkdir(parents=True)
 
         branded, derive_failures = branded_templates(root)
-        expect("the branded templates are derived from the parse tree",
-               branded == {"Permission": 1, "ReadView": 1, "OwnedRegion": 2, "Borrowed": 2,
-                           "SharedPermissionPool": 1, "Novel": 1, "Renamed": 1, "Handle": 1, "Late": 2}
+        expect("the branded templates are derived from the parse tree, each by its qualified name",
+               branded.position == {("Permission",): 1, ("ReadView",): 1, ("OwnedRegion",): 2, ("Borrowed",): 2,
+                                    ("SharedPermissionPool",): 1, ("Novel",): 1, ("Renamed",): 1, ("Handle",): 1,
+                                    ("Late",): 2, ("fixy", "Carried"): 2}
                and not derive_failures)
-        expect("a template with no brand is not branded", "Plain" not in branded, True)
+        expect("a template with no brand is not branded", ("Plain",) not in branded.position, True)
+        expect("a template of the same last name in another namespace is not branded",
+               ("fixy", "session", "Carried") not in branded.position, True)
         sites, unreadable, parse_failures = scan(root)
         rows = sorted(site.row for site in sites)
         expect("sixteen sites in the planted header", len(sites) == 16 and not unreadable and not parse_failures)
@@ -440,6 +541,22 @@ def self_test() -> int:
         expect("a file outside the roots is not read", all(site.path == "include/fixy/Planted.h" for site in sites),
                True)
 
+        (root / "include/fixy/Qualified.h").write_text(qualified, encoding="utf-8")
+        qualified_rows = sorted(site.row for site in scan(root)[0] if site.path == "include/fixy/Qualified.h")
+        expect("counted: the branded template that the enclosing namespace declares", 2 in qualified_rows)
+        expect("counted: a qualified spelling of the branded template", 3 in qualified_rows)
+        expect("counted: a using-declaration of the branded template", 6 in qualified_rows)
+        expect("counted: a qualifier that no scope knows, which fails closed", 7 in qualified_rows)
+        expect("counted: a template-id that qualifies a member name", 8 in qualified_rows)
+        expect("counted: a name that lookup cannot resolve, which fails closed", 9 in qualified_rows)
+        expect("not counted: a template of the same last name that an inner namespace declares",
+               1 not in qualified_rows, True)
+        expect("not counted: a qualified spelling of the template with no brand", 4 not in qualified_rows, True)
+        expect("not counted: a using-directive of the namespace of the template with no brand",
+               5 not in qualified_rows, True)
+        expect("six sites in the qualified header", len(qualified_rows) == 6)
+        (root / "include/fixy/Qualified.h").unlink()
+
         def captured(action) -> tuple[int, str]:
             buffer = io.StringIO()
             with contextlib.redirect_stderr(buffer):
@@ -458,7 +575,7 @@ def self_test() -> int:
         ledger.write_text("include/fixy/Planted.h\t16\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
         expect("two templates of one name with the brand at two positions fail",
-               code == 1 and "Novel: two primary templates" in report, True)
+               code == 1 and "Novel: two primary declarations" in report, True)
         clash.unlink()
         ledger.write_text("include/fixy/Planted.h\t18\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
