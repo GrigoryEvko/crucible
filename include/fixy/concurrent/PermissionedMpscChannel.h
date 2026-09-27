@@ -122,7 +122,10 @@ public:
         // Move assignment stays deleted, because the share's lifetime
         // is fixed at construction.
 
-        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept { return ch_->ring_.try_push(std::move(item)); }
+        // The value comes by reference to const, which is the shape of a
+        // producer pole in fixy/concurrent/HandleTraits.h.  A value
+        // parameter hides the pole, and no stage can then feed the channel.
+        [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept { return ch_->ring_.try_push(item); }
 
         // Snapshots.  Sound for telemetry and for deciding whether to
         // keep retrying, never for a correctness invariant.

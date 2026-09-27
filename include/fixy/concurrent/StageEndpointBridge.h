@@ -397,6 +397,19 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, FgCtx, ConsEp, FloatPr
 // A positive control, so that a gate which rejects everything cannot pass.
 static_assert(StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
 
+// A stage can feed an MPSC channel.  Its producer handle takes the value
+// by reference to const, which is the producer pole, so the body is a
+// stage and the endpoint mint takes the MPSC producer endpoint.
+struct UTagMpsc {};
+using ChMpsc = PermissionedMpscChannel<int, 64, UTagMpsc>;
+using MpscProdEp = Endpoint<ChMpsc, Direction::Producer, FgCtx>;
+
+inline void feed_mpsc_body(typename Ch1::ConsumerHandle&&, typename ChMpsc::ProducerHandle&&) noexcept {}
+
+static_assert(is_producer_handle_v<typename ChMpsc::ProducerHandle>);
+static_assert(PipelineStage<&feed_mpsc_body>);
+static_assert(CtxFitsStageFromEndpoints<&feed_mpsc_body, FgCtx, ConsEp, MpscProdEp>);
+
 inline void fan_in_body(typename Ch1::ConsumerHandle&&, typename Ch1::ConsumerHandle&&,
                         typename Ch2::ProducerHandle&&) noexcept {}
 inline void fan_out_body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&,

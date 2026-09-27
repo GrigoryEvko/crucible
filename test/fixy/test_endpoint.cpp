@@ -150,6 +150,45 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
     return 0;
 }
 
+// A stage that feeds an MPSC channel.  The MPSC producer handle has the
+// producer pole, so the body is a stage and the endpoint mint takes it.
+struct FeedInTag {};
+struct FeedOutTag {};
+using FeedIn = c::PermissionedSpscChannel<int, 8, FeedInTag>;
+using FeedOut = c::PermissionedMpscChannel<int, 8, FeedOutTag>;
+
+void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out) noexcept {
+    while (const std::optional<int> value = in.try_pop()) {
+        (void)out.try_push(*value + 100);
+    }
+}
+
+[[nodiscard]] int stage_feeds_an_mpsc_channel() {
+    const FgCtx ctx = ::foundation::effects::testing::foreground();
+    FeedIn in_channel{};
+    FeedOut out_channel{};
+    auto [in_producer_perm, in_consumer_perm] = perm::mint_permission_split<FeedIn::producer_tag, FeedIn::consumer_tag>(
+        perm::mint_permission_root<FeedIn::whole_tag>());
+    auto out_consumer_perm = perm::mint_permission_root<FeedOut::consumer_tag>();
+
+    auto feeder = in_channel.producer(std::move(in_producer_perm));
+    auto drain = out_channel.consumer(std::move(out_consumer_perm));
+    (void)feeder.try_push(1);
+    (void)feeder.try_push(2);
+
+    std::optional out_producer = out_channel.producer();
+    if (!out_producer) return fail("the MPSC channel lent no producer share");
+    auto stage = c::mint_stage_from_endpoints<&forwarding_stage>(
+        ctx, c::mint_endpoint<FeedIn, c::Direction::Consumer>(ctx, in_channel.consumer(std::move(in_consumer_perm))),
+        c::mint_endpoint<FeedOut, c::Direction::Producer>(ctx, std::move(*out_producer)));
+    std::move(stage).run();
+
+    const std::optional<int> first = drain.try_pop();
+    const std::optional<int> second = drain.try_pop();
+    if (!first || !second || *first != 101 || *second != 102) return fail("the stage did not feed the MPSC channel");
+    return 0;
+}
+
 struct FanLeftTag {};
 struct FanRightTag {};
 struct FanOutTag {};
@@ -261,6 +300,7 @@ int main() {
     failures += bridge_round_trip();
     failures += endpoint_send_recv_and_hand_back();
     failures += stage_from_endpoints_runs_its_body();
+    failures += stage_feeds_an_mpsc_channel();
     failures += mpmc_stage_from_endpoints_runs_its_body();
     failures += swmr_stage_runs_its_body();
     failures += recording_endpoint_records_each_step();

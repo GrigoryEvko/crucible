@@ -19,6 +19,7 @@
 // context carries no residency tier (foundation/effects/Ctx.h), so that
 // clause has no carrier.
 
+#include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/session/Entry.h>
@@ -100,13 +101,20 @@ concept HasHandleFor = requires { typename handle_for<Substr, Dir>::type; };
 template <class Substr, Direction Dir>
 concept HasDefaultProtoFor = requires { typename default_proto_for<Substr, Dir>::type; };
 
+// The handle of a direction has the pole shape of that direction, so a
+// stage can take it.  fixy/concurrent/StageShape.h reads the same shape.
+template <class Substr, Direction Dir>
+concept HandleHasPoleOf = (Dir == Direction::Producer && is_producer_handle_v<handle_for_t<Substr, Dir>>)
+                       || (Dir == Direction::Consumer && is_consumer_handle_v<handle_for_t<Substr, Dir>>);
+
 }  // namespace detail
 
 // A direction is bridgeable when the table names both its handle and its
-// protocol.  Only the rows above do, so the concept is closed over the two
-// channels.
+// protocol, and the handle has the pole shape of the direction.  Only the
+// rows above do, so the concept is closed over the two channels.
 template <class Substr, Direction Dir>
-concept IsBridgeableDirection = detail::HasHandleFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir>;
+concept IsBridgeableDirection =
+    detail::HasHandleFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir> && detail::HandleHasPoleOf<Substr, Dir>;
 
 // The gate of mint_substrate_session: a bridgeable direction, and the gate
 // of fixy::session::mint_session for its protocol over its handle.  So the
