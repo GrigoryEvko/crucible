@@ -187,7 +187,7 @@ def qualify(type_: str) -> str:
     """Return the type with each template argument list removed and the root namespace dropped.
 
     fixy::Secret<int> gives Secret, and
-    fixy::concurrent::PermissionedMpscChannel<int, 8>::ProducerHandle gives
+    fixy::concurrent::PermissionedMpscChannel<int, 8, FeedTag>::ProducerHandle gives
     concurrent::PermissionedMpscChannel::ProducerHandle.  The walk and the
     roster share this key.
     """
