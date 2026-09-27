@@ -187,7 +187,11 @@ crucible/effects/_ComputationGraded.h:runtime_smoke_test_computation_graded  —
 crucible/effects/_Computation.h:runtime_smoke_test_computation  — An inline smoke test in a public namespace; its body moved to test/foundation/test_computation.cpp.
 crucible/effects/_EffectRowLattice.h:runtime_smoke_test_lattice  — An inline smoke test in a public namespace; its body moved to test/foundation/test_effects_core.cpp.
 crucible/effects/_FxAliases.h:Div  — Progress did not survive the port, so Div has no value form; fixy/Aliases.h:12-18 records why and keeps DivRow.
+crucible/effects/_FxAliases.h:GhostRow  — The empty row under a second name; it was the same type as fixy::PureRow, so a call site names PureRow.
+crucible/effects/_FxAliases.h:IsGhost  — The same concept as fixy::IsPure under a second name, because its bound was the same empty row.
+crucible/effects/_FxAliases.h:IsTot  — The same concept as fixy::IsPure under a second name, because its bound was the same empty row.
 crucible/effects/_FxAliases.h:runtime_smoke_test  — An inline smoke test in a public namespace; its body moved to the fixy sentinel at 24456d2a.
+crucible/effects/_FxAliases.h:TotRow  — The empty row under a second name; it was the same type as fixy::PureRow, so a call site names PureRow.
 
 # ── fixy: the grant tier that became the atom tier ──────────────────────
 # fixy/Atom.h:17-22 records the renaming: a grant is an effect atom, so
@@ -476,6 +480,9 @@ crucible/safety/_IsScopedFence.h:scoped_fence_value_t  — A per-band payload ac
 # ── safety: wrappers ────────────────────────────────────────────────────
 
 crucible/safety/_Affine.h:drop  — The free function became a hidden friend of Qtt (fixy/Qtt.h:175). That is one drop for both grades instead of one per wrapper, and the name can no longer be written for a type that is not a Qtt. An unqualified drop(std::move(x)) still resolves by argument-dependent lookup, and the qualified spelling has no successor. Two mentions in two files use the qualified spelling today, so the move of those consumers to the new tree meets a known list: crucible/fixy/Wrap.h:84 re-exports it with a using-declaration, and test/test_fixy_wrap.cpp:68 calls it through a namespace alias.
+crucible/safety/_Checked.h:safe_byte_budget  — The same product as fixy::safe_capacity under a second name, and no file in the new tree read it.
+crucible/safety/_Checked.h:safe_size_diff  — The same difference as fixy::safe_sub<std::size_t, A, B> under a second name, and no file in the new tree read it.
+crucible/safety/_Checked.h:safe_size_sum  — The same sum as fixy::safe_add<std::size_t, A, B> under a second name, and no file in the new tree read it.
 crucible/safety/_Linear.h:drop  — The same hidden friend as the affine one; fixy/Qtt.h:175 declares drop once for both grades.
 crucible/safety/_Machine.h:machine_transition  — The transition relation is no longer a trait; fixy/Machine.h:13 states it as edges beside the states they join.
 crucible/safety/_Machine.h:CRUCIBLE_ALLOW_MACHINE_TRANSITION  → include/fixy/Machine.h  — The new tree spells the edge macro CRUCIBLE_ADMIT_MACHINE_TRANSITION, because the two bodies write into different relations and a second definition of one name stops a translation unit that includes both trees.

@@ -4,10 +4,13 @@
 // contexts that own it and for no other, and every context is built at
 // run time from the capability it claims.
 //
-// The header self-test pins the shapes.  What this file adds is the
-// scenarios: a gated call, a row narrowed from one production context
-// into another, and the runtime construction, which needs a real
-// capability that a test takes from foundation's testing witness.
+// foundation/effects/Ctx.h pins the shapes in its record of the named
+// contexts, and fixy/Ctx.h names that record.  This file restates each
+// row through the production names, so a rewrite of the record reddens
+// here too.  It adds the scenarios: a gated call, a row narrowed from one
+// production context into another, and the runtime construction, which
+// needs a real capability that a test takes from foundation's testing
+// witness.
 
 #include <fixy/Ctx.h>
 
@@ -40,6 +43,23 @@ static_assert(std::is_same_v<BgCompileCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, E
 static_assert(std::is_same_v<ColdInitCtx, fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
 static_assert(std::is_same_v<TestRunnerCtx,
                              fe::ExecCtx<fe::Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>>);
+static_assert(
+    std::is_same_v<BgLoadCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>>);
+static_assert(
+    std::is_same_v<InitLoadCtx, fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>>);
+
+// No context builds from nothing.
+static_assert(!std::is_default_constructible_v<HotFgCtx> && !std::is_default_constructible_v<BgDrainCtx>
+              && !std::is_default_constructible_v<BgCompileCtx> && !std::is_default_constructible_v<BgLoadCtx>
+              && !std::is_default_constructible_v<ColdInitCtx> && !std::is_default_constructible_v<InitLoadCtx>
+              && !std::is_default_constructible_v<TestRunnerCtx>);
+
+// Only a row that names Block admits Block, and the hot path never does.
+static_assert(!fe::CtxAdmits<HotFgCtx, Row<Effect::Block>>, "The hot path never admits Block.");
+static_assert(!fe::CtxAdmits<ColdInitCtx, Row<Effect::Block>>);
+static_assert(fe::CtxAdmits<InitLoadCtx, Row<Effect::Block>>);
+static_assert(fe::CtxAdmits<BgLoadCtx, Row<Effect::Block>>);
+static_assert(!fe::CtxAdmits<BgCompileCtx, Row<Effect::Block>>);
 
 // And the shapes foundation recorded.
 static_assert(std::is_same_v<HotFgCtx, fe::detail::ctx_witnesses::FgWitness>);

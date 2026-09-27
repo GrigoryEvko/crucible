@@ -233,9 +233,6 @@ inline constexpr T safe_mul = detail::safe_mul_impl<T, A, B>::value;
 template <std::size_t A, std::size_t B>
 inline constexpr std::size_t safe_capacity = safe_mul<std::size_t, A, B>;
 
-template <std::size_t A, std::size_t B>
-inline constexpr std::size_t safe_byte_budget = safe_mul<std::size_t, A, B>;
-
 // A budget is rarely a single product.  A sum of terms, each of them a
 // product, has an intermediate that can wrap and silently under-size the
 // whole.  The helpers below carry the check through every step.
@@ -296,12 +293,6 @@ consteval void ensure_bytes_fit() noexcept {
                                              "a hardware-alignment boundary (cache line, page, sector).");
 }
 
-template <std::size_t A, std::size_t B>
-inline constexpr std::size_t safe_size_sum = safe_add<std::size_t, A, B>;
-
-template <std::size_t A, std::size_t B>
-inline constexpr std::size_t safe_size_diff = safe_sub<std::size_t, A, B>;
-
 // Only the accepting cases can be witnessed here.  A rejection is a
 // failed static_assert, which would break this translation unit, so
 // those cases live in the negative-compile harness instead.
@@ -311,9 +302,6 @@ static_assert(safe_sub<std::uint32_t, 30u, 20u> == 10u);
 static_assert(safe_mul<std::uint32_t, 6u, 7u> == 42u);
 static_assert(safe_capacity<8u, 16u> == 128u);
 static_assert(safe_capacity<std::size_t{1} << 16, std::size_t{1} << 16> == (std::size_t{1} << 32));
-static_assert(safe_byte_budget<256u, 64u> == 256u * 64u);
-static_assert(safe_size_sum<10u, 20u> == 30u);
-static_assert(safe_size_diff<30u, 10u> == 20u);
 
 static_assert(safe_mul<std::size_t, std::size_t{0}, std::size_t{1} << 60> == 0u);
 static_assert(safe_add<std::size_t, std::size_t{0}, std::size_t{0}> == 0u);

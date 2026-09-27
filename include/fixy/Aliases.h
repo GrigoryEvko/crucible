@@ -1,7 +1,7 @@
 #pragma once
 
 // Named effect rows using the F* effect-lattice vocabulary, ordered
-// Pure / Tot / Ghost  ⊑  Div  ⊑  ST  ⊑  All.  Each alias names the
+// Pure  ⊑  Div  ⊑  ST  ⊑  All.  Each alias names the
 // upper bound of its level, so row containment is the lattice order:
 // `Subrow<R, XRow>` reads "R fits within X's effect budget", and the
 // refinement implications between the levels need no separate encoding.
@@ -31,15 +31,9 @@ using ::foundation::effects::Effect;
 using ::foundation::effects::Row;
 using ::foundation::effects::Subrow;
 
+// The empty row.  F* also names it Tot and Ghost, and here the one name
+// serves for each: a second alias would be the same type.
 using PureRow = Row<>;
-
-// Synonym of Pure.  A separate name so a call site can state totality
-// as its intent.
-using TotRow = Row<>;
-
-// No Ghost atom exists, so the row is empty.  The alias is reserved so
-// later code can specialize on it.
-using GhostRow = Row<>;
 
 // Block is the atom for a wait with no guaranteed bound, which is how
 // divergence is spelled here.
@@ -47,31 +41,9 @@ using DivRow = Row<Effect::Block>;
 
 using STRow = Row<Effect::Block, Effect::Alloc, Effect::IO>;
 
-using AllRow = Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>;
-
-// The size check alone is not sufficient.  A rename that keeps the
-// count constant slips through it, so the per-atom membership checks
-// carry the guarantee.
-static_assert(::foundation::effects::row_size_v<AllRow> == ::foundation::effects::effect_count,
-              "AllRow must enumerate every atom in Effect; update both together");
-
-static_assert(::foundation::effects::row_contains_v<AllRow, Effect::Alloc>,
-              "AllRow missing Alloc — universe row out of sync with Effect enum");
-static_assert(::foundation::effects::row_contains_v<AllRow, Effect::IO>,
-              "AllRow missing IO — universe row out of sync with Effect enum");
-static_assert(::foundation::effects::row_contains_v<AllRow, Effect::Block>,
-              "AllRow missing Block — universe row out of sync with Effect enum");
-static_assert(::foundation::effects::row_contains_v<AllRow, Effect::Bg>,
-              "AllRow missing Bg — universe row out of sync with Effect enum");
-static_assert(::foundation::effects::row_contains_v<AllRow, Effect::Init>,
-              "AllRow missing Init — universe row out of sync with Effect enum");
-static_assert(::foundation::effects::row_contains_v<AllRow, Effect::Test>,
-              "AllRow missing Test — universe row out of sync with Effect enum");
-
-static_assert(::foundation::effects::is_subrow_v<PureRow, TotRow>);
-static_assert(::foundation::effects::is_subrow_v<TotRow, PureRow>);
-static_assert(::foundation::effects::is_subrow_v<PureRow, GhostRow>);
-static_assert(::foundation::effects::is_subrow_v<GhostRow, PureRow>);
+// The row of every atom that the Effect enum declares.  Row.h derives it
+// from the enumerators, so a new atom is in it with no edit here.
+using AllRow = ::foundation::effects::every_effect_row;
 
 static_assert(::foundation::effects::is_subrow_v<PureRow, DivRow>);
 static_assert(::foundation::effects::is_subrow_v<DivRow, STRow>);
@@ -87,12 +59,6 @@ template <typename R>
 concept IsPure = Subrow<R, PureRow>;
 
 template <typename R>
-concept IsTot = Subrow<R, TotRow>;
-
-template <typename R>
-concept IsGhost = Subrow<R, GhostRow>;
-
-template <typename R>
 concept IsDiv = Subrow<R, DivRow>;
 
 template <typename R>
@@ -103,8 +69,7 @@ concept IsAll = Subrow<R, AllRow>;
 
 // Value-carrying forms.  A row is the one discrete component that
 // survived, so the two aliases below name every cell worth a name: ST
-// and All are row names, and a Ghost form would expand exactly as Pure
-// does.
+// and All are row names.
 //
 // The alias `Pure` and the enum value `DetSafeTier_v::Pure` share a
 // spelling.  The expansions qualify the enum value so the two cannot be
@@ -119,16 +84,8 @@ using Tot = DetSafe<DetSafeTier_v::Pure, Computation<E_os, T>>;
 namespace detail::aliases_self_test {
 
 static_assert(IsPure<PureRow>);
-static_assert(IsPure<TotRow>);
-static_assert(IsPure<GhostRow>);
 static_assert(!IsPure<Row<Effect::Alloc>>);
 static_assert(!IsPure<Row<Effect::Block>>);
-
-static_assert(IsTot<PureRow>);
-static_assert(!IsTot<Row<Effect::Alloc>>);
-
-static_assert(IsGhost<PureRow>);
-static_assert(!IsGhost<Row<Effect::IO>>);
 
 static_assert(IsDiv<PureRow>);
 static_assert(IsDiv<Row<Effect::Block>>);
@@ -155,20 +112,14 @@ static_assert(IsAll<Row<Effect::Init, Effect::Test>>);
 
 // Each named row sits at its own level and at every level above it.
 static_assert(!IsPure<DivRow>);
-static_assert(!IsTot<DivRow>);
-static_assert(!IsGhost<DivRow>);
 static_assert(IsDiv<DivRow>);
 static_assert(IsST<DivRow>);
 
 static_assert(!IsPure<STRow>);
-static_assert(!IsTot<STRow>);
-static_assert(!IsGhost<STRow>);
 static_assert(!IsDiv<STRow>);
 static_assert(IsST<STRow>);
 
 static_assert(!IsPure<AllRow>);
-static_assert(!IsTot<AllRow>);
-static_assert(!IsGhost<AllRow>);
 static_assert(!IsDiv<AllRow>);
 static_assert(!IsST<AllRow>);
 

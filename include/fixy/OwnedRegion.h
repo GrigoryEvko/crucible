@@ -349,22 +349,23 @@ public:
           perm_{std::move(other.perm_)} {}
 
     // The caller proves exclusive ownership by surrendering the
-    // Permission token.
+    // Permission token.  The body is the allocating mint, so the two
+    // spellings cannot drift apart.
     template <typename Allocator>
         requires ArrayArena<Allocator, T>
     [[nodiscard]] static OwnedRegion adopt(::foundation::effects::Alloc alloc_token, Allocator& arena,
                                            std::size_t count,
                                            ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
-        T* base = (count == 0) ? nullptr : arena.template alloc_array<T>(alloc_token, count);
-        return OwnedRegion{base, count, std::move(perm)};
+        return ::fixy::mint_owned_region<T>(alloc_token, arena, count, std::move(perm));
     }
 
     // Wraps storage allocated elsewhere.  The region owns the
     // Permission proof but not the storage, so the caller keeps
-    // responsibility for the buffer's lifetime.
-    [[nodiscard]] static OwnedRegion wrap(T* base, std::size_t count,
-                                          ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
-        return OwnedRegion{base, count, std::move(perm)};
+    // responsibility for the buffer's lifetime.  The body is the mint
+    // over a pointer.
+    [[nodiscard]] static constexpr OwnedRegion wrap(T* base, std::size_t count,
+                                                    ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
+        return ::fixy::mint_owned_region(base, count, std::move(perm));
     }
 
     [[nodiscard]] constexpr std::span<T> span() noexcept { return std::span<T>{base_, count_}; }

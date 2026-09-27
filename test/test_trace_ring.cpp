@@ -215,7 +215,7 @@ int main() {
             assert(r->try_append(e6));
 
             crucible::TraceRing::Entry one[1];
-            uint32_t g1 = r->drain_pure<eff::TotRow>(one, 1);
+            uint32_t g1 = r->drain_pure<eff::PureRow>(one, 1);
             assert(g1 == 1);
             assert(one[0].schema_hash == SchemaHash{0xCAFE0005});
 
@@ -226,8 +226,6 @@ int main() {
 
         static_assert(eff::IsPure<eff::Row<>>);
         static_assert(eff::IsPure<eff::PureRow>);
-        static_assert(eff::IsPure<eff::TotRow>);
-        static_assert(eff::IsPure<eff::GhostRow>);
         static_assert(!eff::IsPure<eff::DivRow>);  // Block
         static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
         static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
