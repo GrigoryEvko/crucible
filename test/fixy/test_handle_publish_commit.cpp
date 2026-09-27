@@ -43,10 +43,15 @@ static_assert(alignof(Cell) == 64, "the counter must sit on a cache line of its 
 static_assert(!std::is_copy_constructible_v<Cell> && !std::is_move_constructible_v<Cell>);
 static_assert(std::is_trivially_destructible_v<Cell>);
 
+// The two reads are named for their order.  No read takes the order as an
+// argument, because a release order is undefined for a load.
+template <typename C>
+concept ReadsWithAnOrderArgument = requires(C const& cell) { cell.load(std::memory_order_release); };
+static_assert(!ReadsWithAnOrderArgument<Cell>);
+
 [[nodiscard]] bool a_fresh_cell_reads_zero() noexcept {
     Cell cell;
-    return cell.load_acquire() == 0 && cell.peek_relaxed() == 0 && cell.get() == 0
-           && cell.load(std::memory_order_relaxed) == 0;
+    return cell.load_acquire() == 0 && cell.peek_relaxed() == 0;
 }
 
 [[nodiscard]] bool the_writer_counts() noexcept {
@@ -54,7 +59,7 @@ static_assert(std::is_trivially_destructible_v<Cell>);
     std::uint64_t slot = 0;
     Publisher::publish(cell, &slot, 7);
     const std::uint64_t before = Publisher::publish_many(cell, 3);
-    return before == 1 && cell.get() == 4 && slot == 7;
+    return before == 1 && cell.load_acquire() == 4 && slot == 7;
 }
 
 // The reader waits for a count and then reads the side effect with no
@@ -84,7 +89,7 @@ int main() {
             ++failures;
         }
     };
-    check(a_fresh_cell_reads_zero(), "a fresh cell reads zero through every load");
+    check(a_fresh_cell_reads_zero(), "a fresh cell reads zero through both reads");
     check(the_writer_counts(), "the writer's bumps add up, and bump_by returns the count before it");
     check(a_reader_that_sees_the_count_sees_the_write(),
           "a reader that sees the published count also sees the write made before the bump");

@@ -180,10 +180,10 @@ static void test_audit_f_concurrent_spsc_drain() {
     // The processed counter reaching N is what says the drain consumed every
     // entry.  The deadline keeps a stalled drain from hanging the suite.
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (bt.total_processed.load() < N && std::chrono::steady_clock::now() < deadline) {
+    while (bt.total_processed.load_acquire() < N && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    assert(bt.total_processed.load() >= N);
+    assert(bt.total_processed.load_acquire() >= N);
 
     bt.stop_requested.signal();
     bg_thread.join();
@@ -221,10 +221,10 @@ static void test_audit_i_large_batch_drain() {
     }
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (bt.total_processed.load() < TOTAL && std::chrono::steady_clock::now() < deadline) {
+    while (bt.total_processed.load_acquire() < TOTAL && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    const uint64_t processed_after_push = bt.total_processed.load();
+    const uint64_t processed_after_push = bt.total_processed.load_acquire();
     assert(processed_after_push >= TOTAL);
 
     bt.stop_requested.signal();
@@ -273,23 +273,23 @@ static void test_audit_j_rearm_cycle() {
 
         const uint64_t target = prev_processed + PER_CYCLE;
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (bt.total_processed.load() < target && std::chrono::steady_clock::now() < deadline) {
+        while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
             CRUCIBLE_SPIN_PAUSE;
         }
-        assert(bt.total_processed.load() >= target);
+        assert(bt.total_processed.load_acquire() >= target);
 
         bt.stop_requested.signal();
         bg.join();
 
-        prev_processed = bt.total_processed.load();
+        prev_processed = bt.total_processed.load_acquire();
     }
 
     // Both invocations consumed entries, so the total covers both cycles.
-    assert(bt.total_processed.load() >= 2 * PER_CYCLE);
+    assert(bt.total_processed.load_acquire() >= 2 * PER_CYCLE);
 
     std::printf("  audit-J rearm_cycle:                       "
                 "PASSED (total=%llu over 2 cycles)\n",
-                static_cast<unsigned long long>(bt.total_processed.load()));
+                static_cast<unsigned long long>(bt.total_processed.load_acquire()));
 }
 
 // ── audit-K / audit-L: divergence reset and the publish stage ───────────
@@ -471,12 +471,12 @@ static void test_audit_k_reset_drops_inflight_regions() {
 
     deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     const uint64_t target = ring->total_produced();
-    while (bt.total_processed.get() < target && std::chrono::steady_clock::now() < deadline) {
+    while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
     // The commit markers have to keep flowing past a dropped region, or a
     // foreground flush() would never return.
-    assert(bt.total_processed.get() >= target && "commit markers stalled behind a dropped region");
+    assert(bt.total_processed.load_acquire() >= target && "commit markers stalled behind a dropped region");
 
     bt.stop();
 
@@ -527,10 +527,10 @@ static void test_audit_l_callback_runs_outside_arena_gate() {
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     const uint64_t target = ring->total_produced();
-    while (bt.total_processed.get() < target && std::chrono::steady_clock::now() < deadline) {
+    while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    assert(bt.total_processed.get() >= target);
+    assert(bt.total_processed.load_acquire() >= target);
 
     bt.stop();
 

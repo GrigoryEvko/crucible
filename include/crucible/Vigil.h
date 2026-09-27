@@ -371,12 +371,14 @@ public:
     // every background side effect visible on return.
     [[gnu::cold]] void flush() {
         const uint64_t target_produced = ring_->total_produced();
-        while (bg_.total_processed.get() < target_produced) {
+        while (bg_.total_processed.load_acquire() < target_produced) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
 
-    [[nodiscard]] bool flush_complete() const { return bg_.total_processed.get() >= ring_->total_produced(); }
+    [[nodiscard]] bool flush_complete() const {
+        return bg_.total_processed.load_acquire() >= ring_->total_produced();
+    }
 
     // Makes the previously superseded transaction active again, restoring
     // the replay state to match.

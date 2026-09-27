@@ -51,14 +51,10 @@ public:
     [[nodiscard, gnu::pure]] uint64_t load_acquire() const noexcept { return value_.load(std::memory_order_acquire); }
 
     // Carries no synchronization.  Read the counter this way for reporting
-    // only, never to conclude that the published writes are visible.
+    // only, never to conclude that the published writes are visible.  These
+    // two are the only reads: a read that takes its order as an argument
+    // would admit a release order, which no load can have.
     [[nodiscard, gnu::pure]] uint64_t peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
-
-    [[nodiscard, gnu::pure]] uint64_t get() const noexcept { return load_acquire(); }
-
-    [[nodiscard, gnu::pure]] uint64_t load(std::memory_order order = std::memory_order_acquire) const noexcept {
-        return value_.load(order);
-    }
 };
 
 namespace detail::publish_commit_detail {

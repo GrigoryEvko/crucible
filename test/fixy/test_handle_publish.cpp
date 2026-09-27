@@ -79,8 +79,12 @@ static_assert(!std::is_move_constructible_v<h::Once>);
 static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
 
 // SetOnce is the exception: it is a plain pointer slot with no atomic
-// and no cross-thread role, so it copies.
+// and no cross-thread role, so it copies.  It does not assign: an
+// assignment of an unset slot would clear a set one, and the precondition
+// of set would never see it.
 static_assert(std::is_copy_constructible_v<h::SetOnce<Payload>>);
+static_assert(!std::is_copy_assignable_v<h::SetOnce<Payload>>);
+static_assert(!std::is_move_assignable_v<h::SetOnce<Payload>>);
 
 // ── Runtime: the two publication slots ───────────────────────────────
 

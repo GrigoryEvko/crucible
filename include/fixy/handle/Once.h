@@ -44,10 +44,13 @@ public:
     constexpr SetOnce() noexcept = default;
     ~SetOnce() = default;
 
+    // A copy of a set slot is a set slot, so construction by copy is safe.
+    // An assignment would overwrite the slot, and the assignment of an
+    // unset slot would clear a set one past the precondition of set.
     SetOnce(const SetOnce&) = default;
     SetOnce(SetOnce&&) = default;
-    SetOnce& operator=(const SetOnce&) = default;
-    SetOnce& operator=(SetOnce&&) = default;
+    SetOnce& operator=(const SetOnce&) = delete("an assignment would overwrite or clear a slot that takes one pointer");
+    SetOnce& operator=(SetOnce&&) = delete("an assignment would overwrite or clear a slot that takes one pointer");
 
     // The conditions are spelled in the body rather than as contract
     // clauses.  A clause that reads a member through the implicit this
