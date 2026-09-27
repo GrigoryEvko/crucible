@@ -30,7 +30,7 @@
 # with '#'.  A blank line is skipped.
 
 include/crucible/bridges/_RecordingPermissionedSessionHandle.h — c24eaee53c4fb571 — include/crucible/bridges/_RecordingSessionHandle.h close() passes the terminal tier as the sixth stop() argument — the crash-watched close() dropped the crash class, so the Stop event defaulted to Abort and replayed into the wrong recovery family
-include/crucible/bridges/_RecordingPermissionedSessionHandle.h — 1febbdd4cd249c42,1febbdd4cd249c42,983531cb3849f38b,983531cb3849f38b — include/fixy/session/Recording.h event_for_send and event_for_recv take the hand-off kind from the payload type, and include/fixy/session/EventLog.h epoched_delegate_handoff carries both thresholds — the epoched delegate and accept arms recorded plain Delegate and Accept events, so replay lost the two thresholds it needs to check the hand-off against the epoch chain
+include/crucible/bridges/_RecordingPermissionedSessionHandle.h — 1febbdd4cd249c42,1febbdd4cd249c42,983531cb3849f38b,983531cb3849f38b — include/fixy/session/Recording.h event_for_send and event_for_recv take the hand-off kind from the payload type, and include/fixy/session/EventLog.h decodes an epoched hand-off with both thresholds — the epoched delegate and accept arms recorded plain Delegate and Accept events, so replay lost the two thresholds it needs to check the hand-off against the epoch chain
 
 include/crucible/sessions/_SessionEventLog.h — e080baa88bef9c42,06cd3c40590fd67b — include/crucible/safety/_Mutation.h OrderedAppendOnly::append is an unsynchronised vector push, so the log is single-writer — removes a false concurrency claim, no code change
 

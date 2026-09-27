@@ -94,9 +94,8 @@
 //
 // Clause (2) is missing from the published CONCUR 2022 version.  The
 // report's footnote 2 says so.  Without it, a path that ignores a
-// detected crash forever counts as fair.  The report was revised on
-// 2026-08-24.  That revision was not compared with the 2023 version, so
-// this header states the 2023 wording.  A path is live (Def. 18, p. 13)
+// detected crash forever counts as fair.  This header states the wording
+// of the 2023 version.  A path is live (Def. 18, p. 13)
 // when every enabled send eventually fires and every enabled receive of
 // a label other than crash eventually fires.  A receive that waits only
 // for a crash detection need not fire.
@@ -118,14 +117,6 @@
 // Recover" (CC 2017): the recovery branch ends the session, and the
 // Keeper starts a new session with a fresh endpoint.  No type in this
 // header claims more than that.
-//
-// ── What the ported source did wrong ────────────────────────────────
-//
-// crucible/sessions/_SessionCrash.h made Stop the bottom of the subtype
-// order, carried the crash class as a type parameter ordered by a
-// lattice, checked Offers only (a bare Recv from an unreliable peer
-// passed), never read the reliable set, and let a Select carry a crash
-// branch through duality.  Each of those contradicts the calculus.
 
 #include <fixy/session/Payload.h>
 #include <fixy/session/Protocol.h>
@@ -161,10 +152,10 @@ concept is_stop_v = detail::head_is(^^P, ^^Stop);
 // ── The crash label and its metadata ─────────────────────────────────
 
 // How the stopped peer ended, as the detector saw it.  The byte values
-// are the values of the crash lane in the session event log, so a log
-// that crucible/sessions/_SessionEventLog.h wrote decodes unchanged.  The
-// old tree wrote 3 for a crash graded "no throw", which is a
-// contradiction.  It decodes as Unknown.
+// are the values of the crash lane in the session event log
+// (fixy/session/EventLog.h), and they are fixed, so a stored log decodes
+// unchanged.  A stored log can hold 3 for a crash graded "no throw", which
+// is a contradiction.  It decodes as Unknown.
 enum class CrashCause : std::uint8_t {
     Abort = 0,
     Throw = 1,
@@ -233,7 +224,7 @@ using is_crash_branch = std::bool_constant<detail::crash::is_crash_branch_type(^
 template <typename B>
 concept is_crash_branch_v = detail::crash::is_crash_branch_type(^^B);
 
-// ── Reliable roles and unavailable queues ────────────────────────────
+// ── Reliable roles ───────────────────────────────────────────────────
 
 // Roles assumed never to crash inside the protocol's scope.  A peer in
 // the set needs no crash branch, and may not have one.
@@ -269,20 +260,6 @@ using is_reliable_set = std::bool_constant<detail::crash::is_reliable_set_type(^
 
 template <typename Reliable, typename Role>
 concept reliable_set_contains_v = detail::crash::holds_role(^^Reliable, ^^Role);
-
-// The queue into a crashed recipient (⊘ in LMCS 2025 Fig. 2).  A send
-// into it is dropped rather than delivered (rule r-send-↯).  The type
-// names the state for a runtime queue model.  CrashTransport.h does the
-// drop.
-template <typename Peer>
-struct UnavailableQueue {
-    using peer = Peer;
-};
-
-template <typename T>
-struct is_unavailable_queue : std::false_type {};
-template <typename Peer>
-struct is_unavailable_queue<UnavailableQueue<Peer>> : std::true_type {};
 
 // ── The crash walk ───────────────────────────────────────────────────
 //
@@ -730,12 +707,6 @@ struct foundation::contracts::armed_cell<::fixy::session::is_reliable_set> {
     using accepts = witnesses<::fixy::session::ReliableSet<>,
                               ::fixy::session::ReliableSet<::fixy::session::detail::crash::armed_witness::Alice>>;
     using refuses = witnesses<int, std::tuple<::fixy::session::detail::crash::armed_witness::Alice>>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::session::is_unavailable_queue> {
-    using accepts = witnesses<::fixy::session::UnavailableQueue<::fixy::session::detail::crash::armed_witness::Alice>>;
-    using refuses = witnesses<int, ::fixy::session::detail::crash::armed_witness::Alice>;
 };
 
 template <>

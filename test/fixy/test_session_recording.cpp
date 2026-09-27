@@ -3,9 +3,8 @@
 //
 // The event half encodes one event of each kind, decodes it, and gets
 // the same event back.  Then it corrupts one byte at a time, in each way
-// the decoder must refuse, and checks the reason it gives.  A log that
-// the old tree wrote for a crash graded "no throw" must decode with the
-// cause Unknown.
+// the decoder must refuse, and checks the reason it gives.  A stored log
+// that holds a crash graded "no throw" must decode with the cause Unknown.
 //
 // The recorder half records three sessions: a plain one, Example 3.2 of
 // LMCS 2025 with the receiver crashed, and a checkpoint exchange.  It
@@ -70,8 +69,6 @@ static_assert(round_trips(s::SessionEvent::checkpoint_roll(kSelf, kPeer, s::Chec
 static_assert(round_trips(s::SessionEvent::checkpoint_abort(kSelf, kPeer, s::CheckpointRole::Active)));
 static_assert(round_trips(s::SessionEvent::delegate_handoff(kSelf, kPeer, {5}, {6})));
 static_assert(round_trips(s::SessionEvent::accept_handoff(kSelf, kPeer, {5}, {6})));
-static_assert(round_trips(s::SessionEvent::epoched_delegate_handoff(kSelf, kPeer, {5}, 7, 3, {6})));
-static_assert(round_trips(s::SessionEvent::epoched_accept_handoff(kSelf, kPeer, {5}, 7, 3, {6})));
 static_assert(round_trips(s::SessionEvent::cipher_event(s::SessionOp::TierPromote, s::StepId{4}, {8}, 1000,
                                                         s::CipherTierTag::Warm, s::CipherTierTag::Hot)));
 
@@ -126,7 +123,18 @@ static_assert(s::decode_session_event(kLegacyBase).has_value());
 static_assert(s::decode_session_event(kLegacyBase)->legacy_checkpoint_choice() == s::CheckpointChoice::Base);
 static_assert(error_of(with_byte(kLegacyBase, kReasonOffset, 2)) == s::EventDecodeError::ControlByteOutOfRange);
 
-// The old tree wrote 3 in the crash lane for a crash graded "no throw".
+// An epoched hand-off decodes with its thresholds, and it writes the same
+// bytes back, although no factory writes one.
+constexpr auto kEpochedBytes =
+    with_byte(with_byte(s::SessionEvent::delegate_handoff(kSelf, kPeer, {5}, {6}).encode(), kOpOffset,
+                        std::to_underlying(s::SessionOp::EpochedDelegate)),
+              kEpochOffset, 7);
+static_assert(s::decode_session_event(kEpochedBytes).has_value());
+static_assert(s::decode_session_event(kEpochedBytes)->op() == s::SessionOp::EpochedDelegate);
+static_assert(s::decode_session_event(kEpochedBytes)->min_epoch() == 7);
+static_assert(s::decode_session_event(kEpochedBytes)->encode() == kEpochedBytes);
+
+// A stored log can hold 3 in the crash lane for a crash graded "no throw".
 static_assert(s::decode_session_event(with_byte(kStopBytes, kCrashOffset, 3))->crash_cause() == s::CrashCause::Unknown);
 
 // A short span is truncated.
@@ -388,8 +396,7 @@ int check_keyed_recording() {
     if (s::replayed_branch<KeyedAsk>(log_left[0]) != 1 || s::replayed_branch<KeyedHear>(log_right[0]) != 0)
         return fail("a recorded keyed event did not replay against its own protocol");
 
-    // An event with no label word, as the old tree wrote it, does not
-    // replay against a keyed choice.  Nor does an event whose word names
+    // An event with no label word does not replay against a keyed choice.  Nor does an event whose word names
     // another branch, nor an Offer against a Select.
     if (s::replayed_branch<KeyedAsk>(s::SessionEvent::select(kSelf, kPeer, 1)))
         return fail("an event with no label word replayed against a keyed choice");

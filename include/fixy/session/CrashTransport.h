@@ -64,18 +64,11 @@
 // cell can publish it.  An endpoint that crashes reports its own count,
 // which its handle kept, so the count needs no trust in the caller.
 //
-// ── What the ported source did wrong ────────────────────────────────
+// ── One class for every head ────────────────────────────────────────
 //
-// crucible/bridges/_CrashTransport.h wrapped each head in its own
-// specialization, six in all.  On a crash it detached the handle and
-// returned an error, so no declared crash branch ever ran.  Its Offer
-// arm could not receive a label, it had no arm for delegation or
-// checkpoints, and its stop_class_compatible walk admitted an unknown
-// combinator through a true primary.  Here one class handles every head,
-// the crash branch is what runs on a crash, and the one crash walk that
-// gates the mint refuses a combinator that it does not know.  The crash
-// class is no longer in the type, so no counterpart of
-// stop_class_compatible is needed.
+// One class handles every head, and the crash branch is what runs on a
+// crash.  The one crash walk that gates the mint refuses a combinator
+// that it does not know.
 //
 // ── What the transport is trusted with ──────────────────────────────
 //

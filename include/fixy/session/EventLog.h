@@ -5,12 +5,11 @@
 //
 // ── The record ──────────────────────────────────────────────────────
 //
-// Each event is 72 bytes, with the layout of the record in
-// crucible/sessions/_SessionEventLog.h, so a whole log drains to durable
-// storage as one block of bytes, and a log that the old tree wrote
-// decodes here.  Each kind of operation reads the two general lanes and
-// the two control bytes in its own way.  The factories write each
-// reading, and the accessors read it back.
+// Each event is 72 bytes, so a whole log drains to durable storage as
+// one block of bytes.  The layout and the byte values of each lane are
+// fixed, so a stored log decodes unchanged.  Each kind of operation reads
+// the two general lanes and the two control bytes in its own way.  The
+// factories write each reading, and the accessors read it back.
 //
 // The fields are private.  A SessionEvent exists only through a factory
 // or through decode_session_event, and both produce only valid events:
@@ -28,32 +27,31 @@
 // enumerators of each enum, found by reflection, so a new enumerator
 // needs no second edit here.
 //
-// The ported source cast those bytes to enums with no check (its
-// accessors at lines 424-441).  A corrupt or hostile log then produced
-// an enum value that no enumerator names, and replay dispatched on it.
+// Without these checks, a corrupt or hostile log gives an enum value
+// that no enumerator names, and replay dispatches on it.
 //
-// ── Differences from the ported source ──────────────────────────────
+// ── The lanes of a stored log ───────────────────────────────────────
 //
-//   * The crash lane holds a CrashCause (fixy/session/Crash.h).  The
-//     old tree wrote its crash class there with the same byte values,
-//     and the old value 3, a contradictory "no throw" crash, decodes as
-//     CrashCause::Unknown.
-//   * The old checkpoint kinds, Checkpoint_Base and Checkpoint_Rollback,
-//     recorded a choice that each endpoint made alone.  They still
-//     decode, so an old log reads, but nothing here writes them.  The
-//     coordinated primitives of fixy/session/Checkpoint.h have their own
-//     kinds: CheckpointCommit, CheckpointRoll and CheckpointAbort.
+//   * The crash lane holds a CrashCause (fixy/session/Crash.h).  A stored
+//     log can hold the value 3 there, a crash graded "no throw", which is
+//     a contradiction.  It decodes as CrashCause::Unknown.
+//   * The checkpoint kinds Checkpoint_Base and Checkpoint_Rollback record
+//     a choice that each endpoint made alone.  They decode, so a stored
+//     log reads, but no factory writes them.  The coordinated primitives
+//     of fixy/session/Checkpoint.h have their own kinds: CheckpointCommit,
+//     CheckpointRoll and CheckpointAbort.
+//   * The hand-off kinds EpochedDelegate and EpochedAccept carry an epoch
+//     threshold and a generation threshold.  They decode with the two
+//     thresholds, but no factory writes them.
 //   * A send or a select to a crashed peer is recorded with the fate
 //     LostToCrashedPeer in the control byte, so replay can tell a
 //     message the peer got from one it never got.
 //   * The schema hash is the stable type id of foundation/reflect/
-//     Hash.h.  The old tree hashed the compiler's function signature, so
-//     the schema lane of an old log compares only with old hashes.
+//     Hash.h.
 //   * A Select or an Offer of a keyed choice records the label word of
-//     the branch in the schema lane, beside the index of the branch.  The
-//     old tree wrote zero there.  A replay against a keyed choice needs
-//     the label word, so an event of the old tree does not replay against
-//     it (replayed_branch in fixy/session/Recording.h).
+//     the branch in the schema lane, beside the index of the branch.  A
+//     replay against a keyed choice needs the label word
+//     (replayed_branch in fixy/session/Recording.h).
 //
 // ── One writer ──────────────────────────────────────────────────────
 //
@@ -406,30 +404,6 @@ public:
         return SessionEvent{SessionOp::Accept, sender, recipient, accepted_proto.value, inner_perm_set.value};
     }
 
-    // The two thresholds have lanes of their own, so replay can check the
-    // hand-off against the live epoch chain without the source.
-    [[nodiscard]] static constexpr SessionEvent epoched_delegate_handoff(RoleTagId sender, RoleTagId recipient,
-                                                                         StateHash delegated_proto,
-                                                                         std::uint64_t min_epoch,
-                                                                         std::uint64_t min_generation,
-                                                                         InnerPermSetHash inner_perm_set = {}) noexcept {
-        SessionEvent event{SessionOp::EpochedDelegate, sender, recipient, delegated_proto.value, inner_perm_set.value};
-        event.epoch_threshold_ = min_epoch;
-        event.generation_threshold_ = min_generation;
-        return event;
-    }
-
-    [[nodiscard]] static constexpr SessionEvent epoched_accept_handoff(RoleTagId recipient, RoleTagId sender,
-                                                                       StateHash accepted_proto,
-                                                                       std::uint64_t min_epoch,
-                                                                       std::uint64_t min_generation,
-                                                                       InnerPermSetHash inner_perm_set = {}) noexcept {
-        SessionEvent event{SessionOp::EpochedAccept, sender, recipient, accepted_proto.value, inner_perm_set.value};
-        event.epoch_threshold_ = min_epoch;
-        event.generation_threshold_ = min_generation;
-        return event;
-    }
-
     // A persistence event.  The lanes hold the timestamp and the content
     // hash, and the two control bytes hold the source and target tiers.
     [[nodiscard]] static constexpr SessionEvent cipher_event(SessionOp op, StepId step, StateHash content,
@@ -596,8 +570,8 @@ decode_session_event(std::span<const std::byte> bytes) noexcept {
         return std::unexpected(EventDecodeError::BranchByteOutOfRange);
     }
     if (op == SessionOp::Stop) {
-        // The old tree wrote 3 for a crash graded "no throw".  The byte
-        // value is CrashCause::Unknown, so an old log reads.
+        // A stored log can hold 3 for a crash graded "no throw".  The byte
+        // value is CrashCause::Unknown, so the log reads.
         if (!names_enumerator<CrashCause>(raw.pad[0])) return std::unexpected(EventDecodeError::CrashCauseOutOfRange);
     } else if (raw.pad[0] != 0) {
         return std::unexpected(EventDecodeError::NonZeroPadding);

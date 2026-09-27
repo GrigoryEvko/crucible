@@ -43,11 +43,10 @@
 // representation, so nothing here depends on the abandonment policy.
 // The handle and that policy are in fixy/session/Handle.h.
 //
-// The EpochCtx context wrapper of the ported source is not here.  No
-// production file uses it, so the port drops it.  The lattices that it
-// reads are in foundation: foundation/algebra/lattices/StrongCounterLattice.h
-// holds EpochLattice and GenerationLattice.  A loop context has four
-// forms, and one function reads them (the section on the loop context).
+// No loop context carries an epoch.  The lattices of an epoch are in
+// foundation: foundation/algebra/lattices/StrongCounterLattice.h holds
+// EpochLattice and GenerationLattice.  A loop context has four forms, and
+// one function reads them (the section on the loop context).
 
 #include <foundation/algebra/Transition.h>
 #include <foundation/algebra/lattices/VendorLattice.h>

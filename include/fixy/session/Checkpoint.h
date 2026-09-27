@@ -26,8 +26,9 @@
 // The party that selects is the active party of Fig. 11.  The party that
 // receives is the passive party.  Commit, Roll and Abort are legal only
 // as a branch of a Select or an Offer.  In any other position one party
-// would decide alone, which is the defect of the ported source below, so
-// the checkpoint mint refuses it.
+// would decide alone.  The two endpoints could then take different
+// branches, and nothing on the wire would tell either one what the other
+// did.  The checkpoint mint refuses such a position.
 //
 // ── The semantics, rule by rule ─────────────────────────────────────
 //
@@ -71,14 +72,6 @@
 // payload that is not plain in the sense of fixy/session/Payload.h.
 // A crash branch cannot appear either, because no paper types the two
 // together.  The mint refuses a Crash payload.
-//
-// ── What the ported source did wrong ────────────────────────────────
-//
-// crucible/sessions/_SessionCheckpoint.h had CheckpointedSession<Base,
-// Rollback>, a choice that each endpoint made alone, and a dual that
-// mirrored the choice onto the peer as a second local choice.  The two
-// endpoints could take different branches, and nothing on the wire told
-// either one what the other did.
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Handle.h>

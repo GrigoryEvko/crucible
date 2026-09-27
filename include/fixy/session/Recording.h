@@ -44,11 +44,10 @@
 //
 // The kind of a hand-off comes from the payload type in one place,
 // event_for_send and event_for_recv below, so a delegation cannot be
-// recorded as a plain send.  The ported permissioned recorder recorded
-// its epoched hand-off as a plain Delegate and lost both thresholds
-// (crucible/bridges/_RecordingPermissionedSessionHandle.h).  The new tree
-// has no epoched delegation payload yet.  When one lands, it must join
-// those two functions, or the recorder writes it as a plain Send.
+// recorded as a plain send.  No payload is an epoched delegation, so no
+// factory of fixy/session/EventLog.h writes an epoched hand-off.  An
+// epoched delegation payload must join those two functions, or the
+// recorder writes it as a plain Send and loses its two thresholds.
 
 #include <fixy/session/Checkpoint.h>
 #include <fixy/session/CrashTransport.h>

@@ -2112,6 +2112,7 @@ crucible/sessions/_SessionCrash.h:is_reliable  → include/fixy/session/Crash.h 
 crucible/sessions/_SessionCrash.h:is_reliable_v  — Dropped with is_reliable. is_in_reliable_set has no variable form.
 crucible/sessions/_SessionCrash.h:is_subtype_sync_structural  — Dropped. The old rule made Stop the bottom of the subtype order, and the new registration relates Stop only to itself, as rule Sub-stop says.
 crucible/sessions/_SessionCrash.h:Stop_g  → include/fixy/session/Crash.h  — Replaced by Stop, which carries no crash class. The calculus has no crash classes, and the crash cause travels on the crash record.
+crucible/sessions/_SessionCrash.h:UnavailableQueue  → include/fixy/session/CrashTransport.h  — Dropped, because no reader asks for the state. The crash transport drops a send into a crashed peer at run time (rule r-send-↯).
 crucible/sessions/_SessionCrash.h:UnreliableAll  → include/fixy/session/Crash.h  — Renamed NoReliableRoles, the empty ReliableSet.
 
 # ── bridges: the session recorders ──────────────────────────────────────
@@ -2277,9 +2278,10 @@ crucible/sessions/_SessionQueue.h:is_queue  — Dropped. The association walk of
 crucible/sessions/_SessionQueue.h:is_queued_msg  — Dropped with is_queue.
 crucible/sessions/_SessionQueue.h:is_queued_msg_v  — Dropped with is_queue.
 crucible/sessions/_SessionQueue.h:is_queue_empty_v  — Dropped. A reader compares a queue with OutQueue<>, as the association rule for a finished role does.
-crucible/sessions/_SessionQueue.h:is_queue_state_v  — Dropped. A queue is an OutQueue of fixy/session/Projection.h or an UnavailableQueue of fixy/session/Crash.h, and no reader asks for the union of the two.
+crucible/sessions/_SessionQueue.h:is_queue_state_v  — Dropped. The one queue type is the OutQueue of fixy/session/Projection.h, and no reader asks whether a type is a queue.
 crucible/sessions/_SessionQueue.h:is_queue_v  — Dropped with is_queue.
-crucible/sessions/_SessionQueue.h:is_unavailable_queue_v  → include/fixy/session/Crash.h  — Replaced by is_unavailable_queue, whose value answers the same question.
+crucible/sessions/_SessionQueue.h:is_unavailable_queue  → include/fixy/session/CrashTransport.h  — Dropped with UnavailableQueue. The crash transport drops a send into a crashed peer at run time, and no type names that queue.
+crucible/sessions/_SessionQueue.h:is_unavailable_queue_v  → include/fixy/session/CrashTransport.h  — Dropped with UnavailableQueue. The crash transport drops a send into a crashed peer at run time, and no type names that queue.
 crucible/sessions/_SessionQueue.h:Queue  → include/fixy/session/Projection.h  — Replaced by OutQueue<Queued...>, the outgoing messages of one role. Two queues are equivalent when they agree for each receiver.
 crucible/sessions/_SessionQueue.h:queue_contains  — Dropped. The association walk compares two queues for each receiver, and no reader asks whether a queue holds a message for one pair of roles.
 crucible/sessions/_SessionQueue.h:queue_contains_v  — Dropped with queue_contains.

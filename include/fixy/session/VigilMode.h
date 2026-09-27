@@ -31,14 +31,13 @@ enum class Mode : std::uint8_t {
 };
 
 // A mode as a type, so the legal transitions can be a fail-closed
-// relation rather than a hand-written disjunction.  The ported header
-// answered the question with
+// relation rather than a hand-written disjunction.  A disjunction such as
 //
 //     (from == RECORDING && to == COMPILED) || (from == COMPILED && to == RECORDING)
 //
-// which is closed but not enumerable: a reader cannot ask the relation
-// what it admits, and a fourth Mode added later is silently absent from
-// every clause of the expression rather than visibly missing an edge.
+// is closed but not enumerable: a reader cannot ask it what it admits,
+// and a fourth Mode is silently absent from every clause of it rather
+// than visibly missing an edge.
 template <Mode M>
 struct mode_tag {
     static constexpr Mode value = M;
@@ -160,22 +159,12 @@ static_assert(AtomicMachineCell<ModeCell>);
 
 using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, ModeCell&, DefaultAbandonmentPolicy>;
 
-// The handle borrows the cell mutably, which the ported header did not.
-// It minted over a `const ModeCell&` and pinned the resource as `const
-// ModeCell*`, and that leaves two of ModeProtocol's three branches
-// unreachable: the transport a Send branch needs is the cell's
-// publish_from_session, both overloads are non-const, and no transport
-// a call site could write would compile through a const pointer.  Only
-// the End branch is walkable, so the factory hands back a handle for a
-// protocol it cannot perform.  The Resource is a reference to the
-// Pinned cell, not a pointer, so no copy of it reaches the cell.
-//
-// The frozen tree's own test shows the split: through
-// mint_vigil_mode_bridge it takes branch 2 and closes, and where it
-// actually publishes the two transitions it drops to the generic
-// mint_atomic_session over a non-const cell.  Taking the cell by
-// non-const reference here removes the split — one factory, and the
-// protocol it names is the protocol it can drive.
+// The handle borrows the cell mutably.  The transport that a Send branch
+// needs is publish_from_session of the cell, and it is not const, so a
+// handle over a const cell could walk only the End branch.  The Resource
+// is a reference to the Pinned cell, not a pointer, so no copy of it
+// reaches the cell.  One factory drives each branch of the protocol it
+// names.
 //
 // Observing the mode does not need a handle and stays const: that is
 // atomic_machine_state(cell), which takes a const reference.

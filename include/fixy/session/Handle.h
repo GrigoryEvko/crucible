@@ -14,11 +14,10 @@
 //
 // ── One handle ──────────────────────────────────────────────────────
 //
-// The old tree had two handle families: a plain handle and a
-// permissioned handle.  They repeated the same five heads, and the
-// permissioned one declared its permission set as a member that no code
-// read.  This header has one family.  The permission set PS is the last
-// template parameter, and it is a type only, so it costs no byte.
+// This header has one handle family, for a handle that holds no
+// permission and for a handle that holds permissions.  The permission set
+// PS is the last template parameter, and it is a type only, so it costs no
+// byte.
 // `Handle<Proto, PS, Resource, LoopCtx, Policy>` is the same class with
 // the parameters in the order the design names them.
 //
@@ -2556,7 +2555,7 @@ template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultA
 // rows of its payloads, over each Send and each Recv, on each branch, and
 // in each protocol that a DelegatedSession carries.  A received payload
 // counts as a sent one does, because the receiver then holds what the
-// payload carries.  The old tree checked the two directions the same way.
+// payload carries.
 //
 // The walk is the payload walk of fixy/concurrent/PayloadRow.h, with the
 // rules of this layer for the families that its rosters do not name:

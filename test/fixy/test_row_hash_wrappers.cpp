@@ -1192,8 +1192,6 @@ inline constexpr StatedZero kZeros[] = {
 
     {^^::fixy::session::Stop, kProtocol},
     {^^::fixy::session::ReliableSet, kVocabulary},
-    {^^::fixy::session::UnavailableQueue, kVocabulary},
-    {^^::fixy::session::is_unavailable_queue, kMetafunction},
     {^^::fixy::session::CrashCoverage, kQuery},
 
     {^^::fixy::session::Commit, kProtocol},
