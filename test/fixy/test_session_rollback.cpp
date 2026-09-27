@@ -15,6 +15,7 @@
 // the test shows that both sides reverted to the same pair.
 
 #include <fixy/session/Checkpoint.h>
+#include <fixy/session/Watch.h>
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
@@ -366,6 +367,7 @@ int run_video_on_demand() {
 int run_loop_rollback() {
     Mailbox to_left;
     Mailbox to_right;
+    const std::uint32_t baseline = s::watch::live_count();
     auto left = s::mint_checkpoint_session<LoopDecide, LoopFollow>(bg_ctx(), Port{&to_left, &to_right});
     auto right = s::mint_checkpoint_session<LoopFollow, LoopDecide>(bg_ctx(), Port{&to_right, &to_left});
 
@@ -380,6 +382,16 @@ int run_loop_rollback() {
                           "a roll inside a loop returns to the handle at the checkpoint");
             std::move(right_got).branch(pop_label, [&](auto right_next) {
                 if constexpr (std::is_same_v<decltype(right_next), decltype(right_saved)>) {
+                    // Each side built its handle again at the checkpoint.  A
+                    // handle that the roll built holds a record in the watch,
+                    // as a minted handle does.
+                    const std::uint32_t records = s::watch::live_count() - baseline;
+                    if (records != 2) {
+                        std::fprintf(stderr,
+                                     "test_session_rollback: after the roll the watch holds %u records, and each "
+                                     "of the two rebuilt handles must hold one\n",
+                                     records);
+                    }
                     auto left_again = std::move(left_back).send(2, push_int);
                     auto [second, right_again] = std::move(right_next).recv(pop_int);
                     auto left_done = std::move(left_again).template select<2>(push_label);
@@ -387,7 +399,7 @@ int run_loop_rollback() {
                         if constexpr (std::is_same_v<typename decltype(right_end)::protocol, s::End>) {
                             (void)std::move(right_end).close();
                             (void)std::move(left_done).close();
-                            rc = (first == 1 && second == 2) ? 0 : 1;
+                            rc = (first == 1 && second == 2 && records == 2) ? 0 : 1;
                         } else {
                             unreachable_branch("the last label of the loop");
                         }
