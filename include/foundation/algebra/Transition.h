@@ -30,23 +30,23 @@
 //     }
 //
 // A header that declares a combinator registers it in the same header,
-// next to the declaration.  A different header can add a registration
-// to a registry when it opens the registry namespace again.  The fold reads the
-// registry when it first meets a shape, and that answer holds for the
-// rest of the translation unit.  A query that meets a shape which is not
-// registered stops the build, so a registration that comes too late is
-// an error and never a silent answer.  A second registration of a shape
-// stops the build at the next read of the registry that is not cached.
+// next to the declaration.  The fold reads the registry when it first
+// meets a shape, and that answer holds for the rest of the translation
+// unit.  A query that meets a shape which is not registered stops the
+// build.  A second registration of a shape stops the build at the next
+// read of the registry that is not cached.
 //
-// A payload rule has no such guard: a payload with no rule is a plain
-// payload, so a rule that comes too late gives a different answer and
-// no error.  A layer closes that gap with a seal.  A seal is a variable
-// of type `seal` in the namespace.  It names one kind of registration
-// and states how many registrations of that kind the namespace holds.
-// Each read of a sealed kind counts the registrations again, and it stops
-// the build when the count differs from the seal, or when the namespace
-// holds two seals of that kind.  Each translation unit that compiles
-// then reads the same registrations of that kind.
+// A registration that a different header adds, in a namespace that it
+// opens again, gives a shape an answer in the translation units that see
+// that header and none in the others.  A payload with no rule is a plain
+// payload, so a payload rule that comes too late gives a different answer
+// and no error.  A layer closes both gaps with a seal.  A seal is a
+// variable of type `seal` in the namespace.  It names one kind of
+// registration and states how many registrations of that kind the
+// namespace holds.  Each read of a sealed kind counts the registrations
+// again, and it stops the build when the count differs from the seal, or
+// when the namespace holds two seals of that kind.  Each translation unit
+// that compiles then reads the same registrations of that kind.
 //
 // The kind fixes the layout of the template arguments:
 //
@@ -59,6 +59,8 @@
 //   back      Shape                       a jump to the nearest binder
 //   terminal  Shape                       the protocol stops
 //   wrapper   Shape<Value, Inner>         a value slot over Inner
+//   marker    Shape<Next>                 a mark on the spine, with no
+//                                         message, then Next
 //
 // A registration whose shape has a different layout is refused at the
 // first query that meets it.
@@ -93,6 +95,14 @@
 //   absorbs_suffix    For a terminal.  False: composition replaces it
 //                     with the suffix.  True: composition keeps it, for
 //                     an endpoint that never resumes.
+//   is_plain          False: no plain protocol holds this combinator.
+//                     Well-formedness refuses it at every depth, and
+//                     every other algebra reads it.  A layer checks a
+//                     protocol that holds it with a relation of its own.
+//   payload_is_protocol  For a step.  True: the payload is a protocol,
+//                     which travels as it is.  Well-formedness asks it of
+//                     that protocol outside every binder, and the
+//                     empty-choice test looks into it.
 //
 // Coherence.  Refinement up to exits must be closed under duality: when
 // T refines U, the dual of U refines the dual of T (Padovani and
@@ -101,8 +111,10 @@
 // is not closed under duality, and the layer states it on its own.  A
 // registration keeps that closure when its dual has the same
 // kind, the opposite direction, the opposite payload variance, the
-// opposite value variance, the same absorption and the same note
-// template.  The note rule makes duality an involution on a choice with
+// opposite value variance, the same absorption, the same note template,
+// the same plainness and the same payload kind.  A plain combinator whose
+// dual is not plain would make the dual of a well-formed protocol
+// ill-formed.  The note rule makes duality an involution on a choice with
 // a note, because the dual keeps the note.  The keyed choice of a step
 // is a choice of the same direction, and the dual step names its dual,
 // so a keyed step and its dual stand for dual choices.  A self-dual wrapper
@@ -202,15 +214,12 @@
 // only when each back node is guarded: some step or choice lies between
 // it and its binder.  Without that guard the unfold does not stop.
 //
-// ── The hook ──────────────────────────────────────────────────────────
+// ── No entry point for a specialization ───────────────────────────────
 //
-// An algebra can take the result for a child node from a template
-// instead of from the fold itself.  A layer passes the reflection of a
-// variable template or an alias template as the hook, and the fold asks
-// that template for each child.  The template of the layer is then the
-// entry point for every node, and an explicit specialization of it for
-// one node answers at every depth.  Without a hook the fold recurses in
-// place.
+// The fold recurses in place.  It asks no template of a layer for the
+// answer at a child, so no specialization of a template of the layer
+// changes an answer at any depth.  The registry alone decides what a
+// node is, and a seal closes the registry.
 //
 // Complexity: each fold visits each node of the spine once, so it is
 // linear in the size of the protocol.  Refinement visits each pair of
@@ -232,7 +241,7 @@ namespace foundation::algebra::transition {
 
 // ── Registration vocabulary ───────────────────────────────────────────
 
-enum class shape_kind : std::uint8_t { step, choice, binder, back, terminal, wrapper };
+enum class shape_kind : std::uint8_t { step, choice, binder, back, terminal, wrapper, marker };
 
 enum class polarity : std::uint8_t { neutral, output, input };
 
@@ -250,6 +259,8 @@ struct combinator {
     std::meta::info value_order{};
     std::meta::info value_admits{};
     bool absorbs_suffix = false;
+    bool is_plain = true;
+    bool payload_is_protocol = false;
 };
 
 struct payload_rule {
@@ -288,22 +299,12 @@ struct subsort_axiom {
 };
 
 // The closure of one kind of registration in one namespace.  `kind` is
-// ^^payload_rule or ^^subsort_axiom, and `count` is the number of
-// variables of that kind in the namespace.  The count is a literal, so a
-// registration that stands before the seal is refused too.
+// ^^combinator, ^^payload_rule or ^^subsort_axiom, and `count` is the
+// number of variables of that kind in the namespace.  The count is a
+// literal, so a registration that stands before the seal is refused too.
 struct seal {
     std::meta::info kind{};
     std::size_t count = 0;
-};
-
-// The position of a node relative to the binders above it.  Depth is
-// the number of binders above the node.  Guarded is true when some step or
-// choice lies between the node and its nearest binder.  A layer passes
-// this type to its hook as the context of a child.
-template <std::size_t Depth, bool Guarded>
-struct scope {
-    static constexpr std::size_t depth = Depth;
-    static constexpr bool guarded = Guarded;
 };
 
 inline constexpr std::size_t npos = static_cast<std::size_t>(-1);
@@ -406,12 +407,14 @@ consteval void require_seal_holds(std::meta::info registry, std::meta::info kind
 
 }  // namespace detail
 
-// Reads the registry now.  A shape with two registrations is counted in
-// the answer, and check_combinator names it.  Two registrations of a
+// Reads the registry now.  A sealed registry must hold the registrations
+// that its seal counts.  A shape with two registrations is counted in the
+// answer, and check_combinator names it.  Two registrations of a
 // different shape stop the build here: a read that is cached could not
 // see the second one.  Complexity: quadratic in the registrations of the
 // registry, which are few.
 [[nodiscard]] consteval combinator_lookup read_combinator(std::meta::info registry, std::meta::info shape) {
+    detail::require_seal_holds(registry, ^^combinator);
     combinator_lookup result{};
     std::vector<std::meta::info> other_shapes{};
     for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::unchecked())) {
@@ -488,6 +491,9 @@ enum class incoherence : std::uint8_t {
     keyed_choice_on_non_step,
     keyed_choice_not_a_choice,
     keyed_choice_not_dual,
+    plainness_differs,
+    protocol_payload_differs,
+    protocol_payload_on_non_step,
 };
 
 struct coherence_verdict {
@@ -544,6 +550,11 @@ namespace detail {
     }
     if (mirror.absorbs_suffix != entry.absorbs_suffix) return {incoherence::absorption_differs, shape};
     if (mirror.annotation != entry.annotation) return {incoherence::annotation_differs, shape};
+    if (mirror.is_plain != entry.is_plain) return {incoherence::plainness_differs, shape};
+    if (entry.payload_is_protocol && entry.kind != shape_kind::step) {
+        return {incoherence::protocol_payload_on_non_step, shape};
+    }
+    if (mirror.payload_is_protocol != entry.payload_is_protocol) return {incoherence::protocol_payload_differs, shape};
     // A pair can flip its variance under duality and still have each side
     // backwards.  An output that is contravariant lets the subtype send a
     // wider payload than the peer of the supertype receives.
@@ -618,6 +629,13 @@ namespace detail {
         case incoherence::keyed_choice_not_dual:
             return "the dual step names a keyed choice that is not the dual of this keyed choice, so a keyed step and "
                    "its dual do not stand for dual choices";
+        case incoherence::plainness_differs:
+            return "the dual disagrees on whether a plain protocol may hold it, so the dual of a well-formed protocol "
+                   "would not be well-formed";
+        case incoherence::protocol_payload_differs:
+            return "the dual disagrees on whether the payload is a protocol";
+        case incoherence::protocol_payload_on_non_step:
+            return "a combinator that is not a step names its payload a protocol, and it has no payload";
         default:
             break;
     }
@@ -666,6 +684,7 @@ struct node {
             }
             break;
         case shape_kind::binder:
+        case shape_kind::marker:
             result.is_malformed = arguments.size() != 1 || !std::meta::is_type(arguments[0]);
             if (!result.is_malformed) result.next = std::meta::dealias(arguments[0]);
             break;
@@ -791,25 +810,23 @@ struct node {
 //   result choice(node, context, child)
 //   result binder(node, context, child)
 //   result wrapper(node, context, child)
+//   result marker(node, context, child)
 //   result unregistered(node, context)
-//   std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context)
-//   result from_hook(std::meta::info)
 //
-// `child(type, context)` gives the result for one child.  It asks the
-// hook when the fold has one, and folds in place otherwise.  An algebra
-// asks only for the children it needs, so a refusal stops the walk.
+// An algebra has one member for each kind, and the fold calls the member
+// of the kind of the node.  An algebra that lacks the member of a kind
+// does not compile, so a kind that an algebra does not handle is refused
+// and never passed.  `child(type, context)` gives the result for one
+// child.  An algebra asks only for the children it needs, so a refusal
+// stops the walk.
 
 template <class Algebra>
 [[nodiscard]] consteval typename Algebra::result fold(std::meta::info registry, std::meta::info type,
-                                                      const Algebra& algebra, typename Algebra::context context,
-                                                      std::meta::info hook = {}) {
+                                                      const Algebra& algebra, typename Algebra::context context) {
     const node view = decompose(registry, type);
     if (!view.is_registered) return algebra.unregistered(view, context);
     const auto child = [&](std::meta::info child_type, typename Algebra::context child_context) {
-        if (hook != std::meta::info{}) {
-            return algebra.from_hook(std::meta::substitute(hook, algebra.hook_arguments(child_type, child_context)));
-        }
-        return fold(registry, child_type, algebra, child_context, hook);
+        return fold(registry, child_type, algebra, child_context);
     };
     switch (view.entry.kind) {
         case shape_kind::terminal:
@@ -824,6 +841,8 @@ template <class Algebra>
             return algebra.binder(view, context, child);
         case shape_kind::wrapper:
             return algebra.wrapper(view, context, child);
+        case shape_kind::marker:
+            return algebra.marker(view, context, child);
         default:
             break;
     }
@@ -1095,10 +1114,6 @@ namespace detail {
     return std::meta::extract<bool>(std::meta::substitute(wrapper.entry.value_admits, {wrapper.value}));
 }
 
-[[nodiscard]] consteval std::meta::info scope_type(std::size_t depth, bool guarded) {
-    return std::meta::substitute(^^scope, {std::meta::reflect_constant(depth), std::meta::reflect_constant(guarded)});
-}
-
 // The branches of a choice after a mapping, with the note kept when the
 // target shape carries a note of the same template.
 [[nodiscard]] consteval std::vector<std::meta::info> choice_arguments(std::meta::info registry, const node& choice,
@@ -1117,7 +1132,7 @@ namespace detail {
 }  // namespace detail
 
 // True for a node where a protocol may stop: a terminal, under any
-// wrappers.
+// wrappers.  A marker is a place on the spine, not a stop.
 struct terminal_algebra {
     using result = bool;
     using context = int;
@@ -1146,17 +1161,19 @@ struct terminal_algebra {
     consteval bool wrapper(const node& view, context ctx, const Child& child) const {
         return child(view.next, ctx);
     }
-    consteval bool unregistered(const node&, context) const { return false; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
-        return {child_type};
+    template <class Child>
+    consteval bool marker(const node&, context, const Child&) const {
+        return false;
     }
-    consteval bool from_hook(std::meta::info answer) const { return std::meta::extract<bool>(answer); }
+    consteval bool unregistered(const node&, context) const { return false; }
 };
 
 // True when a choice somewhere on the spine has no label branch.  A
 // handle at such a choice is stuck: an empty internal choice has no
 // branch to pick, and an empty external choice has no label the peer
-// can send.
+// can send.  A payload that is a protocol becomes a session of its own,
+// where an empty choice leaves its holder stuck, so the walk looks into
+// it too.
 struct empty_choice_algebra {
     using result = bool;
     using context = int;
@@ -1172,6 +1189,7 @@ struct empty_choice_algebra {
     }
     template <class Child>
     consteval bool step(const node& view, context ctx, const Child& child) const {
+        if (view.entry.payload_is_protocol && child(view.payload, ctx)) return true;
         return child(view.next, ctx);
     }
     template <class Child>
@@ -1190,11 +1208,11 @@ struct empty_choice_algebra {
     consteval bool wrapper(const node& view, context ctx, const Child& child) const {
         return child(view.next, ctx);
     }
-    consteval bool unregistered(const node&, context) const { return true; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
-        return {child_type};
+    template <class Child>
+    consteval bool marker(const node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
     }
-    consteval bool from_hook(std::meta::info answer) const { return std::meta::extract<bool>(answer); }
+    consteval bool unregistered(const node&, context) const { return true; }
 };
 
 // Well-formedness:
@@ -1210,8 +1228,11 @@ struct empty_choice_algebra {
 //      labels.
 //   6. Each step whose payload names a label has a keyed choice in its
 //      registration, so the step reads as that choice.
-//
-// The hook receives the child type and a `scope` type.
+//   7. Each combinator is plain.  A combinator that no plain protocol
+//      holds is refused at every depth.
+//   8. A payload that is a protocol is well-formed outside every binder.
+//      The endpoint travels to another participant, so a back node of it
+//      cannot name a binder of the carrier.
 struct well_formed_algebra {
     struct position {
         std::size_t depth = 0;
@@ -1220,27 +1241,29 @@ struct well_formed_algebra {
     using result = bool;
     using context = position;
     std::meta::info registry{};
-    std::meta::info terminal_hook{};
 
     template <class Child>
-    consteval bool terminal(const node&, context, const Child&) const {
-        return true;
+    consteval bool terminal(const node& view, context, const Child&) const {
+        return view.entry.is_plain;
     }
     template <class Child>
-    consteval bool back(const node&, context ctx, const Child&) const {
-        return ctx.depth > 0 && ctx.is_guarded;
+    consteval bool back(const node& view, context ctx, const Child&) const {
+        return view.entry.is_plain && ctx.depth > 0 && ctx.is_guarded;
     }
     template <class Child>
     consteval bool step(const node& view, context ctx, const Child& child) const {
+        if (!view.entry.is_plain) return false;
         if (view.entry.direction == polarity::output) {
             const payload_lookup rule = lookup_payload_rule(registry, view.payload);
             if (rule.is_found && !rule.entry.is_sendable) return false;
         }
         if (is_keyed_step(registry, view) && view.entry.keyed_choice == std::meta::info{}) return false;
+        if (view.entry.payload_is_protocol && !child(view.payload, position{0, true})) return false;
         return child(view.next, position{ctx.depth, true});
     }
     template <class Child>
     consteval bool choice(const node& view, context ctx, const Child& child) const {
+        if (!view.entry.is_plain) return false;
         if (fault_of_choice(registry, view) != choice_fault::none) return false;
         for (const std::meta::info branch : view.branches) {
             if (!child(branch, position{ctx.depth, true})) return false;
@@ -1249,22 +1272,20 @@ struct well_formed_algebra {
     }
     template <class Child>
     consteval bool binder(const node& view, context ctx, const Child& child) const {
-        const bool body_is_terminal =
-            terminal_hook != std::meta::info{}
-                ? std::meta::extract<bool>(std::meta::substitute(terminal_hook, {view.next}))
-                : fold(registry, view.next, terminal_algebra{}, 0);
-        if (body_is_terminal) return false;
+        if (!view.entry.is_plain) return false;
+        if (fold(registry, view.next, terminal_algebra{}, 0)) return false;
         return child(view.next, position{ctx.depth + 1, false});
     }
     template <class Child>
     consteval bool wrapper(const node& view, context ctx, const Child& child) const {
-        return detail::value_is_admitted(view) && child(view.next, ctx);
+        return view.entry.is_plain && detail::value_is_admitted(view) && child(view.next, ctx);
+    }
+    // A marker carries no message, so it is no guard.
+    template <class Child>
+    consteval bool marker(const node& view, context ctx, const Child& child) const {
+        return view.entry.is_plain && child(view.next, ctx);
     }
     consteval bool unregistered(const node&, context) const { return false; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context ctx) const {
-        return {child_type, detail::scope_type(ctx.depth, ctx.is_guarded)};
-    }
-    consteval bool from_hook(std::meta::info answer) const { return std::meta::extract<bool>(answer); }
 };
 
 // The dual: each combinator becomes its registered dual, and each child
@@ -1301,11 +1322,11 @@ struct dual_algebra {
     consteval std::meta::info wrapper(const node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.dual, {view.value, child(view.next, ctx)});
     }
-    consteval std::meta::info unregistered(const node&, context) const { return {}; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
-        return {child_type};
+    template <class Child>
+    consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.dual, {child(view.next, ctx)});
     }
-    consteval std::meta::info from_hook(std::meta::info answer) const { return std::meta::dealias(answer); }
+    consteval std::meta::info unregistered(const node&, context) const { return {}; }
 
 private:
     static consteval std::meta::info rebuild_nullary(const node& view) {
@@ -1369,11 +1390,11 @@ struct canonical_algebra {
     consteval std::meta::info wrapper(const node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.shape, {view.value, child(view.next, ctx)});
     }
-    consteval std::meta::info unregistered(const node& view, context) const { return view.type; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
-        return {child_type};
+    template <class Child>
+    consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
     }
-    consteval std::meta::info from_hook(std::meta::info answer) const { return std::meta::dealias(answer); }
+    consteval std::meta::info unregistered(const node& view, context) const { return view.type; }
 };
 
 // Sequential composition with a suffix: each terminal that does not
@@ -1412,15 +1433,15 @@ struct compose_algebra {
     consteval std::meta::info wrapper(const node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.shape, {view.value, child(view.next, ctx)});
     }
-    consteval std::meta::info unregistered(const node&, context) const { return {}; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
-        return {child_type, suffix};
+    template <class Child>
+    consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
+        return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
     }
-    consteval std::meta::info from_hook(std::meta::info answer) const { return std::meta::dealias(answer); }
+    consteval std::meta::info unregistered(const node&, context) const { return {}; }
 };
 
-// Composition at one branch: the walk passes each step, binder and
-// wrapper, and at the first choice it composes the suffix into branch
+// Composition at one branch: the walk passes each step, binder, wrapper
+// and marker, and at the first choice it composes the suffix into branch
 // `index` alone.  The layer refuses a spine that reaches a terminal or
 // a back node first, and an index past the last branch.  The algebra
 // answers the null reflection for both.
@@ -1430,7 +1451,6 @@ struct compose_at_choice_algebra {
     std::meta::info registry{};
     std::size_t index = 0;
     std::meta::info suffix{};
-    std::meta::info compose_hook{};
 
     template <class Child>
     consteval std::meta::info terminal(const node&, context, const Child&) const {
@@ -1450,9 +1470,7 @@ struct compose_at_choice_algebra {
     consteval std::meta::info choice(const node& view, context, const Child&) const {
         if (index >= view.branches.size()) return {};
         std::vector<std::meta::info> mapped = view.branches;
-        mapped[index] = compose_hook != std::meta::info{}
-                            ? std::meta::dealias(std::meta::substitute(compose_hook, {mapped[index], suffix}))
-                            : fold(registry, mapped[index], compose_algebra{registry, suffix}, 0);
+        mapped[index] = fold(registry, mapped[index], compose_algebra{registry, suffix}, 0);
         return std::meta::substitute(view.entry.shape,
                                      detail::choice_arguments(registry, view, view.entry.shape, mapped));
     }
@@ -1468,23 +1486,32 @@ struct compose_at_choice_algebra {
         if (below == std::meta::info{}) return {};
         return std::meta::substitute(view.entry.shape, {view.value, below});
     }
-    consteval std::meta::info unregistered(const node&, context) const { return {}; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
-        return {child_type, std::meta::reflect_constant(index), suffix};
+    template <class Child>
+    consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
+        const std::meta::info below = child(view.next, ctx);
+        if (below == std::meta::info{}) return {};
+        return std::meta::substitute(view.entry.shape, {below});
     }
-    consteval std::meta::info from_hook(std::meta::info answer) const { return std::meta::dealias(answer); }
+    consteval std::meta::info unregistered(const node&, context) const { return {}; }
 };
 
+namespace detail {
+
+// True for a node that the walk to the first stop of a spine passes.
+[[nodiscard]] consteval bool passes_to_first_stop(const node& view) {
+    return view.is_registered
+           && (view.entry.kind == shape_kind::step || view.entry.kind == shape_kind::binder
+               || view.entry.kind == shape_kind::wrapper || view.entry.kind == shape_kind::marker);
+}
+
+}  // namespace detail
+
 // The first node on the spine where composition at a branch stops: the
-// first choice, terminal or back node under the steps, binders and
-// wrappers at the head.
+// first choice, terminal or back node under the steps, binders, wrappers
+// and markers at the head.
 [[nodiscard]] consteval node first_stop_of_spine(std::meta::info registry, std::meta::info type) {
     node view = decompose(registry, type);
-    while (view.is_registered
-           && (view.entry.kind == shape_kind::step || view.entry.kind == shape_kind::binder
-               || view.entry.kind == shape_kind::wrapper)) {
-        view = decompose(registry, view.next);
-    }
+    while (detail::passes_to_first_stop(view)) view = decompose(registry, view.next);
     return view;
 }
 
@@ -1492,9 +1519,7 @@ struct compose_at_choice_algebra {
 [[nodiscard]] consteval std::size_t binders_above_first_stop(std::meta::info registry, std::meta::info type) {
     std::size_t depth = 0;
     node view = decompose(registry, type);
-    while (view.is_registered
-           && (view.entry.kind == shape_kind::step || view.entry.kind == shape_kind::binder
-               || view.entry.kind == shape_kind::wrapper)) {
+    while (detail::passes_to_first_stop(view)) {
         if (view.entry.kind == shape_kind::binder) ++depth;
         view = decompose(registry, view.next);
     }
@@ -1558,11 +1583,11 @@ struct binding_probe_algebra {
     consteval bool wrapper(const node& view, context depth, const Child& child) const {
         return child(view.next, depth);
     }
-    consteval bool unregistered(const node&, context) const { return true; }
-    consteval std::vector<std::meta::info> hook_arguments(std::meta::info child_type, context) const {
-        return {child_type};
+    template <class Child>
+    consteval bool marker(const node& view, context depth, const Child& child) const {
+        return child(view.next, depth);
     }
-    consteval bool from_hook(std::meta::info answer) const { return std::meta::extract<bool>(answer); }
+    consteval bool unregistered(const node&, context) const { return true; }
 };
 
 // True when `type` holds a back node that no binder of `type` binds.
@@ -1803,7 +1828,8 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
             graph.nodes[here].next = binders.empty() ? npos : binders.back();
             break;
         case shape_kind::step:
-        case shape_kind::wrapper: {
+        case shape_kind::wrapper:
+        case shape_kind::marker: {
             const std::size_t below = add_to_graph(registry, graph, view.next, binders, false);
             graph.nodes[here].next = below;
             break;
@@ -1873,6 +1899,7 @@ consteval void mark_can_end(type_graph& graph) {
                 case shape_kind::wrapper:
                 case shape_kind::binder:
                 case shape_kind::back:
+                case shape_kind::marker:
                     reaches = current.next != npos && graph.nodes[current.next].can_end;
                     break;
                 case shape_kind::choice:
@@ -1982,6 +2009,7 @@ inline constexpr graph_view graph_v = freeze(build_graph(Registry, Type));
 //             without a partner in U.
 //   wrapper   the same shape.  The value order follows the value
 //             variance, then the inner types refine.
+//   marker    the same shape, then the continuations refine.
 //
 // A binder and a back node are unfolded before the comparison, so the
 // relation is the coinductive one on the infinite unfoldings.  A pair
@@ -2271,6 +2299,10 @@ struct label_pairing {
                 pending.push_back(a.next);
                 pending.push_back(b.next);
                 break;
+            case shape_kind::marker:
+                pending.push_back(a.next);
+                pending.push_back(b.next);
+                break;
             case shape_kind::choice: {
                 if (a.annotation != b.annotation) return {false, mismatch::annotation, a.type, b.type};
                 const detail::split_branches own = detail::split_of(left, a);
@@ -2428,6 +2460,13 @@ template <class T, class K>
 struct Drop {};
 template <class T, class K>
 struct Grab {};
+template <class K>
+struct Mark {};
+struct Stall {};
+template <class T, class K>
+struct Give {};
+template <class T, class K>
+struct Get {};
 
 namespace registry {
 inline constexpr combinator put{.shape = ^^Put,
@@ -2470,6 +2509,21 @@ inline constexpr combinator done{.shape = ^^Done, .kind = shape_kind::terminal, 
 inline constexpr combinator halt{.shape = ^^Halt, .kind = shape_kind::terminal, .dual = ^^Halt, .absorbs_suffix = true};
 inline constexpr combinator pin{
     .shape = ^^Pin, .kind = shape_kind::wrapper, .dual = ^^Pin, .value_admits = ^^pin_is_named_v};
+// A marker and a terminal that no plain protocol holds.
+inline constexpr combinator mark{.shape = ^^Mark, .kind = shape_kind::marker, .dual = ^^Mark, .is_plain = false};
+inline constexpr combinator stall{
+    .shape = ^^Stall, .kind = shape_kind::terminal, .dual = ^^Stall, .absorbs_suffix = true, .is_plain = false};
+// A step pair whose payload is a protocol.
+inline constexpr combinator give{.shape = ^^Give,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Get,
+                                 .payload_is_protocol = true};
+inline constexpr combinator get{.shape = ^^Get,
+                                .kind = shape_kind::step,
+                                .direction = polarity::input,
+                                .dual = ^^Give,
+                                .payload_is_protocol = true};
 inline constexpr payload_rule fault{.shape = ^^Fault, .is_sendable = false, .is_label = false};
 inline constexpr payload_rule named{.shape = ^^Named, .label_key = ^^named_label_t, .input_note = ^^named_note_t};
 }  // namespace registry
@@ -2522,9 +2576,7 @@ namespace no_axioms {}
 
 inline constexpr std::meta::info reg = ^^registry;
 
-[[nodiscard]] consteval bool well_formed(std::meta::info type) {
-    return fold(reg, type, well_formed_algebra{reg, {}}, {});
-}
+[[nodiscard]] consteval bool well_formed(std::meta::info type) { return fold(reg, type, well_formed_algebra{reg}, {}); }
 [[nodiscard]] consteval std::meta::info dual(std::meta::info type) { return fold(reg, type, dual_algebra{reg}, 0); }
 [[nodiscard]] consteval bool refines_plain(std::meta::info sub, std::meta::info super) {
     return refines(reg, ^^no_axioms, sub, super).holds;
@@ -2605,8 +2657,6 @@ static_assert(refines_plain(^^SendA, ^^Pick<SendA>) && refines_plain(^^Pick<Send
               "a keyed step and the choice of that one branch are one type");
 static_assert(refines_plain(^^Again<Put<Named<LabelA, int>, Back>>, ^^Again<Pick<Put<Named<LabelA, int>, Back>>>),
               "the entry of a loop reads as the choice it stands for");
-static_assert(!well_formed(^^Drop<Named<LabelA, int>, Done>) && well_formed(^^Drop<int, Done>),
-              "a step with no keyed choice cannot carry a payload that names a label");
 static_assert(first_faulty_choice(reg, ^^Pick<Again<Put<Named<LabelA, int>, Back>>>).fault
                   == choice_fault::keyed_label_below_root,
               "a keyed label branch is its label step, not a loop entry");
@@ -2616,9 +2666,9 @@ static_assert(first_faulty_choice(reg, ^^Pick<Again<Put<int, Back>>>).fault == c
 
 static_assert(fold(reg, ^^Put<int, Pick<Done, Halt>>, compose_algebra{reg, ^^Ping}, 0)
               == ^^Put<int, Pick<Ping, Halt>>);
-static_assert(fold(reg, ^^Put<int, Pick<Done, Done>>, compose_at_choice_algebra{reg, 1, ^^Ping, {}}, 0)
+static_assert(fold(reg, ^^Put<int, Pick<Done, Done>>, compose_at_choice_algebra{reg, 1, ^^Ping}, 0)
               == ^^Put<int, Pick<Done, Ping>>);
-static_assert(fold(reg, ^^Put<int, Done>, compose_at_choice_algebra{reg, 0, ^^Ping, {}}, 0) == std::meta::info{});
+static_assert(fold(reg, ^^Put<int, Done>, compose_at_choice_algebra{reg, 0, ^^Ping}, 0) == std::meta::info{});
 
 static_assert(fold(reg, ^^Pick<>, empty_choice_algebra{reg}, 0));
 static_assert(fold(reg, ^^Wait<Take<Fault<int>, Done>>, empty_choice_algebra{reg}, 0),
@@ -2659,6 +2709,208 @@ static_assert(!has_open_back(reg, ^^Again<Put<int, Back>>));
 static_assert(has_bound_terminal(reg, ^^Exiting) && !has_bound_terminal(reg, ^^Pick<Done>));
 static_assert(!has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Halt>>), "a terminal that absorbs the suffix stays");
 static_assert(has_bound_terminal(reg, ^^Pick<Done>, 1), "a binder above the type binds its terminals");
+
+// ── Markers, plainness and payload protocols ──────────────────────────
+
+// A marker carries no message.  Duality, composition and refinement pass
+// it and keep its place, and it is no terminal.
+static_assert(dual(^^Mark<Ping>) == ^^Mark<Pong>);
+static_assert(fold(reg, ^^Put<int, Mark<Done>>, compose_algebra{reg, ^^Ping}, 0) == ^^Put<int, Mark<Ping>>);
+static_assert(fold(reg, ^^Put<int, Pick<Mark<Done>, Done>>, compose_at_choice_algebra{reg, 0, ^^Ping}, 0)
+              == ^^Put<int, Pick<Mark<Ping>, Done>>);
+static_assert(!fold(reg, ^^Mark<Done>, terminal_algebra{}, 0), "a marker is no terminal");
+static_assert(fold(reg, ^^Mark<Pick<>>, empty_choice_algebra{reg}, 0), "an empty choice below a marker is found");
+static_assert(refines_plain(^^Mark<Ping>, ^^Mark<Ping>) && !refines_plain(^^Mark<Ping>, ^^Ping));
+static_assert(has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Mark<Done>>>));
+static_assert(is_terminable(reg, ^^Mark<Done>));
+static_assert(first_stop_of_spine(reg, ^^Mark<Put<int, Pick<Done>>>).entry.kind == shape_kind::choice,
+              "the walk to the first stop passes a marker");
+
+// A combinator that no plain protocol holds is refused by
+// well-formedness at every depth, and every other algebra reads it.
+static_assert(!well_formed(^^Mark<Done>) && !well_formed(^^Put<int, Mark<Done>>),
+              "no plain protocol holds a marker that is not plain");
+static_assert(!well_formed(^^Stall) && !well_formed(^^Put<int, Pick<Stall, Done>>),
+              "no plain protocol holds a terminal that is not plain");
+static_assert(fold(reg, ^^Put<int, Pick<Stall, Done>>, compose_algebra{reg, ^^Ping}, 0) == ^^Put<int, Pick<Stall, Ping>>,
+              "a terminal that absorbs the suffix keeps its place");
+
+// A step whose payload is a protocol: that protocol is well-formed
+// outside every binder, and an empty choice in it is found.  Duality
+// keeps it as it is.
+static_assert(well_formed(^^Give<Ping, Done>) && !well_formed(^^Give<Back, Done>) && !well_formed(^^Give<Pick<>, Done>));
+static_assert(well_formed(^^Again<Give<Ping, Back>>) && !well_formed(^^Again<Give<Put<int, Back>, Back>>),
+              "a back node of the payload protocol binds no binder of the carrier");
+static_assert(!well_formed(^^Give<Mark<Done>, Done>), "the payload protocol is plain too");
+static_assert(fold(reg, ^^Give<Pick<>, Done>, empty_choice_algebra{reg}, 0));
+static_assert(dual(^^Give<Ping, Done>) == ^^Get<Ping, Done>, "the payload protocol travels as it is");
+
+// ── One registry for each coherence rule ──────────────────────────────
+//
+// A layer that seals its registry refuses a registration outside its own
+// header.  So each rule below is witnessed here, on a stand-in registry
+// that breaks that rule alone, and check_combinator names the rule.
+
+template <class T, class K>
+struct Push {};
+template <class T, class K>
+struct Pull {};
+template <class T, class K>
+struct Shove {};
+template <class... Bs>
+struct Ask {};
+template <class... Bs>
+struct Answer {};
+template <class R>
+struct Other {};
+template <class K>
+struct Unmark {};
+
+namespace registered_twice {
+inline constexpr combinator push{.shape = ^^Push,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Pull,
+                                 .payload_variance = variance::covariant};
+inline constexpr combinator push_again{.shape = ^^Push,
+                                       .kind = shape_kind::step,
+                                       .direction = polarity::output,
+                                       .dual = ^^Pull,
+                                       .payload_variance = variance::covariant};
+inline constexpr combinator pull{.shape = ^^Pull,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Push,
+                                 .payload_variance = variance::contravariant};
+}  // namespace registered_twice
+static_assert(check_combinator(^^registered_twice, ^^Push).reason == incoherence::registered_twice,
+              "a second registration of a shape is refused");
+
+namespace not_involutive {
+inline constexpr combinator push{.shape = ^^Push,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Pull,
+                                 .payload_variance = variance::covariant};
+inline constexpr combinator pull{.shape = ^^Pull,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Shove,
+                                 .payload_variance = variance::contravariant};
+inline constexpr combinator shove{.shape = ^^Shove,
+                                  .kind = shape_kind::step,
+                                  .direction = polarity::output,
+                                  .dual = ^^Pull,
+                                  .payload_variance = variance::covariant};
+}  // namespace not_involutive
+static_assert(check_combinator(^^not_involutive, ^^Push).reason == incoherence::dual_not_involutive,
+              "the dual of the dual of Push is Shove, so duality is no involution");
+
+namespace variance_kept {
+inline constexpr combinator push{.shape = ^^Push,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Pull,
+                                 .payload_variance = variance::covariant};
+inline constexpr combinator pull{.shape = ^^Pull,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Push,
+                                 .payload_variance = variance::covariant};
+}  // namespace variance_kept
+static_assert(check_combinator(^^variance_kept, ^^Push).reason == incoherence::payload_variance_not_flipped,
+              "the dual payload variance is the opposite");
+
+namespace variance_backwards {
+inline constexpr combinator push{.shape = ^^Push,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Pull,
+                                 .payload_variance = variance::contravariant};
+inline constexpr combinator pull{.shape = ^^Pull,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Push,
+                                 .payload_variance = variance::covariant};
+}  // namespace variance_backwards
+static_assert(check_combinator(^^variance_backwards, ^^Push).reason == incoherence::variance_against_direction,
+              "the pair flips its variance, and each side has the variance of the other direction");
+
+namespace note_dropped {
+inline constexpr combinator ask{
+    .shape = ^^Ask, .kind = shape_kind::choice, .direction = polarity::output, .dual = ^^Answer};
+inline constexpr combinator answer{.shape = ^^Answer,
+                                   .kind = shape_kind::choice,
+                                   .direction = polarity::input,
+                                   .dual = ^^Ask,
+                                   .annotation = ^^From};
+}  // namespace note_dropped
+static_assert(check_combinator(^^note_dropped, ^^Answer).reason == incoherence::annotation_differs,
+              "the dual of a choice with a note names no note template, so the dual drops the note");
+
+namespace note_differs {
+inline constexpr combinator ask{.shape = ^^Ask,
+                                .kind = shape_kind::choice,
+                                .direction = polarity::output,
+                                .dual = ^^Answer,
+                                .annotation = ^^Other};
+inline constexpr combinator answer{.shape = ^^Answer,
+                                   .kind = shape_kind::choice,
+                                   .direction = polarity::input,
+                                   .dual = ^^Ask,
+                                   .annotation = ^^From};
+}  // namespace note_differs
+static_assert(check_combinator(^^note_differs, ^^Ask).reason == incoherence::annotation_differs,
+              "a choice and its dual name one note template");
+
+// A marker and its dual disagree on plainness, from each side.
+namespace plainness_differs {
+inline constexpr combinator mark{.shape = ^^Mark, .kind = shape_kind::marker, .dual = ^^Unmark, .is_plain = false};
+inline constexpr combinator unmark{.shape = ^^Unmark, .kind = shape_kind::marker, .dual = ^^Mark};
+}  // namespace plainness_differs
+static_assert(check_combinator(^^plainness_differs, ^^Mark).reason == incoherence::plainness_differs
+                  && check_combinator(^^plainness_differs, ^^Unmark).reason == incoherence::plainness_differs,
+              "a combinator and its dual agree on whether a plain protocol may hold them");
+
+namespace protocol_payload_differs {
+inline constexpr combinator give{.shape = ^^Push,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Pull,
+                                 .payload_is_protocol = true};
+inline constexpr combinator get{
+    .shape = ^^Pull, .kind = shape_kind::step, .direction = polarity::input, .dual = ^^Push};
+}  // namespace protocol_payload_differs
+static_assert(check_combinator(^^protocol_payload_differs, ^^Push).reason == incoherence::protocol_payload_differs,
+              "a step and its dual agree on whether the payload is a protocol");
+
+// A step with no keyed choice cannot carry a payload that names a label.
+// The same payload is well-formed under a step with a keyed choice, and
+// the same step is well-formed with a plain payload, so the refusal comes
+// from the keyed choice alone.
+static_assert(!well_formed(^^Drop<Named<LabelA, int>, Done>) && well_formed(^^Drop<int, Done>)
+                  && well_formed(^^Put<Named<LabelA, int>, Done>),
+              "an output step with no keyed choice and a label payload is refused");
+static_assert(!well_formed(^^Grab<Named<LabelA, int>, Done>) && well_formed(^^Grab<int, Done>)
+                  && well_formed(^^Take<Named<LabelA, int>, Done>),
+              "an input step with no keyed choice and a label payload is refused");
+
+// A seal counts the combinators of its namespace.
+namespace sealed_short {
+inline constexpr combinator push{.shape = ^^Push,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::output,
+                                 .dual = ^^Pull,
+                                 .payload_variance = variance::covariant};
+inline constexpr combinator pull{.shape = ^^Pull,
+                                 .kind = shape_kind::step,
+                                 .direction = polarity::input,
+                                 .dual = ^^Push,
+                                 .payload_variance = variance::contravariant};
+inline constexpr seal combinator_seal{.kind = ^^combinator, .count = 1};
+}  // namespace sealed_short
+static_assert(read_seal(^^sealed_short, ^^combinator).fault == seal_fault::count_differs,
+              "a combinator outside the seal of its namespace is counted");
 
 }  // namespace detail::transition_self_test
 

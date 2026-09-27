@@ -99,7 +99,7 @@ constexpr std::meta::info reg = ^^good;
 
 namespace no_axioms {}
 
-consteval bool well_formed(std::meta::info type) { return tr::fold(reg, type, tr::well_formed_algebra{reg, {}}, {}); }
+consteval bool well_formed(std::meta::info type) { return tr::fold(reg, type, tr::well_formed_algebra{reg}, {}); }
 consteval std::meta::info dual(std::meta::info type) { return tr::fold(reg, type, tr::dual_algebra{reg}, 0); }
 consteval std::meta::info compose(std::meta::info type, std::meta::info suffix) {
     return tr::fold(reg, type, tr::compose_algebra{reg, suffix}, 0);
@@ -392,9 +392,9 @@ static_assert(compose(^^Put<int, Done>, ^^Ping) == ^^Put<int, Ping>);
 static_assert(compose(^^Pick<Done, Halt>, ^^Ping) == ^^Pick<Ping, Halt>, "Halt absorbs the suffix");
 static_assert(compose(^^Again<Pick<Put<int, Back>, Done>>, ^^Ping) == ^^Again<Pick<Put<int, Back>, Ping>>);
 static_assert(compose(^^Wait<From<int>, Done>, ^^Ping) == ^^Wait<From<int>, Ping>, "composition keeps the note");
-static_assert(tr::fold(reg, ^^Pin<2, Put<int, Pick<Done, Done>>>, tr::compose_at_choice_algebra{reg, 0, ^^Ping, {}}, 0)
+static_assert(tr::fold(reg, ^^Pin<2, Put<int, Pick<Done, Done>>>, tr::compose_at_choice_algebra{reg, 0, ^^Ping}, 0)
               == ^^Pin<2, Put<int, Pick<Ping, Done>>>);
-static_assert(tr::fold(reg, ^^Pick<Done>, tr::compose_at_choice_algebra{reg, 1, ^^Ping, {}}, 0) == std::meta::info{},
+static_assert(tr::fold(reg, ^^Pick<Done>, tr::compose_at_choice_algebra{reg, 1, ^^Ping}, 0) == std::meta::info{},
               "an index past the last branch has no answer");
 static_assert(tr::first_stop_of_spine(reg, ^^Put<int, Again<Take<int, Back>>>).entry.kind == tr::shape_kind::back);
 
@@ -468,25 +468,19 @@ static_assert(empty_choice(^^Wait<Take<Fault<int>, Done>, Pin<1, Take<Fault<char
               "no branch is a label, under wrappers too");
 static_assert(!empty_choice(^^Wait<Take<int, Done>, Take<Fault<int>, Done>>));
 
-// ── The hook: a template of the layer answers for each child ──────────
+// ── No entry point for a specialization ───────────────────────────────
+//
+// The fold recurses in place.  A specialization of a template of the
+// layer changes what that template says for its one node, and no answer
+// of the fold at any depth.
 
-template <class P, class Scope>
-struct wf_entry;
-template <class P, class Scope>
-inline constexpr bool wf_entry_v = wf_entry<P, Scope>::value;
-template <class P, class Scope>
-struct wf_entry
-    : std::bool_constant<tr::fold(reg, ^^P, tr::well_formed_algebra{reg, {}}, {Scope::depth, Scope::guarded},
-                                  ^^wf_entry_v)> {};
-// One node answers for itself at every depth.
-template <class Scope>
-struct wf_entry<Halt, Scope> : std::false_type {};
+template <class P>
+inline constexpr bool wf_entry_v = tr::fold(reg, ^^P, tr::well_formed_algebra{reg}, {});
+template <>
+inline constexpr bool wf_entry_v<Halt> = false;
 
-static_assert(wf_entry_v<Ping, tr::scope<0, true>>);
-static_assert(!wf_entry_v<Put<int, Pick<Done, Halt>>, tr::scope<0, true>>,
-              "the specialization for Halt answers below the head");
-static_assert(wf_entry_v<Again<Put<int, Back>>, tr::scope<0, true>>);
-static_assert(!wf_entry_v<Again<Back>, tr::scope<0, true>>, "the hook carries the scope");
+static_assert(!wf_entry_v<Halt>, "the specialization answers for its own node");
+static_assert(wf_entry_v<Put<int, Pick<Done, Halt>>>, "and for no node below the head of another");
 
 // ── The payload preorder ─────────────────────────────────────────────
 

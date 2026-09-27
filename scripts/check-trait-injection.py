@@ -210,11 +210,6 @@ EXTENSION_POINTS: dict[QualifiedName, tuple[tuple[str, ...], str]] = {
     ("foundation", "permissions", "can_split_into_pack"): (("*",), SPLIT_REASON),
     ("foundation", "permissions", "has_split_authoring_witness"): (("*",), SPLIT_REASON),
     ("foundation", "permissions", "has_split_pack_authoring_witness"): (("*",), SPLIT_REASON),
-    ("fixy", "session", "is_well_formed"): (("include/fixy/session/*",), SESSION_REASON),
-    ("fixy", "session", "compose"): (("include/fixy/session/*",), SESSION_REASON),
-    ("fixy", "session", "dual_of"): (("include/fixy/session/*",), SESSION_REASON),
-    ("fixy", "session", "is_empty_choice"): (("include/fixy/session/*",), SESSION_REASON),
-    ("fixy", "session", "is_terminal_state"): (("include/fixy/session/*",), SESSION_REASON),
     ("fixy", "session", "session_loop_ctx_traits"): (("include/fixy/session/*",), SESSION_REASON),
     ("fixy", "session", "session_loop_ctx_rebind_inner"): (("include/fixy/session/*",), SESSION_REASON),
 }

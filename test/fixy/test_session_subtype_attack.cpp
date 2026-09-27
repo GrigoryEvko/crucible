@@ -552,45 +552,11 @@ generated_tally run_generated() {
 
 // ── Registration attacks ─────────────────────────────────────────────
 //
-// A combinator whose dual is not an involution, whose variance does not
-// flip, or whose variance flips with each side backwards, is refused
-// where a query first meets it.  The negative fixtures
-// neg_sess_incoherent_registration_* are those attacks.  The backwards
-// pair compiled before the repair, and subtyping then put a bare int on
-// the wire where the peer receives a positive int.  Here,
-// a coherent combinator registered by a different header works at once
-// and at every depth, and one that the fold does not know is refused.
-
-template <class T, class K>
-struct Offload {};
-template <class T, class K>
-struct Onload {};
-
-}  // namespace test_session_subtype_attack_types
-
-using namespace test_session_subtype_attack_types;
-
-namespace fixy::session::combinators {
-inline constexpr ::foundation::algebra::transition::combinator offload{
-    .shape = ^^::Offload,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::output,
-    .dual = ^^::Onload,
-    .payload_variance = ::foundation::algebra::transition::variance::covariant};
-inline constexpr ::foundation::algebra::transition::combinator onload{
-    .shape = ^^::Onload,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::input,
-    .dual = ^^::Offload,
-    .payload_variance = ::foundation::algebra::transition::variance::contravariant};
-}  // namespace fixy::session::combinators
-
-namespace test_session_subtype_attack_types {
-
-static_assert(std::is_same_v<s::dual_of_t<Send<int, Offload<A, End>>>, Recv<int, Onload<A, End>>>);
-static_assert(s::is_well_formed_v<Loop<Offload<A, Continue>>>);
-static_assert(s::is_subtype_sync_v<Offload<::fixy::Refined<::fixy::positive, int>, End>, Offload<int, End>>);
-static_assert(!s::is_subtype_sync_v<Offload<int, End>, Send<int, End>>, "a new combinator is its own shape");
+// The registry of the session layer is sealed in fixy/session/Protocol.h,
+// so a combinator that a different header registers stops the build
+// (neg_sess_combinator_outside_seal).  The coherence rules, which refuse
+// a dual that is no involution or a variance that does not flip, have
+// their witnesses in the self-test of foundation/algebra/Transition.h.
 
 // ── Empty choices ────────────────────────────────────────────────────
 //
@@ -959,6 +925,8 @@ static_assert(!s::is_subtype_sync_v<Send<Wide, End>, Send<Narrow, End>>
               && !s::is_subtype_sync_v<Recv<Narrow, End>, Recv<Wide, End>>);
 
 }  // namespace test_session_subtype_attack_types
+
+using namespace test_session_subtype_attack_types;
 
 int main() {
     // The runtime half of the capacity family: the check and the runs agree.

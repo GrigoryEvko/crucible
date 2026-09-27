@@ -3,7 +3,10 @@
 // The session-type protocol DSL.  A protocol is a type built from Send,
 // Recv, Select, Offer, Loop, Continue, End, VendorPinned, Delegate and
 // Accept.  The two endpoints of one channel agree when their protocols
-// are duals.
+// are duals.  Stop, Commit, Roll and Abort are combinators too, and no
+// plain protocol holds them: Stop is the runtime type of a crashed
+// endpoint (fixy/session/Crash.h), and the three others are the
+// checkpoint primitives (fixy/session/Checkpoint.h).
 //
 // Select is an internal choice: this endpoint picks the branch and tells
 // the peer which one.  Offer is an external choice: the peer picks, and
@@ -25,14 +28,16 @@
 // one branch, well-formedness, terminality and the empty-choice test.
 // The registration contract is stated in that header.
 //
-// Each primary template reads the registry and fails closed.  A type
-// that is not a registered combinator stops the build with a message
-// that names it, so a combinator that a different header adds without
-// a registration is refused, never passed.
+// Each query reads the registry and fails closed.  A type that is not a
+// registered combinator stops the build with a message that names it.
+// The registry is sealed: every combinator of the layer is registered
+// in this header, and a registration anywhere else stops the build.
 //
-// Each trait is also the entry point the fold uses for a child node.
-// An explicit specialization of a trait for one node therefore answers
-// at every depth, and the registry answers everywhere else.
+// No trait here is a template that a user can specialize.  A class
+// spelling such as dual_of or is_well_formed is an alias template, and a
+// boolean spelling such as is_well_formed_v is a concept, so each
+// specialization of one is a compile error.  The fold recurses in place,
+// so no template of this layer answers for a child node either.
 //
 // This header holds the type level only.  Nothing here has a runtime
 // representation, so nothing here depends on the abandonment policy.
@@ -127,12 +132,10 @@ struct Select<Sender<Role>, Branches...> {
 };
 
 template <typename OfferType>
-struct offer_sender {
-    using type = typename OfferType::sender;
-};
+using offer_sender = std::type_identity<typename OfferType::sender>;
 
 template <typename OfferType>
-using offer_sender_t = typename offer_sender<OfferType>::type;
+using offer_sender_t = typename OfferType::sender;
 
 template <typename Body>
 struct Loop {
@@ -170,6 +173,25 @@ struct Accept {
     using delegated_proto = T;
     using next = K;
 };
+
+// The runtime type of a crashed endpoint.  fixy/session/Crash.h states
+// its rules: no protocol written at design time holds it, and no handle
+// stands at it.
+struct Stop {};
+
+// The checkpoint primitives of fixy/session/Checkpoint.h.  Commit<K>
+// takes a checkpoint and continues with K, Roll returns both parties to
+// their checkpoints, and Abort returns both parties to the start.  Each
+// is a label of a choice that the two parties exchange, and only the
+// checkpoint mint admits a protocol that holds one.
+template <typename K>
+struct Commit {
+    using next = K;
+};
+
+struct Roll {};
+
+struct Abort {};
 
 // The payloads that the registry below has a rule for.  Each is defined
 // in the header of its layer: Crash in fixy/session/Crash.h, and PeerMsg
@@ -254,13 +276,15 @@ using label_of_t = typename label_of<T>::type;
 // vendor.  The mint admission, not refinement, decides which vendor a
 // context runs.
 //
-// The combinators stay open: a different header can register a new one.
-// The payload rules are closed by the seal below.  A payload rule
-// decides whether a payload can be sent, whether a branch is a label,
-// and which label the branch names.  A rule that a later header adds
-// would change those answers in some translation units and not in
-// others, so every payload rule of the layer stands here, and a rule
-// anywhere else stops the build.
+// Two seals below close the combinators and the payload rules.  A
+// combinator that a later header adds would give its shape an answer in
+// some translation units and none in others, and a second registration
+// of a shape would give that shape two answers.  A payload rule decides
+// whether a payload can be sent, whether a branch is a label, and which
+// label the branch names, so a rule that a later header adds would
+// change those answers in some translation units and not in others.
+// Every registration of the layer therefore stands here, and a
+// registration anywhere else stops the build.
 
 namespace combinators {
 
@@ -320,17 +344,59 @@ inline constexpr ::foundation::algebra::transition::combinator vendor_pinned{
 // payload.  The payload is invariant, so this layer states no refinement
 // between two delegated protocols at a head.  The payload order of
 // fixy/session/Subtype.h orders the DelegatedSession that a Send carries.
+// The delegated protocol becomes a session of its own, so it is
+// well-formed outside every Loop, and an empty choice in it is found.
 inline constexpr ::foundation::algebra::transition::combinator delegate{
     .shape = ^^Delegate,
     .kind = ::foundation::algebra::transition::shape_kind::step,
     .direction = ::foundation::algebra::transition::polarity::output,
-    .dual = ^^Accept};
+    .dual = ^^Accept,
+    .payload_is_protocol = true};
 
 inline constexpr ::foundation::algebra::transition::combinator accept{
     .shape = ^^Accept,
     .kind = ::foundation::algebra::transition::shape_kind::step,
     .direction = ::foundation::algebra::transition::polarity::input,
-    .dual = ^^Delegate};
+    .dual = ^^Delegate,
+    .payload_is_protocol = true};
+
+// Stop is a terminal that absorbs a suffix: a crashed endpoint never
+// resumes, so composition keeps it.  Its dual is itself, and refinement
+// relates it only to itself (rule Sub-stop of fixy/session/Crash.h).
+inline constexpr ::foundation::algebra::transition::combinator stop{
+    .shape = ^^Stop,
+    .kind = ::foundation::algebra::transition::shape_kind::terminal,
+    .dual = ^^Stop,
+    .absorbs_suffix = true,
+    .is_plain = false};
+
+// Commit is a marker: it takes a checkpoint and continues, and its dual
+// commits at the same label.  A Roll or an Abort never falls through to
+// what follows it, so composition keeps it, as it keeps a crashed
+// endpoint.  No handle stands at one of the three: the checkpoint handle
+// does the primitive in the step that exchanges its label.
+inline constexpr ::foundation::algebra::transition::combinator commit{
+    .shape = ^^Commit,
+    .kind = ::foundation::algebra::transition::shape_kind::marker,
+    .dual = ^^Commit,
+    .is_plain = false};
+
+inline constexpr ::foundation::algebra::transition::combinator roll{
+    .shape = ^^Roll,
+    .kind = ::foundation::algebra::transition::shape_kind::terminal,
+    .dual = ^^Roll,
+    .absorbs_suffix = true,
+    .is_plain = false};
+
+inline constexpr ::foundation::algebra::transition::combinator restart{
+    .shape = ^^Abort,
+    .kind = ::foundation::algebra::transition::shape_kind::terminal,
+    .dual = ^^Abort,
+    .absorbs_suffix = true,
+    .is_plain = false};
+
+inline constexpr ::foundation::algebra::transition::seal combinator_seal{
+    .kind = ^^::foundation::algebra::transition::combinator, .count = 14};
 
 // The crash label is a payload that no endpoint sends (rule 1) and that
 // is no label a peer can send (rule 2).  fixy/session/Crash.h states why.
@@ -376,9 +442,24 @@ consteval void require_registered_head() {
                                              protocol_registry, ::foundation::algebra::transition::shape_of(^^P))));
 }
 
+// The refusal of every walk that reads the children of a node.  Each node
+// of the spine of P must be registered, and the message names the first
+// one that is not.  A payload and a value are not nodes.  It returns
+// false after a refusal, so the walk stops there and adds no second error.
 template <typename P>
-consteval bool head_is(std::meta::info shape) {
-    return ::foundation::algebra::transition::head_shape(protocol_registry, ^^P) == shape;
+consteval bool require_registered_spine() {
+    constexpr std::meta::info missing = ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P);
+    static_assert(missing == std::meta::info{},
+                  ::foundation::algebra::transition::unregistered_message(
+                      unregistered_prefix, missing == std::meta::info{} ? ^^P : missing));
+    if constexpr (missing == std::meta::info{}) require_registered_head<P>();
+    return missing == std::meta::info{};
+}
+
+// The recognizer of every shape trait.  It is a function over
+// reflections, not a template, so no specialization reaches it.
+[[nodiscard]] consteval bool head_is(std::meta::info type, std::meta::info shape) {
+    return ::foundation::algebra::transition::head_shape(protocol_registry, type) == shape;
 }
 
 }  // namespace detail
@@ -418,88 +499,98 @@ using session_loop_ctx_rebind_inner_t = typename session_loop_ctx_rebind_inner<L
 // answers false for a type that is not a protocol.
 
 template <typename P>
-struct is_send : std::bool_constant<detail::head_is<P>(^^Send)> {};
+using is_send = std::bool_constant<detail::head_is(^^P, ^^Send)>;
 
 template <typename P>
-struct is_recv : std::bool_constant<detail::head_is<P>(^^Recv)> {};
+using is_recv = std::bool_constant<detail::head_is(^^P, ^^Recv)>;
 
 template <typename P>
-struct is_select : std::bool_constant<detail::head_is<P>(^^Select)> {};
+using is_select = std::bool_constant<detail::head_is(^^P, ^^Select)>;
 
 template <typename P>
-struct is_offer : std::bool_constant<detail::head_is<P>(^^Offer)> {};
+using is_offer = std::bool_constant<detail::head_is(^^P, ^^Offer)>;
 
 template <typename P>
-struct is_loop : std::bool_constant<detail::head_is<P>(^^Loop)> {};
+using is_loop = std::bool_constant<detail::head_is(^^P, ^^Loop)>;
 
 template <typename P>
-struct is_end : std::bool_constant<detail::head_is<P>(^^End)> {};
+using is_end = std::bool_constant<detail::head_is(^^P, ^^End)>;
 
 template <typename P>
-struct is_continue : std::bool_constant<detail::head_is<P>(^^Continue)> {};
+using is_continue = std::bool_constant<detail::head_is(^^P, ^^Continue)>;
 
 template <typename P>
-struct is_vendor_pinned : std::false_type {
+concept is_send_v = detail::head_is(^^P, ^^Send);
+template <typename P>
+concept is_recv_v = detail::head_is(^^P, ^^Recv);
+template <typename P>
+concept is_select_v = detail::head_is(^^P, ^^Select);
+template <typename P>
+concept is_offer_v = detail::head_is(^^P, ^^Offer);
+template <typename P>
+concept is_loop_v = detail::head_is(^^P, ^^Loop);
+template <typename P>
+concept is_end_v = detail::head_is(^^P, ^^End);
+template <typename P>
+concept is_continue_v = detail::head_is(^^P, ^^Continue);
+
+namespace detail {
+
+// The vendor of a VendorPinned at the head of P, and the protocol under
+// it.  Every other protocol is Portable, and it is its own protocol.
+template <typename P>
+struct vendor_view : std::false_type {
     using protocol = P;
     static constexpr VendorBackend vendor_backend = VendorBackend::Portable;
 };
 template <VendorBackend V, typename P>
-struct is_vendor_pinned<VendorPinned<V, P>> : std::true_type {
+struct vendor_view<VendorPinned<V, P>> : std::true_type {
     using protocol = P;
     static constexpr VendorBackend vendor_backend = V;
 };
 
+}  // namespace detail
+
 template <typename P>
-inline constexpr bool is_send_v = is_send<P>::value;
+using is_vendor_pinned = detail::vendor_view<P>;
 template <typename P>
-inline constexpr bool is_recv_v = is_recv<P>::value;
+concept is_vendor_pinned_v = detail::vendor_view<P>::value;
 template <typename P>
-inline constexpr bool is_select_v = is_select<P>::value;
+inline constexpr VendorBackend protocol_vendor_v = detail::vendor_view<P>::vendor_backend;
 template <typename P>
-inline constexpr bool is_offer_v = is_offer<P>::value;
-template <typename P>
-inline constexpr bool is_loop_v = is_loop<P>::value;
-template <typename P>
-inline constexpr bool is_end_v = is_end<P>::value;
-template <typename P>
-inline constexpr bool is_continue_v = is_continue<P>::value;
-template <typename P>
-inline constexpr bool is_vendor_pinned_v = is_vendor_pinned<P>::value;
-template <typename P>
-inline constexpr VendorBackend protocol_vendor_v = is_vendor_pinned<P>::vendor_backend;
-template <typename P>
-using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
+using protocol_inner_t = typename detail::vendor_view<P>::protocol;
 
 // A Send or a Recv whose payload names a label key, a PeerMsg or a
 // Labelled.  Outside a choice it is the Select or the Offer of that one
 // branch.  Its message is the label word below, and then the value of its
 // payload when the payload is not void (fixy/session/Handle.h).
 template <typename P>
-inline constexpr bool is_keyed_step_v =
-    ::foundation::algebra::transition::is_keyed_step_type(detail::protocol_registry, ^^P);
+concept is_keyed_step_v = ::foundation::algebra::transition::is_keyed_step_type(detail::protocol_registry, ^^P);
+
+namespace detail {
+
+// The label word that a keyed step sends or expects.  The handle reads
+// this function and not step_wire_word_v, so a specialization of the
+// public spelling changes only what its author reads, never the wire.
+[[nodiscard]] consteval std::uint64_t step_wire_word_of(std::meta::info step) {
+    return ::foundation::algebra::transition::wire_word_of_step(protocol_registry, step).value;
+}
+
+}  // namespace detail
 
 template <typename P>
     requires is_keyed_step_v<P>
-inline constexpr std::uint64_t step_wire_word_v =
-    ::foundation::algebra::transition::wire_word_of_step(detail::protocol_registry, ^^P).value;
+inline constexpr std::uint64_t step_wire_word_v = detail::step_wire_word_of(^^P);
 
-// A protocol head is a position a handle can occupy.  The test is
-// negative, so a combinator that a different header registers is a
-// head without an edit here.  Loop is the one non-head: the factory
-// unrolls it and positions the handle at the body.
+// A protocol head is a position a handle can occupy.  Loop is the one
+// non-head: the factory unrolls it and positions the handle at the body.
 template <typename P>
-inline constexpr bool is_head_v = !is_loop_v<P>;
+concept is_head_v = !detail::head_is(^^P, ^^Loop);
 
 // ── Terminality ──────────────────────────────────────────────────────
 //
 // The positions where a handle can be destroyed without a consume: a
 // terminal combinator, under any wrappers.
-
-template <typename P>
-struct is_terminal_state;
-
-template <typename P>
-inline constexpr bool is_terminal_state_v = is_terminal_state<P>::value;
 
 namespace detail {
 
@@ -507,14 +598,16 @@ template <typename P>
 consteval bool terminal_state_of() {
     require_registered_head<P>();
     return ::foundation::algebra::transition::fold(protocol_registry, ^^P,
-                                                   ::foundation::algebra::transition::terminal_algebra{}, 0,
-                                                   ^^is_terminal_state_v);
+                                                   ::foundation::algebra::transition::terminal_algebra{}, 0);
 }
 
 }  // namespace detail
 
 template <typename P>
-struct is_terminal_state : std::bool_constant<detail::terminal_state_of<P>()> {};
+using is_terminal_state = std::bool_constant<detail::terminal_state_of<P>()>;
+
+template <typename P>
+concept is_terminal_state_v = detail::terminal_state_of<P>();
 
 // ── Empty choices ────────────────────────────────────────────────────
 //
@@ -529,65 +622,51 @@ struct is_terminal_state : std::bool_constant<detail::terminal_state_of<P>()> {}
 // give it a specific diagnostic before the general one.  The walk
 // covers the whole spine, because a handle reaches every position
 // eventually.  A refusal at the top level only would let the misuse
-// surface at the dead-end operation instead of at construction.
-
-template <typename P>
-struct is_empty_choice;
-
-template <typename P>
-inline constexpr bool is_empty_choice_v = is_empty_choice<P>::value;
+// surface at the dead-end operation instead of at construction.  A
+// delegated protocol becomes a session of its own, where an empty choice
+// leaves its holder stuck, so the walk looks into it too (the payload
+// kind of the delegation heads in the registry).
 
 namespace detail {
 
 template <typename P>
 consteval bool empty_choice_of() {
-    require_registered_head<P>();
+    if (!require_registered_spine<P>()) return false;
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::empty_choice_algebra{protocol_registry}, 0,
-        ^^is_empty_choice_v);
+        protocol_registry, ^^P, ::foundation::algebra::transition::empty_choice_algebra{protocol_registry}, 0);
 }
 
 }  // namespace detail
 
 template <typename P>
-struct is_empty_choice : std::bool_constant<detail::empty_choice_of<P>()> {};
+using is_empty_choice = std::bool_constant<detail::empty_choice_of<P>()>;
 
-// A delegated protocol becomes a session of its own, where an empty
-// choice leaves its holder stuck.  So a delegation head holds an empty
-// choice when its delegated protocol holds one, or when its continuation
-// holds one.
-template <typename T, typename K>
-struct is_empty_choice<Delegate<T, K>>
-    : std::bool_constant<is_empty_choice<T>::value || detail::empty_choice_of<Delegate<T, K>>()> {};
-
-template <typename T, typename K>
-struct is_empty_choice<Accept<T, K>>
-    : std::bool_constant<is_empty_choice<T>::value || detail::empty_choice_of<Accept<T, K>>()> {};
+template <typename P>
+concept is_empty_choice_v = detail::empty_choice_of<P>();
 
 // ── Duality ──────────────────────────────────────────────────────────
-
-template <typename P>
-struct dual_of;
-
-template <typename P>
-using dual_of_t = typename dual_of<P>::type;
 
 namespace detail {
 
 template <typename P>
 consteval std::meta::info dual_type_of() {
-    require_registered_head<P>();
-    if (!::foundation::algebra::transition::is_registered(protocol_registry, ^^P)) return ^^void;
+    if (!require_registered_spine<P>()) return ^^void;
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::dual_algebra{protocol_registry}, 0, ^^dual_of_t);
+        protocol_registry, ^^P, ::foundation::algebra::transition::dual_algebra{protocol_registry}, 0);
 }
+
+template <typename P>
+struct dual_view {
+    using type = typename[:dual_type_of<P>():];
+};
 
 }  // namespace detail
 
 template <typename P>
-struct dual_of {
-    using type = typename[:detail::dual_type_of<P>():];
-};
+using dual_of = detail::dual_view<P>;
+
+template <typename P>
+using dual_of_t = typename detail::dual_view<P>::type;
 
 // ── The canonical spelling ───────────────────────────────────────────
 //
@@ -608,13 +687,11 @@ using canonical_t = typename detail::canonical_of<P>::type;
 
 namespace detail {
 
-// A node that the registry does not know keeps its spelling, so a
-// checkpoint node, which its own header gives a dual, compares as it is.
+// A node that the registry does not know keeps its spelling.
 template <typename P>
 consteval std::meta::info canonical_type_of() {
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::canonical_algebra{protocol_registry}, 0,
-        ^^canonical_t);
+        protocol_registry, ^^P, ::foundation::algebra::transition::canonical_algebra{protocol_registry}, 0);
 }
 
 template <typename P>
@@ -630,13 +707,11 @@ struct canonical_of {
 // The test asks for duality in both directions.  A channel pair has no
 // primary side, so the answer must not depend on the order of the
 // arguments.  Coherence makes duality an involution on each registered
-// combinator, so the two directions agree there.  An explicit
-// specialization of dual_of that is no involution makes them differ, and
-// the test then refuses the pair.  The test compares canonical
+// combinator, so the two directions agree.  The test compares canonical
 // spellings, so a keyed step faces the choice of that one branch.
 template <typename P1, typename P2>
-inline constexpr bool is_dual_v = std::is_same_v<canonical_t<dual_of_t<P1>>, canonical_t<P2>>
-                               && std::is_same_v<canonical_t<dual_of_t<P2>>, canonical_t<P1>>;
+concept is_dual_v = std::is_same_v<canonical_t<dual_of_t<P1>>, canonical_t<P2>>
+                 && std::is_same_v<canonical_t<dual_of_t<P2>>, canonical_t<P1>>;
 
 template <typename P1, typename P2>
 consteval void ensure_dual() noexcept {
@@ -669,12 +744,6 @@ consteval void ensure_dual() noexcept {
 // keeps terminability: when P and Q can end from each position, so can
 // the result.  foundation/algebra/Transition.h states the probe.
 
-template <typename P, typename Q>
-struct compose;
-
-template <typename P, typename Q>
-using compose_t = typename compose<P, Q>::type;
-
 namespace detail {
 
 // True when Q holds a Continue that no Loop of Q binds.  It is one
@@ -696,19 +765,15 @@ consteval bool composition_captures() {
 
 template <typename P, typename Q>
 consteval std::meta::info compose_type_of() {
-    require_registered_head<P>();
-    if (!::foundation::algebra::transition::is_registered(protocol_registry, ^^P)) return ^^void;
+    if (!require_registered_spine<P>()) return ^^void;
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::compose_algebra{protocol_registry, ^^Q}, 0,
-        ^^compose_t);
+        protocol_registry, ^^P, ::foundation::algebra::transition::compose_algebra{protocol_registry, ^^Q}, 0);
 }
 
-}  // namespace detail
-
 template <typename P, typename Q>
-struct compose {
+struct compose_view {
 private:
-    static constexpr bool captures = detail::composition_captures<P, Q>();
+    static constexpr bool captures = composition_captures<P, Q>();
     static_assert(!captures,
                   "fixy::session::diagnostic [Compose_Captures_Continue]: compose_t<P, Q>: Q holds a Continue "
                   "that no Loop of Q binds, and an End of P that the composition replaces stands under a Loop of "
@@ -717,19 +782,22 @@ private:
                   "Loop of P stands above the End.");
 
 public:
-    using type = typename[:captures ? ^^void : detail::compose_type_of<P, Q>():];
+    using type = typename[:captures ? ^^void : compose_type_of<P, Q>():];
 };
 
-// Composition at one branch.  The walk passes the Send, Recv, Loop and
-// VendorPinned nodes at the head of P, and at the first Select or Offer
-// it composes Q into branch I alone.  The other branches do not change.
-// Uniform composition, which appends Q to every branch, is compose_t.
+}  // namespace detail
 
-template <typename P, std::size_t I, typename Q>
-struct compose_at_branch;
+template <typename P, typename Q>
+using compose = detail::compose_view<P, Q>;
 
-template <typename P, std::size_t I, typename Q>
-using compose_at_branch_t = typename compose_at_branch<P, I, Q>::type;
+template <typename P, typename Q>
+using compose_t = typename detail::compose_view<P, Q>::type;
+
+// Composition at one branch.  The walk passes the steps, binders,
+// wrappers and markers at the head of P, and at the first Select or
+// Offer it composes Q into branch I alone.  The other branches do not
+// change.  Uniform composition, which appends Q to every branch, is
+// compose_t.
 
 namespace detail {
 
@@ -766,25 +834,19 @@ template <typename P, std::size_t I, typename Q>
 consteval std::meta::info compose_at_branch_type_of() {
     return ::foundation::algebra::transition::fold(
         protocol_registry, ^^P,
-        ::foundation::algebra::transition::compose_at_choice_algebra{protocol_registry, I, ^^Q, ^^compose_t}, 0,
-        ^^compose_at_branch_t);
+        ::foundation::algebra::transition::compose_at_choice_algebra{protocol_registry, I, ^^Q}, 0);
 }
 
-}  // namespace detail
-
 template <typename P, std::size_t I, typename Q>
-struct compose_at_branch {
+struct compose_at_branch_view {
 private:
-    static consteval bool check() {
-        detail::require_registered_head<P>();
-        return true;
-    }
+    static consteval bool check() { return require_registered_spine<P>(); }
     static constexpr bool is_head_checked = check();
-    static constexpr ::foundation::algebra::transition::shape_kind stop = detail::spine_stop_kind<P>();
+    static constexpr ::foundation::algebra::transition::shape_kind stop = spine_stop_kind<P>();
     static constexpr bool reaches_choice = stop == ::foundation::algebra::transition::shape_kind::choice;
     static constexpr bool reaches_back = stop == ::foundation::algebra::transition::shape_kind::back;
-    static constexpr bool index_fits = !reaches_choice || I < detail::spine_branch_count<P>();
-    static constexpr bool captures = detail::branch_composition_captures<P, I, Q>();
+    static constexpr bool index_fits = !reaches_choice || I < spine_branch_count<P>();
+    static constexpr bool captures = branch_composition_captures<P, I, Q>();
 
     static_assert(reaches_choice || reaches_back,
                   "fixy::session::diagnostic [Branch_Compose_No_Choice]: "
@@ -809,9 +871,17 @@ private:
 
 public:
     using type = typename[:is_head_checked && reaches_choice && index_fits && !captures
-                              ? detail::compose_at_branch_type_of<P, I, Q>()
+                              ? compose_at_branch_type_of<P, I, Q>()
                               : ^^void:];
 };
+
+}  // namespace detail
+
+template <typename P, std::size_t I, typename Q>
+using compose_at_branch = detail::compose_at_branch_view<P, I, Q>;
+
+template <typename P, std::size_t I, typename Q>
+using compose_at_branch_t = typename detail::compose_at_branch_view<P, I, Q>::type;
 
 // ── Well-formedness ──────────────────────────────────────────────────
 //
@@ -835,31 +905,24 @@ public:
 //      the six rules, and ensure_choices_well_formed below names the
 //      rule that a choice breaks;
 //   6. the delegated protocol of each Delegate and each Accept is
-//      well-formed outside every Loop.
+//      well-formed outside every Loop.  The endpoint travels to another
+//      participant, so a Continue in the delegated protocol cannot name a
+//      Loop of the carrier;
+//   7. no combinator is one that no plain protocol holds: Stop, Commit,
+//      Roll and Abort.
 //
 // A Send or a Recv of a PeerMsg or a Labelled is keyed.  Outside a choice
 // it is the Select or the Offer of that one branch, and the handle puts
 // its label word on the wire (fixy/session/Handle.h).
 //
 // LoopCtx is void outside a loop.  A Loop type as LoopCtx, the form the
-// handle carries, means inside one loop after its first step.  The fold
-// passes a transition scope to the trait for each child.
-
-template <typename P, typename LoopCtx = void>
-struct is_well_formed;
+// handle carries, means inside one loop after its first step.
 
 namespace detail {
 
-template <typename P, typename Scope>
-inline constexpr bool well_formed_at_v = is_well_formed<P, Scope>::value;
-
 template <typename LoopCtx>
 consteval ::foundation::algebra::transition::well_formed_algebra::position position_of() {
-    constexpr std::meta::info context = std::meta::dealias(^^LoopCtx);
-    if constexpr (std::meta::has_template_arguments(context)
-                  && std::meta::template_of(context) == ^^::foundation::algebra::transition::scope) {
-        return {LoopCtx::depth, LoopCtx::guarded};
-    } else if constexpr (std::is_void_v<session_loop_ctx_inner_t<LoopCtx>>) {
+    if constexpr (std::is_void_v<session_loop_ctx_inner_t<LoopCtx>>) {
         return {0, true};
     } else {
         return {1, true};
@@ -870,30 +933,17 @@ template <typename P, typename LoopCtx>
 consteval bool well_formed_of() {
     require_registered_head<P>();
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P,
-        ::foundation::algebra::transition::well_formed_algebra{protocol_registry, ^^is_terminal_state_v},
-        position_of<LoopCtx>(), ^^well_formed_at_v);
+        protocol_registry, ^^P, ::foundation::algebra::transition::well_formed_algebra{protocol_registry},
+        position_of<LoopCtx>());
 }
 
 }  // namespace detail
 
-template <typename P, typename LoopCtx>
-struct is_well_formed : std::bool_constant<detail::well_formed_of<P, LoopCtx>()> {};
-
-// A delegation head is well-formed when its step and its continuation
-// are, and when its delegated protocol is well-formed outside every
-// Loop.  The endpoint travels to another participant, so a Continue in
-// the delegated protocol cannot name a Loop of the carrier.
-template <typename T, typename K, typename LoopCtx>
-struct is_well_formed<Delegate<T, K>, LoopCtx>
-    : std::bool_constant<is_well_formed<T, void>::value && detail::well_formed_of<Delegate<T, K>, LoopCtx>()> {};
-
-template <typename T, typename K, typename LoopCtx>
-struct is_well_formed<Accept<T, K>, LoopCtx>
-    : std::bool_constant<is_well_formed<T, void>::value && detail::well_formed_of<Accept<T, K>, LoopCtx>()> {};
+template <typename P, typename LoopCtx = void>
+using is_well_formed = std::bool_constant<detail::well_formed_of<P, LoopCtx>()>;
 
 template <typename P>
-inline constexpr bool is_well_formed_v = is_well_formed<P>::value;
+concept is_well_formed_v = detail::well_formed_of<P, void>();
 
 namespace detail {
 
@@ -923,10 +973,33 @@ consteval void ensure_choices_well_formed() noexcept {
                   detail::choice_fault_message<P>());
 }
 
-// Every registration of this header is coherent.  A registration that a
-// different header adds is checked where a query first meets it.
-static_assert(::foundation::algebra::transition::check_registry(detail::protocol_registry).reason
-                  == ::foundation::algebra::transition::incoherence::none,
+// The seal counts every combinator of the registry.  A registration that
+// stands before this header, in a namespace that a different header
+// opened first, makes the count differ here.  A registration after this
+// header makes it differ at the next read of a shape.
+static_assert(::foundation::algebra::transition::read_seal(detail::protocol_registry,
+                                                           ^^::foundation::algebra::transition::combinator)
+                      .fault
+                  == ::foundation::algebra::transition::seal_fault::none,
+              "fixy::session::diagnostic [Protocol_Combinator_Outside_Seal]: fixy::session::combinators holds a "
+              "combinator registration that its seal does not count.  Every combinator of the session layer is "
+              "registered in fixy/session/Protocol.h.");
+
+namespace detail {
+
+// True when every registration of the registry is coherent.  It reads no
+// shape while the seal is broken, so a registration outside the seal
+// gives the one diagnostic above.  The registry is a parameter, so the
+// compiler cannot fold the read before the test of the seal.
+[[nodiscard]] consteval bool registry_is_coherent(std::meta::info registry) {
+    namespace tr = ::foundation::algebra::transition;
+    if (tr::read_seal(registry, ^^tr::combinator).fault != tr::seal_fault::none) return true;
+    return tr::check_registry(registry).reason == tr::incoherence::none;
+}
+
+}  // namespace detail
+
+static_assert(detail::registry_is_coherent(detail::protocol_registry),
               "fixy::session::diagnostic [Protocol_Incoherent_Registration]: a registration in "
               "fixy::session::combinators is incoherent.");
 

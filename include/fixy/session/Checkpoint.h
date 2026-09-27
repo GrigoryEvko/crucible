@@ -111,75 +111,17 @@ struct checkpoint_handle;
 namespace fixy::session {
 
 // ── The three primitives ────────────────────────────────────────────
-
-// Take a checkpoint, then continue with K.
-template <typename K>
-struct Commit {
-    using next = K;
-};
-
-// Return both parties to their checkpoints.
-struct Roll {};
-
-// Return both parties to the start of the session.
-struct Abort {};
-
-// A checkpoint protocol cannot run on one endpoint, because compliance
-// is a property of the pair.  The plain handle factory therefore sees
-// these three as ill-formed, and only mint_checkpoint_session admits
-// them.
-template <typename K, typename LoopCtx>
-struct is_well_formed<Commit<K>, LoopCtx> : std::false_type {};
-template <typename LoopCtx>
-struct is_well_formed<Roll, LoopCtx> : std::false_type {};
-template <typename LoopCtx>
-struct is_well_formed<Abort, LoopCtx> : std::false_type {};
-
-// The dual mirrors the label.  A Select that picks Commit faces an Offer
-// that receives it, so the dual is well defined.  A dual pair is not
-// compliant by that fact alone, because the imposed flag can still make
-// a Roll fail.  The mint checks the pair.
-template <typename K>
-struct dual_of<Commit<K>> {
-    using type = Commit<dual_of_t<K>>;
-};
-template <>
-struct dual_of<Roll> {
-    using type = Roll;
-};
-template <>
-struct dual_of<Abort> {
-    using type = Abort;
-};
-
-// A Roll or an Abort never falls through to what follows it, so
-// composition keeps it, as it keeps a crashed endpoint.
-template <typename K, typename Q>
-struct compose<Commit<K>, Q> {
-    using type = Commit<compose_t<K, Q>>;
-};
-template <typename Q>
-struct compose<Roll, Q> {
-    using type = Roll;
-};
-template <typename Q>
-struct compose<Abort, Q> {
-    using type = Abort;
-};
-
-template <typename K>
-struct is_empty_choice<Commit<K>> : is_empty_choice<K> {};
-template <>
-struct is_empty_choice<Roll> : std::false_type {};
-template <>
-struct is_empty_choice<Abort> : std::false_type {};
-
-template <typename K>
-struct is_terminal_state<Commit<K>> : std::false_type {};
-template <>
-struct is_terminal_state<Roll> : std::false_type {};
-template <>
-struct is_terminal_state<Abort> : std::false_type {};
+//
+// Commit, Roll and Abort and their registrations stand in
+// fixy/session/Protocol.h, under the seal of the registry.  A checkpoint
+// protocol cannot run on one endpoint, because compliance is a property
+// of the pair, so each primitive is registered as not plain: the plain
+// handle factory refuses a protocol that holds one, and only
+// mint_checkpoint_session admits it.  Commit is a marker whose dual
+// commits at the same label.  Roll and Abort are terminals that keep
+// their place under composition, as a crashed endpoint does.  A dual pair
+// is not compliant by that fact alone, because the imposed flag can still
+// make a Roll fail, so the mint checks the pair.
 
 template <typename P>
 struct is_checkpoint_primitive : std::false_type {};

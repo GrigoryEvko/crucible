@@ -600,6 +600,15 @@ foundation_neg_compile_test(neg_label_word_of_a_closure_key
   "a stable id refuses the type"
   "has no declared name")
 
+# A combinator and its dual agree on whether a plain protocol may hold
+# them.  The coherence check names the pair from each side.
+foundation_neg_compile_test(neg_transition_plainness_differs_on_the_shape
+  "the registration of template<class K> struct neg_transition_plainness_differs_on_the_shape_types::Mark is incoherent"
+  "the dual disagrees on whether a plain protocol may hold it")
+foundation_neg_compile_test(neg_transition_plainness_differs_on_the_dual
+  "the registration of template<class K> struct neg_transition_plainness_differs_on_the_dual_types::Unmark is incoherent"
+  "the dual disagrees on whether a plain protocol may hold it")
+
 # The only Raw -> Checked edge is declared outside the relation's
 # namespace, so the pair is not admitted.  The satisfaction note names
 # the concept and the namespace the check was given.

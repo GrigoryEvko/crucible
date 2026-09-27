@@ -1384,7 +1384,7 @@ public:
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message takes, or the payload walk of fixy/session/Payload.h refuses the message.");
         auto& core = core_(handle);
-        std::size_t word = static_cast<std::size_t>(step_wire_word_v<Send<T, R>>);
+        std::size_t word = detail::step_wire_word_of(^^Send<T, R>);
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
         const watch::session_ref session = core.session_();
         return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(), session);
@@ -1428,7 +1428,7 @@ public:
         auto& core = core_(handle);
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
-        if (word != static_cast<std::size_t>(step_wire_word_v<Recv<T, R>>)) [[unlikely]] {
+        if (word != detail::step_wire_word_of(^^Recv<T, R>)) [[unlikely]] {
             std::abort();
         }
         const watch::session_ref session = core.session_();

@@ -1733,7 +1733,7 @@ fixy_neg_compile_test(neg_sess_handle_factory_redefined
   "previous definition of .class fixy::session::HandleFactory.")
 fixy_neg_compile_test(neg_sess_mint_door_states_the_gate
   "no matching function for call to .fixy::session::SessionMintDoor::open<fixy::session::Send<int, fixy::session::Continue>, neg_sess_mint_door_states_the_gate_types::Wire"
-  "the expression .is_well_formed_v<Proto> .with Proto = fixy::session::Send<int, fixy::session::Continue>.. evaluated to .false.")
+  "satisfaction of .is_well_formed_v<Proto>. .with Proto = fixy::session::Send<int, fixy::session::Continue>.")
 fixy_neg_compile_test(neg_sess_mint_door_derived_look_alike
   "cannot derive from .final. base"
   "SessionMintDoor")
@@ -1822,29 +1822,6 @@ fixy_neg_compile_test(neg_sess_unregistered_combinator_in_dual
   "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
   "the combinator .*Teleport<int, fixy::session::End> has no registration")
 
-# A registration that breaks the involution of duality, or its closure
-# under refinement, is refused where a query first meets it.
-fixy_neg_compile_test(neg_sess_incoherent_registration_not_involutive
-  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
-  "Push is incoherent: the dual of the dual is not the shape")
-fixy_neg_compile_test(neg_sess_incoherent_registration_variance
-  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
-  "Emit is incoherent: the dual payload variance is not the opposite")
-# The pair below flips its variance under duality, so the flip rule
-# admitted it, but each side has the variance of the other direction.
-# The fixture compiled before the repair, and subtyping then put a bare
-# int on the wire where the peer receives a positive int.
-fixy_neg_compile_test(neg_sess_incoherent_registration_backwards_variance
-  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
-  "Emit is incoherent: an output step with a contravariant payload")
-# A choice and its dual must name the same note template.  A pair that
-# does not makes the dual drop the note, so duality is no involution.
-fixy_neg_compile_test(neg_sess_incoherent_registration_note_dropped
-  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
-  "Answer is incoherent: the dual names a different note template")
-fixy_neg_compile_test(neg_sess_incoherent_registration_note_differs
-  "fixy::session::diagnostic \\[Protocol_Incoherent_Registration\\]"
-  "Ask is incoherent: the dual names a different note template")
 # Duality keeps the Sender note, so a client and a server that name
 # different roles for one choice are refused from either side.
 fixy_neg_compile_test(neg_sess_compatible_server_wrong_role
@@ -1853,10 +1830,12 @@ fixy_neg_compile_test(neg_sess_compatible_server_wrong_role
 fixy_neg_compile_test(neg_sess_compatible_client_wrong_role
   "fixy::session::diagnostic \\[Subtype_Annotation\\]: assert_compatible_client"
   "because the choice notes differ")
-# The payload rules and the payload axioms of the session layer are
-# sealed at the foot of their headers.  A rule or an axiom that stands
-# outside the seal stops the build, and so does a second registration of
-# a combinator shape.
+# The combinators, the payload rules and the payload axioms of the
+# session layer are sealed at the foot of their headers.  A registration
+# that stands outside a seal stops the build: a second registration of
+# Send before fixy/session/Protocol.h, and a new combinator from a user
+# file after it.  The coherence rules of a registration have their
+# witnesses in the self-test of foundation/algebra/Transition.h.
 fixy_neg_compile_test(neg_sess_payload_rule_after_seal
   "a_registration_stands_outside_its_seal"
   "expansion of .foundation::algebra::transition::read_payload_rule")
@@ -1867,15 +1846,82 @@ fixy_neg_compile_test(neg_sess_axiom_after_seal
   "a_registration_stands_outside_its_seal"
   "expansion of .foundation::algebra::transition::detail::subsorts_within")
 fixy_neg_compile_test(neg_sess_combinator_registered_twice
-  "a_combinator_shape_has_two_registrations"
-  "expansion of .foundation::algebra::transition::read_combinator")
+  "fixy::session::diagnostic \\[Protocol_Combinator_Outside_Seal\\]"
+  "holds a combinator registration that its seal does not count")
+fixy_neg_compile_test(neg_sess_combinator_outside_seal
+  "a_registration_stands_outside_its_seal"
+  "expansion of .foundation::algebra::transition::read_combinator\\(\\^\\^fixy::session::combinators, \\^\\^.*Emit\\)")
+
+# No trait of fixy/session/Protocol.h or fixy/session/Delegate.h is a
+# template that a user can specialize.  A class spelling is an alias
+# template, so each specialization below is a compile error, and the
+# verdicts of the registry stand.  test_session_protocol.cpp checks that
+# each boolean spelling is a concept.
+fixy_neg_compile_test(neg_sess_trait_spec_is_send
+  "specialization of alias template .template<class P> using fixy::session::is_send = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Send\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_recv
+  "specialization of alias template .template<class P> using fixy::session::is_recv = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Recv\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_select
+  "specialization of alias template .template<class P> using fixy::session::is_select = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Select\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_offer
+  "specialization of alias template .template<class P> using fixy::session::is_offer = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Offer\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_loop
+  "specialization of alias template .template<class P> using fixy::session::is_loop = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Loop\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_end
+  "specialization of alias template .template<class P> using fixy::session::is_end = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^fixy::session::End\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_continue
+  "specialization of alias template .template<class P> using fixy::session::is_continue = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^fixy::session::Continue\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_vendor_pinned
+  "specialization of alias template .template<class P> using fixy::session::is_vendor_pinned = "
+  "= fixy::session::detail::vendor_view<P>.")
+fixy_neg_compile_test(neg_sess_trait_spec_is_terminal_state
+  "specialization of alias template .template<class P> using fixy::session::is_terminal_state = "
+  "= std::bool_constant<\\(\\(bool\\)terminal_state_of<P>\\(\\)\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_empty_choice
+  "specialization of alias template .template<class P> using fixy::session::is_empty_choice = "
+  "= std::bool_constant<\\(\\(bool\\)empty_choice_of<P>\\(\\)\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_dual_of
+  "specialization of alias template .template<class P> using fixy::session::dual_of = "
+  "= fixy::session::detail::dual_view<P>.")
+fixy_neg_compile_test(neg_sess_trait_spec_compose
+  "specialization of alias template .template<class P, class Q> using fixy::session::compose = "
+  "= fixy::session::detail::compose_view<P, Q>.")
+fixy_neg_compile_test(neg_sess_trait_spec_compose_at_branch
+  "specialization of alias template .template<class P, long unsigned int I, class Q> using fixy::session::compose_at_branch = "
+  "= fixy::session::detail::compose_at_branch_view<P, I, Q>.")
+fixy_neg_compile_test(neg_sess_trait_spec_is_well_formed
+  "specialization of alias template .template<class P, class LoopCtx> using fixy::session::is_well_formed = "
+  "= std::bool_constant<\\(\\(bool\\)well_formed_of<P, LoopCtx>\\(\\)\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_offer_sender
+  "specialization of alias template .template<class OfferType> using fixy::session::offer_sender = "
+  "= std::type_identity<typename OfferType::sender>.")
+fixy_neg_compile_test(neg_sess_trait_spec_is_delegate
+  "specialization of alias template .template<class P> using fixy::session::is_delegate = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Delegate\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_accept
+  "specialization of alias template .template<class P> using fixy::session::is_accept = "
+  "= std::bool_constant<fixy::session::detail::head_is\\(\\^\\^P, \\^\\^struct fixy::session::Accept\\)>")
+
+# Commit is a marker that the registry marks as not plain.  The
+# well-formedness algebra refuses it at every depth, so a plain mint
+# refuses a protocol that commits below a step.
+fixy_neg_compile_test(neg_sess_marker_not_plain
+  "no matching function for call to .mint_session<Commits>"
+  "required for the satisfaction of .is_well_formed_v<Proto>. \\[with Proto = fixy::session::Send<int, fixy::session::Commit<fixy::session::Recv<int, fixy::session::End> > >\\]")
 
 # Well-formedness now asks for a guard between a Continue and its Loop,
 # and refuses VendorBackend::None.  Before, the mint gate admitted all
 # three and the build failed later inside the handle.
 fixy_neg_compile_test(neg_sess_mint_unguarded_loop
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Loop<fixy::session::Continue>\\]. evaluated to .false.")
+  "well_formed_of<P, void>.\\(\\) \\[with P = fixy::session::Loop<fixy::session::Continue>\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_unguarded_pinned_loop
   "no matching function for call to .mint_session_handle"
   "Loop<fixy::session::VendorPinned<foundation::algebra::lattices::VendorBackend::NV, fixy::session::Continue> >\\]. evaluated to .false.")
@@ -2024,13 +2070,13 @@ fixy_neg_compile_test(neg_sess_subtype_label_word_clash_input
 # one label.  The mint gate refuses each through is_well_formed_v.
 fixy_neg_compile_test(neg_sess_wf_label_after_crash_branch
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::Crash<")
+  "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::Crash<")
 fixy_neg_compile_test(neg_sess_wf_repeated_crash_branch
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Ping, fixy::session::End>, fixy::session::Recv<fixy::session::Crash<")
+  "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Ping, fixy::session::End>, fixy::session::Recv<fixy::session::Crash<")
 fixy_neg_compile_test(neg_sess_wf_repeated_label
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>")
+  "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>")
 
 # A keyed branch sends its label word and a positional branch sends its
 # position, so a choice that mixes the two is refused.  Two closure types
@@ -2044,24 +2090,19 @@ fixy_neg_compile_test(neg_sess_wf_label_word_collision
   "a stable id refuses the type .*<lambda\\(\\)>.*has no declared name")
 fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")
+  "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")
 
 # A keyed step is a choice of one branch.  A keyed label branch is its
-# label step, a keyed step needs a keyed choice in its registration, and
-# the label step of a keyed Send takes no value: the value step after it
-# sends the value.  A keyed step refines a choice by label.
+# label step, and the label step of a keyed Send takes no value: the value
+# step after it sends the value.  A keyed step refines a choice by label.
+# The rule that a keyed step needs a keyed choice in its registration has
+# its witness in the self-test of foundation/algebra/Transition.h.
 fixy_neg_compile_test(neg_sess_wf_keyed_label_under_loop
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
   "a label branch of a keyed choice starts with a wrapper or a binder")
 fixy_neg_compile_test(neg_sess_wf_keyed_label_under_vendor_pin
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
   "a label branch of a keyed choice starts with a wrapper or a binder")
-fixy_neg_compile_test(neg_sess_wf_keyed_step_without_keyed_choice
-  "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = .*Emit<fixy::session::Labelled<.*Hello, int>")
-fixy_neg_compile_test(neg_sess_wf_keyed_step_without_keyed_choice_input
-  "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = .*Absorb<fixy::session::PeerMsg<.*Hello, int>")
 fixy_neg_compile_test(neg_sess_keyed_send_with_value
   "use of deleted function"
   "Keyed_Label_Takes_No_Value\\] a Send of a PeerMsg or a Labelled is keyed")
@@ -2074,12 +2115,6 @@ fixy_neg_compile_test(neg_sess_subtype_keyed_step_label_set_input
 fixy_neg_compile_test(neg_sess_subtype_keyed_step_label_set_output
   "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
   "The failed pair is .*Send<.*L2, int>.* against .*Select<.*L0, int>")
-fixy_neg_compile_test(neg_sess_incoherent_registration_keyed_choice_direction
-  "diagnostic \\[(Protocol|Subtype)_Incoherent_Registration\\]"
-  "Emit is incoherent: the keyed choice of a step is not a registered choice of the same direction")
-fixy_neg_compile_test(neg_sess_incoherent_registration_keyed_choice_one_sided
-  "diagnostic \\[(Protocol|Subtype)_Incoherent_Registration\\]"
-  "Absorb is incoherent: the dual step names a keyed choice that is not the dual of this keyed choice")
 
 # The adversarial campaign against the algebra and the relations.  The
 # runtime half runs two threads over bounded queues with a watchdog, so
@@ -2158,11 +2193,11 @@ fixy_neg_compile_test(neg_sess_forked_channel_body_stops_early
 # payload whose row the context does not hold is refused.
 fixy_neg_compile_test(neg_sess_forked_channel_row_outside_ctx
   "no matching function for call to .mint_forked_channel<forked_row_fixture::Proto, forked_row_fixture::Left, forked_row_fixture::Right>"
-  "satisfaction of .CtxAdmitsChannelRow<Ctx, Proto, typename fixy::session::dual_of<[A-Za-z0-9]+>::type>."
+  "satisfaction of .CtxAdmitsChannelRow<Ctx, Proto, typename fixy::session::detail::dual_view<[A-Za-z0-9]+>::type>."
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, SelfProto>. .with Ctx = .*SelfProto = fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>, fixy::session::End>.")
 fixy_neg_compile_test(neg_sess_test_channel_row_outside_ctx
   "no matching function for call to .mint_test_channel<test_row_fixture::Proto>"
-  "satisfaction of .CtxAdmitsChannelRow<Ctx, Proto, typename fixy::session::dual_of<[A-Za-z0-9]+>::type>."
+  "satisfaction of .CtxAdmitsChannelRow<Ctx, Proto, typename fixy::session::detail::dual_view<[A-Za-z0-9]+>::type>."
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, SelfProto>. .with Ctx = .*SelfProto = fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int>, fixy::session::End>.")
 
 # A forked channel whose sides are related by asynchronous subtyping runs
@@ -2172,7 +2207,7 @@ fixy_neg_compile_test(neg_sess_test_channel_row_outside_ctx
 fixy_test(test_session_async_channel)
 fixy_neg_compile_test(neg_sess_async_channel_capacity_too_small
   "no matching function for call to .mint_forked_async_channel"
-  "is_subtype_async_v<SelfProto, typename fixy::session::dual_of<PeerProto>::type, ResourceSelf>")
+  "is_subtype_async_v<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf>")
 fixy_neg_compile_test(neg_sess_async_channel_without_capacity
   "no matching function for call to .mint_forked_async_channel"
   "StatesChannelCapacity<ResourceSelf>. \\[with ResourceSelf = .unnamed.::SilentEnd\\]")
@@ -2182,10 +2217,10 @@ fixy_neg_compile_test(neg_sess_async_channel_without_capacity
 # order.  GCC prints the parameter of dual_of under a name that can drift.
 fixy_neg_compile_test(neg_sess_async_channel_peer_drops_the_exit
   "no matching function for call to .mint_forked_async_channel"
-  "is_subtype_async_v<PeerProto, typename fixy::session::dual_of<[A-Za-z0-9]+>::type, ResourcePeer> \\[with PeerProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
+  "is_subtype_async_v<PeerProto, typename fixy::session::detail::dual_view<[A-Za-z0-9]+>::type, ResourcePeer> \\[with PeerProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
 fixy_neg_compile_test(neg_sess_async_channel_self_drops_the_exit
   "no matching function for call to .mint_forked_async_channel"
-  "is_subtype_async_v<SelfProto, typename fixy::session::dual_of<PeerProto>::type, ResourceSelf> \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
+  "is_subtype_async_v<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf> \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
 fixy_neg_compile_test(neg_sess_async_channel_row_outside_ctx
   "no matching function for call to .mint_forked_async_channel<async_row_fixture::LeftProto, async_row_fixture::RightProto, async_row_fixture::Left, async_row_fixture::Right>"
   "satisfaction of .CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>."
@@ -2431,7 +2466,7 @@ fixy_neg_compile_test(neg_sess_crash_watched_friend_specialized
 # the plain handle factory refuses them.
 fixy_neg_compile_test(neg_sess_crash_label_sent
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Send<int, fixy::session::End>, fixy::session::Send<fixy::session::Crash<")
+  "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<int, fixy::session::End>, fixy::session::Send<fixy::session::Crash<")
 
 fixy_neg_compile_test(neg_sess_crash_pure_choice
   "no matching function for call to .mint_session_handle"
@@ -2439,7 +2474,7 @@ fixy_neg_compile_test(neg_sess_crash_pure_choice
 
 fixy_neg_compile_test(neg_sess_crash_stop_at_design_time
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Send<int, fixy::session::Stop>\\]")
+  "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Send<int, fixy::session::Stop>\\]")
 
 # HS14 for crash(): a reliable role cannot crash, and an ended process
 # cannot crash.
@@ -2530,7 +2565,7 @@ fixy_test(test_session_rollback)
 # the compliance check.
 fixy_neg_compile_test(neg_sess_checkpoint_single_endpoint
   "no matching function for call to .mint_session_handle"
-  "is_well_formed_v<Proto> \\[with Proto = fixy::session::Select<fixy::session::Commit<")
+  "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Commit<")
 
 fixy_neg_compile_test(neg_sess_checkpoint_labels_disagree
   "no matching function for call to .mint_checkpoint_session"

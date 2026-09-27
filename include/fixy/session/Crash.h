@@ -141,15 +141,11 @@
 namespace fixy::session {
 
 // ── Stop ─────────────────────────────────────────────────────────────
-
-struct Stop {};
-
-// Stop is runtime syntax, so no design-time protocol may contain it.  The
-// registration below gives its dual, its terminal kind and its place in
-// refinement.  This specialization keeps it out of every design-time
-// protocol.
-template <typename LoopCtx>
-struct is_well_formed<Stop, LoopCtx> : std::false_type {};
+//
+// Stop and its registration stand in fixy/session/Protocol.h, under the
+// seal of the registry.  The registration gives its dual, its terminal
+// kind that absorbs a suffix, and its place in refinement, and it marks
+// Stop as not plain, so no design-time protocol holds it.
 
 template <typename P>
 struct is_stop : std::bool_constant<std::is_same_v<P, Stop>> {};
@@ -191,11 +187,7 @@ struct is_crash_payload<Crash<Peer>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_crash_payload_v = is_crash_payload<T>::value;
 
-// ── The registrations ────────────────────────────────────────────────
-//
-// Stop is a terminal that absorbs a suffix: a crashed endpoint never
-// resumes, so composition keeps it.  Its dual is itself, and refinement
-// relates it only to itself (rule Sub-stop).
+// ── The payload rule of the crash label ──────────────────────────────
 //
 // The crash label is a payload that no endpoint sends (rule 1) and that
 // is no label a peer can send (rule 2).  The first refuses the plain dual
@@ -203,18 +195,8 @@ inline constexpr bool is_crash_payload_v = is_crash_payload<T>::value;
 // an endpoint is its crash dual (crash_dual_t below).  The second makes
 // an Offer of crash branches only an empty choice, and gives rule Sub-&
 // its two side conditions in refinement.  The rule is crash_label in
-// fixy/session/Protocol.h, because every payload rule stands under the
+// fixy/session/Protocol.h, because every registration stands under the
 // seal of that header.
-
-namespace combinators {
-
-inline constexpr ::foundation::algebra::transition::combinator stop{
-    .shape = ^^Stop,
-    .kind = ::foundation::algebra::transition::shape_kind::terminal,
-    .dual = ^^Stop,
-    .absorbs_suffix = true};
-
-}  // namespace combinators
 
 // A crash branch of an Offer.
 template <typename B>

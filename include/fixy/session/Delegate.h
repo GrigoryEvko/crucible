@@ -253,18 +253,19 @@ template <typename H, typename Hold>
 // ── Queries over the delegation heads ────────────────────────────────
 
 // True when the head of P, under its VendorPinned wrappers, is a
-// Delegate or an Accept.
+// Delegate or an Accept.  Each trait is an alias and each _v form is a
+// concept, so no program can specialize one to change its answer.
 template <typename P>
-struct is_delegate : std::bool_constant<detail::head_is<P>(^^Delegate)> {};
+using is_delegate = std::bool_constant<detail::head_is(^^P, ^^Delegate)>;
 
 template <typename P>
-struct is_accept : std::bool_constant<detail::head_is<P>(^^Accept)> {};
+using is_accept = std::bool_constant<detail::head_is(^^P, ^^Accept)>;
 
 template <typename P>
-inline constexpr bool is_delegate_v = is_delegate<P>::value;
+concept is_delegate_v = detail::head_is(^^P, ^^Delegate);
 
 template <typename P>
-inline constexpr bool is_accept_v = is_accept<P>::value;
+concept is_accept_v = detail::head_is(^^P, ^^Accept);
 
 // True when CarrierProto is a Delegate that hands off an endpoint of
 // DelegatedProto.
@@ -323,3 +324,9 @@ struct foundation::contracts::armed_cell<::fixy::session::is_accept> {
                               ::fixy::session::Recv<::fixy::session::detail::delegation_head_armed_witness::Carried,
                                                     ::fixy::session::End>>;
 };
+
+// The two traits are aliases, and the roster walk of
+// foundation/contracts/Armed.h finds class templates only.  These two
+// assertions read the two cells.
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_delegate>);
+static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_accept>);

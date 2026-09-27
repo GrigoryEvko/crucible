@@ -1039,6 +1039,20 @@ struct foundation::contracts::armed_cell<sess::is_well_formed> {
     using refuses = witnesses<sess::Continue, sess::Send<int, sess::Continue>, sess::Loop<sess::Continue>>;
 };
 
+// Each protocol trait above is an alias, so no program can specialize it.
+// The walk finds class templates only, so these assertions read the cells.
+static_assert(fc::armed_cell_holds_v<sess::is_send>);
+static_assert(fc::armed_cell_holds_v<sess::is_recv>);
+static_assert(fc::armed_cell_holds_v<sess::is_select>);
+static_assert(fc::armed_cell_holds_v<sess::is_offer>);
+static_assert(fc::armed_cell_holds_v<sess::is_loop>);
+static_assert(fc::armed_cell_holds_v<sess::is_end>);
+static_assert(fc::armed_cell_holds_v<sess::is_continue>);
+static_assert(fc::armed_cell_holds_v<sess::is_vendor_pinned>);
+static_assert(fc::armed_cell_holds_v<sess::is_empty_choice>);
+static_assert(fc::armed_cell_holds_v<sess::is_terminal_state>);
+static_assert(fc::armed_cell_holds_v<sess::is_well_formed>);
+
 // The payload walk of fixy/session/Payload.h.  A token reached owned is
 // classified, and a token behind a pointer, in an optional, or a read
 // proof outside its marker is refused.

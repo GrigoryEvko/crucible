@@ -55,6 +55,7 @@ test/fixy/test_session_recording.cpp ::foundation::effects::detail x1 — builds
 test/fixy/test_session_rollback.cpp ::fixy::session::detail x2 — pins the checkpoint erasure of a protocol
 test/fixy/test_session_rollback.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_subtype.cpp ::fixy::session::detail x1 — pins the bound of the async subtype search
+test/fixy/test_session_wire_word.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 
 # Self-test namespaces and helpers: a test that runs a self-test namespace of
 # a layer header, or checks one helper that no public door exposes.

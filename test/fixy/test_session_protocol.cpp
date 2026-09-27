@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <meta>
 #include <source_location>
 #include <tuple>
 #include <type_traits>
@@ -27,6 +28,19 @@ struct Ack {};
 
 using PingPong = s::Send<Msg, s::Recv<Ack, s::End>>;
 using PongPing = s::Recv<Msg, s::Send<Ack, s::End>>;
+
+// ── Each verdict is a concept ────────────────────────────────────────
+//
+// A concept has no specialization, so no declaration of a program can
+// change the answer of one of these verdicts.
+static_assert(std::meta::is_concept(^^s::is_dual_v),
+              "is_dual_v must stay a concept, so that no specialization makes two senders dual");
+static_assert(std::meta::is_concept(^^s::is_empty_choice_v),
+              "is_empty_choice_v must stay a concept, so that no specialization hides an empty choice");
+static_assert(std::meta::is_concept(^^s::is_terminal_state_v),
+              "is_terminal_state_v must stay a concept, so that no specialization ends a protocol early");
+static_assert(std::meta::is_concept(^^s::is_well_formed_v),
+              "is_well_formed_v must stay a concept, so that no specialization admits a protocol the registry refuses");
 
 // ── Combinator shape ─────────────────────────────────────────────────
 

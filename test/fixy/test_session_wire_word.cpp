@@ -1,47 +1,31 @@
 // The label word of a keyed branch is one value in every translation
 // unit.  This file and test_session_wire_word_peer.cpp include the
-// session headers in different orders, and each registers a combinator
-// of its own: this file before it reads its words, the peer file after.
-// The payload rules that give a branch its label key stand under the
-// seal of fixy/session/Protocol.h, so neither file can add one.  The word
-// is then the stable type id of the label key, and the label key is a
-// function of the payload type alone.  main compares the words of the two
-// files.
+// session headers in different orders, and the peer file reads its words
+// before it includes a second header.  The registrations and the payload
+// rules that give a branch its label key stand under the seals of
+// fixy/session/Protocol.h, so neither file can add one.  The word is then
+// the stable type id of the label key, and the label key is a function of
+// the payload type alone.  main compares the words of the two files.
+//
+// This file also specializes step_wire_word_v for one keyed step.  The
+// specialization changes what this file reads through that spelling, and
+// the handle still sends the word of the registry, so no user spelling
+// reaches the wire.
 
 #include <fixy/session/Projection.h>
 #include <fixy/session/Crash.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 
+#include <foundation/effects/Ctx.h>
+
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 
 namespace s = ::fixy::session;
 namespace tr = ::foundation::algebra::transition;
-
-namespace {
-
-template <class T, class K>
-struct Emit {};
-template <class T, class K>
-struct Absorb {};
-
-}  // namespace
-
-namespace fixy::session::combinators {
-inline constexpr ::foundation::algebra::transition::combinator wire_word_emit{
-    .shape = ^^::Emit,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::output,
-    .dual = ^^::Absorb,
-    .payload_variance = ::foundation::algebra::transition::variance::covariant};
-inline constexpr ::foundation::algebra::transition::combinator wire_word_absorb{
-    .shape = ^^::Absorb,
-    .kind = ::foundation::algebra::transition::shape_kind::step,
-    .direction = ::foundation::algebra::transition::polarity::input,
-    .dual = ^^::Emit,
-    .payload_variance = ::foundation::algebra::transition::variance::contravariant};
-}  // namespace fixy::session::combinators
 
 // The same definitions stand in the peer file.
 namespace wire_word_probe {
@@ -53,17 +37,49 @@ using Menu = ::fixy::session::Select<
     ::fixy::session::Send<::fixy::session::PeerMsg<Alice, Bye, int>, ::fixy::session::End>>;
 
 [[nodiscard]] std::array<std::uint64_t, 2> words_of_the_peer_unit() noexcept;
+
+using KeyedHello = ::fixy::session::Send<::fixy::session::Labelled<Hello, int>, ::fixy::session::End>;
+inline constexpr std::uint64_t forged_word = 7;
 }  // namespace wire_word_probe
+
+namespace fixy::session {
+template <>
+inline constexpr std::uint64_t step_wire_word_v<wire_word_probe::KeyedHello> = wire_word_probe::forged_word;
+}  // namespace fixy::session
 
 namespace {
 
 using wire_word_probe::Alice;
 using wire_word_probe::Bye;
 using wire_word_probe::Hello;
+using wire_word_probe::KeyedHello;
 using wire_word_probe::Menu;
 
-static_assert(s::is_well_formed_v<Emit<int, Menu>>, "the combinator of this file is in the registry");
 static_assert(s::is_keyed_choice_v<Menu>);
+static_assert(s::step_wire_word_v<KeyedHello> == wire_word_probe::forged_word,
+              "the specialization answers for its author");
+
+// The Resource of the keyed send: the word that the transport took.
+struct WordWire {
+    std::uint64_t* written = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+
+// Sends the keyed message of KeyedHello and returns the word that the
+// handle wrote.
+[[nodiscard]] std::uint64_t word_the_handle_sends() {
+    using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+    const BgCtx ctx{::foundation::effects::testing::bg()};
+    std::uint64_t written = 0;
+    auto head = s::mint_session<KeyedHello>(ctx, WordWire{&written});
+    auto at_value = std::move(head).send([](WordWire& wire, std::size_t& word) noexcept {
+        *wire.written = word;
+        return true;
+    });
+    auto at_end = std::move(at_value).send(1, [](WordWire&, int&) noexcept { return true; });
+    static_cast<void>(std::move(at_end).close());
+    return written;
+}
 
 inline constexpr std::array<std::uint64_t, 2> own_words{s::branch_wire_word_v<Menu, 0>, s::branch_wire_word_v<Menu, 1>};
 
@@ -95,6 +111,14 @@ int main() {
                 static_cast<unsigned long long>(peer_words[0]), static_cast<unsigned long long>(peer_words[1]));
     if (!is_same) {
         std::fprintf(stderr, "test_session_wire_word: two translation units put different words on one wire\n");
+        return 1;
+    }
+    const std::uint64_t sent = word_the_handle_sends();
+    if (sent != tr::label_word_of(^^s::Labelled<Hello, void>) || sent == wire_word_probe::forged_word) {
+        std::fprintf(stderr,
+                     "test_session_wire_word: the handle sent %016llx, and a specialization of step_wire_word_v "
+                     "reached the wire\n",
+                     static_cast<unsigned long long>(sent));
         return 1;
     }
     return 0;
