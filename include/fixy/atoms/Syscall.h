@@ -252,48 +252,51 @@ inline constexpr std::array<std::pair<sc::SyscallId, sc::SyscallFamily>, 50> sys
     return sc::SyscallFamily::Privilege;
 }
 
-template <sc::SyscallFamily F>
-struct syscall_family_row;
-
-template <>
-struct syscall_family_row<sc::SyscallFamily::NoSyscall> {
-    using type = ::foundation::effects::Row<>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::VdsoOnly> {
-    using type = ::foundation::effects::Row<>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::ReadOnlyState> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::FileMutation> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::MemoryMapping> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::ThreadSync> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::NetworkIo> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::ProcessControl> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
-};
-template <>
-struct syscall_family_row<sc::SyscallFamily::Privilege> {
-    using type = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+// The effects that a family of calls needs from its context.
+struct syscall_family_effects {
+    bool needs_io = true;
+    bool needs_block = true;
 };
 
+// One row per family.  The self-test below requires each enumerator of
+// SyscallFamily to hold exactly one row, as it does for the calls.
+inline constexpr std::array<std::pair<sc::SyscallFamily, syscall_family_effects>, 9> syscall_family_effects_table{{
+    {sc::SyscallFamily::NoSyscall, {.needs_io = false, .needs_block = false}},
+    {sc::SyscallFamily::VdsoOnly, {.needs_io = false, .needs_block = false}},
+    {sc::SyscallFamily::ReadOnlyState, {.needs_io = true, .needs_block = false}},
+    {sc::SyscallFamily::FileMutation, {.needs_io = true, .needs_block = true}},
+    {sc::SyscallFamily::MemoryMapping, {.needs_io = true, .needs_block = true}},
+    {sc::SyscallFamily::ThreadSync, {.needs_io = false, .needs_block = true}},
+    {sc::SyscallFamily::NetworkIo, {.needs_io = true, .needs_block = true}},
+    {sc::SyscallFamily::ProcessControl, {.needs_io = true, .needs_block = true}},
+    {sc::SyscallFamily::Privilege, {.needs_io = true, .needs_block = true}},
+}};
+
+// How many rows of the family table name the family.  Complexity: linear
+// in the table.
+[[nodiscard]] consteval std::size_t syscall_family_rows_naming_(sc::SyscallFamily family) noexcept {
+    std::size_t rows = 0;
+    for (const auto& [row_family, row_effects] : syscall_family_effects_table) {
+        if (row_family == family) ++rows;
+    }
+    return rows;
+}
+
+// The effects of a family.  A family with no row gets IO and Block, the
+// most restrictive answer, and the self-test refuses such a family.
+[[nodiscard]] consteval syscall_family_effects syscall_family_effects_of_(sc::SyscallFamily family) noexcept {
+    for (const auto& [row_family, row_effects] : syscall_family_effects_table) {
+        if (row_family == family) return row_effects;
+    }
+    return syscall_family_effects{};
+}
+
 template <sc::SyscallFamily F>
-using syscall_family_row_t = typename syscall_family_row<F>::type;
+using syscall_family_row_t = ::foundation::effects::row_union_t<
+    std::conditional_t<syscall_family_effects_of_(F).needs_io,
+                       ::foundation::effects::Row<::foundation::effects::Effect::IO>, ::foundation::effects::Row<>>,
+    std::conditional_t<syscall_family_effects_of_(F).needs_block,
+                       ::foundation::effects::Row<::foundation::effects::Effect::Block>, ::foundation::effects::Row<>>>;
 
 // A value of SyscallId that names a call of the catalog.  A cast from an
 // integer can make any value of the underlying type, and such a value
@@ -398,6 +401,19 @@ using SI = syscall::SyscallId;
     return true;
 }
 
+// Every family holds exactly one row of the family table.  A family with
+// none would take the fallback of syscall_family_effects_of_, and a
+// family with two would make its row depend on the order of the table.
+[[nodiscard]] consteval bool every_family_has_exactly_one_row_() noexcept {
+    bool exact = true;
+    static constexpr auto families = std::define_static_array(std::meta::enumerators_of(^^SF));
+    template for (constexpr auto family_member : families) {
+        constexpr SF family = [:family_member:];
+        exact = exact && (syscall_family_rows_naming_(family) == 1);
+    }
+    return exact;
+}
+
 #pragma GCC diagnostic pop
 
 static_assert(every_call_has_exactly_one_row_(),
@@ -416,11 +432,14 @@ static_assert(std::meta::enumerators_of(^^SI).size() == 50,
               "stored federation keys, and somebody has to justify it.");
 static_assert(std::meta::enumerators_of(^^SF).size() == 9,
               "fixy/atoms/Syscall.h: the family chain has nine families; a new family needs a row in "
-              "syscall_family_row and a place in the chain.");
+              "syscall_family_effects_table and a place in the chain.");
 
-// Every family has a row.
-static_assert(fe::every_enumerator_lifted<SF, syscall_family_row>(),
-              "fixy/atoms/Syscall.h: a SyscallFamily has no specialization of syscall_family_row.");
+// Every family has exactly one row, and the table holds no other row.
+static_assert(every_family_has_exactly_one_row_(),
+              "fixy/atoms/Syscall.h: an enumerator of SyscallFamily holds no row, or two rows, in "
+              "syscall_family_effects_table.  Add exactly one row that states its effects.");
+static_assert(syscall_family_effects_table.size() == std::meta::enumerators_of(^^SF).size(),
+              "fixy/atoms/Syscall.h: the family table and the family chain must have the same size.");
 
 static_assert(every_atom_in_is_rostered_<^^::fixy::atom::syscall, syscall_atom_roster>(),
               "fixy/atoms/Syscall.h: an atom declared in fixy::atom::syscall is missing from syscall_atom_roster.");
@@ -463,6 +482,17 @@ static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::epoll_wait>>, fe::R
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_nanosleep>>, fe::Row<fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::bpf>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::family<SF::NoSyscall>>, fe::Row<>>);
+
+// The row of each family, in the canonical form that a hand-written row
+// has, so that a lifted row and a stated row are one type.
+static_assert(std::is_same_v<syscall_family_row_t<SF::VdsoOnly>, fe::Row<>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::ReadOnlyState>, fe::Row<fe::Effect::IO>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::FileMutation>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::MemoryMapping>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::ThreadSync>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::NetworkIo>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::ProcessControl>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::Privilege>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 
 // A call and a family are distinct atoms, and two calls are distinct.
 static_assert(!std::is_same_v<syscall::per<SI::write>, syscall::per<SI::pwrite>>);
