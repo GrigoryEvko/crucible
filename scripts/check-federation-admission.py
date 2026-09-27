@@ -48,8 +48,10 @@ THE RULE
 
 WHAT READS THE SITES
     The parse tree of the pinned tree-sitter kit (scripts/tsast.py), over
-    each C++ file that git lists and that names the class, names a member
-    name, or holds a line splice, which can split a name.  A name is read
+    each C++ file that git tracks and that names the class, names a member
+    name, or holds a line splice, which can split a name.  An untracked file
+    is out of scope, because the export of a guard run under the tree holds
+    a copy of include/fixy/Federation.h at a different path.  A name is read
     from its tokens, so a comment or a splice inside it hides nothing.  A
     file that the parser cannot read fails.
 
@@ -100,11 +102,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import preprocessed  # noqa: E402  (the path insert above has to come first)
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 CLASS = "FederationAdmission"
 AUTHORED = "include/fixy/Federation.h"
-EXCLUDED_DIRS = ("build", "cmake-build-", "third_party", "external", "vendor", ".git", ".tools")
 CLASS_HEADS = ("class_specifier", "struct_specifier", "union_specifier")
 CLASS_KEYS = frozenset({"class", "struct", "union"})
 # Each declarator node that wraps the declarator id in its `declarator` field.
@@ -405,18 +407,14 @@ def expanded_sites(root: Path, compile_db: Path, members: set[str], problems: li
 
 
 def listed_files(root: Path, needles: tuple[bytes, ...]) -> list[str]:
-    """Return the C++ files under the root that hold a needle or a line splice, relative to the root."""
-    try:
-        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-                             check=True, capture_output=True).stdout.decode(errors="replace")
-        candidates = [path for path in out.split("\0") if path]
-    except (OSError, subprocess.CalledProcessError):
-        candidates = []
-        for directory, dirs, names in os.walk(root):
-            dirs[:] = sorted(d for d in dirs if not d.startswith(EXCLUDED_DIRS))
-            candidates += [str((Path(directory) / name).relative_to(root)) for name in names]
+    """Return the tracked C++ files under the root that hold a needle or a line splice, relative to the root.
+
+    tsast.tracked_files gives the files.  An untracked file is out of scope,
+    because the export of a guard run under the tree holds a copy of the
+    authored file at a different path.
+    """
     found = []
-    for path in sorted(candidates):
+    for path in tsast.tracked_files(root):
         full = root / path
         if tsast.is_in_cpp_scope(path) and full.is_file():
             data = full.read_bytes()
@@ -674,6 +672,22 @@ def self_test() -> int:
         for rel in [*planted, "src/planted/broken.cpp"]:
             (root / rel).unlink()
         expect("a tree with only legal uses exits 0", captured(lambda: run(root))[0] == 0)
+
+    # In a work tree, an untracked file is out of scope: a guard-run export
+    # holds a copy of the authored file at another path.
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work).resolve()
+        throwaway_repo.init(root)
+        (root / AUTHORED).parent.mkdir(parents=True)
+        (root / AUTHORED).write_text(authored, encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        copy = root / "grun" / "change" / AUTHORED
+        copy.parent.mkdir(parents=True)
+        copy.write_text(authored, encoding="utf-8")
+        expect("an untracked copy of the authored file is out of scope", captured(lambda: run(root))[0] == 0)
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        code, report = captured(lambda: run(root))
+        expect("the same copy fails once git tracks it", code == 1 and f"grun/change/{AUTHORED}:2" in report, True)
 
     if failures:
         print(f"check-federation-admission --self-test: FAILED — {len(failures)} case(s) did not hold")

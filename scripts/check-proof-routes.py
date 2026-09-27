@@ -81,8 +81,10 @@ Two passes
 Both passes read parse trees of the pinned tree-sitter kit
 (scripts/tsast.py): each rule is a node shape, and a comment or a literal is
 its own node, so neither can form a site.  The lexical pass parses each C
-and C++ source file that git tracks, and each untracked file that
-.gitignore does not exclude.  The preprocessed pass runs with
+and C++ source file that git tracks.  An untracked file is out of scope:
+the export and the build of a guard run, or the scratch file of another
+tool, can appear under the tree and vanish while this guard reads it.  The
+preprocessed pass runs with
 --compile-db: it runs each entry of the compile database through the
 preprocessor with the flags of the build, and it parses each distinct
 expansion of each file, so a shape that a macro or token pasting forms is
@@ -152,6 +154,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 from preprocessed import Store, files_of, joined  # noqa: E402
 
@@ -453,17 +456,11 @@ def in_scope(path: str) -> bool:
 
 
 def listed_files(root: Path) -> list[str]:
-    """The files git lists under the root, or every file under it outside a work tree."""
-    try:
-        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-                             check=True, capture_output=True).stdout
-        return [p for p in out.decode(errors="replace").split("\0") if p and (root / p).is_file()]
-    except (OSError, subprocess.CalledProcessError):
-        found = []
-        for directory, dirs, names in os.walk(root):
-            dirs[:] = [d for d in dirs if not d.startswith((".git", "build"))]
-            found += [str((Path(directory) / n).relative_to(root)) for n in names]
-        return found
+    """The files git tracks under the root, or every file under it outside a work tree (tsast.tracked_files).
+
+    An untracked file is out of scope, because a guard run or another tool
+    can write one under the tree while this guard reads it."""
+    return [path for path in tsast.tracked_files(root) if (root / path).is_file()]
 
 
 def roster_names(root: Path) -> dict[str, set[str]]:
@@ -987,6 +984,26 @@ def self_test() -> int:
                                   str(root / "not-built"), "--allowlist", str(allow)], capture_output=True, text=True)
         if missing.returncode != 3 or "is not built" not in missing.stderr:
             failures.append(f"a proof-name binary that is not built did not skip with exit 3:\n{missing.stderr}")
+    # In a work tree, an untracked file is out of scope, because the export
+    # of a guard run can appear under the tree while the guard reads it.
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch)
+        throwaway_repo.init(root)
+        (root / "scripts").mkdir()
+        allow = root / "scripts" / "allow.txt"
+        allow.write_text("# none\n")
+        (root / "clean.cpp").write_text("int clean = 0;\n")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        (root / "grun" / "change").mkdir(parents=True)
+        (root / "grun" / "change" / "export.cpp").write_text("union Exported { int a; float b; };\n")
+        if scan(root, None, None, allow, "check") != 0:
+            failures.append("an untracked file was read")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        report = io.StringIO()
+        with contextlib.redirect_stderr(report):
+            verdict = scan(root, None, None, allow, "check")
+        if verdict != 1 or "grun/change/export.cpp:union:Exported" not in report.getvalue():
+            failures.append(f"the same file was not refused once git tracks it:\n{report.getvalue()}")
     for failure in failures:
         print(f"check-proof-routes: SELF-TEST FAILED: {failure}", file=sys.stderr)
     if failures:

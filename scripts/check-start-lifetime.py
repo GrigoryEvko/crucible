@@ -68,10 +68,12 @@ a mention there is not a use.
 
 The lexical pass parses each source file, and the body of each #define on
 its own with tsast.macro_bodies.  It follows each #include whose operand is
-a literal, whatever the suffix of the named file.  Its scope is every C and
-C++ source file that git tracks, every untracked file that .gitignore does
-not exclude, and with --compile-db each source that the compile database
-names.  A file or a macro body that the parser cannot read is read from its
+a literal to a tracked file, whatever the suffix of the named file.  Its
+scope is every C and C++ source file that git tracks, and with --compile-db
+each source that the compile database names.  An untracked file is out of
+scope: the export and the build of a guard run, or the scratch file of
+another tool, can appear under the tree and vanish while this guard reads
+it.  A file or a macro body that the parser cannot read is read from its
 preprocessing tokens, so no use is lost.  The tokens then bound the argument
 list by its angle brackets.
 
@@ -143,6 +145,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 from preprocessed import Store, files_of  # noqa: E402
 
@@ -151,7 +154,6 @@ NAMES = frozenset({"start_lifetime_as", "start_lifetime_as_array"})
 SOURCE_SUFFIXES = frozenset({".c", ".C", ".h", ".H", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".c++", ".h++",
                              ".cp", ".CPP", ".ixx", ".cppm", ".mpp", ".inl", ".ipp", ".tpp", ".tcc", ".txx",
                              ".icc", ".inc", ".ii"})
-SKIPPED_DIRS = frozenset({".git", "third_party", "external", "vendor", "__pycache__", "node_modules"})
 # The directories that an include path is resolved against, after the
 # directory of the file that names it.
 INCLUDE_ROOTS = ("include", "", "src", "test", "vessel", "bench", "tools", "fuzz", "examples")
@@ -183,21 +185,14 @@ def is_source(path: Path) -> bool:
 
 
 def listed_files(root: Path) -> list[Path]:
-    """The files git lists under the root, or every file under it outside a work tree.
+    """The files git tracks under the root, or every file under it outside a work tree (tsast.tracked_files).
+
+    An untracked file is out of scope, because a guard run or another tool
+    can write one under the tree while this guard reads it.
 
     Complexity: linear in the number of files under the root.
     """
-    try:
-        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-                             check=True, capture_output=True).stdout
-        return [root / p for p in out.decode(errors="replace").split("\0") if p]
-    except (OSError, subprocess.CalledProcessError):
-        found = []
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames
-                           if d not in SKIPPED_DIRS and not d.startswith("build") and not d.startswith("cmake-build")]
-            found.extend(Path(dirpath) / name for name in filenames)
-        return found
+    return [root / path for path in tsast.tracked_files(root)]
 
 
 def database_entries(compile_db: Path | None) -> list[dict]:
@@ -342,15 +337,18 @@ def with_defines(trees: list[tsast.Tree]) -> list[tsast.Tree]:
 
 
 def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
-    """Record each use in scope, and follow each include directive to the file it names.
+    """Record each use in scope, and follow each include directive to the file it names when that file is in scope.
 
+    The scope is the tracked files and the sources of the compile database.
     Each file is parsed once, in rounds: a round parses the files that the
     last round found.  Complexity: linear in the total size of the files in
     scope and of their macro bodies.
     """
     uses: Uses = defaultdict(list)
-    pending = {p.resolve() for p in listed_files(root) if is_source(p) and p.is_file()}
-    pending |= {entry_source(e).resolve() for e in database_entries(compile_db) if entry_source(e).is_file()}
+    listed = {p.resolve() for p in listed_files(root) if p.is_file()}
+    sources = {entry_source(e).resolve() for e in database_entries(compile_db) if entry_source(e).is_file()}
+    in_scope = listed | sources
+    pending = {p for p in listed if is_source(p)} | sources
     seen: set[Path] = set()
     while pending:
         batch = sorted(pending - seen)
@@ -369,7 +367,7 @@ def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
                 uses[f"{where}:{key}"].append(line)
             for delimiter, name in include_targets(tree):
                 target = resolve_include(root, path, delimiter, name)
-                if target is not None and target not in seen:
+                if target is not None and target not in seen and target in in_scope:
                     pending.add(target)
         for body in tsast.macro_bodies(with_defines(clean)):
             where = shown(root, Path(body.define.tree.path))
@@ -796,6 +794,31 @@ def self_test() -> int:
         if code != 1 or "include/planted/frozen/Reviewed.h:" not in report:
             failures.append(f"a missing frozen declaration did not refuse the frozen site (exit {code}):\n{report}")
 
+    # In a work tree, an untracked file is out of scope, because the export
+    # of a guard run can appear under the tree while the guard reads it.  A
+    # tracked include does not bring an untracked file into scope either.
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work).resolve()
+        throwaway_repo.init(root)
+        (root / "scripts").mkdir()
+        (root / "scripts/frozen-paths.txt").write_text("# planted\n")
+        (root / "src").mkdir()
+        (root / "src/Clean.h").write_text('#pragma once\n#include "../grun/Included.txt"\n')
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        (root / "grun/change").mkdir(parents=True)
+        (root / "grun/change/Export.h").write_text(
+            "inline void* exported(unsigned char* buf) { return std::start_lifetime_as<Proof[20]>(buf); }\n")
+        (root / "grun/Included.txt").write_text(
+            "inline void* included(unsigned char* buf) { return std::start_lifetime_as<Proof[21]>(buf); }\n")
+        code, report = run(root)
+        if code != 0:
+            failures.append(f"an untracked file was read (exit {code}):\n{report}")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        code, report = run(root)
+        if code != 1 or "grun/change/Export.h:start_lifetime_as<Proof[20]>" not in report \
+                or "grun/Included.txt:start_lifetime_as<Proof[21]>" not in report:
+            failures.append(f"the same files were not refused once git tracks them (exit {code}):\n{report}")
+
     for failure in failures:
         print(f"check-start-lifetime --self-test: FAIL — {failure}", file=sys.stderr)
     if failures:
@@ -805,8 +828,8 @@ def self_test() -> int:
           "the source trees are reported, and so are the pasted name, the macro include, the -I header, a "
           "generated source and each expansion of a macro body.  Comments, literals, the frozen site and the "
           "fixture are not.  An entry cannot admit a path outside the three places, the cache gives the same "
-          "verdict, a changed dependency makes its entry stale, a preprocessor failure refuses the run, and a "
-          "missing frozen list freezes nothing.")
+          "verdict, a changed dependency makes its entry stale, a preprocessor failure refuses the run, a "
+          "missing frozen list freezes nothing, and an untracked file is out of scope.")
     return 0
 
 

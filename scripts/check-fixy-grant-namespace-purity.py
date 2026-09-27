@@ -21,7 +21,9 @@ THE RULE
       * the attack fixtures, cheat probes and per-domain negative fixtures that
         exercise this residual gap on purpose.  Each one must carry a comment
         that holds the words `known residual gap`
-    A file under misc/ is out of scope.
+    A file under misc/ is out of scope.  So is a file that git does not
+    track: the export of a guard run under the tree holds a copy of each
+    catalog at a different path, and it can disappear while the guard runs.
 
 WHAT READS THE CODE
     The parse tree of the pinned tree-sitter kit (scripts/tsast.py).  A
@@ -49,7 +51,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import tsast  # noqa: E402  (the path insert above has to come first)
+import throwaway_repo  # noqa: E402  (the path insert above has to come first)
+import tsast  # noqa: E402
 
 GRANT = ("crucible", "fixy", "grant")
 ACK = "known residual gap"
@@ -165,19 +168,15 @@ def acknowledged(tree: tsast.Tree) -> bool:
 
 
 def candidate_files(root: Path) -> list[str]:
-    """Return the C++ files that git lists under the root, relative to it and sorted.
+    """Return the C++ files that git tracks under the root, relative to it and sorted (tsast.tracked_files).
+
+    An untracked file is out of scope.  The export of a guard run under the
+    tree holds a copy of each catalog at a different path, and another tool
+    can remove an untracked file while this guard reads it.
 
     Complexity: linear in the file count of the tree.
     """
-    inside = subprocess.run(["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
-                            capture_output=True, text=True, check=False)
-    if inside.returncode == 0 and inside.stdout.strip() == "true":
-        listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-                                capture_output=True, check=True).stdout.decode().split("\0")
-        paths = sorted({path for path in listed if path})
-    else:
-        paths = sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
-    return [path for path in paths if tsast.is_in_cpp_scope(path) and (root / path).is_file()
+    return [path for path in tsast.tracked_files(root) if tsast.is_in_cpp_scope(path) and (root / path).is_file()
             and not path.startswith(OUT_OF_SCOPE)]
 
 
@@ -317,6 +316,28 @@ def self_test() -> int:
         plant("src/Foreign.cpp", "namespace broken { void f() { g(1) { } } }\n")
         code, report = captured()
         expect("a file the parser cannot read fails", code == 1 and "parse failure" in report)
+
+    # In a work tree, an untracked file is out of scope: a guard-run export
+    # holds a catalog copy at a path outside AUTHORING.
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work).resolve()
+        throwaway_repo.init(root)
+        (root / "include/crucible/fixy").mkdir(parents=True)
+        (root / "include/crucible/fixy/_Grant.h").write_text("namespace crucible::fixy::grant { struct tag {}; }\n")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        (root / "grun/change/include/crucible/fixy").mkdir(parents=True)
+        (root / "grun/change/include/crucible/fixy/_Grant.h").write_text(
+            "namespace crucible::fixy::grant { struct tag {}; }\n")
+        buffer = io.StringIO()
+        with contextlib.redirect_stderr(buffer):
+            code = check(root)
+        expect("an untracked copy of a catalog is out of scope", code == 0 and "clean" in buffer.getvalue())
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        buffer = io.StringIO()
+        with contextlib.redirect_stderr(buffer):
+            code = check(root)
+        expect("the same copy fails once git tracks it",
+               code == 1 and "reopen at grun/change/include/crucible/fixy/_Grant.h:1" in buffer.getvalue())
 
     if failures:
         print(f"check-fixy-grant-namespace-purity --self-test: FAILED — {len(failures)} case(s) did not hold")
