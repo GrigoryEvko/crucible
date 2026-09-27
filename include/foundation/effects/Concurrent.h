@@ -13,10 +13,11 @@
 //
 // Budgets are uint64_t, and unsigned addition wraps.  A wrapped sum
 // reads as a smaller demand than either operand, which would let an
-// oversubscribed schedule pass a fitting check.  Two gates refuse a
+// oversubscribed schedule pass a fitting check.  Three gates refuse a
 // wrap.  ConcurrentRow refuses a pack whose sum on one axis wraps, so
 // the demand of a row on an axis is always the true sum.  The sum of
-// two rows requires ConcurrentlySchedulable, so it never wraps either.
+// two rows requires ConcurrentlySchedulable, and the sum of any number
+// of rows requires that the rows together fit, so neither sum wraps.
 
 #include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Decide.h>
@@ -165,9 +166,39 @@ template <typename R1, typename R2>
     requires ConcurrentlySchedulable<R1, R2>
 using concurrent_row_sum_t = [:detail::canonical_sum_<R1, R2>():];
 
-// The fold direction is fixed even though the sum is commutative and
-// associative, so that the same inputs always give the same type.
+// The sum of any number of rows.  Its constraint admits only concurrent
+// rows whose demands together fit in uint64_t on each axis, so the fold
+// below never names a partial sum that wraps, and a caller can ask
+// whether a sum exists with a requires expression.  The fold direction is
+// fixed even though the sum is commutative and associative, so that the
+// same inputs always give the same type.
 namespace detail {
+
+// True when every argument is a concurrent row and no axis of the
+// arguments together sums past the top of uint64_t.  Every partial sum is
+// checked.  Complexity: linear in the number of rows for each axis, at
+// compile time only.
+template <typename... Rs>
+[[nodiscard]] consteval bool rows_sum_fit_() noexcept {
+    if constexpr (!(IsConcurrentRow<Rs> && ...)) {
+        return false;
+    } else {
+        static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+        template for (constexpr auto axis : axes) {
+            constexpr ResourceKind kind = [:axis:];
+            constexpr std::array<std::uint64_t, sizeof...(Rs)> demands{concurrent_row_value_v<kind, Rs>...};
+            std::uint64_t axis_sum = 0;
+            for (const std::uint64_t demand : demands) {
+                if (!::foundation::decide::no_overflow_sum(axis_sum, demand)) return false;
+                axis_sum += demand;
+            }
+        }
+#pragma GCC diagnostic pop
+        return true;
+    }
+}
 
 template <typename... Rs>
 struct concurrent_row_n;
@@ -190,6 +221,7 @@ struct concurrent_row_n<R1, R2, Rest...> {
 }  // namespace detail
 
 template <typename... Rs>
+    requires(detail::rows_sum_fit_<Rs...>())
 using concurrent_row_n_t = typename detail::concurrent_row_n<Rs...>::type;
 
 // A row is canonical when it names each axis at most once, and then
@@ -287,6 +319,20 @@ static_assert(std::is_same_v<concurrent_row_n_t<ConcurrentRow<SmBudget<10>>, Con
                              ConcurrentRow<SmBudget<100>>>);
 static_assert(std::is_same_v<concurrent_row_n_t<>, ConcurrentRow<>>);
 static_assert(std::is_same_v<concurrent_row_n_t<ConcurrentRow<SmBudget<32>>>, ConcurrentRow<SmBudget<32>>>);
+
+// A sum that wraps on one axis, at any position of the fold, names no
+// type, and neither does an argument that is not a row.  A sum that
+// reaches the top of uint64_t exactly still exists.
+template <typename... Rs>
+concept HasConcurrentSum = requires { typename concurrent_row_n_t<Rs...>; };
+
+static_assert(HasConcurrentSum<ConcurrentRow<SmBudget<UINT64_MAX - 1>>, ConcurrentRow<SmBudget<1>>, ConcurrentRow<>>);
+static_assert(!HasConcurrentSum<ConcurrentRow<SmBudget<UINT64_MAX>>, ConcurrentRow<SmBudget<1>>, ConcurrentRow<>>);
+static_assert(!HasConcurrentSum<ConcurrentRow<>, ConcurrentRow<SmBudget<UINT64_MAX>>, ConcurrentRow<SmBudget<1>>>);
+static_assert(!HasConcurrentSum<ConcurrentRow<SmBudget<UINT64_MAX / 2 + 1>>, ConcurrentRow<HbmBytes<1>>,
+                                ConcurrentRow<SmBudget<UINT64_MAX / 2 + 1>>>);
+static_assert(!HasConcurrentSum<int>);
+static_assert(!HasConcurrentSum<ConcurrentRow<>, SmBudget<1>>);
 
 static_assert(concurrent_row_value_v<ResourceKind::Sm, ConcurrentRow<SmBudget<32>>> == 32);
 static_assert(concurrent_row_value_v<ResourceKind::NicQp, ConcurrentRow<SmBudget<32>>> == 0);

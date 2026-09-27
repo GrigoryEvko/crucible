@@ -220,6 +220,15 @@ foundation_neg_compile_test(neg_concurrent_rows_that_wrap_are_not_schedulable
 foundation_neg_compile_test(neg_concurrent_row_sum_that_wraps
   "template constraint failure for .template<class R1, class R2> +requires +ConcurrentlySchedulable<R1, R2> using foundation::effects::concurrent_row_sum_t"
   "the expression .\\(sums_fit_pairwise_<R1, R2>\\)\\(\\) .with R1 = foundation::effects::ConcurrentRow<foundation::effects::resource::HbmBytes<18446744073709551615> >")
+# The sum of any number of rows has no type when a partial sum wraps or an
+# argument is not a row.  The constraint refuses at the call site, before
+# the fold names a partial sum.
+foundation_neg_compile_test(neg_concurrent_row_n_that_wraps
+  "template constraint failure for .template<class \\.\\.\\. Rs> +requires \\(rows_sum_fit_<Rs \\.\\.\\.>\\)\\(\\) using foundation::effects::concurrent_row_n_t"
+  "the expression .\\(rows_sum_fit_<Rs \\.\\.\\.>\\)\\(\\) \\[with Rs = \\{foundation::effects::ConcurrentRow<foundation::effects::resource::SmBudget<18446744073709551615> >, foundation::effects::ConcurrentRow<foundation::effects::resource::SmBudget<1> >, foundation::effects::ConcurrentRow<>\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_concurrent_row_n_refuses_a_non_row
+  "template constraint failure for .template<class \\.\\.\\. Rs> +requires \\(rows_sum_fit_<Rs \\.\\.\\.>\\)\\(\\) using foundation::effects::concurrent_row_n_t"
+  "the expression .\\(rows_sum_fit_<Rs \\.\\.\\.>\\)\\(\\) \\[with Rs = \\{int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_resource_tag_refuses_a_forged_kind
   "constraints not satisfied"
   "nested requirement .IsResourceKind<.*>. is not satisfied")
