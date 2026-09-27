@@ -27,7 +27,7 @@
 // Each query that reads a file, or that asks the file system whether a
 // path exists, takes a context that owns IO and Block, because the open
 // and the read can wait on the kernel.  The gate is fixy::CtxFitsFileOpen.
-// The two parsers and num_online_cpus take no context.
+// Only the two parsers take no context.
 
 #include <fixy/OwnedFile.h>
 #include <foundation/contracts/Decide.h>
@@ -154,8 +154,11 @@ static_assert(CPU_SETSIZE >= 1024, "The allowed_cpus fallback iterates a fixed-s
                                    "holds at least 1024 CPUs.");
 #endif
 
+// glibc answers _SC_NPROCESSORS_ONLN with a read of
+// /sys/devices/system/cpu/online, so this query also takes the context.
 // One on failure, which is the conservative answer.
-[[nodiscard]] inline int num_online_cpus() noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline int num_online_cpus(Ctx const&) noexcept {
 #ifdef __linux__
     const long n = sysconf(_SC_NPROCESSORS_ONLN);
     return (n > 0) ? static_cast<int>(n) : 1;
@@ -169,7 +172,8 @@ namespace detail {
 // Reached when procfs is unreadable or malformed. Ask the kernel
 // directly, and if even that fails assume every online CPU is
 // available.
-[[nodiscard, gnu::cold]] inline std::vector<int> allowed_cpus_fallback() noexcept {
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard, gnu::cold]] inline std::vector<int> allowed_cpus_fallback(Ctx const& ctx) noexcept {
 #ifdef __linux__
     cpu_set_t set;
     CPU_ZERO(&set);
@@ -181,7 +185,7 @@ namespace detail {
     }
 #endif
     std::vector<int> out;
-    const int n = num_online_cpus();
+    const int n = num_online_cpus(ctx);
     for (int c = 0; c < n; ++c)
         out.push_back(c);
     return out;
@@ -195,7 +199,7 @@ template <::fixy::CtxFitsFileOpen Ctx>
 [[nodiscard]] inline std::vector<int> allowed_cpus(Ctx const& ctx) noexcept {
     const auto status = detail::read_small_file(ctx, "/proc/self/status");
     if (auto v = detail::parse_cpus_allowed_list(status); !v.empty()) return v;
-    return detail::allowed_cpus_fallback();
+    return detail::allowed_cpus_fallback(ctx);
 }
 
 // The CPUs the kernel command line has withheld from the scheduler.

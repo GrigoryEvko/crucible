@@ -42,7 +42,7 @@ constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
 void test_topology_basic() {
     using namespace crucible::warden;
 
-    const int n = num_online_cpus();
+    const int n = num_online_cpus(kStartup);
     CHECK(n >= 1, "must see at least one online CPU");
 
     const auto allowed = allowed_cpus(kStartup);
