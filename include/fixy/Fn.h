@@ -17,11 +17,12 @@
 // because they could not say anything but "default".  They are gone,
 // along with Profile.h, sketch mode and CRUCIBLE_FIXY_STRICT.
 //
-// The resolver is one fold rather than 45 specialisations.  Asking for
-// the grade on an axis walks the pack once and takes the entry whose
-// axis matches, or the axis's strict pole when none does.  Adding an
-// axis to the enum needs no edit here, and adding an atom needs no edit
-// anywhere but the atom's own declaration.
+// The resolver is one fold and not 45 specializations, and it is
+// fixy::collision::grades in fixy/Collision.h, which the collision rules
+// read too.  A request for the grade on an axis walks the pack one time
+// and takes the entry whose axis agrees, or the strict pole of the axis
+// when no entry agrees.  An axis added to the enum takes no edit here,
+// and an atom takes no edit other than its own declaration.
 //
 // Old spelling: include/crucible/fixy/_Fn.h, include/crucible/safety/_Fn.h.
 
@@ -88,71 +89,21 @@ concept IsRoleFor = is_fn_v<Role<T>> && detail::role::is_accepted_fn<Role<T>>::v
 
 namespace detail::resolve {
 
-// An expansion statement redeclares its variable once per expansion and
-// each declaration shadows the one before.  The warning is right about
-// the shape and wrong about the risk.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-
-// The silent default is only honest while every axis is classified.
-//
-// Thirteen axes take axis_traits' defaulted primary, whose pole is
-// pole::Unconstrained<A>.  For those thirteen that IS the strict pole:
-// each is a Fact axis, and a binding that says nothing about it states
-// no fact.  What makes that safe is the roster in Axis.h: an axis
-// reaches the primary only by being named there.
-//
-// An axis added to the enum and classified neither way would reach the
-// primary anyway and collect a Fact pole without anyone classifying it.
-// On an axis that carries a right, that pole would be a free pass in
-// every binding in the tree.
-// Axis.h refuses that, and this assertion is where the resolver says it
-// depends on the refusal, because this is the file that would hand the
-// pass out.
-static_assert(::fixy::every_axis_has_traits(),
-              "fixy::fn resolves an unmentioned axis to axis_traits<A>::strict, so every axis "
-              "must be classified: either it carries a hand-written specialisation, or it is "
-              "named on Axis.h's defaulted_axes roster as a Fact axis whose pole claims nothing.");
-
-// The grade an axis takes when the pack says nothing about it.  Every
-// axis but one has a strict pole.  Type is the exception: there is no
-// default function type, so its grade is the payload the caller named.
-template <Axis A, class T>
-[[nodiscard]] consteval std::meta::info default_grade_() noexcept {
-    // A value outside the enum reaches axis_traits' primary and would
-    // come back Unconstrained, which reads as a grade on an axis that
-    // does not exist.  Only a cast produces such a value, and a cast
-    // into this resolver is a mistake rather than a question.
-    static_assert(std::to_underlying(A) < ::fixy::axis_count,
-                  "fixy::fn::grade_on<A>: A is not an Axis enumerator.  A value outside the enum "
-                  "reaches the defaulted axis_traits primary and would resolve to an unconstrained "
-                  "pole, a grade on an axis that does not exist.");
-    if constexpr (requires { axis_traits<A>::caller_supplied; }) {
-        return ^^T;
-    } else {
-        using Strict = typename axis_traits<A>::strict;
-        return ^^Strict;
-    }
-}
-
-// The one fold.  The pack is walked once and the entry whose axis
-// matches wins; nothing matching leaves the default in place.  Tier 4
-// has already refused a pack with two atoms on one axis, so "the last
-// match wins" and "the only match wins" are the same answer here.
+// The grade on one axis.  The Type axis has no pole, so its grade is the
+// payload the binding names.  Every other axis resolves through
+// fixy::collision::grades, the resolver that the collision rules and the
+// corpus read, so a binding and its rules cannot resolve one pack two
+// ways.  That resolver also holds the assertion that every axis is
+// classified, and it refuses a value outside the enum.
 template <Axis A, class T, class... Atoms>
 [[nodiscard]] consteval std::meta::info grade_() noexcept {
-    std::meta::info found = default_grade_<A, T>();
-    static constexpr auto entries = ::fixy::detail::reject::pack_entries_<Atoms...>();
-    template for (constexpr auto entry : entries) {
-        using Candidate = [:entry:];
-        if constexpr (::fixy::atom::IsAtom<Candidate>) {
-            if constexpr (Candidate::axis == A) found = entry;
-        }
+    if constexpr (IsCallerSupplied<A>) {
+        return ^^T;
+    } else {
+        using Grade = typename ::fixy::collision::grades<Atoms...>::template on<A>;
+        return ^^Grade;
     }
-    return found;
 }
-
-#pragma GCC diagnostic pop
 
 }  // namespace detail::resolve
 
@@ -634,11 +585,11 @@ static_assert(duplicate_tag_or_void_t<atom::copy, atom::affine>::name == "Duplic
 static_assert(std::is_same_v<duplicate_tag_or_void_t<atom::copy, atom::mut_append>, void>);
 
 // The door carries the value through and the type records the pack.
-[[nodiscard]] consteval bool mint_carries_the_value() noexcept {
+[[nodiscard]] consteval bool door_carries_the_value() noexcept {
     const auto bound = mint_fn<int, atom::copy>(42);
     return bound.value() == 42;
 }
-static_assert(mint_carries_the_value());
+static_assert(door_carries_the_value());
 static_assert(std::is_same_v<decltype(mint_fn<int, atom::copy>(0)), fn<int, atom::copy>>);
 
 // The value constructor is not a public door.  A caller can still

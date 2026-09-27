@@ -212,7 +212,6 @@ apply to the row.
 | `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_carries_the_value` | `include/fixy/Fn.h` | Y | Y | Y | · | token | · | · | HS14: 0 ⚠ |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
 | `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
@@ -358,4 +357,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | · | 5 |
+| new (`include/foundation/`, `include/fixy/`) | 112 | 53 | 56 | 3 | 0 | · | 4 |

@@ -43,7 +43,6 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <vector>
 
 namespace fixy {
 
@@ -85,14 +84,10 @@ namespace detail::reject {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
-// The pack as reflections.  define_static_array gives each element a
-// constant address, which `template for` needs to bind it as constexpr
-// and a splice needs to name its type.  An empty pack yields an empty
-// array and every walk below iterates zero times.
-template <class... Atoms>
-[[nodiscard]] consteval auto pack_entries_() {
-    return std::define_static_array(std::vector<std::meta::info>{^^Atoms...});
-}
+// The pack as reflections, from the one helper in fixy/Collision.h.  An
+// empty pack gives an empty array, and each walk below does zero
+// iterations.
+using ::fixy::collision::detail::pack_entries_;
 
 // How many atoms in the pack sit on one axis.  Counting rather than
 // testing for a second lets the duplicate diagnostic say how many.

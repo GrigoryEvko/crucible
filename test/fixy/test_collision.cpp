@@ -917,8 +917,8 @@ static_assert(::fixy::IsAccepted<int, at::borrow>);
 static_assert(::fixy::IsAccepted<int, at::coroutine>);
 static_assert(!::fixy::IsAccepted<int, at::borrow, at::coroutine>);
 static_assert(!::fixy::IsAccepted<int, at::capability_usage, at::trust_unverified>);
-static_assert(col::CollisionRules<::fixy::fn<int, at::copy>>::valid);
-static_assert(!col::CollisionRules<::fixy::fn<int, at::borrow, at::coroutine>>::valid);
+static_assert(col::rules_of<int, at::copy>::valid);
+static_assert(!col::rules_of<int, at::borrow, at::coroutine>::valid);
 
 // W001 reaches the gate through the lifted row.  The gate admits a cold
 // or a warm binding with the same row.

@@ -11,9 +11,9 @@
 // Live rules and pending rules
 //
 // A rule can only fire if an atom can move both of its axes off their
-// strict poles.  The shipped atom catalog reaches 24 of the 33 axes;
-// eight have no atom at all, so a rule reading one of them can never
-// fire no matter what a caller writes.
+// strict poles.  The shipped atom catalog reaches every axis but Type,
+// whose grade is the payload the binding names.  A rule that read an
+// axis with no atom could never fire, no matter what a caller writes.
 //
 // A rule that cannot fire is a comment.  A rule that cannot fire and
 // that nobody can tell cannot fire is worse than a comment: it looks
@@ -30,13 +30,13 @@
 // ---------------------------------------------------------------------
 // Why grades<Atoms...> and not fn
 //
-// CollisionRules is partial-specialised on fn, and a rule that read
-// `F::something` would complete fn, whose body asserts this file's
-// ValidComposition, and the instantiation recurses — GCC reports
-// "satisfaction of atomic constraint depends on itself".  Every rule
-// below reads grades<Atoms...>::on<Axis::X> instead, which is computed
-// from the pack alone and never needs fn complete.  fn is forward
-// declared here for the partial specialization and nothing more.
+// A rule that reads a member of fn completes fn, whose body asserts
+// ValidComposition in fixy/Reject.h, and the instantiation recurses.  GCC
+// reports "satisfaction of atomic constraint depends on itself".  Every
+// rule below reads grades<Atoms...>::on<Axis::X> instead, which it
+// calculates from the pack alone, so the rule does not complete fn.  fn
+// reads its own grades through the same resolver, so a binding and its
+// rules cannot resolve one pack two ways.
 //
 // ---------------------------------------------------------------------
 // Why rules_of<Payload, Atoms...> takes the payload, and still not fn
@@ -95,9 +95,6 @@
 
 namespace fixy {
 
-template <class Type, class... Atoms>
-class fn;
-
 // The two spawn atoms L003 reads, declared rather than included.
 // fixy/os/Spawn.h defines them beside the spawning mints, and including
 // it here would pull std::thread and the permission layer into every
@@ -122,6 +119,10 @@ namespace detail {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
+// The pack as reflections.  define_static_array gives each element a
+// constant address.  `template for` binds the element as constexpr only
+// with that address, and a splice names its type with it.  fixy/Reject.h
+// also walks the pack through this helper.
 template <class... Atoms>
 [[nodiscard]] consteval auto pack_entries_() {
     return std::define_static_array(std::vector<std::meta::info>{^^Atoms...});
@@ -129,6 +130,14 @@ template <class... Atoms>
 
 template <Axis A, class... Atoms>
 [[nodiscard]] consteval std::meta::info grade_() noexcept {
+    // A value outside the enum reaches the defaulted axis_traits primary
+    // and comes back as a pole of an axis that does not exist.  Only a
+    // cast produces such a value, and a cast into the resolver is a
+    // mistake and not a question.
+    static_assert(std::to_underlying(A) < ::fixy::axis_count,
+                  "fixy::collision::grades<Atoms...>::on<A>: A is not an Axis enumerator.  A value outside the "
+                  "enum reaches the defaulted axis_traits primary and resolves to a pole of an axis that "
+                  "does not exist.");
     std::meta::info found = ^^void;
     if constexpr (requires { typename axis_traits<A>::strict; }) {
         using Strict = typename axis_traits<A>::strict;
@@ -148,13 +157,27 @@ template <Axis A, class... Atoms>
 
 }  // namespace detail
 
-// The same answer fn::grade_on gives, computed from the pack alone.
-// Axis::Type is absent on purpose: it resolves to the payload, which is
-// fn's business, and no collision rule reads it.
+// The one resolver of a pack.  The collision rules, the corpus and
+// fn::grade_on all read it, and fn answers only the Type axis itself,
+// with the payload the binding names.  Here Axis::Type resolves to void,
+// and no rule reads it.
 //
 // Every entry must be an atom of the closed catalog.  A rule reads a
 // grade by its axis alone, so a type that states an axis without being
 // an atom would be read as a shipped grade.
+//
+// An axis the pack does not mention resolves to axis_traits<A>::strict,
+// so the default is correct only while each axis is classified.
+// An unclassified axis in the enum reaches the primary and gets a Fact
+// pole.  On an axis that carries a right, that pole puts no bound on
+// each binding in the tree.  fixy/Axis.h refuses such an axis, and
+// this assertion shows where the resolver depends on that refusal.
+// The message names the two ways to classify an axis.
+static_assert(::fixy::every_axis_has_traits(),
+              "fixy::collision::grades resolves an unmentioned axis to axis_traits<A>::strict, so every axis "
+              "must be classified: it carries a hand-written specialization, or it is named on "
+              "Axis.h's defaulted_axes roster as a Fact axis whose pole claims nothing.");
+
 template <class... Atoms>
     requires(::fixy::atom::IsAtom<Atoms> && ...)
 struct grades {
@@ -2266,17 +2289,6 @@ static_assert(live_rules<>::failing_codes().empty(),
               "fixy/Collision.h: the empty pack sits at every strict pole and must trip no rule, so the "
               "code list it produces is empty.  A non-empty answer here means a rule fires on a binding "
               "that claims nothing.");
-
-// ---------------------------------------------------------------------
-// The shape fn asks.
-
-template <class F>
-struct CollisionRules {
-    static constexpr bool valid = true;
-};
-
-template <class Type, class... Atoms>
-struct CollisionRules<::fixy::fn<Type, Atoms...>> : rules_of<Type, Atoms...> {};
 
 }  // namespace collision
 

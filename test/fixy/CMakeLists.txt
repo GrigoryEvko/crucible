@@ -719,6 +719,12 @@ fixy_neg_compile_test(neg_corpus_classified_bg_export_policy
   "Corpus entry classified_bg_without_declassify"
   "fixy::fn<int, fixy::atom::with<foundation::effects::Effect::Bg>, fixy::atom::declassify<fixy::tags::secret_policy::AuditedLogging> >::tier5_composition_ok_.+ evaluates to false")
 
+# An entry declared in fixy::corpus and left out of Entries refuses
+# nothing, so the walk over the declarations names it.
+fixy_neg_compile_test(neg_corpus_entry_declared_not_joined
+  "static assertion failed: fixy/Corpus.h: these corpus entries are declared in fixy::corpus and missing from Entries, so they refuse nothing: forgotten_entry\\."
+  "Name each one in the Entries tuple")
+
 # The tier chain itself: one message per bad pack.  fn asks the tiers in
 # order and stops at the first failure, because a later tier's question
 # is a hard error on a pack an earlier one refused — the uniqueness walk

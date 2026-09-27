@@ -512,6 +512,80 @@ using Entries = std::tuple<classified_io_without_declassify, classified_bg_witho
 
 inline constexpr std::size_t corpus_size = std::tuple_size_v<Entries>;
 
+// ---------------------------------------------------------------------
+// Every entry declared in this namespace is in the corpus.
+//
+// Entries is a hand list, because its order is the order the walk
+// consults.  An entry declared in fixy::corpus and left out of it
+// matches nothing and refuses nothing.  So this walk reads the declarations,
+// and it answers with the name of each entry that Entries does not hold.
+//
+// The Site parameter gives each caller a vantage point of its own, as in
+// fixy/Collision.h.  std::meta::members_of answers as of the point where
+// the walk is instantiated, and each caller passes its own tag type, so
+// its call walks the namespace as its translation unit has it at that
+// line.  The walk is O(members of the namespace × corpus size).
+
+namespace detail {
+
+// An entry is a diagnostic tag with a matcher over a pack.
+template <class Candidate>
+concept IsCorpusEntry = std::derived_from<Candidate, ::foundation::diag::tag_base> && requires {
+    { Candidate::template matches<int>() } -> std::same_as<bool>;
+};
+
+[[nodiscard]] consteval bool is_in_entries_(std::meta::info candidate) {
+    for (const std::meta::info entry : std::meta::template_arguments_of(std::meta::dealias(^^Entries))) {
+        if (entry == candidate) return true;
+    }
+    return false;
+}
+
+}  // namespace detail
+
+template <class Site>
+[[nodiscard]] consteval std::string corpus_entries_declared_but_not_joined() {
+    std::string offenders;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : std::define_static_array(
+                      std::meta::members_of(^^::fixy::corpus, std::meta::access_context::current()))) {
+        if constexpr (std::meta::is_type(member)) {
+            using Candidate = [:member:];
+            if constexpr (detail::IsCorpusEntry<Candidate>) {
+                if (!detail::is_in_entries_(std::meta::dealias(member))) {
+                    if (!offenders.empty()) offenders += ", ";
+                    offenders += std::meta::identifier_of(member);
+                }
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return offenders;
+}
+
+// The diagnostic names each entry that the walk finds, so a reader gets
+// the entry and the one line to edit.  It is empty when every entry is
+// joined.
+template <class Site>
+[[nodiscard]] consteval std::string_view corpus_join_diagnostic() {
+    const std::string offenders = corpus_entries_declared_but_not_joined<Site>();
+    if (offenders.empty()) return {};
+    std::string message =
+        "fixy/Corpus.h: these corpus entries are declared in fixy::corpus and missing from Entries, so they "
+        "refuse nothing: ";
+    message += offenders;
+    message += ".  Name each one in the Entries tuple, at the place in the order where the walk must consult it.";
+    return std::define_static_string(message);
+}
+
+namespace detail {
+struct corpus_header_site_ final {};
+}  // namespace detail
+
+static_assert(corpus_entries_declared_but_not_joined<detail::corpus_header_site_>().empty(),
+              corpus_join_diagnostic<detail::corpus_header_site_>());
+
 namespace detail {
 
 // The first entry the pack matches, as a reflection, or the reflection

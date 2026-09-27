@@ -48,7 +48,6 @@ mint_synthetic_probes|include/crucible/observe/SyntheticProbe.h
 # namesakes.  Their own tree has fewer than two.
 
 # include/fixy
-mint_carries_the_value|include/fixy/Fn.h
 mint_fn_for|include/fixy/Fn.h
 mint_machine|include/fixy/Machine.h
 mint_affine|include/fixy/Qtt.h
