@@ -24,7 +24,6 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/diag/RowHash.h>
-#include <foundation/diag/RowMismatch.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Signature.h>
@@ -416,22 +415,9 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
 mint_stage(Ctx const& ctx, std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 0>>&& in,
            std::remove_reference_t<::foundation::reflect::param_type_t<FnPtr, 1>>&& out) noexcept {
-    using ctx_row = typename Ctx::row_type;
-    using input_row = payload_effect_row_t<pipeline_stage_input_value_t<FnPtr>>;
-    using output_row = payload_effect_row_t<pipeline_stage_output_value_t<FnPtr>>;
-    using input_offending_row = ::foundation::effects::row_difference_t<input_row, ctx_row>;
-    using output_offending_row = ::foundation::effects::row_difference_t<output_row, ctx_row>;
-
-    // These repeat the two subset checks the requires-clause already makes, so
-    // a mismatch never reaches this body.  They stay because the concept
-    // reports only that the constraint failed, while these name the offending
-    // row.
-    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<input_row, ctx_row>()), EffectRowMismatch,
-                                      FnPtr, ctx_row, input_row, input_offending_row);
-
-    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<output_row, ctx_row>()), EffectRowMismatch,
-                                      FnPtr, ctx_row, output_row, output_offending_row);
-
+    // The requires clause checks the two rows.  A refused row never reaches
+    // this body, and the compiler names the conjunct that refused it:
+    // StageInputRowAdmitted or StageOutputRowAdmitted.
     return Stage<FnPtr, Ctx>{ctx, std::move(in), std::move(out)};
 }
 

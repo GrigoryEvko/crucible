@@ -12,9 +12,9 @@
 //   - MpmcStage and SwmrStage are built through StageEndpointDoor, a final
 //     class with private static members and the two mints as its friends.
 //     The old unconstrained helpers were callable from any code.
-//   - The row check of the two mints names the stage body as its anchor, as
-//     mint_stage of fixy/concurrent/Stage.h does.  The old mints named two
-//     empty anchor functions.
+//   - The two mints check the row in the requires clause alone, as
+//     mint_stage of fixy/concurrent/Stage.h does.  The old mints also
+//     repeated the check in the body, where a refused row never arrives.
 
 #include <fixy/concurrent/Endpoint.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -23,8 +23,6 @@
 
 #include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
-#include <foundation/contracts/Decide.h>
-#include <foundation/diag/RowMismatch.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Signature.h>
@@ -248,16 +246,6 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, cl
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
     requires CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>
 [[nodiscard]] constexpr auto mint_mpmc_stage_from_endpoints(Ctx const& ctx, Endpoints&&... endpoints) noexcept {
-    using ctx_row = typename Ctx::row_type;
-    using required_row = variadic_stage_row_union_t<FnPtr>;
-    using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
-
-    // This repeats the subset check that the requires-clause already makes.
-    // It stays because the concept reports only that the constraint failed,
-    // while this names the offending row.
-    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                      FnPtr, ctx_row, required_row, offending_row);
-
     std::tuple<std::remove_cvref_t<Endpoints>...> endpoint_tuple{std::move(endpoints)...};
     return ::fixy::session::detail::late_door_t<StageEndpointDoor, Ctx>::template make_mpmc_<FnPtr>(ctx,
                                                                                                   endpoint_tuple);
@@ -266,13 +254,6 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>
     requires CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>
 [[nodiscard]] constexpr auto mint_swmr_stage(Ctx const& ctx, ConsumerEp&& in_ep, Writer&& writer) noexcept {
-    using ctx_row = typename Ctx::row_type;
-    using required_row = swmr_stage_row_union_t<FnPtr>;
-    using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
-
-    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                      FnPtr, ctx_row, required_row, offending_row);
-
     return ::fixy::session::detail::late_door_t<StageEndpointDoor, Ctx>::template make_swmr_<FnPtr>(
         ctx, std::move(in_ep).into_handle(), std::move(writer));
 }

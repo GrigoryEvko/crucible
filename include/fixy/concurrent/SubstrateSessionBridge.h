@@ -26,6 +26,7 @@
 #include <fixy/session/Handle.h>
 
 #include <foundation/effects/Ctx.h>
+#include <foundation/reflect/Instance.h>
 
 #include <concepts>
 #include <cstddef>
@@ -40,25 +41,28 @@ enum class Direction : std::uint8_t {
     Consumer = 1,
 };
 
+namespace detail {
+
+// The two channels of the table.  The set is read by reflection off the
+// two templates, so no other type joins it, and a cv-qualified channel is
+// not a channel of the table.
+template <class Substr>
+concept IsBridgedChannel =
+    std::same_as<Substr, std::remove_cvref_t<Substr>>
+    && ::foundation::reflect::IsInstanceOfAny<Substr, ^^PermissionedSpscChannel, ^^PermissionedMpscChannel>;
+
+}  // namespace detail
+
+// Both channels name their handles ProducerHandle and ConsumerHandle, so
+// one rule gives the handle of each role of either channel.
 template <class Substr, Direction Dir>
 struct handle_for;
 
-template <class T, std::size_t Cap, class UserTag>
-struct handle_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Producer> {
-    using type = typename PermissionedSpscChannel<T, Cap, UserTag>::ProducerHandle;
-};
-template <class T, std::size_t Cap, class UserTag>
-struct handle_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Consumer> {
-    using type = typename PermissionedSpscChannel<T, Cap, UserTag>::ConsumerHandle;
-};
-
-template <class T, std::size_t Cap, class UserTag>
-struct handle_for<PermissionedMpscChannel<T, Cap, UserTag>, Direction::Producer> {
-    using type = typename PermissionedMpscChannel<T, Cap, UserTag>::ProducerHandle;
-};
-template <class T, std::size_t Cap, class UserTag>
-struct handle_for<PermissionedMpscChannel<T, Cap, UserTag>, Direction::Consumer> {
-    using type = typename PermissionedMpscChannel<T, Cap, UserTag>::ConsumerHandle;
+template <class Substr, Direction Dir>
+    requires detail::IsBridgedChannel<Substr>
+struct handle_for<Substr, Dir> {
+    using type =
+        std::conditional_t<Dir == Direction::Producer, typename Substr::ProducerHandle, typename Substr::ConsumerHandle>;
 };
 
 template <class Substr, Direction Dir>
@@ -72,22 +76,13 @@ using handle_for_t = typename handle_for<Substr, Dir>::type;
 template <class Substr, Direction Dir>
 struct default_proto_for;
 
-template <class T, std::size_t Cap, class UserTag>
-struct default_proto_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Producer> {
-    using type = ::fixy::session::Loop<::fixy::session::Send<T, ::fixy::session::Continue>>;
-};
-template <class T, std::size_t Cap, class UserTag>
-struct default_proto_for<PermissionedMpscChannel<T, Cap, UserTag>, Direction::Producer> {
-    using type = ::fixy::session::Loop<::fixy::session::Send<T, ::fixy::session::Continue>>;
-};
-
-template <class T, std::size_t Cap, class UserTag>
-struct default_proto_for<PermissionedSpscChannel<T, Cap, UserTag>, Direction::Consumer> {
-    using type = ::fixy::session::Loop<::fixy::session::Recv<T, ::fixy::session::Continue>>;
-};
-template <class T, std::size_t Cap, class UserTag>
-struct default_proto_for<PermissionedMpscChannel<T, Cap, UserTag>, Direction::Consumer> {
-    using type = ::fixy::session::Loop<::fixy::session::Recv<T, ::fixy::session::Continue>>;
+template <class Substr, Direction Dir>
+    requires detail::IsBridgedChannel<Substr>
+struct default_proto_for<Substr, Dir> {
+    using type = std::conditional_t<
+        Dir == Direction::Producer,
+        ::fixy::session::Loop<::fixy::session::Send<typename Substr::value_type, ::fixy::session::Continue>>,
+        ::fixy::session::Loop<::fixy::session::Recv<typename Substr::value_type, ::fixy::session::Continue>>>;
 };
 
 template <class Substr, Direction Dir>
@@ -111,7 +106,7 @@ concept HandleHasPoleOf = (Dir == Direction::Producer && is_producer_handle_v<ha
 
 // A direction is bridgeable when the table names both its handle and its
 // protocol, and the handle has the pole shape of the direction.  Only the
-// rows above do, so the concept is closed over the two channels.
+// two channels have a row, so the concept is closed over them.
 template <class Substr, Direction Dir>
 concept IsBridgeableDirection =
     detail::HasHandleFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir> && detail::HandleHasPoleOf<Substr, Dir>;
@@ -163,6 +158,16 @@ static_assert(IsBridgeableDirection<Mpsc, Direction::Consumer>);
 
 static_assert(!IsBridgeableDirection<int, Direction::Producer>);
 static_assert(!IsBridgeableDirection<int, Direction::Consumer>);
+static_assert(!IsBridgeableDirection<Spsc const, Direction::Producer>, "a cv-qualified channel has no row");
+
+// A type that names the two handles and a value type is still no channel
+// of the table.
+struct LooksLikeAChannel {
+    using value_type = int;
+    using ProducerHandle = typename Spsc::ProducerHandle;
+    using ConsumerHandle = typename Spsc::ConsumerHandle;
+};
+static_assert(!IsBridgeableDirection<LooksLikeAChannel, Direction::Producer>);
 
 }  // namespace detail::substrate_session_bridge_self_test
 

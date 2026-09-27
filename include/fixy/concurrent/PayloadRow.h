@@ -224,15 +224,6 @@ struct PayloadRowWalk {
     return mask;
 }
 
-// A class whose state the walk cannot read: complete, not empty, and
-// with no reflected base or data member.
-[[nodiscard]] consteval bool holds_unreadable_state(std::meta::info type) {
-    if (!std::meta::is_class_type(type) || is_specialization(type)) return false;
-    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
-    const auto unchecked = std::meta::access_context::unchecked();
-    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
-}
-
 // The walk.  Each node answers by its kind:
 //
 //   * a row-carrying family adds its row, and a Computation also hands
@@ -308,7 +299,9 @@ struct PayloadRowWalk {
             refuse(type);
             continue;
         }
-        if (holds_unreadable_state(type)) {
+        // Only a complete non-specialization gets here, which is the case
+        // that the shared predicate reads.
+        if (refl::holds_unreadable_state(refl::TypeNode{type, true})) {
             refuse(type);
             continue;
         }

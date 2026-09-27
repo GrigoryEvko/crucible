@@ -3519,18 +3519,13 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_ctx_starts_no_threads
   "required for the satisfaction of .CtxStartsStageThreads<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
   "no matching function for call to .mint_pipeline_dag\\(fixy::HotFgCtx&")
 
-# The coordinator's row admission, which is the one gate in this family
-# that reports through the assembled block rather than a concept: the
-# payloads chain and every stage fits its own context, and what fails is
-# the union against the context that starts them.  The third regex is
-# the offending set the block names, which is the whole reason the block
-# exists.
-# The gate moved from the body to the requires clause, so the refusal is a
-# constraint rather than a static assertion.  The third regex is what keeps
-# this fixture honest: it pins the ATOMIC constraint that answered false, so
+# The coordinator's row admission: the payloads chain and every stage fits
+# its own context, and what fails is the union against the context that
+# starts them.  The refusal is a constraint.  The third regex keeps this
+# fixture honest: it pins the atomic constraint that answered false, so
 # deleting the row conjunct from CtxFitsPipeline changes the diagnostic and
 # reds the fixture.  Matching only "constraints not satisfied" would pass for
-# any of the three conjuncts.
+# any of the four conjuncts.
 fixy_neg_compile_test(neg_pipeline_mint_row_union_not_admitted
   "constraints not satisfied"
   "required for the satisfaction of .CtxFitsPipeline<"

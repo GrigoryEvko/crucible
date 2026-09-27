@@ -39,7 +39,6 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/diag/RowHash.h>
-#include <foundation/diag/RowMismatch.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
@@ -222,8 +221,6 @@ concept pipeline_chain = sizeof...(Stages) >= 1 && (IsStage<Stages> && ...)
 
 namespace detail {
 
-inline void pipeline_row_admission_anchor_() noexcept {}
-
 template <class... Stages>
 struct pipeline_row_union_impl;
 
@@ -401,8 +398,6 @@ struct stage_graph_row_union<StageGraph<StagePack<Stages...>, EdgePack<Edges...>
     using type = pipeline_row_union_t<Stages...>;
 };
 
-inline void pipeline_dag_row_admission_anchor_() noexcept {}
-
 }  // namespace detail
 
 template <class T>
@@ -555,15 +550,16 @@ void pin_current_pipeline_thread_(Ctx const& ctx, int cpu) noexcept {
 #endif
 }
 
-}  // namespace detail
-
+// What a linear pipeline and a graph do after their gate holds.  The two
+// differ in their gate and in the claim that they fold into the row hash, and
+// in nothing that runs, so each one holds its stages in this class as a
+// private base.  The constructor is public: a caller that holds the stages
+// can already run each one, so this class gives no power that the stages do
+// not give.
 template <class... Stages>
-    requires pipeline_chain<Stages...>
-class Pipeline {
+class StageRunner {
 public:
     static constexpr std::size_t arity = sizeof...(Stages);
-    using row_discipline = ::fixy::row_discipline::pipeline;
-    using row_payload = ::foundation::diag::row_payloads<Stages...>;
     static constexpr std::size_t aggregate_per_call_working_set = aggregate_per_call_ws_v<Stages...>;
     static constexpr bool inline_safe = is_pipeline_inline_safe_v<Stages...>;
     static constexpr bool aggregate_working_set_known = aggregate_per_call_ws_known_v<Stages...>;
@@ -571,6 +567,110 @@ public:
     static_assert(((!is_stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
                   "Pipeline inline opt-in requires both stage handles to expose "
                   "static constexpr per_call_working_set");
+
+    [[nodiscard]] explicit constexpr StageRunner(Stages&&... stages) noexcept
+        : stages_{std::forward<Stages>(stages)...} {}
+
+    StageRunner(StageRunner const&) = delete("the stages hold linear endpoint handles");
+    StageRunner& operator=(StageRunner const&) = delete("the stages hold linear endpoint handles");
+    StageRunner(StageRunner&&) noexcept = default;
+    StageRunner& operator=(StageRunner&&) noexcept = default;
+
+    [[nodiscard]] static PipelineDispatchKind dispatch_kind() noexcept {
+        static const PipelineDispatchKind kind = compute_dispatch_kind_();
+        return kind;
+    }
+
+    [[nodiscard]] static bool will_run_inline() noexcept { return dispatch_kind() == PipelineDispatchKind::Inline; }
+
+    // The same question as will_run_inline, asked of a stated cache size
+    // instead of the probed one, so a caller can assert at compile time that
+    // its pipeline runs inline on the target it is built for.  The runtime
+    // answer stays authoritative: on a host smaller than the assertion
+    // assumed, dispatch quietly falls back to a thread per stage and only the
+    // claim was wrong.  A branching graph sums the working set over every
+    // stage, which is the worst case of one token reaching all of them, so a
+    // wide fan-out counts each branch.
+    template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
+    [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
+        if constexpr (!inline_safe || !aggregate_working_set_known) {
+            return false;
+        } else {
+            return (aggregate_per_call_working_set <= L1dBytes) || (aggregate_per_call_working_set <= L2Bytes);
+        }
+    }
+
+    template <std::size_t I>
+        requires(I < arity)
+    [[nodiscard]] constexpr auto& stage() & noexcept {
+        return std::get<I>(stages_);
+    }
+
+    template <std::size_t I>
+        requires(I < arity)
+    [[nodiscard]] constexpr auto const& stage() const& noexcept {
+        return std::get<I>(stages_);
+    }
+
+    // The class that holds this runner checks the context of the caller
+    // against its own gate before it calls here.
+    void run_stages() && noexcept {
+        if (will_run_inline()) {
+            std::move(*this).run_inline_(std::index_sequence_for<Stages...>{});
+        } else {
+            std::move(*this).run_threaded_(std::index_sequence_for<Stages...>{});
+        }
+    }
+
+private:
+    [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
+        if constexpr (inline_safe && aggregate_working_set_known) {
+            if (ParallelismRule::is_core_resident(aggregate_per_call_working_set)) {
+                return PipelineDispatchKind::Inline;
+            }
+        }
+        return PipelineDispatchKind::ThreadPerStage;
+    }
+
+    template <std::size_t... Is>
+    void run_inline_(std::index_sequence<Is...>) && noexcept {
+        ((void)std::move(std::get<Is>(stages_)).run(), ...);
+    }
+
+    template <std::size_t... Is>
+    void run_threaded_(std::index_sequence<Is...>) && noexcept {
+        const auto& affinity_cpus = pipeline_affinity_cpus_<sizeof...(Is)>();
+
+        // Each thread takes its stage by move.  The array destructor at the
+        // end of this function joins them all.
+        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
+            [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
+                pin_current_pipeline_thread_(stage.ctx(), cpu);
+                std::move(stage).run();
+            }}...};
+    }
+
+    std::tuple<Stages...> stages_;
+};
+
+}  // namespace detail
+
+template <class... Stages>
+    requires pipeline_chain<Stages...>
+class Pipeline : private detail::StageRunner<Stages...> {
+    using runner_type = detail::StageRunner<Stages...>;
+
+public:
+    using row_discipline = ::fixy::row_discipline::pipeline;
+    using row_payload = ::foundation::diag::row_payloads<Stages...>;
+    using runner_type::aggregate_per_call_working_set;
+    using runner_type::aggregate_working_set_known;
+    using runner_type::arity;
+    using runner_type::dispatch_kind;
+    using runner_type::inline_safe;
+    using runner_type::stage;
+    using runner_type::will_run_inline;
+    using runner_type::will_run_inline_v;
 
     Pipeline(Pipeline const&) = delete(
         "Pipeline holds move-only Stages, each of which holds linear Permission tokens via its consumer/producer handles");
@@ -586,52 +686,15 @@ public:
     template <::foundation::effects::IsExecCtx RunCtx>
         requires CtxFitsPipeline<RunCtx, Stages...>
     void run(RunCtx const& /*ctx*/) && noexcept {
-        if (will_run_inline()) {
-            std::move(*this).run_inline_impl_(std::index_sequence_for<Stages...>{});
-        } else {
-            std::move(*this).run_threaded_impl_(std::index_sequence_for<Stages...>{});
-        }
-    }
-
-    [[nodiscard]] static PipelineDispatchKind dispatch_kind() noexcept {
-        static const PipelineDispatchKind kind = compute_dispatch_kind_();
-        return kind;
-    }
-
-    [[nodiscard]] static bool will_run_inline() noexcept { return dispatch_kind() == PipelineDispatchKind::Inline; }
-
-    // The same question as will_run_inline, asked of a stated cache size
-    // instead of the probed one, so a caller can assert at compile time that
-    // its pipeline runs inline on the target it is built for.  The runtime
-    // answer stays authoritative: on a host smaller than the assertion
-    // assumed, dispatch quietly falls back to a thread per stage and only the
-    // claim was wrong.
-    template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
-    [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
-        if constexpr (!inline_safe || !aggregate_working_set_known) {
-            return false;
-        } else {
-            return (aggregate_per_call_working_set <= L1dBytes) || (aggregate_per_call_working_set <= L2Bytes);
-        }
-    }
-
-    template <std::size_t I>
-        requires(I < sizeof...(Stages))
-    [[nodiscard]] constexpr auto& stage() & noexcept {
-        return std::get<I>(stages_);
-    }
-
-    template <std::size_t I>
-        requires(I < sizeof...(Stages))
-    [[nodiscard]] constexpr auto const& stage() const& noexcept {
-        return std::get<I>(stages_);
+        static_cast<runner_type&&>(*this).run_stages();
     }
 
 private:
     // Private because direct construction would skip the row admission and
     // produce a pipeline whose effects were never weighed against the context
     // that starts it.
-    [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept : stages_{std::forward<Stages>(stages)...} {}
+    [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept
+        : runner_type{std::forward<Stages>(stages)...} {}
 
     // The constraint must match the definition's exactly.  A friend whose
     // constraints differ declares a DIFFERENT template, so the friendship
@@ -642,34 +705,6 @@ private:
     template <::foundation::effects::IsExecCtx MintCtx, class... MintStages>
         requires CtxFitsPipeline<MintCtx, std::remove_cvref_t<MintStages>...>
     friend constexpr auto mint_pipeline(MintCtx const&, MintStages&&...) noexcept;
-
-    [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
-        if constexpr (inline_safe && aggregate_working_set_known) {
-            if (ParallelismRule::is_core_resident(aggregate_per_call_working_set)) {
-                return PipelineDispatchKind::Inline;
-            }
-        }
-        return PipelineDispatchKind::ThreadPerStage;
-    }
-    template <std::size_t... Is>
-    void run_inline_impl_(std::index_sequence<Is...>) && noexcept {
-        ((void)std::move(std::get<Is>(stages_)).run(), ...);
-    }
-
-    template <std::size_t... Is>
-    void run_threaded_impl_(std::index_sequence<Is...>) && noexcept {
-        const auto& affinity_cpus = detail::pipeline_affinity_cpus_<sizeof...(Is)>();
-
-        // Each thread takes its stage by move.  The array destructor at the
-        // end of this function joins them all.
-        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
-            [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
-                detail::pin_current_pipeline_thread_(stage.ctx(), cpu);
-                std::move(stage).run();
-            }}...};
-    }
-
-    std::tuple<Stages...> stages_;
 };
 
 // Declared ahead of the class below because the friend declaration inside it
@@ -696,23 +731,25 @@ class PipelineDag;
 
 template <class... Stages, class... Edges>
     requires StageGraphWellFormed<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>>
-class PipelineDag<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> {
+class PipelineDag<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> : private detail::StageRunner<Stages...> {
+    using runner_type = detail::StageRunner<Stages...>;
+
 public:
     using graph_type = StageGraph<StagePack<Stages...>, EdgePack<Edges...>>;
     // The edges are the shape of the graph, which is part of the claim;
     // the stages are what it runs.
     using row_discipline = ::fixy::row_discipline::pipeline_dag<EdgePack<Edges...>>;
     using row_payload = ::foundation::diag::row_payloads<Stages...>;
+    using runner_type::aggregate_per_call_working_set;
+    using runner_type::aggregate_working_set_known;
+    using runner_type::arity;
+    using runner_type::dispatch_kind;
+    using runner_type::inline_safe;
+    using runner_type::stage;
+    using runner_type::will_run_inline;
+    using runner_type::will_run_inline_v;
 
-    static constexpr std::size_t arity = sizeof...(Stages);
     static constexpr std::size_t edge_count = sizeof...(Edges);
-    static constexpr std::size_t aggregate_per_call_working_set = aggregate_per_call_ws_v<Stages...>;
-    static constexpr bool inline_safe = is_pipeline_inline_safe_v<Stages...>;
-    static constexpr bool aggregate_working_set_known = aggregate_per_call_ws_known_v<Stages...>;
-
-    static_assert(((!is_stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
-                  "PipelineDag inline opt-in requires every stage handle pack to "
-                  "expose static constexpr per_call_working_set");
 
     PipelineDag(PipelineDag const&) = delete("PipelineDag holds move-only Stages, each of which owns endpoint handles");
     PipelineDag&
@@ -724,36 +761,7 @@ public:
     template <::foundation::effects::IsExecCtx RunCtx>
         requires CtxFitsPipelineDag<RunCtx, graph_type>
     void run(RunCtx const& /*ctx*/) && noexcept {
-        if (will_run_inline()) {
-            std::move(*this).run_inline_impl_(std::index_sequence_for<Stages...>{});
-        } else {
-            std::move(*this).run_threaded_impl_(std::index_sequence_for<Stages...>{});
-        }
-    }
-
-    [[nodiscard]] static PipelineDispatchKind dispatch_kind() noexcept {
-        static const PipelineDispatchKind kind = compute_dispatch_kind_();
-        return kind;
-    }
-
-    [[nodiscard]] static bool will_run_inline() noexcept { return dispatch_kind() == PipelineDispatchKind::Inline; }
-
-    // As for a linear pipeline.  A branching graph still sums the working
-    // set over every stage, which is the worst case of one token reaching all
-    // of them, so a wide fan-out counts each branch.
-    template <std::size_t L1dBytes, std::size_t L2Bytes = L1dBytes>
-    [[nodiscard]] static consteval bool will_run_inline_v() noexcept {
-        if constexpr (!inline_safe || !aggregate_working_set_known) {
-            return false;
-        } else {
-            return (aggregate_per_call_working_set <= L1dBytes) || (aggregate_per_call_working_set <= L2Bytes);
-        }
-    }
-
-    template <std::size_t I>
-        requires(I < sizeof...(Stages))
-    [[nodiscard]] constexpr auto& stage() & noexcept {
-        return std::get<I>(stages_);
+        static_cast<runner_type&&>(*this).run_stages();
     }
 
 private:
@@ -761,70 +769,24 @@ private:
     // produce a graph whose effects were never weighed against the context
     // that starts it.
     [[nodiscard]] explicit constexpr PipelineDag(Stages&&... stages) noexcept
-        : stages_{std::forward<Stages>(stages)...} {}
+        : runner_type{std::forward<Stages>(stages)...} {}
 
     template <::foundation::effects::IsExecCtx MintCtx, class MintGraph, class... MintStages>
         requires CtxFitsPipelineDagMint<MintCtx, MintGraph, MintStages...>
     friend constexpr auto mint_pipeline_dag(MintCtx const&, MintGraph, MintStages&&...) noexcept;
-
-    [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
-        if constexpr (inline_safe && aggregate_working_set_known) {
-            if (ParallelismRule::is_core_resident(aggregate_per_call_working_set)) {
-                return PipelineDispatchKind::Inline;
-            }
-        }
-        return PipelineDispatchKind::ThreadPerStage;
-    }
-
-    template <std::size_t... Is>
-    void run_inline_impl_(std::index_sequence<Is...>) && noexcept {
-        ((void)std::move(std::get<Is>(stages_)).run(), ...);
-    }
-
-    template <std::size_t... Is>
-    void run_threaded_impl_(std::index_sequence<Is...>) && noexcept {
-        const auto& affinity_cpus = detail::pipeline_affinity_cpus_<sizeof...(Is)>();
-
-        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
-            [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
-                detail::pin_current_pipeline_thread_(stage.ctx(), cpu);
-                std::move(stage).run();
-            }}...};
-    }
-
-    std::tuple<Stages...> stages_;
 };
 
 template <::foundation::effects::IsExecCtx Ctx, class... Stages>
     requires CtxFitsPipeline<Ctx, std::remove_cvref_t<Stages>...>
 [[nodiscard]] constexpr auto mint_pipeline(Ctx const& /*ctx*/, Stages&&... stages) noexcept {
-    using ctx_row = typename Ctx::row_type;
-    using required_row = pipeline_row_union_t<std::remove_cvref_t<Stages>...>;
-    using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
-
-    // The clause above already refuses an unfitting context, so this does not
-    // fire while `CtxFitsPipeline` carries its row conjunct.  It is the
-    // backstop for the case where that conjunct is dropped: measured by
-    // deleting it, the assertion catches the same call and names the offending
-    // atoms.  `mint_pipeline_dag` below keeps the pair for the same reason.
-    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                      &::fixy::concurrent::detail::pipeline_row_admission_anchor_, ctx_row,
-                                      required_row, offending_row);
-
+    // The requires clause checks the row, and a refused row never reaches
+    // this body.  The compiler names the row conjunct of CtxFitsPipeline.
     return Pipeline<std::remove_cvref_t<Stages>...>{std::forward<Stages>(stages)...};
 }
 
 template <::foundation::effects::IsExecCtx Ctx, class Graph, class... Stages>
     requires CtxFitsPipelineDagMint<Ctx, Graph, Stages...>
 [[nodiscard]] constexpr auto mint_pipeline_dag(Ctx const& /*ctx*/, Graph, Stages&&... stages) noexcept {
-    using ctx_row = typename Ctx::row_type;
-    using required_row = stage_graph_row_union_t<Graph>;
-    using offending_row = ::foundation::effects::row_difference_t<required_row, ctx_row>;
-
-    CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT((::foundation::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
-                                      &::fixy::concurrent::detail::pipeline_dag_row_admission_anchor_, ctx_row,
-                                      required_row, offending_row);
-
     using graph_type = std::remove_cvref_t<Graph>;
     return PipelineDag<graph_type>{std::forward<Stages>(stages)...};
 }
