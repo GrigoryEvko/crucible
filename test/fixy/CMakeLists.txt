@@ -3414,12 +3414,28 @@ fixy_neg_compile_test(neg_pipeline_mint_chain_break
   "pipeline_chain_check<std::tuple<typename std::remove_cvref<_Tps>::type \\.\\.\\.> >\\)\\(\\{\\}\\)"
   "&float_to_double\\(<unnamed>::FakeConsumer<float>&&")
 fixy_neg_compile_test(neg_pipeline_mint_empty_pack
-  "no matching function for call to .mint_pipeline\\(fixy::HotFgCtx&\\)."
+  "no matching function for call to .mint_pipeline\\(const fixy::BgDrainCtx&\\)."
   "sizeof \\.\\.\\. \\(Stages \\.\\.\\.\\) >= 1 \\[with Stages = \\{\\}\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_pipeline_mint_ctx_not_exec_ctx
   "no matching function for call to .mint_pipeline\\(int&"
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = int\\]"
   "is_exec_ctx_v<T> \\[with T = int\\]. evaluated to .false.")
+
+# The authority to start threads.  A pipeline starts one thread per stage
+# unless the cache sizes probed at run time say it fits inline, so the
+# context that mints it and the context that runs it must own Bg or Init.
+# The foreground context owns neither.  The first fixture is the mint, the
+# second is run on a pipeline that a background context minted, and the
+# third is the graph mint.
+fixy_neg_compile_test(neg_pipeline_mint_ctx_starts_no_threads
+  "required for the satisfaction of .CtxStartsStageThreads<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "no matching function for call to .mint_pipeline\\(fixy::HotFgCtx&")
+fixy_neg_compile_test(neg_pipeline_run_ctx_starts_no_threads
+  "required for the satisfaction of .CtxStartsStageThreads<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "::run\\(fixy::HotFgCtx&\\).")
+fixy_neg_compile_test(neg_pipeline_dag_mint_ctx_starts_no_threads
+  "required for the satisfaction of .CtxStartsStageThreads<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+  "no matching function for call to .mint_pipeline_dag\\(fixy::HotFgCtx&")
 
 # The coordinator's row admission, which is the one gate in this family
 # that reports through the assembled block rather than a concept: the
@@ -3445,7 +3461,7 @@ fixy_neg_compile_test(neg_pipeline_copied
   "Pipeline holds move-only Stages")
 fixy_neg_compile_test(neg_pipeline_run_on_an_lvalue
   "as .this. argument discards qualifiers"
-  "in call to .void fixy::concurrent::Pipeline<Stages>::run\\(\\) &&")
+  "in call to .void fixy::concurrent::Pipeline<Stages>::run\\(const RunCtx&\\) &&")
 
 # The inline opt-in, on three axes.  The first is the claim a stage
 # makes about itself: opting in without a stated working set is refused
@@ -3486,9 +3502,9 @@ fixy_neg_compile_test(neg_pipeline_dag_unreachable_stage
 # graph is well formed, so only the pack clause can be what refuses.
 fixy_neg_compile_test(neg_pipeline_dag_mint_not_a_graph
   "required for the satisfaction of .CtxFitsPipelineDagMint<Ctx, Graph, Stages \\.\\.\\.>."
-  "pipeline_dag_mint_gate<Ctx, Graph, Stages \\.\\.\\.>::value \\[with Ctx = .*. Graph = int.")
+  "required for the satisfaction of .StageGraphWellFormed<Graph>. \\[with Graph = int\\]")
 fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
-  "required for the satisfaction of .CtxFitsPipelineDagMint<Ctx, Graph, Stages \\.\\.\\.>."
+  "required for the satisfaction of .graph_stage_pack_is<Graph, Stages \\.\\.\\.>."
   "Graph = fixy::concurrent::StageGraph<fixy::concurrent::StagePack<fixy::concurrent::Stage<&pass_through")
 
 # ── The publication handles ───────────────────────────────────────────

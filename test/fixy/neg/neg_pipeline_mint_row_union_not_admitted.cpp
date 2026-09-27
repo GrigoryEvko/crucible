@@ -3,9 +3,10 @@
 // The payloads chain and every stage fit its own context; what fails is
 // the coordinator.  One stage was minted under the background drain
 // context and one under the startup context, so the union the pipeline
-// needs is Bg, Alloc, Init and IO, and the foreground coordinator admits
-// none of them.  Neither of those contexts is built from nothing, so the
-// stages are typed through declval.
+// needs is Bg, Alloc, Init and IO.  The coordinator is the background
+// drain context: it may start threads, and it admits neither Init nor IO.
+// Neither of those contexts is built from nothing, so the stages are
+// typed through declval.
 //
 // The refusal is CtxFitsPipeline, in the requires clause.  It was the
 // row-mismatch block inside the body until the clause gained the gate:
@@ -40,7 +41,7 @@ using StartupStage = decltype(fixy::concurrent::mint_stage<&pass>(std::declval<f
                                                                   std::declval<FakeConsumer<int>&&>(),
                                                                   std::declval<FakeProducer<int>&&>()));
 
-using Bad = decltype(fixy::concurrent::mint_pipeline(std::declval<fixy::HotFgCtx const&>(),
+using Bad = decltype(fixy::concurrent::mint_pipeline(std::declval<fixy::BgDrainCtx const&>(),
                                                      std::declval<DrainStage&&>(), std::declval<StartupStage&&>()));
 
 }  // namespace

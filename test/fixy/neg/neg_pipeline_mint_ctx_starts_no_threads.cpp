@@ -1,8 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_pipeline_dag with a bare int where the stage graph belongs.  The
-// mint gate's first clause is that the graph is a StageGraph at all,
-// before the stage pack is compared against it.
+// The foreground context mints a pipeline of foreground stages.  The row
+// of the stages is empty, so the row gate admits it.  The pipeline starts
+// one thread per stage and joins them, and the foreground context owns
+// neither Bg nor Init, so the mint refuses it.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -29,10 +30,8 @@ inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 int main() {
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto stage = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-    int not_a_graph = 0;
 
-    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
-    auto bad = fixy::concurrent::mint_pipeline_dag(coordinator, not_a_graph, std::move(stage));
+    auto bad = fixy::concurrent::mint_pipeline(ctx, std::move(stage));
     (void)bad;
     return 0;
 }

@@ -28,8 +28,9 @@ inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 int main() {
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto stage = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-    auto pipeline = fixy::concurrent::mint_pipeline(ctx, std::move(stage));
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
+    auto pipeline = fixy::concurrent::mint_pipeline(coordinator, std::move(stage));
 
-    pipeline.run();
+    pipeline.run(coordinator);
     return 0;
 }

@@ -36,6 +36,8 @@ constexpr std::size_t kLargeStages = 5;
 constexpr std::size_t kLargeStageWords = kLargeStageBytes / sizeof(std::uint64_t);
 
 constexpr fixy::HotFgCtx kForeground = foundation::effects::testing::foreground();
+// The router starts threads, so the context that runs it must own Bg.
+constexpr fixy::BgDrainCtx kCoordinator{foundation::effects::testing::bg()};
 
 // Handles that never block and carry the working set that the router reads.
 template <std::size_t Ws>
@@ -159,7 +161,7 @@ static void run_in_order(std::type_identity<std::tuple<Stages...>>) noexcept {
 // thread per stage.
 template <class... Stages>
 static void run_through_router(std::type_identity<std::tuple<Stages...>>) noexcept {
-    cc::mint_pipeline(kForeground, mint_bench_stage<Stages>()...).run();
+    cc::mint_pipeline(kCoordinator, mint_bench_stage<Stages>()...).run(kCoordinator);
 }
 
 static void fill_inputs() {

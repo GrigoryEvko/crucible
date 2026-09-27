@@ -1,9 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The graph declares two stages joined by one edge, and the call
-// supplies one stage.  The graph is well formed; the mint gate's second
-// clause, that the supplied pack is the graph's stage pack, is what
-// refuses.
+// The foreground context mints a graph of two foreground stages.  The
+// graph is well formed and its row is empty, so only the authority to
+// start threads is missing.  The foreground context owns neither Bg nor
+// Init, so the graph mint refuses it.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -34,10 +34,10 @@ using TwoStageGraph = cc::StageGraph<cc::StagePack<PlainStage, PlainStage>, cc::
 
 int main() {
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
-    auto only_stage = cc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto first = cc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto second = cc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
-    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
-    auto bad = cc::mint_pipeline_dag(coordinator, TwoStageGraph{}, std::move(only_stage));
+    auto bad = cc::mint_pipeline_dag(ctx, TwoStageGraph{}, std::move(first), std::move(second));
     (void)bad;
     return 0;
 }

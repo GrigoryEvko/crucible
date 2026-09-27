@@ -19,7 +19,9 @@
 // Every stage settled its own fit with its own context when it was minted, and
 // each of its endpoints did the same before that.  What is left to check here
 // is that consecutive payload types agree, and that the coordinating context
-// admits the effects of all the stage contexts it is about to start.
+// may start threads and admits the effects of all the stage contexts it is
+// about to start.  The mint checks the context of the minting thread, and run
+// checks the context of the thread that starts the stages.
 //
 // Old spelling: include/crucible/concurrent/Pipeline.h.  That header also
 // included the SPSC channel and the permission token and used neither.
@@ -194,8 +196,18 @@ struct pipeline_row_union_impl<Stage0, Rest...> {
 template <class... Stages>
 using pipeline_row_union_t = typename detail::pipeline_row_union_impl<std::remove_cvref_t<Stages>...>::type;
 
+// A pipeline starts one thread per stage and joins them, unless the working
+// sets are small enough to run inline, and that answer comes from the cache
+// sizes probed at run time.  So the context that mints or runs a pipeline
+// must own the authority to start threads in every case: Bg or Init, the
+// same authority that fixy/os/CpuPinned.h asks of a pin.  The foreground
+// hot path owns neither, and a pipeline never starts from it.
+template <class Ctx>
+concept CtxStartsStageThreads =
+    ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Init>;
+
 template <class Ctx, class... Stages>
-concept CtxFitsPipeline = ::foundation::effects::IsExecCtx<Ctx> && pipeline_chain<Stages...>
+concept CtxFitsPipeline = ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && pipeline_chain<Stages...>
                        && ::foundation::decide::row_subset<pipeline_row_union_t<Stages...>, typename Ctx::row_type>();
 
 template <class... Stages>
@@ -361,7 +373,7 @@ using stage_graph_row_union_t = typename detail::stage_graph_row_union<std::remo
 
 template <class Ctx, class Graph>
 concept CtxFitsPipelineDag =
-    ::foundation::effects::IsExecCtx<Ctx> && StageGraphWellFormed<Graph>
+    ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && StageGraphWellFormed<Graph>
     && ::foundation::decide::row_subset<stage_graph_row_union_t<Graph>, typename Ctx::row_type>();
 
 template <class Stage>
@@ -520,7 +532,13 @@ public:
     Pipeline(Pipeline&&) noexcept = default;
     Pipeline& operator=(Pipeline&&) noexcept = default;
 
-    void run() && noexcept {
+    // The caller presents its own context, and the gate of the mint runs
+    // again on it.  A pipeline can move to another thread after the mint,
+    // so the context of the mint says nothing about the thread that starts
+    // the stages.
+    template <::foundation::effects::IsExecCtx RunCtx>
+        requires CtxFitsPipeline<RunCtx, Stages...>
+    void run(RunCtx const& /*ctx*/) && noexcept {
         if (will_run_inline()) {
             std::move(*this).run_inline_impl_(std::index_sequence_for<Stages...>{});
         } else {
@@ -612,27 +630,18 @@ private:
 // factory would not match and the factory could not reach the constructor.
 namespace detail {
 
-template <class Ctx, class Graph, class... Stages>
-struct pipeline_dag_mint_gate {
-private:
-    static consteval bool compute() noexcept {
-        if constexpr (!CtxFitsPipelineDag<Ctx, Graph>) {
-            return false;
-        } else {
-            using expected = typename stage_graph_traits<std::remove_cvref_t<Graph>>::stage_pack_type;
-            using actual = StagePack<std::remove_cvref_t<Stages>...>;
-            return std::is_same_v<expected, actual>;
-        }
-    }
-
-public:
-    static constexpr bool value = compute();
-};
+// Read only after CtxFitsPipelineDag holds, so Graph is a stage graph here.
+template <class Graph, class... Stages>
+concept graph_stage_pack_is =
+    std::is_same_v<typename stage_graph_traits<std::remove_cvref_t<Graph>>::stage_pack_type,
+                   StagePack<std::remove_cvref_t<Stages>...>>;
 
 }  // namespace detail
 
+// A conjunction and not a folded value, so a refusal names the clause that
+// failed: the context, the graph, or the pack of stages.
 template <class Ctx, class Graph, class... Stages>
-concept CtxFitsPipelineDagMint = detail::pipeline_dag_mint_gate<Ctx, Graph, Stages...>::value;
+concept CtxFitsPipelineDagMint = CtxFitsPipelineDag<Ctx, Graph> && detail::graph_stage_pack_is<Graph, Stages...>;
 
 template <class Graph>
     requires StageGraphWellFormed<Graph>
@@ -664,7 +673,10 @@ public:
     PipelineDag(PipelineDag&&) noexcept = default;
     PipelineDag& operator=(PipelineDag&&) noexcept = default;
 
-    void run() && noexcept {
+    // As for a linear pipeline, the caller presents its own context.
+    template <::foundation::effects::IsExecCtx RunCtx>
+        requires CtxFitsPipelineDag<RunCtx, graph_type>
+    void run(RunCtx const& /*ctx*/) && noexcept {
         if (will_run_inline()) {
             std::move(*this).run_inline_impl_(std::index_sequence_for<Stages...>{});
         } else {
@@ -828,14 +840,20 @@ static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int>, eff::Row<eff::E
 static_assert(eff::Subrow<pipeline_row_union_t<S_bg_int_to_int, S_init_int_to_int>,
                           eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Init, eff::Effect::IO>>);
 
-static_assert(CtxFitsPipeline<HotFgCtx, S_int_to_int>);
+static_assert(CtxFitsPipeline<BgDrainCtx, S_int_to_int>);
+static_assert(CtxFitsPipeline<ColdInitCtx, S_int_to_int>);
 static_assert(CtxFitsPipeline<BgDrainCtx, S_int_to_float, S_float_to_double>);
 static_assert(CtxFitsPipeline<BgDrainCtx, S_bg_int_to_int, S_int_to_int>);
 static_assert(!CtxFitsPipeline<int, S_int_to_int>);
-static_assert(!CtxFitsPipeline<HotFgCtx, S_int_to_int, S_float_to_double>);
-static_assert(!CtxFitsPipeline<HotFgCtx, int>);
+static_assert(!CtxFitsPipeline<BgDrainCtx, S_int_to_int, S_float_to_double>);
+static_assert(!CtxFitsPipeline<BgDrainCtx, int>);
+// The hot context admits the empty row of the stages, and it still starts
+// no pipeline, because it owns no authority to start threads.
+static_assert(!CtxStartsStageThreads<HotFgCtx>);
+static_assert(!CtxFitsPipeline<HotFgCtx, S_int_to_int>);
+static_assert(!CtxStartsStageThreads<TestRunnerCtx>);
+static_assert(CtxStartsStageThreads<BgDrainCtx> && CtxStartsStageThreads<ColdInitCtx>);
 // The coordinating context admits fewer effects than the stage needs.
-static_assert(!CtxFitsPipeline<HotFgCtx, S_bg_int_to_int>);
 static_assert(!CtxFitsPipeline<ColdInitCtx, S_bg_int_to_int>);
 
 using FanOutGraph = StageGraph<StagePack<S_int_to_int, S_int_to_int, S_int_to_int, S_int_to_int>,
@@ -852,10 +870,11 @@ static_assert(StageGraphWellFormed<DiamondGraph>);
 static_assert(!StageGraphWellFormed<CycleGraph>);
 static_assert(!StageGraphWellFormed<UnreachableGraph>);
 static_assert(!StageGraphWellFormed<DisconnectedGraph>);
-static_assert(CtxFitsPipelineDag<HotFgCtx, FanOutGraph>);
-static_assert(CtxFitsPipelineDag<HotFgCtx, DiamondGraph>);
-static_assert(!CtxFitsPipelineDag<HotFgCtx, CycleGraph>);
-static_assert(!CtxFitsPipelineDag<HotFgCtx, UnreachableGraph>);
+static_assert(CtxFitsPipelineDag<BgDrainCtx, FanOutGraph>);
+static_assert(CtxFitsPipelineDag<BgDrainCtx, DiamondGraph>);
+static_assert(!CtxFitsPipelineDag<HotFgCtx, DiamondGraph>);
+static_assert(!CtxFitsPipelineDag<BgDrainCtx, CycleGraph>);
+static_assert(!CtxFitsPipelineDag<BgDrainCtx, UnreachableGraph>);
 static_assert(eff::Subrow<stage_graph_row_union_t<FanOutGraph>, eff::Row<>>);
 
 using P1 = Pipeline<S_int_to_int>;

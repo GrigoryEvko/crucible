@@ -56,8 +56,7 @@ static_assert(HugePipeline::aggregate_per_call_working_set == 100 * MiB);
 static_assert(HugePipeline::inline_safe);
 static_assert(HugePipeline::aggregate_working_set_known);
 
-// A site that runs a pipeline on the hot path and states the cache it
-// was built for.
+// A site that runs a pipeline and states the cache it was built for.
 template <class P>
     requires(P::template will_run_inline_v<32 * KiB, 1 * MiB>())
 void claim_inline() noexcept {}

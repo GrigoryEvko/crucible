@@ -30,7 +30,8 @@ int main() {
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     auto first = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     auto second = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-    auto pipeline = fixy::concurrent::mint_pipeline(ctx, std::move(first), std::move(second));
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
+    auto pipeline = fixy::concurrent::mint_pipeline(coordinator, std::move(first), std::move(second));
 
     auto twin = pipeline;
     (void)twin;

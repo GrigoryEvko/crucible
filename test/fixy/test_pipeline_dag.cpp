@@ -69,8 +69,10 @@ static void test_diamond_dag_runtime() {
     static_assert(!cc::StageGraphWellFormed<Cycle>);
     static_assert(!cc::StageGraphWellFormed<Unreachable>);
 
-    auto pipeline = cc::mint_pipeline_dag(ctx, Graph{}, std::move(s0), std::move(s1), std::move(s2), std::move(s3));
-    std::move(pipeline).run();
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
+    auto pipeline =
+        cc::mint_pipeline_dag(coordinator, Graph{}, std::move(s0), std::move(s1), std::move(s2), std::move(s3));
+    std::move(pipeline).run(coordinator);
 
     require(dag_calls.load(std::memory_order_relaxed) == 4, "diamond DAG did not run all four stages");
 }

@@ -1,9 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The graph declares two stages joined by one edge, and the call
-// supplies one stage.  The graph is well formed; the mint gate's second
-// clause, that the supplied pack is the graph's stage pack, is what
-// refuses.
+// A background context mints the pipeline, and the foreground thread
+// tries to run it.  A pipeline can move to another thread after the mint,
+// so run asks the context of the caller again.  The foreground context
+// owns neither Bg nor Init, so run refuses it.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -12,8 +12,6 @@
 #include <utility>
 
 namespace {
-
-namespace cc = fixy::concurrent;
 
 template <typename T>
 struct FakeConsumer {
@@ -27,17 +25,14 @@ struct FakeProducer {
 
 inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 
-using PlainStage = cc::Stage<&pass_through, fixy::HotFgCtx>;
-using TwoStageGraph = cc::StageGraph<cc::StagePack<PlainStage, PlainStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
-
 }  // namespace
 
 int main() {
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
-    auto only_stage = cc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-
     const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
-    auto bad = cc::mint_pipeline_dag(coordinator, TwoStageGraph{}, std::move(only_stage));
-    (void)bad;
+    auto stage = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto pipeline = fixy::concurrent::mint_pipeline(coordinator, std::move(stage));
+
+    std::move(pipeline).run(ctx);
     return 0;
 }

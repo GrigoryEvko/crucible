@@ -115,11 +115,12 @@ static void test_small_pipeline_runs_inline() {
     require(SmallPipeline::will_run_inline(), "8KB inline-safe pipeline should select inline dispatch");
 
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
     auto s0 = cc::mint_stage<&small_a>(ctx, Consumer<1 * KiB>{}, Producer<1 * KiB>{});
     auto s1 = cc::mint_stage<&small_b>(ctx, Consumer<1536>{}, Producer<1536>{});
     auto s2 = cc::mint_stage<&small_c>(ctx, Consumer<1536>{}, Producer<1536>{});
-    auto p = cc::mint_pipeline(ctx, std::move(s0), std::move(s1), std::move(s2));
-    std::move(p).run();
+    auto p = cc::mint_pipeline(coordinator, std::move(s0), std::move(s1), std::move(s2));
+    std::move(p).run(coordinator);
 
     require(calls.load(std::memory_order_relaxed) == 3, "small pipeline should run all three stages");
     require(main_thread_calls.load(std::memory_order_relaxed) == 3,
@@ -135,13 +136,14 @@ static void test_large_pipeline_spawns_threads() {
     require(!LargePipeline::will_run_inline(), "100MB inline-safe pipeline should exceed private-L2 inline gate");
 
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
     auto s0 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s1 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s2 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s3 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s4 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
-    auto p = cc::mint_pipeline(ctx, std::move(s0), std::move(s1), std::move(s2), std::move(s3), std::move(s4));
-    std::move(p).run();
+    auto p = cc::mint_pipeline(coordinator, std::move(s0), std::move(s1), std::move(s2), std::move(s3), std::move(s4));
+    std::move(p).run(coordinator);
 
     require(calls.load(std::memory_order_relaxed) == 5, "large pipeline should run all five stages");
     require(main_thread_calls.load(std::memory_order_relaxed) == 0,

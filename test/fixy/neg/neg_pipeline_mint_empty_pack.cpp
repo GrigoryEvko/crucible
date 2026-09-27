@@ -8,9 +8,9 @@
 #include <fixy/concurrent/Pipeline.h>
 
 int main() {
-    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
 
-    auto bad = fixy::concurrent::mint_pipeline(ctx);
+    auto bad = fixy::concurrent::mint_pipeline(coordinator);
     (void)bad;
     return 0;
 }

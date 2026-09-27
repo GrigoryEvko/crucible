@@ -32,7 +32,8 @@ int main() {
     auto first = fixy::concurrent::mint_stage<&int_pass>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     auto second = fixy::concurrent::mint_stage<&float_to_double>(ctx, FakeConsumer<float>{}, FakeProducer<double>{});
 
-    auto bad = fixy::concurrent::mint_pipeline(ctx, std::move(first), std::move(second));
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
+    auto bad = fixy::concurrent::mint_pipeline(coordinator, std::move(first), std::move(second));
     (void)bad;
     return 0;
 }

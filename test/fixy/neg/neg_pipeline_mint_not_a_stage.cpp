@@ -30,7 +30,8 @@ int main() {
     auto stage = fixy::concurrent::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
     int not_a_stage = 42;
 
-    auto bad = fixy::concurrent::mint_pipeline(ctx, std::move(stage), not_a_stage);
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
+    auto bad = fixy::concurrent::mint_pipeline(coordinator, std::move(stage), not_a_stage);
     (void)bad;
     return 0;
 }

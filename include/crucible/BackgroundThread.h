@@ -1229,7 +1229,7 @@ private:
 
         auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
                                                           std::move(build_stage), std::move(publish_stage));
-        std::move(pipeline).run();
+        std::move(pipeline).run(ctx);
     }
 
 public:
