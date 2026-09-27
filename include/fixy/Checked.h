@@ -83,17 +83,21 @@ template <std::signed_integral T>
     return static_cast<T>(a < T{0} ? -a : a);
 }
 
+// The exact value a * 2^shift, if T can hold it.  A shift count outside
+// [0, width) gives nullopt, and so does a shift that moves a bit out of
+// the width or changes the sign.  A negative value is not refused: since
+// C++20 its left shift is defined, and -1 shifted by 3 is exactly -8.
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_shl(T a, int shift) noexcept {
-    if (shift < 0 || shift >= static_cast<int>(sizeof(T) * 8)) [[unlikely]]
+    using Bits = std::make_unsigned_t<T>;
+    if (shift < 0 || shift >= std::numeric_limits<Bits>::digits) [[unlikely]]
         return std::nullopt;
-    if constexpr (std::is_signed_v<T>) {
-        // Shifting a negative value left is undefined, so it is refused
-        // rather than performed.
-        if (a < T{0}) [[unlikely]]
-            return std::nullopt;
-    }
-    return static_cast<T>(a << shift);
+    const T shifted = static_cast<T>(static_cast<Bits>(a) << shift);
+    // The right shift of a signed value copies the sign bit, so it gives
+    // back a only if the left shift lost no bit and kept the sign.
+    if ((shifted >> shift) != a) [[unlikely]]
+        return std::nullopt;
+    return shifted;
 }
 
 template <std::integral T>

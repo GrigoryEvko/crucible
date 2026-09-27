@@ -26,8 +26,9 @@
 //   checked_add/sub/mul  == wide-result-if-it-fits, else nullopt
 //   checked_div/mod      == zero→nullopt, signed MIN/-1 handled, else exact
 //   checked_neg/abs      (signed) == MIN→nullopt, else exact
-//   checked_shl/shr      == invalid-shift→nullopt, negative-left→nullopt,
-//                           else the truncated wide shift
+//   checked_shl          == invalid-shift→nullopt, else the wide product
+//                           a * 2^shift if it fits, else nullopt
+//   checked_shr          == invalid-shift→nullopt, else the wide shift
 //   wrapping_add/sub/mul == wide result truncated to T (mod 2^bits)
 //   trapping_add/sub/mul == checked value (only on non-overflowing inputs;
 //                           the abort path can't be fuzzed in-process)
@@ -168,13 +169,14 @@ template <typename T>
             {
                 const int shift = spec.shift;
                 const bool shift_ok = shift >= 0 && shift < bits;
-                // shl: also rejects negative-value left shift (signed, UB).
-                bool reject_shl = !shift_ok;
-                if constexpr (std::signed_integral<T>) {
-                    if (a < T{0}) reject_shl = true;
+                // shl: the exact product a * 2^shift if it fits, else
+                // nullopt.  The wide type holds that product for every
+                // T of 64 bits or less.
+                std::optional<T> want_shl = std::nullopt;
+                if (shift_ok) {
+                    const Wide<T> product = wa * (Wide<T>{1} << shift);
+                    if (fits<T>(product)) want_shl = static_cast<T>(product);
                 }
-                const std::optional<T> want_shl =
-                    reject_shl ? std::nullopt : std::optional<T>{static_cast<T>(static_cast<w_u>(wa) << shift)};
                 if (ck::checked_shl<T>(a, shift) != want_shl) return false;
 
                 const std::optional<T> want_shr =

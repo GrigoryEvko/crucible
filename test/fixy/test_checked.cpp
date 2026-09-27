@@ -11,9 +11,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <optional>
 #include <type_traits>
+#include <vector>
 
 namespace {
 
@@ -73,15 +75,54 @@ concept HasCheckedNeg = requires(T a) { checked_neg(a); };
 static_assert(HasCheckedNeg<I8>);
 static_assert(!HasCheckedNeg<U8>);
 
-// A shift is refused when the count leaves the width, and a negative
-// left operand is refused rather than shifted.
+// A left shift gives the exact product a * 2^shift or nothing.  It is
+// refused when the count leaves the width, when a bit moves out of the
+// width, and when the sign changes.  A negative value that keeps every
+// bit shifts like any other value.
 static_assert(checked_shl<U8>(1, 7).value() == 128);
 static_assert(!checked_shl<U8>(1, 8).has_value());
 static_assert(!checked_shl<U8>(1, -1).has_value());
-static_assert(!checked_shl<I8>(-1, 1).has_value());
+static_assert(!checked_shl<U8>(0xFF, 4).has_value());
+static_assert(!checked_shl<std::uint32_t>(0xFFFFFFFFu, 4).has_value());
+static_assert(!checked_shl<std::int32_t>(1, 31).has_value());
+static_assert(!checked_shl<I8>(64, 1).has_value());
+static_assert(checked_shl<I8>(-1, 1).value() == -2);
+static_assert(checked_shl<I8>(-1, 7).value() == i8_min);
+static_assert(checked_shl<I8>(-64, 1).value() == i8_min);
+static_assert(!checked_shl<I8>(-65, 1).has_value());
 static_assert(checked_shr<U8>(128, 7).value() == 1);
 static_assert(!checked_shr<U8>(128, 8).has_value());
 static_assert(checked_shr<I8>(-8, 1).value() == -4);
+
+// The reference for checked_shl is the product a * 2^shift in a signed
+// 128-bit integer.  That type holds the product for each type of 64 bits
+// or less, so the reference cannot lose a bit, and its answer is the
+// product if the type holds it and nothing if the type does not.
+__extension__ using WideProduct = __int128;
+
+template <typename T>
+[[nodiscard]] constexpr std::optional<T> shl_reference(T value, int shift) noexcept {
+    const WideProduct product = static_cast<WideProduct>(value) * (WideProduct{1} << shift);
+    if (product < static_cast<WideProduct>(std::numeric_limits<T>::min())
+        || product > static_cast<WideProduct>(std::numeric_limits<T>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<T>(product);
+}
+
+// Each 8-bit value at each shift from 0 to 7, at compile time.
+template <typename T>
+[[nodiscard]] consteval bool shl_matches_reference_for_every_8_bit_value() noexcept {
+    for (unsigned bits = 0; bits < 256u; ++bits) {
+        const auto value = static_cast<T>(bits);
+        for (int shift = 0; shift < 8; ++shift) {
+            if (checked_shl<T>(value, shift) != shl_reference<T>(value, shift)) return false;
+        }
+    }
+    return true;
+}
+static_assert(shl_matches_reference_for_every_8_bit_value<I8>());
+static_assert(shl_matches_reference_for_every_8_bit_value<U8>());
 
 // The wrapping family produces the truncated value the hardware would
 // have produced, and the saturating family produces the end of the
@@ -160,10 +201,80 @@ int check_runtime_matches_consteval() {
     return 0;
 }
 
+// The values the shift grid tries for one type.  An 8-bit or 16-bit type
+// gives every value.  A wider type gives 0, each power of two, each power
+// of two plus and minus one, the negation of each, two alternating bit
+// patterns, and the minimum and the maximum.  These values put the
+// highest set bit and the sign bit at each position of the width.
+template <typename T>
+[[nodiscard]] std::vector<T> shift_grid_values() {
+    using Bits = std::make_unsigned_t<T>;
+    constexpr int width = std::numeric_limits<Bits>::digits;
+    std::vector<T> values;
+    if constexpr (width <= 16) {
+        for (std::uint32_t bits = 0; bits <= std::numeric_limits<Bits>::max(); ++bits) {
+            values.push_back(static_cast<T>(bits));
+        }
+        return values;
+    } else {
+        values.push_back(T{0});
+        values.push_back(std::numeric_limits<T>::min());
+        values.push_back(std::numeric_limits<T>::max());
+        values.push_back(static_cast<T>(static_cast<Bits>(0x5555555555555555ull)));
+        values.push_back(static_cast<T>(static_cast<Bits>(0xAAAAAAAAAAAAAAAAull)));
+        for (int position = 0; position < width; ++position) {
+            const Bits power = static_cast<Bits>(Bits{1} << position);
+            for (const Bits near : {power, static_cast<Bits>(power - 1u), static_cast<Bits>(power + 1u)}) {
+                values.push_back(static_cast<T>(near));
+                values.push_back(static_cast<T>(static_cast<Bits>(Bits{0} - near)));
+            }
+        }
+        return values;
+    }
+}
+
+// Each value of the grid at each shift from 0 to the width minus one,
+// compared with the 128-bit product.  The shifts at the width and at -1
+// must give nothing for each value.  Complexity: O(values * width).
+template <typename T>
+[[nodiscard]] bool shl_matches_reference_on_the_grid() {
+    constexpr int width = std::numeric_limits<std::make_unsigned_t<T>>::digits;
+    volatile int shift_source = 0;
+    for (const T value : shift_grid_values<T>()) {
+        for (int step = 0; step < width; ++step) {
+            shift_source = step;
+            const int shift = shift_source;
+            if (checked_shl<T>(value, shift) != shl_reference<T>(value, shift)) {
+                std::fprintf(stderr, "checked_shl: width %d, shift %d, value %lld disagrees with the reference\n",
+                             width, shift, static_cast<long long>(value));
+                return false;
+            }
+        }
+        shift_source = width;
+        if (checked_shl<T>(value, shift_source).has_value()) return false;
+        shift_source = -1;
+        if (checked_shl<T>(value, shift_source).has_value()) return false;
+    }
+    return true;
+}
+
+[[nodiscard]] int check_shl_grid() {
+    if (!shl_matches_reference_on_the_grid<std::int8_t>()) return 40;
+    if (!shl_matches_reference_on_the_grid<std::uint8_t>()) return 41;
+    if (!shl_matches_reference_on_the_grid<std::int16_t>()) return 42;
+    if (!shl_matches_reference_on_the_grid<std::uint16_t>()) return 43;
+    if (!shl_matches_reference_on_the_grid<std::int32_t>()) return 44;
+    if (!shl_matches_reference_on_the_grid<std::uint32_t>()) return 45;
+    if (!shl_matches_reference_on_the_grid<std::int64_t>()) return 46;
+    if (!shl_matches_reference_on_the_grid<std::uint64_t>()) return 47;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (int rc = check_runtime_matches_consteval(); rc != 0) return rc;
+    if (int rc = check_shl_grid(); rc != 0) return rc;
 
     return 0;
 }
