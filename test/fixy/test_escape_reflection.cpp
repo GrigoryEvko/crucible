@@ -5,14 +5,15 @@
 //
 // scripts/check-escape-doors.py reads the parse tree and is the tree-wide
 // net.  It is coarse: a return type that a macro hides slips through,
-// which is the dangerous direction.  This
-// TU closes that gap for the wrappers where a raw escape is dangerous:
-// it walks each one's public members through std::meta and asserts every
-// reference- or pointer-returning member is a sanctioned accessor, a
-// discouraged escape hatch, a within-object operator, or a mint.  A new
-// member added to any wrapper below — a trailing-return `auto -> T&`, a
-// macro-hidden type, a declaration split across lines — is seen exactly
-// as the first was, because the compiler resolved its return type.
+// which is the dangerous direction.  This TU closes that gap for the
+// wrappers where a raw escape is dangerous.  It reads the public surface
+// of each one through std::meta: its own members, the members of each
+// public base, and each member of a base that a using-declaration makes
+// public.  Every member there that returns a reference or a pointer must
+// be a sanctioned accessor, a discouraged escape hatch, a within-object
+// operator or a mint, and no data member may be public.  A new member
+// added to any wrapper below or to a base of it is seen exactly as the
+// first was, because the compiler resolved its return type.
 //
 // This is a compile-only assertion: the TU builds iff every wrapper's
 // escape surface is sanctioned, and main() only proves it linked.

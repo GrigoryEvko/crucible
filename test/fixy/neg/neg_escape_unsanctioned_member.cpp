@@ -11,9 +11,8 @@
 
 namespace {
 
-struct Leaky {
-    int value_ = 0;
-
+class Leaky {
+public:
     // A getter by a sanctioned name, to prove the guard admits the safe
     // door beside the unsafe one rather than firing on everything.
     [[nodiscard]] int& get() noexcept { return value_; }
@@ -22,6 +21,9 @@ struct Leaky {
     // spelled with a trailing return so a text scan is most likely to
     // miss it.
     [[nodiscard]] auto steal_the_pointer() noexcept -> int* { return &value_; }
+
+private:
+    int value_ = 0;
 };
 
 }  // namespace
