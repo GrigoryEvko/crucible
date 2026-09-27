@@ -14,7 +14,7 @@
 // straddles a migration over an offset boundary can report a delta that
 // runs backwards and wraps.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -42,22 +42,11 @@ inline constexpr std::size_t pinning_requirement_count = ::foundation::reflect::
     return ::foundation::reflect::enum_name(p);
 }
 
-struct PinningRequirementLattice : ChainLatticeOps<PinningRequirement> {
-    // A broader coherence domain is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return PinningRequirement::NotRequired; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return PinningRequirement::CrossSocketSafe; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "PinningRequirementLattice"; }
-
+// A broader coherence domain is the stronger claim.
+struct PinningRequirementLattice
+    : EnumChainLattice<PinningRequirementLattice, PinningRequirement, ClaimOrientation::stronger_is_higher> {
     template <PinningRequirement P>
-    struct AtElement : PinnedElement<P> {
-        using pinning_requirement_value_type = PinningRequirement;
-    };
-
-    template <PinningRequirement P>
-    struct At : PinnedAt<PinningRequirementLattice, P, AtElement<P>> {
+    struct At : PinnedAt<PinningRequirementLattice, P> {
         static constexpr PinningRequirement requirement = P;
     };
 };
@@ -105,23 +94,6 @@ static_assert(pinning_requirement_name(static_cast<PinningRequirement>(255)) == 
 
 static_assert(pinning_requirement::NotRequiredPin::requirement == PinningRequirement::NotRequired);
 static_assert(pinning_requirement::CrossSocketSafePin::requirement == PinningRequirement::CrossSocketSafe);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using CorePinnedGraded = Graded<ModalityKind::Absolute, pinning_requirement::PerCorePin, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(CorePinnedGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(CorePinnedGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(CorePinnedGraded, int);
-
-template <typename T_>
-using CrossSocketGraded = Graded<ModalityKind::Absolute, pinning_requirement::CrossSocketSafePin, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(CrossSocketGraded, EightByteValue);
 
 }  // namespace detail::pinning_requirement_lattice_self_test
 

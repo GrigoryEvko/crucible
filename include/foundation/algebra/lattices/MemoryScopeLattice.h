@@ -13,7 +13,7 @@
 // Wider visibility sits higher, so a leq that holds reads as a value needing
 // the lower scope being published by a fence at the higher one.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -53,14 +53,31 @@ inline constexpr std::size_t memory_scope_count = ::foundation::reflect::enum_co
     return ::foundation::reflect::enum_name(x);
 }
 
-[[nodiscard]] constexpr bool mem_scope_is_accel(MemoryScope x) noexcept {
-    const auto u = std::to_underlying(x);
-    return u >= std::to_underlying(MemoryScope::Warp) && u <= std::to_underlying(MemoryScope::Gpu);
+namespace detail {
+
+// The chain that holds x: the high nibble of its value, 1 for the
+// accelerator scopes and 2 for the host domains.  Thread, System and a
+// value outside the enum hold no chain, and the answer is 0 for them.
+[[nodiscard]] constexpr std::uint8_t mem_scope_chain(MemoryScope x) noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
+    // `template for` unrolls into successive scopes that each declare the
+    // induction variable, and -Wshadow fires on the body.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto scope : enumerators) {
+        if (x == [:scope:]) {
+            const auto nibble = static_cast<std::uint8_t>(std::to_underlying(x) >> 4);
+            return nibble == 1 || nibble == 2 ? nibble : std::uint8_t{0};
+        }
+    }
+#pragma GCC diagnostic pop
+    return 0;
 }
-[[nodiscard]] constexpr bool mem_scope_is_arm(MemoryScope x) noexcept {
-    const auto u = std::to_underlying(x);
-    return u >= std::to_underlying(MemoryScope::Inner) && u <= std::to_underlying(MemoryScope::Outer);
-}
+
+}  // namespace detail
+
+[[nodiscard]] constexpr bool mem_scope_is_accel(MemoryScope x) noexcept { return detail::mem_scope_chain(x) == 1; }
+[[nodiscard]] constexpr bool mem_scope_is_arm(MemoryScope x) noexcept { return detail::mem_scope_chain(x) == 2; }
 // Thread and System belong to neither chain, so this answers false for both of
 // them against anything.  Every caller therefore has to settle those two cases
 // before asking.
@@ -119,12 +136,7 @@ struct MemoryScopeLattice {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "MemoryScopeLattice"; }
 
     template <MemoryScope S>
-    struct AtElement : PinnedElement<S> {
-        using memory_scope_value_type = MemoryScope;
-    };
-
-    template <MemoryScope S>
-    struct At : PinnedAt<MemoryScopeLattice, S, AtElement<S>> {
+    struct At : PinnedAt<MemoryScopeLattice, S> {
         static constexpr MemoryScope scope = S;
     };
 };
@@ -142,9 +154,9 @@ using SystemScope = MemoryScopeLattice::At<MemoryScope::System>;
 
 namespace detail::memory_scope_lattice_self_test {
 
-static_assert(memory_scope_count == 8, "The MemoryScope catalog changed size.  Confirm the intent, then update "
-                                       "mem_scope_is_accel and mem_scope_is_arm, which bound the two chains by "
-                                       "underlying value.");
+static_assert(memory_scope_count == 8, "The MemoryScope catalog changed size.  Confirm the intent: a new scope takes "
+                                       "the next free value inside the high nibble of its chain, and the chain "
+                                       "predicates read that nibble.");
 
 static_assert(Lattice<MemoryScopeLattice>);
 static_assert(BoundedLattice<MemoryScopeLattice>);
@@ -169,6 +181,9 @@ static_assert(mem_scope_same_trunk(MemoryScope::Inner, MemoryScope::Outer));
 static_assert(!mem_scope_same_trunk(MemoryScope::Cta, MemoryScope::Inner));
 static_assert(!mem_scope_same_trunk(MemoryScope::Thread, MemoryScope::Inner));
 static_assert(!mem_scope_same_trunk(MemoryScope::System, MemoryScope::Cta));
+// A value outside the enum holds no chain, although its high nibble is the
+// nibble of the accelerator chain.
+static_assert(!mem_scope_is_accel(static_cast<MemoryScope>(0x14)) && !mem_scope_is_arm(static_cast<MemoryScope>(0x22)));
 
 // The partial-order axioms at every triple, and leq, join and meet in
 // agreement at every pair, walked by reflection over the enumerators.
@@ -249,28 +264,6 @@ static_assert(memory_scope_name(static_cast<MemoryScope>(0x30)) == "<unknown Mem
 
 static_assert(memory_scope::CtaScope::scope == MemoryScope::Cta);
 static_assert(memory_scope::SystemScope::scope == MemoryScope::System);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using SystemScopeGraded = Graded<ModalityKind::Absolute, memory_scope::SystemScope, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SystemScopeGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SystemScopeGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SystemScopeGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SystemScopeGraded, double);
-
-template <typename T_>
-using CtaGraded = Graded<ModalityKind::Absolute, memory_scope::CtaScope, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(CtaGraded, EightByteValue);
-
-template <typename T_>
-using OuterGraded = Graded<ModalityKind::Absolute, memory_scope::OuterScope, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(OuterGraded, EightByteValue);
 
 }  // namespace detail::memory_scope_lattice_self_test
 

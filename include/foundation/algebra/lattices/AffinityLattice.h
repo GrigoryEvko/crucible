@@ -81,7 +81,7 @@ struct AffinityMask {
 struct AffinityLattice {
     using element_type = AffinityMask;
 
-    // A larger mask says less about where the thread runs, so it is the
+    // A larger mask says less about where the thread runs, and it is the
     // weaker claim.
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
 

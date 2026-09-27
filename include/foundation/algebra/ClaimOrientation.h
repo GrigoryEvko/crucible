@@ -1,35 +1,38 @@
 #pragma once
 
-// How a lattice reads as a claim: which way its order runs, and whether
-// the claim is about the bytes of a value or about the slot that holds
-// them.  The second question is answered near the end of this file.
+// How the order of a lattice relates to a claim: which way the order
+// runs, and whether the claim is about the bytes of a value or about the
+// slot that holds them.  The end of this file answers the second
+// question.
 //
-// Graded reads its up direction as the weaker claim.  weaken() and
-// compose() move a stored grade up and nowhere else, so a grade that
-// moves up must promise less.  This is the approximation order of a
-// graded modal type (Orchard, Liepelt and Eades, ICFP 2019): a value
-// graded r may be used where grade s is asked for when r approximates s,
-// and the order that Graded reads must be that approximation.
+// In Graded, up is the weaker claim.  weaken() and compose() move a
+// stored grade up and nowhere else, and a grade that moves up must
+// promise less.  This is the approximation order of a graded modal type
+// (Orchard, Liepelt and Eades, ICFP 2019): a value graded r can be used
+// where grade s is necessary when r approximates s.  The order of Graded
+// must be that approximation.
 //
-// A lattice whose order puts the stronger claim higher breaks the rule.
-// Both operations then strengthen a claim with no proof.  A version
-// counter is that case: a newer epoch is the stronger claim, so a Graded
-// over the numeric epoch order lets weaken() mark a stale value as fresh.
-// The order dual of that lattice reads the right way, and Graded accepts
-// it.
+// A lattice whose order puts the stronger claim higher breaks the rule,
+// because both operations then strengthen a claim with no proof.  A
+// version counter is that case.  A newer epoch is the stronger claim, and
+// a Graded over the numeric epoch order lets weaken() mark a stale value
+// as fresh.  The order dual of that lattice has the correct orientation,
+// and Graded accepts it.
 //
-// A lattice states its reading with the static member claim_orientation
-// (the type is in Lattice.h).  The reading of a lattice that states
-// none is derived from its element type.  An empty element type has one
-// value, so every move leaves the claim where it was, and the reading is
-// one_claim.  Any other element type makes the reading unstated, and
-// Graded refuses an unstated lattice as a stored grade: an unknown
-// reading is refused, never admitted.  A generic lattice, such as a chain
-// over any enumeration, has as many readings as its uses, so it states
-// nothing, and the wrapper that grades by it passes a lattice that states
-// one.  The dual of a lattice turns its reading over, and a product has
-// the reading that its components share.  Each of the two is derived
-// here from its components, never restated by hand.
+// A lattice states its orientation with the static member
+// claim_orientation (the type is in Lattice.h).  The orientation of a
+// lattice that states none comes from its element type.  An empty element
+// type has one value, and each move leaves the claim where it was: the
+// orientation is one_claim.  Any other element type makes the orientation
+// unstated.  Graded refuses an unstated lattice as a stored grade, because
+// an unknown orientation is refused and never admitted.
+//
+// A generic lattice, such as a chain over any enumeration, has as many
+// orientations as its uses.  It states none, and the wrapper that grades
+// by it gives a lattice that states one.  The dual of a lattice turns its
+// orientation over, and a product has the orientation that its components
+// share.  This file derives each of the two from the components, and no
+// lattice states them again by hand.
 
 #include <foundation/algebra/Lattice.h>
 
@@ -38,12 +41,12 @@
 
 namespace foundation::algebra {
 
-// The reading that L states, one_claim when L states none and its
-// element type is empty, and unstated otherwise.  A member with the right
-// name and another type stops the build, so a misspelt declaration
-// cannot fall back to a derived reading.  One claim is a property of the
-// element type, so a lattice that states it over an element with more
-// than one value reads as unstated.
+// The orientation that L states.  If L states none, the orientation is
+// one_claim for an empty element type, and unstated for any other.  A
+// member with the correct name and another type stops the build, because
+// a misspelt declaration must not fall back to a derived orientation.
+// One claim is a property of the element type.  A lattice that states it
+// over an element with more than one value is unstated.
 template <typename L>
 [[nodiscard]] consteval ClaimOrientation claim_orientation_of() noexcept {
     if constexpr (requires { L::claim_orientation; }) {
@@ -64,20 +67,21 @@ template <typename L>
 template <typename L>
 inline constexpr ClaimOrientation claim_orientation_v = claim_orientation_of<L>();
 
-// The reading of the order dual: the stronger and the weaker ends
-// exchange places.  One claim stays one claim, and an unstated reading
-// stays unstated.
+// The orientation of the order dual: the stronger and the weaker ends
+// exchange places.  One claim stays one claim, and an unstated
+// orientation stays unstated.
 [[nodiscard]] consteval ClaimOrientation turned_over(ClaimOrientation source) noexcept {
     if (source == ClaimOrientation::weaker_is_higher) return ClaimOrientation::stronger_is_higher;
     if (source == ClaimOrientation::stronger_is_higher) return ClaimOrientation::weaker_is_higher;
     return source;
 }
 
-// The reading of a product.  The product moves every component at once,
-// so one component whose up is the stronger claim lets the product
-// strengthen a claim, and one component whose reading is unknown makes
-// the reading of the product unknown.  A one-claim component never
-// moves, so it leaves the reading of the others as it is.
+// The orientation of a product.  The product moves each component at
+// the same time.  One component whose up is the stronger claim lets the
+// product strengthen a claim, and one component whose orientation is
+// unknown makes the orientation of the product unknown.  A one-claim
+// component does not move, and it leaves the orientation of the others
+// as it is.
 template <typename... Ls>
 [[nodiscard]] consteval ClaimOrientation product_orientation() noexcept {
     if ((... || (claim_orientation_v<Ls> == ClaimOrientation::stronger_is_higher))) {
@@ -92,8 +96,8 @@ template <typename... Ls>
     return ClaimOrientation::one_claim;
 }
 
-// A lattice that Graded may store beside a value: up is the weaker claim,
-// or the lattice has one element and so no up at all.
+// A lattice that Graded can store beside a value: up is the weaker claim,
+// or the lattice has one element and no up at all.
 template <typename L>
 concept GradableLattice = Lattice<L>
                        && (claim_orientation_v<L> == ClaimOrientation::weaker_is_higher
@@ -174,8 +178,8 @@ static_assert(claim_orientation_v<Weaker> == ClaimOrientation::weaker_is_higher)
 static_assert(claim_orientation_v<Stronger> == ClaimOrientation::stronger_is_higher);
 static_assert(claim_orientation_v<Single> == ClaimOrientation::one_claim, "an empty element names one claim");
 
-// A lattice that states one claim over an element with two values reads
-// as unstated, so it cannot state its way past the gate.
+// A lattice that states one claim over an element with two values is
+// unstated.  It cannot state its way past the gate.
 struct ForgedSingle : Silent {
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::one_claim;
 };
@@ -195,8 +199,9 @@ static_assert(product_orientation<Weaker, Single>() == ClaimOrientation::weaker_
 static_assert(product_orientation<Single, Single>() == ClaimOrientation::one_claim);
 static_assert(product_orientation<>() == ClaimOrientation::one_claim);
 
-// An unstated reading is refused as a stored grade, as a stated stronger
-// one is.  The two readings that Graded accepts are the positive cases.
+// An unstated orientation is refused as a stored grade, as a stated
+// stronger one is.  The two orientations that Graded accepts are the
+// positive cases.
 static_assert(GradableLattice<Weaker> && GradableLattice<Single>);
 static_assert(!GradableLattice<Stronger> && !GradableLattice<Silent> && !GradableLattice<ForgedSingle>);
 static_assert(Lattice<Stronger> && Lattice<Silent>, "the refusal is about orientation, not about the lattice laws");

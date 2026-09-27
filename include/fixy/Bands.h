@@ -31,8 +31,8 @@
 // RecipeSpec is not a band.  It carries both numerical axes at run time,
 // so the grade is stored beside the value and the caller decides
 // admission with admits().  Its door is mint_recipe_spec.  On each axis
-// up is the stronger claim, so the stored grade is the order dual, and
-// the substrate's weaken() and compose() can only relax a claim.
+// up is the stronger claim.  The stored grade is the order dual, and the
+// weaken() and compose() of the substrate can only relax a claim.
 //
 // Two bands pin a partial order rather than a chain.  ScopedFence's
 // scopes form two trunks that meet only at the ends, so two scopes on
@@ -102,10 +102,10 @@ using ::foundation::algebra::lattices::WaitLattice;
 // every band, so none exists.
 
 // A pinned grade: the At<v> of a lattice over a scoped enum, whose outer
-// order reads up as the stronger claim.  relax moves a band down and
-// satisfies_v admits a band at or above a requirement, and both
-// directions are sound only for that reading.  A pinned grade of an outer
-// lattice that states another reading, or none, is not a band.
+// order puts the stronger claim higher.  relax moves a band down, and
+// satisfies_v admits a band at or above a requirement.  The two
+// directions are sound only for that orientation.  A pinned grade of an
+// outer lattice that states another orientation, or none, is not a band.
 template <typename L>
 concept IsPinnedGrade = requires {
     typename L::outer_lattice;
@@ -492,12 +492,13 @@ template <std::meta::info Ns, std::meta::info EnumInfo>
 //
 // A value paired with the numerical strategy it was produced under: a
 // tolerance tier and a reduction family, both carried at run time.  The
-// tiers form a chain.  The families do not, so two named families are
+// tiers form a chain.  The families do not: two named families are
 // incomparable siblings under a wildcard that stands for all of them.
 //
-// A tighter tier and a wider family are the stronger claims, so the grade
-// is the product of the two order duals.  weaken() moves toward RELAXED
-// and None, and compose() reports the looser tier and the common family.
+// A tighter tier and a wider family are the stronger claims, and the
+// grade is the product of the two order duals.  weaken() moves toward
+// RELAXED and None, and compose() gives the looser tier and the common
+// family.
 
 using RecipeSpecLattice =
     ::foundation::algebra::lattices::ProductLattice<::foundation::algebra::lattices::DualLattice<ToleranceLattice>,
@@ -574,14 +575,15 @@ static_assert(IsBand<PureInt const&>);
 static_assert(IsBand<opaque_lifetime::PerFleet<int>>);
 static_assert(!IsBand<int>);
 
-// A pinned grade whose outer order reads up as the weaker claim is not a
-// band, so relax cannot move a Public value to Secret by calling that the
-// weaker end.  The same carrier over a stronger-up order is one.
+// A pinned grade whose outer order puts the weaker claim higher is not a
+// band.  relax cannot move a Public value to Secret, although Secret is
+// the weaker end.  The same carrier over an order that puts the stronger
+// claim higher is a band.
 using PinnedConf = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute,
                                                  ::foundation::algebra::lattices::ConfLattice::At<
                                                      ::foundation::algebra::lattices::Conf::Public>,
                                                  int>;
-static_assert(!IsBand<PinnedConf>, "relax and satisfies_v read the outer order as the stronger claim");
+static_assert(!IsBand<PinnedConf>, "relax and satisfies_v need an outer order that puts the stronger claim higher");
 static_assert(!IsBand<RecipeSpec<int>>, "the grade of a RecipeSpec is stored, not pinned");
 
 static_assert(IsBandOf<DetSafeLattice, PureInt>);

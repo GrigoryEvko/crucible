@@ -1,7 +1,8 @@
 // A chain that states no claim orientation cannot say which way weaken()
-// moves a claim.  Graded refuses such a lattice as a stored grade: an
-// unknown reading is refused, never admitted.  The same chain grades a
-// value that is its own grade, which the self-test in Graded.h shows.
+// moves a claim.  Graded refuses such a lattice as a stored grade, because
+// an unknown orientation is refused and never admitted.  The same chain
+// grades a value that is its own grade, and the self-test in Graded.h
+// shows that.
 
 #include <foundation/algebra/Graded.h>
 

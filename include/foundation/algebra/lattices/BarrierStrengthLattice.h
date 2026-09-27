@@ -28,7 +28,7 @@
 // A fence-then-relaxed pattern whose correctness depends on a particular
 // architecture is claimed separately.  Nothing here proves it.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -101,12 +101,7 @@ struct BarrierStrengthLattice {
     }
 
     template <BarrierStrength K>
-    struct AtElement : PinnedElement<K> {
-        using barrier_strength_value_type = BarrierStrength;
-    };
-
-    template <BarrierStrength K>
-    struct At : PinnedAt<BarrierStrengthLattice, K, AtElement<K>> {
+    struct At : PinnedAt<BarrierStrengthLattice, K> {
         static constexpr BarrierStrength tier = K;
     };
 };
@@ -208,24 +203,6 @@ static_assert(BarrierStrengthLattice::At<static_cast<BarrierStrength>(255)>::nam
 
 static_assert(barrier_strength_name(BarrierStrength::CompilerBarrier) == "CompilerBarrier");
 static_assert(barrier_strength_name(static_cast<BarrierStrength>(255)) == "<unknown BarrierStrength>");
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using NoneGraded = Graded<ModalityKind::Absolute, BarrierStrengthLattice::At<BarrierStrength::None>, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, double);
-
-template <typename T_>
-using FullFenceGraded = Graded<ModalityKind::Absolute, BarrierStrengthLattice::At<BarrierStrength::FullFence>, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FullFenceGraded, EightByteValue);
 
 }  // namespace detail::barrier_strength_lattice_self_test
 

@@ -1,5 +1,5 @@
 // A purer source is the stronger claim in the determinism chain.  A grade
-// stored beside a value in that order would let weaken() move a value read
+// stored beside a value in that order can let weaken() move a value read
 // from a nondeterministic syscall up to Pure.  The chain states that its
 // up is the stronger claim, and Graded refuses it at the template head.
 

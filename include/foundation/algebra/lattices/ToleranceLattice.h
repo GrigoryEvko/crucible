@@ -12,7 +12,7 @@
 // values and the witness set stays finite and enumerable.  A continuous
 // budget belongs one level up, in whatever solves for it.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -43,22 +43,10 @@ inline constexpr std::size_t tolerance_count = ::foundation::reflect::enum_count
     return ::foundation::reflect::enum_name(t);
 }
 
-struct ToleranceLattice : ChainLatticeOps<Tolerance> {
-    // A tighter error bound is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return Tolerance::RELAXED; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return Tolerance::BITEXACT; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "ToleranceLattice"; }
-
+// A tighter error bound is the stronger claim.
+struct ToleranceLattice : EnumChainLattice<ToleranceLattice, Tolerance, ClaimOrientation::stronger_is_higher> {
     template <Tolerance T>
-    struct AtElement : PinnedElement<T> {
-        using tolerance_value_type = Tolerance;
-    };
-
-    template <Tolerance T>
-    struct At : PinnedAt<ToleranceLattice, T, AtElement<T>> {
+    struct At : PinnedAt<ToleranceLattice, T> {
         static constexpr Tolerance tier = T;
     };
 };
@@ -106,28 +94,6 @@ static_assert(tolerance_name(static_cast<Tolerance>(255)) == "<unknown Tolerance
 
 static_assert(tolerance::RelaxedTier::tier == Tolerance::RELAXED);
 static_assert(tolerance::BitexactTier::tier == Tolerance::BITEXACT);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using BitexactGraded = Graded<ModalityKind::Absolute, tolerance::BitexactTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BitexactGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BitexactGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BitexactGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BitexactGraded, double);
-
-template <typename T_>
-using Fp16Graded = Graded<ModalityKind::Absolute, tolerance::Fp16Tier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Fp16Graded, EightByteValue);
-
-template <typename T_>
-using RelaxedGraded = Graded<ModalityKind::Absolute, tolerance::RelaxedTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxedGraded, EightByteValue);
 
 }  // namespace detail::tolerance_lattice_self_test
 

@@ -51,8 +51,8 @@ static_assert(recipe_family_count == 6, "RecipeFamily must hold exactly six enum
 struct RecipeFamilyLattice {
     using element_type = RecipeFamily;
 
-    // A family that covers more requested families is the stronger claim,
-    // so Any, which covers all of them, is the strongest.
+    // A family that covers more requested families is the stronger claim.
+    // Any covers all of them and is the strongest.
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return RecipeFamily::None; }

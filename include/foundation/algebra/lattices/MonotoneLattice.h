@@ -16,11 +16,11 @@
 // Nothing here enforces that at compile time.  The bounds themselves
 // are safe because lowest() and max() are finite.
 //
-// The lattice states no claim orientation.  A monotone count can be read
-// as a lower bound or as an upper bound, and the two readings run in
-// opposite directions.  Monotonic grades a value by the value itself,
-// and Graded asks no orientation of a grade that is the value.  A stored
-// grade in this order is refused (ClaimOrientation.h).
+// The lattice states no claim orientation.  A monotone count can be a
+// lower bound or an upper bound, and the two bounds run in opposite
+// directions.  Monotonic grades a value by the value itself, and Graded
+// asks no orientation of a grade that is the value.  A stored grade in
+// this order is refused (ClaimOrientation.h).
 
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>

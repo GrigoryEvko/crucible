@@ -265,13 +265,13 @@ foundation_neg_compile_test(neg_strong_counter_retag_by_construction
 foundation_neg_compile_test(neg_strong_counter_join_across_axes
   "cannot convert .element_type<foundation::algebra::lattices::counter_tags::generation>. to .element_type<foundation::algebra::lattices::counter_tags::epoch>."
   "initializing argument 2 of .static constexpr foundation::algebra::lattices::StrongCounterLattice<Tag>::element_type foundation::algebra::lattices::StrongCounterLattice<Tag>::join\\(")
-# Graded reads up as the weaker claim.  A version counter in its numeric
+# In Graded, up is the weaker claim.  A version counter in its numeric
 # order, a product with one such component, the dual of a use counter and
-# the determinism chain each read up as the stronger claim, and a chain
-# that states no reading is unknown.  Graded refuses each of them as a
-# stored grade.  The second regex names the refused lattice beside a
-# payload that it does not name, and the third says that neither the
-# orientation nor a grade derived from the value admits it.
+# the determinism chain each put the stronger claim higher, and the
+# orientation of a chain that states none is unknown.  Graded refuses
+# each of them as a stored grade.  The second regex names the refused
+# lattice beside a payload that it does not name, and the third says that
+# neither the orientation nor a grade derived from the value admits it.
 foundation_neg_compile_test(neg_graded_version_counter_numeric_order
   "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
   "satisfaction of .LatticeGradesValue<L, T>. .with L = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>. T = int."

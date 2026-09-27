@@ -248,7 +248,7 @@ static_assert(FractionalLattice::add(FractionalLattice::top(), FractionalLattice
 
 static_assert(FractionalLattice::name() == "FractionalLattice");
 
-// A larger share is the stronger claim, so a share stored beside a value
+// A larger share is the stronger claim.  A share stored beside a value
 // goes through the order dual, where weaken() gives a smaller share.
 static_assert(!GradableLattice<FractionalLattice> && GradableLattice<DualLattice<FractionalLattice>>);
 

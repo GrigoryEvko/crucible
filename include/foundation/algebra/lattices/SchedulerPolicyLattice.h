@@ -16,7 +16,7 @@
 //
 // Old spelling: include/crucible/algebra/lattices/SchedulerPolicyLattice.h.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/EnumName.h>
@@ -46,22 +46,11 @@ inline constexpr std::size_t scheduler_policy_count = ::foundation::reflect::enu
     return ::foundation::reflect::enum_name(p);
 }
 
-struct SchedulerPolicyLattice : ChainLatticeOps<SchedulerPolicy> {
-    // A class that preempts more is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return SchedulerPolicy::Idle; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return SchedulerPolicy::Deadline; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "SchedulerPolicyLattice"; }
-
+// A class that preempts more is the stronger claim.
+struct SchedulerPolicyLattice
+    : EnumChainLattice<SchedulerPolicyLattice, SchedulerPolicy, ClaimOrientation::stronger_is_higher> {
     template <SchedulerPolicy P>
-    struct AtElement : PinnedElement<P> {
-        using scheduler_policy_value_type = SchedulerPolicy;
-    };
-
-    template <SchedulerPolicy P>
-    struct At : PinnedAt<SchedulerPolicyLattice, P, AtElement<P>> {
+    struct At : PinnedAt<SchedulerPolicyLattice, P> {
         static constexpr SchedulerPolicy policy = P;
     };
 };
@@ -81,111 +70,39 @@ static_assert(scheduler_policy_count == 6, "SchedulerPolicy catalog diverged fro
                                            "RoundRobin, Fifo, Deadline}.  A new class needs the admission "
                                            "thresholds that name a class rechecked.");
 
-// Each enumerator renders as the identifier it declares, and a value
-// outside the enum reaches the sentinel.  These pins replace the two
-// coverage walks the hand-written name switches needed: with the name
-// read from the enumerator, those walks answered true by construction.
-static_assert(scheduler_policy_name(SchedulerPolicy::Idle) == "Idle");
-static_assert(scheduler_policy_name(SchedulerPolicy::Batch) == "Batch");
-static_assert(scheduler_policy_name(SchedulerPolicy::Other) == "Other");
-static_assert(scheduler_policy_name(SchedulerPolicy::RoundRobin) == "RoundRobin");
-static_assert(scheduler_policy_name(SchedulerPolicy::Fifo) == "Fifo");
-static_assert(scheduler_policy_name(SchedulerPolicy::Deadline) == "Deadline");
-static_assert(scheduler_policy_name(static_cast<SchedulerPolicy>(200)) == "<unknown SchedulerPolicy>",
-              "A value outside the enum must reach the unknown-class sentinel, so a corrupt byte prints as "
-              "one rather than as an empty name.");
-
-static_assert(Lattice<SchedulerPolicyLattice>);
-static_assert(BoundedLattice<SchedulerPolicyLattice>);
-static_assert(Lattice<scheduler_policy::IdleClass>);
-static_assert(Lattice<scheduler_policy::DeadlineClass>);
-static_assert(BoundedLattice<scheduler_policy::DeadlineClass>);
+// The generic walk covers the declaration order, the exhaustive axioms,
+// the reflected names and the shape of every At<policy>.
+static_assert(verify_chain_lattice<SchedulerPolicyLattice>(),
+              "SchedulerPolicyLattice: the chain order, the pinned grades or the reflected names diverged from "
+              "the SchedulerPolicy enumerator list.");
 
 static_assert(!UnboundedLattice<SchedulerPolicyLattice>);
 static_assert(!Semiring<SchedulerPolicyLattice>);
 
-static_assert(std::is_empty_v<scheduler_policy::IdleClass::element_type>);
-static_assert(std::is_empty_v<scheduler_policy::OtherClass::element_type>);
-static_assert(std::is_empty_v<scheduler_policy::FifoClass::element_type>);
-static_assert(std::is_empty_v<scheduler_policy::DeadlineClass::element_type>);
+static_assert(SchedulerPolicyLattice::bottom() == SchedulerPolicy::Idle);
+static_assert(SchedulerPolicyLattice::top() == SchedulerPolicy::Deadline);
 
-static_assert(verify_chain_lattice_exhaustive<SchedulerPolicyLattice>(),
-              "SchedulerPolicyLattice chain-order lattice axioms fail at some "
-              "triple.  The defect is in leq, join, meet or the enum encoding.");
-static_assert(verify_chain_lattice_distributive_exhaustive<SchedulerPolicyLattice>(),
-              "SchedulerPolicyLattice chain fails distributivity at some triple.  "
-              "A chain order always satisfies it, so the defect is in join or "
-              "meet.");
-
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Idle, SchedulerPolicy::Batch));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Batch, SchedulerPolicy::Other));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPolicy::RoundRobin));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::RoundRobin, SchedulerPolicy::Fifo));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Fifo, SchedulerPolicy::Deadline));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Idle, SchedulerPolicy::Deadline));
+// The pairs that the admission thresholds read.
 static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::RoundRobin, SchedulerPolicy::Fifo),
               "A FIFO thread serves a round-robin requirement.");
 static_assert(!SchedulerPolicyLattice::leq(SchedulerPolicy::Fifo, SchedulerPolicy::RoundRobin),
               "A round-robin thread does not satisfy a FIFO requirement.");
-static_assert(!SchedulerPolicyLattice::leq(SchedulerPolicy::Deadline, SchedulerPolicy::Idle));
-
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPolicy::Other));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPolicy::RoundRobin));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPolicy::Fifo));
-static_assert(SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPolicy::Deadline));
 static_assert(!SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPolicy::Batch),
               "SCHED_BATCH sits below the Other threshold that a timestamp-counter "
               "read requires.  The kernel may migrate the thread mid-quantum, so a "
               "sched_getcpu pin proves nothing there.");
-static_assert(!SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPolicy::Idle));
-
-static_assert(SchedulerPolicyLattice::bottom() == SchedulerPolicy::Idle);
-static_assert(SchedulerPolicyLattice::top() == SchedulerPolicy::Deadline);
-
-static_assert(SchedulerPolicyLattice::join(SchedulerPolicy::Idle, SchedulerPolicy::Deadline)
-              == SchedulerPolicy::Deadline);
-static_assert(SchedulerPolicyLattice::join(SchedulerPolicy::RoundRobin, SchedulerPolicy::Fifo)
-              == SchedulerPolicy::Fifo);
-static_assert(SchedulerPolicyLattice::meet(SchedulerPolicy::Idle, SchedulerPolicy::Deadline) == SchedulerPolicy::Idle);
-static_assert(SchedulerPolicyLattice::meet(SchedulerPolicy::RoundRobin, SchedulerPolicy::Fifo)
-              == SchedulerPolicy::RoundRobin);
 
 static_assert(SchedulerPolicyLattice::name() == "SchedulerPolicyLattice");
-static_assert(scheduler_policy::IdleClass::name() == "SchedulerPolicyLattice::At<Idle>");
-static_assert(scheduler_policy::BatchClass::name() == "SchedulerPolicyLattice::At<Batch>");
-static_assert(scheduler_policy::OtherClass::name() == "SchedulerPolicyLattice::At<Other>");
-static_assert(scheduler_policy::RoundRobinClass::name() == "SchedulerPolicyLattice::At<RoundRobin>");
 static_assert(scheduler_policy::FifoClass::name() == "SchedulerPolicyLattice::At<Fifo>");
-static_assert(scheduler_policy::DeadlineClass::name() == "SchedulerPolicyLattice::At<Deadline>");
-
-// A value outside the enum reaches the At sentinel rather than an empty
-// name, which is the other half of what the retired coverage walk over
-// At<P>::name() said.
 static_assert(SchedulerPolicyLattice::At<static_cast<SchedulerPolicy>(200)>::name() == "SchedulerPolicyLattice::At<?>");
 
+static_assert(scheduler_policy_name(SchedulerPolicy::RoundRobin) == "RoundRobin");
+static_assert(scheduler_policy_name(static_cast<SchedulerPolicy>(200)) == "<unknown SchedulerPolicy>",
+              "A value outside the enum must reach the unknown-class sentinel, so a corrupt byte prints as "
+              "one rather than as an empty name.");
+
 static_assert(scheduler_policy::IdleClass::policy == SchedulerPolicy::Idle);
-static_assert(scheduler_policy::BatchClass::policy == SchedulerPolicy::Batch);
-static_assert(scheduler_policy::OtherClass::policy == SchedulerPolicy::Other);
-static_assert(scheduler_policy::RoundRobinClass::policy == SchedulerPolicy::RoundRobin);
-static_assert(scheduler_policy::FifoClass::policy == SchedulerPolicy::Fifo);
 static_assert(scheduler_policy::DeadlineClass::policy == SchedulerPolicy::Deadline);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using FifoGraded = Graded<ModalityKind::Absolute, scheduler_policy::FifoClass, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FifoGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FifoGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FifoGraded, int);
-
-template <typename T_>
-using DeadlineGraded = Graded<ModalityKind::Absolute, scheduler_policy::DeadlineClass, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(DeadlineGraded, EightByteValue);
 
 }  // namespace detail::scheduler_policy_lattice_self_test
 

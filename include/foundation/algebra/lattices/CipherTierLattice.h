@@ -12,7 +12,7 @@
 // separate type.  The axes are independent, so the grades must never
 // collapse into one.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -39,22 +39,10 @@ inline constexpr std::size_t cipher_tier_tag_count = ::foundation::reflect::enum
     return ::foundation::reflect::enum_name(t);
 }
 
-struct CipherTierLattice : ChainLatticeOps<CipherTierTag> {
-    // A faster recovery is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return CipherTierTag::Cold; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return CipherTierTag::Hot; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "CipherTierLattice"; }
-
+// A faster recovery is the stronger claim.
+struct CipherTierLattice : EnumChainLattice<CipherTierLattice, CipherTierTag, ClaimOrientation::stronger_is_higher> {
     template <CipherTierTag T>
-    struct AtElement : PinnedElement<T> {
-        using cipher_tier_tag_value_type = CipherTierTag;
-    };
-
-    template <CipherTierTag T>
-    struct At : PinnedAt<CipherTierLattice, T, AtElement<T>> {
+    struct At : PinnedAt<CipherTierLattice, T> {
         static constexpr CipherTierTag tier = T;
     };
 };
@@ -89,30 +77,6 @@ static_assert(cipher_tier_tag_name(static_cast<CipherTierTag>(255)) == "<unknown
 
 static_assert(cipher_tier_tag::ColdTier::tier == CipherTierTag::Cold);
 static_assert(cipher_tier_tag::HotTier::tier == CipherTierTag::Hot);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-// The top tier witnesses the collapse for both class and arithmetic
-// values; the other two need only one witness each.
-template <typename T_>
-using HotGraded = Graded<ModalityKind::Absolute, cipher_tier_tag::HotTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, double);
-
-template <typename T_>
-using WarmGraded = Graded<ModalityKind::Absolute, cipher_tier_tag::WarmTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmGraded, EightByteValue);
-
-template <typename T_>
-using ColdGraded = Graded<ModalityKind::Absolute, cipher_tier_tag::ColdTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdGraded, EightByteValue);
 
 }  // namespace detail::cipher_tier_lattice_self_test
 

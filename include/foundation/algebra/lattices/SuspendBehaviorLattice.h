@@ -13,7 +13,7 @@
 // should fire.  A consumer that needs suspend-inclusive elapsed declares
 // KeepsTicking, and the order then rejects anything below it.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -40,22 +40,11 @@ inline constexpr std::size_t suspend_behavior_count = ::foundation::reflect::enu
     return ::foundation::reflect::enum_name(b);
 }
 
-struct SuspendBehaviorLattice : ChainLatticeOps<SuspendBehavior> {
-    // A clock that keeps ticking is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return SuspendBehavior::Unknown; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return SuspendBehavior::KeepsTicking; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "SuspendBehaviorLattice"; }
-
+// A clock that does not stop across a suspend is the stronger claim.
+struct SuspendBehaviorLattice
+    : EnumChainLattice<SuspendBehaviorLattice, SuspendBehavior, ClaimOrientation::stronger_is_higher> {
     template <SuspendBehavior B>
-    struct AtElement : PinnedElement<B> {
-        using suspend_behavior_value_type = SuspendBehavior;
-    };
-
-    template <SuspendBehavior B>
-    struct At : PinnedAt<SuspendBehaviorLattice, B, AtElement<B>> {
+    struct At : PinnedAt<SuspendBehaviorLattice, B> {
         static constexpr SuspendBehavior behavior = B;
     };
 };
@@ -99,23 +88,6 @@ static_assert(suspend_behavior_name(static_cast<SuspendBehavior>(255)) == "<unkn
 
 static_assert(suspend_behavior::UnknownBehavior::behavior == SuspendBehavior::Unknown);
 static_assert(suspend_behavior::KeepsTickingClock::behavior == SuspendBehavior::KeepsTicking);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using BootClockGraded = Graded<ModalityKind::Absolute, suspend_behavior::KeepsTickingClock, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BootClockGraded, int);
-
-template <typename T_>
-using MonoClockGraded = Graded<ModalityKind::Absolute, suspend_behavior::PausesOnSuspendClock, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(MonoClockGraded, EightByteValue);
 
 }  // namespace detail::suspend_behavior_lattice_self_test
 

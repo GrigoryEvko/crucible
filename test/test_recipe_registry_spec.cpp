@@ -218,9 +218,9 @@ template <class T>
 
     // The composition of two specs claims what both claim: the looser tier,
     // and the family that the two share.  Two siblings share no named family,
-    // so the result names none.  A composition that took the tighter tier or
-    // the wildcard would claim more than either input.  Every starter recipe
-    // is Pairwise, which is why the second spec is synthesized.
+    // and the result names none.  A composition that took the tighter tier
+    // or the wildcard can claim more than either input.  Every starter recipe
+    // is Pairwise, and the test synthesizes the second spec.
     {
         auto a = reg.by_name_spec(names::kF32Strict).value();
         RecipeSpec<const NumericalRecipe*> synth_kahan =

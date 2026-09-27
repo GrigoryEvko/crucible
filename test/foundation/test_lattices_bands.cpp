@@ -57,6 +57,17 @@ struct TwoWords {
     unsigned long long hi{0};
 };
 
+// The payload of the pinned carriers below.  A chain header keeps no
+// payload type of its own, because ChainLattice.h checks the layout of
+// a pinned carrier one time for all of them.
+struct OneByteValue {
+    char c{0};
+};
+
+// The Absolute carrier over a pinned grade.
+template <typename PinnedGrade, typename T>
+using PinnedGraded = fa::Graded<fa::ModalityKind::Absolute, PinnedGrade, T>;
+
 // Every chain lattice here is built on the shared ChainLatticeOps base,
 // so its element type is the scoped enum and its At<> sub-lattice is
 // empty; a band wrapper over At<> costs sizeof(T) at every tier, not
@@ -178,7 +189,8 @@ void det_safe_lattice_runs_at_run_time() {
     [[maybe_unused]] DetSafeTier m2 = DetSafeLattice::meet(mono, philox);
 
     OneByteValue v{42};
-    PureGraded<OneByteValue> initial{test_authority::key(), v, det_safe_tier::PureTier::bottom()};
+    PinnedGraded<det_safe_tier::PureTier, OneByteValue> initial{test_authority::key(), v,
+                                                               det_safe_tier::PureTier::bottom()};
     auto widened = initial.weaken(det_safe_tier::PureTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(det_safe_tier::PureTier::top());
@@ -208,7 +220,8 @@ void alloc_class_lattice_runs_at_run_time() {
     [[maybe_unused]] AllocClassTag m2 = AllocClassLattice::meet(heap, arena);
 
     OneByteValue v{42};
-    StackGraded<OneByteValue> initial{test_authority::key(), v, alloc_class_tag::StackAlloc::bottom()};
+    PinnedGraded<alloc_class_tag::StackAlloc, OneByteValue> initial{test_authority::key(), v,
+                                                                   alloc_class_tag::StackAlloc::bottom()};
     auto widened = initial.weaken(alloc_class_tag::StackAlloc::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(alloc_class_tag::StackAlloc::top());
@@ -237,7 +250,8 @@ void hot_path_lattice_runs_at_run_time() {
     [[maybe_unused]] HotPathTier m2 = HotPathLattice::meet(warm, b);
 
     OneByteValue v{42};
-    HotGraded<OneByteValue> initial{test_authority::key(), v, hot_path_tier::HotTier::bottom()};
+    PinnedGraded<hot_path_tier::HotTier, OneByteValue> initial{test_authority::key(), v,
+                                                              hot_path_tier::HotTier::bottom()};
     auto widened = initial.weaken(hot_path_tier::HotTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(hot_path_tier::HotTier::top());
@@ -266,7 +280,8 @@ void cipher_tier_lattice_runs_at_run_time() {
     [[maybe_unused]] CipherTierTag m2 = CipherTierLattice::meet(warm, b);
 
     OneByteValue v{42};
-    HotGraded<OneByteValue> initial{test_authority::key(), v, cipher_tier_tag::HotTier::bottom()};
+    PinnedGraded<cipher_tier_tag::HotTier, OneByteValue> initial{test_authority::key(), v,
+                                                                cipher_tier_tag::HotTier::bottom()};
     auto widened = initial.weaken(cipher_tier_tag::HotTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(cipher_tier_tag::HotTier::top());
@@ -296,7 +311,8 @@ void tolerance_lattice_runs_at_run_time() {
     [[maybe_unused]] Tolerance m2 = ToleranceLattice::meet(fp16, fp32);
 
     OneByteValue v{42};
-    BitexactGraded<OneByteValue> initial{test_authority::key(), v, tolerance::BitexactTier::bottom()};
+    PinnedGraded<tolerance::BitexactTier, OneByteValue> initial{test_authority::key(), v,
+                                                               tolerance::BitexactTier::bottom()};
     auto widened = initial.weaken(tolerance::BitexactTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(tolerance::BitexactTier::top());
@@ -326,7 +342,8 @@ void wait_lattice_runs_at_run_time() {
     [[maybe_unused]] WaitStrategy m2 = WaitLattice::meet(umwait, futex);
 
     OneByteValue v{42};
-    SpinPauseGraded<OneByteValue> initial{test_authority::key(), v, wait_strategy::SpinPauseStrategy::bottom()};
+    PinnedGraded<wait_strategy::SpinPauseStrategy, OneByteValue> initial{test_authority::key(), v,
+                                                                        wait_strategy::SpinPauseStrategy::bottom()};
     auto widened = initial.weaken(wait_strategy::SpinPauseStrategy::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(wait_strategy::SpinPauseStrategy::top());
@@ -351,7 +368,8 @@ void lifetime_lattice_runs_at_run_time() {
     [[maybe_unused]] Lifetime top = LifetimeLattice::top();
 
     OneByteValue v{42};
-    FleetOpaque<OneByteValue> initial{test_authority::key(), v, lifetime::PerFleetTier::bottom()};
+    fa::Graded<fa::ModalityKind::Comonad, lifetime::PerFleetTier, OneByteValue> initial{
+        test_authority::key(), v, lifetime::PerFleetTier::bottom()};
     auto widened = initial.weaken(lifetime::PerFleetTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(lifetime::PerFleetTier::top());
@@ -383,7 +401,8 @@ void vendor_lattice_runs_at_run_time() {
     [[maybe_unused]] VendorBackend m2 = VendorLattice::meet(portable, b);
 
     OneByteValue v{42};
-    PortableGraded<OneByteValue> initial{test_authority::key(), v, vendor_backend::PortableVendor::bottom()};
+    PinnedGraded<vendor_backend::PortableVendor, OneByteValue> initial{test_authority::key(), v,
+                                                                      vendor_backend::PortableVendor::bottom()};
     auto widened = initial.weaken(vendor_backend::PortableVendor::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(vendor_backend::PortableVendor::top());
@@ -412,7 +431,7 @@ void recipe_family_lattice_runs_at_run_time() {
     auto sib_meet = RecipeFamilyLattice::meet(RecipeFamily::Linear, RecipeFamily::Pairwise);
     if (sib_meet != RecipeFamily::None) std::abort();
 
-    // A wider family is the stronger claim, so a stored family grades
+    // A wider family is the stronger claim.  A stored family grades
     // through the order dual, and weaken() narrows it toward None.
     using RecipeGraded = Graded<ModalityKind::Absolute, DualLattice<RecipeFamilyLattice>, int>;
     RecipeGraded v{test_authority::key(), 42, RecipeFamily::Kahan};
@@ -442,7 +461,8 @@ void barrier_strength_lattice_runs_at_run_time() {
     [[maybe_unused]] BarrierStrength rel_recovered = rel_pin;
 
     OneByteValue payload{9};
-    NoneGraded<OneByteValue> initial{test_authority::key(), payload, BarrierStrengthLattice::At<BarrierStrength::None>::bottom()};
+    using NoneFence = BarrierStrengthLattice::At<BarrierStrength::None>;
+    PinnedGraded<NoneFence, OneByteValue> initial{test_authority::key(), payload, NoneFence::bottom()};
     auto widened = initial.weaken(BarrierStrengthLattice::At<BarrierStrength::None>::top());
     auto composed = initial.compose(widened);
     [[maybe_unused]] auto grade = widened.grade();
@@ -466,7 +486,8 @@ void memory_scope_lattice_runs_at_run_time() {
     [[maybe_unused]] bool xtrunk = mem_scope_same_trunk(a, b);  // false
 
     OneByteValue v{42};
-    SystemScopeGraded<OneByteValue> initial{test_authority::key(), v, memory_scope::SystemScope::bottom()};
+    PinnedGraded<memory_scope::SystemScope, OneByteValue> initial{test_authority::key(), v,
+                                                                 memory_scope::SystemScope::bottom()};
     auto widened = initial.weaken(memory_scope::SystemScope::top());
     auto composed = initial.compose(widened);
     [[maybe_unused]] auto g = widened.grade();
@@ -543,7 +564,8 @@ void pinning_requirement_lattice_runs_at_run_time() {
     [[maybe_unused]] PinningRequirement m2 = PinningRequirementLattice::meet(core, socket);
 
     OneByteValue v{42};
-    CorePinnedGraded<OneByteValue> initial{test_authority::key(), v, pinning_requirement::PerCorePin::bottom()};
+    PinnedGraded<pinning_requirement::PerCorePin, OneByteValue> initial{test_authority::key(), v,
+                                                                       pinning_requirement::PerCorePin::bottom()};
     auto widened = initial.weaken(pinning_requirement::PerCorePin::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(pinning_requirement::PerCorePin::top());
@@ -573,7 +595,8 @@ void suspend_behavior_lattice_runs_at_run_time() {
     [[maybe_unused]] SuspendBehavior m2 = SuspendBehaviorLattice::meet(mono, boot);
 
     OneByteValue v{42};
-    BootClockGraded<OneByteValue> initial{test_authority::key(), v, suspend_behavior::KeepsTickingClock::bottom()};
+    PinnedGraded<suspend_behavior::KeepsTickingClock, OneByteValue> initial{
+        test_authority::key(), v, suspend_behavior::KeepsTickingClock::bottom()};
     auto widened = initial.weaken(suspend_behavior::KeepsTickingClock::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(suspend_behavior::KeepsTickingClock::top());
@@ -604,8 +627,8 @@ void clock_source_lattice_runs_at_run_time() {
 
     [[maybe_unused]] auto built = ClockSourceLattice::make_point(det, suspend, pin);
 
-    // A point stored beside a value grades through the order dual, so
-    // weaken() moves from the counter read to the weaker boot clock and
+    // A point stored beside a value grades through the order dual.
+    // weaken() moves from the counter read to the weaker boot clock, and
     // then to the weakest point.
     EightByteValue payload{42};
     ClockGraded<EightByteValue> initial{test_authority::key(), payload, tsc_point};
@@ -677,8 +700,8 @@ void numa_node_lattice_runs_at_run_time() {
     if (NumaNodeLattice::leq(NumaNodeLattice::top(), first)) std::abort();
     if (!is_concrete_numa_node(second) || is_concrete_numa_node(NumaNodeId::Any)) std::abort();
 
-    // A claim that covers more nodes is the stronger claim, so a stored
-    // node grades through the order dual, and weaken() narrows it to None.
+    // A claim that covers more nodes is the stronger claim.  A stored node
+    // grades through the order dual, and weaken() narrows it to None.
     using NumaGraded = Graded<ModalityKind::Absolute, DualLattice<NumaNodeLattice>, int>;
     NumaGraded const value{test_authority::key(), 42, NumaNodeId{2}};
     if (value.grade() != NumaNodeId{2} || value.peek() != 42) std::abort();
@@ -705,7 +728,8 @@ void scheduler_policy_lattice_runs_at_run_time() {
     [[maybe_unused]] bool tsc_ok = SchedulerPolicyLattice::leq(other, fifo);
 
     OneByteValue v{42};
-    FifoGraded<OneByteValue> initial{test_authority::key(), v, scheduler_policy::FifoClass::bottom()};
+    PinnedGraded<scheduler_policy::FifoClass, OneByteValue> initial{test_authority::key(), v,
+                                                                   scheduler_policy::FifoClass::bottom()};
     auto widened = initial.weaken(scheduler_policy::FifoClass::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(scheduler_policy::FifoClass::top());

@@ -13,7 +13,7 @@
 // The Tag suffix keeps the enum's name clear of the wrapper that carries
 // it.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -43,22 +43,10 @@ inline constexpr std::size_t alloc_class_tag_count = ::foundation::reflect::enum
     return ::foundation::reflect::enum_name(t);
 }
 
-struct AllocClassLattice : ChainLatticeOps<AllocClassTag> {
-    // A cheaper allocation is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return AllocClassTag::HugePage; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return AllocClassTag::Stack; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "AllocClassLattice"; }
-
+// A cheaper allocation is the stronger claim.
+struct AllocClassLattice : EnumChainLattice<AllocClassLattice, AllocClassTag, ClaimOrientation::stronger_is_higher> {
     template <AllocClassTag T>
-    struct AtElement : PinnedElement<T> {
-        using alloc_class_tag_value_type = AllocClassTag;
-    };
-
-    template <AllocClassTag T>
-    struct At : PinnedAt<AllocClassLattice, T, AtElement<T>> {
+    struct At : PinnedAt<AllocClassLattice, T> {
         static constexpr AllocClassTag tag = T;
     };
 };
@@ -98,28 +86,6 @@ static_assert(alloc_class_tag_name(static_cast<AllocClassTag>(255)) == "<unknown
 
 static_assert(alloc_class_tag::HugePageAlloc::tag == AllocClassTag::HugePage);
 static_assert(alloc_class_tag::StackAlloc::tag == AllocClassTag::Stack);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using StackGraded = Graded<ModalityKind::Absolute, alloc_class_tag::StackAlloc, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(StackGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(StackGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(StackGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(StackGraded, double);
-
-template <typename T_>
-using ArenaGraded = Graded<ModalityKind::Absolute, alloc_class_tag::ArenaAlloc, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ArenaGraded, EightByteValue);
-
-template <typename T_>
-using HeapGraded = Graded<ModalityKind::Absolute, alloc_class_tag::HeapAlloc, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HeapGraded, EightByteValue);
 
 }  // namespace detail::alloc_class_lattice_self_test
 

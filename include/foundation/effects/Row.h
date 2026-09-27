@@ -441,7 +441,7 @@ struct EffectRowLattice {
     using element_type = std::uint64_t;
     using atom_type = Effect;
 
-    // A row bounds the effects a computation may perform, so a larger row
+    // A row bounds the effects that a computation can do.  A larger row
     // promises less and is the weaker claim.
     static constexpr ::foundation::algebra::ClaimOrientation claim_orientation =
         ::foundation::algebra::ClaimOrientation::weaker_is_higher;

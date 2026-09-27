@@ -13,7 +13,7 @@
 // separate type.  The axes are independent, so the grades must never
 // collapse into one.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -40,22 +40,10 @@ inline constexpr std::size_t hot_path_tier_count = ::foundation::reflect::enum_c
     return ::foundation::reflect::enum_name(t);
 }
 
-struct HotPathLattice : ChainLatticeOps<HotPathTier> {
-    // A tighter budget is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return HotPathTier::Cold; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return HotPathTier::Hot; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "HotPathLattice"; }
-
+// A tighter budget is the stronger claim.
+struct HotPathLattice : EnumChainLattice<HotPathLattice, HotPathTier, ClaimOrientation::stronger_is_higher> {
     template <HotPathTier T>
-    struct AtElement : PinnedElement<T> {
-        using hot_path_tier_value_type = HotPathTier;
-    };
-
-    template <HotPathTier T>
-    struct At : PinnedAt<HotPathLattice, T, AtElement<T>> {
+    struct At : PinnedAt<HotPathLattice, T> {
         static constexpr HotPathTier tier = T;
     };
 };
@@ -89,30 +77,6 @@ static_assert(hot_path_tier_name(static_cast<HotPathTier>(255)) == "<unknown Hot
 
 static_assert(hot_path_tier::ColdTier::tier == HotPathTier::Cold);
 static_assert(hot_path_tier::HotTier::tier == HotPathTier::Hot);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-// The top tier witnesses the collapse for both class and arithmetic
-// values; the other two need only one witness each.
-template <typename T_>
-using HotGraded = Graded<ModalityKind::Absolute, hot_path_tier::HotTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, double);
-
-template <typename T_>
-using WarmGraded = Graded<ModalityKind::Absolute, hot_path_tier::WarmTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmGraded, EightByteValue);
-
-template <typename T_>
-using ColdGraded = Graded<ModalityKind::Absolute, hot_path_tier::ColdTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdGraded, EightByteValue);
 
 }  // namespace detail::hot_path_lattice_self_test
 

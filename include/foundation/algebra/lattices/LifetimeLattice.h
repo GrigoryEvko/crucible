@@ -14,7 +14,7 @@
 //
 // Old spelling: include/crucible/algebra/lattices/LifetimeLattice.h.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -41,22 +41,10 @@ inline constexpr std::size_t lifetime_count = ::foundation::reflect::enum_count<
     return ::foundation::reflect::enum_name(l);
 }
 
-struct LifetimeLattice : ChainLatticeOps<Lifetime> {
-    // A longer scope is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return Lifetime::PER_REQUEST; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return Lifetime::PER_FLEET; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "LifetimeLattice"; }
-
+// A longer scope is the stronger claim.
+struct LifetimeLattice : EnumChainLattice<LifetimeLattice, Lifetime, ClaimOrientation::stronger_is_higher> {
     template <Lifetime L>
-    struct AtElement : PinnedElement<L> {
-        using lifetime_value_type = Lifetime;
-    };
-
-    template <Lifetime L>
-    struct At : PinnedAt<LifetimeLattice, L, AtElement<L>> {
+    struct At : PinnedAt<LifetimeLattice, L> {
         static constexpr Lifetime scope = L;
     };
 };
@@ -91,30 +79,6 @@ static_assert(lifetime_name(static_cast<Lifetime>(255)) == "<unknown Lifetime>")
 
 static_assert(lifetime::PerRequestTier::scope == Lifetime::PER_REQUEST);
 static_assert(lifetime::PerFleetTier::scope == Lifetime::PER_FLEET);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-// The top scope witnesses the collapse for both class and arithmetic
-// values; the other scopes need only one witness each.
-template <typename T>
-using FleetOpaque = Graded<ModalityKind::Comonad, lifetime::PerFleetTier, T>;
-
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetOpaque, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetOpaque, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetOpaque, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetOpaque, double);
-
-template <typename T>
-using ProgramOpaque = Graded<ModalityKind::Comonad, lifetime::PerProgramTier, T>;
-template <typename T>
-using RequestOpaque = Graded<ModalityKind::Comonad, lifetime::PerRequestTier, T>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ProgramOpaque, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RequestOpaque, EightByteValue);
 
 }  // namespace detail::lifetime_lattice_self_test
 

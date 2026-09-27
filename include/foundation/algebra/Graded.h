@@ -17,13 +17,14 @@
 // recoverable from the type or from the value, do not add a member
 // for it.
 //
-// Up is the weaker claim here, so weaken() and compose() can only
-// promise less.  A grade stored beside the value must read that way
-// (ClaimOrientation.h), and the template head refuses a lattice that
-// states the opposite reading or states none.  A version counter in its
-// numeric order is refused, and its dual is accepted.  Where the grade
-// is the value, or grade_of derives it from the value, the grade cannot
-// be false, so the head admits any reading.
+// Up is the weaker claim here, and weaken() and compose() can only
+// promise less.  The order of a grade stored beside the value must have
+// that orientation (ClaimOrientation.h).  The template head refuses a
+// lattice that states the opposite orientation or states none.  A
+// version counter in its numeric order is refused, and its dual is
+// accepted.  Where the grade is the value, or grade_of derives it from
+// the value, the grade cannot be false, and the head admits any
+// orientation.
 //
 // A grade is a claim about the value, and a claim needs a key.  Every
 // door that pairs a value with a grade that Graded does not derive takes
@@ -83,10 +84,10 @@ concept LatticeDerivesGrade = requires(T const& v) {
 };
 
 // L grades a value of type T.  A grade stored beside the value is a
-// claim about it, and weaken() and compose() move that grade up, so L
-// must read up as the weaker claim.  A grade that is the value, or that
-// grade_of derives from it, names the value itself and claims nothing
-// that can be false, so any reading of L serves.
+// claim about it.  weaken() and compose() move that grade up, and up in L
+// must be the weaker claim.  A grade that is the value, or that grade_of
+// derives from it, names the value itself and claims nothing that can be
+// false.  Any orientation of L is permitted for such a grade.
 template <typename L, typename T>
 concept LatticeGradesValue = Lattice<L> && (GradableLattice<L> || std::same_as<LatticeElement<L>, T>
                                             || LatticeDerivesGrade<L, T>);
@@ -571,9 +572,9 @@ static_assert(g_chain_element.grade() == 2);
 static_assert(g_chain_element.weaken(static_cast<unsigned char>(3)).grade() == 3);
 static_assert(g_chain_element.compose(GChainElement{static_cast<unsigned char>(1)}).grade() == 2);
 
-// The head reads the orientation only where the grade is stored.  A
-// chain that states no reading grades a value that is its own grade, and
-// is refused beside a value that it does not name.
+// The head checks the orientation only where the grade is stored.  A
+// chain that states no orientation grades a value that is its own grade,
+// and it is refused beside a value that it does not name.
 struct UnstatedChainLattice {
     using element_type = unsigned char;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
@@ -588,7 +589,7 @@ concept CanNameGraded = requires { typename Graded<ModalityKind::Absolute, L, T>
 
 static_assert(claim_orientation_v<UnstatedChainLattice> == ClaimOrientation::unstated);
 static_assert(CanNameGraded<UnstatedChainLattice, unsigned char>);
-static_assert(!CanNameGraded<UnstatedChainLattice, OneByteValue>, "an unstated reading is refused as a stored grade");
+static_assert(!CanNameGraded<UnstatedChainLattice, OneByteValue>, "an unstated orientation is refused as a stored grade");
 static_assert(CanNameGraded<TrivialChainLattice, OneByteValue>);
 
 // The reachability tests go through named concepts.  An inline

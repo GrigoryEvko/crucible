@@ -70,12 +70,7 @@ struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattic
     // and referring to it here would be a forward reference.  A holder that
     // wants the point calls that function with the pinned source.
     template <ClockSource Source>
-    struct AtElement : PinnedElement<Source> {
-        using clock_source_value_type = ClockSource;
-    };
-
-    template <ClockSource Source>
-    struct At : PinnedAt<ClockSourceLattice, Source, AtElement<Source>> {
+    struct At : PinnedAt<ClockSourceLattice, Source> {
         static constexpr ClockSource source = Source;
     };
 };
@@ -260,8 +255,8 @@ static_assert(clock_source_name(ClockSource::TscRaw) == std::string_view{"TscRaw
 static_assert(clock_source_name(ClockSource::Boot) == std::string_view{"Boot"});
 static_assert(clock_source_name(ClockSource::TscSerialized) == std::string_view{"TscSerialized"});
 
-// Every axis puts the stronger guarantee higher, so the product reads up
-// as the stronger claim, and a point stored beside a value goes through
+// Each axis puts the stronger guarantee higher, and the product puts the
+// stronger claim higher too.  A point stored beside a value goes through
 // the order dual.
 static_assert(claim_orientation_v<ClockSourceLattice> == ClaimOrientation::stronger_is_higher);
 static_assert(!GradableLattice<ClockSourceLattice> && GradableLattice<DualLattice<ClockSourceLattice>>);

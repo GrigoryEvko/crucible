@@ -12,6 +12,7 @@
 // is what lets the fixed-position sub-lattice carry an empty grade and
 // collapse to the size of the payload.
 
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
@@ -35,35 +36,13 @@ inline constexpr std::size_t conf_count = ::foundation::reflect::enum_count<Conf
 // The identifier of c, or "<unknown Conf>" for a value outside the enum.
 [[nodiscard]] consteval std::string_view conf_name(Conf c) noexcept { return ::foundation::reflect::enum_name(c); }
 
-struct ConfLattice {
-    using element_type = Conf;
-
-    // A higher classification promises less about where the value may go,
-    // so it is the weaker claim.  Raising the classification is sound, and
-    // lowering it is declassification.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return Conf::Public; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return Conf::Secret; }
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        return std::to_underlying(a) <= std::to_underlying(b);
-    }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return leq(a, b) ? b : a;
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return leq(a, b) ? a : b;
-    }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "ConfLattice"; }
-
+// A higher classification promises less about where the value can go,
+// and it is the weaker claim.  weaken() moves a stored grade up, which
+// increases the classification and is sound.  A move down of a stored
+// grade is a declassification, and Graded does not do it.
+struct ConfLattice : EnumChainLattice<ConfLattice, Conf, ClaimOrientation::weaker_is_higher> {
     template <Conf C>
-    struct AtElement : PinnedElement<C> {
-        using conf_value_type = Conf;
-    };
-
-    template <Conf C>
-    struct At : PinnedAt<ConfLattice, C, AtElement<C>> {
+    struct At : PinnedAt<ConfLattice, C> {
         static constexpr Conf classification = C;
     };
 };
@@ -99,7 +78,11 @@ static_assert(conf_name(static_cast<Conf>(9)) == "<unknown Conf>");
 
 static_assert(conf::PublicTier::classification == Conf::Public);
 static_assert(conf::SecretTier::classification == Conf::Secret);
+static_assert(ConfLattice::bottom() == Conf::Public && ConfLattice::top() == Conf::Secret);
+static_assert(claim_orientation_v<ConfLattice> == ClaimOrientation::weaker_is_higher);
 
+// The carrier of a classified value.  The runtime smoke test in
+// test/foundation/test_lattices_core.cpp builds one.
 struct OneByteValue {
     char c{0};
 };
@@ -112,10 +95,6 @@ using SecretGraded = Graded<ModalityKind::Comonad, conf::SecretTier, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, EightByteValue);
-// The arithmetic witnesses pin the collapse across the
-// trivially-default-constructible split as well as the class one.
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, double);
 
 }  // namespace detail::conf_lattice_self_test
 

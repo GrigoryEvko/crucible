@@ -15,7 +15,7 @@
 //
 // Old spelling: include/crucible/algebra/lattices/_ResidencyHeatLattice.h.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -42,22 +42,11 @@ inline constexpr std::size_t residency_heat_tag_count = ::foundation::reflect::e
     return ::foundation::reflect::enum_name(t);
 }
 
-struct ResidencyHeatLattice : ChainLatticeOps<ResidencyHeatTag> {
-    // A residency nearer the core is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return ResidencyHeatTag::Cold; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return ResidencyHeatTag::Hot; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "ResidencyHeatLattice"; }
-
+// A residency nearer the core is the stronger claim.
+struct ResidencyHeatLattice
+    : EnumChainLattice<ResidencyHeatLattice, ResidencyHeatTag, ClaimOrientation::stronger_is_higher> {
     template <ResidencyHeatTag T>
-    struct AtElement : PinnedElement<T> {
-        using residency_heat_tag_value_type = ResidencyHeatTag;
-    };
-
-    template <ResidencyHeatTag T>
-    struct At : PinnedAt<ResidencyHeatLattice, T, AtElement<T>> {
+    struct At : PinnedAt<ResidencyHeatLattice, T> {
         static constexpr ResidencyHeatTag tier = T;
     };
 };
@@ -95,30 +84,6 @@ static_assert(residency_heat_tag_name(static_cast<ResidencyHeatTag>(255)) == "<u
 
 static_assert(residency_heat_tag::ColdHeat::tier == ResidencyHeatTag::Cold);
 static_assert(residency_heat_tag::HotHeat::tier == ResidencyHeatTag::Hot);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-// The top tier witnesses the collapse for both class and arithmetic
-// values; the other two need only one witness each.
-template <typename T_>
-using HotGraded = Graded<ModalityKind::Absolute, residency_heat_tag::HotHeat, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotGraded, double);
-
-template <typename T_>
-using WarmGraded = Graded<ModalityKind::Absolute, residency_heat_tag::WarmHeat, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmGraded, EightByteValue);
-
-template <typename T_>
-using ColdGraded = Graded<ModalityKind::Absolute, residency_heat_tag::ColdHeat, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdGraded, EightByteValue);
 
 }  // namespace detail::residency_heat_lattice_self_test
 

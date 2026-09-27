@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-// The underlying value of each enumerator below is folded into the hash that
-// keys a shared cache slot, so those values are part of a persisted format
-// rather than an implementation detail.  Inserting an enumerator anywhere but
-// at the end silently renumbers the ones after it, which changes the hash of
-// every instantiation that mentions the enum, invalidates the slots those
-// hashes name, and breaks the match between builds.
+// The underlying values of the enums below are part of a format, not an
+// implementation detail.  For most of them the value is the order of the
+// lattice: ChainLatticeOps compares underlying values,
+// BarrierStrengthLattice derives a height from them, and MemoryScope reads
+// its chain from the high nibble.  A grade that a program stores at run
+// time, such as the tier and the family of a RecipeSpec, holds the value
+// too.  An enumerator that goes in before the end renumbers the ones after
+// it, and the order and each stored grade then change meaning with no
+// error.  A row hash cannot see such a change, because a pinned grade
+// folds the name of its enumerator and not its value.  These tables are
+// the witness.
 //
 // So a new enumerator takes the next free value, or for the enums that pack a
 // group into the high nibble the next free value within its group, and extends

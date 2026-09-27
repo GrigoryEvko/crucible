@@ -13,7 +13,7 @@
 // below Pure: the same counter and key give the same bits on any
 // machine, but the generator state is still observable.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -44,24 +44,10 @@ inline constexpr std::size_t det_safe_tier_count = ::foundation::reflect::enum_c
     return ::foundation::reflect::enum_name(t);
 }
 
-struct DetSafeLattice : ChainLatticeOps<DetSafeTier> {
-    // A purer source is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return DetSafeTier::NonDeterministicSyscall; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return DetSafeTier::Pure; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "DetSafeLattice"; }
-
-    // The element keeps the alias that spells the pinned value in this
-    // lattice's vocabulary.
+// A purer source is the stronger claim.
+struct DetSafeLattice : EnumChainLattice<DetSafeLattice, DetSafeTier, ClaimOrientation::stronger_is_higher> {
     template <DetSafeTier T>
-    struct AtElement : PinnedElement<T> {
-        using det_safe_tier_value_type = DetSafeTier;
-    };
-
-    template <DetSafeTier T>
-    struct At : PinnedAt<DetSafeLattice, T, AtElement<T>> {
+    struct At : PinnedAt<DetSafeLattice, T> {
         static constexpr DetSafeTier tier = T;
     };
 };
@@ -90,8 +76,8 @@ static_assert(verify_chain_lattice<DetSafeLattice>(), "DetSafeLattice: the chain
 static_assert(!UnboundedLattice<DetSafeLattice>);
 static_assert(!Semiring<DetSafeLattice>);
 
-// The chain is not a stored grade, and a pinned tier is: its element is
-// empty, so it names one claim.
+// The chain is not a stored grade, and a pinned tier is.  The element of
+// a pinned tier is empty, and it names one claim.
 static_assert(!GradableLattice<DetSafeLattice>);
 static_assert(claim_orientation_v<det_safe_tier::PureTier> == ClaimOrientation::one_claim);
 
@@ -110,28 +96,6 @@ static_assert(det_safe_tier_name(static_cast<DetSafeTier>(255)) == "<unknown Det
 
 static_assert(det_safe_tier::NdsTier::tier == DetSafeTier::NonDeterministicSyscall);
 static_assert(det_safe_tier::PureTier::tier == DetSafeTier::Pure);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using PureGraded = Graded<ModalityKind::Absolute, det_safe_tier::PureTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureGraded, double);
-
-template <typename T_>
-using PhiloxGraded = Graded<ModalityKind::Absolute, det_safe_tier::PhiloxTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PhiloxGraded, EightByteValue);
-
-template <typename T_>
-using NdsGraded = Graded<ModalityKind::Absolute, det_safe_tier::NdsTier, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NdsGraded, EightByteValue);
 
 }  // namespace detail::det_safe_lattice_self_test
 

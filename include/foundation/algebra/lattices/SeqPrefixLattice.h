@@ -45,9 +45,9 @@ struct SeqPrefixLattice {
     using element_type = Length<Element>;
     using sequence_element_type = Element;
 
-    // A longer prefix claims more of the stream, so it is the stronger
+    // A longer prefix claims more of the stream, and it is the stronger
     // claim.  An append-only container derives its prefix through
-    // grade_of below, and a derived grade needs no orientation in Graded.
+    // grade_of below, and Graded needs no orientation for a derived grade.
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{0}; }
@@ -164,7 +164,7 @@ static_assert(LatB::name() == "SeqPrefixLattice");
 static_assert(std::is_same_v<LatA::sequence_element_type, EventA>);
 static_assert(std::is_same_v<LatB::sequence_element_type, EventB>);
 
-// An append-only container carries its own length, so Graded derives the
+// An append-only container holds its own length.  Graded derives the
 // prefix from it and stores nothing beside it.  A value that is not a
 // sequence cannot carry a prefix as a stored grade, because a longer
 // prefix is the stronger claim.

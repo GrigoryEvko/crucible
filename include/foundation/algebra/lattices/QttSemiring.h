@@ -15,9 +15,11 @@
 // to compare.
 //
 // The grade names are the QTT symbols 0, 1 and ω, not the enumerator
-// identifiers, so the two name switches here stay hand-written where
-// every other lattice reads its names by reflection.
+// identifiers.  Because of this, qtt_grade_name stays hand-written, where
+// every other lattice reads its names by reflection.  The name of
+// At<Grade> comes from qtt_grade_name.
 
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
@@ -25,6 +27,7 @@
 
 #include <cstdint>
 #include <meta>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -39,6 +42,9 @@ enum class QttGrade : std::int8_t {
 
 inline constexpr std::size_t qtt_grade_count = ::foundation::reflect::enum_count<QttGrade>;
 
+// The name that qtt_grade_name gives for a value outside the enum.
+inline constexpr std::string_view unknown_qtt_grade_name = "<unknown QttGrade>";
+
 [[nodiscard]] consteval std::string_view qtt_grade_name(QttGrade g) noexcept {
     switch (g) {
         case QttGrade::Zero:
@@ -48,29 +54,28 @@ inline constexpr std::size_t qtt_grade_count = ::foundation::reflect::enum_count
         case QttGrade::Omega:
             return "\xCF\x89";  // UTF-8 ω
         default:
-            return std::string_view{"<unknown QttGrade>"};
+            return unknown_qtt_grade_name;
     }
 }
 
-struct QttSemiring {
-    using element_type = QttGrade;
+namespace detail {
 
-    // A grade that permits more uses is the stronger claim: a move from
-    // one use to many would duplicate a linear value.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+// "QttSemiring::At<symbol>", or "QttSemiring::At<?>" for a value outside
+// the enum.  The text lives in static storage.
+template <QttGrade Grade>
+[[nodiscard]] consteval std::string_view make_qtt_at_name() {
+    const std::string_view symbol = qtt_grade_name(Grade);
+    std::string text{"QttSemiring::At<"};
+    text += symbol == unknown_qtt_grade_name ? std::string_view{"?"} : symbol;
+    text += '>';
+    return std::define_static_string(text);
+}
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return QttGrade::Zero; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return QttGrade::Omega; }
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        return std::to_underlying(a) <= std::to_underlying(b);
-    }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return leq(a, b) ? b : a;
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return leq(a, b) ? a : b;
-    }
+}  // namespace detail
 
+// A grade that permits more uses is the stronger claim: a move from one
+// use to many can duplicate a linear value.
+struct QttSemiring : EnumChainLattice<QttSemiring, QttGrade, ClaimOrientation::stronger_is_higher> {
     [[nodiscard]] static constexpr element_type zero() noexcept { return QttGrade::Zero; }
     [[nodiscard]] static constexpr element_type one() noexcept { return QttGrade::One; }
 
@@ -92,31 +97,13 @@ struct QttSemiring {
         return QttGrade::Omega;
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "QttSemiring"; }
-
-    template <QttGrade Grade>
-    struct AtElement : PinnedElement<Grade> {
-        using grade_value_type = QttGrade;
-    };
-
     // name() hides the reflected one of PinnedAt because the grade
     // names are symbols, not identifiers.
     template <QttGrade Grade>
-    struct At : PinnedAt<QttSemiring, Grade, AtElement<Grade>> {
+    struct At : PinnedAt<QttSemiring, Grade> {
         static constexpr QttGrade grade = Grade;
 
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            switch (Grade) {
-                case QttGrade::Zero:
-                    return "QttSemiring::At<0>";
-                case QttGrade::One:
-                    return "QttSemiring::At<1>";
-                case QttGrade::Omega:
-                    return "QttSemiring::At<\xCF\x89>";  // UTF-8 ω
-                default:
-                    return "QttSemiring::At<?>";
-            }
-        }
+        [[nodiscard]] static consteval std::string_view name() noexcept { return detail::make_qtt_at_name<Grade>(); }
     };
 };
 
@@ -132,14 +119,15 @@ namespace detail::qtt_self_test {
 
 static_assert(qtt_grade_count == 3, "QttGrade must hold exactly the three grades 0, 1 and ω.");
 
-// The two hand-written switches are the one place a new grade can be
-// missed, so both are walked.
+// The hand-written switch is the one place where a new grade can be
+// missed, and this walk covers each grade.  The name of each At<Grade>
+// comes from the same switch.
 [[nodiscard]] consteval bool every_qtt_grade_has_name() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (qtt_grade_name([:en:]) == std::string_view{"<unknown QttGrade>"}) {
+        if (qtt_grade_name([:en:]) == unknown_qtt_grade_name) {
             return false;
         }
     }
@@ -148,23 +136,6 @@ static_assert(qtt_grade_count == 3, "QttGrade must hold exactly the three grades
 }
 static_assert(every_qtt_grade_has_name(), "qtt_grade_name() has no arm for at least one grade, so that grade "
                                           "reports the '<unknown QttGrade>' sentinel.");
-
-[[nodiscard]] consteval bool every_at_grade_has_name() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        // A splice in template-argument position needs the parentheses
-        // to keep `<:` from lexing as a digraph.
-        if (QttSemiring::At<([:en:])>::name() == std::string_view{"QttSemiring::At<?>"}) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(every_at_grade_has_name(), "QttSemiring::At<Grade>::name() has no arm for at least one grade, "
-                                         "so that grade reports the 'QttSemiring::At<?>' sentinel.");
 
 // The chain order, the exhaustive lattice axioms and the shape of every
 // At<grade>.  The At name check inside accepts the hand-written symbols
@@ -206,7 +177,11 @@ static_assert(QttSemiring::join(QttGrade::One, QttGrade::One) == QttGrade::One,
               "semiring add One+One = Omega.");
 
 static_assert(QttSemiring::name() == "QttSemiring");
+static_assert(QttSemiring::bottom() == QttGrade::Zero && QttSemiring::top() == QttGrade::Omega);
+static_assert(claim_orientation_v<QttSemiring> == ClaimOrientation::stronger_is_higher);
 static_assert(QttSemiring::At<QttGrade::One>::name() == "QttSemiring::At<1>");
+static_assert(QttSemiring::At<QttGrade::Omega>::name() == "QttSemiring::At<\xCF\x89>");
+static_assert(QttSemiring::At<static_cast<QttGrade>(9)>::name() == "QttSemiring::At<?>");
 static_assert(qtt_grade_name(QttGrade::Zero) == "0");
 static_assert(qtt_grade_name(QttGrade::One) == "1");
 
@@ -214,6 +189,8 @@ static_assert(qtt::Erased::grade == QttGrade::Zero);
 static_assert(qtt::LinearGrade::grade == QttGrade::One);
 static_assert(qtt::Unrestricted::grade == QttGrade::Omega);
 
+// The carrier of a linear value.  The runtime smoke test in
+// test/foundation/test_lattices_core.cpp builds one.
 struct OneByteValue {
     char c{0};
 };
@@ -226,10 +203,6 @@ using LinearGraded = Graded<ModalityKind::Absolute, qtt::LinearGrade, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, EightByteValue);
-// The arithmetic witnesses pin the collapse across the
-// trivially-default-constructible split as well as the class one.
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, double);
 
 }  // namespace detail::qtt_self_test
 

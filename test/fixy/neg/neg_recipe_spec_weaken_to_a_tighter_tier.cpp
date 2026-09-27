@@ -1,7 +1,8 @@
-// A RecipeSpec stores its two numerical axes through their order duals,
-// so the substrate's weaken() can only relax a claim.  A move from RELAXED
-// to BITEXACT would claim a bit-exact result for a value produced under no
-// error bound.  The guard in weaken() stops the constant evaluation.
+// A RecipeSpec stores its two numerical axes through their order duals.
+// The weaken() of the substrate can then only relax a claim.  A move from
+// RELAXED to BITEXACT claims a bit-exact result for a value produced
+// under no error bound.  The guard in weaken() stops the constant
+// evaluation.
 
 #include <fixy/Bands.h>
 

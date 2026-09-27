@@ -956,9 +956,9 @@ public:
     // pool's atomic state, not anything an individual token knows.  The
     // alias exists only so the token introspects like the other graded
     // wrappers.  Its value type is the tag, because the proof's value is
-    // its identity.  A larger share is the stronger claim, so the lattice
-    // is the order dual of the shares, which is what Graded asks of a
-    // grade stored beside a value.
+    // its identity.  A larger share is the stronger claim.  The lattice is
+    // the order dual of the shares, because Graded asks for that
+    // orientation of a grade stored beside a value.
     using value_type = Tag;
     using lattice_type = ::foundation::algebra::lattices::DualLattice<::foundation::algebra::lattices::FractionalLattice>;
     static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
@@ -1653,8 +1653,8 @@ static_assert(seplog_roster::root_brands_are_fresh());
 
 // ── Row-hash identities ─────────────────────────────────────────────
 //
-// SharedPermission grades on the fractional lattice and reaches the
-// graded fold.  The other three carriers here make claims no lattice
+// SharedPermission grades on the order dual of the fractional lattice and
+// reaches the graded fold.  The other three carriers here make claims no lattice
 // grades, and each names its claim with one of these identities.  They
 // fold through specializations rather than through published members,
 // because the payload is the tag's row, and naming that row in a class
@@ -1696,11 +1696,12 @@ using row_payload_of_tag_t = typename row_payload_of_tag<Tag>::type;
 // token over a pure region.
 namespace foundation::diag {
 
-// A share grades on the fractional lattice, and its published value type
-// is its tag, a bare type that contributes zero.  Through the published
-// shape alone, a share over an IO region and a share over a pure region
-// were one claim.  This specialization keeps the graded fold and takes
-// the tag's row as the payload, as the three carriers below do.
+// A share grades on the order dual of the fractional lattice, and its
+// published value type is its tag, a bare type that contributes zero.
+// Through the published shape alone, a share over an IO region and a
+// share over a pure region were one claim.  This specialization keeps the
+// graded fold and takes the tag's row as the payload, as the three
+// carriers below do.
 template <typename Tag, typename Brand>
 struct row_hash_contribution<::foundation::permissions::SharedPermission<Tag, Brand>> {
     using share_type = ::foundation::permissions::SharedPermission<Tag, Brand>;

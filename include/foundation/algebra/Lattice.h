@@ -40,22 +40,24 @@ namespace foundation::algebra {
 template <typename L>
 using LatticeElement = typename L::element_type;
 
-// How the order of a lattice reads as a claim.  A lattice states its
-// reading with a static member claim_orientation of this type.
-// ClaimOrientation.h derives the reading of a lattice that states none,
-// and says which readings Graded accepts.  The type is declared here, so
-// a lattice states its reading with no other include.
+// The direction in which the order of a lattice runs, as a claim.  A
+// lattice states its orientation with a static member claim_orientation
+// of this type.  ClaimOrientation.h derives the orientation of a lattice
+// that states none, and says which orientations Graded accepts.  This
+// header declares the type, and a lattice states its orientation with no
+// other include.
 enum class ClaimOrientation : std::uint8_t {
-    // The lattice states no reading, and its element has more than one
-    // value.  Graded refuses such a lattice as a stored grade.
+    // The lattice states no orientation and its element has more than
+    // one value, or it states one_claim over such an element.  Graded
+    // refuses such a lattice as a stored grade.
     unstated = 0,
-    // Up is the weaker claim.  This is the reading of Graded.
+    // Up is the weaker claim.  Graded uses this orientation.
     weaker_is_higher = 1,
     // Up is the stronger claim.  Graded refuses it as a stored grade, and
-    // the order dual reads the way Graded does.
+    // the order dual has the orientation that Graded uses.
     stronger_is_higher = 2,
-    // The element type is empty, so every element names the same claim
-    // and no move changes it.  claim_orientation_of derives this reading
+    // The element type is empty.  Each element names the same claim, and
+    // no move changes it.  claim_orientation_of derives this orientation
     // from the element type.
     one_claim = 3,
 };
@@ -462,8 +464,8 @@ template <Semiring S>
 
 namespace detail::lattice_self_test {
 
-// Read as a claim, false is the stronger element and true the weaker, so
-// the Graded self-tests can store it as a grade.
+// As a claim, false is the stronger element and true is the weaker.  The
+// Graded self-tests can then store it as a grade.
 struct TrivialBoolLattice {
     using element_type = bool;
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;

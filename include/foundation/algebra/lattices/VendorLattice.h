@@ -11,7 +11,7 @@
 // somewhere to land.  Without it the structure is a meet-semilattice only, and
 // no longer a bounded lattice.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -68,9 +68,6 @@ struct VendorLattice {
         if (a == b) return a;
         if (a == VendorBackend::None) return b;
         if (b == VendorBackend::None) return a;
-        if (a == VendorBackend::Portable || b == VendorBackend::Portable) {
-            return VendorBackend::Portable;
-        }
         return VendorBackend::Portable;
     }
 
@@ -78,21 +75,13 @@ struct VendorLattice {
         if (a == b) return a;
         if (a == VendorBackend::Portable) return b;
         if (b == VendorBackend::Portable) return a;
-        if (a == VendorBackend::None || b == VendorBackend::None) {
-            return VendorBackend::None;
-        }
         return VendorBackend::None;
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept { return "VendorLattice"; }
 
     template <VendorBackend B>
-    struct AtElement : PinnedElement<B> {
-        using vendor_backend_value_type = VendorBackend;
-    };
-
-    template <VendorBackend B>
-    struct At : PinnedAt<VendorLattice, B, AtElement<B>> {
+    struct At : PinnedAt<VendorLattice, B> {
         static constexpr VendorBackend backend = B;
     };
 };
@@ -190,32 +179,6 @@ static_assert(vendor_backend_name(static_cast<VendorBackend>(7)) == "<unknown Ve
 
 static_assert(vendor_backend::NoneVendor::backend == VendorBackend::None);
 static_assert(vendor_backend::PortableVendor::backend == VendorBackend::Portable);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using PortableGraded = Graded<ModalityKind::Absolute, vendor_backend::PortableVendor, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, double);
-
-template <typename T_>
-using NvGraded = Graded<ModalityKind::Absolute, vendor_backend::NvVendor, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NvGraded, EightByteValue);
-
-template <typename T_>
-using AmdGraded = Graded<ModalityKind::Absolute, vendor_backend::AmdVendor, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AmdGraded, EightByteValue);
-
-template <typename T_>
-using NoneGraded = Graded<ModalityKind::Absolute, vendor_backend::NoneVendor, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, EightByteValue);
 
 }  // namespace detail::vendor_lattice_self_test
 

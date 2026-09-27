@@ -6,11 +6,8 @@
 // empty component, where the aggregate below costs the one-byte language
 // minimum for the whole product.
 //
-// The umbrella header that forward-declares the variadic primary template also
-// includes this file, so this file must not include it back.  Doing so would
-// have the specializations below parsed before the primary declaration they
-// specialize is visible.  Each lattice header therefore declares the primary
-// template it specializes inline.
+// This file declares the variadic primary template, and then the
+// specializations for two components, for none and for any other count.
 
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>
@@ -231,8 +228,8 @@ struct ProductLattice<Ls...> {
 
 namespace detail::product_lattice_self_test {
 
-// Read as a use count, where the larger count is the weaker claim, so a
-// product of two can be stored beside a value.
+// This lattice is a use count, where the larger count is the weaker
+// claim.  A product of two of them can then be stored beside a value.
 struct U8MinMax {
     using element_type = std::uint8_t;
     static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;

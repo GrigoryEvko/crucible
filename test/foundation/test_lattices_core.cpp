@@ -307,8 +307,8 @@ void seq_prefix_lattice_runs_at_run_time() {
     expect(LatA::bottom().length == 0);
     expect(LatA::top().length == std::numeric_limits<std::size_t>::max());
 
-    // A longer prefix is the stronger claim, so the prefix is derived from
-    // the log and never stored beside a value.
+    // A longer prefix is the stronger claim.  The prefix is derived from
+    // the log, and it is never stored beside a value.
     AppendOnlyGraded<MiniLog> log{MiniLog{n_b}};
     [[maybe_unused]] auto g1 = log.grade();
     [[maybe_unused]] auto v1 = log.peek().size();
@@ -369,9 +369,9 @@ void fractional_lattice_runs_at_run_time() {
                       Rational::MAX_SAFE_MAGNITUDE));
     expect(is_exactly(FractionalLattice::meet(large_lo, large_hi), 1, Rational::MAX_SAFE_MAGNITUDE));
 
-    // A share is stored through the order dual, so weakening gives a smaller
-    // share and the shares below are built in descending sequence.
-    // Requesting a larger share violates the precondition.
+    // A share is stored through the order dual.  A weaker grade is a
+    // smaller share, and the shares below are built in descending
+    // sequence.  A request for a larger share violates the precondition.
     OneByteValue v{42};
     SharedPermissionGraded<OneByteValue> initial{test_authority::key(), v, FractionalLattice::top()};
     auto widened = initial.weaken(Rational{3, 4});

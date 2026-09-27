@@ -189,7 +189,7 @@ using K05_OnDualEpoch = OnAxis<fl::DualLattice<fl::EpochLattice>>;
 //
 // The width and the tag are both part of the key.  H01 and H02 differ
 // only in the tag, and H01 and H03 differ only in the width.  A larger
-// clock is the stronger claim, so a clock enters through its order dual.
+// clock is the stronger claim, and a clock goes in through its order dual.
 using H01_ClockOfFour = OnAxis<fl::DualLattice<fl::HappensBeforeLattice<4>>>;
 using H02_ClockOfFourTagged = OnAxis<fl::DualLattice<fl::HappensBeforeLattice<4, row_hash_witness::ReplayClock>>>;
 using H03_ClockOfEight = OnAxis<fl::DualLattice<fl::HappensBeforeLattice<8>>>;
@@ -276,9 +276,9 @@ using L04_FnStderrWrite =
 // ── The permission carriers ────────────────────────────────────────
 //
 // Each carrier folds its tag's row as its payload.  P01 and P02 differ
-// only in that row.  P03 and P04 are the share, which grades on the
-// fractional lattice and folds the same row, so the two must differ and
-// neither may repeat the exclusive token over the same region.
+// only in that row.  P03 and P04 are the share, which grades on the order
+// dual of the fractional lattice and folds the same row.  The two must
+// differ, and neither can repeat the exclusive token over the same region.
 using P01_PermissionPure = fp::Permission<row_hash_witness::PureRegion>;
 using P02_PermissionIo = fp::Permission<fp::tag::MmapRegionTag>;
 using P03_SharePure = fp::SharedPermission<row_hash_witness::PureRegion>;

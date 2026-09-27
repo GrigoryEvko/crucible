@@ -11,7 +11,7 @@
 // enter the kernel or the scheduler.  The three highest stay in user
 // space.
 
-#include <foundation/algebra/Graded.h>
+#include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/reflect/Enumerate.h>
@@ -41,22 +41,10 @@ inline constexpr std::size_t wait_strategy_count = ::foundation::reflect::enum_c
     return ::foundation::reflect::enum_name(s);
 }
 
-struct WaitLattice : ChainLatticeOps<WaitStrategy> {
-    // A cheaper wait is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return WaitStrategy::Block; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return WaitStrategy::SpinPause; }
-
-    [[nodiscard]] static consteval std::string_view name() noexcept { return "WaitLattice"; }
-
+// A cheaper wait is the stronger claim.
+struct WaitLattice : EnumChainLattice<WaitLattice, WaitStrategy, ClaimOrientation::stronger_is_higher> {
     template <WaitStrategy T>
-    struct AtElement : PinnedElement<T> {
-        using wait_strategy_value_type = WaitStrategy;
-    };
-
-    template <WaitStrategy T>
-    struct At : PinnedAt<WaitLattice, T, AtElement<T>> {
+    struct At : PinnedAt<WaitLattice, T> {
         static constexpr WaitStrategy strategy = T;
     };
 };
@@ -95,28 +83,6 @@ static_assert(wait_strategy_name(static_cast<WaitStrategy>(255)) == "<unknown Wa
 
 static_assert(wait_strategy::BlockStrategy::strategy == WaitStrategy::Block);
 static_assert(wait_strategy::SpinPauseStrategy::strategy == WaitStrategy::SpinPause);
-
-struct OneByteValue {
-    char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
-};
-
-template <typename T_>
-using SpinPauseGraded = Graded<ModalityKind::Absolute, wait_strategy::SpinPauseStrategy, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinPauseGraded, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinPauseGraded, EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinPauseGraded, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinPauseGraded, double);
-
-template <typename T_>
-using ParkGraded = Graded<ModalityKind::Absolute, wait_strategy::ParkStrategy, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ParkGraded, EightByteValue);
-
-template <typename T_>
-using BlockGraded = Graded<ModalityKind::Absolute, wait_strategy::BlockStrategy, T_>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BlockGraded, EightByteValue);
 
 }  // namespace detail::wait_lattice_self_test
 
