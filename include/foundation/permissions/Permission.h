@@ -53,6 +53,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
+#include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/RowHash.h>
@@ -955,9 +956,11 @@ public:
     // pool's atomic state, not anything an individual token knows.  The
     // alias exists only so the token introspects like the other graded
     // wrappers.  Its value type is the tag, because the proof's value is
-    // its identity.
+    // its identity.  A larger share is the stronger claim, so the lattice
+    // is the order dual of the shares, which is what Graded asks of a
+    // grade stored beside a value.
     using value_type = Tag;
-    using lattice_type = ::foundation::algebra::lattices::FractionalLattice;
+    using lattice_type = ::foundation::algebra::lattices::DualLattice<::foundation::algebra::lattices::FractionalLattice>;
     static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
     using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, Tag>;
 

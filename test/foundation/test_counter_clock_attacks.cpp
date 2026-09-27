@@ -419,9 +419,9 @@ constexpr std::array<std::uint64_t, 13> kIdentities = {
     fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<Dual<fl::EpochLattice>, Dual<fl::GenerationLattice>>>>,
     fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<Dual<fl::GenerationLattice>, Dual<fl::EpochLattice>>>>,
     fd::row_hash_contribution_v<OnAxis<fl::ProductLattice<fl::BitsBudgetLattice, fl::PeakBytesLattice>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, ReplayClock>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, KernelClock>>>,
-    fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<5, ReplayClock>>>,
+    fd::row_hash_contribution_v<OnAxis<Dual<fl::HappensBeforeLattice<4, ReplayClock>>>>,
+    fd::row_hash_contribution_v<OnAxis<Dual<fl::HappensBeforeLattice<4, KernelClock>>>>,
+    fd::row_hash_contribution_v<OnAxis<Dual<fl::HappensBeforeLattice<5, ReplayClock>>>>,
 };
 
 // ── The orientation Graded reads ────────────────────────────────────
@@ -444,10 +444,11 @@ static_assert(can_grade<Dual<fl::EpochLattice>> && can_grade<fl::PeakBytesLattic
 // than were used, so it is refused too.
 static_assert(!can_grade<Dual<fl::PeakBytesLattice>> && !can_grade<Dual<fl::BitsBudgetLattice>>);
 
-// A clock states no orientation.  It can bound the history a value saw
-// from above or from below, and the wrapper that grades by it chooses.
-static_assert(fa::claim_orientation_v<fl::HappensBeforeLattice<4>> == fa::ClaimOrientation::unstated);
-static_assert(can_grade<fl::HappensBeforeLattice<4>> && can_grade<Dual<fl::HappensBeforeLattice<4>>>);
+// A clock claims the history it saw, so a larger clock is the stronger
+// claim, as a newer version is.  The clock is refused in its pointwise
+// order and accepted through its dual.
+static_assert(fa::claim_orientation_v<fl::HappensBeforeLattice<4>> == fa::ClaimOrientation::stronger_is_higher);
+static_assert(!can_grade<fl::HappensBeforeLattice<4>> && can_grade<Dual<fl::HappensBeforeLattice<4>>>);
 
 [[nodiscard]] consteval bool all_distinct_and_nonzero(std::array<std::uint64_t, 13> const& values) {
     for (std::size_t i = 0; i < values.size(); ++i) {

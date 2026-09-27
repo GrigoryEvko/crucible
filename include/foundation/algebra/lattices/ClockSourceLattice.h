@@ -10,6 +10,7 @@
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
 #include <foundation/algebra/lattices/DetSafeLattice.h>
+#include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/PinningRequirementLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
@@ -259,6 +260,12 @@ static_assert(clock_source_name(ClockSource::TscRaw) == std::string_view{"TscRaw
 static_assert(clock_source_name(ClockSource::Boot) == std::string_view{"Boot"});
 static_assert(clock_source_name(ClockSource::TscSerialized) == std::string_view{"TscSerialized"});
 
+// Every axis puts the stronger guarantee higher, so the product reads up
+// as the stronger claim, and a point stored beside a value goes through
+// the order dual.
+static_assert(claim_orientation_v<ClockSourceLattice> == ClaimOrientation::stronger_is_higher);
+static_assert(!GradableLattice<ClockSourceLattice> && GradableLattice<DualLattice<ClockSourceLattice>>);
+
 // The product point occupies three bytes, one per axis, so a carrier over it
 // grows by that much plus padding and the exact-size invariant does not apply.
 // The bound is asserted by hand instead.
@@ -267,7 +274,7 @@ struct EightByteValue {
 };
 
 template <typename T_>
-using ClockGraded = Graded<ModalityKind::Absolute, ClockSourceLattice, T_>;
+using ClockGraded = Graded<ModalityKind::Absolute, DualLattice<ClockSourceLattice>, T_>;
 
 static_assert(sizeof(ClockGraded<int>) <= sizeof(int) + 4,
               "ClockGraded<int> exceeded sizeof(int) + 4 — the three-byte grade "

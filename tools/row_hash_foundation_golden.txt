@@ -2,7 +2,7 @@
 # format-version:  1
 # matrix-size:     55
 # fold-seed:       0xf0117a11eda11a5e
-# fold-anchor:     0xd8a50f1650b1c32a
+# fold-anchor:     0x78a9de9a2a89fd19
 # toolchain-tag:   0x531f2bb4b45652c8
 # (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
 # (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
@@ -47,13 +47,13 @@ K02_OnDualGeneration     0x9e071212337c3790
 K03_OnPeakBytes          0x1efd403d7caa48e3
 K04_OnBitsBudget         0x5d25bcd8a9645a63
 K05_OnDualEpoch          0x3bc2ce4347181e0b
-H01_ClockOfFour          0xaa19a122d6e2ef4c
-H02_ClockOfFourTagged    0xaea5fe292e998b0d
-H03_ClockOfEight         0xeab69bb82089eec4
+H01_ClockOfFour          0x3a7cb02fe3753c6a
+H02_ClockOfFourTagged    0x8100ee0968a32d21
+H03_ClockOfEight         0xbf7339a99a1461a4
 P01_PermissionPure       0xe9592725c224e6b2
 P02_PermissionIo         0xda89dec3dcfa7d6f
-P03_SharePure            0x77a817c3794bb2da
-P04_ShareIo              0x4e1829a88162533d
+P03_SharePure            0xb28aa79cfa08ccb4
+P04_ShareIo              0x789724050fdd62b0
 P05_GuardIo              0xb29fcfc679f3df57
 P06_PoolIo               0xa8856cffab822da3
 P07_ReadViewIo           0x38684fc2b90e4632

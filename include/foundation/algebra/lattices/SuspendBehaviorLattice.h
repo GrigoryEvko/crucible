@@ -41,6 +41,9 @@ inline constexpr std::size_t suspend_behavior_count = ::foundation::reflect::enu
 }
 
 struct SuspendBehaviorLattice : ChainLatticeOps<SuspendBehavior> {
+    // A clock that keeps ticking is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return SuspendBehavior::Unknown; }
     [[nodiscard]] static constexpr element_type top() noexcept { return SuspendBehavior::KeepsTicking; }
 

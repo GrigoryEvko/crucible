@@ -70,7 +70,10 @@ static_assert(BoundedLattice<BoolLattice<positive>>);
 static_assert(Lattice<BoolLattice<non_negative>>);
 static_assert(Lattice<BoolLattice<non_zero>>);
 
-// Emptiness is the precondition for the grade to collapse under EBO.
+// Emptiness is the precondition for the grade to collapse under EBO, and
+// it makes the order one claim, which Graded stores with no orientation.
+static_assert(claim_orientation_v<BoolLattice<positive>> == ClaimOrientation::one_claim);
+static_assert(GradableLattice<BoolLattice<positive>>);
 static_assert(std::is_empty_v<BoolLattice<positive>::element_type>);
 static_assert(std::is_empty_v<BoolLattice<non_negative>::element_type>);
 static_assert(std::is_empty_v<BoolLattice<non_zero>::element_type>);

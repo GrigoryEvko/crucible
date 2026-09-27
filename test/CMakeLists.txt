@@ -9122,11 +9122,11 @@ crucible_neg_compile_multi_test(neg_recipe_registry_pinned_with_family_template_
 # are different types.  The expected of one does not convert to the
 # expected of the other, in each direction.
 crucible_neg_compile_multi_test(neg_recipe_registry_spec_assigned_to_pinned_expected
-  "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::ToleranceLattice, foundation::algebra::lattices::RecipeFamilyLattice>"
+  "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >"
   "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>")
 crucible_neg_compile_multi_test(neg_recipe_registry_pinned_assigned_to_spec_expected
   "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>"
-  "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::ToleranceLattice, foundation::algebra::lattices::RecipeFamilyLattice>")
+  "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >")
 
 # The lookups of the registry are pure projections.  by_name, by_hash,
 # entries, the pinned lookups and the spec lookups each refuse a caller

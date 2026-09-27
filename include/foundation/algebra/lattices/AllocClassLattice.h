@@ -44,6 +44,9 @@ inline constexpr std::size_t alloc_class_tag_count = ::foundation::reflect::enum
 }
 
 struct AllocClassLattice : ChainLatticeOps<AllocClassTag> {
+    // A cheaper allocation is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return AllocClassTag::HugePage; }
     [[nodiscard]] static constexpr element_type top() noexcept { return AllocClassTag::Stack; }
 

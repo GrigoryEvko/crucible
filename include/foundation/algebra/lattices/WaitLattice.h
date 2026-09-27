@@ -42,6 +42,9 @@ inline constexpr std::size_t wait_strategy_count = ::foundation::reflect::enum_c
 }
 
 struct WaitLattice : ChainLatticeOps<WaitStrategy> {
+    // A cheaper wait is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return WaitStrategy::Block; }
     [[nodiscard]] static constexpr element_type top() noexcept { return WaitStrategy::SpinPause; }
 

@@ -15,6 +15,12 @@
 // 1.0) is NaN while join(1.0, NaN) is 1.0.  Callers must keep NaN out.
 // Nothing here enforces that at compile time.  The bounds themselves
 // are safe because lowest() and max() are finite.
+//
+// The lattice states no claim orientation.  A monotone count can be read
+// as a lower bound or as an upper bound, and the two readings run in
+// opposite directions.  Monotonic grades a value by the value itself,
+// and Graded asks no orientation of a grade that is the value.  A stored
+// grade in this order is refused (ClaimOrientation.h).
 
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -220,10 +226,9 @@ static_assert(std::is_same_v<MonU64Less::compare_type, std::less<std::uint64_t>>
 static_assert(std::is_same_v<MonU64Greater::compare_type, std::greater<std::uint64_t>>);
 
 // The element type is the carrier itself, so the grade is not empty and
-// cannot collapse by empty-base optimization.  Graded instead ships a
-// partial specialization for the case where the value type equals the
-// lattice element type, which stores one cell for both views.  The
-// sizeof assertions below are the witness that it is still selected.
+// cannot collapse by empty-base optimization.  Where the value type is
+// the lattice element type, Graded stores one member for both views.
+// The sizeof assertions below are the witness that it still does.
 static_assert(!std::is_empty_v<MonU64Less::element_type>);
 static_assert(sizeof(MonU64Less::element_type) == 8);
 
@@ -232,6 +237,10 @@ using MonotonicGraded = Graded<ModalityKind::Absolute, MonotoneLattice<T, std::l
 
 static_assert(sizeof(MonotonicGraded<std::uint64_t>) == sizeof(std::uint64_t));
 static_assert(sizeof(MonotonicGraded<std::int32_t>) == sizeof(std::int32_t));
+
+static_assert(claim_orientation_v<MonU64Less> == ClaimOrientation::unstated);
+static_assert(LatticeGradesValue<MonU64Less, std::uint64_t> && !LatticeGradesValue<MonU64Less, std::int32_t>,
+              "the order grades a value that is its own grade, and no value beside it");
 
 }  // namespace detail::monotone_lattice_self_test
 

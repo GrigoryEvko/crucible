@@ -18,9 +18,12 @@
 // for it.
 //
 // Up is the weaker claim here, so weaken() and compose() can only
-// promise less.  A lattice that states the opposite orientation is
-// refused at the template head (ClaimOrientation.h).  A version counter
-// in its numeric order is that lattice, and its dual is accepted.
+// promise less.  A grade stored beside the value must read that way
+// (ClaimOrientation.h), and the template head refuses a lattice that
+// states the opposite reading or states none.  A version counter in its
+// numeric order is refused, and its dual is accepted.  Where the grade
+// is the value, or grade_of derives it from the value, the grade cannot
+// be false, so the head admits any reading.
 //
 // A grade is a claim about the value, and a claim needs a key.  Every
 // door that pairs a value with a grade that Graded does not derive takes
@@ -79,6 +82,15 @@ concept LatticeDerivesGrade = requires(T const& v) {
     { L::grade_of(v) } -> std::same_as<typename L::element_type>;
 };
 
+// L grades a value of type T.  A grade stored beside the value is a
+// claim about it, and weaken() and compose() move that grade up, so L
+// must read up as the weaker claim.  A grade that is the value, or that
+// grade_of derives from it, names the value itself and claims nothing
+// that can be false, so any reading of L serves.
+template <typename L, typename T>
+concept LatticeGradesValue = Lattice<L> && (GradableLattice<L> || std::same_as<LatticeElement<L>, T>
+                                            || LatticeDerivesGrade<L, T>);
+
 namespace detail::graded {
 
 enum class Regime : std::uint8_t {
@@ -124,7 +136,8 @@ using forwarded_t = decltype(std::forward_like<Self>(std::declval<T&>()));
 
 }  // namespace detail::graded
 
-template <ModalityKind M, GradableLattice L, typename T>
+template <ModalityKind M, typename L, typename T>
+    requires LatticeGradesValue<L, T>
 class [[nodiscard]] Graded {
     static_assert(IsModality<M>, "Graded<M, L, T>: M must be one of Comonad / RelativeMonad / "
                                  "Absolute / Relative / Stepping.");
@@ -463,6 +476,7 @@ static_assert(!GradeIgnoresBytes<TrivialBoolLattice>);
 // perfectly good unsigned char and no element of the chain.
 struct TrivialChainLattice {
     using element_type = unsigned char;
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
     [[nodiscard]] static constexpr element_type top() noexcept { return 3; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a <= b; }
@@ -556,6 +570,26 @@ constexpr GChainElement g_chain_element{static_cast<unsigned char>(2)};
 static_assert(g_chain_element.grade() == 2);
 static_assert(g_chain_element.weaken(static_cast<unsigned char>(3)).grade() == 3);
 static_assert(g_chain_element.compose(GChainElement{static_cast<unsigned char>(1)}).grade() == 2);
+
+// The head reads the orientation only where the grade is stored.  A
+// chain that states no reading grades a value that is its own grade, and
+// is refused beside a value that it does not name.
+struct UnstatedChainLattice {
+    using element_type = unsigned char;
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return 3; }
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a <= b; }
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a < b ? b : a; }
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a < b ? a : b; }
+};
+
+template <typename L, typename T>
+concept CanNameGraded = requires { typename Graded<ModalityKind::Absolute, L, T>; };
+
+static_assert(claim_orientation_v<UnstatedChainLattice> == ClaimOrientation::unstated);
+static_assert(CanNameGraded<UnstatedChainLattice, unsigned char>);
+static_assert(!CanNameGraded<UnstatedChainLattice, OneByteValue>, "an unstated reading is refused as a stored grade");
+static_assert(CanNameGraded<TrivialChainLattice, OneByteValue>);
 
 // The reachability tests go through named concepts.  An inline
 // requires-expression against a member-function constraint is a hard

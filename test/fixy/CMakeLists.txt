@@ -1535,7 +1535,7 @@ fixy_neg_compile_test(neg_bands_mint_band_not_a_band
 # Braces meet no constructor, and the door refuses a reference payload and
 # a payload that cannot move.
 fixy_neg_compile_test(neg_recipe_spec_braces_without_door
-  "no matching function for call to .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::ToleranceLattice, foundation::algebra::lattices::RecipeFamilyLattice>, int>::Graded\\(<brace-enclosed initializer list>\\)."
+  "no matching function for call to .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >, int>::Graded\\(<brace-enclosed initializer list>\\)."
   "candidate 1: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
 fixy_neg_compile_test(neg_mint_recipe_spec_reference_payload
   "required for the satisfaction of .RecipeSpecPayload<T>. \\[with T = int&\\]"
@@ -1543,6 +1543,13 @@ fixy_neg_compile_test(neg_mint_recipe_spec_reference_payload
 fixy_neg_compile_test(neg_mint_recipe_spec_immovable_payload
   "required for the satisfaction of .RecipeSpecPayload<T>. \\[with T = <unnamed>::Pinned\\]"
   "required for the satisfaction of .move_constructible<T>. \\[with T = <unnamed>::Pinned\\]")
+# The two axes are stored through their order duals, so weaken() only
+# relaxes a claim.  A move from RELAXED to BITEXACT stops the constant
+# evaluation at the guard in weaken(), and the second regex names the
+# dual lattice that the guard compared in.
+fixy_neg_compile_test(neg_recipe_spec_weaken_to_a_tighter_tier
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
+  "expansion of .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, .*::weaken<")
 
 # ── The eight value wrappers ──────────────────────────────────────────
 #

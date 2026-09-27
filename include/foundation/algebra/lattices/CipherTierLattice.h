@@ -40,6 +40,9 @@ inline constexpr std::size_t cipher_tier_tag_count = ::foundation::reflect::enum
 }
 
 struct CipherTierLattice : ChainLatticeOps<CipherTierTag> {
+    // A faster recovery is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return CipherTierTag::Cold; }
     [[nodiscard]] static constexpr element_type top() noexcept { return CipherTierTag::Hot; }
 

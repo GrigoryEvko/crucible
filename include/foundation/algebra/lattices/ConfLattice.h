@@ -38,6 +38,11 @@ inline constexpr std::size_t conf_count = ::foundation::reflect::enum_count<Conf
 struct ConfLattice {
     using element_type = Conf;
 
+    // A higher classification promises less about where the value may go,
+    // so it is the weaker claim.  Raising the classification is sound, and
+    // lowering it is declassification.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return Conf::Public; }
     [[nodiscard]] static constexpr element_type top() noexcept { return Conf::Secret; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {

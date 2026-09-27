@@ -85,7 +85,10 @@ static_assert(BoundedLattice<TrustLattice<trust::Verified>>);
 static_assert(BoundedLattice<TrustLattice<access::RW>>);
 static_assert(BoundedLattice<TrustLattice<version::V<7>>>);
 
-// Emptiness is the precondition for the grade to collapse under EBO.
+// Emptiness is the precondition for the grade to collapse under EBO, and
+// it makes the order one claim, which Graded stores with no orientation.
+static_assert(claim_orientation_v<TrustLattice<source::FromUser>> == ClaimOrientation::one_claim);
+static_assert(GradableLattice<TrustLattice<source::FromUser>>);
 static_assert(std::is_empty_v<TrustLattice<source::FromUser>::element_type>);
 static_assert(std::is_empty_v<TrustLattice<trust::Verified>::element_type>);
 static_assert(std::is_empty_v<TrustLattice<access::RW>::element_type>);

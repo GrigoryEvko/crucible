@@ -96,9 +96,9 @@ namespace {
 
 using namespace test_lattices_counters_types;
 
-static_assert(fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, ReplayTag>>>
-              != fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, KernelTag>>>);
-static_assert(fd::row_hash_contribution_v<OnAxis<fl::HappensBeforeLattice<4, ReplayTag>>> != 0);
+static_assert(fd::row_hash_contribution_v<OnAxisGradedWay<fl::HappensBeforeLattice<4, ReplayTag>>>
+              != fd::row_hash_contribution_v<OnAxisGradedWay<fl::HappensBeforeLattice<4, KernelTag>>>);
+static_assert(fd::row_hash_contribution_v<OnAxisGradedWay<fl::HappensBeforeLattice<4, ReplayTag>>> != 0);
 
 // The value is read at run time, so the compiler cannot fold the calls.
 volatile std::uint64_t g_runtime_seed = 5;

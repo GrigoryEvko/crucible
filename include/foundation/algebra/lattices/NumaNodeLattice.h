@@ -58,6 +58,9 @@ static_assert(std::to_underlying(NumaNodeId::Any) == 255, "NumaNodeId::Any must 
 struct NumaNodeLattice {
     using element_type = NumaNodeId;
 
+    // A claim that covers more requested nodes is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return NumaNodeId::None; }
     [[nodiscard]] static constexpr element_type top() noexcept { return NumaNodeId::Any; }
 

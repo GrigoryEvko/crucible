@@ -71,6 +71,9 @@ enum class BarrierStrength : std::uint8_t {
 struct BarrierStrengthLattice {
     using element_type = BarrierStrength;
 
+    // A stronger fence is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr BarrierStrength bottom() noexcept { return BarrierStrength::None; }
     [[nodiscard]] static constexpr BarrierStrength top() noexcept { return BarrierStrength::FullFence; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "BarrierStrengthLattice"; }

@@ -44,6 +44,9 @@ inline constexpr std::size_t tolerance_count = ::foundation::reflect::enum_count
 }
 
 struct ToleranceLattice : ChainLatticeOps<Tolerance> {
+    // A tighter error bound is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return Tolerance::RELAXED; }
     [[nodiscard]] static constexpr element_type top() noexcept { return Tolerance::BITEXACT; }
 

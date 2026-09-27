@@ -51,6 +51,10 @@ struct StalenessSemiring {
         [[nodiscard]] friend constexpr bool operator==(element_type, element_type) noexcept = default;
     };
 
+    // A staler bound promises less about the value, so it is the weaker
+    // claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{0}; }
     [[nodiscard]] static constexpr element_type top() noexcept { return element_type::infinity(); }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a.value <= b.value; }

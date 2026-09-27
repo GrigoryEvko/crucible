@@ -45,6 +45,9 @@ inline constexpr std::size_t det_safe_tier_count = ::foundation::reflect::enum_c
 }
 
 struct DetSafeLattice : ChainLatticeOps<DetSafeTier> {
+    // A purer source is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return DetSafeTier::NonDeterministicSyscall; }
     [[nodiscard]] static constexpr element_type top() noexcept { return DetSafeTier::Pure; }
 
@@ -86,6 +89,11 @@ static_assert(verify_chain_lattice<DetSafeLattice>(), "DetSafeLattice: the chain
 
 static_assert(!UnboundedLattice<DetSafeLattice>);
 static_assert(!Semiring<DetSafeLattice>);
+
+// The chain is not a stored grade, and a pinned tier is: its element is
+// empty, so it names one claim.
+static_assert(!GradableLattice<DetSafeLattice>);
+static_assert(claim_orientation_v<det_safe_tier::PureTier> == ClaimOrientation::one_claim);
 
 // The specific pins: which enumerators bound the chain, and the exact
 // spellings that the reflection builds.

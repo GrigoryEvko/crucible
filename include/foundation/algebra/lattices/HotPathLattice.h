@@ -41,6 +41,9 @@ inline constexpr std::size_t hot_path_tier_count = ::foundation::reflect::enum_c
 }
 
 struct HotPathLattice : ChainLatticeOps<HotPathTier> {
+    // A tighter budget is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return HotPathTier::Cold; }
     [[nodiscard]] static constexpr element_type top() noexcept { return HotPathTier::Hot; }
 

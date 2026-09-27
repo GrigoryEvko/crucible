@@ -216,17 +216,21 @@ template <class T>
         assert(::fixy::recipe_family_of(c) == RecipeFamily::Pairwise);
     }
 
-    // Two siblings have no common family below the wildcard, so their join
-    // promotes to it. Every starter recipe is Pairwise, which is why the second
-    // spec is synthesized.
+    // The composition of two specs claims what both claim: the looser tier,
+    // and the family that the two share.  Two siblings share no named family,
+    // so the result names none.  A composition that took the tighter tier or
+    // the wildcard would claim more than either input.  Every starter recipe
+    // is Pairwise, which is why the second spec is synthesized.
     {
         auto a = reg.by_name_spec(names::kF32Strict).value();
         RecipeSpec<const NumericalRecipe*> synth_kahan =
             ::fixy::mint_recipe_spec(a.peek(), Tolerance::ULP_FP16, RecipeFamily::Kahan);
 
-        auto joined = a.compose(synth_kahan);
-        assert(::fixy::tolerance_of(joined) == Tolerance::BITEXACT);
-        assert(::fixy::recipe_family_of(joined) == RecipeFamily::Any);
+        auto composed = a.compose(synth_kahan);
+        assert(::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
+        assert(::fixy::recipe_family_of(composed) == RecipeFamily::None);
+        assert(!::fixy::admits(composed, Tolerance::BITEXACT, RecipeFamily::None));
+        assert(!::fixy::admits(composed, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
     }
 
     // Both axes are runtime data, so neither can collapse away. One byte per
@@ -326,8 +330,8 @@ template <class T>
         assert(rejection_count == 12);
     }
 
-    // Every sibling pair joins to the wildcard, and the tolerance axis is left
-    // untouched by that promotion.
+    // Every sibling pair composes to a spec that names no family, and the
+    // tolerance axis, equal on the two sides, stays where it was.
     {
         constexpr RecipeFamily kFamilies[] = {
             RecipeFamily::Linear,
@@ -345,9 +349,9 @@ template <class T>
                     ::fixy::mint_recipe_spec<const NumericalRecipe*>(base_recipe, Tolerance::ULP_FP16, kFamilies[i]);
                 RecipeSpec<const NumericalRecipe*> spec_j =
                     ::fixy::mint_recipe_spec<const NumericalRecipe*>(base_recipe, Tolerance::ULP_FP16, kFamilies[j]);
-                auto joined = spec_i.compose(spec_j);
-                assert(::fixy::tolerance_of(joined) == Tolerance::ULP_FP16);
-                assert(::fixy::recipe_family_of(joined) == RecipeFamily::Any);
+                auto composed = spec_i.compose(spec_j);
+                assert(::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
+                assert(::fixy::recipe_family_of(composed) == RecipeFamily::None);
                 ++join_count;
             }
         }
@@ -439,14 +443,16 @@ template <class T>
         RecipeSpec<MoveOnlyT> a = ::fixy::mint_recipe_spec(MoveOnlyT{42}, Tolerance::ULP_FP16, RecipeFamily::Kahan);
         RecipeSpec<MoveOnlyT> b = ::fixy::mint_recipe_spec(MoveOnlyT{99}, Tolerance::BITEXACT, RecipeFamily::Kahan);
 
-        // The join takes the maximum on each axis and keeps the left carrier.
-        auto joined = std::move(a).compose(b);
-        assert(::fixy::tolerance_of(joined) == Tolerance::BITEXACT);
-        assert(::fixy::recipe_family_of(joined) == RecipeFamily::Kahan);
-        assert(joined.peek().v == 42);
+        // The composition keeps the looser tier and the shared family, and it
+        // keeps the left carrier.
+        auto composed = std::move(a).compose(b);
+        assert(::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
+        assert(::fixy::recipe_family_of(composed) == RecipeFamily::Kahan);
+        assert(composed.peek().v == 42);
 
-        assert(::fixy::admits(joined, Tolerance::ULP_FP8, RecipeFamily::Kahan));
-        assert(!::fixy::admits(joined, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
+        assert(::fixy::admits(composed, Tolerance::ULP_FP8, RecipeFamily::Kahan));
+        assert(!::fixy::admits(composed, Tolerance::BITEXACT, RecipeFamily::Kahan));
+        assert(!::fixy::admits(composed, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
     }
 
     // The sentinels on the request side, rather than on the spec side. A None

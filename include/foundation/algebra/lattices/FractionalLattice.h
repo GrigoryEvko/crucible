@@ -23,6 +23,7 @@
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/algebra/lattices/DualLattice.h>
 
 #include <compare>
 #include <cstdint>
@@ -110,6 +111,9 @@ struct Rational {
 // two shares and multiplication splits one.
 struct FractionalLattice {
     using element_type = Rational;
+
+    // Graded stores a share through the order dual (DualLattice.h).
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return Rational{0, 1}; }
     [[nodiscard]] static constexpr element_type top() noexcept { return Rational{1, 1}; }
@@ -244,6 +248,10 @@ static_assert(FractionalLattice::add(FractionalLattice::top(), FractionalLattice
 
 static_assert(FractionalLattice::name() == "FractionalLattice");
 
+// A larger share is the stronger claim, so a share stored beside a value
+// goes through the order dual, where weaken() gives a smaller share.
+static_assert(!GradableLattice<FractionalLattice> && GradableLattice<DualLattice<FractionalLattice>>);
+
 // The grade is not empty, so the exact-size layout invariant does not apply
 // here and the growth is bounded by hand instead.
 struct OneByteValue {
@@ -254,7 +262,7 @@ struct EightByteValue {
 };
 
 template <typename T>
-using SharedPermissionGraded = Graded<ModalityKind::Absolute, FractionalLattice, T>;
+using SharedPermissionGraded = Graded<ModalityKind::Absolute, DualLattice<FractionalLattice>, T>;
 
 static_assert(sizeof(SharedPermissionGraded<OneByteValue>) == sizeof(OneByteValue) + sizeof(Rational) + 7,
               "A one-byte payload carrying a share must pad out to the share's "

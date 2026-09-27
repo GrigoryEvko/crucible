@@ -31,6 +31,7 @@
 #include <foundation/algebra/Modality.h>
 
 #include <concepts>
+#include <cstdint>
 #include <string_view>
 #include <type_traits>
 
@@ -38,6 +39,26 @@ namespace foundation::algebra {
 
 template <typename L>
 using LatticeElement = typename L::element_type;
+
+// How the order of a lattice reads as a claim.  A lattice states its
+// reading with a static member claim_orientation of this type.
+// ClaimOrientation.h derives the reading of a lattice that states none,
+// and says which readings Graded accepts.  The type is declared here, so
+// a lattice states its reading with no other include.
+enum class ClaimOrientation : std::uint8_t {
+    // The lattice states no reading, and its element has more than one
+    // value.  Graded refuses such a lattice as a stored grade.
+    unstated = 0,
+    // Up is the weaker claim.  This is the reading of Graded.
+    weaker_is_higher = 1,
+    // Up is the stronger claim.  Graded refuses it as a stored grade, and
+    // the order dual reads the way Graded does.
+    stronger_is_higher = 2,
+    // The element type is empty, so every element names the same claim
+    // and no move changes it.  claim_orientation_of derives this reading
+    // from the element type.
+    one_claim = 3,
+};
 
 // The signature-only probe, and internal scaffolding.  Downstream code
 // uses Lattice.  The law-witness machinery below is constrained by this
@@ -441,8 +462,11 @@ template <Semiring S>
 
 namespace detail::lattice_self_test {
 
+// Read as a claim, false is the stronger element and true the weaker, so
+// the Graded self-tests can store it as a grade.
 struct TrivialBoolLattice {
     using element_type = bool;
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return false; }
     [[nodiscard]] static constexpr element_type top() noexcept { return true; }
     [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept { return !a || b; }

@@ -45,6 +45,11 @@ struct SeqPrefixLattice {
     using element_type = Length<Element>;
     using sequence_element_type = Element;
 
+    // A longer prefix claims more of the stream, so it is the stronger
+    // claim.  An append-only container derives its prefix through
+    // grade_of below, and a derived grade needs no orientation in Graded.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{0}; }
     [[nodiscard]] static constexpr element_type top() noexcept {
         // A synthesized ceiling.  The order has no greatest element, but
@@ -159,24 +164,25 @@ static_assert(LatB::name() == "SeqPrefixLattice");
 static_assert(std::is_same_v<LatA::sequence_element_type, EventA>);
 static_assert(std::is_same_v<LatB::sequence_element_type, EventB>);
 
-// The grade is a size_t, so it cannot collapse under EBO the way an
-// empty grade does.  Graded stores value and grade both, and the
-// zero-overhead layout invariant deliberately does not apply here.
+// An append-only container carries its own length, so Graded derives the
+// prefix from it and stores nothing beside it.  A value that is not a
+// sequence cannot carry a prefix as a stored grade, because a longer
+// prefix is the stronger claim.
+struct MiniLog {
+    std::size_t count{0};
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return count; }
+};
 struct OneByteValue {
     char c{0};
-};
-struct EightByteValue {
-    unsigned long long v{0};
 };
 
 template <typename T>
 using AppendOnlyGraded = Graded<ModalityKind::Absolute, SeqPrefixLattice<EventA>, T>;
 
-// The 7 is the padding that 8-byte alignment inserts after the 1-byte
-// value.
-static_assert(sizeof(AppendOnlyGraded<OneByteValue>) == sizeof(OneByteValue) + sizeof(LatA::element_type) + 7);
-
-static_assert(sizeof(AppendOnlyGraded<EightByteValue>) == sizeof(EightByteValue) + sizeof(LatA::element_type));
+static_assert(LatticeDerivesGrade<LatA, MiniLog>);
+static_assert(sizeof(AppendOnlyGraded<MiniLog>) == sizeof(MiniLog));
+static_assert(AppendOnlyGraded<MiniLog>{MiniLog{3}}.grade() == Length<EventA>{3});
+static_assert(!GradableLattice<LatA> && !LatticeGradesValue<LatA, OneByteValue>);
 
 }  // namespace detail::seq_prefix_lattice_self_test
 

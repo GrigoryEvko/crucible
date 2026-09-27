@@ -48,6 +48,9 @@ inline constexpr std::size_t vendor_backend_count = ::foundation::reflect::enum_
 struct VendorLattice {
     using element_type = VendorBackend;
 
+    // A backend that runs in more places is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return VendorBackend::None; }
     [[nodiscard]] static constexpr element_type top() noexcept { return VendorBackend::Portable; }
 

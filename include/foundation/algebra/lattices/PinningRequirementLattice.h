@@ -43,6 +43,9 @@ inline constexpr std::size_t pinning_requirement_count = ::foundation::reflect::
 }
 
 struct PinningRequirementLattice : ChainLatticeOps<PinningRequirement> {
+    // A broader coherence domain is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return PinningRequirement::NotRequired; }
     [[nodiscard]] static constexpr element_type top() noexcept { return PinningRequirement::CrossSocketSafe; }
 

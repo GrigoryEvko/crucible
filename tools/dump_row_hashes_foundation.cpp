@@ -188,10 +188,11 @@ using K05_OnDualEpoch = OnAxis<fl::DualLattice<fl::EpochLattice>>;
 // ── The vector clock ───────────────────────────────────────────────
 //
 // The width and the tag are both part of the key.  H01 and H02 differ
-// only in the tag, and H01 and H03 differ only in the width.
-using H01_ClockOfFour = OnAxis<fl::HappensBeforeLattice<4>>;
-using H02_ClockOfFourTagged = OnAxis<fl::HappensBeforeLattice<4, row_hash_witness::ReplayClock>>;
-using H03_ClockOfEight = OnAxis<fl::HappensBeforeLattice<8>>;
+// only in the tag, and H01 and H03 differ only in the width.  A larger
+// clock is the stronger claim, so a clock enters through its order dual.
+using H01_ClockOfFour = OnAxis<fl::DualLattice<fl::HappensBeforeLattice<4>>>;
+using H02_ClockOfFourTagged = OnAxis<fl::DualLattice<fl::HappensBeforeLattice<4, row_hash_witness::ReplayClock>>>;
+using H03_ClockOfEight = OnAxis<fl::DualLattice<fl::HappensBeforeLattice<8>>>;
 
 // ── Nesting order ──────────────────────────────────────────────────
 //
@@ -366,7 +367,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0xd8a50f1650b1c32aULL;
+inline constexpr std::uint64_t kFoldAnchor = 0x78a9de9a2a89fd19ULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;

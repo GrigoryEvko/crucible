@@ -43,6 +43,9 @@ inline constexpr std::size_t residency_heat_tag_count = ::foundation::reflect::e
 }
 
 struct ResidencyHeatLattice : ChainLatticeOps<ResidencyHeatTag> {
+    // A residency nearer the core is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return ResidencyHeatTag::Cold; }
     [[nodiscard]] static constexpr element_type top() noexcept { return ResidencyHeatTag::Hot; }
 

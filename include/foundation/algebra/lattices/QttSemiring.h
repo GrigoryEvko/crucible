@@ -55,6 +55,10 @@ inline constexpr std::size_t qtt_grade_count = ::foundation::reflect::enum_count
 struct QttSemiring {
     using element_type = QttGrade;
 
+    // A grade that permits more uses is the stronger claim: a move from
+    // one use to many would duplicate a linear value.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return QttGrade::Zero; }
     [[nodiscard]] static constexpr element_type top() noexcept { return QttGrade::Omega; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {

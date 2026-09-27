@@ -47,6 +47,9 @@ inline constexpr std::size_t scheduler_policy_count = ::foundation::reflect::enu
 }
 
 struct SchedulerPolicyLattice : ChainLatticeOps<SchedulerPolicy> {
+    // A class that preempts more is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return SchedulerPolicy::Idle; }
     [[nodiscard]] static constexpr element_type top() noexcept { return SchedulerPolicy::Deadline; }
 

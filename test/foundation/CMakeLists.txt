@@ -113,7 +113,7 @@ foundation_neg_compile_test(neg_lattice_order_against_join
   "no matching function for call to .verify_lattice_axioms_at<Inverted>"
   "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::lattice_self_test::InvertedOrder\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_lattice_bottom_above_top
-  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
   "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::lattice_self_test::ExchangedBounds\\]. evaluated to .false.")
 # Two operation pairs with the signature of a semiring and not its laws:
 # subtraction for add, and the maximum for both add and mul.  The laws at
@@ -253,18 +253,32 @@ foundation_neg_compile_test(neg_strong_counter_join_across_axes
   "cannot convert .element_type<foundation::algebra::lattices::counter_tags::generation>. to .element_type<foundation::algebra::lattices::counter_tags::epoch>."
   "initializing argument 2 of .static constexpr foundation::algebra::lattices::StrongCounterLattice<Tag>::element_type foundation::algebra::lattices::StrongCounterLattice<Tag>::join\\(")
 # Graded reads up as the weaker claim.  A version counter in its numeric
-# order, a product with one such component, and the dual of a use counter
-# each read up as the stronger claim, and Graded refuses each of them.
+# order, a product with one such component, the dual of a use counter and
+# the determinism chain each read up as the stronger claim, and a chain
+# that states no reading is unknown.  Graded refuses each of them as a
+# stored grade.  The second regex names the refused lattice beside a
+# payload that it does not name, and the third says that neither the
+# orientation nor a grade derived from the value admits it.
 foundation_neg_compile_test(neg_graded_version_counter_numeric_order
-  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
-  "satisfaction of .GradableLattice<L>. .with L = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>."
-  "\\(claim_orientation_v<L>\\) != foundation::algebra::ClaimOrientation::stronger_is_higher")
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
+  "satisfaction of .LatticeGradesValue<L, T>. .with L = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>. T = int."
+  "no operand of the disjunction is satisfied")
 foundation_neg_compile_test(neg_graded_version_counter_in_product
-  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
-  "satisfaction of .GradableLattice<L>. .with L = foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch> >, foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation> >.")
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
+  "satisfaction of .LatticeGradesValue<L, T>. .with L = foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch> >, foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation> >. T = int."
+  "no operand of the disjunction is satisfied")
 foundation_neg_compile_test(neg_graded_use_counter_dual
-  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +GradableLattice<L> class foundation::algebra::Graded."
-  "satisfaction of .GradableLattice<L>. .with L = foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::peak_bytes> >.")
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
+  "satisfaction of .LatticeGradesValue<L, T>. .with L = foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::peak_bytes> >. T = int."
+  "no operand of the disjunction is satisfied")
+foundation_neg_compile_test(neg_graded_stored_grade_in_a_stronger_up_chain
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
+  "satisfaction of .LatticeGradesValue<L, T>. .with L = foundation::algebra::lattices::DetSafeLattice. T = int."
+  "no operand of the disjunction is satisfied")
+foundation_neg_compile_test(neg_graded_stored_grade_in_an_unstated_order
+  "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
+  "satisfaction of .LatticeGradesValue<L, T>. .with L = <unnamed>::UnstatedChain. T = int."
+  "no operand of the disjunction is satisfied")
 # A counter tag that does not state its claim orientation is refused.
 foundation_neg_compile_test(neg_counter_tag_without_orientation
   "template constraint failure for .template<class Tag> +requires +CounterTag<Tag> struct foundation::algebra::lattices::StrongCounterLattice."

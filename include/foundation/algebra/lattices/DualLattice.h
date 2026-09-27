@@ -8,12 +8,13 @@
 // Graded reads its up direction as the weaker claim: weaken() and
 // compose() move a grade up and nowhere else.  A lattice whose natural
 // order puts the stronger claim higher gives Graded the wrong direction.
-// A version counter is the case in this tree: the newer version is the
-// stronger claim, so a Graded over the numeric order would let weaken()
-// mark an old value as new, and compose() would pair one value with the
-// newer of two versions.  The dual of that order puts the older version
-// higher, so both operations become sound: weaken() moves to an older
-// version, and compose() reports the older of two.
+// A version counter is such a lattice: the newer version is the stronger
+// claim, so a Graded over the numeric order would let weaken() mark an
+// old value as new, and compose() would pair one value with the newer of
+// two versions.  The dual of that order puts the older version higher,
+// so both operations become sound: weaken() moves to an older version,
+// and compose() reports the older of two.  A vector clock, a fractional
+// share and the numerical tiers of a recipe are graded the same way.
 //
 // The dual keeps the element type.  A value in the dual is the value in
 // the source, so a caller reads it with the source's own accessors.
@@ -23,8 +24,10 @@
 // a double dual back, because no caller needs it.
 //
 // The dual turns the claim orientation of its source over, so Graded
-// accepts the dual of a lattice it refuses, and refuses the dual of a
-// lattice that reads the Graded way (ClaimOrientation.h).
+// accepts the dual of a lattice whose up is the stronger claim, and
+// refuses the dual of a lattice that reads the Graded way.  The dual of a
+// lattice that states no orientation states none, and Graded refuses it
+// as a stored grade (ClaimOrientation.h).
 
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>

@@ -231,8 +231,11 @@ struct ProductLattice<Ls...> {
 
 namespace detail::product_lattice_self_test {
 
+// Read as a use count, where the larger count is the weaker claim, so a
+// product of two can be stored beside a value.
 struct U8MinMax {
     using element_type = std::uint8_t;
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
     [[nodiscard]] static constexpr element_type top() noexcept { return 255; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a <= b; }

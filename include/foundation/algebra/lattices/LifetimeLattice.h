@@ -42,6 +42,9 @@ inline constexpr std::size_t lifetime_count = ::foundation::reflect::enum_count<
 }
 
 struct LifetimeLattice : ChainLatticeOps<Lifetime> {
+    // A longer scope is the stronger claim.
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
+
     [[nodiscard]] static constexpr element_type bottom() noexcept { return Lifetime::PER_REQUEST; }
     [[nodiscard]] static constexpr element_type top() noexcept { return Lifetime::PER_FLEET; }
 

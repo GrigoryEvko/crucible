@@ -17,6 +17,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/BoolLattice.h>
 #include <foundation/algebra/lattices/ConfLattice.h>
+#include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
 #include <foundation/algebra/lattices/MonotoneLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
@@ -89,7 +90,7 @@ static_assert(sizeof(AppendOnlyLog) == sizeof(Log));
 
 // Regime 4: value and grade both stored.
 using StaleU64 = fa::Graded<fa::ModalityKind::Absolute, fl::StalenessSemiring, std::uint64_t>;
-using SharedU64 = fa::Graded<fa::ModalityKind::Absolute, fl::FractionalLattice, std::uint64_t>;
+using SharedU64 = fa::Graded<fa::ModalityKind::Absolute, fl::DualLattice<fl::FractionalLattice>, std::uint64_t>;
 static_assert(sizeof(StaleU64) == sizeof(std::uint64_t) + sizeof(fl::StalenessSemiring::element_type));
 static_assert(sizeof(SharedU64) == sizeof(std::uint64_t) + sizeof(fl::Rational));
 
@@ -306,18 +307,12 @@ void seq_prefix_lattice_runs_at_run_time() {
     expect(LatA::bottom().length == 0);
     expect(LatA::top().length == std::numeric_limits<std::size_t>::max());
 
-    OneByteValue v{42};
-    AppendOnlyGraded<OneByteValue> initial{test_authority::key(), v, LatA::bottom()};
-    auto widened = initial.weaken(a);
-    auto widened2 = widened.weaken(b);
-    auto composed = initial.compose(widened2);
-    auto rv_widen = std::move(widened2).weaken(b);
-    auto rv_comp = std::move(initial).compose(composed);
-
-    [[maybe_unused]] auto g1 = composed.grade();
-    [[maybe_unused]] auto v1 = composed.peek().c;
-    [[maybe_unused]] auto v2 = std::move(rv_comp).consume().c;
-    [[maybe_unused]] auto g2 = rv_widen.grade();
+    // A longer prefix is the stronger claim, so the prefix is derived from
+    // the log and never stored beside a value.
+    AppendOnlyGraded<MiniLog> log{MiniLog{n_b}};
+    [[maybe_unused]] auto g1 = log.grade();
+    [[maybe_unused]] auto v1 = log.peek().size();
+    [[maybe_unused]] auto v2 = std::move(log).consume().size();
 }
 
 void staleness_semiring_runs_at_run_time() {
@@ -374,15 +369,15 @@ void fractional_lattice_runs_at_run_time() {
                       Rational::MAX_SAFE_MAGNITUDE));
     expect(is_exactly(FractionalLattice::meet(large_lo, large_hi), 1, Rational::MAX_SAFE_MAGNITUDE));
 
-    // Weakening only ever moves up the order, so the shares below are built in
-    // ascending sequence.  Requesting a smaller grade violates the
-    // precondition.
+    // A share is stored through the order dual, so weakening gives a smaller
+    // share and the shares below are built in descending sequence.
+    // Requesting a larger share violates the precondition.
     OneByteValue v{42};
-    SharedPermissionGraded<OneByteValue> initial{test_authority::key(), v, FractionalLattice::bottom()};
+    SharedPermissionGraded<OneByteValue> initial{test_authority::key(), v, FractionalLattice::top()};
     auto widened = initial.weaken(Rational{3, 4});
-    auto widened_max = widened.weaken(FractionalLattice::top());
+    auto widened_max = widened.weaken(FractionalLattice::bottom());
     auto composed = initial.compose(widened_max);
-    auto rv_widen = std::move(widened_max).weaken(FractionalLattice::top());
+    auto rv_widen = std::move(widened_max).weaken(FractionalLattice::bottom());
 
     // Composing into a separate handle lets the result be consumed without
     // aliasing either operand, which is what reaches the rvalue overloads.

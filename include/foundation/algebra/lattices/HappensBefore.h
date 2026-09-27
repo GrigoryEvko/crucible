@@ -19,6 +19,11 @@
 // std::bit_cast and to a lifetime start over bytes for the reasons given in
 // StrongCounterLattice.h, and at the same cost, which is none.
 //
+// A larger clock claims a longer history, so up is the stronger claim, as
+// it is for a version counter.  A Graded over the pointwise order would let
+// weaken() claim a history nobody recorded, which is what the doors above
+// refuse.  A value graded by its clock uses the order dual (DualLattice.h).
+//
 // Old spelling: include/crucible/algebra/lattices/_HappensBefore.h.  The
 // preconditions moved from native pre() clauses into the function bodies,
 // where CRUCIBLE_PRE fires during constant evaluation too.
@@ -53,6 +58,8 @@ struct HappensBeforeLattice {
     static_assert(N > 0, "HappensBeforeLattice<0> is forbidden — an empty vector clock "
                          "has no algebraic content.  Use N >= 1; N=1 reduces to a "
                          "Lamport scalar clock.");
+
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
 
     // operator<=> is written out rather than defaulted.  A defaulted one would
     // forward to the array member and yield a lexicographic strong_ordering,
@@ -506,6 +513,10 @@ static_assert(HBReplay::image_axis() != HBKernel::image_axis() && HBReplay::imag
 static_assert(!std::is_reference_v<decltype(std::declval<HB4::element_type const&>().slots())>);
 static_assert(std::is_same_v<decltype(hb4_c.slots()), std::array<std::uint64_t, 4>>);
 static_assert(hb4_c.slots()[1] == 2);
+
+// A clock in its pointwise order is not a stored grade, and its dual is.
+static_assert(!GradableLattice<HB4> && !GradableLattice<HBReplay>);
+static_assert(claim_orientation_v<HB4> == ClaimOrientation::stronger_is_higher);
 
 }  // namespace detail::happens_before_self_test
 

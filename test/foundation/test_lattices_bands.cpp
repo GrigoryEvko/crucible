@@ -14,6 +14,7 @@
 #include <foundation/algebra/lattices/CipherTierLattice.h>
 #include <foundation/algebra/lattices/ClockSourceLattice.h>
 #include <foundation/algebra/lattices/DetSafeLattice.h>
+#include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/EnumValuePins.h>
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/algebra/lattices/LifetimeLattice.h>
@@ -411,10 +412,12 @@ void recipe_family_lattice_runs_at_run_time() {
     auto sib_meet = RecipeFamilyLattice::meet(RecipeFamily::Linear, RecipeFamily::Pairwise);
     if (sib_meet != RecipeFamily::None) std::abort();
 
-    using RecipeGraded = Graded<ModalityKind::Absolute, RecipeFamilyLattice, int>;
+    // A wider family is the stronger claim, so a stored family grades
+    // through the order dual, and weaken() narrows it toward None.
+    using RecipeGraded = Graded<ModalityKind::Absolute, DualLattice<RecipeFamilyLattice>, int>;
     RecipeGraded v{test_authority::key(), 42, RecipeFamily::Kahan};
-    [[maybe_unused]] auto g = v.grade();
-    [[maybe_unused]] auto vp = v.peek();
+    if (v.grade() != RecipeFamily::Kahan || v.peek() != 42) std::abort();
+    if (v.weaken(RecipeFamily::None).grade() != RecipeFamily::None) std::abort();
 }
 
 void barrier_strength_lattice_runs_at_run_time() {
@@ -601,11 +604,15 @@ void clock_source_lattice_runs_at_run_time() {
 
     [[maybe_unused]] auto built = ClockSourceLattice::make_point(det, suspend, pin);
 
+    // A point stored beside a value grades through the order dual, so
+    // weaken() moves from the counter read to the weaker boot clock and
+    // then to the weakest point.
     EightByteValue payload{42};
-    ClockGraded<EightByteValue> initial{test_authority::key(), payload, boot_point};
-    auto widened = initial.weaken(tsc_point);
+    ClockGraded<EightByteValue> initial{test_authority::key(), payload, tsc_point};
+    auto widened = initial.weaken(boot_point);
     auto composed = initial.compose(widened);
-    auto rv_widen = std::move(widened).weaken(ClockSourceLattice::top());
+    auto rv_widen = std::move(widened).weaken(ClockSourceLattice::bottom());
+    if (!(composed.grade() == boot_point) || !(rv_widen.grade() == ClockSourceLattice::bottom())) std::abort();
 
     [[maybe_unused]] auto grade = rv_widen.grade();
     [[maybe_unused]] auto value = composed.peek().v;
@@ -670,9 +677,12 @@ void numa_node_lattice_runs_at_run_time() {
     if (NumaNodeLattice::leq(NumaNodeLattice::top(), first)) std::abort();
     if (!is_concrete_numa_node(second) || is_concrete_numa_node(NumaNodeId::Any)) std::abort();
 
-    using NumaGraded = Graded<ModalityKind::Absolute, NumaNodeLattice, int>;
+    // A claim that covers more nodes is the stronger claim, so a stored
+    // node grades through the order dual, and weaken() narrows it to None.
+    using NumaGraded = Graded<ModalityKind::Absolute, DualLattice<NumaNodeLattice>, int>;
     NumaGraded const value{test_authority::key(), 42, NumaNodeId{2}};
     if (value.grade() != NumaNodeId{2} || value.peek() != 42) std::abort();
+    if (value.weaken(NumaNodeId::None).grade() != NumaNodeId::None) std::abort();
 }
 
 void scheduler_policy_lattice_runs_at_run_time() {
