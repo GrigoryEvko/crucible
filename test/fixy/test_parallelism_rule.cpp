@@ -219,20 +219,6 @@ void test_container_cap() {
     CRUCIBLE_TEST_REQUIRE(on_factor_ladder_(dec.factor));
 }
 
-void test_free_function_equivalence() {
-    WorkBudget budget{
-        .read_bytes = 64 * 1024 * 1024,
-        .write_bytes = 64 * 1024 * 1024,
-        .item_count = 1000000,
-    };
-    const auto from_rule = ParallelismRule::recommend(budget);
-    const auto from_free = recommend_parallelism(budget);
-    CRUCIBLE_TEST_REQUIRE(from_rule.kind == from_free.kind);
-    CRUCIBLE_TEST_REQUIRE(from_rule.factor == from_free.factor);
-    CRUCIBLE_TEST_REQUIRE(from_rule.numa == from_free.numa);
-    CRUCIBLE_TEST_REQUIRE(from_rule.tier == from_free.tier);
-}
-
 void test_budget_for_span() {
     const auto budget = ParallelismRule::budget_for_span<std::uint64_t>(/*count=*/1024);
     CRUCIBLE_TEST_REQUIRE(budget.item_count == 1024);
@@ -304,7 +290,6 @@ int main() {
     run_test("NumaSpread/Ignore on DRAM", test_numa_policy_dram_bound);
     run_test("determinism", test_determinism);
     run_test("container-aware factor cap", test_container_cap);
-    run_test("free-function equivalence", test_free_function_equivalence);
     run_test("budget_for_span helper", test_budget_for_span);
     run_test("saturated budget is not small", test_saturated_budget_is_not_small);
     run_test("no-regression invariant", test_no_regression_invariant);

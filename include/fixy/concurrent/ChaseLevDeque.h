@@ -26,13 +26,9 @@
 //
 // Old spelling: include/crucible/concurrent/_ChaseLevDeque.h.
 
-#include <fixy/Atom.h>
-#include <fixy/Axis.h>
 #include <fixy/Mutation.h>
-#include <fixy/atoms/Barrier.h>
 
 #include <foundation/Pinned.h>
-#include <foundation/algebra/lattices/BarrierStrengthLattice.h>
 
 #include <array>
 #include <atomic>
@@ -50,32 +46,6 @@ struct chase_lev_deque;
 }  // namespace fixy::row_discipline
 
 namespace fixy::concurrent {
-
-// The deque emits two fence strengths: a release fence in push_bottom
-// and a seq_cst fence at each of the two critical points.  A region
-// holding both is graded at their lattice join, so SeqCst is the barrier
-// atom that characterizes the deque.  The atom names a strength and no
-// instruction, because the fences are std::atomic_thread_fence and the
-// target instruction is the compiler's choice.
-namespace chaselev_hw {
-
-namespace fal = ::foundation::algebra::lattices;
-using BSL = fal::BarrierStrengthLattice;
-using BS = fal::BarrierStrength;
-
-using BarrierTier = ::fixy::atom::barrier::seq_cst;
-
-static_assert(::fixy::atom::IsAtom<BarrierTier> && BarrierTier::axis == ::fixy::Axis::BarrierStrength,
-              "the deque's barrier tier is a shipped atom of the BarrierStrength axis");
-
-// Compared through the lattice ordering rather than the underlying
-// values, so a renumbering of the enum cannot silently invert this.
-static_assert(BSL::leq(BS::ReleaseStore, BS::SeqCst), "the release fence is weaker than the seq_cst fence");
-static_assert(BSL::join(BS::ReleaseStore, BS::SeqCst) == BarrierTier::tier,
-              "the deque's barrier tier is the join of its two "
-              "fence strengths — SeqCst dominates the release fence");
-
-}  // namespace chaselev_hw
 
 template <typename T>
 concept DequeValue =

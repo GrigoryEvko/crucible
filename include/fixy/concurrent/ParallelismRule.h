@@ -34,14 +34,11 @@
 // a fraction of that many CPUs, which is worse than staying sequential.
 //
 // This header is the one place the cache thresholds live.  The rule
-// reads the probed sizes at run time.  The static tier math below reads
-// the fleet floors at compile time.  fixy/os/Spawn.h and
-// fixy/concurrent/Pipeline.h ask is_core_resident rather than compare
-// sizes of their own.
+// reads the probed sizes at run time.  fixy/os/Spawn.h and
+// fixy/concurrent/Pipeline.h ask is_core_resident or recommend rather
+// than compare sizes of their own.
 //
-// Old spelling: include/crucible/concurrent/ParallelismRule.h, the tier
-// math of include/crucible/concurrent/SubstrateCtxFit.h, and
-// include/crucible/concurrent/TopologyConstexpr.h.
+// Old spelling: include/crucible/concurrent/ParallelismRule.h.
 //
 // Deviations, each deliberate:
 //
@@ -57,31 +54,29 @@
 //
 //  3. One boundary rule: a set fits a tier when it is no larger than the
 //     capacity of the tier.  The old classify compared strictly, while the
-//     old tier math and the old dispatch choice of Pipeline compared with
-//     no-larger-than.  A set of exactly L2 bytes was then L3-resident to
-//     the rule and core-resident to the other two.
+//     old dispatch choice of Pipeline compared with no-larger-than.  A set
+//     of exactly L2 bytes was then L3-resident to the rule and
+//     core-resident to Pipeline.
 //
-//  4. The static tier math compares against the fleet floors of the
-//     topology_constexpr namespace, not against the conservative floors
-//     directly.  The old tier math read the conservative floors, so a
-//     build override of a fleet floor changed the exported constants and
-//     no decision.
-//
-//  5. is_core_private_tier and is_core_resident name the one question the
+//  4. is_core_private_tier and is_core_resident name the one question the
 //     callers ask.  The old callers each wrote their own comparison.
 //
-//  6. The substrate gates of SubstrateCtxFit.h did not come.  They read
-//     the substrate descriptor and the residency axis of the old context,
-//     and neither exists in this tree.  fits_in_tier_v and
-//     required_tier_for_footprint are the math they were built on.
+//  5. The static tier math did not come: the fleet floors of
+//     TopologyConstexpr.h, fits_in_tier_v, required_tier_for_footprint and
+//     the substrate gates of SubstrateCtxFit.h.  The gates read the
+//     substrate descriptor and the residency axis of the old context, and
+//     neither exists in this tree.  Without the gates, nothing read the
+//     math.  The recommend_parallelism alias did not come either, because
+//     each caller names ParallelismRule::recommend.  The conservative
+//     floors of WorkingSet.h stay, because a compile-time check that must
+//     hold on the smallest supported host reads them.
 //
-//  7. ParallelismRule deletes every constructor and has a user-provided
+//  6. ParallelismRule deletes every constructor and has a user-provided
 //     destructor, the shape of the other static-only holders in this tree.
 //     The old class deleted only its default constructor, so it stayed
 //     trivially copyable, and a byte route could make an object of it.
 
 #include <fixy/concurrent/Topology.h>
-#include <fixy/concurrent/WorkingSet.h>
 #include <foundation/Saturate.h>
 
 #include <algorithm>
@@ -265,120 +260,8 @@ public:
     }
 };
 
-[[nodiscard]] inline ParallelismDecision recommend_parallelism(WorkBudget budget) noexcept {
-    return ParallelismRule::recommend(budget);
-}
-
-// The fleet floors: the cache sizes a decision made at compile time
-// compares against.  A build that overrides these constants must supply
-// the lowest cache budget across the fleet the binary will run on.
-// Cost-model decisions derived from them stay sound only for the
-// worst-case host.
-//
-// When the build host differs from the deploy host, the override has to
-// be stated explicitly.  Reading the build host's own cache topology
-// would bake the wrong silicon's numbers into the binary.
-
-namespace topology_constexpr {
-
-#ifdef CRUCIBLE_L1D_PER_CORE_BYTES
-inline constexpr std::size_t l1d_per_core_bytes_v = static_cast<std::size_t>(CRUCIBLE_L1D_PER_CORE_BYTES);
-#else
-inline constexpr std::size_t l1d_per_core_bytes_v = conservative_l1d_per_core;
-#endif
-
-#ifdef CRUCIBLE_L2_PER_CORE_BYTES
-inline constexpr std::size_t l2_per_core_bytes_v = static_cast<std::size_t>(CRUCIBLE_L2_PER_CORE_BYTES);
-#else
-inline constexpr std::size_t l2_per_core_bytes_v = conservative_l2_per_core;
-#endif
-
-#ifdef CRUCIBLE_L3_TOTAL_BYTES
-inline constexpr std::size_t l3_total_bytes_v = static_cast<std::size_t>(CRUCIBLE_L3_TOTAL_BYTES);
-#else
-inline constexpr std::size_t l3_total_bytes_v = conservative_l3_total;
-#endif
-
-static_assert(l1d_per_core_bytes_v > 0, "l1d_per_core_bytes_v must be greater than zero — check the "
-                                        "CRUCIBLE_L1D_PER_CORE_BYTES override value.");
-static_assert(l2_per_core_bytes_v > 0, "l2_per_core_bytes_v must be greater than zero — check the "
-                                       "CRUCIBLE_L2_PER_CORE_BYTES override value.");
-static_assert(l3_total_bytes_v > 0, "l3_total_bytes_v must be greater than zero — check the "
-                                    "CRUCIBLE_L3_TOTAL_BYTES override value.");
-static_assert(l1d_per_core_bytes_v < l2_per_core_bytes_v, "l1d_per_core_bytes_v must be less than "
-                                                          "l2_per_core_bytes_v — an override that fails this has "
-                                                          "most likely confused KB with MB.");
-static_assert(l2_per_core_bytes_v < l3_total_bytes_v, "l2_per_core_bytes_v must be less than l3_total_bytes_v — an "
-                                                      "override that fails this has most likely confused KB, MB "
-                                                      "and GB.");
-
-#ifdef CRUCIBLE_L1D_PER_CORE_BYTES
-inline constexpr bool is_l1d_overridden_v = true;
-#else
-inline constexpr bool is_l1d_overridden_v = false;
-#endif
-
-#ifdef CRUCIBLE_L2_PER_CORE_BYTES
-inline constexpr bool is_l2_overridden_v = true;
-#else
-inline constexpr bool is_l2_overridden_v = false;
-#endif
-
-#ifdef CRUCIBLE_L3_TOTAL_BYTES
-inline constexpr bool is_l3_overridden_v = true;
-#else
-inline constexpr bool is_l3_overridden_v = false;
-#endif
-
-static_assert(is_l1d_overridden_v || l1d_per_core_bytes_v == conservative_l1d_per_core,
-              "with no override in force, l1d_per_core_bytes_v must equal the conservative "
-              "substrate default it is derived from.");
-static_assert(is_l2_overridden_v || l2_per_core_bytes_v == conservative_l2_per_core,
-              "with no override in force, l2_per_core_bytes_v must equal the conservative "
-              "substrate default it is derived from.");
-static_assert(is_l3_overridden_v || l3_total_bytes_v == conservative_l3_total,
-              "with no override in force, l3_total_bytes_v must equal the conservative "
-              "substrate default it is derived from.");
-
-}  // namespace topology_constexpr
-
-// The static half of the rule, for a decision made before the topology
-// has been read.  The fleet floors sit below every supported host's real
-// figures, so a check against them errs towards "does not fit, move up a
-// tier".  It refuses more configurations than the run-time rule would,
-// and never fewer.
-
-template <std::size_t Footprint, Tier T>
-inline constexpr bool fits_in_tier_v = [] consteval {
-    if constexpr (T == Tier::L1Resident)
-        return Footprint <= topology_constexpr::l1d_per_core_bytes_v;
-    else if constexpr (T == Tier::L2Resident)
-        return Footprint <= topology_constexpr::l2_per_core_bytes_v;
-    else if constexpr (T == Tier::L3Resident)
-        return Footprint <= topology_constexpr::l3_total_bytes_v;
-    else /* T == Tier::DRAMBound */
-        return true;
-}();
-
-// The inverse: the hottest tier a footprint fits.  A construction
-// context has to claim at least this tier to build an object of this
-// size.
-
-template <std::size_t Footprint>
-inline constexpr Tier required_tier_for_footprint = [] consteval {
-    if (Footprint <= topology_constexpr::l1d_per_core_bytes_v)
-        return Tier::L1Resident;
-    else if (Footprint <= topology_constexpr::l2_per_core_bytes_v)
-        return Tier::L2Resident;
-    else if (Footprint <= topology_constexpr::l3_total_bytes_v)
-        return Tier::L3Resident;
-    else
-        return Tier::DRAMBound;
-}();
-
 namespace detail::parallelism_rule_self_test {
 
-namespace floors = topology_constexpr;
 namespace ladder = parallelism_rule_detail;
 
 inline constexpr std::size_t kMaxSize = std::numeric_limits<std::size_t>::max();
@@ -408,30 +291,6 @@ static_assert(is_core_private_tier(Tier::L1Resident));
 static_assert(is_core_private_tier(Tier::L2Resident));
 static_assert(!is_core_private_tier(Tier::L3Resident));
 static_assert(!is_core_private_tier(Tier::DRAMBound));
-
-// Deviation 3 on the static side: each floor is inside its own tier and
-// one byte more is not.  The cells name the floors rather than literals,
-// so a build override moves the cells with the floors.
-static_assert(fits_in_tier_v<floors::l1d_per_core_bytes_v, Tier::L1Resident>);
-static_assert(!fits_in_tier_v<floors::l1d_per_core_bytes_v + 1, Tier::L1Resident>);
-static_assert(fits_in_tier_v<floors::l1d_per_core_bytes_v + 1, Tier::L2Resident>);
-static_assert(fits_in_tier_v<floors::l2_per_core_bytes_v, Tier::L2Resident>);
-static_assert(!fits_in_tier_v<floors::l2_per_core_bytes_v + 1, Tier::L2Resident>);
-static_assert(fits_in_tier_v<floors::l3_total_bytes_v, Tier::L3Resident>);
-static_assert(!fits_in_tier_v<floors::l3_total_bytes_v + 1, Tier::L3Resident>);
-static_assert(fits_in_tier_v<kMaxSize, Tier::DRAMBound>);
-
-static_assert(required_tier_for_footprint<0> == Tier::L1Resident);
-static_assert(required_tier_for_footprint<floors::l1d_per_core_bytes_v> == Tier::L1Resident);
-static_assert(required_tier_for_footprint<floors::l1d_per_core_bytes_v + 1> == Tier::L2Resident);
-static_assert(required_tier_for_footprint<floors::l2_per_core_bytes_v> == Tier::L2Resident);
-static_assert(required_tier_for_footprint<floors::l2_per_core_bytes_v + 1> == Tier::L3Resident);
-static_assert(required_tier_for_footprint<floors::l3_total_bytes_v> == Tier::L3Resident);
-static_assert(required_tier_for_footprint<floors::l3_total_bytes_v + 1> == Tier::DRAMBound);
-
-// A footprint fits the tier it requires, and every tier above it.
-static_assert(fits_in_tier_v<floors::l2_per_core_bytes_v, required_tier_for_footprint<floors::l2_per_core_bytes_v>>);
-static_assert(fits_in_tier_v<floors::l2_per_core_bytes_v, Tier::L3Resident>);
 
 }  // namespace detail::parallelism_rule_self_test
 

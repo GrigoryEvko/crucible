@@ -571,7 +571,9 @@ crucible/concurrent/_PermissionedSpscChannel.h:splits_into  — The header speci
 crucible/concurrent/_PermissionedSpscChannel.h:splits_into_pack  — The same for the pack manifest, which the ported header specialises as can_split_into_pack.
 crucible/concurrent/_PermissionedSpscChannel.h:splits_into_authoring_witness  — The same for the binary witness, which the ported header specialises as has_split_authoring_witness.
 crucible/concurrent/_PermissionedSpscChannel.h:splits_into_pack_authoring_witness  — The same for the pack witness, which the ported header specialises as has_split_pack_authoring_witness.
-crucible/concurrent/_ChaseLevDeque.h:ActiveBarrierGrant  → include/fixy/concurrent/ChaseLevDeque.h  — The alias named the old barrier grant of the deque's fences; the ported header names the same strength as the fixy atom BarrierTier, and the old grant layer has no place in the new tree.
+crucible/concurrent/_ChaseLevDeque.h:ActiveBarrierGrant  — The alias named a barrier grant for the fences of the deque, and nothing read it: the fences state their own memory orders, so the ported deque carries no barrier atom.
+crucible/concurrent/_ChaseLevDeque.h:BS  — A local alias of the barrier-strength enum for the self-test of the grant above, gone with that grant.
+crucible/concurrent/_ChaseLevDeque.h:BSL  — A local alias of the barrier-strength lattice for the self-test of the grant above, gone with that grant.
 crucible/permissions/_ReadView.h:mint_read_view  → include/foundation/permissions/ReadView.h  — The mint returned a view by value, which a caller could bind to a name that outlived its source, so foundation/permissions/ReadView.h lends a view only inside the body of with_read_view and carries a read right that travels as the ReadLoan of mint_read_loan.
 
 # The old row hash carried one partial specialisation per wrapper and
@@ -1186,11 +1188,20 @@ crucible/safety/_JoinPolicy.h:mint_join_policy  — The mint of the deferred Joi
 crucible/safety/_JoinPolicy.h:WaitDeadline  — An alias of the deferred JoinPolicy wrapper at one tier, deferred with it.
 
 # ── concurrent: the parallelism rule, its tier math and the workload helpers ──
-crucible/concurrent/_SubstrateCtxFit.h:SubstrateFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this gate to read, so only its tier math came, as fits_in_tier_v.
-crucible/concurrent/_SubstrateCtxFit.h:StorageFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this construction gate to read, so only its tier math came, as fits_in_tier_v.
+crucible/concurrent/_SubstrateCtxFit.h:SubstrateFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this gate to read, so the gate did not come, and deviation 5 of the carrier says why.
+crucible/concurrent/_SubstrateCtxFit.h:StorageFitsCtxResidency  → include/fixy/concurrent/ParallelismRule.h  — The new context has no residency axis for this construction gate to read, so the gate did not come, and deviation 5 of the carrier says why.
 crucible/concurrent/_SubstrateCtxFit.h:SubstrateBenefitsFromParallelism  → include/fixy/concurrent/ParallelismRule.h  — It read the byte footprint of the substrate descriptor, which the new tree does not carry, and ParallelismRule::recommend answers the same question from a WorkBudget.
-crucible/concurrent/_SubstrateCtxFit.h:substrate_required_tier_v  → include/fixy/concurrent/ParallelismRule.h  — It read the byte footprint of the substrate descriptor, which the new tree does not carry, so required_tier_for_footprint takes the footprint directly.
-crucible/concurrent/_SubstrateCtxFit.h:substrate_hot_path_required_tier_v  → include/fixy/concurrent/ParallelismRule.h  — It read the per-call footprint of the substrate descriptor, which the new tree does not carry, so required_tier_for_footprint takes the footprint directly.
+crucible/concurrent/_SubstrateCtxFit.h:substrate_required_tier_v  → include/fixy/concurrent/ParallelismRule.h  — It read the byte footprint of the substrate descriptor, which the new tree does not carry, and ParallelismRule::classify gives the tier of a footprint at run time.
+crucible/concurrent/_SubstrateCtxFit.h:substrate_hot_path_required_tier_v  → include/fixy/concurrent/ParallelismRule.h  — It read the per-call footprint of the substrate descriptor, which the new tree does not carry, and ParallelismRule::classify gives the tier of a footprint at run time.
+crucible/concurrent/_SubstrateCtxFit.h:fits_in_tier_v  — The static tier math under the residency gates, which did not come, so nothing read it.
+crucible/concurrent/_SubstrateCtxFit.h:required_tier_for_footprint  — The static tier math under the residency gates, which did not come, so nothing read it.
+crucible/concurrent/_ParallelismRule.h:recommend_parallelism  — A free alias of ParallelismRule::recommend, and each caller names the member.
+crucible/concurrent/_TopologyConstexpr.h:l1d_per_core_bytes_v  — A fleet floor of the static tier math, which did not come, so nothing read the floor.
+crucible/concurrent/_TopologyConstexpr.h:l2_per_core_bytes_v  — A fleet floor of the static tier math, which did not come, so nothing read the floor.
+crucible/concurrent/_TopologyConstexpr.h:l3_total_bytes_v  — A fleet floor of the static tier math, which did not come, so nothing read the floor.
+crucible/concurrent/_TopologyConstexpr.h:is_l1d_overridden_v  — The override flag of a fleet floor that did not come.
+crucible/concurrent/_TopologyConstexpr.h:is_l2_overridden_v  — The override flag of a fleet floor that did not come.
+crucible/concurrent/_TopologyConstexpr.h:is_l3_overridden_v  — The override flag of a fleet floor that did not come.
 crucible/safety/_LocalityHint.h:HasLocalityHint  — Not carried, because no file includes the header, and the rule chooses the NUMA policy from the working set alone.
 crucible/safety/_LocalityHint.h:locality_hint_of_v  — Not carried, because no file includes the header, and the rule chooses the NUMA policy from the working set alone.
 crucible/safety/_LocalityHint.h:LocalityIgnore_t  — A hint tag of the dropped locality hint, whose header no file includes.
