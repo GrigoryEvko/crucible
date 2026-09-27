@@ -4590,6 +4590,14 @@ fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle
   "mint_witnessed_at\\(const session::SessionHandle<Proto, Resource, LoopCtx, Policy>&&"
   "the protocol position the borrow would name is already gone")
 
+# ── The component walk, read by four gates ────────────────────────────
+#
+# A function type and a pointer to member are components of the walk in
+# foundation/reflect/TypeComponents.h.  This TU pins what the ReadView
+# result gate, the throws search, the delegation query and the payload
+# row answer for them.
+fixy_test(test_component_walk_gates)
+
 # ── The escape surface, reflected ─────────────────────────────────────
 #
 # The compiler reads each wrapper's member return types through

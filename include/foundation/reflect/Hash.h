@@ -31,6 +31,8 @@
 
 #pragma once
 
+#include <foundation/reflect/TypeComponents.h>
+
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -218,17 +220,6 @@ struct identity_verdict {
     identity_fault fault = identity_fault::none;
     std::meta::info culprit{};
 };
-
-// The two parts of a member pointer type.  The meta header gives no
-// query for them, so a partial specialization takes the type apart.
-template <typename T>
-inline constexpr std::meta::info member_pointer_member_ = ^^void;
-template <typename M, typename C>
-inline constexpr std::meta::info member_pointer_member_<M C::*> = ^^M;
-template <typename T>
-inline constexpr std::meta::info member_pointer_owner_ = ^^void;
-template <typename M, typename C>
-inline constexpr std::meta::info member_pointer_owner_<M C::*> = ^^C;
 
 // The function that a template argument of pointer-to-function type
 // names, or a null reflection for any other value.  The pointer is not
@@ -478,11 +469,9 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
     if (std::meta::is_array_type(type)) return identity_of_type(std::meta::remove_all_extents(type), suffix);
     type = std::meta::dealias(std::meta::remove_cv(type));
     if (std::meta::is_member_pointer_type(type)) {
-        const identity_verdict owner = identity_of_type(
-            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_owner_, {type})), suffix);
+        const identity_verdict owner = identity_of_type(member_pointer_class_of(type), suffix);
         if (owner.fault != identity_fault::none) return owner;
-        return identity_of_type(
-            std::meta::extract<std::meta::info>(std::meta::substitute(^^member_pointer_member_, {type})), suffix);
+        return identity_of_type(member_pointer_member_of(type), suffix);
     }
     if (std::meta::is_function_type(type)) {
         const identity_verdict result = identity_of_type(std::meta::return_type_of(type), suffix);

@@ -15,10 +15,18 @@
 // One step lists the components of a type:
 //
 //   * the element of a pointer, a reference or an array;
+//   * the return type and each parameter type of a function type, which
+//     the walk reaches through a pointer, a reference or a template
+//     argument;
+//   * the class and the member type of a pointer to member;
 //   * each type argument of a class template specialization, and the
 //     type of each value argument;
 //   * each base and each non-static data member of a class, when the
 //     walk may read its members.
+//
+// A function hands out its return type, and it can write through a
+// parameter.  A pointer to member is a function from its class to its
+// member, so both parts are components by the same rule.
 //
 // A template template argument is not a type, and the walk skips it.  A
 // member alias is a declaration, not a component, and the walk does not
@@ -37,12 +45,13 @@
 //     the completeness query instantiates nothing for such a class.
 //
 // Elsewhere the walk reads the template arguments and stops.  That is a
-// type argument, a value argument, or the element of a pointer or a
-// reference, when that type is a specialization.
+// type argument, a value argument, the element of a pointer or a
+// reference, a return or a parameter type, or a part of a pointer to
+// member, when that type is a specialization.
 //
 // The instantiating read.  A gate that must see every member can ask the
-// walk to read each specialization it reaches, through a pointer, a
-// reference or a template argument.  The completeness query then
+// walk to read each specialization that it reaches other than by value.
+// The completeness query then
 // instantiates the specialization, and a template with no definition
 // here stays unreadable.  The read has two costs:
 //
@@ -62,8 +71,8 @@
 // What the walk cannot see, stated rather than implied:
 //
 //   * in the default read, a member of a specialization that the walk
-//     reaches through a pointer or a template argument, when the
-//     arguments do not also name that member;
+//     reaches other than by value, when the arguments do not also name
+//     that member;
 //   * a value behind type erasure, as in std::function or std::any, where
 //     the type of the held value is not part of the static type;
 //   * a lambda capture.  GCC 16 reflects no data member of a closure
@@ -87,6 +96,37 @@ struct TypeNode {
 // The type with each alias, cv qualifier and reference removed.
 [[nodiscard]] consteval std::meta::info bare_type(std::meta::info type) {
     return std::meta::dealias(std::meta::remove_cvref(std::meta::dealias(type)));
+}
+
+namespace detail {
+
+// The two parts of a pointer to member.  The meta header gives no query
+// for them, so a partial specialization takes the type apart.  A pointer
+// to a member function matches too, and its member type is the function
+// type with its cv and reference qualifiers.
+template <typename T>
+inline constexpr std::meta::info member_pointer_class_ = std::meta::info{};
+template <typename Member, typename Class>
+inline constexpr std::meta::info member_pointer_class_<Member Class::*> = ^^Class;
+template <typename T>
+inline constexpr std::meta::info member_pointer_member_ = std::meta::info{};
+template <typename Member, typename Class>
+inline constexpr std::meta::info member_pointer_member_<Member Class::*> = ^^Member;
+
+}  // namespace detail
+
+// The class of a pointer to member, or a null reflection for a type that
+// is not a pointer to member.
+[[nodiscard]] consteval std::meta::info member_pointer_class_of(std::meta::info type) {
+    return std::meta::extract<std::meta::info>(
+        std::meta::substitute(^^detail::member_pointer_class_, {std::meta::dealias(std::meta::remove_cv(type))}));
+}
+
+// The member type of a pointer to member, or a null reflection for a type
+// that is not a pointer to member.
+[[nodiscard]] consteval std::meta::info member_pointer_member_of(std::meta::info type) {
+    return std::meta::extract<std::meta::info>(
+        std::meta::substitute(^^detail::member_pointer_member_, {std::meta::dealias(std::meta::remove_cv(type))}));
 }
 
 // How the walk reads a class template specialization that it reaches
@@ -122,10 +162,12 @@ enum class SpecializationRead : unsigned char {
 }
 
 // The components one step below `type` that need no read of its
-// members: the element of a pointer, a reference or an array, and each
-// template argument.  An array element inherits `may_read_members`,
-// because the element of a complete array is complete.  Complexity:
-// linear in the number of template arguments.
+// members: the element of a pointer, a reference or an array, the return
+// and parameter types of a function type, the class and the member type
+// of a pointer to member, and each template argument.  An array element
+// inherits `may_read_members`, because the element of a complete array is
+// complete.  Complexity: linear in the number of parameters or template
+// arguments.
 [[nodiscard]] consteval std::vector<TypeNode> argument_components_of(
     TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
     std::vector<TypeNode> components;
@@ -137,6 +179,18 @@ enum class SpecializationRead : unsigned char {
     }
     if (std::meta::is_array_type(type)) {
         components.push_back(TypeNode{bare_type(std::meta::remove_all_extents(type)), node.may_read_members});
+        return components;
+    }
+    if (std::meta::is_function_type(type)) {
+        components.push_back(node_reached_indirectly(std::meta::return_type_of(type), read));
+        for (const std::meta::info parameter : std::meta::parameters_of(type)) {
+            components.push_back(node_reached_indirectly(parameter, read));
+        }
+        return components;
+    }
+    if (std::meta::is_member_pointer_type(type)) {
+        components.push_back(node_reached_indirectly(member_pointer_class_of(type), read));
+        components.push_back(node_reached_indirectly(member_pointer_member_of(type), read));
         return components;
     }
     if (!std::meta::has_template_arguments(type)) return components;
@@ -293,6 +347,31 @@ static_assert(first_component_satisfying<is_needle>(^^HoldsNeedle).type == ^^Nee
 static_assert(first_component_satisfying<is_needle>(^^Unrelated).type == std::meta::info{},
               "a walk that accepts no node answers with a null type");
 
+// A function hands out its return type and takes its parameters.  A
+// pointer to member is a function from its class to its member.
+struct Holder {};
+struct HoldsFactory {
+    Needle (*make)() = nullptr;
+};
+struct HoldsFunctionReference {
+    Needle (&make)();
+};
+static_assert(any_component_satisfies<is_needle>(^^Needle (*)()), "a return type is a component");
+static_assert(any_component_satisfies<is_needle>(^^void (*)(int, Needle const&) noexcept),
+              "a parameter type is a component");
+static_assert(any_component_satisfies<is_needle>(^^HoldsFactory), "a function pointer member is read");
+static_assert(any_component_satisfies<is_needle>(^^HoldsFunctionReference), "a function reference member is read");
+static_assert(any_component_satisfies<is_needle>(^^Needle Holder::*),
+              "the member type of a pointer to member is a component");
+static_assert(any_component_satisfies<is_needle>(^^int Needle::*), "the class of a pointer to member is a component");
+static_assert(any_component_satisfies<is_needle>(^^void (Holder::*)(Needle) const&),
+              "a parameter of a member function is a component");
+static_assert(!any_component_satisfies<is_needle>(^^int (*)(double, ...)));
+static_assert(!any_component_satisfies<is_needle>(^^long (Holder::*)() volatile&&));
+static_assert(member_pointer_class_of(^^Needle Holder::*) == ^^Holder);
+static_assert(member_pointer_member_of(^^Needle Holder::* const) == ^^Needle);
+static_assert(member_pointer_class_of(^^Needle*) == std::meta::info{});
+
 // The capture gap, pinned.  The closure holds a Needle and the walk does
 // not see it, because GCC 16 reflects no data member of a closure type.
 inline constexpr auto captures_needle = [held = NeedleValue{}] { return sizeof(held); };
@@ -309,6 +388,12 @@ static_assert(!any_component_satisfies<is_needle>(^^Wrap<Unrelated>));
 // arguments and not instantiated.
 static_assert(!any_component_satisfies<is_needle>(^^Wrap<Detonates<int>>));
 static_assert(any_component_satisfies<is_needle>(^^Wrap<Detonates<Needle>>));
+static_assert(!any_component_satisfies<is_needle>(^^Detonates<int> (*)(Detonates<long>)),
+              "a return and a parameter type are read for their arguments and not instantiated");
+// GCC instantiates the class of a pointer to member when it forms the
+// type, so the class here is a harmless wrapper of the detonator.
+static_assert(!any_component_satisfies<is_needle>(^^Detonates<int> Wrap<Detonates<long>>::*),
+              "the two parts of a pointer to member are read for their arguments and not instantiated");
 
 // The instantiating read.  A specialization that holds a Needle in a
 // member that no argument names is seen only when the walk reads it.
@@ -329,6 +414,10 @@ static_assert(any_component_satisfies<is_needle, kInstantiating>(^^BoxesNeedle<i
               "a pointee specialization is read for its members");
 static_assert(any_component_satisfies<is_needle, kInstantiating>(^^Wrap<BoxesNeedle<int>>),
               "a specialization named by an argument is read for its members");
+static_assert(any_component_satisfies<is_needle, kInstantiating>(^^BoxesNeedle<int> (*)()),
+              "a specialization named by a return type is read for its members");
+static_assert(any_component_satisfies<is_needle, kInstantiating>(^^int BoxesNeedle<long>::*),
+              "a specialization named by a pointer to member is read for its members");
 static_assert(first_component_satisfying<is_unreadable_class, kInstantiating>(^^OnlyDeclared<int>*).type
                   == ^^OnlyDeclared<int>,
               "a template with no definition stays unreadable, so a gate can refuse it");

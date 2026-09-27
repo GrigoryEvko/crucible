@@ -148,21 +148,23 @@ using read_view_for_body_t =
 template <typename Body, typename Tag, typename Brand>
 using read_view_result_t = std::invoke_result_t<Body, read_view_for_body_t<Body, Tag, Brand> const&>;
 
-// True for a node that names a ReadView, for an address whose type the
+// True for a node that names a ReadView, for an address whose target the
 // walk cannot read, and for a class whose state the walk cannot read.
-// A pointer to void, a pointer to a function and a member function
-// pointer are the parts that type erasure keeps: std::function, std::any
-// and a coroutine handle hold a view through them and show no ReadView
-// in their type.  GCC 16 reflects no capture of a lambda, so a lambda
-// with captures is a complete class that is not empty and shows no base
-// and no member.
+// A pointer to void and a function are the parts that type erasure
+// keeps: std::function, std::any and a coroutine handle hold a view
+// through them and show no ReadView in their type.  The walk reaches a
+// function through a pointer, a reference or a pointer to a member
+// function, and the function can reach a view through state that no
+// type names.  GCC 16 reflects no capture of a lambda, so a lambda with
+// captures is a complete class that is not empty and shows no base and
+// no member.
 inline constexpr auto may_carry_a_read_view = [](::foundation::reflect::TypeNode node) consteval {
     const std::meta::info type = node.type;
     if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^ReadView) return true;
-    if (std::meta::is_member_function_pointer_type(type)) return true;
-    if (std::meta::is_pointer_type(type)) {
-        const std::meta::info pointee = std::meta::remove_cv(std::meta::remove_pointer(type));
-        if (std::meta::is_void_type(pointee) || std::meta::is_function_type(pointee)) return true;
+    if (std::meta::is_function_type(type)) return true;
+    if (std::meta::is_pointer_type(type)
+        && std::meta::is_void_type(std::meta::remove_cv(std::meta::remove_pointer(type)))) {
+        return true;
     }
     if (!node.may_read_members || !std::meta::is_class_type(type)) return false;
     if (std::meta::has_template_arguments(type) || std::meta::is_empty_type(type)) return false;
@@ -177,8 +179,8 @@ inline constexpr auto may_carry_a_read_view = [](::foundation::reflect::TypeNode
 // that leaves the frame names something that the result does not own.
 // A result that names a ReadView through a pointer, a member or a
 // template argument is refused, and so is a result that holds an address
-// the walk cannot type (a type-erased callable, std::any, a coroutine
-// handle) and a lambda whose captures the walk cannot read.
+// the walk cannot follow (a function, a type-erased callable, std::any, a
+// coroutine handle) and a lambda whose captures the walk cannot read.
 template <typename R>
 concept ReadViewResultStaysInside =
     std::is_void_v<R>

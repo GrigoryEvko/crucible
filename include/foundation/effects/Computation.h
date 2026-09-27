@@ -241,9 +241,11 @@ struct is_computation : std::false_type {};
 // Those are the kinds that convey authority by themselves.  A payload
 // conveys authority when one of them is a component of it, read by the
 // walk in foundation/reflect/TypeComponents.h: a template argument, a
-// base, a by-value member, or the target of a pointer.  So a pair, an
-// optional or a plain struct that holds a capability conveys the
-// capability, and a stack of carriers cannot launder one.
+// base, a by-value member, the target of a pointer, the return or a
+// parameter type of a function, or a part of a pointer to member.  So a
+// pair, an optional or a plain struct that holds a capability conveys
+// the capability, a pointer to a function that returns one conveys it
+// too, and a stack of carriers cannot launder one.
 //
 // A class that holds state the walk cannot read is refused, because the
 // gate cannot say what that state is.  That is a class that is not empty
@@ -728,6 +730,22 @@ static_assert(!detail::extract_admits_payload_v<Computation<Row<>, ExecCtx<Bg, R
 // no complete type.
 static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg>*>);
 static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg> const* const*>);
+
+// A function hands out its return type and can write through a
+// reference parameter.  A pointer to member is a function from its class
+// to its member.  So each of them conveys the capability that it names.
+struct AuthorityProbeHolder {
+    int count = 0;
+};
+struct HoldsCapabilityFactory {
+    Capability<Effect::IO, Bg> (*make)() = nullptr;
+};
+static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg> (*)()>);
+static_assert(!detail::extract_admits_payload_v<void (*)(Capability<Effect::IO, Bg>&)>);
+static_assert(!detail::extract_admits_payload_v<Capability<Effect::IO, Bg> AuthorityProbeHolder::*>);
+static_assert(!detail::extract_admits_payload_v<HoldsCapabilityFactory>);
+static_assert(detail::extract_admits_payload_v<int (*)(double)>);
+static_assert(detail::extract_admits_payload_v<double AuthorityProbeHolder::*>);
 
 // A lambda with captures holds state the walk cannot read, so it is
 // refused whatever it captures.  A lambda without captures is empty.
