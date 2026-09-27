@@ -36,6 +36,8 @@
 
 #include <fixy/atoms/Os.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <cerrno>
 #include <cstdio>
@@ -44,6 +46,14 @@
 #include <utility>
 
 namespace fixy {
+
+// The gate of a caller that reads or writes a file through this class.  An
+// open enters the kernel, and it can wait there on the file system, so the
+// context must own IO and Block.  fixy/os/Fs.h asks for the same two atoms
+// when it opens a descriptor.
+template <typename Ctx>
+concept CtxFitsFileOpen =
+    ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
 class [[nodiscard]] OwnedFile {
     std::FILE* fp_ = nullptr;
@@ -172,6 +182,15 @@ static_assert(!can_release<NotALeakAtom>);
 static_assert(!can_release<int>);
 static_assert(!can_release<std::FILE*>);
 static_assert(!can_release_lvalue<SampleLeak>, "A release binds only to an rvalue handle.");
+
+namespace fe = ::foundation::effects;
+static_assert(CtxFitsFileOpen<fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO, fe::Effect::Block>>>);
+static_assert(!CtxFitsFileOpen<fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>>>,
+              "A context that owns IO but not Block cannot wait on the file system.");
+static_assert(!CtxFitsFileOpen<fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Alloc>>>,
+              "The drain context owns no IO.");
+static_assert(!CtxFitsFileOpen<fe::ExecCtx<fe::ctx_cap::Fg, fe::Row<>>>, "The foreground context owns no IO.");
+static_assert(!CtxFitsFileOpen<int>, "Only an execution context passes the gate.");
 
 }  // namespace detail::owned_file_self_test
 

@@ -37,7 +37,9 @@
 #include <string_view>
 #include <system_error>
 
+#include <crucible/TraceLoader.h>
 #include <crucible/vis/TraceVisualizer.h>
+#include <fixy/Ctx.h>
 
 namespace {
 
@@ -171,7 +173,9 @@ int main(int argc, char** argv) {
 
     // ── Load trace ────────────────────────────────────────────────────
     std::fprintf(stderr, "Loading %s...\n", trace_path);
-    auto trace = crucible::load_trace(trace_path);
+    // The tool reads its input at startup, so it loads with the startup
+    // context, which owns IO and Block.
+    auto trace = crucible::load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, trace_path);
     if (!trace) {
         // load_trace already prints a specific reason to stderr; add a
         // top-level marker so scripts parsing our output can key off it.

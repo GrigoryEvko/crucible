@@ -26,6 +26,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
 #include <crucible/TraceRing.h>
+#include <fixy/Ctx.h>
 
 #include "bench_harness.h"
 
@@ -339,7 +340,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         reports.push_back([path = argv[i]] {
             auto test = ::foundation::effects::testing::test();
-            auto trace = load_trace(path);
+            auto trace = load_trace(::fixy::TestRunnerCtx{test}, path);
             if (!trace) {
                 std::fprintf(stderr, "[skip] could not load %s\n", path);
                 return bench::run("build_trace (skipped — load fail)", [] { asm volatile("" ::: "memory"); });

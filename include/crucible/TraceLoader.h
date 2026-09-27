@@ -195,8 +195,9 @@ template <class Field>
 // Loads the trace at path.  When should_register_names is true, the schema
 // names of the trace go into the global table through schema_table_view.  An
 // empty view means that the table is sealed, and the names then stay out.
+template <::fixy::CtxFitsFileOpen Ctx>
 [[nodiscard]] inline std::unique_ptr<LoadedTrace>
-load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
+load_trace_(Ctx const&, const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
             bool should_register_names) {
     auto opened = ::fixy::OwnedFile::open_path(path, "rb");
     if (!opened) {
@@ -402,16 +403,23 @@ load_trace_(const char* path, std::optional<SchemaTable::MutableView> const& sch
     return trace;
 }
 
-// Loads the trace at path.  Its schema names stay out of the global table,
-// because only a thread that holds a Vigil's producer claim writes there.
-[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
-    return load_trace_(path, std::nullopt, false);
+// Loads the trace at path.  The open and the reads can wait on the file
+// system, so the context must own IO and Block.  The foreground context of
+// a Vigil owns neither.  The schema names of the trace stay out of the
+// global table, because only a thread that holds a Vigil's producer claim
+// writes there.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(Ctx const& io, const char* path) {
+    return load_trace_(io, path, std::nullopt, false);
 }
 
 // Loads the trace at path, and puts its schema names into the global table.
-// The context proves that the caller holds a Vigil's producer claim.
-[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(VigilFgCtx const& fg, const char* path) {
-    return load_trace_(path, global_schema_table().mint_mutable_view(fg), true);
+// It takes two contexts, because no one context proves the two claims: io
+// owns the file reads, and fg proves that the caller holds a Vigil's
+// producer claim, which the table asks for before it takes a name.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(Ctx const& io, VigilFgCtx const& fg, const char* path) {
+    return load_trace_(io, path, global_schema_table().mint_mutable_view(fg), true);
 }
 
 }  // namespace crucible

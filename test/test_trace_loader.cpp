@@ -3,6 +3,7 @@
 
 #include <crucible/TraceLoader.h>
 #include <crucible/SchemaTable.h>
+#include <fixy/Ctx.h>
 
 #include "test_assert.h"
 #include <array>
@@ -29,6 +30,9 @@ static bool missing(SchemaTable::LookupName name) { return name.value().data() =
 // the test door.
 constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
 
+// Each load reads a file, so it also takes a context that owns IO and Block.
+constexpr ::fixy::TestRunnerCtx kTestIo{::foundation::effects::testing::test()};
+
 // The caller removes the file when done.  The path is built from the
 // process id and a counter because tmpnam is deprecated and its
 // replacement signature warns on an unused result.
@@ -44,14 +48,14 @@ static std::string write_tmp(const void* data, size_t n) {
 }
 
 static void test_missing_file() {
-    auto t = load_trace("/definitely/does/not/exist.crtrace");
+    auto t = load_trace(kTestIo, "/definitely/does/not/exist.crtrace");
     assert(!t);
     std::printf("  test_missing_file:              PASSED\n");
 }
 
 static void test_empty_file() {
     std::string path = write_tmp("", 0);
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_empty_file:                PASSED\n");
@@ -66,7 +70,7 @@ static void test_bad_magic() {
         uint32_t n_metas;
     } hdr{.magic = {'X', 'X', 'X', 'X'}, .version = 1, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_bad_magic:                 PASSED\n");
@@ -80,7 +84,7 @@ static void test_wrong_version() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 99, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_wrong_version:             PASSED\n");
@@ -90,7 +94,7 @@ static void test_truncated_header() {
     // Eight bytes, so the two count fields are missing.
     char buf[8] = {'C', 'R', 'T', 'R', 1, 0, 0, 0};
     std::string path = write_tmp(buf, sizeof(buf));
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_truncated_header:          PASSED\n");
@@ -108,7 +112,7 @@ static void test_truncated_op_records() {
     char buf[16 + 40] = {};
     std::memcpy(buf, &hdr, sizeof(hdr));
     std::string path = write_tmp(buf, sizeof(buf));
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_truncated_ops:             PASSED\n");
@@ -124,7 +128,7 @@ static void test_happy_path_zero_ops() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(t);
     assert(t->num_ops == 0);
     assert(t->num_metas == 0);
@@ -143,7 +147,7 @@ static void test_adversarial_num_ops_rejected() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_adversarial_counts:        PASSED\n");
@@ -171,7 +175,7 @@ static void test_round_trip_single_op() {
     // scalar counts and the flag bytes, all left zero.
 
     std::string path = write_tmp(buf, sizeof(buf));
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     std::remove(path.c_str());
     assert(t);
     assert(t->num_ops == 1);
@@ -234,11 +238,11 @@ static void test_schema_name_table_round_trip() {
     std::string path = write_tmp(buf.data(), buf.size());
 
     // A load with no producer context reads the names and registers none.
-    auto t_without_context = load_trace(path.c_str());
-    assert(t_without_context);
+    auto t_without_producer_context = load_trace(kTestIo, path.c_str());
+    assert(t_without_producer_context);
     assert(global_schema_table().count() == 0);
 
-    auto t = load_trace(kVigilForeground, path.c_str());
+    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     assert(t);
@@ -271,7 +275,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     append_le<uint16_t>(buf, 0);  // CORRUPT name_len
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(kVigilForeground, path.c_str());
+    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     // The header and ops parsed cleanly, so the loader still returns a
@@ -309,7 +313,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
     buf.insert(buf.end(), 300, static_cast<unsigned char>(0x5A));
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(kVigilForeground, path.c_str());
+    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     assert(t);
@@ -351,7 +355,7 @@ static void test_meta_overrun_rejected() {
     // Op claims 5 tensors (3 in + 2 out) but only 2 metas exist — the
     // running meta cursor would overrun the metas vector.  Reject.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/3, /*out=*/2);
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_meta_overrun_rejected:     PASSED\n");
@@ -360,7 +364,7 @@ static void test_meta_overrun_rejected() {
 static void test_meta_exact_count_loads() {
     // Op claims exactly 5 tensors and 5 metas exist — in bounds, loads.
     std::string path = write_one_op_trace(/*n_metas=*/5, /*in=*/3, /*out=*/2);
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(t);
     assert(t->num_ops == 1);
     assert(t->num_metas == 5);
@@ -376,7 +380,7 @@ static void test_meta_count_uint16_overflow_rejected() {
     // in 32 bits it is a real claim of 65536 tensors, and the file holds
     // two metas.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/65535, /*out=*/1);
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
     std::remove(path.c_str());
     std::printf("  test_meta_uint16_overflow:      PASSED\n");
@@ -401,7 +405,7 @@ static void test_counts_past_the_file_allocate_nothing() {
         std::memcpy(buf.data() + 8, &claimed_ops, 4);
         std::memcpy(buf.data() + 12, &claimed_metas, 4);
         std::string path = write_tmp(buf.data(), buf.size());
-        auto t = load_trace(path.c_str());
+        auto t = load_trace(kTestIo, path.c_str());
         std::remove(path.c_str());
         assert(!t);
     }
@@ -432,7 +436,7 @@ static bool loads_with_meta(const MetaRecord& record) {
     std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
     std::memcpy(buf.data() + 16 + 80, record.data(), record.size());
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(path.c_str());
+    auto t = load_trace(kTestIo, path.c_str());
     std::remove(path.c_str());
     return t != nullptr;
 }
@@ -491,7 +495,7 @@ static void test_names_on_a_sealed_table_are_skipped() {
     buf.insert(buf.end(), name, name + sizeof(name) - 1);
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(kVigilForeground, path.c_str());
+    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
     std::remove(path.c_str());
 
     assert(t);

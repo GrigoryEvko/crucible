@@ -11123,11 +11123,19 @@ crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_ckernel_mint_mutable_view_other_brand.cpp:15")
 crucible_neg_compile_multi_test(neg_trace_loader_names_unbranded_ctx
-  "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
-  "neg_trace_loader_names_unbranded_ctx.cpp:10")
+  "no matching function for call to .load_trace.const fixy::TestRunnerCtx&, foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "to type .const crucible::VigilFgCtx&."
+  "neg_trace_loader_names_unbranded_ctx.cpp:12")
 crucible_neg_compile_multi_test(neg_trace_loader_names_other_brand
-  "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >"
-  "neg_trace_loader_names_other_brand.cpp:14")
+  "no matching function for call to .load_trace.const fixy::TestRunnerCtx&, foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >"
+  "to type .const crucible::VigilFgCtx&."
+  "neg_trace_loader_names_other_brand.cpp:17")
+# A trace load reads a file, so it asks for a context that owns IO and
+# Block.  The foreground context of a Vigil owns neither.
+crucible_neg_compile_multi_test(neg_trace_loader_refuses_foreground_io
+  "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<crucible::Vigil>, foundation::effects::Row<> >"
+  "required for the satisfaction of .CtxFitsFileOpen<Ctx>."
+  "neg_trace_loader_refuses_foreground_io.cpp:10")
 
 # The view mints of CrucibleContext, PoolAllocator and ReplayEngine.  Each
 # carrier has one typed view, so the per-state mismatch used for

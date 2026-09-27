@@ -35,6 +35,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
 #include <crucible/TraceRing.h>
+#include <fixy/Ctx.h>
 #include <foundation/Lifetime.h>
 
 #include <algorithm>
@@ -684,7 +685,7 @@ int main(int argc, char* argv[]) {
 
     std::printf("TSC ratio: %.4f ns/cycle\n", bench::Timer::ns_per_cycle());
 
-    auto trace = load_trace(trace_path);
+    auto trace = load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, trace_path);
     if (!trace) {
         std::fprintf(stderr, "error: could not load %s\n", trace_path);
         std::fprintf(stderr, "usage: %s [file.crtrace] [iters]\n", argv[0]);

@@ -5,13 +5,16 @@
 // another state's claim proves that its holder owns that state, not a Vigil.
 
 #include <crucible/TraceLoader.h>
+#include <fixy/Ctx.h>
 
 namespace {
 struct Stranger {};
 }  // namespace
 
 int main() {
-    auto trace = crucible::load_trace(::foundation::effects::testing::foreground<Stranger>(), "trace.crtrace");
+    const ::fixy::TestRunnerCtx io{::foundation::effects::testing::test()};
+    auto trace =
+        crucible::load_trace(io, ::foundation::effects::testing::foreground<Stranger>(), "trace.crtrace");
     (void)trace;
     return 0;
 }

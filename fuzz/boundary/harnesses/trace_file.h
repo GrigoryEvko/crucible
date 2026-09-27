@@ -8,6 +8,7 @@
 #include "tensor_meta_claims.h"
 
 #include <crucible/TraceLoader.h>
+#include <fixy/Ctx.h>
 
 namespace crucible::fuzz::boundary {
 
@@ -43,7 +44,8 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
 
     const auto path = scratch_dir() / "input.crtrace";
     write_file(path, bytes);
-    auto trace = load_trace(path.c_str());
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto trace = load_trace(ctx, path.c_str());
     if (!trace) return;
 
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace->metas.size() == trace->num_metas);
