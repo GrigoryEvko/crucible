@@ -75,10 +75,10 @@
 
 # ── algebra ─────────────────────────────────────────────────────────────
 
-crucible/algebra/_Modality.h:CoeffectModality  — The port deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
-crucible/algebra/_Modality.h:Coeffect_t  — The port deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:43 records the deletion.
-crucible/algebra/_Modality.h:QuotientModality  — The port deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
-crucible/algebra/_Modality.h:Quotient_t  — The port deleted the Quotient kind because no lattice in the tree used it, and Modality.h:43 records the deletion.
+crucible/algebra/_Modality.h:CoeffectModality  — The port deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:45 states why the enum has no such kind.
+crucible/algebra/_Modality.h:Coeffect_t  — The port deleted the Coeffect kind because no semiring grade in the tree used it, and Modality.h:45 states why the enum has no such kind.
+crucible/algebra/_Modality.h:QuotientModality  — The port deleted the Quotient kind because no lattice in the tree used it, and Modality.h:45 states why the enum has no such kind.
+crucible/algebra/_Modality.h:Quotient_t  — The port deleted the Quotient kind because no lattice in the tree used it, and Modality.h:45 states why the enum has no such kind.
 crucible/algebra/lattices/_HappensBefore.h:make_clock  → include/foundation/algebra/lattices/HappensBefore.h  — The port deleted make_clock, because a clock built from integers claims events that no successor recorded.
 crucible/algebra/_GradedTrait.h:value_type_decoupled  — The trait is gone because it asked no question and no gate read it; the concept DeclaresValueTypeDecoupled reads the member of the wrapper itself.
 crucible/algebra/_GradedTrait.h:value_type_decoupled_v  — The variable is gone with its trait; the concept DeclaresValueTypeDecoupled answers the same question from the member of the wrapper.

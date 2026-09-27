@@ -7,8 +7,9 @@
 //
 // A new enumerator has to reach the enum, the concept gates, the
 // exclusivity predicates and the tag types together.  The cardinality
-// guard in the self-test fires if any of them is missed.  The name is
-// no longer one of them: it is read from the enumerator.
+// guard in the self-test fires if any of them is missed.  The name and
+// IsModality come from the enumerators by reflection, so they need no
+// edit.
 //
 // Prefer the enum in a template parameter.  The tag types exist for the
 // cases where an overload set reads better than a non-type argument.
@@ -41,11 +42,9 @@ enum class ModalityKind : std::uint8_t {
     Stepping = 4,
 };
 
-// Two kinds were removed when the substrate was extracted: Quotient
-// (agreement of representatives, which coincided with Absolute for
-// every lattice in the tree) and Coeffect (a semiring grade, which the
-// tree expresses as a Semiring-shaped lattice under Absolute).  Neither
-// had an instantiation outside its own self-test.
+// The enum has no quotient kind and no coeffect kind.  Agreement of
+// representatives is Absolute for every lattice in the tree, and a
+// semiring grade is a Semiring-shaped lattice under Absolute.
 
 inline constexpr std::size_t modality_kind_count = std::meta::enumerators_of(^^ModalityKind).size();
 
@@ -82,8 +81,7 @@ inline constexpr bool has_grade_only_v =
 
 // The name of a modality is the identifier its enumerator declares,
 // read by reflection, so a new enumerator is named the moment it is
-// declared.  A value outside the enum yields "<unknown ModalityKind>",
-// the same sentinel the hand-written switch returned.
+// declared.  A value outside the enum yields "<unknown ModalityKind>".
 //
 // This stays consteval, although the helper it calls is constexpr.  The
 // three Graded forwarders declare themselves consteval and call it, and
@@ -157,10 +155,7 @@ static_assert(!SteppingModality<ModalityKind::Absolute>);
 static_assert(!SteppingModality<ModalityKind::Relative>);
 
 // Each enumerator renders as exactly the identifier it declares, and a
-// value outside the enum still reaches the sentinel.  These pins
-// replace the coverage walk that used to police the switch: with the
-// name read from the enumerator, that walk answered true by
-// construction.
+// value outside the enum reaches the sentinel.
 static_assert(modality_name(ModalityKind::Comonad) == "Comonad");
 static_assert(modality_name(ModalityKind::RelativeMonad) == "RelativeMonad");
 static_assert(modality_name(ModalityKind::Absolute) == "Absolute");

@@ -2,13 +2,6 @@
 
 // Reflection over a function's parameter list and return type.
 //
-// Old spelling: include/crucible/safety/_SignatureTraits.h, namespace
-// crucible::safety::extract.  That namespace was not a location: 57
-// headers reopened it, each adding the aliases for the thing it
-// examined, so "extract" named a convention rather than a home.  These
-// queries examine a function signature through reflection, which is
-// what this directory is for, so they land here under their own names.
-//
 // Two shapes are out of scope.  A pointer to a non-static member
 // function has a different invocation shape, with an implicit object
 // parameter, and needs its own trait family.  A variadic ellipsis is

@@ -25,9 +25,6 @@
 // the type. An entity with no declared name, or with internal linkage,
 // breaks that, and every id here refuses such a type at compile time.
 // The section on identity below says why and how.
-//
-// Old spelling: include/crucible/safety/diag/StableName.h; fmix64 and
-// combine_ids were in include/crucible/Expr.h.
 
 #pragma once
 
@@ -66,22 +63,13 @@ namespace foundation::reflect {
 //     make_region's own postcondition refuses — can only arise from the one
 //     accumulator state that maps to it, never from a degenerate input.
 //
-// It replaced `wymix(a, b) = lo(a*b) ^ hi(a*b)`, deleted 2026-09-15, which
-// was none of those things.  The 128-bit product folded down to 64 bits is
-// lossy by construction and had two absorbing values for its second operand:
-// `wymix(a, 0)` is 0 and `wymix(a, ~0)` is ~0, for every `a`.  Both were
-// reachable from real tensor metadata — a uint8 tensor on CPU:0 packs to
-// zero, and ScalarType::Undefined is int8_t(-1), which sign-extends to all
-// ones — so two structurally different regions hashed identically, on the
-// value that keys the compiler's cache.  Three call sites had already
-// patched around the zero case locally with three different spellings, each
-// commenting that wymix collapses on it; the per-op tensor fold, the one
-// that matters most, never got the treatment.
-//
-// wymix bought nothing for that.  Its own comment claimed it avalanched
-// better than a shift-and-xor chain; measured against this tree's other
-// fmix64-based combiner it avalanches identically, 31.93 against 32.04
-// flipped output bits per input bit flipped, both at the ideal 32 of 64.
+// Do not replace it with a folded 128-bit product such as
+// `lo(a*b) ^ hi(a*b)`.  That mix loses bits, and it has two absorbing
+// values for its second operand: 0 gives 0 and ~0 gives ~0 for every
+// first operand.  Real tensor metadata reaches both.  A uint8 tensor on
+// CPU:0 packs to zero, and ScalarType::Undefined is int8_t(-1), which
+// sign-extends to all ones.  Two different regions then get one content
+// hash, and that hash keys the compiler cache.
 //
 // Two reasons a fold calls combine_ids rather than fmix64 on a bare xor.
 //
@@ -91,17 +79,16 @@ namespace foundation::reflect {
 // interchangeable across steps.  Do not flatten a fold into one xor.
 //
 // And `fmix64(0)` is 0.  A permutation still has exactly one preimage of
-// zero, and for the bare form that preimage is `input == accumulator` — a
-// coincidence that ordinary data reaches, because a seed and a schema hash
-// can be built from the same constant.  It happened on the first run of
-// this change: test_cipher_commit_lifetime mints a region whose schema hash
-// is `1 * 0x9E3779B97F4A7C15`, which is the fold's own seed, so the first
-// step produced `fmix64(0)` and the content hash came out 0 — the
-// KernelCache empty-slot sentinel, caught by make_region's postcondition.
-// combine_ids displaces the input by the golden ratio and mixes the
-// accumulator's own bits before the xor, so the zero preimage stops
-// coinciding with `input == accumulator`.  Measured: 200,000 of 200,000
-// self-mixes give 0 through the bare form, 0 of 200,000 through combine_ids.
+// zero, and for the bare form that preimage is `input == accumulator`.
+// Ordinary data reaches that case, because a seed and a schema hash can
+// come from the same constant.  A region whose schema hash is
+// `1 * 0x9E3779B97F4A7C15`, the seed of the fold, makes the first bare
+// step `fmix64(0)`, and its content hash is then 0, the KernelCache
+// empty-slot sentinel.  combine_ids displaces the input by the golden
+// ratio and mixes the bits of the accumulator before the xor.  The zero
+// preimage is then not `input == accumulator`.  Measured: each of 200,000
+// self-mixes gives 0 through the bare form, and none gives 0 through
+// combine_ids.
 constexpr uint64_t fmix64(uint64_t k) {
     k ^= k >> 33;
     k *= 0xff51afd7ed558ccdULL;
@@ -945,10 +932,5 @@ static_assert(
 static_assert(identity_verdict_of<decltype(identity_test::plain_closure)>.fault == identity_fault::no_declared_name);
 
 }  // namespace detail::stable_name_self_test
-
-// A static_assert can be discharged by the constant folder without the
-// consteval body running as written. Driving the same surface from a
-// runtime context, through volatile sinks the optimizer cannot fold,
-// keeps that path honest.
 
 }  // namespace foundation::reflect

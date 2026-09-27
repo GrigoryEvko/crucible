@@ -6,13 +6,9 @@
 // Enumerate.h, which holds bits_to_string, states one precondition
 // through foundation::decide, and that pulls contracts/Decide.h, which
 // pulls effects/Row.h, which pulls effects/Effect.h.  A header inside
-// that chain therefore could not read its own enumerator names: Effect.h
-// and Modality.h each carried a hand-written name switch for exactly
-// that reason.  This header has no such dependency, so both of them now
-// read the identifier the enum already declares.
-//
-// Old spelling: include/crucible/safety/Reflected.h, whose name helpers
-// arrived in include/foundation/reflect/Enumerate.h.
+// that chain cannot include Enumerate.h.  This header has no such
+// dependency, so Effect.h and Modality.h read their enumerator names
+// through it.
 
 #pragma once
 

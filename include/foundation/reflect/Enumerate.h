@@ -3,18 +3,15 @@
 // bits_to_string renders a flag word as pipe-separated enumerator names.
 //
 // The ScopedEnum concept and the name helpers this builds on live in
-// foundation/reflect/EnumName.h.  They were split out because the
-// precondition below names foundation::decide, and contracts/Decide.h
-// reaches effects/Row.h and so effects/Effect.h: a header inside that
-// chain could not include this one, and had to hand-write its own name
-// switch.  EnumName.h carries no such dependency.
+// foundation/reflect/EnumName.h.  The precondition below names
+// foundation::decide, and contracts/Decide.h reaches effects/Row.h and
+// so effects/Effect.h.  A header inside that chain cannot include this
+// one, and EnumName.h carries no such dependency.
 //
 // bits_to_string takes the raw std::underlying_type_t<E> mask rather
 // than a Bits<E>, because Bits is a fixy wrapper header that foundation
 // cannot name, and tests a flag with
 // `(mask & static_cast<U>(flag)) != U{0}` as Bits::test does.
-//
-// Old spelling: include/crucible/safety/Reflected.h.
 
 #pragma once
 
