@@ -467,11 +467,14 @@ int check_atomic_monotonic() {
         if (counter.load(std::memory_order_seq_cst) != 0ULL) return 133;
         if (counter.load(std::memory_order_relaxed) != 0ULL) return 134;
 
-        counter.advance_sole_writer(7ULL);
+        counter.advance_sole_writer_from(0ULL, 7ULL);
         if (counter.get() != 7ULL) return 135;
 
-        counter.advance_sole_writer(42ULL);
+        counter.advance_sole_writer_from(7ULL, 42ULL);
         if (counter.get() != 42ULL) return 136;
+
+        counter.advance_sole_writer_from(42ULL, 43ULL);
+        if (counter.get() != 43ULL) return 193;
     }
 
     // A failed compare-exchange writes the value it actually observed back
@@ -527,7 +530,7 @@ int check_atomic_monotonic() {
         AtomicMonotonic<std::uint64_t> top = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 
         // One thread only. No race is exercised here, just the API shape.
-        bottom.advance_sole_writer(5ULL);
+        bottom.advance_sole_writer_from(0ULL, 5ULL);
         AtomicMonotonic<std::uint64_t>::fence_seq_cst();
         const auto t = top.load(std::memory_order_relaxed);
         if (t != 0ULL) return 147;
@@ -666,8 +669,18 @@ int check_contracts_abort() {
     AtomicMonotonic<std::uint64_t> atomic = ::fixy::mint_atomic_monotonic<std::uint64_t>(10);
     if (!aborts([&] { atomic.advance(9); })) return 176;
     if (!aborts([&] { atomic.advance(10); })) return 185;
-    if (!aborts([&] { atomic.advance_sole_writer(9); })) return 177;
     if (atomic.get() != 10) return 178;
+
+    // The step from a held value refuses a step back, a step that stands
+    // still, and a step that wraps past the end of the carrier.  A held
+    // value that is not the stored one is refused where the Debug check is
+    // armed, and every test binary arms it.
+    if (!aborts([&] { atomic.advance_sole_writer_from(10, 9); })) return 194;
+    if (!aborts([&] { atomic.advance_sole_writer_from(10, 10); })) return 195;
+    AtomicMonotonic<std::uint8_t> at_top = ::fixy::mint_atomic_monotonic<std::uint8_t>(std::uint8_t{255});
+    if (!aborts([&] { at_top.advance_sole_writer_from(std::uint8_t{255}, std::uint8_t{0}); })) return 196;
+    if (!aborts([&] { atomic.advance_sole_writer_from(7, 11); })) return 197;
+    if (atomic.get() != 10 || at_top.get() != 255) return 198;
 
     AtomicMonotonic<std::int64_t> signed_counter = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
     if (!aborts([&] { (void)signed_counter.bump_by(-1); })) return 179;

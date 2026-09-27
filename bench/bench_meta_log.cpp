@@ -165,8 +165,9 @@ int main() {
         [&] {
             auto log = std::make_unique<MetaLog>();
             uint32_t v = 0;
-            return bench::run("head.advance_sole_writer (release)", [&] {
-                log->head.advance_sole_writer(++v);
+            return bench::run("head.advance_sole_writer_from (release)", [&] {
+                log->head.advance_sole_writer_from(v, v + 1);
+                ++v;
                 bench::do_not_optimize(v);
             });
         }(),

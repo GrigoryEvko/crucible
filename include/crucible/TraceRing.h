@@ -177,7 +177,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // head and tail are each written by one thread and read by the other, so
     // they sit on separate cache lines: sharing one line would make every
     // producer write invalidate the consumer's copy and back again.
-    // advance_sole_writer() publishes with release and get() reads with
+    // advance_sole_writer_from() publishes with release and get() reads with
     // acquire, which is the edge that makes the slot writes visible across
     // the pair. A thread reading its own counter uses peek_relaxed and needs
     // no ordering.
@@ -258,7 +258,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         }
 
         // This release publishes all four slot writes above to the consumer.
-        head.advance_sole_writer(h + 1);
+        head.advance_sole_writer_from(h, h + 1);
         return true;
     }
 
@@ -329,7 +329,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         // this before it can overwrite any of them.
         const uint64_t next_tail = t + count;
         consumer_tail_ = next_tail;
-        tail.advance_sole_writer(next_tail);
+        // t is the consumer's own copy of its last store to tail.
+        tail.advance_sole_writer_from(t, next_tail);
         CRUCIBLE_POST(count, count <= max_count);
         return count;
     }
@@ -403,7 +404,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
         const uint64_t next_tail = t + count;
         consumer_tail_ = next_tail;
-        tail.advance_sole_writer(next_tail);
+        // t is the consumer's own copy of its last store to tail.
+        tail.advance_sole_writer_from(t, next_tail);
         CRUCIBLE_POST(count, count <= max_count);
         return count;
     }

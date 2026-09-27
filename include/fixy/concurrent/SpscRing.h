@@ -64,7 +64,7 @@ public:
             return false;
         }
         buffer_[h & MASK] = item;
-        head_.advance_sole_writer(h + 1);
+        head_.advance_sole_writer_from(h, h + 1);
         return true;
     }
 
@@ -75,7 +75,7 @@ public:
             return std::nullopt;
         }
         const T result = buffer_[t & MASK];
-        tail_.advance_sole_writer(t + 1);
+        tail_.advance_sole_writer_from(t, t + 1);
         return result;
     }
 
@@ -102,7 +102,7 @@ public:
             std::memcpy(buffer_.data(), items.data() + first, second * sizeof(T));
         }
 
-        head_.advance_sole_writer(h + count);
+        head_.advance_sole_writer_from(h, h + count);
         return count;
     }
 
@@ -125,7 +125,7 @@ public:
             std::memcpy(out.data() + first, buffer_.data(), second * sizeof(T));
         }
 
-        tail_.advance_sole_writer(t + count);
+        tail_.advance_sole_writer_from(t, t + count);
         return count;
     }
 
@@ -153,10 +153,11 @@ private:
     // Each side reads its own index with peek_relaxed: that index is
     // written by this thread alone, so no ordering is needed to observe
     // the latest value.  The other side's index is read with get, which
-    // acquires, and published with advance_sole_writer, which releases.
-    // That pair is what carries the cell contents across.  Each index has
-    // one writer, so the publish is a plain store and not a locked
-    // instruction.
+    // acquires, and published with advance_sole_writer_from, which
+    // releases.  That pair is what carries the cell contents across.  Each
+    // index has one writer, so the publish is a plain store and not a
+    // locked instruction.  The writer hands in the value it read, so the
+    // step check compares registers and loads nothing.
 
     ::fixy::AtomicMonotonic<std::uint64_t> head_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
     ::fixy::AtomicMonotonic<std::uint64_t> tail_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);

@@ -758,12 +758,19 @@ public:
     }
 
     // For the one thread that writes this counter, such as the producer
-    // of a single-producer ring.  The check reads that thread's own last
-    // store, and the store is a plain release with no locked instruction.
-    // Two writers use advance instead: between the check and the store
-    // here, another writer can pass the new value.
-    void advance_sole_writer(T new_value) noexcept {
-        CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_relaxed), new_value));
+    // of a single-producer ring.  current is the value that the counter
+    // holds, from that thread's own load or its own copy of its last store.
+    // The precondition compares two values in registers, so it folds to one
+    // compare where the step is visibly forward, and a step that wraps past
+    // the end of T still fails it.  A Debug build also checks that current
+    // is the stored value.  The store is a plain release with no locked
+    // instruction.  Two writers use advance instead: between the check and
+    // the store here, another writer can pass the new value.
+    void advance_sole_writer_from(T current, T new_value) noexcept {
+        CRUCIBLE_PRE(Cmp{}(current, new_value));
+        // Equal under the order, which asks of T no operator==.
+        CRUCIBLE_DEBUG_ASSERT(!Cmp{}(current, value_.load(std::memory_order_relaxed))
+                              && !Cmp{}(value_.load(std::memory_order_relaxed), current));
         value_.store(new_value, std::memory_order_release);
     }
 
