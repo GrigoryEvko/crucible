@@ -4370,30 +4370,36 @@ fixy_test(test_os_spawn)
 fixy_test(test_parallelism_rule_fixy test_parallelism_rule.cpp)
 
 # Every second regex is text the compiler emits and the fixture source
-# does not: a signature with its permission_t parameter spelled out, a
-# candidate-arity line, a constraint note naming the concept, or a
-# sentence from the header's own static_assert.  So no fixture can satisfy
-# its own gate by echoing itself.
+# does not: the signature of a private member with its template
+# arguments, a candidate-arity line, a constraint note naming the concept,
+# or a sentence from the header's own static_assert.  So no fixture can
+# satisfy its own gate by echoing itself.
 
-# Deviation 1 of fixy/os/SpinLock.h: both doors are private, and lock_in
-# is the way in.  A public door beside the gated one would let a caller
-# acquire with no context at all.
+# Deviations 1 and 3 of fixy/os/SpinLock.h: the three doors are private,
+# and the guard is the way in and out.  A public door beside the guard
+# would let a caller acquire with no context, or release a gate that it
+# does not hold.
 fixy_neg_compile_test(neg_spin_lock_door_is_private
   "is private within this context"
-  "fixy::spin::Gate<Tag, Strategy>::lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\) \\[with Brand = [^;]+; Tag = \\{anonymous\\}::GateTag; foundation::algebra::lattices::WaitStrategy Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
+  "fixy::spin::Gate<Tag, Strategy>::lock\\(\\) \\[with Tag = \\{anonymous\\}::GateTag. foundation::algebra::lattices::WaitStrategy Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
 
 fixy_neg_compile_test(neg_spin_try_lock_door_is_private
   "is private within this context"
-  "fixy::spin::Gate<Tag, Strategy>::try_lock\\(foundation::permissions::Permission<Tag, [A-Za-z]+>&\\) \\[with Brand = [^;]+; Tag = \\{anonymous\\}::GateTag; foundation::algebra::lattices::WaitStrategy Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
+  "fixy::spin::Gate<Tag, Strategy>::try_lock\\(\\) \\[with Tag = \\{anonymous\\}::GateTag. foundation::algebra::lattices::WaitStrategy Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
 
-# Deviation 3: release costs the same witness acquisition did.
-fixy_neg_compile_test(neg_spin_unlock_without_witness
-  "no matching function for call to .fixy::spin::Gate<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::BoundedSpin>::unlock\\(\\)."
-  "candidate expects 1 argument, 0 provided")
+fixy_neg_compile_test(neg_spin_unlock_door_is_private
+  "is private within this context"
+  "fixy::spin::Gate<Tag, Strategy>::unlock\\(\\) \\[with Tag = \\{anonymous\\}::GateTag. foundation::algebra::lattices::WaitStrategy Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
 
 # Deviation 2, the spin side: a background context may also allocate,
 # syscall or block.  The context in the fixture owns Block as well, so
-# owning Block does not open the spin gate to background work.
+# owning Block does not open the spin gate to background work.  A cold
+# init context owns no Bg, but it owns Alloc and IO, and the spin gate
+# refuses it as well.
+fixy_neg_compile_test(neg_spin_guard_under_init_ctx
+  "no operand of the disjunction is satisfied"
+  "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<")
+
 fixy_neg_compile_test(neg_spin_guard_under_bg_ctx
   "no operand of the disjunction is satisfied"
   "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >; Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
@@ -4403,15 +4409,10 @@ fixy_neg_compile_test(neg_spin_lock_without_permission
   "candidate expects 3 arguments, 2 provided")
 
 # Deviation 2, the blocking side: a wait on the blocking gate is a block,
-# so a context that owns no Block is refused, at the guard and at the
-# manual door alike.
+# so a context that owns no Block is refused at the guard.
 fixy_neg_compile_test(neg_blocking_guard_without_block
   "no operand of the disjunction is satisfied"
   "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >; Strategy = foundation::algebra::lattices::WaitStrategy::AcquireWait\\]")
-
-fixy_neg_compile_test(neg_blocking_lock_in_without_block
-  "no matching function for call to .fixy::spin::Gate<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::AcquireWait>::lock_in\\("
-  "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >; Strategy = foundation::algebra::lattices::WaitStrategy::AcquireWait\\]")
 
 fixy_neg_compile_test(neg_blocking_guard_without_permission
   "no matching function for call to .fixy::spin::GateGuard<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::AcquireWait, \\{anonymous\\}::GateBrand>::GateGuard\\("

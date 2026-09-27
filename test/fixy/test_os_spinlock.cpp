@@ -1,6 +1,7 @@
 // The witnessed gates, the spin gate and the blocking gate, acquired and
-// released through every door they have, each with a context its wait
-// strategy admits and a Permission.
+// released through the guard, which is the one door each gate has.  Each
+// case gives the guard a context its wait strategy admits and a
+// Permission.
 //
 // Old spelling: the runtime_smoke_test inside
 // include/crucible/fixy/concurrent/_SpinLock.h, which acquired and
@@ -17,6 +18,7 @@
 #include <atomic>
 #include <cstdio>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace eff = foundation::effects;
@@ -25,8 +27,8 @@ namespace spin = fixy::spin;
 
 namespace {
 
-// The shape a foreground caller has: a context that exists and does not
-// own the background capability.
+// The shape a foreground caller has: a context that exists and owns none
+// of Bg, Alloc, IO and Block.
 using ForegroundCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;
 
 // The shape background work that may wait has: it owns Block.
@@ -50,29 +52,12 @@ struct BlockingCase {
     [[nodiscard]] static BackgroundBlockCtx context() noexcept { return BackgroundBlockCtx{eff::testing::bg()}; }
 };
 
-template <typename Case>
-[[nodiscard]] int manual_acquire_and_release() {
-    auto ctx = Case::context();
-    typename Case::gate_type gate{};
-    auto proof = perm::mint_permission_root<GateTag>();
-
-    gate.lock_in(ctx, proof);
-    gate.unlock(proof);
-
-    if (!gate.try_lock_in(ctx, proof)) {
-        std::fprintf(stderr, "%s: try_lock_in failed on an uncontended gate\n", Case::name);
-        return 1;
-    }
-    gate.unlock(proof);
-
-    // A second acquisition after a clean release must succeed, which is
-    // what says unlock actually freed the gate.
-    if (!gate.try_lock_in(ctx, proof)) {
-        std::fprintf(stderr, "%s: the gate did not release: try_lock_in failed after unlock\n", Case::name);
-        return 1;
-    }
-    gate.unlock(proof);
-    return 0;
+// Whether a try guard acquires the gate now.  The try guard releases on
+// its way out, so the gate is as it was after the call.
+template <typename Ctx, typename Gate, typename Proof>
+[[nodiscard]] bool is_free(Ctx const& ctx, Gate& gate, Proof& proof) {
+    spin::GateGuard probe{std::try_to_lock, ctx, gate, proof};
+    return probe.was_acquired();
 }
 
 template <typename Case>
@@ -87,13 +72,17 @@ template <typename Case>
             std::fprintf(stderr, "%s: the plain guard constructor did not acquire\n", Case::name);
             return 1;
         }
+        if (is_free(ctx, gate, proof)) {
+            std::fprintf(stderr, "%s: a try guard acquired a gate that a guard held\n", Case::name);
+            return 1;
+        }
     }
-    // The gate must be free again now that the guard has gone.
-    if (!gate.try_lock_in(ctx, proof)) {
-        std::fprintf(stderr, "%s: the guard did not release on scope exit\n", Case::name);
+    // The gate must be free again now that the guard has gone, and a
+    // second time, which says that the try guard released it as well.
+    if (!is_free(ctx, gate, proof) || !is_free(ctx, gate, proof)) {
+        std::fprintf(stderr, "%s: a guard did not release on scope exit\n", Case::name);
         return 1;
     }
-    gate.unlock(proof);
     return 0;
 }
 
@@ -103,7 +92,9 @@ template <typename Case>
     typename Case::gate_type gate{};
     auto proof = perm::mint_permission_root<GateTag>();
 
-    gate.lock_in(ctx, proof);
+    using HolderGuard = decltype(spin::GateGuard{ctx, gate, proof});
+    std::optional<HolderGuard> holder;
+    holder.emplace(ctx, gate, proof);
     {
         // The gate is held, so the try guard must report that it did not
         // acquire, and must not release on destruction.
@@ -113,14 +104,18 @@ template <typename Case>
             return 1;
         }
     }
-    // The original acquisition is still ours: a guard that did not acquire
+    // The first acquisition is still held: a guard that did not acquire
     // must not have released it.
-    if (gate.try_lock_in(ctx, proof)) {
+    if (is_free(ctx, gate, proof)) {
         std::fprintf(stderr, "%s: a try guard that failed to acquire released the holder's gate anyway\n",
                      Case::name);
         return 1;
     }
-    gate.unlock(proof);
+    holder.reset();
+    if (!is_free(ctx, gate, proof)) {
+        std::fprintf(stderr, "%s: the holder's guard did not release\n", Case::name);
+        return 1;
+    }
     return 0;
 }
 
@@ -169,7 +164,9 @@ template <typename Case>
     std::atomic<bool> is_waiter_ready{false};
     std::atomic<bool> has_waiter_acquired{false};
 
-    gate.lock_in(ctx, holder_proof);
+    using HolderGuard = decltype(spin::GateGuard{ctx, gate, holder_proof});
+    std::optional<HolderGuard> holder;
+    holder.emplace(ctx, gate, holder_proof);
     std::jthread waiter{[&] () noexcept {
         auto waiter_proof = perm::mint_permission_root<GateTag>();
         is_waiter_ready.store(true, std::memory_order_release);
@@ -184,7 +181,7 @@ template <typename Case>
         std::fprintf(stderr, "blocking: the waiter acquired a gate the holder still held\n");
         return 1;
     }
-    gate.unlock(holder_proof);
+    holder.reset();
     waiter.join();
     if (!has_waiter_acquired.load(std::memory_order_acquire)) {
         std::fprintf(stderr, "blocking: the waiter did not acquire after the release\n");
@@ -195,7 +192,6 @@ template <typename Case>
 
 template <typename Case>
 [[nodiscard]] int run_case() {
-    if (const int rc = manual_acquire_and_release<Case>(); rc != 0) return rc;
     if (const int rc = guard_releases_on_scope_exit<Case>(); rc != 0) return rc;
     if (const int rc = try_guard_reports_a_contended_gate<Case>(); rc != 0) return rc;
     return the_gate_actually_excludes<Case>();

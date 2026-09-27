@@ -11,34 +11,38 @@
 //
 // Deviations, each deliberate:
 //
-//  1. Acquiring takes a context.  lock() and try_lock() are private, and
-//     the way in is lock_in<Ctx> / try_lock_in<Ctx>, whose clause states
-//     which contexts may wait on the gate.  The old header had both doors
-//     public, so the eleven production sites in
+//  1. The guard is the one way in and the one way out.  lock(), try_lock()
+//     and unlock() are private, and GateGuard is the only friend.  The
+//     guard takes a context and a Permission, and its clause states which
+//     contexts may wait on the gate.  The old header had the doors public,
+//     so the eleven production sites in
 //     include/crucible/cntp/ConnectionPoolRuntime.h took the ungated one
 //     and no context rule ever applied to them.  A gate with a public
 //     bypass beside it is not a gate.
 //
 //  2. The context rule is read off the wait strategy, and WaitLattice
 //     splits the strategies at the kernel.  A spin wait stays in user
-//     space and burns the waiter's core for as long as the holder takes,
-//     so a spin gate refuses a context that owns Effect::Bg: a background
-//     context may also allocate, syscall or block, and none of the three
-//     belongs inside a section another thread spins on.  A kernel wait
+//     space and burns the waiter's core for as long as the holder takes.
+//     So a spin gate refuses a context that owns Bg, Alloc, IO or Block:
+//     each of the four lets the holder allocate, make a system call or
+//     sleep inside a section that another thread spins on.  A kernel wait
 //     puts the waiter to sleep until the holder releases, so a blocking
 //     gate requires a context that owns Effect::Block: waiting on the gate
 //     is a block.  Background work that needs mutual exclusion takes the
 //     blocking gate.
 //
-//  3. unlock() takes the same witness lock did.  The old one took none,
-//     which made the pair asymmetric: the type system priced acquisition
-//     and gave release away.  A caller who can reach unlock without a
-//     Permission can release a gate it never acquired.
+//  3. No release is public.  A public unlock that took any Permission of
+//     the tag let a thread that did not hold the gate release it, and let
+//     one holder release it two times.  The guard releases in its
+//     destructor, and only when it acquired, so each acquisition has one
+//     release, by its holder.  A guard neither copies nor moves.
 //
-//  4. GateGuard carries the context into the lock and the witness to the
-//     unlock, so the RAII path and the manual path are gated alike.  It
-//     also keeps the reference to the Permission, which deviation 3
-//     makes necessary.
+//  4. The spin wait reads the flag and pauses while the flag is set, and
+//     tries the exchange only when a read finds the flag clear.  A wait
+//     that did the exchange at each turn took the cache line in exclusive
+//     state at each turn, away from the holder.  The spin never yields,
+//     because sched_yield is a system call, and the context rule of
+//     deviation 2 keeps the holder out of the kernel as well.
 //
 //  5. cache_tier_hot is gone.  It was a namespace-scope constant that
 //     restated SpinLock<Tag>::cache_tier, and nothing read it.
@@ -52,7 +56,9 @@
 //     here, spelled Unwitnessed so that choosing one reads as the choice
 //     it is.  A class that serializes its own members declares a private
 //     gate tag and mints a token of it at each acquisition: the token then
-//     witnesses that the acquisition comes from inside the class.
+//     witnesses that the acquisition comes from inside the class.  A bare
+//     lock is not a gate, so the rules of deviations 1 and 3 do not apply
+//     to it.
 //
 //  7. One template, Gate<Tag, W>, carries the witnessing for every
 //     strategy, so the spin gate and the blocking gate cannot drift apart.
@@ -70,10 +76,8 @@
 #include <foundation/permissions/Permission.h>
 
 #include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <mutex>
-#include <thread>
 #include <type_traits>
 
 // The claims the carriers in this header make that no lattice grades.
@@ -110,7 +114,7 @@ using ::foundation::algebra::lattices::WaitStrategy;
 // ownership of the data the lock protects.  The gates below are the types
 // production code names.
 
-// A test-and-set lock that spins.
+// A test-and-test-and-set lock that spins.
 class alignas(64) UnwitnessedSpinLock {
 public:
     static constexpr WaitStrategy wait_strategy = WaitStrategy::BoundedSpin;
@@ -124,21 +128,19 @@ public:
     UnwitnessedSpinLock& operator=(UnwitnessedSpinLock&&) =
         delete("a lock is an identity; moving one would leave a waiter spinning on the old address");
 
+    // The waiter reads the flag and pauses while it is set, so the cache
+    // line stays shared while the holder runs.  Only a read that finds
+    // the flag clear is followed by the exchange, which takes the line
+    // in exclusive state.  An exchange at each turn took the line away
+    // from the holder at each turn, and the holder then paid a miss to
+    // release.  The wait does not yield, because sched_yield is a system
+    // call and a spin gate is a hot-path gate.  A holder that loses its
+    // core keeps its waiters spinning until it runs again.  Work that can
+    // lose its core in the section takes the blocking lock.
     void lock() noexcept {
-        // A pause-only spin burns the waiter's core for the holder's whole
-        // scheduling quantum whenever the holder is descheduled between
-        // acquire and release. The bounded pause phase covers the common case,
-        // where the holder releases almost at once, and the escalation to
-        // yield lets the scheduler run a holder that has lost its core. That
-        // caps the wasted CPU at the pause budget.
-        constexpr std::size_t kPauseBeforeYield = 64;
-        std::size_t spin_iters = 0;
         while (flag_.test_and_set(std::memory_order_acquire)) {
-            if (spin_iters < kPauseBeforeYield) {
+            while (flag_.test(std::memory_order_acquire)) {
                 CRUCIBLE_SPIN_PAUSE;
-                ++spin_iters;
-            } else {
-                std::this_thread::yield();
             }
         }
     }
@@ -250,16 +252,21 @@ struct gate_substrate<WaitStrategy::AcquireWait> {
 
 }  // namespace detail
 
-// A context that may wait on a spin gate: one that exists and does not own
-// the background capability.
+// A context that may wait on a spin gate: one that exists and owns none of
+// Bg, Alloc, IO and Block.  Each of the four lets the holder allocate,
+// make a system call or sleep inside the section, and the waiters spin
+// for all of it.  A cold init context owns Alloc and IO, so it takes the
+// blocking gate.
 template <typename Ctx>
-concept CtxMayAcquireSpin = eff::IsExecCtx<Ctx> && (!eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>);
+concept CtxMayAcquireSpin =
+    eff::IsExecCtx<Ctx>
+    && !eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>;
 
 // A context that may wait on a blocking gate: one that owns Block.
 template <typename Ctx>
 concept CtxMayBlock = eff::CtxOwnsCapability<Ctx, eff::Effect::Block>;
 
-// The rule of deviation 2, one clause for both doors and both guards.
+// The rule of deviation 2, one clause for both guards.
 // A strategy on either side of the kernel split picks its rule, so the
 // clause has no case to forget.
 template <typename Ctx, WaitStrategy Strategy>
@@ -295,42 +302,18 @@ public:
     Gate(Gate&&) = delete("a gate is an identity; moving one would leave a waiter on the old address");
     Gate& operator=(Gate&&) = delete("a gate is an identity; moving one would leave a waiter on the old address");
 
-    // The two doors.  The context is read by the clause and by nothing
-    // else; the proof is a compile-time witness and the body ignores it.
-    // The proof is taken under whatever brand it carries: the gate is
-    // keyed by its tag, and a permission of any instance of that tag
-    // witnesses the acquisition.
-    template <typename Ctx, typename Brand>
-        requires CtxMayAcquire<Ctx, Strategy>
-    void lock_in(Ctx const& /*ctx*/, perm::Permission<Tag, Brand>& proof) noexcept {
-        lock(proof);
-    }
-
-    template <typename Ctx, typename Brand>
-        requires CtxMayAcquire<Ctx, Strategy>
-    [[nodiscard]] bool try_lock_in(Ctx const& /*ctx*/, perm::Permission<Tag, Brand>& proof) noexcept {
-        return try_lock(proof);
-    }
-
-    // Release costs the same witness acquisition did, per deviation 3.
-    template <typename Brand>
-    void unlock(perm::Permission<Tag, Brand>& /*proof*/) noexcept {
-        substrate_.unlock();
-    }
-
 private:
-    // Private, per deviation 1: reaching these without a context is the
-    // bypass the old header left open.  lock_in and try_lock_in are the
-    // way in, and GateGuard goes through them too.
-    template <typename Brand>
-    void lock(perm::Permission<Tag, Brand>& /*proof*/) noexcept {
-        substrate_.lock();
-    }
+    // Private, per deviations 1 and 3.  The guard is the only friend: it
+    // checks the context and takes the Permission before it calls lock or
+    // try_lock, and it calls unlock once, and only after an acquisition.
+    template <typename, WaitStrategy, typename>
+    friend class GateGuard;
 
-    template <typename Brand>
-    [[nodiscard]] bool try_lock(perm::Permission<Tag, Brand>& /*proof*/) noexcept {
-        return substrate_.try_lock();
-    }
+    void lock() noexcept { substrate_.lock(); }
+
+    [[nodiscard]] bool try_lock() noexcept { return substrate_.try_lock(); }
+
+    void unlock() noexcept { substrate_.unlock(); }
 
     [[no_unique_address]] substrate_t substrate_{};
 };
@@ -359,11 +342,14 @@ static_assert(sizeof(SpinLock<gate_size_probe_::SizeProbe>) == sizeof(Unwitnesse
 // Copy and move are deleted: a second guard over the same gate would
 // release it twice and break the acquire/release pairing.
 //
-// The guard holds a reference to the proof for the release, so it
-// carries the proof's brand.  A proof minted by a root mint carries a
-// fresh brand, so the guard is deduced rather than spelled:
-// `GateGuard guard{ctx, gate, proof};`.  The deduction guides below are
-// what make that spelling work.
+// The guard takes the proof as the witness of the acquisition, so it
+// carries the proof's brand.  The context is read by the clause and by
+// nothing else, and the proof is a compile-time witness that the body
+// does not read.  The gate is keyed by its tag, and a permission of any
+// instance of that tag witnesses the acquisition.  A proof minted by a
+// root mint carries a fresh brand, so the guard is deduced rather than
+// spelled: `GateGuard guard{ctx, gate, proof};`.  The deduction guides
+// below are what make that spelling work.
 template <typename Tag, WaitStrategy Strategy, typename Brand>
 class GateGuard {
 public:
@@ -375,14 +361,14 @@ public:
 
     template <typename Ctx>
         requires CtxMayAcquire<Ctx, Strategy>
-    explicit GateGuard(Ctx const& ctx, lock_type& lock, permission_t& proof) noexcept : lock_{lock}, proof_{proof} {
-        lock_.lock_in(ctx, proof);
+    explicit GateGuard(Ctx const& /*ctx*/, lock_type& lock, permission_t& /*proof*/) noexcept : lock_{lock} {
+        lock_.lock();
     }
 
     template <typename Ctx>
         requires CtxMayAcquire<Ctx, Strategy>
-    explicit GateGuard(std::try_to_lock_t, Ctx const& ctx, lock_type& lock, permission_t& proof) noexcept
-        : lock_{lock}, proof_{proof}, acquired_{lock.try_lock_in(ctx, proof)} {}
+    explicit GateGuard(std::try_to_lock_t, Ctx const& /*ctx*/, lock_type& lock, permission_t& /*proof*/) noexcept
+        : lock_{lock}, acquired_{lock.try_lock()} {}
 
     GateGuard(const GateGuard&) = delete("two guards over one gate would release it twice");
     GateGuard& operator=(const GateGuard&) = delete("two guards over one gate would release it twice");
@@ -391,7 +377,7 @@ public:
 
     ~GateGuard() noexcept {
         if (acquired_) {
-            lock_.unlock(proof_);
+            lock_.unlock();
         }
     }
 
@@ -399,7 +385,6 @@ public:
 
 private:
     lock_type& lock_;
-    permission_t& proof_;
     bool acquired_ = true;  // the plain constructor always acquires
 };
 
@@ -478,20 +463,35 @@ static_assert(!CtxMayAcquire<ForegroundCtx, WaitStrategy::AcquireWait>,
 static_assert(!CtxMayAcquire<int, WaitStrategy::BoundedSpin> && !CtxMayAcquire<int, WaitStrategy::AcquireWait>,
               "a non-context must not pass for one.");
 
-// Five claims about this header cannot be written here.  An access
+// A cold init context owns Alloc and IO, and a test runner owns Block.
+// Neither may spin, and each may take the blocking gate when it owns Block.
+using ColdInitShape =
+    eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO>>;
+using AllocOnlyShape = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc>>;
+using TestRunnerShape =
+    eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+static_assert(!CtxMayAcquire<ColdInitShape, WaitStrategy::BoundedSpin>,
+              "a context that owns IO must NOT spin: the holder could make a system call inside the section.");
+static_assert(!CtxMayAcquire<AllocOnlyShape, WaitStrategy::BoundedSpin>,
+              "a context that owns Alloc must NOT spin: the holder could enter the allocator inside the section.");
+static_assert(!CtxMayAcquire<TestRunnerShape, WaitStrategy::BoundedSpin>
+                  && CtxMayAcquire<TestRunnerShape, WaitStrategy::AcquireWait>);
+
+// Seven claims about this header cannot be written here.  An access
 // failure inside a requires-expression is a hard error in GCC 16 rather
-// than a substitution failure, so `!requires { gate.lock(proof); }` does
-// not compile even when the answer is the one wanted.  The claims are
-// carried by negative-compile fixtures instead:
+// than a substitution failure, so `!requires { gate.lock(); }` does not
+// compile even when the answer is the one wanted.  The claims are carried
+// by negative-compile fixtures instead:
 //
-//   neg_spin_lock_door_is_private       — gate.lock(proof) from outside
-//   neg_spin_try_lock_door_is_private   — gate.try_lock(proof) from outside
-//   neg_spin_unlock_without_witness     — gate.unlock() with no Permission
+//   neg_spin_lock_door_is_private       — gate.lock() from outside
+//   neg_spin_try_lock_door_is_private   — gate.try_lock() from outside
+//   neg_spin_unlock_door_is_private     — gate.unlock() from outside
 //   neg_spin_guard_under_bg_ctx         — a Bg context at the spin guard
+//   neg_spin_guard_under_init_ctx       — a cold init context at the spin
+//                                         guard
 //   neg_spin_lock_without_permission    — a guard with no Permission at all
 //   neg_blocking_guard_without_block    — a context without Block at the
 //                                         blocking guard
-//   neg_blocking_lock_in_without_block  — the same at the lock_in door
 //   neg_blocking_guard_without_permission — a blocking guard with no
 //                                         Permission at all
 
