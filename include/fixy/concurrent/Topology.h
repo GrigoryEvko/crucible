@@ -6,10 +6,16 @@
 // measurement, deliberately above the conservative floors in
 // WorkingSet.h, so an unmeasured host never reads as the smallest one.
 //
+// A NUMA node is named by its node id, and node ids can be sparse: a
+// host can have node0 and node2 and no node1.  Every NUMA accessor takes
+// a node id and never uses it as a position.
+//
 // Old spelling: include/crucible/concurrent/Topology.h.
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <algorithm>
 #include <charconv>
@@ -17,6 +23,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <optional>
 #include <set>
 #include <span>
 #include <sstream>
@@ -170,20 +177,21 @@ namespace topology_detail {
 // and a kernel built without CPU hotplug ships none at all.  A missing file
 // therefore reads as online, which is the fail-open direction that keeps this
 // probe working on those kernels rather than returning an empty set.
-[[nodiscard]] inline std::vector<int> enumerate_cpus_() noexcept {
+[[nodiscard]] inline std::vector<int> enumerate_cpus_(std::string_view sysfs_root) noexcept {
     std::vector<int> cpus;
 #if __has_include(<filesystem>)
     namespace fs = std::filesystem;
     try {
-        if (!fs::exists("/sys/devices/system/cpu")) return cpus;
-        for (auto const& entry : fs::directory_iterator{"/sys/devices/system/cpu"}) {
+        const std::string cpu_dir = std::string{sysfs_root} + "/devices/system/cpu";
+        if (!fs::exists(cpu_dir)) return cpus;
+        for (auto const& entry : fs::directory_iterator{cpu_dir}) {
             const auto name = entry.path().filename().string();
             if (name.size() < 4 || name.substr(0, 3) != "cpu") continue;
             const std::string_view tail{name.data() + 3, name.size() - 3};
             int id = 0;
             auto [p, ec] = std::from_chars(tail.data(), tail.data() + tail.size(), id);
-            if (ec != std::errc{} || p != tail.data() + tail.size()) continue;
-            const std::string online_path = "/sys/devices/system/cpu/" + name + "/online";
+            if (ec != std::errc{} || p != tail.data() + tail.size() || id < 0) continue;
+            const std::string online_path = cpu_dir + "/" + name + "/online";
             if (fs::exists(online_path) && read_trimmed_(online_path) == "0") continue;
             cpus.push_back(id);
         }
@@ -220,8 +228,8 @@ namespace topology_detail {
 // The kernel writes all three settings and brackets the active one, as in
 // "always [madvise] never".  Either "always" or "madvise" counts as available,
 // the second requiring the allocation to ask for it.
-[[nodiscard]] inline bool probe_hugepage_2mb_available_() noexcept {
-    const auto contents = read_trimmed_("/sys/kernel/mm/transparent_hugepage/enabled");
+[[nodiscard]] inline bool probe_hugepage_2mb_available_(std::string_view sysfs_root) noexcept {
+    const auto contents = read_trimmed_(std::string{sysfs_root} + "/kernel/mm/transparent_hugepage/enabled");
     if (contents.empty()) return false;
     return contents.find("[always]") != std::string::npos || contents.find("[madvise]") != std::string::npos;
 }
@@ -252,19 +260,22 @@ namespace topology_detail {
     return {vendor, model};
 }
 
-[[nodiscard]] inline std::vector<int> enumerate_numa_nodes_() noexcept {
+// The node ids in ascending order.  They are ids, not positions: a host
+// with node0 and node2 gives {0, 2}.
+[[nodiscard]] inline std::vector<int> enumerate_numa_nodes_(std::string_view sysfs_root) noexcept {
     std::vector<int> nodes;
 #if __has_include(<filesystem>)
     namespace fs = std::filesystem;
     try {
-        if (!fs::exists("/sys/devices/system/node")) return nodes;
-        for (auto const& entry : fs::directory_iterator{"/sys/devices/system/node"}) {
+        const std::string node_dir = std::string{sysfs_root} + "/devices/system/node";
+        if (!fs::exists(node_dir)) return nodes;
+        for (auto const& entry : fs::directory_iterator{node_dir}) {
             const auto name = entry.path().filename().string();
             if (name.size() < 5 || name.substr(0, 4) != "node") continue;
             const std::string_view tail{name.data() + 4, name.size() - 4};
             int id = 0;
             auto [p, ec] = std::from_chars(tail.data(), tail.data() + tail.size(), id);
-            if (ec != std::errc{} || p != tail.data() + tail.size()) continue;
+            if (ec != std::errc{} || p != tail.data() + tail.size() || id < 0) continue;
             nodes.push_back(id);
         }
         std::sort(nodes.begin(), nodes.end());
@@ -300,13 +311,22 @@ public:
     };
 
     [[nodiscard]] static const Topology& instance() noexcept {
-        static const Topology inst{};
+        static const Topology inst{kSysfsRoot};
         return inst;
     }
 
     [[nodiscard]] static Snapshot reprobe_snapshot() noexcept {
-        const Topology fresh{};
+        const Topology fresh{kSysfsRoot};
         return fresh.snapshot();
+    }
+
+    // A topology read from a sysfs tree under another root, for a test
+    // that builds the tree it wants, for example one with sparse node
+    // ids.  Only a context that owns the Test capability reaches it.
+    template <typename Ctx>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Test>
+    [[nodiscard]] static Topology probe_tree(Ctx const&, std::string_view sysfs_root) noexcept {
+        return Topology{sysfs_root};
     }
 
     [[nodiscard]] Snapshot snapshot() const noexcept {
@@ -385,22 +405,29 @@ public:
     // bounds a die, where on a monolithic part it bounds a socket.
     [[nodiscard]] std::span<const std::vector<int>> cache_clusters() const noexcept { return l3_groups(); }
 
-    [[nodiscard]] std::size_t numa_nodes() const noexcept { return cores_on_node_.size(); }
+    [[nodiscard]] std::size_t numa_nodes() const noexcept { return numa_node_ids_.size(); }
 
-    [[nodiscard]] int numa_distance(int from, int to) const noexcept {
-        if (from < 0 || to < 0) return 10;
-        const std::size_t f = static_cast<std::size_t>(from);
-        const std::size_t t = static_cast<std::size_t>(to);
-        if (f >= numa_distance_.size()) return 10;
-        if (t >= numa_distance_[f].size()) return 10;
-        return numa_distance_[f][t];
+    // The node ids in ascending order.  They can be sparse.
+    [[nodiscard]] std::span<const int> numa_node_ids() const noexcept {
+        return {numa_node_ids_.data(), numa_node_ids_.size()};
     }
 
+    // The distance between two nodes, each named by its node id.  Empty
+    // when an id names no node of this host, so an unknown node never
+    // reads as local.
+    [[nodiscard]] std::optional<int> numa_distance(int from_node, int to_node) const noexcept {
+        const std::optional<std::size_t> from = numa_position_(from_node);
+        const std::optional<std::size_t> to = numa_position_(to_node);
+        if (!from.has_value() || !to.has_value()) return std::nullopt;
+        return numa_distance_[*from][*to];
+    }
+
+    // The CPUs of one node, named by its node id.  Empty when the id names
+    // no node of this host.
     [[nodiscard]] std::span<const int> cores_on_node(int node) const noexcept {
-        if (node < 0) return {};
-        const std::size_t n = static_cast<std::size_t>(node);
-        if (n >= cores_on_node_.size()) return {};
-        return {cores_on_node_[n].data(), cores_on_node_[n].size()};
+        const std::optional<std::size_t> position = numa_position_(node);
+        if (!position.has_value()) return {};
+        return {cores_on_node_[*position].data(), cores_on_node_[*position].size()};
     }
 
     [[nodiscard]] Source source() const noexcept { return source_; }
@@ -438,6 +465,8 @@ private:
     static_assert(kFallbackL1d < kFallbackL2 && kFallbackL2 < kFallbackL3);
     static constexpr std::size_t kFallbackLine = 64;
 
+    static constexpr std::string_view kSysfsRoot = "/sys";
+
     std::size_t l1d_ = kFallbackL1d;
     std::size_t l1i_ = kFallbackL1d;  // L1i typically same as L1d
     std::size_t l2_ = kFallbackL2;
@@ -451,13 +480,29 @@ private:
     std::string cpu_vendor_;
     std::string cpu_model_;
     std::vector<std::vector<int>> l3_groups_;
+
+    // One entry per NUMA node, in ascending order of node id.  The three
+    // vectors are parallel: position i holds the id, the CPUs and the
+    // distance row of one node.  A sysfs distance row lists the distance
+    // to each online node in the same order, so a row also indexes by
+    // position, and each row has one entry per node.  A lookup by id goes
+    // through numa_position_ and never uses the id as a position.
+    std::vector<int> numa_node_ids_;
     std::vector<std::vector<int>> cores_on_node_;
     std::vector<std::vector<int>> numa_distance_;
     Source source_ = Source::Fallback;
 
+    // The position of a node id.  Complexity: logarithmic in the node
+    // count, because the ids are sorted.
+    [[nodiscard]] std::optional<std::size_t> numa_position_(int node) const noexcept {
+        const auto found = std::lower_bound(numa_node_ids_.begin(), numa_node_ids_.end(), node);
+        if (found == numa_node_ids_.end() || *found != node) return std::nullopt;
+        return static_cast<std::size_t>(found - numa_node_ids_.begin());
+    }
+
     // Noexcept and total: any failure to read sysfs, however malformed, leaves
     // the defaults in place rather than propagating out.
-    Topology() noexcept {
+    explicit Topology(std::string_view sysfs_root) noexcept {
         const unsigned hw = std::thread::hardware_concurrency();
         cores_ = (hw == 0) ? 1 : hw;
         threads_ = cores_;
@@ -467,13 +512,15 @@ private:
 
         page_size_ = topology_detail::probe_page_size_();
 
-        hugepage_2mb_ = topology_detail::probe_hugepage_2mb_available_();
+        hugepage_2mb_ = topology_detail::probe_hugepage_2mb_available_(sysfs_root);
 
         auto [vendor, model] = topology_detail::probe_cpu_vendor_and_model_();
         cpu_vendor_ = std::move(vendor);
         cpu_model_ = std::move(model);
 
-        // One node, and the conventional distance from a node to itself.
+        // One node with id 0, and the conventional distance from a node to
+        // itself.
+        numa_node_ids_.push_back(0);
         cores_on_node_.push_back({});
         numa_distance_.push_back({10});
         for (std::size_t i = 0; i < cores_; ++i) {
@@ -481,20 +528,21 @@ private:
         }
 
 #if __has_include(<filesystem>)
-        probe_linux_();
+        probe_linux_(sysfs_root);
 #endif
     }
 
 #if __has_include(<filesystem>)
-    void probe_linux_() noexcept;
+    void probe_linux_(std::string_view sysfs_root) noexcept;
 #endif
 };
 
 #if __has_include(<filesystem>)
-inline void Topology::probe_linux_() noexcept {
+inline void Topology::probe_linux_(std::string_view sysfs_root) noexcept {
     using namespace topology_detail;
 
-    const auto cpus = enumerate_cpus_();
+    const std::string cpu_dir = std::string{sysfs_root} + "/devices/system/cpu";
+    const auto cpus = enumerate_cpus_(sysfs_root);
     if (cpus.empty()) return;  // no sysfs: keep the fallback values
 
     // Sysfs beats the standard library's count when CPUs have been unplugged
@@ -507,13 +555,16 @@ inline void Topology::probe_linux_() noexcept {
     // part that mixes performance and efficiency cores would need each core
     // probed separately.
 
+    // A CPU with no cache directory keeps the fallback sizes, and the probe
+    // goes on to the cores, the L3 groups and the NUMA nodes.
     {
-        const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(cpus[0]) + "/cache";
+        const std::string base = cpu_dir + "/cpu" + std::to_string(cpus[0]) + "/cache";
 
         namespace fs = std::filesystem;
         try {
-            if (!fs::exists(base)) return;
-            for (auto const& entry : fs::directory_iterator{base}) {
+            const auto entries =
+                fs::exists(base) ? fs::directory_iterator{base} : fs::directory_iterator{};
+            for (auto const& entry : entries) {
                 const auto name = entry.path().filename().string();
                 if (name.size() < 6 || name.substr(0, 5) != "index") continue;
 
@@ -570,7 +621,7 @@ inline void Topology::probe_linux_() noexcept {
     {
         std::set<std::pair<int, int>> physical_cores;  // (package, core)
         for (int cpu : cpus) {
-            const std::string topo = "/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/";
+            const std::string topo = cpu_dir + "/cpu" + std::to_string(cpu) + "/topology/";
             const auto core_str = read_trimmed_(topo + "core_id");
             int core_id = -1;
             std::from_chars(core_str.data(), core_str.data() + core_str.size(), core_id);
@@ -598,7 +649,7 @@ inline void Topology::probe_linux_() noexcept {
         std::set<std::vector<int>> seen;
         namespace fs = std::filesystem;
         for (int cpu : cpus) {
-            const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/cache";
+            const std::string base = cpu_dir + "/cpu" + std::to_string(cpu) + "/cache";
             try {
                 if (!fs::exists(base)) continue;
                 for (auto const& entry : fs::directory_iterator{base}) {
@@ -629,32 +680,33 @@ inline void Topology::probe_linux_() noexcept {
     }
 
     {
-        const auto nodes = enumerate_numa_nodes_();
+        auto nodes = enumerate_numa_nodes_(sysfs_root);
         if (!nodes.empty()) {
-            std::vector<std::vector<int>> new_cores_on_node;
-            std::vector<std::vector<int>> new_numa_distance;
+            std::vector<std::vector<int>> new_cores_on_node(nodes.size());
+            std::vector<std::vector<int>> new_numa_distance(nodes.size());
 
-            for (int node : nodes) {
-                const std::string base = "/sys/devices/system/node/node" + std::to_string(node);
+            for (std::size_t position = 0; position < nodes.size(); ++position) {
+                const std::string base =
+                    std::string{sysfs_root} + "/devices/system/node/node" + std::to_string(nodes[position]);
                 auto cpus_on_node = parse_cpu_list_(read_trimmed_(base + "/cpulist"));
                 std::sort(cpus_on_node.begin(), cpus_on_node.end());
-                new_cores_on_node.push_back(std::move(cpus_on_node));
+                new_cores_on_node[position] = std::move(cpus_on_node);
 
+                // A row with one entry per node indexes by position.  A
+                // missing row, or one of another length, reads as the
+                // conventional distances: 10 to the node itself and 20 to
+                // each other node.
                 auto dist_row = parse_int_list_(read_trimmed_(base + "/distance"));
-                if (dist_row.empty()) {
-                    // The conventional distances: 10 to itself, 20 elsewhere.
+                if (dist_row.size() != nodes.size()) {
                     dist_row.assign(nodes.size(), 20);
-                    if (static_cast<std::size_t>(node) < dist_row.size()) {
-                        dist_row[static_cast<std::size_t>(node)] = 10;
-                    }
+                    dist_row[position] = 10;
                 }
-                new_numa_distance.push_back(std::move(dist_row));
+                new_numa_distance[position] = std::move(dist_row);
             }
 
-            if (!new_cores_on_node.empty()) {
-                cores_on_node_ = std::move(new_cores_on_node);
-                numa_distance_ = std::move(new_numa_distance);
-            }
+            numa_node_ids_ = std::move(nodes);
+            cores_on_node_ = std::move(new_cores_on_node);
+            numa_distance_ = std::move(new_numa_distance);
         }
     }
 

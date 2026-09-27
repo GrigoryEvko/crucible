@@ -402,12 +402,14 @@ template <::foundation::effects::IsExecCtx Ctx>
     // each can have different hop costs, and a verdict about a remote
     // access is only portable between hosts whose distances agree.
     {
+        // The node ids can be sparse, so the walk takes each pair of ids
+        // from the node list.  Each distance is then present.
         std::uint64_t accumulator = 0x9e3779b97f4a7c15ULL;
-        const int node_count = static_cast<int>(topology.numa_nodes);
-        for (int from_node = 0; from_node < node_count; ++from_node) {
-            for (int to_node = 0; to_node < node_count; ++to_node) {
+        const std::span<const int> node_ids = Topology::instance().numa_node_ids();
+        for (const int from_node : node_ids) {
+            for (const int to_node : node_ids) {
                 const std::uint64_t distance =
-                    static_cast<std::uint64_t>(Topology::instance().numa_distance(from_node, to_node));
+                    static_cast<std::uint64_t>(Topology::instance().numa_distance(from_node, to_node).value_or(0));
                 accumulator = probe::mix(accumulator, distance);
             }
         }

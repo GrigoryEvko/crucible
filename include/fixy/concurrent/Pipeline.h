@@ -450,7 +450,7 @@ namespace detail {
         }
     }
 
-    auto node0 = topology.cores_on_node(0);
+    auto node0 = topology.cores_on_node(topology.numa_node_ids().front());
     if (!node0.empty()) {
         return node0[worker_index % node0.size()];
     }

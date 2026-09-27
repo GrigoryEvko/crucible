@@ -285,12 +285,13 @@ private:
 // has one node or the topology could not say.
 [[nodiscard]] inline int remote_node_cpu_for(int measuring_cpu) noexcept {
     ::fixy::concurrent::Topology const& topology = ::fixy::concurrent::Topology::instance();
-    const int node_count = static_cast<int>(topology.numa_nodes());
-    if (node_count < 2) {
+    // Node ids, which can be sparse.
+    const std::span<const int> node_ids = topology.numa_node_ids();
+    if (node_ids.size() < 2) {
         return -1;
     }
     int local_node = -1;
-    for (int node = 0; node < node_count; ++node) {
+    for (const int node : node_ids) {
         const std::span<const int> cpus = topology.cores_on_node(node);
         if (std::find(cpus.begin(), cpus.end(), measuring_cpu) != cpus.end()) {
             local_node = node;
@@ -306,7 +307,7 @@ private:
     // placement policy has to survive.
     int best_cpu = -1;
     int best_distance = 0;
-    for (int node = 0; node < node_count; ++node) {
+    for (const int node : node_ids) {
         if (node == local_node) {
             continue;
         }
@@ -314,7 +315,8 @@ private:
         if (cpus.empty()) {
             continue;
         }
-        const int distance = topology.numa_distance(local_node, node);
+        // Both ids come from the node list, so the distance is present.
+        const int distance = topology.numa_distance(local_node, node).value_or(0);
         if (distance > best_distance) {
             best_distance = distance;
             best_cpu = cpus.front();
