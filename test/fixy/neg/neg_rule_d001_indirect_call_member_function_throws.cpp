@@ -7,12 +7,14 @@
 
 #include <fixy/Fn.h>
 
-namespace {
+// The class has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 struct callback_owner final {};
-}  // namespace
+}  // namespace fixture
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::dispatch::indirect_call<void (callback_owner::*)() const>>
+    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::dispatch::indirect_call<void (fixture::callback_owner::*)() const>>
         refused{};
     return 0;
 }

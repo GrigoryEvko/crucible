@@ -12,17 +12,19 @@
 
 #include <fixy/Fn.h>
 
-namespace {
+// The tags have external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 
 struct handshake final {};
 struct ring_depth_proved final {};
 
-}  // namespace
+}  // namespace fixture
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
-                                ::fixy::atom::refined_with<ring_depth_proved>,
-                                ::fixy::atom::session::live_handle<handshake>>
+                                ::fixy::atom::refined_with<fixture::ring_depth_proved>,
+                                ::fixy::atom::session::live_handle<fixture::handshake>>
         refused{};
     return 0;
 }

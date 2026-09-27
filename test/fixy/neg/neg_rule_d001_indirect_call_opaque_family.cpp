@@ -9,11 +9,13 @@
 
 #include <fixy/Fn.h>
 
-namespace {
+// The tag has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 struct region_ready_family final {};
-}  // namespace
+}  // namespace fixture
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::dispatch::indirect_call<region_ready_family>> refused{};
+    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::dispatch::indirect_call<fixture::region_ready_family>> refused{};
     return 0;
 }

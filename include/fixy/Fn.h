@@ -182,11 +182,10 @@ class fn {
                                      "the binding holds it by value.  fixy::unholdable_payload<Type> "
                                      "names the offending type.");
 
+    // The message names the first entry that is not an atom and, for an
+    // entry with the shape of an atom, the read that refuses it.
     static constexpr bool tier2_atoms_ok_ = refused_at_ != detail::reject::Tier::Malformed;
-    static_assert(tier2_atoms_ok_, "fixy::fn<Type, Atoms...> [tier 2]: every entry in the pack must be an "
-                                   "atom of the closed catalog — a final class deriving fixy::atom::atom_of<Axis>, "
-                                   "declared in fixy::atom or a family namespace, in the file that seals it.  "
-                                   "fixy::malformed_atom<Offender> names the offending entry.");
+    static_assert(tier2_atoms_ok_, detail::reject::tier2_message_<Atoms...>());
 
     // There is no tier 3.  An unmentioned axis is not an error.
 

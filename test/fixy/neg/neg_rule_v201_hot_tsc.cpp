@@ -15,15 +15,17 @@
 
 #include <fixy/Fn.h>
 
-namespace {
+// The tag has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 
 struct cycle_budget_proved final {};
 
-}  // namespace
+}  // namespace fixture
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot, ::fixy::atom::hw::non_deterministic_tsc,
-                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<cycle_budget_proved>>
+                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::cycle_budget_proved>>
         refused{};
     return 0;
 }

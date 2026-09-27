@@ -11,15 +11,17 @@
 
 #include <fixy/Fn.h>
 
-namespace {
+// The tag has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 
 struct resume_count_proved final {};
 
-}  // namespace
+}  // namespace fixture
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::coroutine, ::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
-                                ::fixy::atom::refined_with<resume_count_proved>>
+                                ::fixy::atom::refined_with<fixture::resume_count_proved>>
         refused{};
     return 0;
 }

@@ -24,6 +24,11 @@
 #include <tuple>
 #include <type_traits>
 
+// A tag with external linkage, the positive control for the identity read.
+namespace atom_test_tags {
+struct external_linkage_predicate final {};
+}  // namespace atom_test_tags
+
 namespace {
 
 namespace fa = ::fixy::atom;
@@ -52,6 +57,16 @@ static_assert(fad::every_roster_member_is_atom_<fad::stack_atom_roster>());
 static_assert(fad::every_roster_member_is_atom_<fad::stdio_atom_roster>());
 static_assert(fad::every_roster_member_is_atom_<fad::os_atom_roster>());
 static_assert(fad::every_roster_member_is_atom_<every_atom_roster>());
+
+// The name of an atom is its key in the row hash, so an atom whose
+// argument has internal linkage is refused.  This namespace has no name,
+// so the probe below has internal linkage.  The header walks the closure.
+struct internal_linkage_probe final {};
+static_assert(!fa::IsAtom<fa::from_source<internal_linkage_probe>>);
+static_assert(!fa::IsAtom<fa::refined_with<internal_linkage_probe>>);
+static_assert(!fa::IsAtom<fa::global::thread_local_<internal_linkage_probe>>);
+static_assert(fa::IsAtom<fa::refined_with<atom_test_tags::external_linkage_predicate>>);
+static_assert(fa::IsAtom<fa::from_source<atom_test_tags::external_linkage_predicate>>);
 
 // Each single-axis family sits on its axis.
 static_assert(fad::every_roster_member_on_axis_<fad::ctrl_atom_roster, Axis::ControlFlow>());

@@ -16,16 +16,18 @@
 
 #include <foundation/effects/Effect.h>
 
-namespace {
+// The tag has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 
 struct queue_depth_proved final {};
 
-}  // namespace
+}  // namespace fixture
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
                                 ::fixy::atom::with<::foundation::effects::Effect::Bg>,
-                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<queue_depth_proved>>
+                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::queue_depth_proved>>
         refused{};
     return 0;
 }

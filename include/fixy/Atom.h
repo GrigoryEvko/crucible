@@ -26,6 +26,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Hash.h>
 
 #include <concepts>
 #include <cstddef>
@@ -70,7 +71,8 @@ struct lifting_atom_of : atom_of<A> {
 // axis.  Any namespace can repeat it, so a check on the shape alone
 // admits a type that a user declares in a namespace of their own, and
 // every rule then reads that type as a shipped grade.  IsAtom therefore
-// reads three facts that the type cannot state about itself.
+// reads three facts that the type cannot state about itself, and a
+// fourth fact about its name.
 //
 //   1. The namespace.  An atom is declared directly in fixy::atom or
 //      directly in one of the family namespaces below.  parent_of reads
@@ -90,6 +92,13 @@ struct lifting_atom_of : atom_of<A> {
 //      else, is refused.  The rule reads the declaration and not the
 //      point of the query, so the order of the includes cannot change
 //      the answer.
+//   4. The identity.  The name of an atom is its identity in the row hash
+//      of every binding that names it, so the name must be a function of
+//      the type in every translation unit.  An atom whose arguments name
+//      a closure type, an unnamed class or an entity with internal
+//      linkage has no such name.  foundation::reflect::HasStableIdentity
+//      reads the name, and an atom that fails it is refused.  A binding
+//      that the gate admits can therefore always be keyed.
 //
 // A `#line` directive that names a family header defeats the third read.
 // That forges the position of the source, and no property of a type can
@@ -137,8 +146,9 @@ enum class atom_refusal : std::uint8_t {
     none,
     outside_the_catalog,       // not declared directly in fixy::atom or in a family
     namespace_unsealed,        // the namespace holds no atom_seal
-    namespace_sealed_twice,    // the namespace holds two atom_seal variables
-    declared_outside_its_seal  // declared in a file other than the one that seals its namespace
+    namespace_sealed_twice,     // the namespace holds two atom_seal variables
+    declared_outside_its_seal,  // declared in a file other than the one that seals its namespace
+    no_stable_identity          // its name is not a function of the type in every translation unit
 };
 
 // The namespace that declares a type.  A specialization is placed where
@@ -163,9 +173,11 @@ enum class atom_refusal : std::uint8_t {
     return lhs_file == rhs_file;
 }
 
-// The refusal for a type that already has the shape.  Complexity: linear
-// in the members of the owning namespace.
-[[nodiscard]] consteval atom_refusal atom_refusal_of_(std::meta::info type) {
+// The refusal for a type that already has the shape.  The caller reads
+// the identity of the type, because the identity walk is a concept over
+// the type and not a query over its reflection.  Complexity: linear in
+// the members of the owning namespace.
+[[nodiscard]] consteval atom_refusal atom_refusal_of_(std::meta::info type, bool has_stable_identity) {
     const std::meta::info owner = atom_owner_(type);
     if (!is_admitted_atom_namespace_(owner)) return atom_refusal::outside_the_catalog;
     std::meta::info seal{};
@@ -179,6 +191,7 @@ enum class atom_refusal : std::uint8_t {
     if (seals == 0) return atom_refusal::namespace_unsealed;
     if (seals > 1) return atom_refusal::namespace_sealed_twice;
     if (!same_file_(std::meta::dealias(type), seal)) return atom_refusal::declared_outside_its_seal;
+    if (!has_stable_identity) return atom_refusal::no_stable_identity;
     return atom_refusal::none;
 }
 
@@ -194,6 +207,9 @@ enum class atom_refusal : std::uint8_t {
             return "its namespace holds two fixy::atom::atom_seal variables";
         case atom_refusal::declared_outside_its_seal:
             return "it is declared in a file other than the one that seals its namespace";
+        case atom_refusal::no_stable_identity:
+            return "an argument names a closure type, an unnamed class or an entity with internal linkage, so "
+                   "the name of the atom is not a function of its type, and the name is its key in the row hash";
         default:
             break;
     }
@@ -212,11 +228,12 @@ concept HasAtomShape =
     };
 
 // The answer for one type, computed once at the first query.  The
-// namespace and the file are facts of the declaration.  A second seal
-// that a translation unit adds later refuses each atom first asked
-// about after it.
+// namespace, the file and the identity are facts of the declaration.  A
+// second seal that a translation unit adds later refuses each atom first
+// asked about after it.
 template <class G>
-inline constexpr atom_refusal atom_refusal_v = atom_refusal_of_(^^G);
+inline constexpr atom_refusal atom_refusal_v =
+    atom_refusal_of_(^^G, ::foundation::reflect::HasStableIdentity<G>);
 
 }  // namespace detail
 
@@ -225,8 +242,10 @@ concept IsAtom = detail::HasAtomShape<G> && detail::atom_refusal_v<G> == detail:
 
 // Each concept below is the minimum structural bar a parametric atom's
 // parameter must clear.  A parameter that fails one makes the atom
-// template-id ill-formed, so `IsAtom` rejects the atom by substitution
-// failure instead of the build hitting a hard error inside the resolver.
+// template-id ill-formed where it is named, so the compiler names the
+// parameter before any resolver reads the pack.  The identity of the
+// parameter is not one of these bars: IsAtom reads the identity of the
+// whole atom, for every parametric atom at once.
 
 // The parameter of `protocol<P>` is a session type or a machine state type,
 // so this gate stays open-world.  Enumerating the legal session combinators
@@ -238,18 +257,24 @@ concept IsSessionProtocol = std::is_same_v<Proto, std::remove_cvref_t<Proto>> &&
 // into a per-predicate gate, so that check happens per-type at construction
 // and is deliberately absent here.
 //
-// Emptiness and default-constructibility are required for a reason unrelated
-// to calling the predicate.  A binding that engages `refined_with<Pred>`
-// carries `Pred` into its cache key, and every distinct `Pred` type claims
-// its own slot.  A stateful predicate struct, or a capturing lambda, has a
-// fresh type per declaration site, so two textually identical ones fragment
-// the cache into two slots.  Requiring empty and default-constructible
-// forces bindings onto named predicates, which share a type across call
-// sites.  A capture-less lambda is empty and default-constructible, so it
-// still passes.
+// The type of the predicate is the whole claim of `refined_with<Pred>`.  A
+// stateful predicate, such as a threshold held in a member, makes a claim
+// that its type does not state, so the gate asks for an empty class that
+// the type alone can construct.
+//
+// `pole::pred::True` is refused.  It is the strict pole of the Refinement
+// axis, the claim of a binding that names no refinement, and it proves
+// nothing.  Written as an atom it would read as a witness: H002 asks a hot
+// binding for one, and the vacuous predicate would satisfy it.  A binding
+// that proves nothing names no Refinement atom.
+//
+// A closure is an empty class that the type alone can construct, so it
+// passes this gate.  IsAtom refuses the atom, because the name of a
+// closure type is not a function of the type.
 template <typename Pred>
 concept IsRefinementPredicate = std::is_same_v<Pred, std::remove_cvref_t<Pred>> && std::is_class_v<Pred>
-                             && std::is_empty_v<Pred> && std::is_default_constructible_v<Pred>;
+                             && std::is_empty_v<Pred> && std::is_default_constructible_v<Pred>
+                             && !std::is_same_v<Pred, ::fixy::pole::pred::True>;
 
 // A provenance source is an empty marker class by convention, and this gate
 // is stricter than the two above because that convention is stricter.  A
@@ -786,15 +811,16 @@ template <std::meta::info Ns, class Roster>
     return true;
 }
 
-// Protocol, Lifetime and Provenance atoms are parameterized by a caller tag
-// type, and their concepts require a COMPLETE empty class — an elaborated
-// `struct X` written inline forward-declares instead, which the concept
-// rejects.  Two local witnesses, defined here rather than borrowed from a
-// production tag tree so the roster does not couple to one.
-// `in_region` takes a non-type `auto` parameter, so it witnesses with a
-// value rather than one of these tags.
+// Protocol, Provenance and Refinement atoms are parameterized by a caller
+// tag type, and their concepts require a COMPLETE empty class — an
+// elaborated `struct X` written inline forward-declares instead, which the
+// concept rejects.  Three local witnesses, defined here rather than
+// borrowed from a production tag tree so the roster does not couple to
+// one.  `in_region` takes a non-type `auto` parameter, so it witnesses
+// with a value rather than one of these tags.
 struct atom_axis_witness_proto final {};
 struct atom_axis_witness_source final {};
+struct atom_axis_witness_predicate final {};
 
 // The roster of this header: every atom above, one instantiation per
 // parametric atom.
@@ -809,7 +835,7 @@ using core_atom_roster =
                repr<::fixy::pole::ReprKind::C>, cost_constant, cost_linear<1>, cost_quadratic<1>, cost_unbounded,
                precision_f32, precision_f64, precision_higham<1>, space_bounded<1>, space_unbounded, overflow_wrap,
                overflow_saturate, overflow_widen, mut_mutable, mut_append, mut_monotonic, reentrant, coroutine,
-               sized_at<1>, productive, version<3>, stale_to<5>, refined_with<::fixy::pole::pred::True>>;
+               sized_at<1>, productive, version<3>, stale_to<5>, refined_with<atom_axis_witness_predicate>>;
 
 }  // namespace detail
 
@@ -883,36 +909,40 @@ static_assert(!IsSecurityGrade<const as_public>, "a qualified atom is refused ra
 static_assert(constant_time::axis == Axis::Security);
 static_assert(sizeof(constant_time) == 1 && std::is_empty_v<constant_time>);
 
-static_assert(IsRefinementPredicate<::fixy::pole::pred::True>,
-              "A named empty default-constructible predicate must satisfy "
-              "IsRefinementPredicate.");
+static_assert(IsRefinementPredicate<atom_axis_witness_predicate>,
+              "A named empty default-constructible predicate must satisfy IsRefinementPredicate.");
+static_assert(!IsRefinementPredicate<::fixy::pole::pred::True>,
+              "The strict pole of Refinement proves nothing, so it is not a witness.");
 
-// What IsRefinementPredicate admits and refuses, on four shapes: the
-// two that carry state or a constructor argument, and the empty
-// default-constructible one that a capture-less lambda produces.
+// What the Refinement gates admit and refuse, on four shapes: the two
+// that carry state or a constructor argument, which the predicate gate
+// refuses, and the empty default-constructible class that a capture-less
+// lambda produces, which the predicate gate admits and IsAtom refuses.
 namespace refinement_predicate_shape_witness {
 struct StatefulPredicate {
     int threshold = 0;
     [[nodiscard]] constexpr bool operator()(int v) const noexcept { return v > threshold; }
 };
 static_assert(!IsRefinementPredicate<StatefulPredicate>,
-              "A stateful predicate must be rejected by IsRefinementPredicate "
-              "— each unique stateful Pred type fragments the cache.");
+              "A stateful predicate makes a claim its type does not state.");
 
 struct NonDefaultConstructiblePredicate {
     constexpr NonDefaultConstructiblePredicate(int) noexcept {}
     [[nodiscard]] constexpr bool operator()(int v) const noexcept { return v > 0; }
 };
 static_assert(!IsRefinementPredicate<NonDefaultConstructiblePredicate>,
-              "A non-default-constructible predicate must be rejected — the "
-              "refinement machinery instantiates Pred freely.");
+              "A predicate that the type alone cannot construct makes a claim its type does not state.");
 
 using CaptureLessLambdaType = decltype([](int v) noexcept { return v > 0; });
 static_assert(std::is_empty_v<CaptureLessLambdaType>);
 static_assert(std::is_default_constructible_v<CaptureLessLambdaType>);
-static_assert(IsRefinementPredicate<CaptureLessLambdaType>,
-              "A capture-less lambda is empty and default-constructible, so "
-              "IsRefinementPredicate must admit it.");
+static_assert(IsRefinementPredicate<CaptureLessLambdaType>, "a closure has the shape of a predicate");
+static_assert(!IsAtom<refined_with<CaptureLessLambdaType>>,
+              "The name of a closure type is not a function of the type, so the atom has no key.");
+static_assert(atom_refusal_v<refined_with<CaptureLessLambdaType>> == atom_refusal::no_stable_identity);
+static_assert(!IsAtom<from_source<decltype([] {})>>, "the identity read covers every parametric atom");
+static_assert(!IsAtom<protocol<decltype([] {})>>);
+static_assert(IsAtom<refined_with<atom_axis_witness_predicate>>);
 }  // namespace refinement_predicate_shape_witness
 
 // A forge-phase source carries its phase as a non-type parameter and stays
@@ -960,7 +990,7 @@ static_assert(!IsAtom<shaped_outside_the_catalog>);
 static_assert(atom_refusal_v<shaped_outside_the_catalog> == atom_refusal::outside_the_catalog);
 
 // The core namespace and each family carry one seal, in this file for
-// the core.  A shipped atom passes each of the three reads.
+// the core.  A shipped atom passes each of the four reads.
 static_assert(atom_refusal_v<affine> == atom_refusal::none);
 static_assert(atom_refusal_v<with_io> == atom_refusal::none, "an alias is read through to the atom it names");
 static_assert(atom_refusal_v<declassify<::fixy::tags::secret_policy::AuditedLogging>> == atom_refusal::none);

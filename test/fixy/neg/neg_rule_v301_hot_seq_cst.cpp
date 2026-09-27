@@ -12,15 +12,17 @@
 
 #include <fixy/Fn.h>
 
-namespace {
+// The tag has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 
 struct ring_index_proved final {};
 
-}  // namespace
+}  // namespace fixture
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot, ::fixy::atom::barrier::seq_cst,
-                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<ring_index_proved>>
+                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::ring_index_proved>>
         refused{};
     return 0;
 }

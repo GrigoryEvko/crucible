@@ -856,6 +856,22 @@ fixy_neg_compile_test(neg_atom_specialized_outside_its_header
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
   "fixy::fn<int, fixy::atom::stdio::write<user_code::private_stream> >::tier2_atoms_ok_.+ evaluates to false")
 
+# The name of an atom is its key in the row hash, so IsAtom refuses an
+# atom whose argument has no stable identity: a closure type, and a class
+# with internal linkage.  The strict Refinement pole is no witness, so
+# refined_with refuses it as its predicate.
+fixy_neg_compile_test(neg_atom_refined_with_closure_predicate
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
+  "The type fixy::atom::refined_with<<lambda\\(int\\)> > appears in a fixy::fn pack but is not an atom"
+  "refused because an argument names a closure type, an unnamed class or an entity with internal linkage")
+fixy_neg_compile_test(neg_atom_from_source_internal_linkage
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
+  "The type fixy::atom::from_source<.anonymous.::private_source> appears in a fixy::fn pack but is not an atom"
+  "refused because an argument names a closure type, an unnamed class or an entity with internal linkage")
+fixy_neg_compile_test(neg_atom_refined_with_vacuous_predicate
+  "template constraint failure for .template<class Pred> +requires +IsRefinementPredicate<Pred> struct fixy::atom::refined_with."
+  "the expression .!\\(is_same_v<Pred, fixy::pole::pred::True>\\) \\[with Pred = fixy::pole::pred::True\\]. evaluated to .false.")
+
 # The declassification policies are closed the same way: the namespace
 # and the file of the declaration, read by IsDeclassificationPolicy.
 fixy_neg_compile_test(neg_declassify_forged_policy

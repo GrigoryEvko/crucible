@@ -13,12 +13,14 @@
 
 #include <fixy/Fn.h>
 
-namespace {
+// The tag has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 struct parser_scratch_tag final {};
-}  // namespace
+}  // namespace fixture
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::global::thread_local_<parser_scratch_tag>,
+    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::global::thread_local_<fixture::parser_scratch_tag>,
                                 ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>
         refused{};
     return 0;

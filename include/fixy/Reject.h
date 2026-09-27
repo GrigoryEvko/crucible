@@ -206,18 +206,27 @@ template <class G>
     return std::define_static_string(text);
 }
 
+// The text is a std::string, so the tier-2 message can append it.  GCC 16
+// does not append a view that define_static_string gave, in a constant
+// expression: the append compares the pointer with null, and GCC refuses
+// that comparison for such a pointer.
 template <class G>
-[[nodiscard]] consteval std::string_view malformed_description_() {
+[[nodiscard]] consteval std::string malformed_text_() {
     std::string text{"The type "};
     text += std::meta::display_string_of(^^G);
-    text += " appears in a fixy::fn pack but is not an atom.  An atom is "
-            "final, derives fixy::atom::atom_base, names an axis, and is declared in the closed catalog.";
+    text += " appears in a fixy::fn pack but is not an atom.  An atom is final, derives fixy::atom::atom_base, "
+            "names an axis, is declared in the closed catalog, and has a name that is its identity.";
     if constexpr (::fixy::atom::detail::HasAtomShape<G>) {
         text += "  It has the shape, and it is refused because ";
         text += ::fixy::atom::detail::atom_refusal_text_(::fixy::atom::detail::atom_refusal_v<G>);
         text += '.';
     }
-    return std::define_static_string(text);
+    return text;
+}
+
+template <class G>
+[[nodiscard]] consteval std::string_view malformed_description_() {
+    return std::define_static_string(malformed_text_<G>());
 }
 
 template <class T>
@@ -405,6 +414,26 @@ template <class... Atoms>
     }
 }
 
+// The tier-2 message, naming the first entry that is not an atom.  For an
+// entry with the shape of an atom it also names the read that refuses
+// it, so the reader learns whether the namespace, the seal, the file or
+// the identity of the entry is wrong.  The message is instantiated
+// whatever tier refused the pack, so a pack of atoms gets a sentence that
+// says tier 2 was not reached.
+template <class... Atoms>
+[[nodiscard]] consteval std::string_view tier2_message_() noexcept {
+    constexpr std::meta::info offender = first_malformed_atom_<Atoms...>();
+    if constexpr (offender == ^^void) {
+        return "fixy::fn<Type, Atoms...> [tier 2]: not reached — every entry in the pack is an atom.";
+    } else {
+        using Offender = [:offender:];
+        std::string text{"fixy::fn<Type, Atoms...> [tier 2]: every entry in the pack must be an atom of the closed "
+                         "catalog.  "};
+        text += malformed_text_<Offender>();
+        return std::define_static_string(text);
+    }
+}
+
 // Reached only through the tier chain in fn, which has already
 // established that the pack is atoms and unique per axis.  The guard
 // here repeats that, because a static_assert message is instantiated
@@ -504,6 +533,16 @@ static_assert(::fixy::detail::text_contains(
 // axis, which is a hard error on a non-atom rather than a false.
 static_assert(::fixy::detail::text_contains(detail::reject::tier5_message_<int, not_an_atom>(), "not reached"));
 static_assert(::fixy::detail::text_contains(detail::reject::tier5_message_<void>(), "not reached"));
+
+// The tier-2 message names the entry, and for an entry with the shape of
+// an atom it names the read that refuses it.
+struct shaped_outside_the_catalog final : ::fixy::atom::atom_of<Axis::Usage> {};
+static_assert(::fixy::detail::text_contains(detail::reject::tier2_message_<::fixy::atom::copy, not_an_atom>(),
+                                            "not_an_atom"));
+static_assert(::fixy::detail::text_contains(detail::reject::tier2_message_<shaped_outside_the_catalog>(),
+                                            "refused because it is not declared directly in fixy::atom"));
+static_assert(::fixy::detail::text_contains(detail::reject::tier2_message_<::fixy::atom::copy>(), "not reached"));
+static_assert(::fixy::detail::text_contains(detail::reject::tier2_message_<>(), "not reached"));
 static_assert(::fixy::detail::text_contains(
     detail::reject::tier5_message_<int, ::fixy::atom::copy, ::fixy::atom::affine>(), "tier 4 refused"));
 

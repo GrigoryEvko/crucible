@@ -14,17 +14,19 @@
 #include <fixy/Fn.h>
 #include <fixy/atoms/Syscall.h>
 
-namespace {
+// The tag has external linkage.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it at tier 2.
+namespace fixture {
 
 struct owner_pid_proved final {};
 
-}  // namespace
+}  // namespace fixture
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
                                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::getpid>,
                                 ::fixy::atom::as_public, ::fixy::atom::cost_constant,
-                                ::fixy::atom::refined_with<owner_pid_proved>>
+                                ::fixy::atom::refined_with<fixture::owner_pid_proved>>
         refused{};
     return 0;
 }

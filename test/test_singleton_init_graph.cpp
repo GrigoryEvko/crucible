@@ -12,6 +12,15 @@
 #include <tuple>
 #include <type_traits>
 
+// The tags of the probe singletons.  An atom whose argument has internal
+// linkage has no stable identity, and the gate refuses it.
+namespace singleton_graph_tags {
+struct first_tag final {};
+struct second_tag final {};
+struct third_tag final {};
+struct outside_tag final {};
+}  // namespace singleton_graph_tags
+
 namespace {
 
 namespace sig = ::crucible::singleton_init_graph;
@@ -28,14 +37,11 @@ static_assert(!std::is_same_v<sig::CKernelTableSingleton, sig::HotRegionRegistry
 static_assert(!std::is_same_v<sig::HotRegionRegistrySingleton, sig::BpfLogCbSingleton>);
 static_assert(!std::is_same_v<sig::CKernelTableSingleton, sig::BpfLogCbSingleton>);
 
-struct first_tag final {};
-struct second_tag final {};
-struct third_tag final {};
-struct outside_tag final {};
+using singleton_graph_tags::first_tag;
 using First = fg::singleton<first_tag>;
-using Second = fg::singleton<second_tag>;
-using Third = fg::singleton<third_tag>;
-using Outside = fg::singleton<outside_tag>;
+using Second = fg::singleton<singleton_graph_tags::second_tag>;
+using Third = fg::singleton<singleton_graph_tags::third_tag>;
+using Outside = fg::singleton<singleton_graph_tags::outside_tag>;
 using Three = std::tuple<First, Second, Third>;
 
 // A chain has no cycle.  A self-loop and a three-cycle have one.

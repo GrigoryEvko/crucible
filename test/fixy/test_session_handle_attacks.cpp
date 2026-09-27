@@ -116,6 +116,12 @@ struct Left2 {
 struct Right2 {
     using permission_row = eff::Row<>;
 };
+// Two arguments of atoms.  An atom whose argument has internal linkage
+// has no stable identity, and the gate refuses it.
+struct hot_invariant final {};
+struct Ping {
+    int value = 0;
+};
 }  // namespace attack_tags
 
 template <>
@@ -185,9 +191,7 @@ constexpr auto kAttackDeadline = std::chrono::milliseconds{800};
 
 // ── Resources ────────────────────────────────────────────────────────
 
-struct Ping {
-    int value = 0;
-};
+using attack_tags::Ping;
 struct Pong {
     int value = 0;
 };
@@ -782,11 +786,10 @@ using OneRead = s::Recv<int, s::End>;
 // and the transport can wait in the kernel.  Collision rule W003 refuses
 // the binding until it states its wait strategy.  With a stated spin the
 // binding is admitted, and with a stated kernel wait W001 refuses it.
-struct hot_invariant final {};
 template <class... Wait>
 using HotHoldsRecv =
     ::fixy::collision::live_rules<::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
-                                  ::fixy::atom::refined_with<hot_invariant>, ::fixy::atom::as_public,
+                                  ::fixy::atom::refined_with<attack_tags::hot_invariant>, ::fixy::atom::as_public,
                                   ::fixy::atom::session::live_handle<s::Recv<Ping, s::End>>, Wait...>;
 static_assert(!HotHoldsRecv<>::W003_ok && !HotHoldsRecv<>::valid,
               "a hot binding that holds a handle at a receive and states no wait is refused");

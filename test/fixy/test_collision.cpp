@@ -28,7 +28,10 @@
 #include <type_traits>
 #include <utility>
 
-namespace {
+// The namespace has a name.  The tags below are arguments of atoms, and an
+// atom whose argument has internal linkage has no stable identity, so the
+// gate refuses it.
+namespace collision_test {
 
 namespace col = ::fixy::collision;
 namespace at = ::fixy::atom;
@@ -1055,7 +1058,7 @@ static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D00
 // rule states.
 
 // A static_assert proves the constant-evaluated path only.
-[[nodiscard]] int check_runtime_paths() {
+[[nodiscard]] static int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
     if (col::pending_rule_count != 0) return 2;
     if (col::live_rule_count != 43) return 3;
@@ -1092,9 +1095,9 @@ static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D00
     return 0;
 }
 
-}  // namespace
+}  // namespace collision_test
 
 int main() {
-    if (int rc = check_runtime_paths(); rc != 0) return rc;
+    if (int rc = collision_test::check_runtime_paths(); rc != 0) return rc;
     return 0;
 }
