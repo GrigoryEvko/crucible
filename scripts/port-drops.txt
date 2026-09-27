@@ -247,7 +247,7 @@ crucible/fixy/_Hw.h:accept_default_strict_for_SimdIsa  — The engagement marker
 crucible/fixy/_Hw.h:accept_default_strict_for_MemoryScope  — The engagement marker that the old resolver demanded. fixy/Fn.h:12 takes the strict pole for every axis that the atom pack does not name, so no marker exists.
 crucible/fixy/_Hw.h:CacheOp  — The operation enum of the cache grant. An atom of fixy/atoms/Hw.h names an instruction class and cannot carry an operand, as fixy/atoms/Hw.h:39 records.
 crucible/fixy/_Hw.h:BarrierArch  — The fence dialect of the barrier and scope grants. The new tree reads the architecture from the SIMD atom of a binding, and V402 in fixy/Collision.h checks a scope against it.
-crucible/fixy/_Hw.h:TscMode  → include/fixy/os/Time.h  — The enum moved to fixy::time at fixy/os/Time.h:50, beside its only reader.
+crucible/fixy/_Hw.h:TscMode  → include/fixy/os/Time.h  — The enum moved to fixy::time in fixy/os/Time.h, beside TscReader, its only reader in the new tree.
 crucible/fixy/_Hw.h:RngSource  — The source enum of the RNG grant. Nothing outside the old tests reads the RNG grant, so the enum was not carried.
 crucible/fixy/_Hw.h:valid_simd_width_v  — The width check of the SIMD width grant. An atom of fixy/atoms/Simd.h names the instruction set that a body was emitted for, and that set fixes the width.
 crucible/fixy/_Hw.h:is_sanctioned_cpuid_leaf_v  — The leaf check of the cpuid grant. Nothing outside the old tests reads the cpuid grant, so the check was not carried.
@@ -301,7 +301,8 @@ crucible/fixy/_Sched.h:affinity  — The CPU pin grant tag. fixy/os/Sched.h:10 r
 crucible/fixy/_Sched.h:scheduler_policy  — The scheduling-policy grant tag. fixy/os/Sched.h:10 records that the four scheduling grant tags were not carried, because nothing outside the old self-test read them.
 crucible/fixy/_Sched.h:thread_name  — The thread-name grant tag. fixy/os/Sched.h:10 records that the four scheduling grant tags were not carried, because nothing outside the old self-test read them.
 crucible/fixy/_Sched.h:which_dim  — The axis registration of the scheduling grant tags, dropped with the tags, as fixy/os/Sched.h:10 records.
-crucible/fixy/_Sched.h:CtxFitsAffinityMint  → include/fixy/os/CpuPinned.h  — The gate moved to namespace fixy at fixy/os/CpuPinned.h:146 with the declaration of mint_affinity, as fixy/os/Sched.h:128 records.
+crucible/fixy/_Sched.h:CtxFitsAffinityMint  → include/fixy/os/CpuPinned.h  — The gate moved to namespace fixy in fixy/os/CpuPinned.h with the declaration of mint_affinity, as the comment on it in fixy/os/Sched.h records.
+crucible/safety/_SchedClass.h:mint_sched_class  — Removed, not ported. A SchedClass is a proof that the policy of the thread was set, so only mint_scheduler_policy builds one, after its syscall, through the key of SchedProofDoor in fixy/os/Sched.h.
 crucible/fixy/_Fn.h:NamedSession  — A stance alias that the new tree does not carry. fixy/Role.h:19 records that no production site used it, and a caller writes its atoms as a pack.
 crucible/fixy/_Fn.h:SyncBlocking  — A stance alias that the new tree does not carry. fixy/Role.h:19 records that no production site used it, and a caller writes its atoms as a pack.
 crucible/fixy/_Fn.h:RealtimeHot  — A stance alias that the new tree does not carry. fixy/Role.h:19 records that no production site used it, and a caller writes its atoms as a pack.
@@ -668,9 +669,9 @@ crucible/concurrent/_WorkingSet.h:has_static_per_call_working_set_v  — The val
 # Nothing outside the old header's own self-test read these four, and
 # fixy/os/Time.h states the drop. What gates the time surface now is a
 # context concept that reads the context and the clock source.
-crucible/fixy/_Time.h:clock_read  — A grant tag no code outside the old header's self-test read; the clock surface is gated by CtxFitsClockReaderMint in fixy/os/Time.h:198, which reads the context and the source rather than a tag.
-crucible/fixy/_Time.h:sleep  — A grant tag with the same standing as clock_read, replaced by the CtxFitsBoundedSleepMint gate in fixy/os/Time.h:300, which requires the Block effect and a non-zero bound.
-crucible/fixy/_Time.h:tsc_read  — A grant tag with the same standing as clock_read, replaced by the CtxFitsTscReaderMint gate in fixy/os/Time.h:297, which requires a singleton pin proof rather than a tag.
+crucible/fixy/_Time.h:clock_read  — A grant tag no code outside the old header's self-test read; the clock surface is gated by CtxFitsClockReaderMint in fixy/os/Time.h, which reads the context and the source rather than a tag.
+crucible/fixy/_Time.h:sleep  — A grant tag with the same standing as clock_read, replaced by the CtxFitsBoundedSleepMint gate in fixy/os/Time.h, which requires the Block effect and a bound that is not zero and not more than max_bounded_sleep_nanos.
+crucible/fixy/_Time.h:tsc_read  — A grant tag with the same standing as clock_read, replaced by the CtxFitsTscReaderMint gate in fixy/os/Time.h, which requires a pin proof of one CPU that the caller moves in, rather than a tag.
 crucible/fixy/_Time.h:which_dim  — The three specialisations that routed those tags onto an axis. An atom carries the axis it engages as a static member in fixy/Atom.h:54, so there is no separate routing trait left to specialise.
 crucible/fixy/_Time.h:mint_clock_source  — Removed, not ported.  A clock reading is stamped only by the readers of fixy/os/Time.h, through a private door, right after the read of that clock, so a factory that stamped any value with any source has no new spelling.
 crucible/safety/_ClockSource.h:mint_clock_source  — Removed, not ported, for the same reason as the re-export in crucible/fixy/_Time.h: a reading of a clock comes only from a read of that clock, so no factory stamps a value with a source.

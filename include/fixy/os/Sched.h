@@ -12,10 +12,12 @@
 // outside the header's own self-test reads them, so the port drops both
 // and the eleven assertions that read them.
 
+#include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
 #include <foundation/Platform.h>
+#include <foundation/algebra/Graded.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 
@@ -49,12 +51,33 @@ using ProofUnit = int;
 
 // The nice value is a flat integer over [-20, 19] rather than a lattice, so
 // no graded wrapper fits and this surface owns the witness.
+//
+// The witness is a proof that setpriority succeeded for the calling
+// thread.  So it has the shape of the scheduling-class proof in
+// fixy/os/SchedClass.h.  Its one constructor takes the key of
+// SchedProofDoor, and only the door builds that key, after the syscall of
+// mint_priority returned.  The witness is neither copyable nor movable,
+// because the nice value belongs to the thread that set it, and a copy or
+// a move could carry the claim to another thread.
 template <int Nice>
     requires(Nice >= -20 && Nice <= 19)
-struct SchedPriority final {
+class [[nodiscard]] SchedPriority final {
+public:
     static constexpr int nice = Nice;
     using row_discipline = SchedPriority;
     using row_payload = ::foundation::diag::row_payloads<>;
+
+    // User-provided, so the type is not an aggregate and not an
+    // implicit-lifetime type.
+    explicit constexpr SchedPriority(::foundation::algebra::grade_key<SchedProofDoor> const&) noexcept {}
+
+    SchedPriority(const SchedPriority&) = delete("a nice value belongs to the thread that set it, and a copy could "
+                                                 "reach another thread");
+    SchedPriority(SchedPriority&&) = delete("a nice value belongs to the thread that set it, and a move could carry "
+                                            "the claim to another thread");
+    SchedPriority& operator=(const SchedPriority&) = delete("a priority proof is not assignable");
+    SchedPriority& operator=(SchedPriority&&) = delete("a priority proof is not assignable");
+    ~SchedPriority() = default;
 };
 
 namespace detail {
@@ -128,8 +151,8 @@ template <SchedulerPolicy_v Policy>
 // CtxFitsAffinityMint moved to fixy/os/CpuPinned.h with mint_affinity's
 // declaration, which had to move because the proof names that mint as
 // its sole friend and a friend must already have been declared.  The
-// name is unqualified below through `using sf::CtxFitsAffinityMint`, so
-// every call site reads as it did.
+// definition below names the gate as ::fixy::CtxFitsAffinityMint, the
+// spelling of the declaration.
 
 // The second conjunct is not a restatement of the enum's own range,
 // though it reads like one.  It is the
@@ -173,30 +196,90 @@ concept CtxFitsPriorityMint = CtxFitsRuntimeAffinity<Ctx> && (Nice >= -20 && Nic
 template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
     requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>
 [[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, sf::PinProofUnit>, int> mint_affinity(Ctx const&) noexcept {
-    if (const int failure = sf::detail::pin_calling_thread(Mask); failure != 0) [[unlikely]] {
-        return std::unexpected(failure);
+    const auto pin_event = sf::detail::pin_calling_thread(Mask);
+    if (!pin_event) [[unlikely]] {
+        return std::unexpected(pin_event.error());
     }
-    return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0};
+    return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0, *pin_event};
 }
 
 // Deadline admission requires runtime < deadline <= period. The SchedClass
 // return type asserts that ordering, so a budget that violates it is a
 // compile error inside the mint and needs no separate concept.
+//
+// The two mints below are declared here and defined after SchedProofDoor,
+// which names each one as a friend.  The default arguments belong to this
+// declaration.
 template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs = 0, std::uint64_t DeadlineNs = 0,
           std::uint64_t PeriodNs = 0, eff::IsExecCtx Ctx>
 // §XXI carve-out: cx=alloc — setting a scheduler policy is a kernel side effect.
     requires CtxFitsSchedPolicyMint<Ctx, Policy>
 [[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
-mint_scheduler_policy(Ctx const&, int rt_priority = 0) noexcept {
+mint_scheduler_policy(Ctx const&, int rt_priority = 0) noexcept;
+
+// §XXI carve-out: cx=alloc — setpriority is a kernel side effect.
+template <int Nice, eff::IsExecCtx Ctx>
+    requires CtxFitsPriorityMint<Ctx, Nice>
+[[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept;
+
+// The door to the two scheduling proofs.  No object of it exists.  It is
+// the authority of the key that the constructor of SchedClass and of
+// SchedPriority takes, so only its members build that key.  Its members
+// are private, and its two friends are the mints above, which call a
+// member only after their syscall returned.  Each member builds its proof
+// in place inside the result, because a proof neither copies nor moves.
+//
+// The trailing return types are necessary: fixy/os/CpuPinned.h gives the
+// parse reason.
+class SchedProofDoor final {
+    SchedProofDoor() = delete("the scheduling proof door holds static members only, and no object of it exists");
+    SchedProofDoor(const SchedProofDoor&) = delete("the scheduling proof door holds static members only");
+    SchedProofDoor& operator=(const SchedProofDoor&) = delete("the scheduling proof door holds static members only");
+    SchedProofDoor(SchedProofDoor&&) = delete("the scheduling proof door holds static members only");
+    SchedProofDoor& operator=(SchedProofDoor&&) = delete("the scheduling proof door holds static members only");
+    constexpr ~SchedProofDoor() noexcept {}
+
+    template <SchedulerPolicy_v FriendPolicy, std::uint64_t FriendRuntimeNs, std::uint64_t FriendDeadlineNs,
+              std::uint64_t FriendPeriodNs, eff::IsExecCtx FriendCtx>
+        requires CtxFitsSchedPolicyMint<FriendCtx, FriendPolicy>
+    friend auto mint_scheduler_policy(FriendCtx const&, int) noexcept
+        -> std::expected<sf::SchedClass<FriendPolicy, ProofUnit, FriendRuntimeNs, FriendDeadlineNs, FriendPeriodNs>,
+                         int>;
+
+    template <int FriendNice, eff::IsExecCtx FriendCtx>
+        requires CtxFitsPriorityMint<FriendCtx, FriendNice>
+    friend auto mint_priority(FriendCtx const&) noexcept -> std::expected<SchedPriority<FriendNice>, int>;
+
+    using key_ = ::foundation::algebra::grade_key<SchedProofDoor>;
+
+    template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
+    [[nodiscard]] static std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
+    policy_proof_(int rt_priority) noexcept {
+        const key_ key{};
+        return std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>{
+            std::in_place, key, rt_priority};
+    }
+
+    template <int Nice>
+    [[nodiscard]] static std::expected<SchedPriority<Nice>, int> priority_proof_() noexcept {
+        const key_ key{};
+        return std::expected<SchedPriority<Nice>, int>{std::in_place, key};
+    }
+};
+
+template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs,
+          eff::IsExecCtx Ctx>
+    requires CtxFitsSchedPolicyMint<Ctx, Policy>
+[[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
+mint_scheduler_policy(Ctx const&, int rt_priority) noexcept {
     if (detail::apply_scheduler_policy<Policy>(rt_priority, RuntimeNs, DeadlineNs, PeriodNs) != 0) [[unlikely]] {
         return std::unexpected(errno);
     }
-    return sf::mint_sched_class<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>(rt_priority);
+    return SchedProofDoor::policy_proof_<Policy, RuntimeNs, DeadlineNs, PeriodNs>(rt_priority);
 }
 
 // On Linux, PRIO_PROCESS with a who of 0 sets the nice value of the calling
 // thread, not of the whole process.
-// §XXI carve-out: cx=alloc — setpriority is a kernel side effect.
 template <int Nice, eff::IsExecCtx Ctx>
     requires CtxFitsPriorityMint<Ctx, Nice>
 [[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept {
@@ -205,7 +288,7 @@ template <int Nice, eff::IsExecCtx Ctx>
         [[unlikely]] {  // SYSCALL-CAP-OK: mint_priority body, CtxFitsPriorityMint ctx-gate
         return std::unexpected(errno);
     }
-    return SchedPriority<Nice>{};
+    return SchedProofDoor::priority_proof_<Nice>();
 }
 
 using ::fixy::mint_thread_name;
@@ -213,7 +296,11 @@ using ::fixy::mint_thread_name;
 // The CPU index arrives at runtime, so no compile-time pinning proof can be
 // produced. This is not a mint for that reason. Its gate is the one the
 // three mints above read, CtxFitsRuntimeAffinity in fixy/os/CpuPinned.h.
-
+//
+// A negative index asks for no pin, and the call changes nothing.  A pin
+// goes through the same helper as mint_affinity, so it records a new pin
+// event, and a proof of an earlier pin on this thread stops being in
+// force.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
 [[nodiscard]] std::expected<void, int> apply_affinity_to_cpu(Ctx const&, int cpu) noexcept {
@@ -224,9 +311,9 @@ template <eff::IsExecCtx Ctx>
     cpu_set_t set;
     CPU_ZERO(&set);
     CPU_SET(static_cast<std::size_t>(cpu), &set);
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_cpu CtxFitsRuntimeAffinity ctx-gate (Bg|Init)
-        return std::unexpected(errno);
+    const auto pin_event = sf::detail::set_calling_thread_affinity(set);
+    if (!pin_event) [[unlikely]] {
+        return std::unexpected(pin_event.error());
     }
     return {};
 }
@@ -238,13 +325,9 @@ namespace fixy::sched::detail::scheduler_mint_invariants {
 // The eleven grant-tag assertions the old self-test carried are not
 // ported, because the tags they read are not ported.
 
-// BgDrainCtx, ColdInitCtx and HotFgCtx belong to a fixy/Ctx.h the tree
-// does not have yet.  These three stand in until it lands, in the shape
-// foundation's own Ctx.h self-test uses.  They are scaffolding, not a
-// second spelling of the named contexts.
-using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
-using InitWitness = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO>>;
-using FgWitness = eff::ExecCtx<>;
+using BgWitness = ::fixy::BgDrainCtx;
+using InitWitness = ::fixy::ColdInitCtx;
+using FgWitness = ::fixy::HotFgCtx;
 
 static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Other) == SCHED_OTHER);
 static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Fifo) == SCHED_FIFO);
@@ -260,6 +343,18 @@ static_assert(!CtxFitsSchedPolicyMint<BgWitness, static_cast<SchedulerPolicy_v>(
 static_assert(SchedPriority<-20>::nice == -20);
 static_assert(SchedPriority<19>::nice == 19);
 static_assert(!std::is_same_v<SchedPriority<-10>, SchedPriority<10>>);
+
+// The priority proof comes only from its mint, and it stays with the
+// thread whose syscall it names.  fixy/os/SchedClass.h asserts the same
+// of the scheduling-class proof.
+static_assert(!std::is_default_constructible_v<SchedPriority<5>> && !std::is_copy_constructible_v<SchedPriority<5>>
+                  && !std::is_move_constructible_v<SchedPriority<5>>,
+              "a priority proof comes only from mint_priority and never leaves the frame that holds it");
+static_assert(!std::is_implicit_lifetime_v<SchedPriority<5>> && !std::is_aggregate_v<SchedPriority<5>>,
+              "std::start_lifetime_as and aggregate initialization must not build a priority proof");
+static_assert(!std::is_default_constructible_v<SchedProofDoor> && !std::is_copy_constructible_v<SchedProofDoor>
+                  && !std::is_move_constructible_v<SchedProofDoor>,
+              "No object of the scheduling proof door exists.  Only its members build the proof key.");
 
 static_assert(
     std::is_same_v<decltype(mint_priority<5>(std::declval<BgWitness const&>())), std::expected<SchedPriority<5>, int>>);

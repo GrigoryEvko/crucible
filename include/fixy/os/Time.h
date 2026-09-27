@@ -205,6 +205,16 @@ template <typename T>
 concept IsSingletonCpuPin =
     ::foundation::reflect::IsInstanceOf<T, ^^sf::CpuPinned> && std::remove_cvref_t<T>::is_singleton_pin;
 
+// The pin that a TSC reader takes.  It is a single-core pin with the
+// explicit posture, because an auto pin can still migrate.  The reader
+// owns it, so the caller gives up its pin: an lvalue or a const pin is
+// refused, and the call site names the move.  A forwarding reference
+// that took an lvalue moved the caller's pin out with no std::move in
+// sight.
+template <typename PinT>
+concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_reference_v<PinT> && !std::is_const_v<PinT>
+                                   && PinT::template meets_posture<sf::PinningPosture::PinnedExplicit>;
+
 // Whether the kernel promises the clock never steps backward.  Realtime
 // can be set, and the two CPU-time clocks are per-thread and per-process
 // accumulators that one reader may be asked to read from more than one
@@ -311,6 +321,16 @@ struct ClockReader final {
         }
     }
 
+    // The reader stays in the frame that minted it.  The gate of the mint
+    // says that the frame is off the replay-bound foreground path, and a
+    // copy or a move could carry the reader onto that path.  A clamped
+    // reader is pinned by its floor as well.
+    ClockReader(const ClockReader&) = delete("a clock reader stays in the frame whose context the mint read");
+    ClockReader(ClockReader&&) = delete("a clock reader stays in the frame whose context the mint read");
+    ClockReader& operator=(const ClockReader&) = delete("a clock reader is not assignable");
+    ClockReader& operator=(ClockReader&&) = delete("a clock reader is not assignable");
+    ~ClockReader() = default;
+
 private:
     // One door.  The mint's requires-clause is the whole gate, and the
     // mint is the only friend, so a reader cannot be built anywhere the
@@ -323,9 +343,9 @@ private:
 
     // The floor of every value this reader has returned.  Advancing it is
     // the read's own bookkeeping, which is why it is mutable behind a
-    // const read; AtomicMonotonic is pinned, so a clamped reader is pinned
-    // with it and has one address for the lifetime of its floor.  An
-    // unclamped reader carries nothing and stays a value.
+    // const read.  AtomicMonotonic is pinned, so a clamped reader has one
+    // address for the lifetime of its floor.  An unclamped reader carries
+    // nothing.
     struct NoClamp final {};
     using clamp_state = std::conditional_t<is_clamped, sf::AtomicMonotonic<std::uint64_t>, NoClamp>;
 
@@ -344,8 +364,20 @@ private:
 // It names the same thing here.
 using MonotonicClock = ClockReader<ClockSource_v::Monotonic>;
 
+template <typename Ctx, TscMode Mode, typename PinT>
+concept CtxFitsTscReaderMint =
+    CtxFitsMonotonicClock<Ctx> && (Mode != TscMode::NotAllowed) && IsOwnedExplicitSingletonPin<PinT>;
+
 // The reader owns the pin proof for its whole lifetime, so the pin cannot be
 // released while a read is still possible.
+//
+// The counter belongs to one core, and the pin to one thread.  So each
+// read asks the pin whether it is in force on the calling thread, and
+// gives an error and no reading when it is not.  A reader that a
+// reference or a move took to another thread, and a reader whose thread
+// pinned again, read nothing.  The check is one load of a thread-local
+// value and one comparison.  It is not on the foreground path, because
+// the mint refuses a foreground context.
 template <TscMode Mode, typename PinT>
     requires(Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>
 struct TscReader final {
@@ -353,15 +385,16 @@ struct TscReader final {
                                            sf::TscBytes<std::uint64_t>>;
     static constexpr TscMode mode = Mode;
 
-    explicit constexpr TscReader(PinT&& pin) noexcept : pin_{std::move(pin)} {}
-
-    TscReader(const TscReader&) = delete;
-    TscReader& operator=(const TscReader&) = delete;
+    TscReader(const TscReader&) = delete("a TSC reader owns its pin proof, and a pin claim is never held two times");
+    TscReader& operator=(const TscReader&) = delete("a TSC reader owns its pin proof");
     TscReader(TscReader&&) noexcept = default;
     TscReader& operator=(TscReader&&) noexcept = default;
     ~TscReader() = default;
 
-    [[nodiscard]] result_type read() const noexcept {
+    [[nodiscard]] std::expected<result_type, std::error_code> read() const noexcept {
+        if (!pin_.is_in_force()) [[unlikely]] {
+            return std::unexpected{std::make_error_code(std::errc::operation_not_permitted)};
+        }
         if constexpr (Mode == TscMode::SerializedPinned) {
             return detail::clock_stamp_access::stamp<result_type::source>(detail::read_raw_tsc_serialized());
         } else {
@@ -372,6 +405,16 @@ struct TscReader final {
     [[nodiscard]] PinT const& pin() const& noexcept { return pin_; }
 
 private:
+    // One door.  The mint checks that the pin is in force on the calling
+    // thread, and then gives the pin to this constructor.  The mint is
+    // the only friend.
+    explicit constexpr TscReader(PinT&& pin) noexcept : pin_{std::move(pin)} {}
+
+    template <TscMode FriendMode, eff::IsExecCtx FriendCtx, typename FriendPinT>
+        requires CtxFitsTscReaderMint<FriendCtx, FriendMode, FriendPinT>
+    friend auto mint_tsc_reader(FriendCtx const&, FriendPinT&&) noexcept
+        -> std::expected<TscReader<FriendMode, std::remove_cvref_t<FriendPinT>>, std::error_code>;
+
     PinT pin_;
 };
 
@@ -451,7 +494,7 @@ private:
 // path from the index itself, so a caller cannot point it at a file that
 // is not a PTP device node.
 class PtpDeviceDoor final {
-    PtpDeviceDoor() = delete("the PTP device door holds static members only; no object of it exists");
+    PtpDeviceDoor() = delete("the PTP device door holds static members only, and no object of it exists");
     PtpDeviceDoor(const PtpDeviceDoor&) = delete("the PTP device door holds static members only");
     PtpDeviceDoor& operator=(const PtpDeviceDoor&) = delete("the PTP device door holds static members only");
     PtpDeviceDoor(PtpDeviceDoor&&) = delete("the PTP device door holds static members only");
@@ -489,24 +532,73 @@ class PtpDeviceDoor final {
     }
 };
 
+// The largest bound a sleeper takes.  A deadline is the time of the
+// monotonic clock plus the sleep, in nanoseconds.  The nanosecond field
+// of the clock is below one second, so the sum fits in 64 bits for each
+// bound up to 2^62.
+inline constexpr std::uint64_t max_bounded_sleep_nanos = std::uint64_t{1} << 62;
+
 template <std::uint64_t MaxNanos>
-    requires(MaxNanos > 0)
+concept IsSleepBound = (MaxNanos > 0) && (MaxNanos <= max_bounded_sleep_nanos);
+
+// The gate states the bound of the sleeper as well, so the concept is the
+// whole rule of the mint.  A call with a bound out of range is a refused
+// candidate: the return type BoundedSleeper<MaxNanos> fails its own
+// constraint first.
+template <typename Ctx, std::uint64_t MaxNanos>
+concept CtxFitsBoundedSleepMint = eff::CtxOwnsCapability<Ctx, eff::Effect::Block> && IsSleepBound<MaxNanos>;
+
+// The right to block the calling thread for at most MaxNanos in one call.
+//
+// The sleeper comes only from mint_bounded_sleep, whose gate asks for a
+// context that owns Block.  Its constructor is private and the mint is
+// the only friend.  It is neither copyable nor movable, so it stays in
+// the frame whose context the gate read, and a thread that owns no Block
+// does not get it by a copy or a move.
+//
+// A signal handler that runs during the sleep ends clock_nanosleep early
+// with EINTR.  The sleep then continues to the same deadline on the
+// monotonic clock, so a signal does not shorten it and a restart does
+// not add the time already slept.  Another failure gives its error, and
+// the caller must look at it.
+template <std::uint64_t MaxNanos>
+    requires IsSleepBound<MaxNanos>
 struct BoundedSleeper final {
     static constexpr std::uint64_t max_nanos = MaxNanos;
 
-    void sleep_for(std::uint64_t nanos) const noexcept {
+    BoundedSleeper(const BoundedSleeper&) = delete("a sleeper stays in the frame whose context the mint read");
+    BoundedSleeper(BoundedSleeper&&) = delete("a sleeper stays in the frame whose context the mint read");
+    BoundedSleeper& operator=(const BoundedSleeper&) = delete("a sleeper is not assignable");
+    BoundedSleeper& operator=(BoundedSleeper&&) = delete("a sleeper is not assignable");
+    ~BoundedSleeper() = default;
+
+    [[nodiscard]] std::expected<void, std::error_code> sleep_for(std::uint64_t nanos) const noexcept {
         CRUCIBLE_PRE(nanos <= MaxNanos);
-        std::timespec request{static_cast<std::time_t>(nanos / 1000000000ULL),
-                              static_cast<long>(nanos % 1000000000ULL)};
-        (void)::clock_nanosleep(CLOCK_MONOTONIC, 0, &request, nullptr);
+        constexpr std::uint64_t nanos_per_second = 1000000000ULL;
+        std::timespec deadline{};
+        if (::clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
+            return std::unexpected{std::error_code{errno, std::system_category()}};
+        }
+        const std::uint64_t total_nanos = static_cast<std::uint64_t>(deadline.tv_nsec) + nanos;
+        deadline.tv_sec += static_cast<std::time_t>(total_nanos / nanos_per_second);
+        deadline.tv_nsec = static_cast<long>(total_nanos % nanos_per_second);
+        int failure = 0;
+        do {
+            failure = ::clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, nullptr);  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
+        } while (failure == EINTR);
+        if (failure != 0) [[unlikely]] {
+            return std::unexpected{std::error_code{failure, std::system_category()}};
+        }
+        return {};
     }
+
+private:
+    constexpr BoundedSleeper() noexcept {}
+
+    template <std::uint64_t FriendMaxNanos, eff::IsExecCtx FriendCtx>
+        requires CtxFitsBoundedSleepMint<FriendCtx, FriendMaxNanos>
+    friend constexpr auto mint_bounded_sleep(FriendCtx const&) noexcept -> BoundedSleeper<FriendMaxNanos>;
 };
-
-template <typename Ctx, TscMode Mode, typename PinT>
-concept CtxFitsTscReaderMint = eff::IsExecCtx<Ctx> && (Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>;
-
-template <typename Ctx, std::uint64_t MaxNanos>
-concept CtxFitsBoundedSleepMint = eff::CtxOwnsCapability<Ctx, eff::Effect::Block> && (MaxNanos > 0);
 
 template <ClockSource_v Source, eff::IsExecCtx Ctx>
     requires CtxFitsClockReaderMint<Ctx, Source>
@@ -514,16 +606,25 @@ template <ClockSource_v Source, eff::IsExecCtx Ctx>
     return ClockReader<Source>{};
 }
 
+// Gives a reader that owns the pin, or operation_not_permitted when the
+// pin is not in force on the calling thread.  A pin that another thread
+// earned, and a pin whose thread pinned again, are refused.
+//
+// §XXI carve-out: cx=alloc — the mint reads the pin event of the calling thread.
 template <TscMode Mode, eff::IsExecCtx Ctx, typename PinT>
     requires CtxFitsTscReaderMint<Ctx, Mode, PinT>
-[[nodiscard]] constexpr TscReader<Mode, std::remove_cvref_t<PinT>> mint_tsc_reader(Ctx const&, PinT&& pin) noexcept {
-    return TscReader<Mode, std::remove_cvref_t<PinT>>{std::move(pin)};
+[[nodiscard]] std::expected<TscReader<Mode, std::remove_cvref_t<PinT>>, std::error_code> mint_tsc_reader(
+    Ctx const&, PinT&& pin) noexcept {
+    if (!pin.is_in_force()) [[unlikely]] {
+        return std::unexpected{std::make_error_code(std::errc::operation_not_permitted)};
+    }
+    return TscReader<Mode, std::remove_cvref_t<PinT>>{std::forward<PinT>(pin)};
 }
 
 template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
     requires CtxFitsBoundedSleepMint<Ctx, MaxNanos>
 [[nodiscard]] constexpr BoundedSleeper<MaxNanos> mint_bounded_sleep(Ctx const&) noexcept {
-    return {};
+    return BoundedSleeper<MaxNanos>{};
 }
 
 // Opens /dev/ptpN read-only through PtpDeviceDoor and returns its reader,
@@ -576,14 +677,40 @@ static_assert(std::is_same_v<TscReader<TscMode::Raw, SinglePin>::result_type, sf
 static_assert(std::is_same_v<TscReader<TscMode::SerializedPinned, SinglePin>::result_type,
                              sf::TscSerializedBytes<std::uint64_t>>);
 
+// The TSC reader's one door is the mint.  The reader owns its pin, so it
+// moves and does not copy.
+static_assert(!std::is_constructible_v<TscReader<TscMode::Raw, SinglePin>, SinglePin&&>);
+static_assert(!std::is_copy_constructible_v<TscReader<TscMode::Raw, SinglePin>>);
+static_assert(std::is_nothrow_move_constructible_v<TscReader<TscMode::Raw, SinglePin>>);
+
+// The gate of the TSC mint: a context off the foreground path, a pin the
+// caller gives up, and the explicit posture.
+using AutoPin = sf::CpuPinned<ml::AffinityMask::single(0), sf::PinningPosture::PinnedAuto, int>;
+using InitCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init>>;
+static_assert(CtxFitsTscReaderMint<InitCtx, TscMode::Raw, SinglePin>);
+static_assert(!CtxFitsTscReaderMint<eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>, TscMode::Raw, SinglePin>,
+              "the foreground hot path must not read the TSC: the value differs across machines and breaks replay");
+static_assert(!CtxFitsTscReaderMint<InitCtx, TscMode::Raw, SinglePin&>,
+              "an lvalue pin must be refused: the mint would move the caller's pin out with no std::move in sight");
+static_assert(!CtxFitsTscReaderMint<InitCtx, TscMode::Raw, SinglePin const>);
+static_assert(!CtxFitsTscReaderMint<InitCtx, TscMode::Raw, AutoPin>,
+              "an auto pin can still migrate, so it must not feed a per-core counter");
+static_assert(!CtxFitsTscReaderMint<InitCtx, TscMode::NotAllowed, SinglePin>);
+
 static_assert(BoundedSleeper<1000000>::max_nanos == 1000000ULL);
+static_assert(!std::is_default_constructible_v<BoundedSleeper<1000000>>
+                  && !std::is_copy_constructible_v<BoundedSleeper<1000000>>
+                  && !std::is_move_constructible_v<BoundedSleeper<1000000>>,
+              "a sleeper comes only from mint_bounded_sleep and never leaves the frame that holds it");
+static_assert(IsSleepBound<1> && IsSleepBound<max_bounded_sleep_nanos>);
+static_assert(!IsSleepBound<0> && !IsSleepBound<max_bounded_sleep_nanos + 1>);
 
 // The gate and the clamp, as properties of the types.  A foreground
 // context is refused at the mint and a background one admitted; the
 // three non-decreasing sources are clamped and Realtime is not; the
-// reader's one door is the mint, so it is neither default- nor
-// copy-constructible from outside, and a clamped reader has one address
-// because its floor does.  The behaviour under a sequence of reads, and
+// reader's one door is the mint, so it is not default-constructible from
+// outside, and no reader copies or moves out of the frame that minted
+// it.  The behaviour under a sequence of reads, and
 // the clamp fed a regressing value, are in test/fixy/test_os_time.cpp;
 // the two refusals are test/fixy/neg/neg_os_clock_reader_*.cpp.
 using ForegroundCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
@@ -604,7 +731,9 @@ static_assert(!std::is_default_constructible_v<MonotonicClock>);
 static_assert(!std::is_copy_constructible_v<MonotonicClock>);
 static_assert(!std::is_move_constructible_v<MonotonicClock>);
 static_assert(!std::is_default_constructible_v<ClockReader<ClockSource_v::Realtime>>);
-static_assert(std::is_copy_constructible_v<ClockReader<ClockSource_v::Realtime>>);
+static_assert(!std::is_copy_constructible_v<ClockReader<ClockSource_v::Realtime>>
+                  && !std::is_move_constructible_v<ClockReader<ClockSource_v::Realtime>>,
+              "an unclamped reader stays in the frame whose context the mint read, as a clamped one does");
 
 // The PTP reader.  Its readings are PtpHwClock readings and are never
 // clamped.  It is not built from outside: no default constructor, no

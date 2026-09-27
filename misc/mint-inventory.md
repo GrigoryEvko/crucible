@@ -267,8 +267,8 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
 | `mint_affinity` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
-| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
+| `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_cold_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
@@ -281,12 +281,11 @@ apply to the row.
 | `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_sched_class` | `include/fixy/os/SchedClass.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_spawn` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
-| `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 1 ⚠ |
+| `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_warm_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_zerocopy_transfer` | `include/fixy/os/Io.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
 
@@ -358,4 +357,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 113 | 52 | 58 | 3 | 0 | · | 12 |
+| new (`include/foundation/`, `include/fixy/`) | 112 | 52 | 57 | 3 | 0 | · | 8 |

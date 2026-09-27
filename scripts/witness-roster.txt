@@ -156,7 +156,7 @@ fixy::Witnessed<fixy::Borrowed<int, foundation::permissions::tag::HugePageTag, f
 fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2> | fixy/OwnedRegion.h | fixy::Disjoint<int, foundation::brand::DefaultBrand, fixy::Unsplit, 2>{fixy::detail::split_mint_t{}} | private | closed
 
 # -- OS handles: the constructor is the syscall, or it consumes one ---
-fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0} | private | closed
+fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int> | fixy/os/CpuPinned.h | fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>{0, std::uint64_t{1}} | private | closed
 # A clock reading claims that its clock returned the value.  The value
 # constructor is private, and only the readers of fixy/os/Time.h reach the
 # stamp, right after they read that clock.
@@ -177,6 +177,20 @@ fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic> |
 # one door is mint_ptp_clock_reader, which opens /dev/ptpN itself, so a
 # forger who holds another descriptor cannot build a reader over it.
 fixy::time::PtpClockReader | fixy/os/Time.h | fixy::time::PtpClockReader{forge::rvalue<fixy::fs::OwnedFd>()} | private | closed
+# A TSC reader reads the counter of the core that its pin names.  Its one
+# door is mint_tsc_reader, which refuses a pin that is not in force on the
+# calling thread.
+fixy::time::TscReader<fixy::time::TscMode::Raw, fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>> | fixy/os/Time.h | fixy::time::TscReader<fixy::time::TscMode::Raw, fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>>{forge::rvalue<fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>>()} | private | closed
+# A sleeper blocks the calling thread.  Its one door is mint_bounded_sleep,
+# gated on a context that owns Block.
+fixy::time::BoundedSleeper<1000> | fixy/os/Time.h | fixy::time::BoundedSleeper<1000>{} | private | closed
+# A scheduling proof claims that the kernel set a policy or a nice value
+# for the calling thread.  Its constructor takes the key of
+# SchedProofDoor, and only the members of the door build the key, after
+# the syscall.  Braces that give a value with no key meet no constructor.
+fixy::SchedClass<foundation::algebra::lattices::SchedulerPolicy::Fifo, int> | fixy/os/SchedClass.h | fixy::SchedClass<foundation::algebra::lattices::SchedulerPolicy::Fifo, int>{0} | no-match | closed
+fixy::sched::SchedPriority<5> | fixy/os/Sched.h | fixy::sched::SchedPriority<5>{} | no-match | closed
+fixy::sched::SchedProofDoor | fixy/os/Sched.h | fixy::sched::SchedProofDoor{} | deleted | closed
 fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy/OwnedMmap.h | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}} | private | closed
 # OwnedFile fcloses what it holds, so a public FILE* constructor let
 # `OwnedFile{stdin}` close standard input.  The constructor is private;

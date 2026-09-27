@@ -22,11 +22,13 @@
 // of static_asserts masks the bugs that appear when a body is
 // instantiated for runtime evaluation rather than folded.
 
+#include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -49,17 +51,15 @@ using TwoBitC = fixy::CpuPinned<kTwoBit, fixy::PinningPosture::PinnedExplicit, i
 using FifoInt = fixy::SchedClass<fixy::SchedulerPolicy_v::Fifo, int>;
 using DeadlineInt = fixy::SchedClass<fixy::SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>;
 
-// The named contexts these mints are meant to take belong to a header
-// the tree does not have yet.  This one stands in, in the shape
-// foundation's own context self-test uses.  It is handed the capability
-// it claims: a context is not evidence of a capability, it carries one.
-using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
+// Each context is handed the capability it claims: a context is not
+// evidence of a capability, it carries one.
+using BgWitness = fixy::BgDrainCtx;
 
 // Every pin here is earned.  CpuPinned has one constructor, it is
 // private, and fixy::sched::mint_affinity is its sole friend, so the
 // only way into this leg is a sched_setaffinity that returned 0.  The
-// leg therefore really re-pins the calling thread, and restores the full
-// mask on the way out so the later legs run unpinned.
+// leg therefore really pins the calling thread, and the later legs of
+// this process run pinned.  No leg depends on the mask.
 [[nodiscard]] int pin_proof_round_trips_through_an_earned_pin() {
     BgWitness bg{eff::testing::bg()};
 
@@ -83,10 +83,20 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         return 1;
     }
 
-    // Moving transfers the claim rather than copying it, so the moved-to
-    // proof is the same proof.  The copy operations are deleted, so this
-    // cannot be anything else.
+    // The pin is in force on the thread that earned it.
+    if (!pin->is_in_force()) {
+        std::fprintf(stderr, "an earned pin was not in force on the thread that earned it\n");
+        return 1;
+    }
+
+    // Moving transfers the claim rather than copying it: the moved-to
+    // proof is in force and the source is not.  The copy operations are
+    // deleted, so this cannot be anything else.
     PinnedC0 moved{std::move(*pin)};
+    if (!moved.is_in_force() || pin->is_in_force()) {
+        std::fprintf(stderr, "a move did not take the pin event from its source\n");
+        return 1;
+    }
     if (std::move(moved).consume() != 9) {
         std::fprintf(stderr, "consume did not move the value out of an earned pin\n");
         return 1;
@@ -115,41 +125,13 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         return 1;
     }
 
-    if (!fixy::sched::apply_affinity_to_cpu(bg, -1)) {
-        std::fprintf(stderr, "restoring the full affinity mask after the pin leg failed\n");
-        return 1;
-    }
     return 0;
 }
 
-[[nodiscard]] int sched_class_values_round_trip() {
-    int seed = 21;
-
-    FifoInt fifo{seed * 2};
-    if (fifo.peek() != 42) {
-        std::fprintf(stderr, "a scheduling class did not carry its value\n");
-        return 1;
-    }
-    fifo.peek_mut() = 9;
-    if (fifo.peek() != 9) {
-        std::fprintf(stderr, "peek_mut did not write through\n");
-        return 1;
-    }
-
-    auto minted = fixy::mint_sched_class<fixy::SchedulerPolicy_v::Other, int>(seed);
-    if (std::move(minted).consume() != 21) {
-        std::fprintf(stderr, "consume did not move the value out\n");
-        return 1;
-    }
-
-    FifoInt first{1};
-    FifoInt second{2};
-    swap(first, second);
-    if (first.peek() != 2 || second.peek() != 1) {
-        std::fprintf(stderr, "swap did not exchange two same-policy tasks\n");
-        return 1;
-    }
-
+// A scheduling class is a proof that only mint_scheduler_policy builds,
+// so the pool rule and the budget are read off the types here, and the
+// proof itself is exercised in the case after the next one.
+[[nodiscard]] int sched_class_answers_read_at_run_time() {
     // The pool-hosting answers at run time.  A FIFO task runs on a
     // DEADLINE pool and must not run on an OTHER one.
     const bool on_deadline = FifoInt::runnable_on<fixy::SchedulerPolicy_v::Deadline>;
@@ -159,16 +141,17 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         return 1;
     }
 
-    DeadlineInt deadline{seed};
-    if (deadline.peek() != 21 || deadline.runtime_ns != 5000) {
-        std::fprintf(stderr, "a deadline task lost its value or its budget\n");
+    const std::uint64_t runtime_ns = DeadlineInt::runtime_ns;
+    const std::uint64_t period_ns = DeadlineInt::period_ns;
+    if (runtime_ns != 5000 || period_ns != 20000) {
+        std::fprintf(stderr, "a deadline class lost its budget\n");
         return 1;
     }
 
-    fixy::sched_class::Idle<int> idle{0};
-    fixy::sched_class::RoundRobin<int> round_robin{456};
-    if (idle.peek() != 0 || round_robin.peek() != 456) {
-        std::fprintf(stderr, "a named policy alias did not carry its value\n");
+    const bool idle_on_idle = fixy::sched_class::Idle<int>::runnable_on<fixy::SchedulerPolicy_v::Idle>;
+    const bool round_robin_on_other = fixy::sched_class::RoundRobin<int>::runnable_on<fixy::SchedulerPolicy_v::Other>;
+    if (!idle_on_idle || round_robin_on_other) {
+        std::fprintf(stderr, "a named policy alias answered the pool rule wrongly\n");
         return 1;
     }
     return 0;
@@ -199,8 +182,8 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         std::fprintf(stderr, "setting SCHED_OTHER failed (errno %d)\n", policy.error());
         return 1;
     }
-    if (policy->policy != fixy::SchedulerPolicy_v::Other) {
-        std::fprintf(stderr, "the minted class named a policy the call did not set\n");
+    if (policy->policy != fixy::SchedulerPolicy_v::Other || policy->peek() != 0) {
+        std::fprintf(stderr, "the minted class named a policy or a priority the call did not set\n");
         return 1;
     }
 
@@ -223,12 +206,17 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
         return 1;
     }
 
-    // -1 means "every CPU in the cpuset", which always succeeds.
+    // A negative index asks for no pin: the call changes nothing, and it
+    // succeeds.  A pin through the runtime door records a new pin event,
+    // so the proof above stops being in force.
     if (!fixy::sched::apply_affinity_to_cpu(bg, -1)) {
-        std::fprintf(stderr, "restoring the full affinity mask failed\n");
+        std::fprintf(stderr, "a runtime affinity call that asks for no pin failed\n");
         return 1;
     }
-    (void)fixy::sched::apply_affinity_to_cpu(bg, 0);
+    if (pin && fixy::sched::apply_affinity_to_cpu(bg, 0) && pin->is_in_force()) {
+        std::fprintf(stderr, "a pin proof stayed in force after its thread pinned again\n");
+        return 1;
+    }
     return 0;
 }
 
@@ -236,7 +224,7 @@ using BgWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::A
 
 int main() {
     if (const int rc = pin_proof_round_trips_through_an_earned_pin(); rc != 0) return rc;
-    if (const int rc = sched_class_values_round_trip(); rc != 0) return rc;
+    if (const int rc = sched_class_answers_read_at_run_time(); rc != 0) return rc;
     if (const int rc = thread_name_reaches_the_kernel(); rc != 0) return rc;
     if (const int rc = scheduler_mints_reach_the_kernel(); rc != 0) return rc;
     return 0;

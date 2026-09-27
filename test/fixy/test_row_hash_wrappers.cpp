@@ -1331,6 +1331,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::time::TscReader, kFactory},
     {^^::fixy::time::PtpClockReader, kFactory},
     {^^::fixy::time::BoundedSleeper, kFactory},
+    {^^::fixy::sched::SchedProofDoor,
+     "a door of the scheduling proof mints: it has static members only, no object of it exists, and it is never a "
+     "value"},
     {^^::fixy::witness::AtProtocol, kVocabulary},
     {^^::fixy::witness::UnderRow, kVocabulary},
     {^^::fixy::cipher::durable::warm_writer_stance, kVocabulary},

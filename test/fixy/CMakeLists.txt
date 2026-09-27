@@ -3779,6 +3779,21 @@ fixy_neg_compile_test(neg_os_clock_reader_direct_ctor
   "is private within this context"
   "ClockReader\\(\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic\\]")
 
+# The TSC has no clock id, so the clock-reader mint has no candidate for
+# it, and a TSC read goes through the pin-gated mint.
+fixy_neg_compile_test(neg_os_clock_reader_tsc_source
+  "no matching function for call to .mint_clock_reader<foundation::algebra::lattices::ClockSource::TscRaw>\\(const fixy::TestRunnerCtx&\\)."
+  "required for the satisfaction of .ClockBacked<Source>. \\[with Source = foundation::algebra::lattices::ClockSource::TscRaw\\]")
+
+# The sleeper blocks, so its mint asks for Block, and its bound keeps the
+# deadline in 64 bits.  One fixture for each.
+fixy_neg_compile_test(neg_os_bounded_sleep_ctx_lacks_block
+  "no matching function for call to .mint_bounded_sleep<1000>\\(const fixy::BgDrainCtx&\\)."
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Block>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+fixy_neg_compile_test(neg_os_bounded_sleep_bound_past_limit
+  "no matching function for call to .mint_bounded_sleep<\\(4611686018427387904 \\+ 1\\)>\\(const fixy::TestRunnerCtx&\\)."
+  "the expression .MaxNanos <= fixy::time::max_bounded_sleep_nanos \\[with MaxNanos = 4611686018427387905\\]. evaluated to .false.")
+
 # The PTP clock reader.  Its gate folds the clock gate and the file
 # system gate into one concept, because the mint opens /dev/ptpN.  The
 # first fixture is a foreground context, and the clock half refuses it.
@@ -3815,7 +3830,7 @@ fixy_test(test_os_sched)
 # does not, so the source echo cannot satisfy its own gate.
 fixy_neg_compile_test(neg_os_cpu_pinned_value_ctor
   "is private within this context"
-  "CpuPinned\\(Unit\\)")
+  "CpuPinned\\(Unit, uint64_t\\)")
 
 fixy_neg_compile_test(neg_os_cpu_pinned_default_ctor
   "use of deleted function"
@@ -3903,6 +3918,18 @@ fixy_neg_compile_test(neg_os_tsc_reader_shape_of_a_pin
 fixy_neg_compile_test(neg_os_tsc_reader_recogniser_specialized
   "expected initializer before .<. token"
   "recogniser_specialized\\.cpp:[0-9]+:[0-9]+: error")
+
+# The rest of the gate of the TSC mint: the pin is given up, not lent, it
+# has the explicit posture, and the context is off the foreground path.
+fixy_neg_compile_test(neg_os_tsc_reader_lvalue_pin
+  "no matching function for call to .mint_tsc_reader<fixy::time::TscMode::Raw>\\(const \\{anonymous\\}::InitCtx&, \\{anonymous\\}::Pin&\\)."
+  "the expression .!\\(is_reference_v<PinT>\\) \\[with PinT = fixy::CpuPinned<")
+fixy_neg_compile_test(neg_os_tsc_reader_auto_posture
+  "no matching function for call to .mint_tsc_reader<fixy::time::TscMode::Raw>\\(const \\{anonymous\\}::InitCtx&"
+  "the expression .PinT::meets_posture<fixy::PinningPosture::PinnedExplicit> \\[with PinT = fixy::CpuPinned<.*fixy::PinningPosture::PinnedAuto, int>\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_tsc_reader_foreground_ctx
+  "no matching function for call to .mint_tsc_reader<fixy::time::TscMode::Raw>\\(const fixy::HotFgCtx&"
+  "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
 # ── Every scheduling door reads one gate ─────────────────────────────
 #

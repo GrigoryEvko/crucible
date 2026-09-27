@@ -12,11 +12,15 @@
 // DetSafe break.
 //
 // The constructor is private now and fixy::sched::mint_affinity is its
-// sole friend.  This fixture is the standing witness that it stayed
-// private.  Its four siblings cover the other routes: the default
-// constructor, the in_place constructor, the free mint, and the copy.
+// sole friend.  It takes the value and the pin event, and this fixture
+// gives it both, so the refusal is the access check and not the arity.
+// This fixture is the standing witness that it stayed private.  Its four
+// siblings cover the other routes: the default constructor, the in_place
+// constructor, the free mint, and the copy.
 
 #include <fixy/os/CpuPinned.h>
+
+#include <cstdint>
 
 namespace ml = foundation::algebra::lattices;
 
@@ -25,7 +29,7 @@ using Pin = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPosture::P
 }  // namespace
 
 int main() {
-    Pin forged{0};
+    Pin forged{0, std::uint64_t{1}};
     (void)forged;
     return 0;
 }

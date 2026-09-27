@@ -347,6 +347,21 @@
       "constructor": "\\bRefinement\\("
     },
     {
+      "name": "neg_witness_sched_schedpriority_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bSchedPriority\\("
+    },
+    {
+      "name": "neg_witness_sched_schedproofdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bSchedProofDoor\\("
+    },
+    {
+      "name": "neg_witness_schedclass_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bSchedClass\\("
+    },
+    {
       "name": "neg_witness_scopedview_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bScopedView\\("
@@ -482,6 +497,11 @@
       "constructor": "\\bThreadNamed\\("
     },
     {
+      "name": "neg_witness_time_boundedsleeper_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBoundedSleeper\\("
+    },
+    {
       "name": "neg_witness_time_clockreader_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bClockReader\\("
@@ -495,6 +515,11 @@
       "name": "neg_witness_time_ptpdevicedoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bPtpDeviceDoor\\("
+    },
+    {
+      "name": "neg_witness_time_tscreader_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bTscReader\\("
     },
     {
       "name": "neg_witness_versionsource_direct_construction",

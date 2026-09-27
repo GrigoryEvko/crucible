@@ -57,8 +57,4 @@ mint_sealed_refined_trusted|include/fixy/Refined.h
 # include/fixy/os
 mint_io_uring_ring|include/fixy/os/Io.h
 mint_zerocopy_transfer|include/fixy/os/Io.h
-mint_sched_class|include/fixy/os/SchedClass.h
 mint_thread_name|include/fixy/os/ThreadName.h
-mint_bounded_sleep|include/fixy/os/Time.h
-mint_clock_reader|include/fixy/os/Time.h
-mint_tsc_reader|include/fixy/os/Time.h

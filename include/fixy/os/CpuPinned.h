@@ -11,11 +11,24 @@
 // singleton-and-posture gate on the TSC reader now stands on the pin
 // rather than on the shape of a token anyone could build.
 //
-// The token is move-only, so one pin claim cannot be duplicated across
-// two readers racing the same core.  It is neither default-constructible
-// nor constructible from a value: both of those were open doors, and
-// both are closed.  Moving one transfers the claim rather than copying
-// it, which is why the move operations stay public.
+// A pin holds for one thread, and only until that thread pins again.  So
+// the proof names one pin event.  Each successful sched_setaffinity
+// through this header takes the next value of one count for the process,
+// and records it as the pin event in force on the calling thread.  The
+// proof keeps the value, and is_in_force() compares it with the value in
+// force on the thread that asks.  A proof moved to another thread, or
+// kept after its thread pinned again, is not in force, and a consumer
+// that reads the counter of one core refuses it.  The proof can move, and
+// a move takes the event from the source, so one claim is never held
+// two times.  It is neither default-constructible nor constructible from
+// a value: both of those were open doors, and both are closed.
+//
+// A pin that does not go through this header is not recorded.  A raw
+// sched_setaffinity call, a call from another thread that names this
+// thread, and a taskset from outside the process move the thread with no
+// record, and a proof then stays in force for a mask the thread no
+// longer has.  The syscall-capability guard keeps raw calls out of the
+// tree, so the first case needs an allowlist line.
 //
 // Posture is a parameter of the mint rather than a fact the syscall
 // reports, because the syscall reports only success.  Asking for
@@ -49,6 +62,7 @@
 
 #include <sched.h>
 
+#include <atomic>
 #include <cerrno>
 #include <concepts>
 #include <cstddef>
@@ -97,20 +111,51 @@ CRUCIBLE_INLINE void fill_cpu_set(AffinityMask mask, ::cpu_set_t& set) noexcept 
     }
 }
 
-// Pins the calling thread and reports the failure.  Returns 0 on
-// success, the errno otherwise.
+// The pin event in force on a thread that never pinned through this
+// header, and the event of a proof that a move emptied.  The count
+// starts at no_pin_event and each event adds one, so no event is
+// no_pin_event.  At one event each nanosecond, the count gets to
+// released_pin_event after more than 500 years, so no event of a process
+// is released_pin_event.  A thread never has released_pin_event in force,
+// and a proof never names no_pin_event.  So one comparison tells an emptied
+// proof, a proof of another thread and a stale proof from a proof in
+// force.
+inline constexpr std::uint64_t no_pin_event = 0;
+inline constexpr std::uint64_t released_pin_event = ~std::uint64_t{0};
+
+// One count for the process, whatever shared library pins a thread.  Two
+// copies of the count, one in each library, could give two threads one
+// event value, and a proof of one thread would then be in force on the
+// other.
+CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<std::uint64_t> pin_event_count{no_pin_event};
+
+// The pin event in force on the calling thread.
+CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_pin_event = no_pin_event;
+
+// Sets the affinity of the calling thread to the set, and records a new
+// pin event.  Returns the event, or the errno of a failed call.  A failed
+// call leaves the affinity as it was, so the event in force stays.
 //
-// This helper is reachable, and that is deliberate: calling it pins the
-// thread and hands back an int.  It mints nothing.  The proof is built
-// by mint_affinity, on this helper's success, and nowhere else.
-[[nodiscard]] inline int pin_calling_thread(AffinityMask mask) noexcept {
+// Each change of affinity in the new tree comes through this function,
+// so a proof of an earlier pin on this thread stops being in force.  The
+// function mints nothing.  The proof is built by mint_affinity, on its
+// success, and nowhere else.
+[[nodiscard]] inline std::expected<std::uint64_t, int> set_calling_thread_affinity(::cpu_set_t const& set) noexcept {
+    if (::sched_setaffinity(0, sizeof(set), &set) != 0)
+        [[unlikely]] {  // SYSCALL-CAP-OK: detail helper for mint_affinity and apply_affinity_to_cpu ctx-gates (CtxFitsAffinityMint, CtxFitsRuntimeAffinity)
+        return std::unexpected{errno};
+    }
+    const std::uint64_t event = pin_event_count.fetch_add(1, std::memory_order_acq_rel) + 1;
+    tls_pin_event = event;
+    return event;
+}
+
+// Pins the calling thread to the mask.  Returns the new pin event, or
+// the errno of a failed call.
+[[nodiscard]] inline std::expected<std::uint64_t, int> pin_calling_thread(AffinityMask mask) noexcept {
     ::cpu_set_t set;
     fill_cpu_set(mask, set);
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: detail helper for mint_affinity ctx-gate (CtxFitsAffinityMint)
-        return errno;
-    }
-    return 0;
+    return set_calling_thread_affinity(set);
 }
 
 }  // namespace detail
@@ -176,14 +221,17 @@ public:
 
 private:
     Unit value_{};
+    std::uint64_t pin_event_ = detail::released_pin_event;
 
-    // The only constructor that builds a proof, and it is private.
-    constexpr explicit CpuPinned(Unit value) noexcept(std::is_nothrow_move_constructible_v<Unit>)
-        : value_{std::move(value)} {}
+    // The only constructor that builds a proof, and it is private.  The
+    // event is the one that set_calling_thread_affinity returned for this
+    // same mask.
+    constexpr CpuPinned(Unit value, std::uint64_t pin_event) noexcept(std::is_nothrow_move_constructible_v<Unit>)
+        : value_{std::move(value)}, pin_event_{pin_event} {}
 
     // The sole friend, and the whole gate.  It is reached only after
-    // detail::pin_calling_thread returned 0 for this same Mask, so a
-    // caller holding a CpuPinned has pinned the thread it runs on.
+    // detail::pin_calling_thread returned a pin event for this same Mask,
+    // so a proof in force names a pin of the thread that asks.
     //
     // Keep this friend a function that PERFORMS AND CHECKS the syscall.
     // A friend that merely forwards an argument would prove nothing, and
@@ -210,11 +258,22 @@ public:
     // move still leaves the class trivially copyable, and then
     // std::bit_cast<CpuPinned<...>>(0) builds a pin with no syscall.  A
     // user-provided move makes the class neither trivially copyable nor
-    // an implicit-lifetime type, at no cost once it is inlined.
+    // an implicit-lifetime type.  The move takes the event from the
+    // source, so the source is not in force after the move.
     constexpr CpuPinned(CpuPinned&& other) noexcept(std::is_nothrow_move_constructible_v<Unit>)
-        : value_{std::move(other.value_)} {}
-    constexpr CpuPinned& operator=(CpuPinned&&) = default;
+        : value_{std::move(other.value_)}, pin_event_{std::exchange(other.pin_event_, detail::released_pin_event)} {}
+    constexpr CpuPinned& operator=(CpuPinned&& other) noexcept(std::is_nothrow_move_assignable_v<Unit>) {
+        value_ = std::move(other.value_);
+        pin_event_ = std::exchange(other.pin_event_, detail::released_pin_event);
+        return *this;
+    }
     ~CpuPinned() = default;
+
+    // True when the pin event of this proof is the one in force on the
+    // calling thread.  A proof of another thread, a proof whose thread
+    // pinned again and a proof that a move emptied give false.  The cost
+    // is one load of a thread-local value and one comparison.
+    [[nodiscard]] bool is_in_force() const noexcept { return pin_event_ == detail::tls_pin_event; }
 
     [[nodiscard]] constexpr Unit const& peek() const& noexcept { return value_; }
     [[nodiscard]] constexpr Unit& peek_mut() & noexcept { return value_; }
@@ -226,9 +285,11 @@ public:
     static constexpr bool meets_posture = static_cast<std::uint8_t>(Posture) >= static_cast<std::uint8_t>(Required);
 };
 
-static_assert(sizeof(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>) == sizeof(int));
+static_assert(sizeof(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>)
+                  == 2 * sizeof(std::uint64_t),
+              "a pin proof holds its unit payload and its pin event, and nothing more");
 static_assert(sizeof(CpuPinned<AffinityMask::single(7), PinningPosture::PinnedExplicit, unsigned long long>)
-              == sizeof(unsigned long long));
+              == sizeof(unsigned long long) + sizeof(std::uint64_t));
 static_assert(!std::is_copy_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
               "CpuPinned MUST be move-only — a pin proof cannot be duplicated.");
 static_assert(std::is_move_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>);

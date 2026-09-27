@@ -17,6 +17,17 @@
 // inequality at compile time rather than taking an EINVAL at run time.
 // Every other policy leaves the three budgets zero.
 //
+// A value of this type is a proof: fixy::sched::mint_scheduler_policy
+// returns one only after the kernel set the policy for the calling
+// thread.  So the one constructor takes the key of
+// fixy::sched::SchedProofDoor in fixy/os/Sched.h, and only that door
+// builds the key, after the syscall returned.  A public constructor let
+// any code claim a real-time policy that no syscall set.  The proof is
+// neither copyable nor movable, because the policy belongs to the thread
+// that set it, and a copy or a move could carry the claim to another
+// thread.  The pool rule, runnable_on, is a fact about the type, and a
+// caller reads it without an object.
+//
 // Old spelling: include/crucible/safety/_SchedClass.h.
 
 #include <fixy/GradedFacade.h>
@@ -24,9 +35,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/SchedulerPolicyLattice.h>
 
-#include <concepts>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -34,6 +43,10 @@ namespace fixy {
 
 using ::foundation::algebra::lattices::SchedulerPolicyLattice;
 using SchedulerPolicy_v = ::foundation::algebra::lattices::SchedulerPolicy;
+
+namespace sched {
+class SchedProofDoor;
+}  // namespace sched
 
 template <SchedulerPolicy_v Policy, typename T, std::uint64_t RuntimeNs = 0, std::uint64_t DeadlineNs = 0,
           std::uint64_t PeriodNs = 0>
@@ -68,53 +81,26 @@ private:
     using key_ = ::foundation::algebra::grade_key<SchedClass>;
 
 public:
-    constexpr SchedClass() noexcept(std::is_nothrow_default_constructible_v<T>)
-        : impl_{key_{}, T{}, typename lattice_type::element_type{}} {}
-
-    constexpr explicit SchedClass(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
+    // The one constructor.  Only the members of SchedProofDoor build the
+    // key, so only mint_scheduler_policy, after its syscall, builds a
+    // proof.
+    constexpr SchedClass(::foundation::algebra::grade_key<::fixy::sched::SchedProofDoor> const&,
+                         T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{key_{}, std::move(value), typename lattice_type::element_type{}} {}
 
-    template <typename... Args>
-        requires std::is_constructible_v<T, Args...>
-    constexpr explicit SchedClass(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
-                                                                            && std::is_nothrow_move_constructible_v<T>)
-        : impl_{key_{}, T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
-
-    constexpr SchedClass(const SchedClass&) = default;
-    constexpr SchedClass(SchedClass&&) = default;
-    constexpr SchedClass& operator=(const SchedClass&) = default;
-    constexpr SchedClass& operator=(SchedClass&&) = default;
+    SchedClass(const SchedClass&) = delete("a scheduling policy belongs to the thread that set it, and a copy could "
+                                           "reach another thread");
+    SchedClass(SchedClass&&) = delete("a scheduling policy belongs to the thread that set it, and a move could carry "
+                                      "the claim to another thread");
+    SchedClass& operator=(const SchedClass&) = delete("a scheduling-class proof is not assignable");
+    SchedClass& operator=(SchedClass&&) = delete("a scheduling-class proof is not assignable");
     ~SchedClass() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(SchedClass const& a,
-                                                   SchedClass const& b) noexcept(noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) {
-            { x == y } -> std::convertible_to<bool>;
-        }
-    {
-        return a.peek() == b.peek();
-    }
-
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
-    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return std::move(impl_).consume();
-    }
-    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(key_{}); }
-
-    constexpr void swap(SchedClass& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
-    friend constexpr void swap(SchedClass& a, SchedClass& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     template <SchedulerPolicy_v PoolPolicy>
     static constexpr bool runnable_on = SchedulerPolicyLattice::leq(Policy, PoolPolicy);
 };
-
-template <SchedulerPolicy_v Policy, typename T, std::uint64_t RuntimeNs = 0, std::uint64_t DeadlineNs = 0,
-          std::uint64_t PeriodNs = 0, typename... Args>
-    requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr SchedClass<Policy, T, RuntimeNs, DeadlineNs, PeriodNs>
-mint_sched_class(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
-    return SchedClass<Policy, T, RuntimeNs, DeadlineNs, PeriodNs>{std::in_place, std::forward<Args>(args)...};
-}
 
 namespace sched_class {
 template <typename T>
@@ -159,17 +145,17 @@ using RrInt = SchedClass<SchedulerPolicy_v::RoundRobin, int>;
 using IdleInt = SchedClass<SchedulerPolicy_v::Idle, int>;
 using DeadlineInt = SchedClass<SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>;
 
-inline constexpr FifoInt f_default{};
-static_assert(f_default.peek() == 0);
 static_assert(FifoInt::policy == SchedulerPolicy_v::Fifo);
-
-inline constexpr FifoInt f_explicit{42};
-static_assert(f_explicit.peek() == 42);
-
-inline constexpr OtherInt o_in_place{std::in_place, 7};
-static_assert(o_in_place.peek() == 7);
-
 static_assert(FifoInt::modality == ::foundation::algebra::ModalityKind::Absolute);
+
+// The doors that let any code build a proof are closed.  Each cell names
+// a route that built one with no syscall.
+static_assert(!std::is_default_constructible_v<FifoInt>);
+static_assert(!std::is_constructible_v<FifoInt, int>);
+static_assert(!std::is_constructible_v<FifoInt, std::in_place_t, int>);
+static_assert(!std::is_copy_constructible_v<FifoInt> && !std::is_move_constructible_v<FifoInt>);
+static_assert(!std::is_implicit_lifetime_v<FifoInt> && !std::is_aggregate_v<FifoInt>,
+              "std::start_lifetime_as and aggregate initialization must not build a scheduling-class proof");
 
 static_assert(DeadlineInt::runtime_ns == 5000);
 static_assert(DeadlineInt::deadline_ns == 10000);
@@ -207,27 +193,6 @@ static_assert(!std::is_same_v<DeadlineInt, SchedClass<SchedulerPolicy_v::Deadlin
 static_assert(FifoInt::lattice_name() == "SchedulerPolicyLattice::At<Fifo>");
 static_assert(OtherInt::lattice_name() == "SchedulerPolicyLattice::At<Other>");
 static_assert(FifoInt::value_type_name().ends_with("int"));
-
-[[nodiscard]] consteval bool swap_exchanges_within_same_policy() noexcept {
-    FifoInt a{10};
-    FifoInt b{20};
-    a.swap(b);
-    return a.peek() == 20 && b.peek() == 10;
-}
-static_assert(swap_exchanges_within_same_policy());
-
-[[nodiscard]] consteval bool equality_compares_value_bytes() noexcept {
-    FifoInt a{42};
-    FifoInt b{42};
-    FifoInt c{43};
-    return (a == b) && !(a == c);
-}
-static_assert(equality_compares_value_bytes());
-
-inline constexpr auto minted_fifo = mint_sched_class<SchedulerPolicy_v::Fifo, int>(99);
-static_assert(minted_fifo.peek() == 99 && minted_fifo.policy == SchedulerPolicy_v::Fifo);
-inline constexpr auto minted_dl = mint_sched_class<SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>(7);
-static_assert(minted_dl.peek() == 7 && minted_dl.deadline_ns == 10000);
 
 template <typename Task, SchedulerPolicy_v PoolPolicy>
 concept hostable_on = Task::template runnable_on<PoolPolicy>;
