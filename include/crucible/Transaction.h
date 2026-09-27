@@ -23,8 +23,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
+#include <system_error>
 #include <type_traits>
 
 namespace crucible {
@@ -59,9 +61,10 @@ struct Transaction {
     ContentHash content_hash;  // zero until the transaction commits
     MerkleHash merkle_root;  // zero until the transaction commits
     ArenaRegion region = ::fixy::mint_tagged<::fixy::tags::source::Arena, RegionNode*>(nullptr);
-    // Empty until the log stamps the transaction.  Only a clock reader
-    // builds a reading, so a slot that the log never claimed holds none,
-    // and no default value can claim a time that no clock returned.
+    // Empty until the log stamps the transaction, and empty after a stamp
+    // whose clock read failed.  Only a clock reader builds a reading, so a
+    // slot that the log never claimed holds none, and no default value can
+    // claim a time that no clock returned.
     std::optional<Timestamp> ts_ns;
     TxStatus status = TxStatus::RECORDING;
     uint8_t pad[7]{};
@@ -75,6 +78,20 @@ static_assert(std::is_same_v<decltype(std::declval<Transaction>().ts_ns), std::o
               "a transaction timestamp must carry its monotonic-clock provenance");
 static_assert(!std::is_trivially_copyable_v<Transaction>,
               "a transaction must not be built from bytes, because its timestamp claims a clock read");
+
+// Stores a clock reading in a transaction.  A failed read leaves the
+// transaction with no reading: no value stands for a failed read, and a
+// reading of an earlier event does not stay to claim the time of this
+// one.
+inline void stamp_transaction(Transaction& tx,
+                              std::expected<Transaction::Timestamp, std::error_code> const& reading) noexcept {
+    if (reading) {
+        tx.ts_ns = *reading;
+    } else {
+        tx.ts_ns.reset();
+    }
+    CRUCIBLE_POST(true, tx.ts_ns.has_value() == reading.has_value());
+}
 
 // A proof that the caller is the one thread that owns some state. It is
 // empty, so it costs nothing at a call. It cannot be copied or moved, so a
@@ -140,13 +157,14 @@ public:
         // Set rather than assigned, so a later edit cannot reintroduce a write
         // that goes backwards.
         tx->step_id.advance(step_id);
-        tx->ts_ns = clock_.read();
+        stamp_transaction(*tx, clock_.read());
         // Reordering the claim and the reset would return a pointer into a
-        // slot still holding the previous transaction.
+        // slot still holding the previous transaction.  A failed clock read
+        // leaves the timestamp empty, so the postcondition of
+        // stamp_transaction states the timestamp, and none here does.
         CRUCIBLE_POST(tx, tx != nullptr);
         CRUCIBLE_POST(tx, tx->status == TxStatus::RECORDING);
         CRUCIBLE_POST(tx, tx->step_id.get() == step_id);
-        CRUCIBLE_POST(tx, tx->ts_ns.has_value());
         return tx;
     }
 
@@ -172,7 +190,7 @@ public:
         tx->content_hash = content_hash;
         tx->merkle_root = merkle_root;
         tx->status = TxStatus::COMMITTED;
-        tx->ts_ns = clock_.read();
+        stamp_transaction(*tx, clock_.read());
         // Dropping any one of these assignments leaves the field at the value
         // the slot was reset to, which reads as an uncommitted transaction.
         CRUCIBLE_POST(true, tx->status == TxStatus::COMMITTED);
@@ -193,12 +211,12 @@ public:
         Transaction* prev = nullptr;
         if (active_tx_.value() != nullptr) {
             active_tx_.value()->status = TxStatus::SUPERSEDED;
-            active_tx_.value()->ts_ns = clock_.read();
+            stamp_transaction(*active_tx_.value(), clock_.read());
             prev = active_tx_.value();
         }
 
         tx->status = TxStatus::ACTIVE;
-        tx->ts_ns = clock_.read();
+        stamp_transaction(*tx, clock_.read());
         active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring>(tx);
         // The displaced transaction must end up in the superseded state, since
         // that is what a rollback searches for.
@@ -221,10 +239,10 @@ public:
 
         if (active_tx_.value() != nullptr) {
             active_tx_.value()->status = TxStatus::ROLLED_BACK;
-            active_tx_.value()->ts_ns = clock_.read();
+            stamp_transaction(*active_tx_.value(), clock_.read());
         }
         prev->status = TxStatus::ACTIVE;
-        prev->ts_ns = clock_.read();
+        stamp_transaction(*prev, clock_.read());
         active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring>(prev);
         return true;
     }
@@ -249,8 +267,9 @@ public:
     }
 
 private:
-    static_assert(std::is_same_v<::fixy::time::MonotonicClock::result_type, Transaction::Timestamp>,
-                  "the log's clock reader must return the reading a transaction stores");
+    static_assert(std::is_same_v<decltype(std::declval<::fixy::time::MonotonicClock const&>().read()),
+                                 std::expected<Transaction::Timestamp, std::error_code>>,
+                  "the log's clock reader must return the reading a transaction stores, or the error of a failed read");
 
     // The live-slot pointer is not part of the ring: the ring's own cursor
     // says where the next write goes, and this says which past slot is

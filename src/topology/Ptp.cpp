@@ -28,7 +28,7 @@ namespace {
 }
 
 [[nodiscard]] std::expected<PtpTimestampNs, PtpError> timestamp_from_timespec(timespec const& ts) noexcept {
-    auto const nanos = ::fixy::time::ptp_nanos_from_timespec(ts);
+    auto const nanos = ::fixy::time::nanos_from_timespec(ts);
     if (!nanos) {
         return std::unexpected(timestamp_error(nanos.error()));
     }

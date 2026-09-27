@@ -4,6 +4,8 @@
 #include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
+#include <expected>
+#include <system_error>
 #include <type_traits>
 
 namespace {
@@ -186,6 +188,22 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
     // The loop ends at 32, so the last transaction is the active one.
     assert(log.active(owner) != nullptr);
     assert(log.active(owner)->step_id.get() == 32);
+
+    // A failed clock read leaves the transaction with no reading.  The
+    // result of a failed read stands in for a clock that fails, because a
+    // working clock cannot be made to fail here.  The stamp before it is a
+    // real reading, so the test shows that a failed read clears it rather
+    // than keeping a reading of an earlier event.
+    {
+        crucible::Transaction stamped{};
+        const auto reader = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
+        crucible::stamp_transaction(stamped, reader.read());
+        assert(stamped.ts_ns.has_value());
+        const std::expected<crucible::Transaction::Timestamp, std::error_code> failed_read{
+            std::unexpect, std::make_error_code(std::errc::io_error)};
+        crucible::stamp_transaction(stamped, failed_read);
+        assert(!stamped.ts_ns.has_value() && "a failed clock read must leave the timestamp empty");
+    }
 
     std::printf("test_transaction: all tests passed\n");
     return 0;

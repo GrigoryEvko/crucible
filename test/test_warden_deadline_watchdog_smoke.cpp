@@ -1,16 +1,22 @@
-// Every watchdog built below is given no observation source, which is
-// how it is constructed in a unit test and on a machine without the
-// kernel support.  In that configuration it must report that it has
-// no signal, rather than reporting health it cannot have measured.
+// Each watchdog built below but one is given no observation source,
+// which is how it is constructed in a unit test and on a machine without
+// the kernel support.  In that configuration it must report that it has
+// no signal, rather than reporting health it cannot have measured.  The
+// case of a failed clock read also loads the scheduler source where the
+// host lets it.
 
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <crucible/warden/Policy.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/ClockSource.h>
+#include <fixy/os/Time.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <expected>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -207,6 +213,51 @@ int main() {
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u) {
             std::fprintf(stderr, "reset() should zero diagnostics\n");
             ++failures;
+        }
+    }
+
+    // A failed read of the boot clock is no signal.  The result of a
+    // failed read stands in for a clock that fails, because a working clock
+    // cannot be made to fail here.  A failed read has no value, so no zero
+    // or other value stands for it.
+    {
+        const std::expected<::fixy::BootClockBytes<uint64_t>, std::error_code> failed_read{
+            std::unexpect, std::make_error_code(std::errc::io_error)};
+        Policy policy = Policy::production();
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        if (watchdog.observe_at(runner, failed_read) != WatchdogVerdict::InsufficientData) {
+            std::fprintf(stderr, "a failed clock read must give InsufficientData\n");
+            ++failures;
+        }
+
+        // With a scheduler source, a real reading opens the window and a
+        // failed read changes nothing.  The source needs a BPF load, so a
+        // host without the capability skips this part.
+        const ::crucible::perf::Senses senses = ::crucible::perf::Senses::load_subset(
+            ::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ::crucible::perf::SensesMask{.sched_switch = true});
+        if (senses.sched_switch() == nullptr) {
+            std::fprintf(stderr, "[skipped] no sched_switch source on this host\n");
+        } else {
+            DeadlineWatchdog sensing = mint_deadline_watchdog(startup, &senses, policy);
+            const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(runner);
+            const auto reading = boot_clock.read();
+            if (!reading) {
+                std::fprintf(stderr, "a read of the boot clock failed\n");
+                ++failures;
+            } else {
+                (void)sensing.observe_at(runner, reading);
+                const uint64_t window_started = sensing.window_started_ns();
+                const uint64_t latest = sensing.latest_count();
+                if (window_started != reading->peek()) {
+                    std::fprintf(stderr, "a real reading did not open the window\n");
+                    ++failures;
+                }
+                if (sensing.observe_at(runner, failed_read) != WatchdogVerdict::InsufficientData
+                    || sensing.window_started_ns() != window_started || sensing.latest_count() != latest) {
+                    std::fprintf(stderr, "a failed clock read changed the state of the watchdog\n");
+                    ++failures;
+                }
+            }
         }
     }
 

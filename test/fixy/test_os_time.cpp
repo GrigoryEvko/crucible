@@ -56,8 +56,14 @@ using BgWitness = fixy::BgDrainCtx;
     InitWitness init{eff::testing::init()};
     auto boot_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Boot>(init);
 
-    const BootU64 earlier = boot_reader.read();
-    const BootU64 later = boot_reader.read();
+    const auto earlier_read = boot_reader.read();
+    const auto later_read = boot_reader.read();
+    if (!earlier_read || !later_read) {
+        std::fprintf(stderr, "a read of the boot clock failed\n");
+        return 1;
+    }
+    const BootU64 earlier = *earlier_read;
+    const BootU64 later = *later_read;
     if (later.peek() < earlier.peek()) {
         std::fprintf(stderr, "two reads through one clamped boot reader went backwards\n");
         return 1;
@@ -100,8 +106,8 @@ using BgWitness = fixy::BgDrainCtx;
     // stays nameable for the gates that read it.  The PTP source has a
     // reader of its own, and a case below exercises it.
     auto realtime_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(init);
-    const fixy::RealtimeClockBytes<std::uint64_t> realtime = realtime_reader.read();
-    if (realtime.peek() == 0) {
+    const auto realtime = realtime_reader.read();
+    if (!realtime || realtime->peek() == 0) {
         std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
         return 1;
     }
@@ -115,7 +121,7 @@ using BgWitness = fixy::BgDrainCtx;
 
     auto boot_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Boot>(init);
     const auto now = boot_reader.read();
-    if (now.peek() == 0) {
+    if (!now || now->peek() == 0) {
         std::fprintf(stderr, "the boot clock read zero, which a running system never does\n");
         return 1;
     }
@@ -161,9 +167,9 @@ void ignore_the_signal(int) noexcept {}
 
     auto sleeper = fixy::time::mint_bounded_sleep<sleep_nanos>(blocking);
     auto clock = fixy::time::mint_clock_reader<fixy::ClockSource_v::Monotonic>(bg);
-    const std::uint64_t before = clock.read().peek();
+    const auto before = clock.read();
     const auto slept = sleeper.sleep_for(sleep_nanos);
-    const std::uint64_t after = clock.read().peek();
+    const auto after = clock.read();
     is_sleep_done.store(true, std::memory_order_release);
     signaller.join();
 
@@ -171,9 +177,13 @@ void ignore_the_signal(int) noexcept {}
         std::fprintf(stderr, "an interrupted sleep gave an error: %s\n", slept.error().message().c_str());
         return 1;
     }
-    if (after - before < sleep_nanos) {
+    if (!before || !after) {
+        std::fprintf(stderr, "a read of the monotonic clock failed around the sleep\n");
+        return 1;
+    }
+    if (after->peek() - before->peek() < sleep_nanos) {
         std::fprintf(stderr, "a signal cut a 50 ms sleep to %llu ns\n",
-                     static_cast<unsigned long long>(after - before));
+                     static_cast<unsigned long long>(after->peek() - before->peek()));
         return 1;
     }
     return 0;
@@ -225,9 +235,8 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
 
 // A pin belongs to the thread that earned it.  A pin earned on a helper
 // thread and moved to this one names a pin of the helper, and the TSC
-// mint must refuse it.  Before the pin carried its event, the mint took
-// it, and this thread then read the counter of a core it was not pinned
-// to.
+// mint must refuse it, because a reader over it reads the counter of a
+// core that this thread is not pinned to.
 [[nodiscard]] int pin_of_another_thread_is_refused() {
     BgWitness bg{eff::testing::bg()};
     InitWitness init{eff::testing::init()};
@@ -325,11 +334,16 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
 
     const auto first = monotonic.read();
     const auto second = monotonic.read();
-    if (second.peek() < first.peek()) {
+    if (!first || !second) {
+        std::fprintf(stderr, "a read of the monotonic clock failed\n");
+        return 1;
+    }
+    if (second->peek() < first->peek()) {
         std::fprintf(stderr, "the monotonic reader returned a lower value on its second read\n");
         return 1;
     }
-    if (realtime.read().peek() == 0) {
+    const auto wall = realtime.read();
+    if (!wall || wall->peek() == 0) {
         std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
         return 1;
     }
@@ -404,23 +418,25 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
 
     long seconds = 2;
     long nanos = 5;
-    const auto good = fixy::time::ptp_nanos_from_timespec(std::timespec{seconds, nanos});
+    const auto good = fixy::time::nanos_from_timespec(std::timespec{seconds, nanos});
     if (!good || *good != 2000000005ULL) {
-        std::fprintf(stderr, "the PTP conversion changed a valid reading\n");
+        std::fprintf(stderr, "the conversion changed a valid reading\n");
         return 1;
     }
+    // A negative second field is also the form of a Realtime reading
+    // before 1970, which the readers refuse rather than wrap.
     for (std::timespec refused : {std::timespec{-seconds, 0}, std::timespec{0, -nanos},
                                   std::timespec{0, 1000000000L}}) {
-        const auto result = fixy::time::ptp_nanos_from_timespec(refused);
+        const auto result = fixy::time::nanos_from_timespec(refused);
         if (result || result.error() != std::errc::result_out_of_range) {
-            std::fprintf(stderr, "the PTP conversion accepted a negative or out-of-range timespec\n");
+            std::fprintf(stderr, "the conversion accepted a negative or out-of-range timespec\n");
             return 1;
         }
     }
-    const auto overflow = fixy::time::ptp_nanos_from_timespec(
+    const auto overflow = fixy::time::nanos_from_timespec(
         std::timespec{std::numeric_limits<std::time_t>::max(), 999999999L});
     if (overflow || overflow.error() != std::errc::value_too_large) {
-        std::fprintf(stderr, "the PTP conversion did not refuse a count past 64 bits\n");
+        std::fprintf(stderr, "the conversion did not refuse a count past 64 bits\n");
         return 1;
     }
     return 0;

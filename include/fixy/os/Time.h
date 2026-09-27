@@ -155,16 +155,17 @@ inline constexpr unsigned int ptp_clockfd_tag = 3u;
 
 }  // namespace detail
 
-// The nanosecond count of one PTP reading, or the reason there is none.
+// The nanosecond count of one clock reading, or the reason there is none.
 // The function refuses a negative second or nanosecond field, and a
-// nanosecond field of a full second or more.  It clamps no value into
-// range, because a stamp must hold what the clock returned.  It refuses a
-// count that does not fit in 64 bits as an overflow.  It is a pure
-// function of the timespec, and a test can give it the values that no
-// working clock returns.  The PHC reader converts each read with it, and
-// so does a caller that reads a hardware timestamp from a socket control
-// message.
-[[nodiscard]] constexpr std::expected<std::uint64_t, std::error_code> ptp_nanos_from_timespec(
+// nanosecond field of a full second or more.  A Realtime reading before
+// 1970 has a negative second field, and it is refused.  The function
+// clamps no value into range, because a stamp must hold what the clock
+// returned.  It refuses a count that does not fit in 64 bits as an
+// overflow.  It is a pure function of the timespec, and a test can give
+// it the values that no working clock returns.  Each reader converts
+// each read with it, and so does a caller that reads a hardware timestamp
+// from a socket control message.
+[[nodiscard]] constexpr std::expected<std::uint64_t, std::error_code> nanos_from_timespec(
     std::timespec const& reading) noexcept {
     constexpr std::uint64_t nanos_per_second = 1000000000ULL;
     if (reading.tv_sec < 0 || reading.tv_nsec < 0 || reading.tv_nsec >= static_cast<long>(nanos_per_second)) {
@@ -178,6 +179,23 @@ inline constexpr unsigned int ptp_clockfd_tag = 3u;
     }
     return seconds * nanos_per_second + nanos;
 }
+
+namespace detail {
+
+// Reads one clock, and converts the reading with nanos_from_timespec.  A
+// failed call gives its errno, and a value that the count cannot hold
+// gives the error of the conversion.  ClockReader::read and
+// PtpClockReader::read are its callers, and a mint gate keeps each reader
+// off the replay-bound foreground path.
+[[nodiscard]] inline std::expected<std::uint64_t, std::error_code> read_clock_nanos(::clockid_t clock) noexcept {
+    std::timespec now{};
+    if (::clock_gettime(clock, &now) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: detail helper of ClockReader::read and PtpClockReader::read, whose builders the CtxFitsClockReaderMint and CtxFitsPtpClockReaderMint gates admit
+        return std::unexpected{std::error_code{errno, std::system_category()}};
+    }
+    return nanos_from_timespec(now);
+}
+
+}  // namespace detail
 
 // A multi-core mask still lets the thread migrate, and the counter is
 // per-core, so only a single-core pin makes two reads comparable.
@@ -309,16 +327,17 @@ struct ClockReader final {
     static constexpr ClockSource_v source = Source;
     static constexpr bool is_clamped = is_non_decreasing(Source);
 
-    [[nodiscard]] result_type read() const noexcept {
-        std::timespec now{};
-        (void)::clock_gettime(clockid_for(Source), &now);
-        const std::uint64_t raw = static_cast<std::uint64_t>(now.tv_sec) * 1000000000ULL
-                                  + static_cast<std::uint64_t>(now.tv_nsec);
-        if constexpr (is_clamped) {
-            return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
-        } else {
-            return detail::clock_stamp_access::stamp<Source>(raw);
-        }
+    // A read that fails, or that returns a value the stamp cannot hold,
+    // gives an error and no reading.  The floor of a clamped reader does
+    // not move on a failed read.
+    [[nodiscard]] std::expected<result_type, std::error_code> read() const noexcept {
+        return detail::read_clock_nanos(clockid_for(Source)).transform([this](std::uint64_t raw) noexcept {
+            if constexpr (is_clamped) {
+                return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
+            } else {
+                return detail::clock_stamp_access::stamp<Source>(raw);
+            }
+        });
     }
 
     // The reader stays in the frame that minted it.  The gate of the mint
@@ -453,15 +472,10 @@ struct PtpClockReader final {
     ~PtpClockReader() = default;
 
     [[nodiscard]] std::expected<result_type, std::error_code> read() const noexcept {
-        std::timespec now{};
-        if (::clock_gettime(detail::ptp_clockid_from_fd(fd_.get()), &now) != 0) {  // SYSCALL-CAP-OK: PtpClockReader::read, sole builder mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
-            return std::unexpected{std::error_code{errno, std::system_category()}};
-        }
-        auto nanos = ptp_nanos_from_timespec(now);
-        if (!nanos) {
-            return std::unexpected{nanos.error()};
-        }
-        return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(*nanos);
+        return detail::read_clock_nanos(detail::ptp_clockid_from_fd(fd_.get()))
+            .transform([](std::uint64_t nanos) noexcept {
+                return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
+            });
     }
 
     // The capabilities of the clock, as PTP_CLOCK_GETCAPS2 reports them, or

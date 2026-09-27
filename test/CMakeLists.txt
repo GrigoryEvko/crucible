@@ -8337,7 +8337,7 @@ crucible_neg_compile_multi_test(neg_transaction_ts_ns_bare_u64_assign
   "neg_transaction_ts_ns_bare_u64_assign.cpp:18:32: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .uint64_t."
   "error: .constexpr fixy::ClockSource<Source, T>::ClockSource\\(T\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic; T = long unsigned int\\]. is private within this context")
 crucible_neg_compile_multi_test(neg_transaction_ts_ns_cross_source
-  "neg_transaction_ts_ns_cross_source.cpp:25:33: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Boot>::result_type."
+  "neg_transaction_ts_ns_cross_source.cpp:25:34: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>."
   "error: no matching function for call to .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>::ClockSource\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\).")
 
 # ─── WRAP-Cipher-3 #886 HS14 negative-compile fixtures ─────────────

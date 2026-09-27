@@ -43,6 +43,8 @@
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
+#include <expected>
+#include <system_error>
 #include <type_traits>
 
 namespace crucible::warden {
@@ -125,6 +127,19 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsDeadlineWatchdog<Ctx>
     [[nodiscard]] WatchdogVerdict observe(Ctx const& ctx) noexcept {
+        // The reader is new on each call, so its clamp never replaces a
+        // reading.
+        const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(ctx);
+        return observe_at(ctx, boot_clock.read());
+    }
+
+    // The same step, over a boot-clock reading that the caller took.  A
+    // failed read counts as no signal.  Only a reader builds a reading, so
+    // a caller cannot give a time that the boot clock never returned.
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsDeadlineWatchdog<Ctx>
+    [[nodiscard]] WatchdogVerdict observe_at(
+        Ctx const& /*ctx*/, std::expected<::fixy::BootClockBytes<uint64_t>, std::error_code> const& now) noexcept {
         // A budget of zero is the opt-out. A window of zero is also
         // treated as off: every elapsed-time test would pass trivially
         // and the verdict would come from an observation covering
@@ -145,15 +160,14 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
 
-        // The reader stamps its value with the boot clock.  When the
-        // clock read fails, the reader still stamps a value, and that
-        // value is zero.  The boot clock is never zero after boot and
-        // never goes back, so zero, or a value before the start of the
-        // window, is no reading and counts as no signal.  The reader is
-        // new on each call, so its clamp never replaces a reading.
-        const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(ctx);
-        const uint64_t now_ns = boot_clock.read().consume();
-        if (now_ns == 0 || now_ns < window_started_ns_) [[unlikely]] {
+        // A failed read gives no reading.  The boot clock never goes
+        // back, so a reading before the start of the window is a reading
+        // that the caller kept, and it counts as no signal as well.
+        if (!now) [[unlikely]] {
+            return WatchdogVerdict::InsufficientData;
+        }
+        const uint64_t now_ns = now->peek();
+        if (now_ns < window_started_ns_) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }
         const uint64_t count = sched->context_switches();
