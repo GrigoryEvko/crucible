@@ -724,6 +724,100 @@ struct node {
     return decompose(registry, type).is_registered;
 }
 
+// ── The members of a node ─────────────────────────────────────────────
+//
+// The fold reads a node from its template arguments.  A reader of a layer
+// can read a nested member of the node instead, such as `next`, and an
+// explicit specialization of a combinator can give that member a value
+// that the arguments do not give.  A member claim states the value that
+// the arguments give to one member: a type for an alias member, or a
+// reflected constant for a static data member.  members_agree checks each
+// claim and the direct bases of the node.  A specialization that agrees
+// with each claim is harmless, and it passes.
+//
+// A layer states its claims in one node reader: a function that is not a
+// template, so no program can specialize a claim away.  The reader also
+// names the children of the node that a reader of the layer can step to,
+// and first_disagreeing_node walks them.
+
+struct member_claim {
+    std::string_view name{};
+    std::meta::info value{};
+};
+
+struct node_members {
+    bool is_node = false;
+    std::vector<member_claim> claims{};
+    std::vector<std::meta::info> bases{};
+    std::vector<std::meta::info> children{};
+};
+
+using node_reader = node_members (*)(std::meta::info);
+
+// The member of `type` with this identifier, or the null reflection.  An
+// inherited member is not a member here.
+[[nodiscard]] consteval std::meta::info member_named(std::meta::info type, std::string_view name) {
+    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::unchecked())) {
+        if (std::meta::has_identifier(member) && std::meta::identifier_of(member) == name) return member;
+    }
+    return {};
+}
+
+// True when each claimed member of `type` exists with the claimed value,
+// and the direct bases of `type` are exactly `bases`, in order.  A type
+// that is only declared in this translation unit has no member that a
+// reader can read, so it agrees.  Complexity: linear in the members of
+// `type` for each claim.
+[[nodiscard]] consteval bool members_agree(std::meta::info type, const std::vector<member_claim>& claims,
+                                           const std::vector<std::meta::info>& bases) {
+    if (!std::meta::is_complete_type(type)) return true;
+    for (const member_claim& claim : claims) {
+        const std::meta::info member = member_named(type, claim.name);
+        if (member == std::meta::info{}) return false;
+        if (std::meta::is_type(claim.value)) {
+            if (!std::meta::is_type_alias(member) || std::meta::dealias(member) != std::meta::dealias(claim.value)) {
+                return false;
+            }
+        } else if (!std::meta::is_variable(member) || std::meta::constant_of(member) != claim.value) {
+            return false;
+        }
+    }
+    const std::vector<std::meta::info> actual = std::meta::bases_of(type, std::meta::access_context::unchecked());
+    if (actual.size() != bases.size()) return false;
+    for (std::size_t index = 0; index < bases.size(); ++index) {
+        if (std::meta::dealias(std::meta::type_of(actual[index])) != std::meta::dealias(bases[index])) return false;
+    }
+    return true;
+}
+
+// The first node of `type`, in the order of a depth-first walk over the
+// children that `read` names, whose members or bases disagree with its
+// arguments, or the null reflection.  A type that `read` does not know is
+// no node, so the walk stops there.  Complexity: linear in the nodes,
+// times their members.
+[[nodiscard]] consteval std::meta::info first_disagreeing_node(node_reader read, std::meta::info type) {
+    const std::meta::info node_type = std::meta::dealias(type);
+    const node_members view = read(node_type);
+    if (!view.is_node) return {};
+    if (!members_agree(node_type, view.claims, view.bases)) return node_type;
+    for (const std::meta::info child : view.children) {
+        const std::meta::info below = first_disagreeing_node(read, child);
+        if (below != std::meta::info{}) return below;
+    }
+    return {};
+}
+
+// The message of a node whose members disagree with its arguments.
+[[nodiscard]] consteval std::string_view disagreeing_message(std::string_view prefix, std::meta::info type) {
+    std::string text{prefix};
+    text += "the node ";
+    text += std::meta::display_string_of(type);
+    text += " has a nested member or a base that its template arguments do not give.  An explicit "
+            "specialization of a combinator must keep each member that a reader reads, or a handle would "
+            "step to a protocol that the fold never checked.";
+    return std::define_static_string(text);
+}
+
 // The type under every registered wrapper at the head of `type`.
 [[nodiscard]] consteval std::meta::info strip_wrappers(std::meta::info registry, std::meta::info type) {
     std::meta::info current = std::meta::dealias(type);
@@ -2911,6 +3005,43 @@ inline constexpr seal combinator_seal{.kind = ^^combinator, .count = 1};
 }  // namespace sealed_short
 static_assert(read_seal(^^sealed_short, ^^combinator).fault == seal_fault::count_differs,
               "a combinator outside the seal of its namespace is counted");
+
+// A member claim holds for a member that the arguments give, and it
+// fails for a lying member, a missing member, a member of the wrong kind
+// and a base that the claims do not name.
+template <class T, class K>
+struct Step {
+    using message_type = T;
+    using next = K;
+};
+template <>
+struct Step<int, Done> {
+    using message_type = int;
+    using next = Halt;
+};
+template <>
+struct Step<long, Done> {
+    using message_type = long;
+};
+template <>
+struct Step<char, Done> {
+    using message_type = char;
+    static constexpr int next = 0;
+};
+template <>
+struct Step<short, Done> : Step<int, Halt> {
+    using message_type = short;
+    using next = Done;
+};
+[[nodiscard]] consteval bool step_agrees(std::meta::info type) {
+    const auto arguments = std::meta::template_arguments_of(type);
+    return members_agree(type, {member_claim{"message_type", arguments[0]}, member_claim{"next", arguments[1]}}, {});
+}
+static_assert(step_agrees(^^Step<bool, Done>), "a member that the arguments give agrees");
+static_assert(!step_agrees(^^Step<int, Done>), "a member that names another type is refused");
+static_assert(!step_agrees(^^Step<long, Done>), "a missing member is refused");
+static_assert(!step_agrees(^^Step<char, Done>), "a data member where the claim names a type is refused");
+static_assert(!step_agrees(^^Step<short, Done>), "a base that no claim names is refused");
 
 }  // namespace detail::transition_self_test
 

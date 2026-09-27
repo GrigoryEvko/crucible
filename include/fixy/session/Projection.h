@@ -754,7 +754,15 @@ struct proj_walk<g::EnRouteChoice<g::Crashed<From>, To, Chosen, g::Branch<Ls, Ps
 
 template <typename G, typename R, typename Reliable>
 consteval auto project_under() {
-    if constexpr (g::role_in_v<R, g::crashed_roles_t<G>>) {
+    constexpr std::meta::info disagreeing =
+        ::foundation::algebra::transition::first_disagreeing_node(&g::detail::global_node_members, ^^G);
+    static_assert(disagreeing == std::meta::info{},
+                  ::foundation::algebra::transition::disagreeing_message(
+                      "fixy::session::diagnostic [Projection_Specialized_Global_Node]: ",
+                      disagreeing == std::meta::info{} ? ^^G : disagreeing));
+    if constexpr (disagreeing != std::meta::info{}) {
+        return std::type_identity<void>{};
+    } else if constexpr (g::role_in_v<R, g::crashed_roles_t<G>>) {
         return std::type_identity<NotProjectable<projection_failure::ProjectionOntoCrashedRole>>{};
     } else {
         return std::type_identity<typename proj_walk<G, R, Reliable>::type>{};

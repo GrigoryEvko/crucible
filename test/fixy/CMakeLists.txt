@@ -1847,6 +1847,18 @@ fixy_neg_compile_test(neg_sess_unregistered_combinator_in_dual
   "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
   "the combinator .*Teleport<int, fixy::session::End> has no registration")
 
+# A specialization of a combinator whose nested member disagrees with its
+# template arguments is refused at the mint, and a specialized global node
+# is refused at the projection.  test_session_node_members checks that the
+# node reader of each layer claims each member of each combinator.
+fixy_test(test_session_node_members)
+fixy_neg_compile_test(neg_sess_combinator_specialized_member
+  "fixy::session::diagnostic \\[Protocol_Specialized_Combinator\\]: the node fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> >"
+  "In instantiation of .consteval bool fixy::session::detail::require_agreeing_members\\(\\) \\[with P = fixy::session::Loop<")
+fixy_neg_compile_test(neg_sess_global_node_specialized
+  "fixy::session::diagnostic \\[Projection_Specialized_Global_Node\\]: the node fixy::session::global::Branch<neg_sess_global_node_specialized_types::Hello, int, fixy::session::global::End>"
+  "In instantiation of .consteval auto fixy::session::detail::proj::project_under\\(\\) \\[with G = fixy::session::global::Comm<")
+
 # Duality keeps the Sender note, so a client and a server that name
 # different roles for one choice are refused from either side.
 fixy_neg_compile_test(neg_sess_compatible_server_wrong_role

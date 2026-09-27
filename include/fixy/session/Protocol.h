@@ -58,6 +58,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <vector>
 #include <type_traits>
 #include <utility>
 
@@ -442,18 +443,118 @@ consteval void require_registered_head() {
                                              protocol_registry, ::foundation::algebra::transition::shape_of(^^P))));
 }
 
+// ── The members of a node ────────────────────────────────────────────
+//
+// A reader of this layer reads a nested member of a combinator, such as
+// `next` or `body`.  The member claims of a node state the value that
+// its template arguments give to each such member, so an explicit
+// specialization that lies about one is refused at the mint.  The list of
+// members is pinned by test/fixy/test_session_node_members.cpp, which
+// walks the members of each registered combinator.
+
+inline constexpr std::string_view specialized_prefix = "fixy::session::diagnostic [Protocol_Specialized_Combinator]: ";
+
+// The node reader of this layer.  It claims each member that a reader
+// reads: message_type and next of a Send or a Recv, delegated_proto and
+// next of a delegation head, body of a Loop, next of a Commit, protocol
+// and vendor_backend of a pin, which also derives from the protocol that
+// it pins, and branch_count, branches_tuple and the sender of an Offer of
+// a choice.  End, Continue, Stop, Roll and Abort hold no member.  The
+// children are each node that a handle can step to: the next step, each
+// branch of a choice (the crash branches among them), the body of a loop,
+// the protocol under a pin, and the protocol that a delegation head
+// carries.  The payload of a step is a child too, so the members of a
+// crash label and of a keyed message are claimed.
+[[nodiscard]] consteval ::foundation::algebra::transition::node_members session_node_members(std::meta::info type) {
+    using ::foundation::algebra::transition::member_claim;
+    ::foundation::algebra::transition::node_members result{};
+    // A payload with a rule of the registry is read by its members too:
+    // the peer of a crash label, and the peer, label and payload of a
+    // keyed message.
+    if (std::meta::is_type(type) && std::meta::has_template_arguments(type)) {
+        const std::meta::info family = std::meta::template_of(type);
+        const auto arguments = std::meta::template_arguments_of(type);
+        if (family == ^^Crash) {
+            result.is_node = true;
+            result.claims = {member_claim{"peer", arguments[0]}};
+            return result;
+        }
+        if (family == ^^PeerMsg) {
+            result.is_node = true;
+            result.claims = {member_claim{"peer", arguments[0]}, member_claim{"label", arguments[1]},
+                             member_claim{"payload", arguments[2]}};
+            return result;
+        }
+        if (family == ^^Labelled) {
+            result.is_node = true;
+            result.claims = {member_claim{"label", arguments[0]}, member_claim{"payload", arguments[1]}};
+            return result;
+        }
+    }
+    const ::foundation::algebra::transition::node view = ::foundation::algebra::transition::decompose(protocol_registry, type);
+    if (!view.is_registered) return result;
+    result.is_node = true;
+    const std::meta::info shape = view.entry.shape;
+    if (shape == ^^Send || shape == ^^Recv) {
+        result.claims = {member_claim{"message_type", view.payload}, member_claim{"next", view.next}};
+    } else if (shape == ^^Delegate || shape == ^^Accept) {
+        result.claims = {member_claim{"delegated_proto", view.payload}, member_claim{"next", view.next}};
+    } else if (shape == ^^Loop) {
+        result.claims = {member_claim{"body", view.next}};
+    } else if (shape == ^^Commit) {
+        result.claims = {member_claim{"next", view.next}};
+    } else if (shape == ^^VendorPinned) {
+        result.claims = {member_claim{"protocol", view.next}, member_claim{"vendor_backend", view.value}};
+        result.bases = {view.next};
+    } else if (shape == ^^Select || shape == ^^Offer) {
+        result.claims = {member_claim{"branch_count", std::meta::reflect_constant(view.branches.size())},
+                         member_claim{"branches_tuple", std::meta::substitute(^^std::tuple, view.branches)}};
+        if (shape == ^^Offer) {
+            const std::meta::info sender = view.annotation == std::meta::info{}
+                                               ? ^^AnonymousPeer
+                                               : std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
+            result.claims.push_back(member_claim{"sender", sender});
+        }
+    }
+    if (view.payload != std::meta::info{}) result.children.push_back(view.payload);
+    if (view.next != std::meta::info{}) result.children.push_back(view.next);
+    for (const std::meta::info branch : view.branches) result.children.push_back(branch);
+    return result;
+}
+
+// The refusal of a protocol with a node whose members lie.  The static
+// assertion stops the build, so no program that compiles reads the answer
+// after it.  The answer is true, so a gate that holds this clause adds no
+// second error to the refusal.
+template <typename P>
+consteval bool require_agreeing_members() {
+    constexpr std::meta::info disagreeing =
+        ::foundation::algebra::transition::first_disagreeing_node(&session_node_members, ^^P);
+    static_assert(disagreeing == std::meta::info{},
+                  ::foundation::algebra::transition::disagreeing_message(
+                      specialized_prefix, disagreeing == std::meta::info{} ? ^^P : disagreeing));
+    return true;
+}
+
 // The refusal of every walk that reads the children of a node.  Each node
 // of the spine of P must be registered, and the message names the first
-// one that is not.  A payload and a value are not nodes.  It returns
-// false after a refusal, so the walk stops there and adds no second error.
+// one that is not.  A payload and a value are not nodes.  It returns false
+// after that refusal, so the walk stops there and adds no second error.
+// Then each node must keep the members that its arguments give.  The walks
+// read the arguments, so a walk goes on after that refusal and adds no
+// error.
 template <typename P>
 consteval bool require_registered_spine() {
     constexpr std::meta::info missing = ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P);
     static_assert(missing == std::meta::info{},
                   ::foundation::algebra::transition::unregistered_message(
                       unregistered_prefix, missing == std::meta::info{} ? ^^P : missing));
-    if constexpr (missing == std::meta::info{}) require_registered_head<P>();
-    return missing == std::meta::info{};
+    if constexpr (missing == std::meta::info{}) {
+        require_registered_head<P>();
+        return require_agreeing_members<P>();
+    } else {
+        return false;
+    }
 }
 
 // The recognizer of every shape trait.  It is a function over
@@ -998,6 +1099,7 @@ consteval ::foundation::algebra::transition::well_formed_algebra::position posit
 template <typename P, typename LoopCtx>
 consteval bool well_formed_of() {
     require_registered_head<P>();
+    static_cast<void>(require_agreeing_members<P>());
     return ::foundation::algebra::transition::fold(
         protocol_registry, ^^P, ::foundation::algebra::transition::well_formed_algebra{protocol_registry},
         position_of<LoopCtx>());

@@ -96,12 +96,15 @@
 // (its Remark 4.2), so crashed_roles_t can be larger, and each check
 // that reads it is stricter than the paper.
 
+#include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <meta>
 #include <type_traits>
+#include <vector>
 
 namespace fixy::session::global {
 
@@ -157,6 +160,56 @@ template <typename Role>
 struct Crashed {
     using role = Role;
 };
+
+// ── The members of a global node ─────────────────────────────────────
+//
+// The walks of this header match the template arguments of a node, but a
+// projection reads nested members too, such as `next` of a Branch.  An
+// explicit specialization could give a member a value that the arguments
+// do not give, and the projection would then be wrong with no error.  The
+// node reader below claims each member from the arguments, as the reader
+// of fixy/session/Protocol.h does for a local node, and the projection
+// refuses a node whose members disagree.  The reader is a function that
+// is not a template, so no program can specialize a claim away.
+// test/fixy/test_session_node_members.cpp walks the members of each
+// combinator and fails when one has a member that no claim names.
+namespace detail {
+
+[[nodiscard]] consteval ::foundation::algebra::transition::node_members global_node_members(std::meta::info type) {
+    using ::foundation::algebra::transition::member_claim;
+    ::foundation::algebra::transition::node_members result{};
+    const std::meta::info shape = ::foundation::algebra::transition::shape_of(type);
+    result.is_node = type == ^^End || type == ^^Var;
+    if (result.is_node || shape == type) return result;
+    const auto arguments = std::meta::template_arguments_of(type);
+    result.is_node = true;
+    if (shape == ^^Rec) {
+        result.claims = {member_claim{"body", arguments[0]}};
+        result.children = {arguments[0]};
+    } else if (shape == ^^Branch) {
+        result.claims = {member_claim{"label", arguments[0]}, member_claim{"payload", arguments[1]},
+                         member_claim{"next", arguments[2]}};
+        result.children = {arguments[2]};
+    } else if (shape == ^^Comm || shape == ^^EnRouteChoice) {
+        // A Comm has two leading arguments and an en-route choice three,
+        // the chosen label the third.  The branches follow, and a role can
+        // be a Crashed node.
+        const std::ptrdiff_t first_branch = shape == ^^Comm ? 2 : 3;
+        result.children = {arguments.begin() + first_branch, arguments.end()};
+        result.claims = {member_claim{"from", arguments[0]}, member_claim{"to", arguments[1]},
+                         member_claim{"branch_count", std::meta::reflect_constant(result.children.size())}};
+        if (shape == ^^EnRouteChoice) result.claims.push_back(member_claim{"chosen", arguments[2]});
+        result.children.push_back(arguments[0]);
+        result.children.push_back(arguments[1]);
+    } else if (shape == ^^Crashed) {
+        result.claims = {member_claim{"role", arguments[0]}};
+    } else {
+        result.is_node = false;
+    }
+    return result;
+}
+
+}  // namespace detail
 
 // ── Role lists ───────────────────────────────────────────────────────
 //

@@ -518,10 +518,14 @@ concept checkpoint_compliant_v = detail::checkpoint::verdict_v<P1, P2> == Checkp
 // other endpoint runs PeerProto.  Each refusal is its own atomic
 // constraint, so the diagnostic names the verdict.  The last verdict
 // clause asks for Compliant, so a verdict added later and not listed
-// here still refuses.
+// here still refuses.  The runtime reads nested members of each protocol,
+// so the first two clauses refuse a node whose members disagree with its
+// arguments (fixy/session/Protocol.h).
 template <typename Proto, typename PeerProto>
 concept CheckpointSessionAdmissible =
-    detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::NotCheckpointShaped
+    ::fixy::session::detail::require_agreeing_members<Proto>()
+    && ::fixy::session::detail::require_agreeing_members<PeerProto>()
+    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::NotCheckpointShaped
     && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::Stuck
     && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelOutOfRange
     && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelsDisagree
