@@ -19,10 +19,16 @@
 // std::bit_cast and to a lifetime start over bytes for the reasons given in
 // StrongCounterLattice.h, and at the same cost, which is none.
 //
-// A larger clock claims a longer history, so up is the stronger claim, as
-// it is for a version counter.  A Graded over the pointwise order would let
-// weaken() claim a history nobody recorded, which is what the doors above
-// refuse.  A value graded by its clock uses the order dual (DualLattice.h).
+// The image of a clock names its axis: the lattice kind, the source path
+// of the tag and the width.  Each part is declared text or a number, and
+// each toolchain and each host calculates the same word.  A tag with no
+// source path, such as a class in an unnamed namespace, has no image door.
+//
+// A larger clock claims a longer history, and up is the stronger claim, as
+// it is for a version counter.  A Graded over the pointwise order can let
+// weaken() claim a history that no process recorded, and the doors above
+// refuse that.  A value graded by its clock uses the order dual
+// (DualLattice.h).
 //
 // Old spelling: include/crucible/algebra/lattices/_HappensBefore.h.  The
 // preconditions moved from native pre() clauses into the function bodies,
@@ -50,7 +56,12 @@
 
 namespace foundation::algebra::lattices {
 
-// Tag has no members and no effect on layout.  It exists so that clocks
+// A protocol whose clocks can cross a wire: the default protocol, a void
+// tag, or a tag with a source path (StrongCounterLattice.h).
+template <typename Tag>
+concept ClockWireProtocol = std::is_void_v<Tag> || WireTag<Tag>;
+
+// Tag has no data members and no effect on layout.  It exists so that clocks
 // belonging to different protocols are different types and cannot be joined
 // with one another by accident.
 template <std::size_t N, typename Tag = void>
@@ -207,44 +218,50 @@ struct HappensBeforeLattice {
         return successor_at(join(local, received), me);
     }
 
-    // The identity of the lattice in an image: the width and the tag both
-    // enter it, so a clock of another protocol or width does not read back
-    // as this one.
-    [[nodiscard]] static constexpr std::uint64_t image_axis() noexcept {
-        return ::foundation::reflect::stable_type_id<HappensBeforeLattice>;
+    // The identity of the lattice in an image: the kind, the protocol and
+    // the width.  A clock of another protocol or width does not read back
+    // as this one.  The default protocol has the empty path, which no tag
+    // can have.
+    [[nodiscard]] static constexpr std::uint64_t image_axis() noexcept
+        requires ClockWireProtocol<Tag>
+    {
+        return ::foundation::reflect::combine_ids(
+            detail::count_image::wire_axis("HappensBeforeLattice", protocol_path_()), std::uint64_t{N});
     }
 
-    [[nodiscard]] static constexpr image_type image_of(element_type clock) noexcept {
+    [[nodiscard]] static constexpr image_type image_of(element_type clock) noexcept
+        requires ClockWireProtocol<Tag>
+    {
         image_type image{};
-        write_word_(image, 0, image_axis());
-        for (std::size_t p = 0; p < N; ++p) write_word_(image, 8 * (p + 1), clock.clock_[p]);
+        detail::count_image::write_word(image, 0, image_axis());
+        for (std::size_t p = 0; p < N; ++p) detail::count_image::write_word(image, 8 * (p + 1), clock.clock_[p]);
         return image;
     }
 
-    // The checked read of an image.  The context must own IO, and the image
-    // must name this lattice.
+    // The checked read of an image.  The context must own IO, the tag must
+    // have a source path, and the image must name this lattice.
     template <typename Ctx>
         requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
+              && ClockWireProtocol<Tag>
     [[nodiscard]] static constexpr std::expected<element_type, CountImageError> mint_from_image(
         Ctx const&, image_type const& image) noexcept {
-        if (read_word_(image, 0) != image_axis()) return std::unexpected(CountImageError::OtherAxis);
+        if (detail::count_image::read_word(image, 0) != image_axis()) return std::unexpected(CountImageError::OtherAxis);
         std::array<std::uint64_t, N> slots{};
-        for (std::size_t p = 0; p < N; ++p) slots[p] = read_word_(image, 8 * (p + 1));
+        for (std::size_t p = 0; p < N; ++p) slots[p] = detail::count_image::read_word(image, 8 * (p + 1));
         return element_type{slots};
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept { return "HappensBeforeLattice"; }
 
 private:
-    static constexpr void write_word_(image_type& image, std::size_t offset, std::uint64_t word) noexcept {
-        for (std::size_t i = 0; i < 8; ++i) image[offset + i] = static_cast<std::byte>((word >> (8 * i)) & 0xFFu);
-    }
-    [[nodiscard]] static constexpr std::uint64_t read_word_(image_type const& image, std::size_t offset) noexcept {
-        std::uint64_t word = 0;
-        for (std::size_t i = 0; i < 8; ++i) {
-            word |= std::uint64_t{std::to_integer<std::uint8_t>(image[offset + i])} << (8 * i);
+    [[nodiscard]] static consteval std::string_view protocol_path_() noexcept
+        requires ClockWireProtocol<Tag>
+    {
+        if constexpr (std::is_void_v<Tag>) {
+            return {};
+        } else {
+            return detail::count_image::source_path(^^Tag);
         }
-        return word;
     }
 };
 
@@ -507,6 +524,31 @@ static_assert(image_pins_hold());
 static_assert(HBReplay::image_axis() != HBKernel::image_axis() && HBReplay::image_axis() != HBDefault::image_axis()
                   && HB4::image_axis() != HB1::image_axis(),
               "two clock lattices share one image identity");
+
+// The axis words are a wire format.  They depend on declared identifiers
+// and on the width only, and these values hold on each toolchain.  A
+// renamed tag or a changed fold fails here, before the read of a stored
+// clock fails.
+static_assert(HB1::image_axis() == 0x2ec9a8810be113dfULL);
+static_assert(HB4::image_axis() == 0xe01653134ef10969ULL);
+static_assert(HBReplay::image_axis() == 0x22761349051f2ad2ULL);
+
+// A one-slot clock and a count have images of one size.  The kind is part
+// of the axis word, and a clock over the tag of a counter axis does not
+// read back as a count of that axis.
+static_assert(sizeof(HappensBeforeLattice<1, counter_tags::epoch>::image_type) == sizeof(EpochLattice::image_type));
+static_assert(HappensBeforeLattice<1, counter_tags::epoch>::image_axis() != EpochLattice::image_axis());
+
+// A template specialization has no source path, and a clock over it has
+// no image door.  The test of a tag in an unnamed namespace is the fixture
+// neg_happens_before_image_without_source_path, because a header holds no
+// unnamed namespace.
+template <int Width>
+struct TemplatedClockTag {};
+template <typename HB>
+concept has_image_door = requires(typename HB::element_type clock) { HB::image_of(clock); };
+static_assert(has_image_door<HB4> && has_image_door<HBReplay>);
+static_assert(!has_image_door<HappensBeforeLattice<4, TemplatedClockTag<1>>>);
 
 // The slots of a clock cannot be written through the clock: the reader
 // returns a copy, and the storage is private.

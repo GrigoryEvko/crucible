@@ -403,11 +403,28 @@ namespace {
 using ForgedEpochLattice = fl::StrongCounterLattice<forged_epoch_name>;
 static_assert(ForgedEpochLattice::name() == fl::EpochLattice::name(), "the forged tag does report the same name");
 
+// The wire identity is the source path of the tag, not its diagnostic
+// name.  An image of the forged axis is not an image of the epoch.
+static_assert(ForgedEpochLattice::image_axis() != fl::EpochLattice::image_axis(),
+              "a tag that copies the name of the epoch shares its image identity");
+
+// A tag in an unnamed namespace has no source path: every translation unit
+// has its own such tag under one name.  Its counter has no image door.
+struct hidden_axis {
+    static constexpr std::string_view lattice_name = "HiddenAxis";
+    static constexpr fa::ClaimOrientation claim_orientation = fa::ClaimOrientation::weaker_is_higher;
+};
+template <typename L>
+concept has_image_door = requires(typename L::element_type count) { L::image_of(count); };
+static_assert(has_image_door<fl::EpochLattice> && has_image_door<ForgedEpochLattice>);
+static_assert(!has_image_door<fl::StrongCounterLattice<hidden_axis>>);
+static_assert(!has_image_door<fl::HappensBeforeLattice<2, hidden_axis>>);
+
 template <typename L>
 using Dual = fl::DualLattice<L>;
 
-// Graded refuses a version counter in its numeric order, so the version
-// axes enter through their duals.  A use counter enters as it is.
+// Graded refuses a version counter in its numeric order, and the version
+// axes go in through their duals.  A use counter goes in as it is.
 constexpr std::array<std::uint64_t, 13> kIdentities = {
     fd::row_hash_contribution_v<OnAxis<Dual<fl::EpochLattice>>>,
     fd::row_hash_contribution_v<OnAxis<Dual<fl::GenerationLattice>>>,
@@ -440,11 +457,11 @@ static_assert(!can_grade<fl::ProductLattice<Dual<fl::EpochLattice>, fl::Generati
 static_assert(!can_grade<ForgedEpochLattice>);
 static_assert(can_grade<Dual<fl::EpochLattice>> && can_grade<fl::PeakBytesLattice>);
 
-// The dual of a use counter reads up as the stronger claim, fewer bytes
-// than were used, so it is refused too.
+// The dual of a use counter puts the stronger claim higher: fewer bytes
+// than were used.  Graded refuses it too.
 static_assert(!can_grade<Dual<fl::PeakBytesLattice>> && !can_grade<Dual<fl::BitsBudgetLattice>>);
 
-// A clock claims the history it saw, so a larger clock is the stronger
+// A clock claims the history it saw.  A larger clock is the stronger
 // claim, as a newer version is.  The clock is refused in its pointwise
 // order and accepted through its dual.
 static_assert(fa::claim_orientation_v<fl::HappensBeforeLattice<4>> == fa::ClaimOrientation::stronger_is_higher);
@@ -521,6 +538,9 @@ void attack_the_closed_routes() {
     auto const as_bits = fl::BitsBudgetLattice::mint_from_image(ctx, fl::PeakBytesLattice::image_of(
                                                                           count_at<fl::PeakBytesLattice>(s)));
     expect(!as_bits && as_bits.error() == fl::CountImageError::OtherAxis, "an image of bytes is refused as bits");
+    auto const as_forged = ForgedEpochLattice::mint_from_image(ctx, fl::EpochLattice::image_of(epoch));
+    expect(!as_forged && as_forged.error() == fl::CountImageError::OtherAxis,
+           "an image of the epoch is refused by a tag that copies its name");
 
     // The raw count is an integer, and an integer builds a bound, which
     // claims nothing: it cannot be joined, advanced or graded.

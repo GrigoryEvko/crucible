@@ -308,6 +308,10 @@ foundation_neg_compile_test(neg_happens_before_clock_from_integers
 foundation_neg_compile_test(neg_happens_before_image_without_io
   "no matching function for call to .foundation::algebra::lattices::HappensBeforeLattice<2>::mint_from_image"
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::IO>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >.")
+# A clock over a tag with no source path has no image door, even under IO.
+foundation_neg_compile_test(neg_happens_before_image_without_source_path
+  "no matching function for call to .foundation::algebra::lattices::HappensBeforeLattice<2, \\{anonymous\\}::HiddenClock>::mint_from_image"
+  "required for the satisfaction of .ClockWireProtocol<Tag>. .with Tag = <unnamed>::HiddenClock.")
 foundation_neg_compile_test(neg_happens_before_bit_cast
   "no matching function for call to .bit_cast<foundation::algebra::lattices::HappensBeforeLattice<2>::element_type>"
   "the expression .is_trivially_copyable_v<_To> .with _To = foundation::algebra::lattices::HappensBeforeLattice<2, void>::element_type.. evaluated to .false.")

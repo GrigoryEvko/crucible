@@ -29,11 +29,17 @@
 // which never becomes a count.
 //
 // The image of a count names its axis.  mint_from_image() refuses an
-// image of another axis, so a record written for the epoch does not read
-// back as a generation.  The read needs a context that owns IO, the
-// capability of a scope that reads storage or a socket, so a pure
-// function or the foreground dispatch path cannot build a count from
-// bytes.  A record that a program authors on purpose, under such a
+// image of another axis, and a record written for the epoch does not read
+// back as a generation.  The axis word comes from the source path of the
+// tag: the declared identifiers of the tag and of each scope around it,
+// hashed as bytes.  Each toolchain and each host writes and reads the
+// same word.  A reflected display name changes with the spelling of the
+// toolchain, and a record written by one build then does not read back
+// in the next.  A tag with no source path, such as a class in an unnamed
+// namespace, has no image door.  The read needs a
+// context that owns IO, the capability of a scope that reads storage or a
+// socket, so a pure function or the foreground dispatch path cannot build
+// a count from bytes.  A record that a program authors on purpose, under such a
 // context, loads like any other: bytes read back from storage are
 // whatever the storage holds.
 //
@@ -72,6 +78,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Hash.h>
@@ -84,6 +91,8 @@
 #include <cstdlib>
 #include <expected>
 #include <limits>
+#include <meta>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -107,23 +116,66 @@ enum class CountImageError : std::uint8_t {
 
 namespace detail::count_image {
 
-// Little-endian, whatever the host order, so an image moves between
-// hosts unchanged.
-template <std::size_t Offset, std::size_t Size>
-constexpr void write_word(std::array<std::byte, Size>& image, std::uint64_t word) noexcept {
-    static_assert(Offset + 8 <= Size, "the word must fit inside the image");
-    for (std::size_t i = 0; i < 8; ++i) image[Offset + i] = static_cast<std::byte>((word >> (8 * i)) & 0xFFu);
+// The one image codec of the counter and clock lattices.  A word is eight
+// bytes, little-endian on each host, and an image moves between hosts with
+// no change.  The offset is the byte position of the word, and a word that
+// does not fit inside the image stops the build or the process.
+template <std::size_t Size>
+constexpr void write_word(std::array<std::byte, Size>& image, std::size_t offset, std::uint64_t word) noexcept {
+    static_assert(Size >= 8, "an image holds at least one word");
+    CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
+    for (std::size_t i = 0; i < 8; ++i) image[offset + i] = static_cast<std::byte>((word >> (8 * i)) & 0xFFu);
 }
 
-template <std::size_t Offset, std::size_t Size>
-[[nodiscard]] constexpr std::uint64_t read_word(std::array<std::byte, Size> const& image) noexcept {
-    static_assert(Offset + 8 <= Size, "the word must fit inside the image");
+template <std::size_t Size>
+[[nodiscard]] constexpr std::uint64_t read_word(std::array<std::byte, Size> const& image, std::size_t offset) noexcept {
+    static_assert(Size >= 8, "an image holds at least one word");
+    CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
     std::uint64_t word = 0;
-    for (std::size_t i = 0; i < 8; ++i) word |= std::uint64_t{std::to_integer<std::uint8_t>(image[Offset + i])} << (8 * i);
+    for (std::size_t i = 0; i < 8; ++i) word |= std::uint64_t{std::to_integer<std::uint8_t>(image[offset + i])} << (8 * i);
     return word;
 }
 
+// A tag has a source path when each scope around it has a declared
+// identifier and no template arguments.  A class in an unnamed namespace
+// or in a function has none, and neither has a template specialization,
+// whose arguments the path cannot carry.
+[[nodiscard]] consteval bool has_source_path(std::meta::info entity) noexcept {
+    if (!std::meta::has_identifier(entity) || std::meta::has_template_arguments(entity)) return false;
+    for (std::meta::info scope = std::meta::parent_of(entity); scope != ^^::; scope = std::meta::parent_of(scope)) {
+        if (!std::meta::is_namespace(scope) && !std::meta::is_type(scope)) return false;
+        if (!std::meta::has_identifier(scope) || std::meta::has_template_arguments(scope)) return false;
+    }
+    return true;
+}
+
+// The source path of a tag, "a::b::Tag", from declared identifiers only.
+// Each toolchain spells a declared identifier as the source does, but a
+// reflected display name changes with the toolchain.  Two different tags
+// have two paths.  The identity of a tag is its path, and its diagnostic
+// name is not part of that identity.
+[[nodiscard]] consteval std::string_view source_path(std::meta::info entity) {
+    std::string path{std::meta::identifier_of(entity)};
+    for (std::meta::info scope = std::meta::parent_of(entity); scope != ^^::; scope = std::meta::parent_of(scope)) {
+        path.insert(0, "::");
+        path.insert(0, std::meta::identifier_of(scope));
+    }
+    return std::define_static_string(path);
+}
+
+// The wire identity of one axis of one lattice kind.  FNV-1a with the
+// fmix64 finalizer is unsigned arithmetic over bytes.  Each toolchain and
+// each host calculates the same word from the same text.
+[[nodiscard]] consteval std::uint64_t wire_axis(std::string_view kind, std::string_view axis) noexcept {
+    return ::foundation::reflect::combine_ids(::foundation::reflect::detail::hash_name(kind),
+                                              ::foundation::reflect::detail::hash_name(axis));
+}
+
 }  // namespace detail::count_image
+
+// A tag whose identity can cross a wire: it has a source path.
+template <typename Tag>
+concept WireTag = detail::count_image::has_source_path(^^Tag);
 
 template <CounterTag Tag>
 struct StrongCounterLattice {
@@ -225,29 +277,33 @@ struct StrongCounterLattice {
         return count.raw() <= bound.raw();
     }
 
-    // The identity of the axis in an image.  It is the stable id of the
-    // lattice, so two axes have two identities and every translation unit
-    // computes the same one.
-    [[nodiscard]] static constexpr std::uint64_t image_axis() noexcept {
-        return ::foundation::reflect::stable_type_id<StrongCounterLattice>;
+    // The identity of the axis in an image, from the source path of the
+    // tag.  Two tags have two paths, and each toolchain calculates the same
+    // word for one path.
+    [[nodiscard]] static constexpr std::uint64_t image_axis() noexcept
+        requires WireTag<Tag>
+    {
+        return detail::count_image::wire_axis("StrongCounterLattice", detail::count_image::source_path(^^Tag));
     }
 
-    [[nodiscard]] static constexpr image_type image_of(element_type count) noexcept {
+    [[nodiscard]] static constexpr image_type image_of(element_type count) noexcept
+        requires WireTag<Tag>
+    {
         image_type image{};
-        detail::count_image::write_word<0>(image, image_axis());
-        detail::count_image::write_word<8>(image, count.raw());
+        detail::count_image::write_word(image, 0, image_axis());
+        detail::count_image::write_word(image, 8, count.raw());
         return image;
     }
 
-    // The checked read of an image.  The context must own IO, so that the
-    // read happens where storage or a socket is read, and the image must
-    // name this axis.
+    // The checked read of an image.  The context must own IO, because the
+    // read occurs where storage or a socket is read.  The tag must have a
+    // source path, and the image must name this axis.
     template <typename Ctx>
-        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO> && WireTag<Tag>
     [[nodiscard]] static constexpr std::expected<element_type, CountImageError> mint_from_image(
         Ctx const&, image_type const& image) noexcept {
-        if (detail::count_image::read_word<0>(image) != image_axis()) return std::unexpected(CountImageError::OtherAxis);
-        return element_type{detail::count_image::read_word<8>(image)};
+        if (detail::count_image::read_word(image, 0) != image_axis()) return std::unexpected(CountImageError::OtherAxis);
+        return element_type{detail::count_image::read_word(image, 8)};
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept { return Tag::lattice_name; }
@@ -367,8 +423,8 @@ template <typename L>
 template <typename L>
 [[nodiscard]] consteval bool image_pins_hold_for() noexcept {
     auto const image = L::image_of(after_steps<L>(258));
-    return detail::count_image::read_word<0>(image) == L::image_axis()
-        && detail::count_image::read_word<8>(image) == 258 && image[8] == std::byte{2} && image[9] == std::byte{1};
+    return detail::count_image::read_word(image, 0) == L::image_axis()
+        && detail::count_image::read_word(image, 8) == 258 && image[8] == std::byte{2} && image[9] == std::byte{1};
 }
 
 // The count cannot be written through an element, and no integer builds
@@ -411,6 +467,30 @@ static_assert(EpochLattice::image_axis() != GenerationLattice::image_axis()
                   && PeakBytesLattice::image_axis() != BitsBudgetLattice::image_axis()
                   && EpochLattice::image_axis() != PeakBytesLattice::image_axis(),
               "two axes share one image identity, so an image of one reads back as the other");
+
+// The axis words are a wire format.  They depend on declared identifiers
+// only, and these values hold on each toolchain.  A renamed tag or a
+// changed fold fails here, before the read of a stored record fails.
+static_assert(detail::count_image::source_path(^^counter_tags::epoch)
+              == "foundation::algebra::lattices::counter_tags::epoch");
+static_assert(EpochLattice::image_axis() == 0x2c4bdfd19c9f0e35ULL);
+static_assert(GenerationLattice::image_axis() == 0xf680919b94cde330ULL);
+static_assert(PeakBytesLattice::image_axis() == 0x21904f464c944554ULL);
+static_assert(BitsBudgetLattice::image_axis() == 0xcc6bdfaca385eca3ULL);
+
+// A template specialization has no source path, because the path cannot
+// hold its arguments.  A tag of that shape has no image door.  The test
+// of a tag in an unnamed namespace is in a source file, because a header
+// holds no unnamed namespace.
+template <int Width>
+struct templated_axis {
+    static constexpr std::string_view lattice_name = "TemplatedAxis";
+    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::weaker_is_higher;
+};
+template <typename L>
+concept has_image_door = requires(typename L::element_type count) { L::image_of(count); };
+static_assert(has_image_door<EpochLattice>);
+static_assert(!has_image_door<StrongCounterLattice<templated_axis<1>>>);
 
 // The sum exists on a use axis and not on a version axis.
 template <typename L>

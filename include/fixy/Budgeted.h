@@ -168,8 +168,8 @@ private:
     template <typename L, typename Ctx>
     [[nodiscard]] static constexpr typename L::element_type count_of_(Ctx const& ctx, std::uint64_t count) noexcept {
         typename L::image_type image{};
-        ::foundation::algebra::lattices::detail::count_image::write_word<0>(image, L::image_axis());
-        ::foundation::algebra::lattices::detail::count_image::write_word<8>(image, count);
+        ::foundation::algebra::lattices::detail::count_image::write_word(image, 0, L::image_axis());
+        ::foundation::algebra::lattices::detail::count_image::write_word(image, 8, count);
         return *L::mint_from_image(ctx, image);
     }
 

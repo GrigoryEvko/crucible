@@ -314,8 +314,8 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
-| `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
+| `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
+| `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
 
 ## include/foundation/diag/
 
