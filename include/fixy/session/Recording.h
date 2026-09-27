@@ -219,8 +219,207 @@ concept RecordableHandle = requires {
     typename detail::recording::wire_protocol<H>::type;
 };
 
-// The door of the recording mint, which stands after the mint.
-class RecordingDoor;
+// ── The door of the recorder ────────────────────────────────────────
+//
+// The one class that builds a recorder and steps it.  The recorder
+// befriends this class and no other, and no class template, so no
+// specialization of the recorder reaches the constructor or the inner
+// handle of another.  The class is final, and it is defined in this
+// header, so a second definition in a translation unit that includes the
+// header is a redefinition error.
+//
+// Each public member either states the whole gate of
+// mint_recorded_session (make), or takes a live recorder and does one
+// complete step on it: it steps the inner handle, records what happened,
+// and wraps the successor.  The recorder forwards each step here, so a
+// direct call is the same operation as the method.  No object of the
+// class exists.
+class RecordingDoor final {
+    RecordingDoor() = delete("the recording door holds static members only, and no object of it exists");
+    RecordingDoor(const RecordingDoor&) = delete("the recording door holds static members only");
+    RecordingDoor& operator=(const RecordingDoor&) = delete("the recording door holds static members only");
+    RecordingDoor(RecordingDoor&&) = delete("the recording door holds static members only");
+    RecordingDoor& operator=(RecordingDoor&&) = delete("the recording door holds static members only");
+    constexpr ~RecordingDoor() noexcept {}
+
+    template <typename Inner, typename Next>
+    [[nodiscard]] static constexpr Recorded<Next> wrap_(const Recorded<Inner>& from, Next next) noexcept {
+        return Recorded<Next>{std::move(next), *from.log_, from.self_, from.peer_};
+    }
+
+    template <typename Inner>
+    static void record_(const Recorded<Inner>& recorder, SessionEvent event) {
+        recorder.record_(event);
+    }
+
+    template <typename Branches, typename Inner, std::size_t... Is>
+    static void record_passive_checkpoint_(const Recorded<Inner>& recorder, std::size_t taken,
+                                           std::index_sequence<Is...>) {
+        (
+            [&] {
+                using Branch = std::tuple_element_t<Is, Branches>;
+                if (taken == Is) {
+                    if (const auto event = detail::recording::checkpoint_event<Branch>(recorder.self_, recorder.peer_,
+                                                                                      CheckpointRole::Passive))
+                        record_(recorder, *event);
+                }
+            }(),
+            ...);
+    }
+
+public:
+    // mint_recorded_session: puts the recorder around the handle.  The
+    // recorder writes each step of the handle to the log, with self and
+    // peer as the two roles.
+    template <typename H>
+        requires RecordableHandle<H>
+    [[nodiscard]] static constexpr Recorded<H> make(H handle, SessionEventLog& log, RoleTagId self,
+                                                    RoleTagId peer) noexcept {
+        return Recorded<H>{std::move(handle), log, self, peer};
+    }
+
+    // The recorder hands the inner handle a write of the same shape as the
+    // transport, which notes when the transport took the payload.  A payload
+    // that no transport took, because the peer had crashed, is recorded as
+    // lost to the crashed peer.
+    template <typename Inner, typename T, typename Transport>
+        requires is_send_v<typename Inner::protocol> && (!is_keyed_step_v<typename Inner::protocol>)
+              && WriteTransport<Transport, typename Inner::resource_type, typename Inner::protocol::message_type>
+    [[nodiscard]] static constexpr auto send(Recorded<Inner>&& recorder, T value, Transport transport) {
+        using Message = typename Inner::protocol::message_type;
+        bool is_delivered = false;
+        auto marked = detail::observed_write<Message, typename Inner::resource_type>(
+            transport, [&is_delivered]() noexcept { is_delivered = true; });
+        auto result = std::move(recorder.inner_).send(std::move(value), marked);
+        record_(recorder, detail::recording::event_for_send<Message>(
+                              recorder.self_, recorder.peer_,
+                              is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
+        if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
+            using Wrapped = decltype(wrap_(recorder, std::move(result.next)));
+            return CrashSend<Wrapped, Message>{wrap_(recorder, std::move(result.next)), std::move(result.undelivered)};
+        } else {
+            return wrap_(recorder, std::move(result));
+        }
+    }
+
+    template <typename Inner, typename Transport>
+        requires is_recv_v<typename Inner::protocol> && (!is_keyed_step_v<typename Inner::protocol>)
+              && ReadTransport<Transport, typename Inner::resource_type, typename Inner::protocol::message_type>
+    [[nodiscard]] static constexpr auto recv(Recorded<Inner>&& recorder, Transport transport) {
+        auto [value, next] = std::move(recorder.inner_).recv(std::move(transport));
+        record_(recorder, detail::recording::event_for_recv<typename Inner::protocol::message_type>(recorder.self_,
+                                                                                                    recorder.peer_));
+        return std::pair{std::move(value), wrap_(recorder, std::move(next))};
+    }
+
+    // A keyed message is its label word and then the value of its payload.
+    // The transport of this send is a write of the word, and the event
+    // records the message as a send, delivered unless the peer had
+    // crashed.  The value step that follows is a plain send, and it records
+    // one more Send event, of the payload.
+    template <typename Inner, typename Transport>
+        requires is_send_v<typename Inner::protocol> && is_keyed_step_v<typename Inner::protocol>
+              && WriteTransport<Transport, typename Inner::resource_type, std::size_t>
+    [[nodiscard]] static constexpr auto send(Recorded<Inner>&& recorder, Transport transport) {
+        using Message = typename Inner::protocol::message_type;
+        bool is_delivered = false;
+        auto marked = detail::observed_write<std::size_t, typename Inner::resource_type>(
+            transport, [&is_delivered]() noexcept { is_delivered = true; });
+        auto result = std::move(recorder.inner_).send(marked);
+        record_(recorder, detail::recording::event_for_send<Message>(
+                              recorder.self_, recorder.peer_,
+                              is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
+        if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
+            using Wrapped = decltype(wrap_(recorder, std::move(result.next)));
+            return CrashSend<Wrapped, Message>{wrap_(recorder, std::move(result.next)), std::move(result.undelivered)};
+        } else {
+            return wrap_(recorder, std::move(result));
+        }
+    }
+
+    // The keyed receive reads the label word.  It gives the handle at the
+    // value step, or past the message when the payload is void, and no
+    // value.
+    template <typename Inner, typename Transport>
+        requires is_recv_v<typename Inner::protocol> && is_keyed_step_v<typename Inner::protocol>
+              && ReadTransport<Transport, typename Inner::resource_type, std::size_t>
+    [[nodiscard]] static constexpr auto recv(Recorded<Inner>&& recorder, Transport transport) {
+        auto next = std::move(recorder.inner_).recv(std::move(transport));
+        record_(recorder, detail::recording::event_for_recv<typename Inner::protocol::message_type>(recorder.self_,
+                                                                                                    recorder.peer_));
+        return wrap_(recorder, std::move(next));
+    }
+
+    // The crash record of a crash branch.
+    template <typename Inner>
+        requires is_recv_v<typename Inner::protocol> && detail::recording::inner_can_detect_crash<Inner>
+    [[nodiscard]] static constexpr auto recv(Recorded<Inner>&& recorder) {
+        auto [record, next] = std::move(recorder.inner_).recv();
+        record_(recorder, SessionEvent::stop(recorder.self_, recorder.peer_, recorder.peer_, StopReasonKind::PeerCrashed,
+                                             record.cause));
+        return std::pair{record, wrap_(recorder, std::move(next))};
+    }
+
+    template <std::size_t I, typename Inner, typename Transport>
+        requires is_select_v<typename Inner::protocol>
+              && WriteTransport<Transport, typename Inner::resource_type, std::size_t>
+    [[nodiscard]] static constexpr auto select(Recorded<Inner>&& recorder, Transport transport) {
+        using Wire = detail::recording::wire_protocol_t<Inner>;
+        static_assert(Wire::branch_count <= detail::recording::recordable_branch_limit,
+                      "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
+                      "index in one byte, and this Select has more than 256 branches.");
+        bool is_delivered = false;
+        auto marked = detail::observed_write<std::size_t, typename Inner::resource_type>(
+            transport, [&is_delivered]() noexcept { is_delivered = true; });
+        auto next = std::move(recorder.inner_).template select<I>(marked);
+        record_(recorder, SessionEvent::select(recorder.self_, recorder.peer_, static_cast<std::uint8_t>(I),
+                                               is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer,
+                                               detail::recording::label_word_for_select<Wire, I>()));
+        using Branch = std::tuple_element_t<I, typename Inner::protocol::branches_tuple>;
+        if (const auto event =
+                detail::recording::checkpoint_event<Branch>(recorder.self_, recorder.peer_, CheckpointRole::Active))
+            record_(recorder, *event);
+        return wrap_(recorder, std::move(next));
+    }
+
+    // The label reader is whatever the inner handle takes: a polling read
+    // or a declared read of a word for a plain or checkpoint handle, and a
+    // polling read for a crash-watched one.  The recorder hands the inner
+    // handle a read of the same shape, keeps the word it read, and names
+    // the branch that the word names in the protocol of the wire.
+    template <typename Inner, typename Reader, typename Handler>
+        requires is_offer_v<typename Inner::protocol>
+              && ReadTransport<Reader, typename Inner::resource_type, std::size_t>
+    static constexpr auto branch(Recorded<Inner>&& recorder, Reader reader, Handler handler) {
+        using P = typename Inner::protocol;
+        using Wire = detail::recording::wire_protocol_t<Inner>;
+        using Branches = typename P::branches_tuple;
+        constexpr std::size_t count = std::tuple_size_v<Branches>;
+        static_assert(count <= detail::recording::recordable_branch_limit,
+                      "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
+                      "index in one byte, and this Offer has more than 256 branches.");
+        std::optional<std::uint64_t> word;
+        auto marked = detail::observed_read<std::size_t, typename Inner::resource_type>(
+            reader, [&word](std::size_t read) noexcept { word = read; });
+        return std::move(recorder.inner_).branch(marked, [&recorder, &handler, &word](auto next) {
+            // No word was read only when a crash-watched handle took the
+            // crash branch.
+            std::size_t taken = word ? branch_of_wire_word<Wire>(*word) : no_branch;
+            LabelWord label{};
+            if (word && is_keyed_choice_v<Wire>) label = LabelWord{*word};
+            if constexpr (detail::recording::is_crash_watched_shape<Inner>::value) {
+                using Head = typename decltype(next)::protocol;
+                if constexpr (is_crash_branch_v<Head>) {
+                    taken = crash_branch_index_v<P, typename Inner::peer_role>;
+                    label = LabelWord{};
+                }
+            }
+            record_(recorder, SessionEvent::offer(recorder.self_, recorder.peer_, static_cast<std::uint8_t>(taken), label));
+            record_passive_checkpoint_<Branches>(recorder, taken, std::make_index_sequence<count>{});
+            return std::invoke(handler, wrap_(recorder, std::move(next)));
+        });
+    }
+};
 
 template <typename Inner>
 class [[nodiscard]] Recorded {
@@ -229,19 +428,12 @@ class [[nodiscard]] Recorded {
     RoleTagId self_;
     RoleTagId peer_;
 
-    template <typename>
-    friend class Recorded;
-
-    // The first recorder of a session comes only from this door.
+    // The one friend.  The door builds each recorder and does each step, so
+    // no specialization of this template reaches another.
     friend class RecordingDoor;
 
     constexpr Recorded(Inner inner, SessionEventLog& log, RoleTagId self, RoleTagId peer) noexcept
         : inner_{std::move(inner)}, log_{&log}, self_{self}, peer_{peer} {}
-
-    template <typename Next>
-    [[nodiscard]] constexpr Recorded<Next> wrap_(Next next) const noexcept {
-        return Recorded<Next>{std::move(next), *log_, self_, peer_};
-    }
 
     void record_(SessionEvent event) const { log_->record_now(event); }
 
@@ -271,19 +463,7 @@ public:
         requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
                  && WriteTransport<Transport, resource_type, typename protocol::message_type>
     [[nodiscard]] constexpr auto send(T value, Transport transport) && {
-        using Message = typename protocol::message_type;
-        bool is_delivered = false;
-        auto marked =
-            detail::observed_write<Message, resource_type>(transport, [&is_delivered]() noexcept { is_delivered = true; });
-        auto result = std::move(inner_).send(std::move(value), marked);
-        record_(detail::recording::event_for_send<Message>(
-            self_, peer_, is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
-        if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
-            using Wrapped = decltype(wrap_(std::move(result.next)));
-            return CrashSend<Wrapped, Message>{wrap_(std::move(result.next)), std::move(result.undelivered)};
-        } else {
-            return wrap_(std::move(result));
-        }
+        return RecordingDoor::send(std::move(*this), std::move(value), std::move(transport));
     }
 
     template <typename T, typename Transport>
@@ -299,9 +479,7 @@ public:
         requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
                  && ReadTransport<Transport, resource_type, typename protocol::message_type>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
-        auto [value, next] = std::move(inner_).recv(std::move(transport));
-        record_(detail::recording::event_for_recv<typename protocol::message_type>(self_, peer_));
-        return std::pair{std::move(value), wrap_(std::move(next))};
+        return RecordingDoor::recv(std::move(*this), std::move(transport));
     }
 
     template <typename Transport>
@@ -313,27 +491,13 @@ public:
                                      "wait where the watch of fixy/session/Watch.h does not see it.");
 
     // A keyed message is its label word and then the value of its payload.
-    // The transport of this send is a write of the word, and the event
-    // records the message as a send, delivered unless the peer had
-    // crashed.  The value step that follows is a plain send, and it records
-    // one more Send event, of the payload.
+    // This send writes the word, and the value step that follows is a plain
+    // send.
     template <typename Transport>
         requires is_send_v<protocol> && is_keyed_step_v<protocol>
                  && WriteTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {
-        using Message = typename protocol::message_type;
-        bool is_delivered = false;
-        auto marked = detail::observed_write<std::size_t, resource_type>(
-            transport, [&is_delivered]() noexcept { is_delivered = true; });
-        auto result = std::move(inner_).send(marked);
-        record_(detail::recording::event_for_send<Message>(
-            self_, peer_, is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
-        if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
-            using Wrapped = decltype(wrap_(std::move(result.next)));
-            return CrashSend<Wrapped, Message>{wrap_(std::move(result.next)), std::move(result.undelivered)};
-        } else {
-            return wrap_(std::move(result));
-        }
+        return RecordingDoor::send(std::move(*this), std::move(transport));
     }
 
     template <typename Transport>
@@ -351,9 +515,7 @@ public:
         requires is_recv_v<protocol> && is_keyed_step_v<protocol>
                  && ReadTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
-        auto next = std::move(inner_).recv(std::move(transport));
-        record_(detail::recording::event_for_recv<typename protocol::message_type>(self_, peer_));
-        return wrap_(std::move(next));
+        return RecordingDoor::recv(std::move(*this), std::move(transport));
     }
 
     template <typename Transport>
@@ -368,29 +530,13 @@ public:
     template <typename P = protocol>
         requires is_recv_v<P> && detail::recording::inner_can_detect_crash<Inner>
     [[nodiscard]] constexpr auto recv() && {
-        auto [record, next] = std::move(inner_).recv();
-        record_(SessionEvent::stop(self_, peer_, peer_, StopReasonKind::PeerCrashed, record.cause));
-        return std::pair{record, wrap_(std::move(next))};
+        return RecordingDoor::recv(std::move(*this));
     }
 
     template <std::size_t I, typename Transport>
         requires is_select_v<protocol> && WriteTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
-        using Wire = detail::recording::wire_protocol_t<Inner>;
-        static_assert(Wire::branch_count <= detail::recording::recordable_branch_limit,
-                      "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
-                      "index in one byte, and this Select has more than 256 branches.");
-        bool is_delivered = false;
-        auto marked = detail::observed_write<std::size_t, resource_type>(
-            transport, [&is_delivered]() noexcept { is_delivered = true; });
-        auto next = std::move(inner_).template select<I>(marked);
-        record_(SessionEvent::select(self_, peer_, static_cast<std::uint8_t>(I),
-                                     is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer,
-                                     detail::recording::label_word_for_select<Wire, I>()));
-        using Branch = std::tuple_element_t<I, typename protocol::branches_tuple>;
-        if (const auto event = detail::recording::checkpoint_event<Branch>(self_, peer_, CheckpointRole::Active))
-            record_(*event);
-        return wrap_(std::move(next));
+        return RecordingDoor::template select<I>(std::move(*this), std::move(transport));
     }
 
     template <std::size_t I, typename Transport>
@@ -409,32 +555,7 @@ public:
     template <typename Reader, typename Handler>
         requires is_offer_v<protocol> && ReadTransport<Reader, resource_type, std::size_t>
     constexpr auto branch(Reader reader, Handler handler) && {
-        using Wire = detail::recording::wire_protocol_t<Inner>;
-        using Branches = typename protocol::branches_tuple;
-        constexpr std::size_t count = std::tuple_size_v<Branches>;
-        static_assert(count <= detail::recording::recordable_branch_limit,
-                      "fixy::session::diagnostic [Recording_Branch_Lane_Too_Small]: the event records the branch "
-                      "index in one byte, and this Offer has more than 256 branches.");
-        std::optional<std::uint64_t> word;
-        auto marked = detail::observed_read<std::size_t, resource_type>(
-            reader, [&word](std::size_t read) noexcept { word = read; });
-        return std::move(inner_).branch(marked, [this, &handler, &word](auto next) {
-            // No word was read only when a crash-watched handle took the
-            // crash branch.
-            std::size_t taken = word ? branch_of_wire_word<Wire>(*word) : no_branch;
-            LabelWord label{};
-            if (word && is_keyed_choice_v<Wire>) label = LabelWord{*word};
-            if constexpr (detail::recording::is_crash_watched_shape<Inner>::value) {
-                using Head = typename decltype(next)::protocol;
-                if constexpr (is_crash_branch_v<Head>) {
-                    taken = crash_branch_index_v<protocol, typename Inner::peer_role>;
-                    label = LabelWord{};
-                }
-            }
-            record_(SessionEvent::offer(self_, peer_, static_cast<std::uint8_t>(taken), label));
-            record_passive_checkpoint_<Branches>(taken, std::make_index_sequence<count>{});
-            return std::invoke(handler, wrap_(std::move(next)));
-        });
+        return RecordingDoor::branch(std::move(*this), std::move(reader), std::move(handler));
     }
 
     template <typename Reader, typename Handler>
@@ -468,20 +589,6 @@ public:
 
     [[nodiscard]] constexpr resource_type& resource() & noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr const resource_type& resource() const& noexcept { return inner_.resource(); }
-
-private:
-    template <typename Branches, std::size_t... Is>
-    void record_passive_checkpoint_(std::size_t taken, std::index_sequence<Is...>) const {
-        (
-            [&] {
-                using Branch = std::tuple_element_t<Is, Branches>;
-                if (taken == Is) {
-                    if (const auto event = detail::recording::checkpoint_event<Branch>(self_, peer_, CheckpointRole::Passive))
-                        record_(*event);
-                }
-            }(),
-            ...);
-    }
 };
 
 // ── The mint ─────────────────────────────────────────────────────────
@@ -490,43 +597,8 @@ template <typename H>
     requires RecordableHandle<H>
 [[nodiscard]] constexpr auto mint_recorded_session(H handle, SessionEventLog& log, RoleTagId self,
                                                    RoleTagId peer) noexcept {
-    return detail::late_door_t<RecordingDoor, H>::template make_<H>(std::move(handle), log, self, peer);
+    return RecordingDoor::make<H>(std::move(handle), log, self, peer);
 }
-
-// ── The door of the recording mint ───────────────────────────────────
-//
-// mint_recorded_session gets the recorder through this class.  The member
-// of the class is private and static.  The one friend of the class is the
-// mint, which does the check of the handle before it calls the member.
-// The member does that check again, and puts the recorder around the
-// handle.  The class is final, and no object of it exists.
-//
-// The class is after the mint, as the door of the mints in
-// fixy/session/Handle.h is after its mints.  The mint names the class
-// through detail::late_door_t.
-class RecordingDoor final {
-    RecordingDoor() = delete("the recording door holds static members only, and no object of it exists");
-    RecordingDoor(const RecordingDoor&) = delete("the recording door holds static members only");
-    RecordingDoor& operator=(const RecordingDoor&) = delete("the recording door holds static members only");
-    RecordingDoor(RecordingDoor&&) = delete("the recording door holds static members only");
-    RecordingDoor& operator=(RecordingDoor&&) = delete("the recording door holds static members only");
-    constexpr ~RecordingDoor() noexcept {}
-
-    template <typename H>
-        requires RecordableHandle<H>
-    friend constexpr auto mint_recorded_session(H handle, SessionEventLog& log, RoleTagId self,
-                                                RoleTagId peer) noexcept;
-
-    // Puts the recorder around the handle.  The recorder writes each step
-    // of the handle to the log, with self and peer as the two roles.
-    template <typename H>
-    [[nodiscard]] static constexpr auto make_(H handle, SessionEventLog& log, RoleTagId self,
-                                              RoleTagId peer) noexcept -> Recorded<H> {
-        static_assert(RecordableHandle<H>, "fixy::session::diagnostic [Recording_Handle_Refused]: the recording "
-                                           "door accepts only a handle that mint_recorded_session accepts.");
-        return Recorded<H>{std::move(handle), log, self, peer};
-    }
-};
 
 // ── Replay of a choice ───────────────────────────────────────────────
 

@@ -15,7 +15,8 @@ using Decide = s::Select<s::Commit<s::Send<s::Transferable<int, Region>, s::End>
 using Follow = s::Offer<s::Commit<s::Recv<s::Transferable<int, Region>, s::End>>, s::Roll>;
 
 int main() {
-    auto handle = s::mint_checkpoint_session<Decide, Follow>(Wire{});
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_checkpoint_session<Decide, Follow>(ctx, Wire{});
     (void)handle;
     return 0;
 }

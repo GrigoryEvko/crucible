@@ -18,7 +18,8 @@ using Proto = s::Recv<int, s::End>;
 
 int main() {
     s::PeerCrashCell cell;
-    auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Bob>>(Wire{}, cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Bob>>(ctx, Wire{}, cell);
     auto [value, end] = std::move(handle).recv([](Wire&) noexcept { return 1; });
     (void)value;
     (void)std::move(end).close();

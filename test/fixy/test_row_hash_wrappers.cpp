@@ -1009,6 +1009,9 @@ inline constexpr std::string_view kProjectionModel =
     "time, and it is never a value in a signature";
 inline constexpr std::string_view kDoor =
     "a door of a session mint: it has static members only, no object of it exists, and it is never a value";
+inline constexpr std::string_view kModeMessage =
+    "a message of the mode protocol of a Vigil: it holds no value, it is the payload of a Send, and the handle "
+    "that steps through the protocol folds it";
 inline constexpr std::string_view kDescriptorDoor =
     "a door of a descriptor mint: it has static members only, no object of it exists, and it is never a value";
 
@@ -1280,7 +1283,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::RecordingDoor, kDoor},
 
     {^^::fixy::session::vigil_mode::mode_tag, kVocabulary},
-    {^^::fixy::session::vigil_mode::ModeTransition, kProtocol},
+    {^^::fixy::session::vigil_mode::ModeRecordingToCompiled, kModeMessage},
+    {^^::fixy::session::vigil_mode::ModeCompiledToRecording, kModeMessage},
     {^^::fixy::session::vigil_mode::ModeCell, kDescriptor},
 
     {^^::fixy::concurrent::payload_row, kMetafunction},

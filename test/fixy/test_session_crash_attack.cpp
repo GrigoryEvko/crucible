@@ -22,6 +22,7 @@
 #include <fixy/session/EventLog.h>
 #include <fixy/session/Recording.h>
 
+#include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
 #include <sys/wait.h>
@@ -47,8 +48,14 @@
 
 namespace s = ::fixy::session;
 namespace fp = ::foundation::permissions;
+namespace eff = ::foundation::effects;
 
 namespace {
+
+// The context of each session in this file.  No payload here carries an
+// effect row, so the background context admits every protocol.
+using BgCtx = eff::detail::ctx_witnesses::BgWitness;
+[[nodiscard]] BgCtx bg_ctx() noexcept { return BgCtx{eff::testing::bg()}; }
 
 struct P {};
 struct Q {};
@@ -430,8 +437,8 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     (void)std::move(p).crash(s::CrashCause::Abort, s::mint_crash_reporter(cell_p));
     std::move(q).branch(poll_label, [](auto branch) noexcept {
         auto [value, end] = std::move(branch).recv(read_int);
@@ -448,7 +455,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Throw, 0);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     int returned = 0;
     for (int round = 0; round < 3; ++round) {
         auto sent = std::move(q).select<0>(push_label);
@@ -469,7 +476,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     to_q.slots.push_back(0);  // the label of the message branch
     to_q.slots.push_back(7);  // the value of the token's payload
     s::PeerCrashCell cell_p;
-    auto q = s::mint_crash_session<Relay, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<Relay, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     bool came_back_once = false;
     std::move(q).branch(poll_label, [&](auto branch) noexcept {
         using Head = typename decltype(branch)::protocol;
@@ -496,7 +503,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::ErrorReturn, 0);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     int detections = 0;
     std::move(q).branch(poll_label, [&](auto first) noexcept {
         using Head = typename decltype(first)::protocol;
@@ -533,7 +540,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     }
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Abort, 4);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     using Loop = decltype(q);
     std::optional<Loop> current{std::move(q)};
     int received = 0;
@@ -566,7 +573,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     to_q.slots.push_back(1);
     s::PeerCrashCell cell_p;
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     std::move(q).branch(poll_label, [](auto branch) noexcept { std::move(branch).detach(s::detach_reason::TestInstrumentation{}); });
     finish(Outcome::Silent);
 }
@@ -580,7 +587,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Abort, 0);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     bool took_message = false;
     std::move(q).branch([](Port&) noexcept -> std::optional<std::size_t> { return std::size_t{0}; },
                         [&](auto branch) noexcept {
@@ -608,7 +615,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Abort, 2);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     using Loop = decltype(q);
     std::optional<Loop> current{std::move(q)};
     int received = 0;
@@ -643,7 +650,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Throw, 1);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     using Loop = decltype(q);
     std::optional<Loop> current{std::move(q)};
     int empty_polls = 0;
@@ -691,7 +698,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
     for (int round = 0; round < 3; ++round) {
         auto chosen = std::move(p).select<0>(push_label);
         auto [next, undelivered] = std::move(chosen).send(round, push_int);
@@ -702,7 +709,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     (void)std::move(p).crash(s::CrashCause::ErrorReturn, s::mint_crash_reporter(cell_p));
     const std::optional<s::CrashWitness> witness = cell_p.witness();
     if (!witness || std::to_underlying(witness->messages_sent) != 3) finish(Outcome::Silent);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     using Loop = decltype(q);
     std::optional<Loop> current{std::move(q)};
     int received = 0;
@@ -745,7 +752,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Abort, 0);
-    auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     auto [value, end] = std::move(q).recv([](Port&) noexcept -> std::optional<int> { return 99; });
     (void)value;
     (void)std::move(end).close();
@@ -778,7 +785,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     to_q.slots.push_back(0);
     to_q.slots.push_back(7);
     s::PeerCrashCell cell_p;
-    auto q = s::mint_crash_session<Relay, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<Relay, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     bool token_lost = true;
     std::move(q).branch(poll_label, [&](auto branch) noexcept {
         using Head = typename decltype(branch)::protocol;
@@ -814,7 +821,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Abort, 0);
-    auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(Port{&to_q, &to_p}, cell_p);
+    auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     auto [value, end] = std::move(q).recv(read_int);
     (void)value;
     (void)std::move(end).close();
@@ -834,8 +841,8 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     auto half_sent = std::move(p).select<0>(push_label);
     std::move(half_sent).detach(s::detach_reason::TestInstrumentation{});
     crash_endpoint(cell_p, to_p, s::CrashCause::Abort, 1);
@@ -861,7 +868,7 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     s::PeerCrashCell cell_p;
     report_crash(cell_p, s::CrashCause::Throw, 0);
     s::SessionEventLog log{s::SessionTagId{9}};
-    auto q = s::mint_recorded_session(s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p), log,
+    auto q = s::mint_recorded_session(s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p), log,
                                       s::RoleTagId{2}, s::RoleTagId{1});
     auto chosen = std::move(q).select<0>(push_label);
     auto [waiting, undelivered] = std::move(chosen).send(5, push_int);

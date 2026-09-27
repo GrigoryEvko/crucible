@@ -26,7 +26,8 @@ using Proto = s::Offer<s::Recv<Names<OpaqueChannel<int>>, s::End>, s::Recv<s::Cr
 
 int main() {
     s::PeerCrashCell cell;
-    auto handle = s::mint_crash_session<Proto, Alice, Bob>(Wire{}, cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, cell);
     (void)handle;
     return 0;
 }

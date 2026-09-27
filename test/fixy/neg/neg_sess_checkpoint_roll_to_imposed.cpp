@@ -14,7 +14,8 @@ using Follower = s::Offer<s::Commit<s::Select<s::End, s::Roll>>>;
 using Leader = s::Select<s::Commit<s::Offer<s::End, s::Roll>>>;
 
 int main() {
-    auto handle = s::mint_checkpoint_session<Follower, Leader>(Wire{});
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_checkpoint_session<Follower, Leader>(ctx, Wire{});
     (void)handle;
     return 0;
 }

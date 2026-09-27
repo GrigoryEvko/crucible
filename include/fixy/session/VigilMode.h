@@ -65,22 +65,40 @@ template <Mode From, Mode To>
 inline constexpr bool mode_transition_allowed_v =
     ::foundation::fail_closed::Admitted<^^admitted_mode_transitions, mode_tag<From>, mode_tag<To>>;
 
-// A transition as a value the session sends.  The static_assert is what
-// a caller sees when it names a pair the relation does not admit.
+// A transition as a value the session sends.  Each admitted edge has one
+// plain class, so the payload walk of fixy/concurrent/PayloadRow.h reads
+// it as a class with no member, and its effect row is empty.
+struct ModeRecordingToCompiled {
+    static constexpr Mode from = Mode::RECORDING;
+    static constexpr Mode to = Mode::COMPILED;
+};
+
+struct ModeCompiledToRecording {
+    static constexpr Mode from = Mode::COMPILED;
+    static constexpr Mode to = Mode::RECORDING;
+};
+
+namespace detail {
+
+// The class of the edge From -> To.  The static_assert is what a caller
+// sees when it names a pair that the relation does not admit.
 template <Mode From, Mode To>
-struct ModeTransition {
+struct mode_transition {
     static_assert(mode_transition_allowed_v<From, To>,
                   "fixy::session::diagnostic [VigilModeBridge_IllegalTransition]: the persistent Vigil mode "
                   "transitions are RECORDING -> COMPILED and COMPILED -> RECORDING, and they are declared as "
                   "edges in fixy::session::vigil_mode::admitted_mode_transitions.  DIVERGED is a replay status "
                   "rather than a persistent mode, so it is neither a source nor a target.  Adding a transition "
                   "means declaring its edge in that namespace, which is also what makes it greppable.");
-    static constexpr Mode from = From;
-    static constexpr Mode to = To;
+    using type = std::conditional_t<From == Mode::RECORDING, ModeRecordingToCompiled, ModeCompiledToRecording>;
+    static_assert(!mode_transition_allowed_v<From, To> || (type::from == From && type::to == To),
+                  "each admitted edge of admitted_mode_transitions has its own transition class");
 };
 
-using ModeRecordingToCompiled = ModeTransition<Mode::RECORDING, Mode::COMPILED>;
-using ModeCompiledToRecording = ModeTransition<Mode::COMPILED, Mode::RECORDING>;
+}  // namespace detail
+
+template <Mode From, Mode To>
+using ModeTransition = typename detail::mode_transition<From, To>::type;
 
 // The observer drives this protocol, not the thread that owns the cell.
 // It reads the current mode, selects a branch, and either performs one
@@ -131,7 +149,7 @@ public:
 static_assert(sizeof(ModeCell) == sizeof(std::atomic<Mode>));
 static_assert(AtomicMachineCell<ModeCell>);
 
-using ModeSessionHandle = decltype(mint_atomic_session<ModeProtocol>(std::declval<ModeCell&>()));
+using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, ModeCell&, DefaultAbandonmentPolicy>;
 
 // The handle borrows the cell mutably, which the ported header did not.
 // It minted over a `const ModeCell&` and pinned the resource as `const
@@ -158,15 +176,17 @@ static_assert(std::is_same_v<typename ModeSessionHandle::resource_type, ModeCell
 // taking the cell directly.  The concept pins the parameter to exactly
 // this cell, so a call with some other atomic cell fails at the concept
 // by name instead of as a substitution failure deep inside the
-// substrate.
+// substrate.  It also asks the gate of mint_atomic_session of the
+// context.
 
-template <class Cell>
-concept CanMintVigilModeBridge = std::same_as<std::remove_cvref_t<Cell>, ModeCell>;
+template <class Ctx, class Cell>
+concept CtxFitsVigilModeBridge =
+    std::same_as<std::remove_cvref_t<Cell>, ModeCell> && CtxFitsAtomicSession<Ctx, ModeProtocol, Cell>;
 
-template <class Cell>
-    requires CanMintVigilModeBridge<Cell>
-[[nodiscard]] constexpr ModeSessionHandle mint_vigil_mode_bridge(Cell& cell) noexcept {
-    return mint_atomic_session<ModeProtocol>(cell);
+template <class Ctx, class Cell>
+    requires CtxFitsVigilModeBridge<Ctx, Cell>
+[[nodiscard]] constexpr ModeSessionHandle mint_vigil_mode_bridge(Ctx const& ctx, Cell& cell) noexcept {
+    return mint_atomic_session<ModeProtocol>(ctx, cell);
 }
 
 }  // namespace fixy::session::vigil_mode

@@ -19,7 +19,8 @@ using Proto = s::Select<s::Send<s::Transferable<int, Region>, s::End>>;
 
 int main() {
     s::PeerCrashCell cell;
-    auto handle = s::mint_crash_session<Proto, Alice, Bob>(Wire{}, cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, cell);
     (void)handle;
     return 0;
 }

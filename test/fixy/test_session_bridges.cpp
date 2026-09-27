@@ -15,6 +15,9 @@
 
 #include <fixy/session/VigilMode.h>
 
+#include <foundation/effects/Computation.h>
+#include <foundation/effects/Ctx.h>
+
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
@@ -22,8 +25,12 @@
 
 namespace s = fixy::session;
 namespace vm = fixy::session::vigil_mode;
+namespace eff = ::foundation::effects;
 
 namespace {
+
+using BgCtx = eff::detail::ctx_witnesses::BgWitness;
+using BgIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>;
 
 struct Payload {
     int ticks = 0;
@@ -31,6 +38,18 @@ struct Payload {
 
 using Reporting = s::Loop<s::Select<s::Send<int, s::Continue>, s::End>>;
 using Bridge = s::SessionFromMachine<Payload, Reporting>;
+
+// ── The context gate ─────────────────────────────────────────────────
+//
+// A view and an atomic session are sessions, so the context must admit
+// the effect row of each payload, as the context of mint_session must.
+using SendsIo = s::Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, s::End>;
+using IoBridge = s::SessionFromMachine<Payload, SendsIo>;
+static_assert(s::CtxFitsSession<BgIoCtx, SendsIo, IoBridge&>);
+static_assert(!s::CtxFitsSession<BgCtx, SendsIo, IoBridge&>, "the background context holds no IO");
+static_assert(!s::CtxFitsAtomicSession<BgCtx, SendsIo, vm::ModeCell>, "the background context holds no IO");
+static_assert(s::CtxFitsAtomicSession<BgIoCtx, SendsIo, vm::ModeCell>);
+static_assert(!s::CtxFitsAtomicSession<int, vm::ModeProtocol, vm::ModeCell>, "an int is not an execution context");
 
 // ── The bridge owns, and cannot move ─────────────────────────────────
 //
@@ -57,7 +76,7 @@ static_assert(std::is_same_v<typename Bridge::protocol, Reporting>);
 // unroll is what binds the Continue inside the body.  The Resource is a
 // reference to the Pinned bridge, never a pointer to the machine.
 using ExpectedView = s::SessionHandle<s::Select<s::Send<int, s::Continue>, s::End>, Bridge&, Reporting>;
-static_assert(std::is_same_v<s::session_view_t<Bridge>, ExpectedView>);
+static_assert(std::is_same_v<s::session_view_t<Bridge, BgCtx>, ExpectedView>);
 static_assert(s::SessionResource<Bridge&>);
 static_assert(!s::SessionResource<::fixy::Machine<Payload>*>, "a pointer to the machine is a second holder");
 
@@ -128,8 +147,9 @@ struct LookalikeCell : ::foundation::Pinned<LookalikeCell> {
     }
 };
 static_assert(s::AtomicMachineCell<LookalikeCell>);
-static_assert(vm::CanMintVigilModeBridge<vm::ModeCell>);
-static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
+static_assert(vm::CtxFitsVigilModeBridge<BgCtx, vm::ModeCell>);
+static_assert(!vm::CtxFitsVigilModeBridge<BgCtx, LookalikeCell>);
+static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an execution context");
 
 // ── Runtime: the bridge is a lens on the machine it owns ─────────────
 
@@ -143,7 +163,8 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
     // The bridge keeps its own imperative view while a handle is out.
     bridge.state_mut().ticks = 6;
 
-    auto view = bridge.session_view();
+    const BgCtx ctx{eff::testing::bg()};
+    auto view = bridge.session_view(ctx);
     if (&view.resource() != &bridge || &view.resource().machine() != &bridge.machine()) {
         std::fprintf(stderr, "the handle borrowed something other than the bridge\n");
         return 1;
@@ -184,7 +205,8 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
 // to the bridge that the handle held.
 [[nodiscard]] int terminal_view_closes() {
     auto bridge = s::mint_session_from_machine<s::End, Payload>(1);
-    auto view = bridge.session_view();
+    const BgCtx ctx{eff::testing::bg()};
+    auto view = bridge.session_view(ctx);
     static_assert(std::is_same_v<typename decltype(view)::protocol, s::End>);
 
     auto& recovered = std::move(view).close();
@@ -211,7 +233,8 @@ static_assert(!vm::CanMintVigilModeBridge<LookalikeCell>);
         return s::publish_atomic_machine_transition(target, transition);
     };
 
-    auto session = vm::mint_vigil_mode_bridge(cell);
+    const BgCtx ctx{eff::testing::bg()};
+    auto session = vm::mint_vigil_mode_bridge(ctx, cell);
 
     auto to_compiled = std::move(session).select_local<0>();
     auto after_compiled = std::move(to_compiled).send(vm::ModeRecordingToCompiled{}, apply);

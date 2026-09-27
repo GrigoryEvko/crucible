@@ -28,7 +28,8 @@ int main() {
     using Proto = s::Send<s::Labelled<Hello, int>, s::End>;
     s::PeerCrashCell peer_cell;
     s::PeerCrashCell own_cell;
-    auto handle = s::mint_crash_session<Proto, Alice, Bob>(Wire{}, peer_cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, peer_cell);
     auto [half_sent, lost] = std::move(handle).send([](Wire&, std::size_t) noexcept { return true; });
     static_cast<void>(lost);
     (void)std::move(half_sent).crash(s::CrashCause::Abort, s::mint_crash_reporter(own_cell));

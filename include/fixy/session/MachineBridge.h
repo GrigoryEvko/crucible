@@ -23,6 +23,7 @@
 // Old spelling: include/crucible/bridges/_MachineSessionBridge.h.
 
 #include <fixy/Machine.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 
 #include <foundation/Pinned.h>
@@ -102,9 +103,15 @@ public:
     // call.  At most one may be live at a time: two handles would drive
     // the same machine state against each other.  Nothing here enforces
     // that, exactly as nothing enforces it for two mutable borrows of
-    // the machine.  The return type is deduced, because the class is
-    // complete only in the body, and the Pinned check needs it complete.
-    [[nodiscard]] auto session_view() & noexcept { return mint_session_handle<Proto, SessionFromMachine&>(*this); }
+    // the machine.  The gate is the gate of mint_session, so the context
+    // admits the effect row of each payload of Proto.  The return type is
+    // deduced, because the class is complete only in the body, and the
+    // Pinned check needs it complete.
+    template <typename Ctx>
+        requires CtxFitsSession<Ctx, Proto, SessionFromMachine&>
+    [[nodiscard]] auto session_view(Ctx const& ctx) & noexcept {
+        return mint_session<Proto, DefaultAbandonmentPolicy, Ctx, SessionFromMachine&>(ctx, *this);
+    }
 
     [[nodiscard]] static constexpr std::string_view protocol_name() noexcept { return type_display_name_v<Proto>; }
 
@@ -124,7 +131,7 @@ mint_session_from_machine(Args&&... args) noexcept(std::is_nothrow_constructible
     return SessionFromMachine<State, Proto, Edges>{::fixy::mint_machine<State, Edges>(std::forward<Args>(args)...)};
 }
 
-// The handle type that session_view() of Bridge returns.
+// The handle type that session_view(ctx) of Bridge returns.
 //
 // A view gives nothing back that its caller does not already hold: the
 // caller owns the bridge, and the bridge owns the machine.  So the view
@@ -132,8 +139,8 @@ mint_session_from_machine(Args&&... args) noexcept(std::is_nothrow_constructible
 // the bridge.  Before End, detach() with a reason tells the destructor
 // that the remaining steps are abandoned on purpose, and the caller goes
 // on with its own bridge.
-template <typename Bridge>
-using session_view_t = decltype(std::declval<Bridge&>().session_view());
+template <typename Bridge, typename Ctx>
+using session_view_t = decltype(std::declval<Bridge&>().session_view(std::declval<Ctx const&>()));
 
 // A state machine whose address is its cross-thread publication
 // identity cannot be owned by a bridge: readers on other threads hold
@@ -164,10 +171,16 @@ concept AtomicMachineCell =
 // whose Send steps have no transport that can run.  A reader that only
 // wants the current state calls atomic_machine_state, which takes the
 // cell by const reference and needs no handle at all.
-template <typename Proto, typename Cell>
-    requires(AtomicMachineCell<Cell> && WellFormedRunnableProtocol<Proto>)
-[[nodiscard]] constexpr auto mint_atomic_session(Cell& cell) noexcept {
-    return mint_session_handle<Proto, Cell&>(cell);
+//
+// The gate is the gate of mint_session over the reference to the cell, so
+// the context admits the effect row of each payload of Proto.
+template <typename Ctx, typename Proto, typename Cell>
+concept CtxFitsAtomicSession = AtomicMachineCell<Cell> && CtxFitsSession<Ctx, Proto, Cell&>;
+
+template <typename Proto, typename Ctx, typename Cell>
+    requires CtxFitsAtomicSession<Ctx, Proto, Cell>
+[[nodiscard]] constexpr auto mint_atomic_session(Ctx const& ctx, Cell& cell) noexcept {
+    return mint_session<Proto, DefaultAbandonmentPolicy, Ctx, Cell&>(ctx, cell);
 }
 
 template <typename Cell>

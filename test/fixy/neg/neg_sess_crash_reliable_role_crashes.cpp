@@ -16,7 +16,8 @@ using Proto = s::Select<s::Send<int, s::End>>;
 int main() {
     s::PeerCrashCell watched;
     s::PeerCrashCell announce;
-    auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Alice>>(Wire{}, watched);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Alice>>(ctx, Wire{}, watched);
     auto resource = std::move(handle).crash(s::CrashCause::Abort, s::mint_crash_reporter(announce));
     (void)resource;
     return 0;

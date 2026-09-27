@@ -14,6 +14,9 @@
 
 #include <fixy/session/CrashTransport.h>
 
+#include <foundation/effects/Computation.h>
+#include <foundation/effects/Ctx.h>
+
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -28,14 +31,24 @@
 #include <utility>
 
 namespace s = fixy::session;
+namespace eff = ::foundation::effects;
 
 namespace {
+
+// The context of each session in this file.  No payload of Example 3.2
+// carries an effect row, so the background context admits it.
+using BgCtx = eff::detail::ctx_witnesses::BgWitness;
+using BgIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>;
+[[nodiscard]] BgCtx bg_ctx() noexcept { return BgCtx{eff::testing::bg()}; }
 
 struct P {};  // role p of Example 3.2
 struct Q {};  // role q of Example 3.2
 struct R {};  // a third role
+// The payload row walk of fixy/concurrent/PayloadRow.h reads no
+// std::string_view, so the text travels as a pointer to its characters.
 struct Text {
-    std::string_view value;
+    const char* value = "";
+    [[nodiscard]] std::string_view view() const noexcept { return value; }
 };
 
 // ── Rule 1: the crash label is never sent ───────────────────────────
@@ -178,7 +191,7 @@ constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
     return true;
 };
 constexpr auto push_text = [](Port& port, Text& text) noexcept {
-    port.out->slots.push_back(text.value.size());
+    port.out->slots.push_back(text.view().size());
     return true;
 };
 constexpr auto push_int = [](Port& port, int& value) noexcept {
@@ -205,8 +218,18 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     return static_cast<std::size_t>(slot);
 };
 
-using CheckedP = decltype(s::mint_crash_session<ProtoP, P, Q>(Port{}, std::declval<const s::PeerCrashCell&>()));
+using CheckedP =
+    decltype(s::mint_crash_session<ProtoP, P, Q>(std::declval<const BgCtx&>(), Port{}, std::declval<const s::PeerCrashCell&>()));
 static_assert(std::is_same_v<CheckedP::protocol, ProtoP>);
+
+// The context of a crash session admits the effect row of each payload,
+// as the context of mint_session does.
+using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+using ReceivesIo = s::Offer<s::Recv<IoPayload, s::End>, s::Recv<s::Crash<P>, s::End>>;
+static_assert(s::CrashSessionAdmissible<ReceivesIo, Q, P, s::ReliableSet<>>);
+static_assert(!s::CtxFitsCrashSession<BgCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port>, "the background context holds no IO");
+static_assert(s::CtxFitsCrashSession<BgIoCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port>);
+static_assert(!s::CtxFitsCrashSession<int, ProtoQ, Q, P, s::ReliableSet<>, Port>, "an int is not an execution context");
 static_assert(!std::is_copy_constructible_v<CheckedP>);
 static_assert(std::is_move_constructible_v<CheckedP>);
 
@@ -221,8 +244,8 @@ int run_without_crash() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;  // watched by q
     s::PeerCrashCell cell_q;  // watched by p
-    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
@@ -236,7 +259,7 @@ int run_without_crash() {
         } else {
             auto [text, q_reply] = std::move(q_branch).recv(read_text);
             auto q_sel = std::move(q_reply).template select<0>(push_label);
-            auto [q_end, q_lost] = std::move(q_sel).send(static_cast<int>(text.value.size()) + 39, push_int);
+            auto [q_end, q_lost] = std::move(q_sel).send(static_cast<int>(text.view().size()) + 39, push_int);
             if (q_lost) std::abort();
             (void)std::move(q_end).close();
         }
@@ -262,15 +285,15 @@ int run_receiver_crashes_first() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
 
     const Port q_port = std::move(q).crash(s::CrashCause::Throw, s::mint_crash_reporter(cell_q));
     if (q_port.in != &to_q) return fail("crash() did not give back the resource");
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
-    if (!p_undelivered || p_undelivered->value != "abc") return fail("the lost payload did not come back");
+    if (!p_undelivered || p_undelivered->view() != "abc") return fail("the lost payload did not come back");
     if (!to_q.slots.empty()) return fail("a message reached the queue of a crashed peer");
 
     bool took_crash_branch = false;
@@ -294,8 +317,8 @@ int run_sender_crashes_after_send() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
@@ -309,7 +332,7 @@ int run_sender_crashes_after_send() {
             std::abort();
         } else {
             auto [text, q_reply] = std::move(q_branch).recv(read_text);
-            took_message = text.value == "abc";
+            took_message = text.view() == "abc";
             auto q_sel = std::move(q_reply).template select<0>(push_label);
             auto [q_end, q_lost] = std::move(q_sel).send(42, push_int);
             took_message = took_message && q_lost.has_value();
@@ -362,7 +385,8 @@ struct WirePort {
 
 using StreamP = s::Loop<s::Select<s::Send<int, s::Continue>>>;
 using StreamQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
-using StreamQHandle = decltype(s::mint_crash_session<StreamQ, Q, P>(WirePort{}, std::declval<const s::PeerCrashCell&>()));
+using StreamQHandle = decltype(s::mint_crash_session<StreamQ, Q, P>(std::declval<const BgCtx&>(), WirePort{},
+                                                                    std::declval<const s::PeerCrashCell&>()));
 
 constexpr int kStreamMessages = 200;
 constexpr int kStreamRuns = 50;
@@ -383,7 +407,7 @@ int run_stream_across_threads() {
 
         std::jthread receiver([&] {
             std::optional<StreamQHandle> q{
-                s::mint_crash_session<StreamQ, Q, P>(WirePort{&to_q, &to_p}, cell_p)};
+                s::mint_crash_session<StreamQ, Q, P>(bg_ctx(), WirePort{&to_q, &to_p}, cell_p)};
             bool is_done = false;
             while (!is_done) {
                 StreamQHandle current = std::move(*q);
@@ -418,7 +442,7 @@ int run_stream_across_threads() {
         // The crash at the end also releases q if a send goes wrong, so
         // the join always returns.
         bool was_payload_returned = false;
-        auto p = s::mint_crash_session<StreamP, P, Q>(WirePort{&to_p, &to_q}, cell_q);
+        auto p = s::mint_crash_session<StreamP, P, Q>(bg_ctx(), WirePort{&to_p, &to_q}, cell_q);
         for (int message = 0; message < kStreamMessages; ++message) {
             auto chosen = std::move(p).select<0>([](WirePort& port, std::size_t label) noexcept {
                 port.out->push(label);

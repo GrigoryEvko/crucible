@@ -617,6 +617,15 @@ concept CheckpointSessionAdmissible =
     && checkpoint_compliant_v<Proto, PeerProto> && WellFormedRunnableProtocol<checkpoint_erase_t<Proto>>
     && WellFormedRunnableProtocol<checkpoint_erase_t<PeerProto>>;
 
+// The whole gate of mint_checkpoint_session: a compliant pair, a Resource
+// that a mint admits, and a context that admits the effect row of the
+// protocol that the plain handle runs (CtxAdmitsProtocolRow of
+// fixy/session/Handle.h).  The erasure keeps each payload, so that row is
+// the row of Proto.
+template <typename Ctx, typename Proto, typename PeerProto, typename Resource>
+concept CtxFitsCheckpointSession = CheckpointSessionAdmissible<Proto, PeerProto> && SessionResource<Resource>
+                                && CtxAdmitsProtocolRow<Ctx, checkpoint_erase_t<Proto>>;
+
 // ── The runtime ─────────────────────────────────────────────────────
 
 // The checkpoint state of one endpoint: its initial protocol, and its
@@ -630,27 +639,32 @@ struct CheckpointFrame {
     using saved_loop = SavedLoop;
 };
 
-// The door of the checkpoint mint, which stands after the mint.
-class CheckpointDoor;
-
-// A plain handle over the erased protocol, with the original protocol
-// and the checkpoint state in the type.  Commit, Roll and Abort take
-// effect in the same call that exchanges their label, so no handle is
-// ever positioned at one of them.
 template <typename Inner, typename Head, typename HeadLoop, typename Frame>
-class [[nodiscard]] CheckpointHandle {
-    Inner inner_;
+class CheckpointHandle;
 
-    template <typename, typename, typename, typename>
-    friend class CheckpointHandle;
-
-    // The first checkpoint handle of a session comes only from this door.
-    friend class CheckpointDoor;
-
-    constexpr explicit CheckpointHandle(Inner inner) noexcept : inner_{std::move(inner)} {}
-
-    using resource_t = typename Inner::resource_type;
-    using policy_t = typename Inner::abandonment_policy;
+// ── The door of the checkpoint session ──────────────────────────────
+//
+// The one class that builds a checkpoint handle and steps it.  The
+// handle befriends this class and no other, and no class template, so no
+// specialization of the handle reaches the constructor or the inner
+// handle of another.  The class is final, and it is defined in this
+// header, so a second definition in a translation unit that includes the
+// header is a redefinition error.
+//
+// Each public member either states the whole gate of
+// mint_checkpoint_session (open), or takes a live checkpoint handle and
+// does one complete step on it.  A Commit, a Roll or an Abort takes effect
+// in the step that exchanges its label.  A rollback rebuilds the plain
+// handle through the rewind of fixy/session/Handle.h.  The handle forwards
+// each step here, so a direct call is the same operation as the method.
+// No object of the class exists.
+class CheckpointDoor final {
+    CheckpointDoor() = delete("the checkpoint door holds static members only, and no object of it exists");
+    CheckpointDoor(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
+    CheckpointDoor& operator=(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
+    CheckpointDoor(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
+    CheckpointDoor& operator=(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
+    constexpr ~CheckpointDoor() noexcept {}
 
     template <typename R, typename Loop, typename NewFrame, typename Next>
     [[nodiscard]] static constexpr auto wrap_(Next next) noexcept {
@@ -661,9 +675,10 @@ class [[nodiscard]] CheckpointHandle {
     // The plain handle that a branch reaches: Commit<K> reaches K, and
     // Roll and Abort reach End.  It is the handle at the erased protocol
     // of the branch, with the erased loop context of the position.
-    template <typename Branch>
-    using inner_branch_t = HandleFactory::handle_at<checkpoint_erase_t<Branch>, resource_t,
-                                                    detail::checkpoint::erase_loop_t<HeadLoop>, policy_t>;
+    template <typename Branch, typename Inner, typename HeadLoop>
+    using inner_branch_t =
+        HandleFactory::handle_at<checkpoint_erase_t<Branch>, typename Inner::resource_type,
+                                 detail::checkpoint::erase_loop_t<HeadLoop>, typename Inner::abandonment_policy>;
 
     // Rebuilds the plain handle at the checkpoint, or at the start, from
     // the handle at End that the Roll or the Abort reached.  The rewind of
@@ -675,7 +690,7 @@ class [[nodiscard]] CheckpointHandle {
     }
 
     // The effect of branch B, given the plain handle it reached.
-    template <typename Branch, typename Next>
+    template <typename Branch, typename HeadLoop, typename Frame, typename Next>
     [[nodiscard]] static constexpr auto take_branch_(Next next) noexcept {
         if constexpr (std::is_same_v<Branch, Roll>) {
             using Saved = typename Frame::saved;
@@ -693,6 +708,158 @@ class [[nodiscard]] CheckpointHandle {
             return wrap_<Branch, HeadLoop, Frame>(std::move(next));
         }
     }
+
+    // The plain handle cannot say which label it took when two branches
+    // erase to one type, so the branch that the wire word names decides.
+    template <typename Branches, typename Inner, typename HeadLoop, typename Frame, typename Next, typename Handler,
+              std::size_t... Is>
+    static constexpr auto dispatch_(std::size_t label, Next next, Handler& handler, std::index_sequence<Is...>) {
+        using First = std::tuple_element_t<0, Branches>;
+        using Result = std::invoke_result_t<
+            Handler&, decltype(take_branch_<First, HeadLoop, Frame>(
+                          std::declval<inner_branch_t<First, Inner, HeadLoop>>()))>;
+        bool is_dispatched = false;
+        if constexpr (std::is_void_v<Result>) {
+            (
+                [&] {
+                    using Branch = std::tuple_element_t<Is, Branches>;
+                    if constexpr (std::is_same_v<inner_branch_t<Branch, Inner, HeadLoop>, Next>) {
+                        if (!is_dispatched && label == Is) {
+                            is_dispatched = true;
+                            std::invoke(handler, take_branch_<Branch, HeadLoop, Frame>(std::move(next)));
+                        }
+                    }
+                }(),
+                ...);
+            if (!is_dispatched) [[unlikely]]
+                std::abort();
+        } else {
+            std::optional<Result> result;
+            (
+                [&] {
+                    using Branch = std::tuple_element_t<Is, Branches>;
+                    if constexpr (std::is_same_v<inner_branch_t<Branch, Inner, HeadLoop>, Next>) {
+                        if (!is_dispatched && label == Is) {
+                            is_dispatched = true;
+                            result.emplace(
+                                std::invoke(handler, take_branch_<Branch, HeadLoop, Frame>(std::move(next))));
+                        }
+                    }
+                }(),
+                ...);
+            if (!is_dispatched) [[unlikely]]
+                std::abort();
+            return std::move(*result);
+        }
+    }
+
+public:
+    // mint_checkpoint_session: opens the plain handle of the erased
+    // protocol, and puts around it the checkpoint handle at the start of
+    // Proto.  The first checkpoint of the session is the start.
+    template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Ctx, typename Resource>
+        requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource>
+    [[nodiscard]] static constexpr auto open(Ctx const&, Resource resource, std::source_location loc) noexcept {
+        using Start = detail::checkpoint::resolve<Proto, void>;
+        auto inner =
+            mint_session_handle<checkpoint_erase_t<Proto>, Resource, Policy>(std::forward<Resource>(resource), loc);
+        return CheckpointHandle<decltype(inner), typename Start::head, typename Start::loop,
+                                CheckpointFrame<Proto, Proto, void>>{std::move(inner)};
+    }
+
+    template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport>
+        requires is_send_v<Head> && (!is_keyed_step_v<Head>)
+              && WriteTransport<Transport, typename Inner::resource_type, typename Head::message_type>
+    [[nodiscard]] static constexpr auto send(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
+                                             typename Head::message_type value, Transport transport) {
+        return wrap_<typename Head::next, HeadLoop, Frame>(
+            std::move(handle.inner_).send(std::move(value), std::move(transport)));
+    }
+
+    template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport>
+        requires is_recv_v<Head> && (!is_keyed_step_v<Head>)
+              && ReadTransport<Transport, typename Inner::resource_type, typename Head::message_type>
+    [[nodiscard]] static constexpr auto recv(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
+                                             Transport transport) {
+        auto [value, next] = std::move(handle.inner_).recv(std::move(transport));
+        return std::pair{std::move(value), wrap_<typename Head::next, HeadLoop, Frame>(std::move(next))};
+    }
+
+    // A keyed message is its label word and then the value of its payload
+    // (fixy/session/Handle.h).  The step moves the word, and the handle
+    // then stands at the value step, or past the message when the payload
+    // is void (keyed_landing_t).
+    template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport>
+        requires is_send_v<Head> && is_keyed_step_v<Head>
+              && WriteTransport<Transport, typename Inner::resource_type, std::size_t>
+    [[nodiscard]] static constexpr auto send(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
+                                             Transport transport) {
+        return wrap_<keyed_landing_t<Head>, HeadLoop, Frame>(std::move(handle.inner_).send(std::move(transport)));
+    }
+
+    template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport>
+        requires is_recv_v<Head> && is_keyed_step_v<Head>
+              && ReadTransport<Transport, typename Inner::resource_type, std::size_t>
+    [[nodiscard]] static constexpr auto recv(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
+                                             Transport transport) {
+        return wrap_<keyed_landing_t<Head>, HeadLoop, Frame>(std::move(handle.inner_).recv(std::move(transport)));
+    }
+
+    // Selects label I and tells the peer.  A Commit, Roll or Abort takes
+    // effect here, on this side, in the same call.  A keyed choice enters
+    // its branch past the label word, and a checkpoint primitive is never a
+    // keyed branch, so the landing is the branch that take_branch_ reads
+    // (branch_landing_t in fixy/session/Handle.h).
+    template <std::size_t I, typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport>
+        requires is_select_v<Head> && WriteTransport<Transport, typename Inner::resource_type, std::size_t>
+    [[nodiscard]] static constexpr auto select(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
+                                               Transport transport) {
+        return take_branch_<branch_landing_t<Head, I>, HeadLoop, Frame>(
+            std::move(handle.inner_).template select<I>(std::move(transport)));
+    }
+
+    // Receives the peer's wire word and calls the handler with the handle
+    // for the branch that the word names.  A Commit, Roll or Abort takes
+    // effect before the call.  Every branch must give the handler the
+    // same return type.  The word is the word of the erased protocol that
+    // the plain handle runs, so the branch comes from that protocol
+    // (branch_of_wire_word in fixy/session/Handle.h).  The erasure keeps
+    // the count and the order of the branches.
+    template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport, typename Handler>
+        requires is_offer_v<Head> && ReadTransport<Transport, typename Inner::resource_type, std::size_t>
+    static constexpr auto branch(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle, Transport transport,
+                                 Handler handler) {
+        constexpr std::size_t count = std::tuple_size_v<typename Head::branches_tuple>;
+        using Branches = typename decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return std::type_identity<std::tuple<branch_landing_t<Head, Is>...>>{};
+        }(std::make_index_sequence<count>{}))::type;
+        std::size_t label = count;
+        auto read_label = ::fixy::session::detail::observed_read<std::size_t, typename Inner::resource_type>(
+            transport,
+            [&label](std::size_t word) noexcept { label = branch_of_wire_word<typename Inner::protocol>(word); });
+        return std::move(handle.inner_).branch(read_label, [&handler, &label](auto next) {
+            return dispatch_<Branches, Inner, HeadLoop, Frame>(label, std::move(next), handler,
+                                                               std::make_index_sequence<count>{});
+        });
+    }
+};
+
+// A plain handle over the erased protocol, with the original protocol
+// and the checkpoint state in the type.  Commit, Roll and Abort take
+// effect in the same call that exchanges their label, so no handle is
+// ever positioned at one of them.
+template <typename Inner, typename Head, typename HeadLoop, typename Frame>
+class [[nodiscard]] CheckpointHandle {
+    Inner inner_;
+
+    // The one friend.  The door builds each checkpoint handle and does each
+    // step, so no specialization of this template reaches another.
+    friend class CheckpointDoor;
+
+    constexpr explicit CheckpointHandle(Inner inner) noexcept : inner_{std::move(inner)} {}
+
+    using resource_t = typename Inner::resource_type;
+    using policy_t = typename Inner::abandonment_policy;
 
 public:
     using protocol = Head;
@@ -719,66 +886,38 @@ public:
         requires is_send_v<P> && (!is_keyed_step_v<P>)
               && WriteTransport<Transport, resource_t, typename P::message_type>
     [[nodiscard]] constexpr auto send(typename P::message_type value, Transport transport) && {
-        return wrap_<typename P::next, HeadLoop, Frame>(std::move(inner_).send(std::move(value), std::move(transport)));
+        return CheckpointDoor::send(std::move(*this), std::move(value), std::move(transport));
     }
 
     template <typename Transport, typename P = Head>
         requires is_recv_v<P> && (!is_keyed_step_v<P>)
               && ReadTransport<Transport, resource_t, typename P::message_type>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
-        auto [value, next] = std::move(inner_).recv(std::move(transport));
-        return std::pair{std::move(value), wrap_<typename P::next, HeadLoop, Frame>(std::move(next))};
+        return CheckpointDoor::recv(std::move(*this), std::move(transport));
     }
 
-    // A keyed message is its label word and then the value of its payload
-    // (fixy/session/Handle.h).  This step moves the word, and the handle
-    // then stands at the value step, or past the message when the payload
-    // is void (keyed_landing_t).
     template <typename Transport, typename P = Head>
         requires is_send_v<P> && is_keyed_step_v<P> && WriteTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {
-        return wrap_<keyed_landing_t<P>, HeadLoop, Frame>(std::move(inner_).send(std::move(transport)));
+        return CheckpointDoor::send(std::move(*this), std::move(transport));
     }
 
     template <typename Transport, typename P = Head>
         requires is_recv_v<P> && is_keyed_step_v<P> && ReadTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
-        return wrap_<keyed_landing_t<P>, HeadLoop, Frame>(std::move(inner_).recv(std::move(transport)));
+        return CheckpointDoor::recv(std::move(*this), std::move(transport));
     }
 
-    // Selects label I and tells the peer.  A Commit, Roll or Abort takes
-    // effect here, on this side, in the same call.
-    // A keyed choice enters its branch past the label word, and a
-    // checkpoint primitive is never a keyed branch, so the landing is the
-    // branch that take_branch_ reads (branch_landing_t in
-    // fixy/session/Handle.h).
     template <std::size_t I, typename Transport, typename P = Head>
         requires is_select_v<P> && WriteTransport<Transport, resource_t, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) && {
-        return take_branch_<branch_landing_t<P, I>>(std::move(inner_).template select<I>(std::move(transport)));
+        return CheckpointDoor::template select<I>(std::move(*this), std::move(transport));
     }
 
-    // Receives the peer's wire word and calls the handler with the handle
-    // for the branch that the word names.  A Commit, Roll or Abort takes
-    // effect before the call.  Every branch must give the handler the
-    // same return type.  The word is the word of the erased protocol that
-    // the plain handle runs, so the branch comes from that protocol
-    // (branch_of_wire_word in fixy/session/Handle.h).  The erasure keeps
-    // the count and the order of the branches.
     template <typename Transport, typename Handler, typename P = Head>
         requires is_offer_v<P> && ReadTransport<Transport, resource_t, std::size_t>
     constexpr auto branch(Transport transport, Handler handler) && {
-        constexpr std::size_t count = std::tuple_size_v<typename P::branches_tuple>;
-        using Branches = typename decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
-            return std::type_identity<std::tuple<branch_landing_t<P, Is>...>>{};
-        }(std::make_index_sequence<count>{}))::type;
-        std::size_t label = count;
-        auto read_label = ::fixy::session::detail::observed_read<std::size_t, resource_t>(
-            transport,
-            [&label](std::size_t word) noexcept { label = branch_of_wire_word<typename Inner::protocol>(word); });
-        return std::move(inner_).branch(read_label, [&handler, &label](auto next) {
-            return dispatch_<Branches>(label, std::move(next), handler, std::make_index_sequence<count>{});
-        });
+        return CheckpointDoor::branch(std::move(*this), std::move(transport), std::move(handler));
     }
 
     template <typename P = Head>
@@ -795,48 +934,6 @@ public:
 
     [[nodiscard]] constexpr resource_t& resource() & noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr const resource_t& resource() const& noexcept { return inner_.resource(); }
-
-private:
-    // The plain handle cannot say which label it took when two branches
-    // erase to one type, so the branch that the wire word names decides.
-    template <typename Branches, typename Next, typename Handler, std::size_t... Is>
-    static constexpr auto dispatch_(std::size_t label, Next next, Handler& handler, std::index_sequence<Is...>) {
-        using First = std::tuple_element_t<0, Branches>;
-        using Result = std::invoke_result_t<Handler&, decltype(take_branch_<First>(
-                                                          std::declval<inner_branch_t<First>>()))>;
-        bool is_dispatched = false;
-        if constexpr (std::is_void_v<Result>) {
-            (
-                [&] {
-                    using Branch = std::tuple_element_t<Is, Branches>;
-                    if constexpr (std::is_same_v<inner_branch_t<Branch>, Next>) {
-                        if (!is_dispatched && label == Is) {
-                            is_dispatched = true;
-                            std::invoke(handler, take_branch_<Branch>(std::move(next)));
-                        }
-                    }
-                }(),
-                ...);
-            if (!is_dispatched) [[unlikely]]
-                std::abort();
-        } else {
-            std::optional<Result> result;
-            (
-                [&] {
-                    using Branch = std::tuple_element_t<Is, Branches>;
-                    if constexpr (std::is_same_v<inner_branch_t<Branch>, Next>) {
-                        if (!is_dispatched && label == Is) {
-                            is_dispatched = true;
-                            result.emplace(std::invoke(handler, take_branch_<Branch>(std::move(next))));
-                        }
-                    }
-                }(),
-                ...);
-            if (!is_dispatched) [[unlikely]]
-                std::abort();
-            return std::move(*result);
-        }
-    }
 };
 
 // ── The mint ─────────────────────────────────────────────────────────
@@ -844,52 +941,13 @@ private:
 // Mints one endpoint.  The other endpoint's protocol is a template
 // argument, so the pair is checked without a mint that holds both ends.
 
-template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Resource>
-    requires CheckpointSessionAdmissible<Proto, PeerProto> && SessionResource<Resource>
-[[nodiscard]] constexpr auto mint_checkpoint_session(Resource resource,
+template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx,
+          typename Resource>
+    requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource>
+[[nodiscard]] constexpr auto mint_checkpoint_session(Ctx const& ctx, Resource resource,
                                                      std::source_location loc = std::source_location::current()) noexcept {
-    return detail::late_door_t<CheckpointDoor, Proto>::template open_<Proto, PeerProto, Policy>(
-        std::forward<Resource>(resource), loc);
+    return CheckpointDoor::open<Proto, PeerProto, Policy>(ctx, std::forward<Resource>(resource), loc);
 }
-
-// ── The checkpoint door ──────────────────────────────────────────────
-//
-// The door of the checkpoint mint.  Its member is private and static.
-// Its friend is mint_checkpoint_session, which does the compliance check
-// of the pair before it opens the first checkpoint handle.  A rollback
-// rebuilds the plain handle through the rewind of fixy/session/Handle.h.
-//
-// The class is final, and no object of it exists.  A friend declaration
-// of a constrained function template must give the same constraint, and
-// it cannot have a default argument.  For this reason, the class is after
-// the mint.  The mint names the class through detail::late_door_t.
-class CheckpointDoor final {
-    CheckpointDoor() = delete("the checkpoint door holds static members only, and no object of it exists");
-    CheckpointDoor(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
-    CheckpointDoor& operator=(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
-    CheckpointDoor(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
-    CheckpointDoor& operator=(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
-    constexpr ~CheckpointDoor() noexcept {}
-
-    template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Resource>
-        requires CheckpointSessionAdmissible<Proto, PeerProto> && SessionResource<Resource>
-    friend constexpr auto mint_checkpoint_session(Resource resource, std::source_location loc) noexcept;
-
-    // Opens the plain handle of the erased protocol, and puts around it
-    // the checkpoint handle at the start of Proto.  The first checkpoint
-    // of the session is the start.
-    template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Resource>
-    [[nodiscard]] static constexpr auto open_(Resource resource, std::source_location loc) noexcept {
-        static_assert(CheckpointSessionAdmissible<Proto, PeerProto>,
-                      "fixy::session::diagnostic [Checkpoint_Session_Refused]: the checkpoint door accepts only a "
-                      "pair of protocols that mint_checkpoint_session accepts.");
-        using Start = detail::checkpoint::resolve<Proto, void>;
-        auto inner =
-            mint_session_handle<checkpoint_erase_t<Proto>, Resource, Policy>(std::forward<Resource>(resource), loc);
-        return CheckpointHandle<decltype(inner), typename Start::head, typename Start::loop,
-                                CheckpointFrame<Proto, Proto, void>>{std::move(inner)};
-    }
-};
 
 }  // namespace fixy::session
 

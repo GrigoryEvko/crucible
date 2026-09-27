@@ -19,7 +19,8 @@ using Proto = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
 
 int main() {
     s::PeerCrashCell cell;
-    auto handle = s::mint_crash_session<Proto, Alice, Bob>(Wire{}, cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, cell);
     std::move(handle).branch([](Wire&) noexcept -> std::size_t { return 0; },
                              [](auto branch) noexcept { std::move(branch).detach(s::detach_reason::TestInstrumentation{}); });
     return 0;

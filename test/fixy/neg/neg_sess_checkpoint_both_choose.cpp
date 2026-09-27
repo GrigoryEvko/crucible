@@ -12,7 +12,8 @@ struct Wire {};
 using Decide = s::Select<s::Commit<s::Send<int, s::End>>, s::Roll>;
 
 int main() {
-    auto handle = s::mint_checkpoint_session<Decide, Decide>(Wire{});
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_checkpoint_session<Decide, Decide>(ctx, Wire{});
     (void)handle;
     return 0;
 }

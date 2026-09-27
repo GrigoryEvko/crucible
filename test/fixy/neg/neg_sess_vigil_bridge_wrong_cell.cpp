@@ -10,7 +10,8 @@ namespace vm = fixy::session::vigil_mode;
 
 int main() {
     std::uint64_t not_a_cell = 0;
-    auto session = vm::mint_vigil_mode_bridge(not_a_cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto session = vm::mint_vigil_mode_bridge(ctx, not_a_cell);
     (void)session;
     return 0;
 }

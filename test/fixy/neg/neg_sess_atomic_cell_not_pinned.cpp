@@ -31,7 +31,8 @@ using Once = s::Send<loose_cell_fixture::Report, s::End>;
 
 int main() {
     loose_cell_fixture::LoosePhaseCell cell{};
-    auto session = s::mint_atomic_session<Once>(cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto session = s::mint_atomic_session<Once>(ctx, cell);
     (void)session;
     return 0;
 }

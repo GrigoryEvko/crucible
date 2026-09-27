@@ -37,9 +37,13 @@ test/foundation/test_host_owner_attacks.cpp ::foundation::effects::detail x4 —
 # Session tests: a test that reads a helper of the session core, or builds a
 # background context from its witness to drive a session.
 test/fixy/test_session_async_channel.cpp ::foundation::effects::detail x1 — builds a background context from its witness
+test/fixy/test_session_bridges.cpp ::foundation::effects::detail x1 — builds a background context from its witness
+test/fixy/test_session_crash_attack.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_crash_stop.cpp ::fixy::session::detail x11 — walks the crash projection helpers
+test/fixy/test_session_crash_stop.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_entry.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_global_attack.cpp ::fixy::session::detail x1 — reads the projection check of each role
+test/fixy/test_session_global_crash.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_handle.cpp ::fixy::session::detail x18 — pins the loop frames of the session handle
 test/fixy/test_session_handle.cpp ::fixy::session::watch::detail x2 — reads the owner of a watched endpoint record
 test/fixy/test_session_handle.cpp ::foundation::effects::detail x5 — builds a background context from its witness
@@ -47,7 +51,9 @@ test/fixy/test_session_handle_attacks.cpp ::fixy::session::detail x3 — builds 
 test/fixy/test_session_handle_attacks.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_ownership_attacks.cpp ::fixy::session::detail x2 — reads the payload refusal of the ownership check
 test/fixy/test_session_payload_seal.cpp ::fixy::session::detail x8 — specializes each gate and cache cell of the payload walk to show that no verdict changes
+test/fixy/test_session_recording.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_rollback.cpp ::fixy::session::detail x2 — pins the checkpoint erasure of a protocol
+test/fixy/test_session_rollback.cpp ::foundation::effects::detail x1 — builds a background context from its witness
 test/fixy/test_session_subtype.cpp ::fixy::session::detail x1 — pins the bound of the async subtype search
 
 # Self-test namespaces and helpers: a test that runs a self-test namespace of

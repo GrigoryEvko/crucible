@@ -294,22 +294,22 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
+| `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
+| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
 | `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 7 |
-| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | Y | Y | Y | token | · | · | HS14: 22 |
+| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 23 |
 | `mint_delegated_session(H)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_delegated_session(H,Hold)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
-| `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
+| `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
 | `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 11 |
-| `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 44 |
+| `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
+| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 46 |
 | `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
-| `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
+| `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 
 ## include/foundation/algebra/
 
@@ -358,4 +358,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 113 | 48 | 62 | 3 | 0 | · | 12 |
+| new (`include/foundation/`, `include/fixy/`) | 113 | 52 | 58 | 3 | 0 | · | 12 |

@@ -15,7 +15,8 @@ struct Wire {};
 using Proto = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
 
 int main() {
-    auto handle = s::mint_crash_session<Proto, Alice, Bob>(Wire{}, s::PeerCrashCell{});
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, s::PeerCrashCell{});
     (void)handle;
     return 0;
 }

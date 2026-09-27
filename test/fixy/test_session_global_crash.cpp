@@ -15,6 +15,8 @@
 #include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
+#include <foundation/effects/Ctx.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <deque>
@@ -256,6 +258,11 @@ constexpr auto poll_int = [](Port& port) noexcept -> std::optional<int> {
 
 namespace {
 
+// The context of each session in this file.  No payload here carries an
+// effect row, so the background context admits every protocol.
+using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+[[nodiscard]] BgCtx bg_ctx() noexcept { return BgCtx{::foundation::effects::testing::bg()}; }
+
 int fail(const char* what) {
     std::fprintf(stderr, "test_session_global_crash: %s\n", what);
     return 1;
@@ -268,8 +275,8 @@ int run_sender_crashes_after_send() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<BinaryP, P, Q>(Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<BinaryQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
 
     auto [p_value, p_label_lost] = std::move(p).send(push_label);
     if (p_label_lost) return fail("a label to a live peer came back");
@@ -309,8 +316,8 @@ int run_sender_crashes_first() {
     Mailbox to_q;
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
-    auto p = s::mint_crash_session<BinaryP, P, Q>(Port{&to_p, &to_q}, cell_q);
-    auto q = s::mint_crash_session<BinaryQ, Q, P>(Port{&to_q, &to_p}, cell_p);
+    auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q);
+    auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p);
     (void)std::move(p).crash(s::CrashCause::ErrorReturn, s::mint_crash_reporter(cell_p));
 
     bool detected = false;

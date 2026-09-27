@@ -16,6 +16,9 @@
 
 #include <fixy/session/Checkpoint.h>
 
+#include <foundation/effects/Computation.h>
+#include <foundation/effects/Ctx.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <deque>
@@ -25,11 +28,21 @@
 #include <utility>
 
 namespace s = fixy::session;
+namespace eff = ::foundation::effects;
 
 namespace {
 
+// The context of each session in this file.  No payload of the example
+// carries an effect row, so the background context admits it.
+using BgCtx = eff::detail::ctx_witnesses::BgWitness;
+using BgIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>;
+[[nodiscard]] BgCtx bg_ctx() noexcept { return BgCtx{eff::testing::bg()}; }
+
+// The payload row walk of fixy/concurrent/PayloadRow.h reads no
+// std::string_view, so the text travels as a pointer to its characters.
 struct Text {
-    std::string_view value;
+    const char* value = "";
+    [[nodiscard]] std::string_view view() const noexcept { return value; }
 };
 struct Region {};
 
@@ -133,6 +146,21 @@ using LoopDecide = s::Loop<s::Select<s::Commit<s::Send<int, s::Continue>>, s::Ro
 using LoopFollow = s::Loop<s::Offer<s::Commit<s::Recv<int, s::Continue>>, s::Roll, s::End>>;
 static_assert(s::checkpoint_verdict_v<LoopDecide, LoopFollow> == s::CheckpointVerdict::Compliant);
 
+// ── The context gate ────────────────────────────────────────────────
+//
+// The context of a checkpoint session admits the effect row of each
+// payload, as the context of mint_session does.
+using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+using DecideIo = s::Select<s::Commit<s::Send<IoPayload, s::End>>, s::Roll>;
+using FollowIo = s::Offer<s::Commit<s::Recv<IoPayload, s::End>>, s::Roll>;
+struct IoWire {
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+static_assert(s::CheckpointSessionAdmissible<DecideIo, FollowIo>);
+static_assert(!s::CtxFitsCheckpointSession<BgCtx, DecideIo, FollowIo, IoWire>, "the background context holds no IO");
+static_assert(s::CtxFitsCheckpointSession<BgIoCtx, DecideIo, FollowIo, IoWire>);
+static_assert(!s::CtxFitsCheckpointSession<int, Decide, Follow, IoWire>, "an int is not an execution context");
+
 // ── The runtime ─────────────────────────────────────────────────────
 
 struct Mailbox {
@@ -155,7 +183,7 @@ constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
 // A Text travels as its first character, which is enough to tell the
 // three texts of the example apart.
 constexpr auto push_text = [](Port& port, Text& text) noexcept {
-    port.out->slots.push_back(static_cast<std::uint64_t>(static_cast<unsigned char>(text.value.front())));
+    port.out->slots.push_back(static_cast<std::uint64_t>(static_cast<unsigned char>(text.view().front())));
     return true;
 };
 constexpr auto push_int = [](Port& port, int& value) noexcept {
@@ -201,7 +229,7 @@ template <typename UserHandle, typename ServiceHandle>
 int run_from_metadata(UserHandle user, ServiceHandle service, int round, Trace& trace) {
     auto service_meta = std::move(service).send(Text{"meta"}, push_text);
     auto [meta, user_meta] = std::move(user).recv(pop_text);
-    if (meta.value != "meta") return 1;
+    if (meta.view() != "meta") return 1;
 
     if (round == 0) {
         // HD, then roll.
@@ -292,8 +320,8 @@ int run_session(UserHandle user, ServiceHandle service, int round, Trace& trace)
 int run_video_on_demand() {
     Mailbox to_user;
     Mailbox to_service;
-    auto user = s::mint_checkpoint_session<UserC, ServiceC>(Port{&to_user, &to_service});
-    auto service = s::mint_checkpoint_session<ServiceC, UserC>(Port{&to_service, &to_user});
+    auto user = s::mint_checkpoint_session<UserC, ServiceC>(bg_ctx(), Port{&to_user, &to_service});
+    auto service = s::mint_checkpoint_session<ServiceC, UserC>(bg_ctx(), Port{&to_service, &to_user});
     static_assert(std::is_same_v<decltype(user)::protocol, UserC>);
 
     Trace trace;
@@ -315,8 +343,8 @@ int run_video_on_demand() {
 int run_loop_rollback() {
     Mailbox to_left;
     Mailbox to_right;
-    auto left = s::mint_checkpoint_session<LoopDecide, LoopFollow>(Port{&to_left, &to_right});
-    auto right = s::mint_checkpoint_session<LoopFollow, LoopDecide>(Port{&to_right, &to_left});
+    auto left = s::mint_checkpoint_session<LoopDecide, LoopFollow>(bg_ctx(), Port{&to_left, &to_right});
+    auto right = s::mint_checkpoint_session<LoopFollow, LoopDecide>(bg_ctx(), Port{&to_right, &to_left});
 
     auto left_saved = std::move(left).select<0>(push_label);
     int rc = 1;

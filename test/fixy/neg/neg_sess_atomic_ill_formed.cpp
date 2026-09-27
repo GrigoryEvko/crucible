@@ -34,7 +34,8 @@ using Orphan = s::Send<Report, s::Continue>;
 
 int main() {
     PhaseCell cell{};
-    auto session = s::mint_atomic_session<Orphan>(cell);
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto session = s::mint_atomic_session<Orphan>(ctx, cell);
     (void)session;
     return 0;
 }

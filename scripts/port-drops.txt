@@ -699,6 +699,7 @@ crucible/safety/_Simd.h:partial_load  — Removed, not ported, because its one c
 # ── bridges: the machine bridge and the Vigil mode cell ─────────────────
 crucible/bridges/_MachineSessionBridge.h:machine_from_session  — A view ends through the handle API of fixy/session/MachineBridge.h: close() at End returns the bridge, and detach() with a reason abandons the remaining steps.
 crucible/bridges/_VigilModeHandle.h:mode_transition_allowed  — Renamed mode_transition_allowed_v in fixy/session/VigilMode.h, which reads the edge relation admitted_mode_transitions, so each legal transition is one declared edge.
+crucible/bridges/_VigilModeHandle.h:CanMintVigilModeBridge  → include/fixy/session/VigilMode.h  — Replaced by CtxFitsVigilModeBridge, which asks the cell of the old concept and the context gate of mint_atomic_session.
 
 # ── concurrent: the dropped channels, their session wirings and the endpoint clauses ──
 # No production file reaches these headers.  The new tree carries two

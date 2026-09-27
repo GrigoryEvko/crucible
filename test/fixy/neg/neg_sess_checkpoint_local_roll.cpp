@@ -10,7 +10,8 @@ struct Wire {};
 }  // namespace
 
 int main() {
-    auto handle = s::mint_checkpoint_session<s::Send<int, s::Roll>, s::Recv<int, s::Roll>>(Wire{});
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_checkpoint_session<s::Send<int, s::Roll>, s::Recv<int, s::Roll>>(ctx, Wire{});
     (void)handle;
     return 0;
 }

@@ -14,7 +14,8 @@ using Decide = s::Select<s::Commit<s::Send<int, s::End>>, s::Roll>;
 using Swapped = s::Offer<s::Roll, s::Commit<s::Recv<int, s::End>>>;
 
 int main() {
-    auto handle = s::mint_checkpoint_session<Decide, Swapped>(Wire{});
+    const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
+    auto handle = s::mint_checkpoint_session<Decide, Swapped>(ctx, Wire{});
     (void)handle;
     return 0;
 }

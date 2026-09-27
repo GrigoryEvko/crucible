@@ -15,6 +15,8 @@
 #include <fixy/session/Projection.h>
 #include <fixy/session/Recording.h>
 
+#include <foundation/effects/Ctx.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +37,11 @@ int fail(const char* what) {
     std::fprintf(stderr, "test_session_recording: %s\n", what);
     return 1;
 }
+
+// The context of each session in this file.  No payload here carries an
+// effect row, so the background context admits every protocol.
+using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
+[[nodiscard]] BgCtx bg_ctx() noexcept { return BgCtx{::foundation::effects::testing::bg()}; }
 }  // namespace
 
 constexpr s::RoleTagId kSelf{11};
@@ -245,9 +252,9 @@ int check_crash_recording() {
     s::PeerCrashCell cell_q;
     s::SessionEventLog log_p;
     s::SessionEventLog log_q;
-    auto p = s::mint_recorded_session(s::mint_crash_session<ProtoP, P, Q>(Port{&to_p, &to_q}, cell_q), log_p, kSelf,
+    auto p = s::mint_recorded_session(s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q), log_p, kSelf,
                                       kPeer);
-    auto q = s::mint_recorded_session(s::mint_crash_session<ProtoQ, Q, P>(Port{&to_q, &to_p}, cell_p), log_q, kPeer,
+    auto q = s::mint_recorded_session(s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p), log_q, kPeer,
                                       kSelf);
 
     (void)std::move(q).crash(s::CrashCause::Throw, s::mint_crash_reporter(cell_q));
@@ -304,9 +311,9 @@ int check_checkpoint_recording() {
     Mailbox to_right;
     s::SessionEventLog log_left;
     s::SessionEventLog log_right;
-    auto left = s::mint_recorded_session(s::mint_checkpoint_session<Decide, Follow>(Port{&to_left, &to_right}),
+    auto left = s::mint_recorded_session(s::mint_checkpoint_session<Decide, Follow>(bg_ctx(), Port{&to_left, &to_right}),
                                          log_left, kSelf, kPeer);
-    auto right = s::mint_recorded_session(s::mint_checkpoint_session<Follow, Decide>(Port{&to_right, &to_left}),
+    auto right = s::mint_recorded_session(s::mint_checkpoint_session<Follow, Decide>(bg_ctx(), Port{&to_right, &to_left}),
                                           log_right, kPeer, kSelf);
     auto left_saved = std::move(left).select<0>(push_label);
     int got = 0;
@@ -431,8 +438,8 @@ int check_keyed_checkpoint() {
     using Follow = s::Offer<s::Commit<Hear>, s::Roll>;
     Mailbox to_left;
     Mailbox to_right;
-    auto left = s::mint_checkpoint_session<Decide, Follow>(Port{&to_left, &to_right});
-    auto right = s::mint_checkpoint_session<Follow, Decide>(Port{&to_right, &to_left});
+    auto left = s::mint_checkpoint_session<Decide, Follow>(bg_ctx(), Port{&to_left, &to_right});
+    auto right = s::mint_checkpoint_session<Follow, Decide>(bg_ctx(), Port{&to_right, &to_left});
     auto left_value = std::move(left).select<0>(push_label).template select<1>(push_label);
     static_assert(std::is_same_v<typename decltype(left_value)::protocol, s::Send<int, s::Send<int, s::End>>>);
     (void)std::move(left_value).send(6, push_int).send(5, push_int).close();

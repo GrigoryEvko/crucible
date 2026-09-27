@@ -2344,22 +2344,32 @@ fixy_neg_compile_test(neg_sess_atomic_ill_formed
 # The address of a cell is its identity, so a cell with the read shape
 # that is not Pinned is refused by the same concept.
 fixy_neg_compile_test(neg_sess_atomic_cell_not_pinned
-  "no matching function for call to .mint_atomic_session<Once>\\(loose_cell_fixture::LoosePhaseCell&\\)"
+  "no matching function for call to .mint_atomic_session<Once>\\(const foundation::effects::detail::ctx_witnesses::BgWitness&, loose_cell_fixture::LoosePhaseCell&\\)"
   "satisfaction of .AtomicMachineCell<Cell>. \\[with Cell = loose_cell_fixture::LoosePhaseCell\\]"
   "_Base = foundation::Pinned<loose_cell_fixture::LoosePhaseCell>")
 
-# HS14 for mint_vigil_mode_bridge.  Its gate is one clause, so the two
-# fixtures separate the two ways to fail it: an unrelated type, and a
-# cell that satisfies the structural concept and is still refused —
-# which is what says the gate is nominal rather than structural.
+# An atomic session and a view of a machine are sessions, so the context
+# admits the effect row of each payload, as the context of mint_session
+# does.
+fixy_neg_compile_test(neg_sess_atomic_ctx_row_refused
+  "no matching function for call to .mint_atomic_session<SendsIo>"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+fixy_neg_compile_test(neg_sess_machine_view_ctx_row_refused
+  "no matching function for call to .fixy::session::SessionFromMachine<neg_sess_machine_view_ctx_row_refused_types::Payload,"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+
+# HS14 for mint_vigil_mode_bridge.  The two fixtures separate the two
+# ways to fail the cell clause: an unrelated type, and a cell that
+# satisfies the structural concept and is still refused, which is what
+# says the gate is nominal rather than structural.
 fixy_neg_compile_test(neg_sess_vigil_bridge_wrong_cell
   "no matching function for call to .mint_vigil_mode_bridge"
-  "satisfaction of .CanMintVigilModeBridge<Cell>."
+  "satisfaction of .CtxFitsVigilModeBridge<Ctx, Cell>."
   "long unsigned int")
 
 fixy_neg_compile_test(neg_sess_vigil_bridge_lookalike_cell
   "no matching function for call to .mint_vigil_mode_bridge"
-  "satisfaction of .CanMintVigilModeBridge<Cell>."
+  "satisfaction of .CtxFitsVigilModeBridge<Ctx, Cell>."
   "LookalikeCell")
 
 # The transition relation itself: DIVERGED has no edge in either
@@ -2398,15 +2408,24 @@ fixy_neg_compile_test(neg_sess_crash_cell_temporary
   "use of deleted function .void fixy::session::mint_crash_session"
   "Crash_Cell_Temporary")
 
-# The door of the crash mint puts a handle under crash-stop semantics.
-# Its member is private, and the class is final.  Only the mint calls the
-# member, and no class can use the door as a base to get access to it.
-fixy_neg_compile_test(neg_sess_crash_door_called_outside
-  "is private within this context"
-  "fixy::session::CrashSessionDoor::open_")
+# The context of a crash session admits the effect row of each payload.
+fixy_neg_compile_test(neg_sess_crash_ctx_row_refused
+  "no matching function for call to .mint_crash_session<ReceivesIo,"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+
+# The door of the crash session builds each decorator and does each step.
+# Its opening member states the whole gate of the mint, and the class is
+# final.  The decorator befriends the door alone, so a specialization of
+# the decorator reaches no constructor of another.
+fixy_neg_compile_test(neg_sess_crash_door_states_the_gate
+  "no matching function for call to .fixy::session::CrashSessionDoor::open<fixy::session::Recv<int, fixy::session::End>,"
+  "the expression .every_reception_handles_crash_v<Proto, Peer, Reliable> \\[with Proto = fixy::session::Recv<int, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_crash_door_derived_look_alike
   "cannot derive from .final. base"
   "CrashSessionDoor")
+fixy_neg_compile_test(neg_sess_crash_watched_friend_specialized
+  "is private within this context"
+  "fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::CrashWatched\\(Handle, const fixy::session::PeerCrashCell&")
 
 # Rules 1 and 2, and Stop as runtime syntax, hold in every session, so
 # the plain handle factory refuses them.
@@ -2482,7 +2501,7 @@ fixy_neg_compile_test(neg_sess_crash_token_send_without_refusal
   "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::send\\(typename P::message_type, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_token_send_without_refusal
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
-  "In instantiation of .constexpr auto fixy::session::Recorded<Inner>::send\\(T, Transport\\)")
+  "In instantiation of .static constexpr auto fixy::session::RecordingDoor::send\\(fixy::session::Recorded<Inner>&&, T, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_send_transport_result
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
   "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Position>::send\\(typename P::message_type, Transport\\)")
@@ -2540,17 +2559,26 @@ fixy_neg_compile_test(neg_sess_checkpoint_delegation_owned_handle
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::NotCheckpointShaped \\[with Proto = fixy::session::Select<fixy::session::Commit<fixy::session::Send<std::unique_ptr<fixy::session::SessionHandle<")
 
-# The checkpoint door opens the first checkpoint handle.  Its member is
-# private, and the class is final.  Only the mint calls the member, and no
-# class can use the door as a base to get access to it.  A rollback
+# The context of a checkpoint session admits the effect row of each
+# payload.
+fixy_neg_compile_test(neg_sess_checkpoint_ctx_row_refused
+  "no matching function for call to .mint_checkpoint_session<Decide, Follow>"
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, typename fixy::session::detail::checkpoint::erase<K>::type>.")
+
+# The checkpoint door builds each checkpoint handle and does each step.
+# Its opening member states the whole gate of the mint, and the class is
+# final.  The checkpoint handle befriends the door alone.  A rollback
 # rebuilds the plain handle through the rewind of fixy/session/Handle.h,
 # and the fixtures of the rewind stand beside the handle factory.
-fixy_neg_compile_test(neg_sess_checkpoint_door_called_outside
-  "is private within this context"
-  "fixy::session::CheckpointDoor::open_")
+fixy_neg_compile_test(neg_sess_checkpoint_door_states_the_gate
+  "no matching function for call to .fixy::session::CheckpointDoor::open<Decide, Decide,"
+  "!= fixy::session::CheckpointVerdict::Stuck")
 fixy_neg_compile_test(neg_sess_checkpoint_door_derived_look_alike
   "cannot derive from .final. base"
   "CheckpointDoor")
+fixy_neg_compile_test(neg_sess_checkpoint_handle_friend_specialized
+  "is private within this context"
+  "fixy::session::CheckpointHandle<Inner, Head, HeadLoop, Frame>::CheckpointHandle\\(Inner\\)")
 
 # ── The event log and the recorder ────────────────────────────────────
 #
@@ -2570,15 +2598,19 @@ fixy_neg_compile_test(neg_sess_record_recorded_handle
   "no matching function for call to .mint_recorded_session"
   "the required type .typename fixy::session::detail::recording::wire_protocol<H>::type. is invalid")
 
-# The door of the recording mint puts a recorder around a handle.  Its
-# member is private, and the class is final.  Only the mint calls the
-# member, and no class can use the door as a base to get access to it.
-fixy_neg_compile_test(neg_sess_record_door_called_outside
-  "is private within this context"
-  "fixy::session::RecordingDoor::make_")
+# The recording door builds each recorder and does each step.  Its
+# opening member states the whole gate of the mint, and the class is
+# final.  The recorder befriends the door alone, so a specialization of
+# the recorder reaches no inner handle of another.
+fixy_neg_compile_test(neg_sess_record_door_states_the_gate
+  "no matching function for call to .fixy::session::RecordingDoor::make<neg_sess_record_door_states_the_gate_types::NotAHandle>"
+  "required for the satisfaction of .RecordableHandle<H>. \\[with H = neg_sess_record_door_states_the_gate_types::NotAHandle\\]")
 fixy_neg_compile_test(neg_sess_record_door_derived_look_alike
   "cannot derive from .final. base"
   "RecordingDoor")
+fixy_neg_compile_test(neg_sess_recorded_friend_specialized
+  "is private within this context"
+  "fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_recorded_friend_specialized_types::Wire")
 
 fixy_neg_compile_test(neg_sess_record_temporary_log
   "no matching function for call to .mint_recorded_session"
