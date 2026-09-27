@@ -45,14 +45,14 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | · | HS14: 12 |
-| `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | · | HS14: 3 |
+| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | · | HS14: 5 |
+| `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | · | HS14: 2 |
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | · | HS14: 15 |
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
-| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | · | HS14: 12 |
-| `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 3 |
+| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | · | HS14: 7 |
+| `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | · | HS14: 2 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 6 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
@@ -315,8 +315,8 @@ apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
 |---|---|---|---|---|---|---|---|---|---|
-| `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
-| `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
+| `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 
 ## include/foundation/diag/
 

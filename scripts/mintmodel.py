@@ -810,31 +810,89 @@ def fixture_files(root: Path = tsast.REPO_ROOT) -> dict[str, list[Path]]:
     return {family: sorted(set(paths)) for family, paths in found.items()}
 
 
-def fixture_counts(paths: list[Path]) -> dict[str, int]:
-    """Return, for each mint name, how many negative-compile fixtures use it.
+def fixture_names(paths: list[Path]) -> list[frozenset[str]]:
+    """Return, for each negative-compile fixture, the names that its code spells.
 
     HS14 sets a floor of two fixtures per mint.  The count has to come from the
     AST rather than a text scan, because a fixture's own doc comment names the
     mint it is about, and a text scan counts that mention as a use.  An
     identifier node cannot appear inside a comment, so parsing removes the whole
-    class of inflation by construction.
+    class of inflation by construction.  The names hold each identifier, each
+    field name, each type name and each namespace name, so a caller can see the
+    class that a fixture names beside a member mint.
 
     Args:
         paths: The fixture files to scan
 
     Returns:
-        Mint name to the number of fixture files that reference it
+        One set of names for each fixture file
     """
-    counts: dict[str, int] = {}
+    return [frozenset(tsast.spelled(node) for node in tree.find("identifier", "field_identifier", "type_identifier",
+                                                               "namespace_identifier"))
+            for tree in tsast.parse(paths, strict=False)]
+
+
+def alias_heads(paths: list[Path]) -> dict[str, set[str]]:
+    """Return, for each type name, the aliases whose definition is that type.
+
+    `using EpochLattice = StrongCounterLattice<EpochTag, Max>;` gives
+    StrongCounterLattice the alias EpochLattice.  The head of the definition
+    decides, so a template argument of it gains no alias.  An alias of an
+    alias is followed to its end.
+
+    Complexity: linear in the size of the files, and in the number of aliases
+    for each round of the closure.
+
+    Args:
+        paths: The headers to read
+
+    Returns:
+        Each type name to the alias names that denote it
+    """
+    head_of: dict[str, str] = {}
     for tree in tsast.parse(paths, strict=False):
-        seen: set[str] = set()
-        for node in tree.find("identifier", "field_identifier"):
-            name = node.text
-            if name.startswith("mint_"):
-                seen.add(name)
-        for name in seen:
-            counts[name] = counts.get(name, 0) + 1
-    return counts
+        for node in tree.find("alias_declaration"):
+            name, body = node.child_by_field("name"), node.child_by_field("type")
+            head = None if body is None else body.child_by_field("type")
+            if head is not None and head.type == "qualified_identifier":
+                head = tsast.qualified_parts(head)
+                head_name = head[1][-1] if head and head[1] else None
+            else:
+                head_name = None if head is None else tsast.leaf_name(head)
+            if name is not None and head_name:
+                head_of[tsast.spelled(name)] = head_name
+    aliases: dict[str, set[str]] = {}
+    for alias, head in head_of.items():
+        seen = {alias}
+        while head in head_of and head not in seen:
+            seen.add(head)
+            head = head_of[head]
+        aliases.setdefault(head, set()).add(alias)
+    return aliases
+
+
+def fixture_count(mint: Mint, carriers: int, names: list[frozenset[str]],
+                  aliases: dict[str, set[str]] | None = None) -> int:
+    """Return how many fixtures use one mint.
+
+    A member mint whose name more than one class carries counts a fixture only
+    when the fixture also names its class or an alias of it, so two carriers
+    of one member name do not share one count.  A fixture that names neither
+    class counts for neither.  Any other mint counts each fixture that names it.
+
+    Args:
+        mint: The mint
+        carriers: The number of mints of its tree with the same name
+        names: The names of each fixture of its tree, from fixture_names()
+        aliases: Each class to the aliases that denote it, from alias_heads()
+
+    Returns:
+        The number of fixtures
+    """
+    if mint.owner is not None and carriers > 1:
+        spellings = {mint.owner} | (aliases or {}).get(mint.owner, set())
+        return sum(1 for spelled in names if mint.name in spelled and spellings & spelled)
+    return sum(1 for spelled in names if mint.name in spelled)
 
 
 def declaration_start(site: tsast.Node) -> int:

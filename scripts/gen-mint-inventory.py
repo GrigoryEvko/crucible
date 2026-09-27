@@ -153,11 +153,16 @@ def build_rows(
     """
     mints = mintmodel.collect(surface)
     reexported = mintmodel.reexports(umbrella)
-    counts = {family: mintmodel.fixture_counts(paths) for family, paths in fixtures.items()}
+    names = {family: mintmodel.fixture_names(paths) for family, paths in fixtures.items()}
+    aliases = mintmodel.alias_heads(surface)
+    family_of = {id(mint): "new" if mintmodel.is_new_tree(relative(mint.path, root)) else "old" for mint in mints}
+    carriers: dict[tuple[str, str], set[str | None]] = {}
+    for mint in mints:
+        carriers.setdefault((family_of[id(mint)], mint.name), set()).add(mint.owner)
     rows: list[Row] = []
     for mint in mints:
         path = relative(mint.path, root)
-        family = "new" if mintmodel.is_new_tree(path) else "old"
+        family = family_of[id(mint)]
         fixy = NOT_APPLICABLE
         if family == "old" and not path.startswith(OLD_FIXY + "/") and mint.shape != "member":
             site = reexported.get(mint.linkage_name)
@@ -168,7 +173,7 @@ def build_rows(
             group=group_of(path),
             family=family,
             fixy=fixy,
-            hs14=counts.get(family, {}).get(mint.name, 0),
+            hs14=mintmodel.fixture_count(mint, len(carriers[(family, mint.name)]), names.get(family, []), aliases),
         ))
     per_site: dict[tuple[str, str], int] = {}
     for row in rows:
@@ -430,6 +435,10 @@ struct Holder {
     [[nodiscard]] Thing mint_planted_member() const noexcept { return {}; }
     friend constexpr Thing mint_planted_token(Thing) noexcept;
 };
+struct Keeper {
+    [[nodiscard]] Thing mint_planted_member() const noexcept { return {}; }
+};
+using Kept = Keeper;
 }  // namespace crucible::sample
 """,
         "include/crucible/sample/_Superseded.h": """
@@ -468,6 +477,14 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
         "test/fixy/neg/uses_image_a.cpp": "void f() { mint_from_image(0, 0); }\n",
         "test/fixy/neg/uses_image_b.cpp": "void f() { mint_from_image(1, 1); }\n",
         "test/fixy/neg/new_tree_names_the_old_token.cpp": "void f() { mint_planted_token(0); }\n",
+        # Two classes carry the member name mint_planted_member.  A fixture
+        # counts for the class it names, and one that names neither class
+        # counts for neither.
+        "test/sample_neg/holder_first.cpp": "void f(Holder const& h) { (void)h.mint_planted_member(); }\n",
+        "test/sample_neg/holder_second.cpp": "void f() { sample::Holder h; (void)h.mint_planted_member(); }\n",
+        "test/sample_neg/keeper.cpp": "void f(Keeper const& k) { (void)k.mint_planted_member(); }\n",
+        "test/sample_neg/keeper_alias.cpp": "void f(Kept const& k) { (void)k.mint_planted_member(); }\n",
+        "test/sample_neg/no_class.cpp": "void f(auto const& any) { (void)any.mint_planted_member(); }\n",
     }
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -481,11 +498,17 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
         by_name = {r.name: r for r in rows}
 
         check(
-            "finds exactly the five live mints",
+            "finds exactly the six live mints",
             sorted(by_name) == [
-                "Holder::mint_planted_member", "Lattice::mint_from_image",
+                "Holder::mint_planted_member", "Keeper::mint_planted_member", "Lattice::mint_from_image",
                 "mint_planted_origin", "mint_planted_source", "mint_planted_token",
             ],
+        )
+        holder, keeper = by_name.get("Holder::mint_planted_member"), by_name.get("Keeper::mint_planted_member")
+        check(
+            "two classes that carry one member name each count the fixtures that name the class or its alias",
+            holder is not None and keeper is not None and holder.hs14 == 2 and keeper.hs14 == 2,
+            True,
         )
         check("the superseded header is out of scope", "mint_superseded" not in by_name, True)
         token = by_name.get("mint_planted_token")

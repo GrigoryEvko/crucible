@@ -11054,6 +11054,11 @@ crucible_neg_compile_multi_test(neg_schema_register_with_sealed_view
   "neg_schema_register_with_sealed_view.cpp:14")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
   "cannot convert.*Sealed.*MutableView")
+# A field keeps the proof of a sealed view after the table is gone, so the
+# field audit refuses it.
+crucible_neg_compile_multi_test(neg_ckernel_mint_sealed_view_in_field
+  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
+  "! fixy::contains_scoped_view<SealedContainer>\\(\\). evaluates to false")
 
 # FIXY-U-135 — HS14 floor for CKernelTable::mint_mutable_view.
 # Paired fixtures pinning the per-state lock at BOTH gates of the
@@ -11074,12 +11079,11 @@ crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingContainer>\\(\\). evaluates to false")
 
-# The HS14 scanner counts the bare token `mint_mutable_view`, so the kernel
-# table fixtures also count for SchemaTable::mint_mutable_view.  But each
-# carrier has its own ScopedView type, its own view_ok overload and its own
-# no_scoped_view_field_check instance, so the kernel table fixtures do not
-# see a defect in the schema table gate.  This pair is the schema table's
-# own witness.
+# Each carrier has its own ScopedView type, its own view_ok overload and its
+# own no_scoped_view_field_check instance, so the kernel table fixtures do
+# not see a defect in the schema table gate.  The HS14 scanner counts a
+# fixture for the carrier whose class it names.  This pair is the schema
+# table's own witness.
 crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_to_sealed_overload
   "invalid initialization of reference of type .const crucible::SchemaTable::SealedView&."
   "from expression of type .const fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable>.")
