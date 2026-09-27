@@ -6,11 +6,7 @@
 // precondition at consteval, is pinned by separate negative-compile
 // fixtures.
 //
-// Ported from test/test_decide.cpp.  The cells that fed the real
-// Murmur3 finalizer into fmix_preserves_non_zero live with the hash in
-// test/foundation/test_reflect.cpp, because foundation's fmix64 arrives
-// with foundation/reflect/Hash.h; the artificial pairs stay here.  The
-// strong hash types of crucible/Types.h are a chain header, so the
+// The strong hash types of crucible/Types.h are in a chain header, so the
 // sentinel cells use a local stand-in with the same sentinel API.
 
 #include <foundation/algebra/lattices/CipherTierLattice.h>
@@ -30,47 +26,6 @@
 namespace {
 
 namespace dc = foundation::decide;
-
-static_assert(dc::no_overflow_mul<uint32_t>(0, 0));
-static_assert(dc::no_overflow_mul<uint32_t>(0, std::numeric_limits<uint32_t>::max()));
-static_assert(dc::no_overflow_mul<uint32_t>(1, std::numeric_limits<uint32_t>::max()));
-static_assert(dc::no_overflow_mul<uint32_t>(std::numeric_limits<uint32_t>::max(), 1));
-
-static_assert(dc::no_overflow_mul<uint32_t>(10, 20));
-static_assert(dc::no_overflow_mul<uint32_t>(0xFFFFu, 0xFFFFu));  // 2^32 - 2^17 + 1, fits
-
-static_assert(dc::no_overflow_mul<uint8_t>(15, 17));  // 255 = UINT8_MAX
-static_assert(!dc::no_overflow_mul<uint8_t>(16, 16));
-static_assert(!dc::no_overflow_mul<uint32_t>(std::numeric_limits<uint32_t>::max(), 2));
-
-// 46340 is the largest n whose square is representable in int32_t.
-static_assert(dc::no_overflow_mul<int32_t>(46340, 46340));
-static_assert(!dc::no_overflow_mul<int32_t>(46341, 46341));
-static_assert(!dc::no_overflow_mul<int32_t>(std::numeric_limits<int32_t>::max(), 2));
-
-static_assert(dc::no_overflow_mul<int32_t>(-1, std::numeric_limits<int32_t>::max()));
-static_assert(!dc::no_overflow_mul<int32_t>(-1, std::numeric_limits<int32_t>::min()));  // -INT_MIN > INT_MAX
-
-static_assert(dc::no_overflow_mul<int32_t>(-46340, -46340));
-static_assert(!dc::no_overflow_mul<int32_t>(-46341, -46341));
-
-static_assert(dc::no_overflow_mul<uint64_t>(0xFFFFFFFFu, 0xFFFFFFFFu));
-static_assert(!dc::no_overflow_mul<uint64_t>(std::numeric_limits<uint64_t>::max(), 2));
-static_assert(!dc::no_overflow_mul<int64_t>(std::numeric_limits<int64_t>::min(), -1));
-
-[[nodiscard]] constexpr uint64_t safe_mul_u64(uint64_t a, uint64_t b) noexcept {
-    CRUCIBLE_PRE(dc::no_overflow_mul(a, b));
-    return a * b;
-}
-
-[[nodiscard]] constexpr int32_t safe_mul_i32(int32_t a, int32_t b) noexcept {
-    CRUCIBLE_PRE(dc::no_overflow_mul(a, b));
-    return a * b;
-}
-
-static_assert(safe_mul_u64(7, 6) == 42);
-static_assert(safe_mul_i32(-5, 3) == -15);
-static_assert(safe_mul_i32(46340, 46340) == 2147395600);
 
 static_assert(dc::no_overflow_sum<uint32_t>(0, 0));
 static_assert(dc::no_overflow_sum<int32_t>(0, 0));
@@ -107,139 +62,6 @@ static_assert(!dc::no_overflow_sum<int64_t>(std::numeric_limits<int64_t>::min(),
 static_assert(safe_add_u64(40, 2) == 42);
 static_assert(safe_add_i32(-100, 50) == -50);
 static_assert(safe_add_i32(std::numeric_limits<int32_t>::max() - 1, 1) == std::numeric_limits<int32_t>::max());
-
-static_assert(dc::no_overflow_pow2_shift<uint32_t>(0, 0));
-static_assert(dc::no_overflow_pow2_shift<uint32_t>(std::numeric_limits<uint32_t>::max(), 0));
-static_assert(dc::no_overflow_pow2_shift<int32_t>(std::numeric_limits<int32_t>::max(), 0));
-static_assert(dc::no_overflow_pow2_shift<int32_t>(0, 31));
-
-static_assert(!dc::no_overflow_pow2_shift<uint8_t>(1, 8));
-static_assert(!dc::no_overflow_pow2_shift<uint32_t>(1, 32));
-static_assert(!dc::no_overflow_pow2_shift<uint64_t>(1, 64));
-static_assert(!dc::no_overflow_pow2_shift<int32_t>(1, 32));
-
-static_assert(!dc::no_overflow_pow2_shift<int32_t>(1, -1));
-static_assert(!dc::no_overflow_pow2_shift<int64_t>(42, -10));
-
-static_assert(!dc::no_overflow_pow2_shift<int32_t>(-1, 1));
-static_assert(!dc::no_overflow_pow2_shift<int32_t>(std::numeric_limits<int32_t>::min(), 0));
-
-static_assert(dc::no_overflow_pow2_shift<uint8_t>(1, 7));
-static_assert(!dc::no_overflow_pow2_shift<uint8_t>(2, 7));
-static_assert(dc::no_overflow_pow2_shift<uint32_t>(1, 31));
-static_assert(!dc::no_overflow_pow2_shift<uint32_t>(2, 31));
-// The top bit is representable for unsigned T and is the sign bit for
-// signed T, so int32_t gives up one shift against uint32_t.
-static_assert(dc::no_overflow_pow2_shift<int32_t>(1, 30));
-static_assert(!dc::no_overflow_pow2_shift<int32_t>(1, 31));
-static_assert(!dc::no_overflow_pow2_shift<int32_t>(std::numeric_limits<int32_t>::max(), 1));
-
-// Defined behaviour for unsigned T, and rejected anyway: the top bit
-// is shifted out.
-static_assert(!dc::no_overflow_pow2_shift<uint32_t>(std::numeric_limits<uint32_t>::max(), 1));
-
-static_assert(dc::no_overflow_pow2_shift<uint64_t>(1ull, 63));
-static_assert(!dc::no_overflow_pow2_shift<uint64_t>(2ull, 63));
-static_assert(!dc::no_overflow_pow2_shift<int64_t>(std::numeric_limits<int64_t>::max(), 1));
-
-[[nodiscard]] constexpr uint32_t safe_shl_u32(uint32_t a, uint32_t b) noexcept {
-    CRUCIBLE_PRE(dc::no_overflow_pow2_shift(a, b));
-    return a << b;
-}
-
-[[nodiscard]] constexpr int32_t safe_shl_i32(int32_t a, int32_t b) noexcept {
-    CRUCIBLE_PRE(dc::no_overflow_pow2_shift(a, b));
-    return a << b;
-}
-
-static_assert(safe_shl_u32(7, 3) == 56);
-static_assert(safe_shl_u32(1, 31) == 0x80000000u);
-static_assert(safe_shl_i32(1, 30) == 0x40000000);
-static_assert(safe_shl_i32(0, 31) == 0);
-
-// A zero-length array is ill formed. The spans below take size 0.
-constexpr int32_t empty_arr[] = {0};
-static_assert(dc::all_in_range<int32_t>(std::span<const int32_t>(empty_arr, 0), 0, 100));
-static_assert(dc::all_in_range<int32_t>(std::span<const int32_t>(empty_arr, 0), 100, 0));
-
-constexpr int32_t one_in[] = {42};
-constexpr int32_t one_below[] = {-1};
-constexpr int32_t one_above[] = {101};
-static_assert(dc::all_in_range<int32_t>(one_in, 0, 100));
-static_assert(!dc::all_in_range<int32_t>(one_below, 0, 100));
-static_assert(!dc::all_in_range<int32_t>(one_above, 0, 100));
-
-// The middle violator rejects an implementation that tests only the
-// first and last elements.
-constexpr int32_t three_in[] = {10, 50, 90};
-constexpr int32_t three_first_oor[] = {-1, 50, 90};
-constexpr int32_t three_middle_oor[] = {10, 200, 90};
-constexpr int32_t three_last_oor[] = {10, 50, 200};
-static_assert(dc::all_in_range<int32_t>(three_in, 0, 100));
-static_assert(!dc::all_in_range<int32_t>(three_first_oor, 0, 100));
-static_assert(!dc::all_in_range<int32_t>(three_middle_oor, 0, 100));
-static_assert(!dc::all_in_range<int32_t>(three_last_oor, 0, 100));
-
-constexpr int32_t three_eq[] = {7, 7, 7};
-constexpr int32_t three_neq[] = {7, 8, 7};
-static_assert(dc::all_in_range<int32_t>(three_eq, 7, 7));
-static_assert(!dc::all_in_range<int32_t>(three_neq, 7, 7));
-
-static_assert(!dc::all_in_range<int32_t>(three_in, 100, 0));
-
-constexpr int32_t signed_in[] = {-50, 0, 50};
-constexpr int32_t signed_oor[] = {-50, 0, 200};
-static_assert(dc::all_in_range<int32_t>(signed_in, -100, 100));
-static_assert(!dc::all_in_range<int32_t>(signed_oor, -100, 100));
-
-constexpr uint64_t u64_full[] = {0ull, 1ull, std::numeric_limits<uint64_t>::max()};
-static_assert(dc::all_in_range<uint64_t>(u64_full, 0ull, std::numeric_limits<uint64_t>::max()));
-
-[[nodiscard]] constexpr int32_t safe_lookup_i32(std::span<const int32_t> ids, int32_t lo, int32_t hi,
-                                                std::size_t idx) noexcept {
-    CRUCIBLE_PRE(dc::all_in_range(ids, lo, hi));
-    CRUCIBLE_PRE(idx < ids.size());
-    return ids[idx];
-}
-
-static_assert(safe_lookup_i32(three_in, 0, 100, 0) == 10);
-static_assert(safe_lookup_i32(three_in, 0, 100, 1) == 50);
-static_assert(safe_lookup_i32(three_in, 0, 100, 2) == 90);
-
-constexpr int32_t empty_int32[] = {0};
-constexpr int32_t single_int32[] = {42};
-static_assert(dc::strictly_increasing<int32_t>(std::span<const int32_t>(empty_int32, 0)));
-static_assert(dc::strictly_increasing<int32_t>(single_int32));
-
-constexpr int32_t two_strict[] = {1, 2};
-constexpr int32_t two_equal[] = {7, 7};
-constexpr int32_t two_decr[] = {3, 1};
-static_assert(dc::strictly_increasing<int32_t>(two_strict));
-static_assert(!dc::strictly_increasing<int32_t>(two_equal));
-static_assert(!dc::strictly_increasing<int32_t>(two_decr));
-
-constexpr int32_t three_strict[] = {1, 2, 3};
-constexpr int32_t three_first_eq[] = {7, 7, 9};
-constexpr int32_t three_last_eq[] = {1, 5, 5};  // front < back, so an endpoint test accepts
-constexpr int32_t three_regress[] = {1, 5, 3};
-static_assert(dc::strictly_increasing<int32_t>(three_strict));
-static_assert(!dc::strictly_increasing<int32_t>(three_first_eq));
-static_assert(!dc::strictly_increasing<int32_t>(three_last_eq));
-static_assert(!dc::strictly_increasing<int32_t>(three_regress));
-
-constexpr uint64_t step_ids[] = {1ull, 100ull, 10000ull, 999999999ull};
-static_assert(dc::strictly_increasing<uint64_t>(step_ids));
-
-constexpr int64_t signed_strict[] = {-100, -50, 0, 50, 100};
-static_assert(dc::strictly_increasing<int64_t>(signed_strict));
-
-[[nodiscard]] constexpr uint64_t safe_last_step(std::span<const uint64_t> ids) noexcept {
-    CRUCIBLE_PRE(dc::strictly_increasing(ids));
-    CRUCIBLE_PRE(!ids.empty());
-    return ids.back();
-}
-
-static_assert(safe_last_step(step_ids) == 999999999ull);
 
 static_assert(dc::weakly_increasing<int32_t>(std::span<const int32_t>{}));
 constexpr int32_t weakly_single[] = {42};
@@ -351,125 +173,6 @@ static_assert(all_valid_widths(std::make_index_sequence<3>{}));
 static_assert(safe_table_capacity(16) == 16);
 static_assert(safe_table_capacity(32) == 32);
 static_assert(safe_table_capacity(64) == 64);
-
-static_assert(dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 1u));
-static_assert(!dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 0u));
-static_assert(!dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 5u));
-
-constexpr uint32_t single_two[] = {2u};
-static_assert(dc::factorization_eq<uint32_t>(single_two, 2u));
-static_assert(!dc::factorization_eq<uint32_t>(single_two, 4u));
-
-constexpr uint32_t two_three[] = {2u, 3u};
-static_assert(dc::factorization_eq<uint32_t>(two_three, 6u));
-static_assert(!dc::factorization_eq<uint32_t>(two_three, 5u));
-static_assert(!dc::factorization_eq<uint32_t>(two_three, 7u));
-
-constexpr uint32_t with_ones[] = {1u, 4u, 1u, 2u, 1u};
-static_assert(dc::factorization_eq<uint32_t>(with_ones, 8u));
-static_assert(!dc::factorization_eq<uint32_t>(with_ones, 4u));
-
-constexpr uint32_t with_zero[] = {2u, 0u, 5u};
-static_assert(dc::factorization_eq<uint32_t>(with_zero, 0u));
-static_assert(!dc::factorization_eq<uint32_t>(with_zero, 10u));
-
-// A five-way parallelism split, whose factors have to multiply to the
-// world size.
-constexpr uint32_t partition_64[] = {2u, 4u, 4u, 1u, 2u};
-static_assert(dc::factorization_eq<uint32_t>(partition_64, 64u));
-static_assert(!dc::factorization_eq<uint32_t>(partition_64, 32u));
-static_assert(!dc::factorization_eq<uint32_t>(partition_64, 128u));
-
-constexpr uint32_t partition_no_tp[] = {1u, 8u, 4u, 1u, 2u};
-static_assert(dc::factorization_eq<uint32_t>(partition_no_tp, 64u));
-
-// 65536 * 65536 * 2 is 2^33, whose low 32 bits are zero, so the wrapped
-// running product would compare equal to a total of 0.
-constexpr uint32_t overflowing[] = {65536u, 65536u, 2u};
-static_assert(!dc::factorization_eq<uint32_t>(overflowing, 0u));
-
-// 65536 * 65536 is 2^32, which wraps to exactly the total asked for.
-constexpr uint32_t hits_zero_via_wrap[] = {65536u, 65536u};
-static_assert(!dc::factorization_eq<uint32_t>(hits_zero_via_wrap, 0u));
-
-constexpr uint64_t partition_1m[] = {16ull, 16ull, 16ull, 16ull, 16ull};
-static_assert(dc::factorization_eq<uint64_t>(partition_1m, 1ull << 20));
-
-constexpr int32_t signed_factors[] = {-2, 3, -4};  // product 24
-static_assert(dc::factorization_eq<int32_t>(signed_factors, 24));
-static_assert(!dc::factorization_eq<int32_t>(signed_factors, -24));
-
-[[nodiscard]] constexpr uint32_t safe_partition_world_size(std::span<const uint32_t> dims, uint32_t world) noexcept {
-    CRUCIBLE_PRE(dc::factorization_eq(dims, world));
-    return world;
-}
-
-static_assert(safe_partition_world_size(partition_64, 64u) == 64u);
-static_assert(safe_partition_world_size(partition_no_tp, 64u) == 64u);
-
-static_assert(dc::coprime<uint32_t>(1u, 1u));
-static_assert(dc::coprime<uint32_t>(1u, 999u));
-static_assert(dc::coprime<uint32_t>(999u, 1u));
-
-static_assert(!dc::coprime<uint32_t>(0u, 0u));
-static_assert(!dc::coprime<int32_t>(0, 0));
-
-static_assert(dc::coprime<uint32_t>(0u, 1u));
-static_assert(dc::coprime<uint32_t>(1u, 0u));
-static_assert(!dc::coprime<uint32_t>(0u, 2u));
-static_assert(!dc::coprime<uint32_t>(0u, 999u));
-
-static_assert(!dc::coprime<uint32_t>(2u, 2u));
-static_assert(!dc::coprime<uint32_t>(7u, 7u));
-static_assert(!dc::coprime<uint32_t>(999u, 999u));
-
-static_assert(dc::coprime<uint32_t>(2u, 3u));
-static_assert(dc::coprime<uint32_t>(3u, 5u));
-static_assert(dc::coprime<uint32_t>(8u, 9u));  // 2^3 vs 3^2
-static_assert(dc::coprime<uint32_t>(7u, 11u));
-static_assert(dc::coprime<uint32_t>(35u, 64u));  // 5*7 vs 2^6
-static_assert(dc::coprime<uint32_t>(13u, 21u));  // 13 vs 3*7
-
-static_assert(!dc::coprime<uint32_t>(6u, 8u));  // gcd 2
-static_assert(!dc::coprime<uint32_t>(15u, 25u));  // gcd 5
-static_assert(!dc::coprime<uint32_t>(77u, 91u));  // gcd 7 (7*11 vs 7*13)
-static_assert(!dc::coprime<uint32_t>(12u, 18u));  // gcd 6
-static_assert(!dc::coprime<uint32_t>(100u, 30u));  // gcd 10
-
-// 6 % 9 and 9 % 6 are both non-zero, so a two-sided modulo test
-// accepts this pair. The full algorithm rejects it.
-static_assert(!dc::coprime<uint32_t>(6u, 9u));  // gcd 3
-
-static_assert(dc::coprime<int32_t>(8, 9));
-static_assert(dc::coprime<int32_t>(-8, 9));
-static_assert(dc::coprime<int32_t>(8, -9));
-static_assert(dc::coprime<int32_t>(-8, -9));
-static_assert(!dc::coprime<int32_t>(15, -25));
-static_assert(!dc::coprime<int32_t>(-15, 25));
-
-// The magnitude of INT_MIN is 2^31, so it is coprime to 1 and shares
-// a factor of 2 with every even value.
-static_assert(dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(), 1));
-static_assert(!dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(), 2));
-static_assert(!dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::min()));
-
-static_assert(dc::coprime<uint64_t>(982451653ull, 982451707ull));  // two distinct primes
-
-// A double-hashing stride has to be coprime to the table capacity for
-// the probe sequence to reach every slot. Capacity 64 is 2^6, so
-// exactly the odd strides qualify.
-static_assert(dc::coprime<uint32_t>(7u, 64u));
-static_assert(dc::coprime<uint32_t>(13u, 64u));
-static_assert(!dc::coprime<uint32_t>(8u, 64u));  // gcd 8
-static_assert(!dc::coprime<uint32_t>(48u, 64u));  // gcd 16
-
-[[nodiscard]] constexpr uint32_t safe_secondary_stride(uint32_t stride, uint32_t capacity) noexcept {
-    CRUCIBLE_PRE(dc::coprime<uint32_t>(stride, capacity));
-    return stride;
-}
-
-static_assert(safe_secondary_stride(7u, 64u) == 7u);
-static_assert(safe_secondary_stride(13u, 100u) == 13u);
 
 // A zero-length array is ill formed. The span below takes size 0.
 constexpr dc::Interval<uint64_t> empty_ivs[] = {{0, 0}};
@@ -585,75 +288,6 @@ constexpr dc::Interval<int32_t> two_slots_disjoint_life[] = {
     {6, 10},
 };
 static_assert(slots_have_disjoint_lifetimes(std::span<const dc::Interval<int32_t>>{two_slots_disjoint_life}));
-
-static_assert(dc::intervals_cover_unit(std::span<const dc::Interval<uint64_t>>{}, uint64_t{0}));
-
-static_assert(!dc::intervals_cover_unit(std::span<const dc::Interval<uint64_t>>{}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> whole_one[] = {{0, 100}};
-static_assert(dc::intervals_cover_unit(std::span{whole_one}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> two_piece[] = {{0, 40}, {40, 100}};
-static_assert(dc::intervals_cover_unit(std::span{two_piece}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> five_packed[] = {
-    {0, 20}, {20, 50}, {50, 64}, {64, 90}, {90, 128},
-};
-static_assert(dc::intervals_cover_unit(std::span{five_packed}, uint64_t{128}));
-
-constexpr dc::Interval<uint64_t> reordered[] = {{40, 100}, {0, 40}};
-static_assert(dc::intervals_cover_unit(std::span{reordered}, uint64_t{100}));
-
-// Each of the three gaps below leaves the intervals pairwise disjoint
-// and inside the bound. Only coverage fails.
-constexpr dc::Interval<uint64_t> gap_left_unfilled[] = {{10, 50}, {50, 100}};
-static_assert(!dc::intervals_cover_unit(std::span{gap_left_unfilled}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> gap_middle[] = {{0, 30}, {50, 100}};
-static_assert(!dc::intervals_cover_unit(std::span{gap_middle}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> gap_right[] = {{0, 50}, {50, 90}};
-static_assert(!dc::intervals_cover_unit(std::span{gap_right}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> overlap_in_bounds[] = {{0, 60}, {40, 100}};
-static_assert(!dc::intervals_cover_unit(std::span{overlap_in_bounds}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> overshoot[] = {{0, 50}, {50, 110}};
-static_assert(!dc::intervals_cover_unit(std::span{overshoot}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> with_empty_iv[] = {{0, 50}, {50, 50}, {50, 100}};
-static_assert(!dc::intervals_cover_unit(std::span{with_empty_iv}, uint64_t{100}));
-
-constexpr dc::Interval<uint64_t> with_inverted[] = {{0, 50}, {80, 60}, {60, 100}};
-static_assert(!dc::intervals_cover_unit(std::span{with_inverted}, uint64_t{100}));
-
-constexpr dc::Interval<int32_t> neg_lo[] = {{-5, 50}, {50, 100}};
-static_assert(!dc::intervals_cover_unit(std::span{neg_lo}, int32_t{100}));
-
-constexpr dc::Interval<int32_t> well_formed[] = {{0, 50}, {50, 100}};
-static_assert(!dc::intervals_cover_unit(std::span{well_formed}, int32_t{-100}));
-
-[[nodiscard]] constexpr bool valid_blob_layout(std::span<const dc::Interval<uint64_t>> slots,
-                                               uint64_t blob_bytes) noexcept {
-    CRUCIBLE_PRE(dc::intervals_cover_unit(slots, blob_bytes));
-    return true;
-}
-
-constexpr dc::Interval<uint64_t> blob_partition[] = {
-    {0, 1024},
-    {1024, 4096},
-    {4096, 8192},
-};
-static_assert(valid_blob_layout(std::span{blob_partition}, uint64_t{8192}));
-
-[[nodiscard]] constexpr bool valid_shard_cover(std::span<const dc::Interval<int32_t>> shards,
-                                               int32_t global_dim) noexcept {
-    CRUCIBLE_PRE(dc::intervals_cover_unit(shards, global_dim));
-    return true;
-}
-
-constexpr dc::Interval<int32_t> shards_2way[] = {{0, 32}, {32, 64}};
-static_assert(valid_shard_cover(std::span{shards_2way}, int32_t{64}));
 
 namespace cl = foundation::algebra::lattices;
 
@@ -786,90 +420,6 @@ static_assert(admit_payload<R_alloc, R_alloc_io>());
 static_assert(admit_payload<R_alloc_io, R_full>());
 static_assert(admit_payload<R_full, R_full>());
 
-// The predicate only compares the pair it is handed.  The pairs below
-// are chosen so that each clause is witnessed on its own; the cells that
-// feed the real Murmur3 finalizer through it are in test_reflect.cpp.
-static_assert(dc::fmix_preserves_non_zero(1, 0xB456BCFC34C2CB2CULL));
-static_assert(dc::fmix_preserves_non_zero(42, 0xDEADBEEFULL));
-static_assert(!dc::fmix_preserves_non_zero(0, 0));
-static_assert(!dc::fmix_preserves_non_zero(0, 0xDEADBEEFULL));
-static_assert(!dc::fmix_preserves_non_zero(42, 0));
-
-[[nodiscard]] constexpr std::uint64_t admit_non_zero_hash(std::uint64_t seed, std::uint64_t mix_output) noexcept {
-    CRUCIBLE_PRE(dc::fmix_preserves_non_zero(seed, mix_output));
-    return mix_output;
-}
-
-static_assert(admit_non_zero_hash(1, 0xB456BCFC34C2CB2CULL) == 0xB456BCFC34C2CB2CULL);
-static_assert(admit_non_zero_hash(42, 0xDEADBEEFULL) == 0xDEADBEEFULL);
-
-static_assert(dc::conjunction(std::span<const bool>{}));
-static_assert(!dc::disjunction(std::span<const bool>{}));
-
-constexpr bool one_true[] = {true};
-constexpr bool one_false[] = {false};
-static_assert(dc::conjunction(std::span<const bool>{one_true}));
-static_assert(!dc::conjunction(std::span<const bool>{one_false}));
-static_assert(dc::disjunction(std::span<const bool>{one_true}));
-static_assert(!dc::disjunction(std::span<const bool>{one_false}));
-
-constexpr bool all_true_4[] = {true, true, true, true};
-constexpr bool all_false_4[] = {false, false, false, false};
-static_assert(dc::conjunction(std::span<const bool>{all_true_4}));
-static_assert(!dc::conjunction(std::span<const bool>{all_false_4}));
-static_assert(dc::disjunction(std::span<const bool>{all_true_4}));
-static_assert(!dc::disjunction(std::span<const bool>{all_false_4}));
-
-// A false at each position in turn, so an implementation that
-// inspects only one end fails.
-constexpr bool mix_first_false[] = {false, true, true, true};
-constexpr bool mix_last_false[] = {true, true, true, false};
-constexpr bool mix_mid_false[] = {true, false, true, true};
-static_assert(!dc::conjunction(std::span<const bool>{mix_first_false}));
-static_assert(!dc::conjunction(std::span<const bool>{mix_last_false}));
-static_assert(!dc::conjunction(std::span<const bool>{mix_mid_false}));
-static_assert(dc::disjunction(std::span<const bool>{mix_first_false}));
-static_assert(dc::disjunction(std::span<const bool>{mix_last_false}));
-static_assert(dc::disjunction(std::span<const bool>{mix_mid_false}));
-
-constexpr bool mix_first_true[] = {true, false, false, false};
-constexpr bool mix_last_true[] = {false, false, false, true};
-constexpr bool mix_mid_true[] = {false, true, false, false};
-static_assert(!dc::conjunction(std::span<const bool>{mix_first_true}));
-static_assert(!dc::conjunction(std::span<const bool>{mix_last_true}));
-static_assert(!dc::conjunction(std::span<const bool>{mix_mid_true}));
-static_assert(dc::disjunction(std::span<const bool>{mix_first_true}));
-static_assert(dc::disjunction(std::span<const bool>{mix_last_true}));
-static_assert(dc::disjunction(std::span<const bool>{mix_mid_true}));
-
-// De Morgan witness — !conjunction(xs) ≡ disjunction(¬xs).
-constexpr bool dm_xs[] = {true, false, true, false};
-constexpr bool dm_neg_xs[] = {false, true, false, true};
-static_assert(!dc::conjunction(std::span<const bool>{dm_xs}) == dc::disjunction(std::span<const bool>{dm_neg_xs}));
-
-// Distinguisher: AND/OR diverge on mixed spans.
-static_assert(dc::conjunction(std::span<const bool>{mix_last_false})
-              != dc::disjunction(std::span<const bool>{mix_last_false}));
-static_assert(dc::conjunction(std::span<const bool>{mix_first_true})
-              != dc::disjunction(std::span<const bool>{mix_first_true}));
-
-template <std::size_t N>
-[[nodiscard]] constexpr bool admit_all_clauses(bool const (&clauses)[N]) noexcept {
-    CRUCIBLE_PRE(dc::conjunction(std::span<const bool>{clauses}));
-    return true;
-}
-
-template <std::size_t N>
-[[nodiscard]] constexpr bool admit_any_clause(bool const (&clauses)[N]) noexcept {
-    CRUCIBLE_PRE(dc::disjunction(std::span<const bool>{clauses}));
-    return true;
-}
-
-constexpr bool full_clauses_pos[] = {true, true, true};
-constexpr bool any_clauses_pos[] = {false, true, false};
-static_assert(admit_all_clauses(full_clauses_pos));
-static_assert(admit_any_clause(any_clauses_pos));
-
 static_assert(dc::implies(true, true));
 static_assert(!dc::implies(true, false));
 static_assert(dc::implies(false, true));
@@ -880,17 +430,15 @@ static_assert(dc::implies(false, false));
 //   1. implies(p, true) is true for every p.
 //   2. implies(false, q) is true for every q.
 //   3. !implies(p, q) holds exactly when p holds and q does not.
-//   4. implies(p, q) equals the disjunction of {!p, q}.
+//   4. implies(p, q) equals !p || q.
 //   5. Modus ponens: implies(p, q) together with p gives q.
 static_assert(dc::implies(true, true) && dc::implies(false, true));  // (1)
 static_assert(dc::implies(false, true) && dc::implies(false, false));  // (2)
 static_assert((!dc::implies(true, false)) == (true && !false));  // (3)
 
 // (4)
-constexpr bool implies_dm_xs_TF[] = {!true, false};
-static_assert(dc::implies(true, false) == dc::disjunction(std::span<const bool>{implies_dm_xs_TF}));
-constexpr bool implies_dm_xs_FT[] = {!false, true};
-static_assert(dc::implies(false, true) == dc::disjunction(std::span<const bool>{implies_dm_xs_FT}));
+static_assert(dc::implies(true, false) == (!true || false));
+static_assert(dc::implies(false, true) == (!false || true));
 
 // (5) Encoded as "if the implication and the antecedent both hold,
 //     the consequent holds", which is why the assertions read as a
@@ -905,51 +453,6 @@ static_assert(!(dc::implies(true, false) && true) || false);
 static_assert(admit_when(true, true));
 static_assert(admit_when(false, true));
 static_assert(admit_when(false, false));
-
-static_assert(dc::aligned_in_range(0, 0, 0, 1));
-static_assert(dc::aligned_in_range(64, 64, 256, 64));
-static_assert(dc::aligned_in_range(256, 64, 256, 64));
-static_assert(dc::aligned_in_range(128, 64, 256, 64));
-static_assert(dc::aligned_in_range(123, 0, 1000, 1));
-static_assert(dc::aligned_in_range(7, 7, 7, 1));
-static_assert(dc::aligned_in_range(1u << 20, 0, 1u << 24, 1u << 16));
-
-// Every clause is violated on its own below, so an implementation
-// that drops one clause, or accepts on any single clause, lets one of
-// these through.
-//
-// (a) below low
-static_assert(!dc::aligned_in_range(32, 64, 256, 32));
-// (b) above high
-static_assert(!dc::aligned_in_range(320, 64, 256, 64));
-// (c) misaligned, in range
-static_assert(!dc::aligned_in_range(100, 0, 200, 8));
-// (d) zero alignment
-static_assert(!dc::aligned_in_range(64, 0, 128, 0));
-// (e) empty interval
-static_assert(!dc::aligned_in_range(0, 100, 50, 1));
-// (f) one below the low endpoint, which pins the closed interval
-static_assert(!dc::aligned_in_range(63, 64, 256, 1));
-// (g) one above the high endpoint
-static_assert(!dc::aligned_in_range(257, 64, 256, 1));
-
-// Bounds and alignment fail independently of each other.
-// Alignment fails while the bounds hold.
-static_assert(!dc::aligned_in_range(100, 0, 200, 16));
-// Bounds fail above while the alignment holds.
-static_assert(!dc::aligned_in_range(256, 0, 200, 64));
-// Bounds fail below while the alignment holds.
-static_assert(!dc::aligned_in_range(0, 64, 256, 32));
-
-template <std::uint64_t Capacity, std::uint64_t SlotBytes, std::uint64_t Alignment>
-[[nodiscard]] constexpr bool admit_slot_offset(std::uint64_t offset) noexcept {
-    static_assert(SlotBytes <= Capacity, "test setup invariant");
-    CRUCIBLE_PRE(dc::aligned_in_range(offset, 0, Capacity - SlotBytes, Alignment));
-    return true;
-}
-static_assert(admit_slot_offset<4096, 64, 64>(0));
-static_assert(admit_slot_offset<4096, 64, 64>(4096 - 64));
-static_assert(admit_slot_offset<4096, 64, 64>(2048));
 
 static_assert(dc::in_range(7, 7, 7));
 static_assert(!dc::in_range(6, 7, 7));
@@ -1195,28 +698,6 @@ static_assert(safe_drain(const_cast<int*>(valid_span_witness_real_ptr), 1024u) =
 int main() {
     int volatile sink = 0;
 
-    // no_overflow_mul
-    uint64_t volatile a = 100;
-    uint64_t volatile b = 200;
-    sink += static_cast<int>(safe_mul_u64(a, b));
-
-    int32_t volatile c = -5;
-    int32_t volatile d = 7;
-    sink += safe_mul_i32(c, d);
-
-    int32_t volatile e = 46340;
-    int32_t volatile f = 46340;
-    sink += safe_mul_i32(e, f) / 100000;
-
-    if (!dc::no_overflow_mul<uint32_t>(100u, 200u)) {
-        std::fprintf(stderr, "test_decide: 100u*200u flagged as overflow\n");
-        return 1;
-    }
-    if (dc::no_overflow_mul<uint32_t>(std::numeric_limits<uint32_t>::max(), 2u)) {
-        std::fprintf(stderr, "test_decide: UINT32_MAX*2 NOT flagged as overflow\n");
-        return 1;
-    }
-
     // no_overflow_sum
     uint64_t volatile sa = 1000;
     uint64_t volatile sb = 2000;
@@ -1239,72 +720,8 @@ int main() {
         return 1;
     }
 
-    // no_overflow_pow2_shift
-    uint32_t volatile sa_shl = 7;
-    uint32_t volatile sb_shl = 3;
-    sink += static_cast<int>(safe_shl_u32(sa_shl, sb_shl));
-
-    int32_t volatile si_shl = 1;
-    int32_t volatile sj_shl = 30;
-    sink += safe_shl_i32(si_shl, sj_shl) / 100000000;
-
-    // The four classes of undefined shift.
-    if (!dc::no_overflow_pow2_shift<uint32_t>(1u, 31u)) {
-        std::fprintf(stderr, "test_decide: 1u<<31 flagged as overflow\n");
-        return 1;
-    }
-    if (dc::no_overflow_pow2_shift<uint32_t>(1u, 32u)) {
-        std::fprintf(stderr, "test_decide: shift-count-32 NOT flagged\n");
-        return 1;
-    }
-    if (dc::no_overflow_pow2_shift<int32_t>(int32_t{-1}, int32_t{1})) {
-        std::fprintf(stderr, "test_decide: signed-negative-shift NOT flagged\n");
-        return 1;
-    }
-    if (dc::no_overflow_pow2_shift<int32_t>(int32_t{1}, int32_t{31})) {
-        std::fprintf(stderr, "test_decide: 1<<31 (signed) NOT flagged as sign-bit overflow\n");
-        return 1;
-    }
-
-    // all_in_range
-    int32_t volatile sink_arr[3] = {10, 50, 90};
-    int32_t arr_copy[3] = {sink_arr[0], sink_arr[1], sink_arr[2]};
-    std::span<const int32_t> arr_span{arr_copy, 3};
-    sink += static_cast<int>(dc::all_in_range<int32_t>(arr_span, 0, 100));
-    sink += static_cast<int>(dc::all_in_range<int32_t>(arr_span, 0, 50));
-
-    if (!dc::all_in_range<uint32_t>(std::span<const uint32_t>{}, 0u, 0u)) {
-        std::fprintf(stderr, "test_decide: empty span NOT vacuously true\n");
-        return 1;
-    }
-    constexpr int32_t middle_violator[] = {10, 200, 90};
-    if (dc::all_in_range<int32_t>(middle_violator, 0, 100)) {
-        std::fprintf(stderr, "test_decide: middle-violator NOT detected\n");
-        return 1;
-    }
-
-    // strictly_increasing
-    uint64_t volatile sa_seq[4] = {1, 2, 3, 4};
-    uint64_t seq_copy[4] = {sa_seq[0], sa_seq[1], sa_seq[2], sa_seq[3]};
-    sink += static_cast<int>(dc::strictly_increasing<uint64_t>(std::span<const uint64_t>{seq_copy, 4}));
-
-    if (!dc::strictly_increasing<int32_t>(std::span<const int32_t>{})) {
-        std::fprintf(stderr, "test_decide: empty-span NOT vacuously increasing\n");
-        return 1;
-    }
-    constexpr uint64_t stalled[] = {1, 2, 2, 3};
-    if (dc::strictly_increasing<uint64_t>(stalled)) {
-        std::fprintf(stderr, "test_decide: stalled-pair (2,2) NOT detected\n");
-        return 1;
-    }
-    constexpr int64_t regressed[] = {10, 5};
-    if (dc::strictly_increasing<int64_t>(regressed)) {
-        std::fprintf(stderr, "test_decide: regression NOT detected\n");
-        return 1;
-    }
-
-    // weakly_increasing. The equal pair is what separates it from the
-    // strict form.
+    // weakly_increasing.  An equal pair passes, and only a strict
+    // regression fails.
     uint32_t volatile sa_offs[5] = {0, 5, 5, 12, 20};
     uint32_t offs_copy[5] = {sa_offs[0], sa_offs[1], sa_offs[2], sa_offs[3], sa_offs[4]};
     sink += static_cast<int>(dc::weakly_increasing<uint32_t>(std::span<const uint32_t>{offs_copy, 5}));
@@ -1358,58 +775,6 @@ int main() {
         return 1;
     }
 
-    // factorization_eq
-    uint32_t volatile sa_dims[5] = {2, 4, 4, 1, 2};
-    uint32_t dims_copy[5] = {sa_dims[0], sa_dims[1], sa_dims[2], sa_dims[3], sa_dims[4]};
-    sink += static_cast<int>(safe_partition_world_size(std::span<const uint32_t>{dims_copy, 5}, 64u));
-
-    if (!dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 1u)) {
-        std::fprintf(stderr, "test_decide: empty product != 1\n");
-        return 1;
-    }
-    if (dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 0u)) {
-        std::fprintf(stderr, "test_decide: empty product WRONGLY equals 0\n");
-        return 1;
-    }
-    constexpr uint32_t bad_partition[] = {8u, 2u, 4u, 1u, 2u};
-    if (dc::factorization_eq<uint32_t>(bad_partition, 64u)) {
-        std::fprintf(stderr, "test_decide: 128 != 64 WRONGLY accepted\n");
-        return 1;
-    }
-    constexpr uint32_t overflow_factors[] = {65536u, 65536u};  // 2^32, wraps to 0
-    if (dc::factorization_eq<uint32_t>(overflow_factors, 0u)) {
-        std::fprintf(stderr, "test_decide: overflow-wrap WRONGLY accepted\n");
-        return 1;
-    }
-
-    // coprime
-    uint32_t volatile sa_stride = 7;
-    uint32_t volatile sa_cap = 64;
-    sink += static_cast<int>(safe_secondary_stride(static_cast<uint32_t>(sa_stride), static_cast<uint32_t>(sa_cap)));
-
-    if (!dc::coprime<uint32_t>(8u, 9u)) {
-        std::fprintf(stderr, "test_decide: coprime(8,9) WRONGLY rejected\n");
-        return 1;
-    }
-    if (dc::coprime<uint32_t>(15u, 25u)) {
-        std::fprintf(stderr, "test_decide: coprime(15,25) WRONGLY accepted\n");
-        return 1;
-    }
-    if (dc::coprime<uint32_t>(0u, 0u)) {
-        std::fprintf(stderr, "test_decide: coprime(0,0) WRONGLY accepted\n");
-        return 1;
-    }
-    // A two-sided modulo test accepts this pair.
-    if (dc::coprime<uint32_t>(6u, 9u)) {
-        std::fprintf(stderr, "test_decide: coprime(6,9) WRONGLY accepted (one-sided modulo bug)\n");
-        return 1;
-    }
-    // INT_MIN must not UB.
-    if (dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(), 2)) {
-        std::fprintf(stderr, "test_decide: coprime(INT_MIN, 2) WRONGLY accepted\n");
-        return 1;
-    }
-
     // intervals_pairwise_disjoint
     uint64_t volatile runtime_lo0 = 0, runtime_hi0 = 64;
     uint64_t volatile runtime_lo1 = 64, runtime_hi1 = 192;
@@ -1442,43 +807,6 @@ int main() {
     };
     if (dc::intervals_pairwise_disjoint(std::span<const dc::Interval<uint64_t>>{bad})) {
         std::fprintf(stderr, "test_decide: inverted interval WRONGLY accepted\n");
-        return 1;
-    }
-
-    // intervals_cover_unit
-    uint64_t volatile cv_lo0 = 0, cv_hi0 = 40;
-    uint64_t volatile cv_lo1 = 40, cv_hi1 = 100;
-    uint64_t volatile cv_total = 100;
-    dc::Interval<uint64_t> cv_partition[2] = {
-        {static_cast<uint64_t>(cv_lo0), static_cast<uint64_t>(cv_hi0)},
-        {static_cast<uint64_t>(cv_lo1), static_cast<uint64_t>(cv_hi1)},
-    };
-    if (!dc::intervals_cover_unit(std::span<const dc::Interval<uint64_t>>{cv_partition},
-                                  static_cast<uint64_t>(cv_total))) {
-        std::fprintf(stderr, "test_decide: cover_unit valid partition WRONGLY rejected\n");
-        return 1;
-    }
-    sink += static_cast<int>(cv_partition[1].hi);
-
-    uint64_t volatile gap_lo0 = 0, gap_hi0 = 30;
-    uint64_t volatile gap_lo1 = 50, gap_hi1 = 100;
-    dc::Interval<uint64_t> gap_ivs[2] = {
-        {static_cast<uint64_t>(gap_lo0), static_cast<uint64_t>(gap_hi0)},
-        {static_cast<uint64_t>(gap_lo1), static_cast<uint64_t>(gap_hi1)},
-    };
-    if (dc::intervals_cover_unit(std::span<const dc::Interval<uint64_t>>{gap_ivs}, static_cast<uint64_t>(cv_total))) {
-        std::fprintf(stderr, "test_decide: cover_unit gap WRONGLY accepted\n");
-        return 1;
-    }
-
-    uint64_t volatile ov_lo0_c = 0, ov_hi0_c = 50;
-    uint64_t volatile ov_lo1_c = 50, ov_hi1_c = 110;
-    dc::Interval<uint64_t> ov_ivs[2] = {
-        {static_cast<uint64_t>(ov_lo0_c), static_cast<uint64_t>(ov_hi0_c)},
-        {static_cast<uint64_t>(ov_lo1_c), static_cast<uint64_t>(ov_hi1_c)},
-    };
-    if (dc::intervals_cover_unit(std::span<const dc::Interval<uint64_t>>{ov_ivs}, static_cast<uint64_t>(cv_total))) {
-        std::fprintf(stderr, "test_decide: cover_unit overshoot WRONGLY accepted\n");
         return 1;
     }
 
@@ -1554,83 +882,6 @@ int main() {
         }
         sink += static_cast<int>(ok_legal_subset) + static_cast<int>(ok_empty) - static_cast<int>(bad_extra)
               - static_cast<int>(bad_disjoint);
-    }
-
-    // fmix_preserves_non_zero.  The pairs are routed through volatile
-    // sinks; the real mixer is driven through this predicate in
-    // test_reflect.cpp.
-    {
-        volatile std::uint64_t seed_nz = 0xDEADBEEFCAFEBABEULL;
-        volatile std::uint64_t mix_nz_v = 0xB456BCFC34C2CB2CULL;
-        if (!dc::fmix_preserves_non_zero(static_cast<std::uint64_t>(seed_nz), static_cast<std::uint64_t>(mix_nz_v))) {
-            std::fprintf(stderr, "test_decide: fmix_preserves_non_zero(non-zero, non-zero) "
-                                 "WRONGLY rejected\n");
-            return 1;
-        }
-        volatile std::uint64_t zero_seed = 0;
-        if (dc::fmix_preserves_non_zero(static_cast<std::uint64_t>(zero_seed), static_cast<std::uint64_t>(mix_nz_v))) {
-            std::fprintf(stderr, "test_decide: fmix_preserves_non_zero(0, non-zero) "
-                                 "WRONGLY accepted (seed-zero violator)\n");
-            return 1;
-        }
-        volatile std::uint64_t mix_zero_v = 0;
-        if (dc::fmix_preserves_non_zero(static_cast<std::uint64_t>(seed_nz), static_cast<std::uint64_t>(mix_zero_v))) {
-            std::fprintf(stderr, "test_decide: fmix_preserves_non_zero(non-zero, 0) "
-                                 "WRONGLY accepted (mix-zero collision violator)\n");
-            return 1;
-        }
-        sink += static_cast<int>(
-            admit_non_zero_hash(static_cast<std::uint64_t>(seed_nz), static_cast<std::uint64_t>(mix_nz_v)) != 0);
-    }
-
-    // conjunction and disjunction
-    {
-        volatile bool clause_true_v = true;
-        volatile bool clause_false_v = false;
-        bool clauses_all_true[] = {static_cast<bool>(clause_true_v), static_cast<bool>(clause_true_v),
-                                   static_cast<bool>(clause_true_v), static_cast<bool>(clause_true_v)};
-        bool clauses_all_false[] = {static_cast<bool>(clause_false_v), static_cast<bool>(clause_false_v),
-                                    static_cast<bool>(clause_false_v), static_cast<bool>(clause_false_v)};
-        bool clauses_last_false[] = {static_cast<bool>(clause_true_v), static_cast<bool>(clause_true_v),
-                                     static_cast<bool>(clause_true_v), static_cast<bool>(clause_false_v)};
-        bool clauses_first_true[] = {static_cast<bool>(clause_true_v), static_cast<bool>(clause_false_v),
-                                     static_cast<bool>(clause_false_v), static_cast<bool>(clause_false_v)};
-
-        if (!dc::conjunction(std::span<const bool>{clauses_all_true})) {
-            std::fprintf(stderr, "test_decide: conjunction(all-true) WRONGLY rejected\n");
-            return 1;
-        }
-        // An OR implementation would accept this span.
-        if (dc::conjunction(std::span<const bool>{clauses_last_false})) {
-            std::fprintf(stderr, "test_decide: conjunction(last-false) WRONGLY accepted "
-                                 "(OR-instead-of-AND violator)\n");
-            return 1;
-        }
-        if (!dc::conjunction(std::span<const bool>{})) {
-            std::fprintf(stderr, "test_decide: conjunction(empty) WRONGLY rejected "
-                                 "(vacuous-AND violator)\n");
-            return 1;
-        }
-
-        if (!dc::disjunction(std::span<const bool>{clauses_first_true})) {
-            std::fprintf(stderr, "test_decide: disjunction(first-true) WRONGLY rejected\n");
-            return 1;
-        }
-        if (dc::disjunction(std::span<const bool>{clauses_all_false})) {
-            std::fprintf(stderr, "test_decide: disjunction(all-false) WRONGLY accepted "
-                                 "(always-true violator)\n");
-            return 1;
-        }
-        if (dc::disjunction(std::span<const bool>{})) {
-            std::fprintf(stderr, "test_decide: disjunction(empty) WRONGLY accepted "
-                                 "(empty-vacuous-true violator)\n");
-            return 1;
-        }
-
-        sink += static_cast<int>(dc::conjunction(std::span<const bool>{clauses_all_true}))
-              - static_cast<int>(dc::conjunction(std::span<const bool>{clauses_last_false}))
-              + static_cast<int>(dc::disjunction(std::span<const bool>{clauses_first_true}))
-              - static_cast<int>(dc::disjunction(std::span<const bool>{clauses_all_false}));
     }
 
     // implies
@@ -1718,56 +969,6 @@ int main() {
                     static_cast<std::uint32_t>(x_mid), static_cast<std::uint32_t>(lo), static_cast<std::uint32_t>(hi)))
               - static_cast<int>(dc::in_range<std::uint32_t>(
                   static_cast<std::uint32_t>(x_above), static_cast<std::uint32_t>(lo), static_cast<std::uint32_t>(hi)));
-    }
-
-    // aligned_in_range
-    {
-        volatile std::uint64_t off_good = 128;
-        volatile std::uint64_t off_oob_below = 32;
-        volatile std::uint64_t off_oob_above = 320;
-        volatile std::uint64_t off_misaligned = 100;
-        volatile std::uint64_t lo = 64;
-        volatile std::uint64_t hi = 256;
-        volatile std::uint64_t aln = 64;
-        volatile std::uint64_t aln_zero = 0;
-
-        if (!dc::aligned_in_range(static_cast<std::uint64_t>(off_good), static_cast<std::uint64_t>(lo),
-                                  static_cast<std::uint64_t>(hi), static_cast<std::uint64_t>(aln))) {
-            std::fprintf(stderr, "test_decide: aligned_in_range(in-range, aligned) "
-                                 "WRONGLY rejected\n");
-            return 1;
-        }
-        if (dc::aligned_in_range(static_cast<std::uint64_t>(off_oob_below), static_cast<std::uint64_t>(lo),
-                                 static_cast<std::uint64_t>(hi), static_cast<std::uint64_t>(aln))) {
-            std::fprintf(stderr, "test_decide: aligned_in_range(below-lo) "
-                                 "WRONGLY accepted (alignment-only violator)\n");
-            return 1;
-        }
-        if (dc::aligned_in_range(static_cast<std::uint64_t>(off_oob_above), static_cast<std::uint64_t>(lo),
-                                 static_cast<std::uint64_t>(hi), static_cast<std::uint64_t>(aln))) {
-            std::fprintf(stderr, "test_decide: aligned_in_range(above-hi) "
-                                 "WRONGLY accepted (alignment-only violator)\n");
-            return 1;
-        }
-        if (dc::aligned_in_range(static_cast<std::uint64_t>(off_misaligned), static_cast<std::uint64_t>(lo),
-                                 static_cast<std::uint64_t>(hi), static_cast<std::uint64_t>(aln))) {
-            std::fprintf(stderr, "test_decide: aligned_in_range(misaligned) "
-                                 "WRONGLY accepted (bounds-only violator)\n");
-            return 1;
-        }
-        if (dc::aligned_in_range(static_cast<std::uint64_t>(off_good), static_cast<std::uint64_t>(lo),
-                                 static_cast<std::uint64_t>(hi), static_cast<std::uint64_t>(aln_zero))) {
-            std::fprintf(stderr, "test_decide: aligned_in_range(zero-alignment) "
-                                 "WRONGLY accepted (alignment-guard violator)\n");
-            return 1;
-        }
-
-        sink +=
-            static_cast<int>(dc::aligned_in_range(static_cast<std::uint64_t>(off_good), static_cast<std::uint64_t>(lo),
-                                                  static_cast<std::uint64_t>(hi), static_cast<std::uint64_t>(aln)))
-            - static_cast<int>(dc::aligned_in_range(static_cast<std::uint64_t>(off_misaligned),
-                                                    static_cast<std::uint64_t>(lo), static_cast<std::uint64_t>(hi),
-                                                    static_cast<std::uint64_t>(aln)));
     }
 
     // is_non_zero

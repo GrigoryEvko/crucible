@@ -22,12 +22,12 @@
 //
 // Methodology — every input is volatile-seeded outside the lambda so
 // constant-folding can't elide the body.  Lambda body uses
-// `bench::do_not_optimize(result)` (the `[[gnu::noipa]]` shim, post-
-// PR124958) to mark the bool return as observed.  Each procedure
+// `bench::do_not_optimize(result)` (the `[[gnu::noipa]]` shim) to
+// mark the bool return as observed.  Each procedure
 // covers the canonical instantiation it ships in production: integer
 // types for the overflow / range family, span<int32_t> for the
-// quantified family, span<Interval<uint64_t>> for the interval
-// family, etc.  We do NOT iterate every primitive type — the body's
+// ordered-sequence predicate, span<Interval<uint64_t>> for the interval
+// predicate.  We do NOT iterate every primitive type — the body's
 // asymptotic shape is independent of T width, and each extra
 // instantiation adds template-noise to the bench list without
 // signal.
@@ -79,10 +79,7 @@ enum class CipherBenchTier : std::uint8_t {
 
 namespace {
 
-// Sequence inputs reused across all span-quantified procedures.
-// Sized at 64 elements — the production cite for strictly_increasing
-// (the step_id sequence of Cipher::store) saw similar lengths in
-// steady state, so the bench tracks a representative window.
+// The sequence input of the ordered-sequence predicate, 64 elements long.
 constexpr std::size_t kSeqLen = 64;
 
 }  // namespace
@@ -101,39 +98,21 @@ int main() {
     // the bench measures `(void)0` and reports 0 ns for everything.
 
     volatile std::int32_t v_int_pos = 12345;
-    volatile std::int32_t v_int_neg = -67890;
     volatile std::int32_t v_lo = -1000;
     volatile std::int32_t v_hi = 100000;
     volatile std::uint64_t v_u64_a = 0x1234567890ABCDEFULL;
     volatile std::uint64_t v_u64_b = 0xCAFEBABEDEADBEEFULL;
-    volatile std::uint64_t v_align = 64;
     volatile std::uint32_t v_u32_a = 35;
-    volatile std::uint32_t v_u32_b = 64;
     volatile std::uint64_t v_pow2 = 0x100;
     volatile std::uint64_t v_pow2_bound = 0x10000;
     volatile bool v_bool_t = true;
     volatile bool v_bool_f = false;
-    volatile std::uint64_t v_seed = 0xDEADBEEFDEADBEEFULL;
-    volatile std::uint64_t v_mix = 0xFEEDFACEFEEDFACEULL;
 
-    // Pre-built sequences — populated once outside the lambda.
-    // strictly_increasing fast path: 64 elements with stride 7.
-    // weakly_increasing fast path: identical to inc_seq (strict
-    // ordering is also weakly-ordered).
-    // all_in_range fast path: 64 elements all within [0, 200].
+    // The sequence of weakly_increasing, built once outside the lambda:
+    // 64 elements with stride 7, so the scan reaches the end.
     std::array<std::int32_t, kSeqLen> inc_seq{};
     for (std::size_t i = 0; i < kSeqLen; ++i)
         inc_seq[i] = static_cast<std::int32_t>(i * 7);
-
-    std::array<std::int32_t, kSeqLen> in_range_seq{};
-    for (std::size_t i = 0; i < kSeqLen; ++i)
-        in_range_seq[i] = static_cast<std::int32_t>(50 + (i % 100));
-
-    // factorization_eq fast path: {2, 3, 5, 7, 11, 13} for total=30030
-    // (= product of first 6 primes).  Both the product fold and the
-    // overflow guard exercise on this domain.
-    std::array<std::uint32_t, 6> factors{2u, 3u, 5u, 7u, 11u, 13u};
-    constexpr std::uint32_t kFactorTotal = 30030u;
 
     // intervals_pairwise_disjoint fast path: 8 disjoint intervals
     // tiling [0, 800).  Both the well-formedness pass and the n²
@@ -145,14 +124,6 @@ int main() {
             .hi = static_cast<std::uint64_t>(i * 100 + 100),
         };
     }
-
-    // intervals_cover_unit fast path: same intervals over total=800.
-    constexpr std::uint64_t kCoverTotal = 800;
-
-    // conjunction / disjunction fast path: 16 booleans, mixed.
-    std::array<bool, 16> bools{
-        true, true, true, false, true, true, false, true, true, false, true, true, true, true, true, true,
-    };
 
     std::printf("=== decide ===\n\n");
 
@@ -197,89 +168,33 @@ int main() {
                        bool r = dc::no_overflow_sum<std::uint64_t>(v_u64_a, v_u64_b);
                        bench::do_not_optimize(r);
                    }),
-        bench::run("decide::no_overflow_mul<u64>",
-                   [&] {
-                       bool r = dc::no_overflow_mul<std::uint64_t>(v_u64_a, v_u64_b);
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::no_overflow_pow2_shift<u64>",
-                   [&] {
-                       bool r = dc::no_overflow_pow2_shift<std::uint64_t>(v_u64_a, 7);
-                       bench::do_not_optimize(r);
-                   }),
 
-        // ── Power-of-two / coprimality (small-loop expected) ──────
+        // ── Power of two (single-instruction expected) ────────────
         bench::run("decide::is_power_of_two_le<u64>",
                    [&] {
                        bool r = dc::is_power_of_two_le<std::uint64_t>(v_pow2, v_pow2_bound);
                        bench::do_not_optimize(r);
                    }),
-        bench::run("decide::coprime<u32>",
-                   [&] {
-                       bool r = dc::coprime<std::uint32_t>(v_u32_a, v_u32_b);
-                       bench::do_not_optimize(r);
-                   }),
 
-        // ── Span-quantified predicates (linear scan, 64 elts) ─────
-        bench::run("decide::all_in_range<int32, 64>",
-                   [&] {
-                       bool r = dc::all_in_range<std::int32_t>(
-                           std::span<const std::int32_t>(in_range_seq.data(), in_range_seq.size()), 0, 200);
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::strictly_increasing<int32, 64>",
-                   [&] {
-                       bool r = dc::strictly_increasing<std::int32_t>(
-                           std::span<const std::int32_t>(inc_seq.data(), inc_seq.size()));
-                       bench::do_not_optimize(r);
-                   }),
+        // ── Ordered sequence (linear scan, 64 elts) ───────────────
         bench::run("decide::weakly_increasing<int32, 64>",
                    [&] {
                        bool r = dc::weakly_increasing<std::int32_t>(
                            std::span<const std::int32_t>(inc_seq.data(), inc_seq.size()));
                        bench::do_not_optimize(r);
                    }),
-        bench::run("decide::factorization_eq<u32, 6>",
-                   [&] {
-                       bool r = dc::factorization_eq<std::uint32_t>(
-                           std::span<const std::uint32_t>(factors.data(), factors.size()), kFactorTotal);
-                       bench::do_not_optimize(r);
-                   }),
 
-        // ── Interval predicates (n² pairwise / linear sort+scan) ──
+        // ── Intervals (quadratic pairwise scan, 8 intervals) ──────
         bench::run("decide::intervals_pairwise_disjoint<u64, 8>",
                    [&] {
                        bool r = dc::intervals_pairwise_disjoint<std::uint64_t>(
                            std::span<const dc::Interval<std::uint64_t>>(ivs_disjoint.data(), ivs_disjoint.size()));
                        bench::do_not_optimize(r);
                    }),
-        bench::run("decide::intervals_cover_unit<u64, 8>",
-                   [&] {
-                       bool r = dc::intervals_cover_unit<std::uint64_t>(
-                           std::span<const dc::Interval<std::uint64_t>>(ivs_disjoint.data(), ivs_disjoint.size()),
-                           kCoverTotal);
-                       bench::do_not_optimize(r);
-                   }),
 
-        // ── Boolean folds (linear scan, 16 elts) ──────────────────
-        bench::run("decide::conjunction<16>",
-                   [&] {
-                       bool r = dc::conjunction(std::span<const bool>(bools.data(), bools.size()));
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::disjunction<16>",
-                   [&] {
-                       bool r = dc::disjunction(std::span<const bool>(bools.data(), bools.size()));
-                       bench::do_not_optimize(r);
-                   }),
         bench::run("decide::implies(bool,bool)",
                    [&] {
                        bool r = dc::implies(v_bool_t, v_bool_f);
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::aligned_in_range(u64,u64,u64,u64)",
-                   [&] {
-                       bool r = dc::aligned_in_range(v_u64_a, 0u, v_u64_b, v_align);
                        bench::do_not_optimize(r);
                    }),
 
@@ -298,11 +213,6 @@ int main() {
                        // do_not_optimize call — confirming the predicate body
                        // itself contributes nothing.
                        bool r = dc::row_subset<PayloadRow, CtxRow>();
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::fmix_preserves_non_zero(u64,u64)",
-                   [&] {
-                       bool r = dc::fmix_preserves_non_zero(v_seed, v_mix);
                        bench::do_not_optimize(r);
                    }),
     };

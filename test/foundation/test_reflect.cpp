@@ -4,10 +4,11 @@
 // own static_asserts and inline smoke tests.  This file includes both and
 // calls the smoke tests.  It drives the enumerate helpers and pin_enum
 // over a local enum and pins the two id properties that a cache key rests
-// on.  It also holds the cells of test/test_decide.cpp that feed the real
-// Murmur3 finalizer through fmix_preserves_non_zero.
+// on.  It also makes sure that the Murmur3 finalizer maps a non-zero seed
+// to a non-zero hash, which the zero-means-empty slot conventions need.
 
 #include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/EnumPins.h>
@@ -130,25 +131,18 @@ static_assert(fr::combine_ids(1, 2) != fr::combine_ids(2, 1));
 
 // The mixer is the Murmur3 finalizer, a bijection on uint64_t with
 // f(0) equal to 0. Every witness below rests on that.
-static_assert(dc::fmix_preserves_non_zero(1, fr::fmix64(1)));
-static_assert(dc::fmix_preserves_non_zero(0xDEADBEEFCAFEBABEULL, fr::fmix64(0xDEADBEEFCAFEBABEULL)));
-static_assert(dc::fmix_preserves_non_zero(0x9E3779B97F4A7C15ULL, fr::fmix64(0x9E3779B97F4A7C15ULL)));
-static_assert(dc::fmix_preserves_non_zero(0xFFFFFFFFFFFFFFFFULL, fr::fmix64(0xFFFFFFFFFFFFFFFFULL)));
-static_assert(dc::fmix_preserves_non_zero(42, fr::fmix64(42)));
-
-static_assert(!dc::fmix_preserves_non_zero(0, fr::fmix64(0)));
-static_assert(!dc::fmix_preserves_non_zero(0, 0));
-
-// These pin the mixer itself rather than the predicate, which only
-// compares the pair it is handed.
+static_assert(dc::is_non_zero(fr::fmix64(1)));
+static_assert(dc::is_non_zero(fr::fmix64(0xDEADBEEFCAFEBABEULL)));
+static_assert(dc::is_non_zero(fr::fmix64(0x9E3779B97F4A7C15ULL)));
+static_assert(dc::is_non_zero(fr::fmix64(0xFFFFFFFFFFFFFFFFULL)));
+static_assert(dc::is_non_zero(fr::fmix64(42)));
+static_assert(dc::is_non_zero(fr::fmix64(0xDEADBEEFULL)));
 static_assert(fr::fmix64(0) == 0);
-static_assert(fr::fmix64(1) != 0);
-static_assert(fr::fmix64(0xDEADBEEFULL) != 0);
-static_assert(fr::fmix64(0xFFFFFFFFFFFFFFFFULL) != 0);
 
 [[nodiscard]] constexpr std::uint64_t make_non_zero_hash(std::uint64_t seed) noexcept {
+    CRUCIBLE_PRE(dc::is_non_zero(seed));
     const std::uint64_t h = fr::fmix64(seed);
-    CRUCIBLE_PRE(dc::fmix_preserves_non_zero(seed, h));
+    CRUCIBLE_POST(h, dc::is_non_zero(h));
     return h;
 }
 
@@ -319,14 +313,13 @@ int main() {
         sink += counter + single_bit_counter;
     }
 
-    // fmix_preserves_non_zero
+    // The mixer maps a non-zero seed to a non-zero hash and zero to zero,
+    // at runtime through volatile operands.
     {
         volatile std::uint64_t seed_nz = 0xDEADBEEFCAFEBABEULL;
         const std::uint64_t mix_nz = fr::fmix64(static_cast<std::uint64_t>(seed_nz));
-        volatile std::uint64_t mix_nz_v = mix_nz;
-        if (!dc::fmix_preserves_non_zero(static_cast<std::uint64_t>(seed_nz), static_cast<std::uint64_t>(mix_nz_v))) {
-            std::fprintf(stderr, "test_reflect: fmix_preserves_non_zero(non-zero seed, fmix(seed)) "
-                                 "WRONGLY rejected\n");
+        if (!dc::is_non_zero(mix_nz)) {
+            std::fprintf(stderr, "test_reflect: fmix64 mapped a non-zero seed to zero\n");
             return 1;
         }
         volatile std::uint64_t zero_seed = 0;
@@ -334,19 +327,6 @@ int main() {
         if (mix_of_zero != 0) {
             std::fprintf(stderr, "test_reflect: fmix64(0) returned non-zero — bijection "
                                  "theorem violated\n");
-            return 1;
-        }
-        if (dc::fmix_preserves_non_zero(static_cast<std::uint64_t>(zero_seed), static_cast<std::uint64_t>(mix_nz_v))) {
-            std::fprintf(stderr, "test_reflect: fmix_preserves_non_zero(0, non-zero) "
-                                 "WRONGLY accepted (seed-zero violator)\n");
-            return 1;
-        }
-        // A mix output the real mixer cannot produce, so the second
-        // clause is witnessed on its own.
-        volatile std::uint64_t mix_zero_v = 0;
-        if (dc::fmix_preserves_non_zero(static_cast<std::uint64_t>(seed_nz), static_cast<std::uint64_t>(mix_zero_v))) {
-            std::fprintf(stderr, "test_reflect: fmix_preserves_non_zero(non-zero, 0) "
-                                 "WRONGLY accepted (mix-zero collision violator)\n");
             return 1;
         }
         sink += static_cast<int>(mix_nz != 0) - static_cast<int>(mix_of_zero != 0);

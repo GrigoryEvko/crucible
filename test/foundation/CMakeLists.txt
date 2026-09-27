@@ -579,14 +579,6 @@ foundation_neg_compile_test(neg_post_violated_at_consteval
   "foundation/contracts/Post\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "in expansion of macro .CRUCIBLE_POST.")
 
-# The multiplication oracle requires an integer operand type.  Two double
-# operands deduce T = double, and the std::integral constraint rejects the
-# only candidate.
-foundation_neg_compile_test(neg_decide_oracle_non_integral_argument
-  "no matching function for call to .no_overflow_mul_oracle\\(double, double\\)."
-  "foundation::decide::oracle::no_overflow_mul_oracle\\(T, T\\) .with T = double."
-  "required for the satisfaction of .integral<T>. .with T = double.")
-
 # The reflect test keeps the file name of the crucible test it stands
 # beside.  The target carries a suffix because test/CMakeLists.txt still
 # registers test_reflect for test/test_reflect.cpp, and a CMake target

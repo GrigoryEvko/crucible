@@ -158,7 +158,6 @@
 #include <foundation/Brand.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Decide.h>
-#include <foundation/contracts/DecideOracle.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/diag/Catalog.h>
@@ -734,7 +733,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::permissions::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::brand, "brands, which are identities of instances and never fold"},
     {^^::foundation::decide, kMachinery},
-    {^^::foundation::decide::oracle, kMachinery},
     {^^::foundation::diag, "the row-hash fold and the diagnostic surface themselves"},
     {^^::foundation::diag::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::fail_closed, kMachinery},

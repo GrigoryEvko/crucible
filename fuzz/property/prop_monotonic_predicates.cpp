@@ -1,40 +1,17 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_monotonic_predicates.cpp — paired differential / inter-predicate
-// fuzzer for decide::strictly_increasing and decide::weakly_increasing
-// (foundation/contracts/Decide.h).
+// prop_monotonic_predicates.cpp — differential fuzzer for
+// decide::weakly_increasing (foundation/contracts/Decide.h).
 //
-// These two span-quantified monotonicity predicates differ only in `<`
-// vs `<=` at the consecutive-pair test, and that one-character choice
-// is load-bearing: Cipher::store cites strictly_increasing (duplicate
-// step_id breaks event-source idempotence), while Arena epoch chains
-// and TraceGraph CSR row offsets cite weakly_increasing (zero-length
-// records legitimately repeat an offset).  The doc warns "the wrong
-// choice silently corrupts replay" — so the bug class this fuzzer
-// targets is strict-vs-weak confusion, NOT a single predicate in
-// isolation.
+// weakly_increasing admits an equal adjacent pair and refuses a strict
+// descent.  The TraceGraph CSR row offsets cite it, because a
+// zero-length row repeats the offset of the row before it.
 //
-// Teeth come from two independent sources:
-//
-//   (1) A std-library differential.  weakly_increasing ≡
-//       std::is_sorted (non-decreasing); strictly_increasing ≡
-//       std::is_sorted AND std::adjacent_find == end (no equal pair).
-//       The iterator-based std implementation is a different codebase
-//       from the index loop under test, so a regression in either
-//       Decide loop diverges from std.
-//
-//   (2) Inter-predicate algebraic laws — independent of HOW either
-//       predicate is implemented, so they cannot both be co-broken the
-//       same way:
-//         * strict ⟹ weak                (strict is the stronger claim)
-//         * no equal-adjacent pair ⟹ strict == weak
-//         * equal-adjacent pair present but NO regression ⟹
-//             weak && !strict             (equal-adjacency is exactly
-//             the discriminator between the two)
-//
-// Four generator modes drive the directed cases: StrictlyIncreasing
-// (both true), WeaklyWithDups (weak true, strict false), Regression
-// (both false), Random (oracle + laws decide).  Signed int32_t exercises
-// negative values and negative-to-positive crossings.
+// The oracle is std::is_sorted, an iterator-based implementation from a
+// different codebase than the index loop under test.  Four generator
+// modes drive the directed cases: StrictlyIncreasing and WeaklyWithDups
+// must pass, Regression must fail, and Random is decided by the oracle
+// alone.  Signed int32_t reaches negative values and crossings from
+// negative to positive.
 // ═══════════════════════════════════════════════════════════════════
 
 #include "property_runner.h"
@@ -67,24 +44,15 @@ struct SeqSpec {
     uint8_t pad[3]{};
 };
 
-// Independent std-library oracles (iterator-based, distinct from the
-// predicate's index loop).
+// The oracle: non-decreasing order, by iterators.
 [[nodiscard]] bool weak_oracle(std::span<const T> xs) noexcept {
-    return std::is_sorted(xs.begin(), xs.end());  // non-decreasing
-}
-[[nodiscard]] bool strict_oracle(std::span<const T> xs) noexcept {
-    return std::is_sorted(xs.begin(), xs.end())
-        && std::adjacent_find(xs.begin(), xs.end()) == xs.end();  // + no equal pair
-}
-[[nodiscard]] bool has_equal_adjacent(std::span<const T> xs) noexcept {
-    return std::adjacent_find(xs.begin(), xs.end()) != xs.end();
+    return std::is_sorted(xs.begin(), xs.end());
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    using ::foundation::decide::strictly_increasing;
     using ::foundation::decide::weakly_increasing;
 
     const Config cfg = parse_args(argc, argv, 2000000);
@@ -148,35 +116,23 @@ int main(int argc, char** argv) {
             }
             return spec;
         },
-        // ── Property: std differential + inter-predicate laws ──
+        // ── Property: std differential and the construction ──
         [](const SeqSpec& spec) noexcept -> bool {
             const std::span<const T> view{spec.xs.data(), spec.len};
-            const bool strict = strictly_increasing<T>(view);
             const bool weak = weakly_increasing<T>(view);
 
-            // (1) std-library differential.
-            if (strict != strict_oracle(view)) return false;
             if (weak != weak_oracle(view)) return false;
 
-            // (2) Inter-predicate algebraic laws (implementation-blind).
-            if (strict && !weak) return false;  // strict ⟹ weak
-            const bool has_dup = has_equal_adjacent(view);
-            if (!has_dup && (strict != weak)) return false;  // no dup ⟹ strict == weak
-            if (weak && has_dup && strict) return false;  // dup + sorted ⟹ !strict
-
-            // Construction-directed.
             switch (spec.mode) {
                 case Mode::StrictlyIncreasing:
-                    if (!strict) return false;  // strictly built
-                    break;
                 case Mode::WeaklyWithDups:
-                    if (!weak || strict) return false;  // weak-true, strict-false
+                    if (!weak) return false;  // built non-decreasing
                     break;
                 case Mode::Regression:
                     if (weak) return false;  // a descent → weak false
                     break;
                 case Mode::Random:
-                    break;  // oracles + laws decide
+                    break;  // the oracle decides
                 default:
                     std::unreachable();
             }
