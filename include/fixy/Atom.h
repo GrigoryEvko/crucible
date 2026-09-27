@@ -436,9 +436,9 @@ using lifted_row_of_t = typename detail::lifted_row_of_pack_<Atoms...>::type;
 template <IsEffectGrade Grade, class... Atoms>
 using binding_row_of_t = ::foundation::effects::row_union_t<effect_row_of_t<Grade>, lifted_row_of_t<Atoms...>>;
 
-// `declassify<Policy>` drops the binding to the public security level and
-// names the policy that licenses the drop.  The policy is opaque to the
-// engagement check and exists for the audit trail.
+// `declassify<Policy>` names the policy that licenses a drop to the public
+// level.  A policy licenses exactly the channels that its mask in
+// fixy/Corpus.h names.  On each other channel the binding stays classified.
 
 template <typename Policy>
     requires IsDeclassificationPolicy<Policy>
@@ -502,7 +502,7 @@ enum class SecurityClass : std::uint8_t {
     Internal = 1,  // as_internal: below the classified carrier, above public
     Classified = 2,  // the strict pole, as_classified, as_secret
     ConstantTime = 3,  // constant_time: classified, with the timing channel closed
-    Declassified = 4,  // declassify<Policy>: a named policy licenses the drop
+    Declassified = 4,  // declassify<Policy>: a named policy licenses the drop on the channels of its mask
 };
 
 namespace detail {
@@ -540,7 +540,8 @@ inline constexpr SecurityClass security_class_of_v = detail::security_class_of_<
 
 // The two readings every rule shares.  A carrier holds classified data,
 // with or without the timing claim.  A declassified grade is not a
-// carrier: the policy it names is the discharge.
+// carrier.  fixy/Corpus.h reads its policy for each channel, because a
+// policy licenses only the channels of its mask.
 template <IsSecurityGrade Grade>
 inline constexpr bool is_classified_carrier_v = security_class_of_v<Grade> == SecurityClass::Classified
                                              || security_class_of_v<Grade> == SecurityClass::ConstantTime;
@@ -1038,7 +1039,7 @@ static_assert(is_classified_carrier_v<constant_time> && is_constant_time_v<const
 static_assert(is_classified_carrier_v<as_classified> && !is_constant_time_v<as_classified>);
 static_assert(!is_classified_carrier_v<as_internal> && !is_classified_carrier_v<as_public>);
 static_assert(!is_classified_carrier_v<declassify<::fixy::tags::secret_policy::AuditedLogging>>,
-              "a declassified grade is the discharge, not a carrier");
+              "a declassified grade is not a carrier. fixy/Corpus.h reads its policy for each channel");
 static_assert(!IsSecurityGrade<int>, "a type that is not a Security grade has no class");
 static_assert(!IsSecurityGrade<affine>, "an atom on another axis has no Security class");
 static_assert(!IsSecurityGrade<const as_public>, "a qualified atom is refused rather than stripped");

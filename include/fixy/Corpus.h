@@ -24,13 +24,15 @@
 //
 // What a declassification discharges
 // ----------------------------------
-// A policy authorizes exactly the axis it names.  AuthorizedReplay
-// lifts Staleness and is the only shipped policy with a non-None mask;
-// the pin below holds that count at one.  No shipping policy
-// discharges IO or Bg.  The old text told a reader to insert a
-// declassify on an IO or Bg refusal, which no policy could satisfy;
-// here the remediation says what works: drop the effect, or project
-// Security below the classified carrier.
+// A policy licenses exactly the channels its mask names.  A binding that
+// names declassify<Policy> stays classified on every other channel, so a
+// policy written for one export does not open another.  AuthorizedReplay
+// licenses Staleness.  AuditedLogging, WireSerialize and UserDisplay
+// license IO, because each names an export: a log, a wire and a display.
+// HashForCompare and LengthOnly release a value derived from the secret
+// and name no channel.  No policy licenses Bg: a crossing into a
+// background context makes the scheduling depend on the value, and a
+// release of the value does not license that.
 //
 // Over grades, not over the pack
 // ------------------------------
@@ -41,12 +43,10 @@
 // an observable effect reads the row of the binding, which joins the
 // Effect grade with the lifts of the atoms.
 //
-// One axis carries one grade, so "classified" is a question about the
-// Security grade: it is the strict pole, as_secret or as_classified.
-// A declassify atom on that axis displaces the carrier, so the
-// discharge arm of an IO or Bg entry is reached only with the carrier
-// arm false; the arm and the bits it reads are kept so that a policy
-// given that authority one day is read here and nowhere else.
+// One axis carries one grade, so "classified on a channel" is one
+// question about the Security grade and the channel: the grade is a
+// classified carrier, or it is a declassification whose mask does not
+// name the channel.
 //
 // Old spelling: include/crucible/fixy/Theory.h.
 
@@ -97,45 +97,50 @@ enum class DischargeAxis : std::uint32_t {
     return (std::to_underlying(mask) & std::to_underlying(axis)) != 0u;
 }
 
-// Defaults to None so that a policy authored before an axis existed
-// cannot discharge that axis by accident.
-template <class Policy>
-struct axes_discharged_of : std::integral_constant<DischargeAxis, DischargeAxis::None> {};
-template <class Policy>
-inline constexpr DischargeAxis axes_discharged_of_v = axes_discharged_of<Policy>::value;
+// The mask of each policy, as one closed function.  A function that is
+// not a template has no specialization, so no other file can widen the
+// mask of a shipped policy.  A trait or a variable template would be
+// open: an explicit specialization in any translation unit changes the
+// answer that every later read in that unit sees.  A type that the
+// function does not name licenses nothing, so a policy added to
+// fixy/Tags.h licenses nothing until it is named here.
+//
+// AuthorizedReplay licenses the replay window.  The three exports each
+// name an output channel, and IO is the channel of each: a log line, a
+// serialized frame on a wire, and a rendered display.
+[[nodiscard]] consteval DischargeAxis discharge_mask_of(std::meta::info policy) noexcept {
+    const std::meta::info named = std::meta::dealias(policy);
+    if (named == ^^::fixy::tags::secret_policy::AuthorizedReplay) return DischargeAxis::Staleness;
+    if (named == ^^::fixy::tags::secret_policy::AuditedLogging) return DischargeAxis::IO;
+    if (named == ^^::fixy::tags::secret_policy::WireSerialize) return DischargeAxis::IO;
+    if (named == ^^::fixy::tags::secret_policy::UserDisplay) return DischargeAxis::IO;
+    return DischargeAxis::None;
+}
 
-template <>
-struct axes_discharged_of<::fixy::tags::secret_policy::AuthorizedReplay>
-    : std::integral_constant<DischargeAxis, DischargeAxis::Staleness> {};
-
-static_assert(axes_discharged_of_v<::fixy::tags::secret_policy::AuthorizedReplay> == DischargeAxis::Staleness,
-              "AuthorizedReplay must discharge Staleness.  It is the only policy with a non-None mask, so a "
-              "change here removes the sole discharge path for the staleness reject.  Lifting a further axis "
-              "means naming a new policy tag and specializing axes_discharged_of for it.");
-static_assert(axes_discharged_of_v<::fixy::tags::secret_policy::AuditedLogging> == DischargeAxis::None,
-              "AuditedLogging must stay at DischargeAxis::None.  Lifting an axis for an already-shipped policy "
-              "requires an explicit specialization here and a matching justification where the policy tag is "
-              "declared.");
-static_assert(axes_discharged_of_v<::fixy::tags::secret_policy::WireSerialize> == DischargeAxis::None,
-              "WireSerialize is a serialization policy, not an axis-discharge policy.  Lifting it to IO requires "
-              "an explicit specialization and a bump of the non-None count below.");
-static_assert(axes_discharged_of_v<::fixy::tags::secret_policy::HashForCompare> == DischargeAxis::None,
-              "HashForCompare releases a hash of the value.  It discharges neither temporal replay nor IO.");
-static_assert(axes_discharged_of_v<::fixy::tags::secret_policy::LengthOnly> == DischargeAxis::None,
-              "LengthOnly releases only size metadata.  Size is an information channel, but no axis in "
-              "DischargeAxis names it, so the policy discharges nothing.  Typing that channel means minting a "
-              "new axis bit and lifting this sentinel.");
-static_assert(axes_discharged_of_v<::fixy::tags::secret_policy::UserDisplay> == DischargeAxis::None,
-              "UserDisplay is a render policy.  It discharges none of the axes in DischargeAxis.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::AuthorizedReplay) == DischargeAxis::Staleness,
+              "AuthorizedReplay must discharge Staleness and nothing else.  It is the only policy that licenses "
+              "the replay window, so a change here removes the sole discharge path for the staleness reject.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::AuditedLogging) == DischargeAxis::IO,
+              "AuditedLogging licenses the log line it writes, which goes out through IO, and nothing else.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::WireSerialize) == DischargeAxis::IO,
+              "WireSerialize licenses the serialized frame on the wire, which goes out through IO, and nothing "
+              "else.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::UserDisplay) == DischargeAxis::IO,
+              "UserDisplay licenses the rendered display, which goes out through IO, and nothing else.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::HashForCompare) == DischargeAxis::None,
+              "HashForCompare releases a hash of the value and names no channel.  A binding that sends the hash "
+              "out needs an export policy.");
+static_assert(discharge_mask_of(^^::fixy::tags::secret_policy::LengthOnly) == DischargeAxis::None,
+              "LengthOnly releases only size metadata and names no channel.  Size is an information channel, but "
+              "no axis in DischargeAxis names it.");
+static_assert(discharge_mask_of(^^int) == DischargeAxis::None, "a type that is not a policy licenses nothing");
 
 namespace detail {
 
-// An implicit None and a deliberate None are indistinguishable, so a
-// policy that quietly acquired a discharge mask would silence a reject
-// with nobody reviewing the lift.  This walks the policy namespace of
-// fixy/Tags.h rather than a hand list, so a policy added there is
-// counted the day it is declared; fixy/Secret.h proves the declared set
-// and the admitted set are one set.
+// A policy that licenses a channel is a decision a reviewer must see.
+// This walks the policy namespace of fixy/Tags.h rather than a hand
+// list, so the count reads every declared policy; fixy/Secret.h proves
+// the declared set and the admitted set are one set.
 [[nodiscard]] consteval std::size_t non_none_policy_count_() noexcept {
     std::size_t count = 0;
     static constexpr auto members = std::define_static_array(
@@ -148,7 +153,7 @@ namespace detail {
             using Policy = [:member:];
             if constexpr (std::derived_from<Policy, ::fixy::tags::secret_policy::secret_policy_base>
                           && !std::is_same_v<Policy, ::fixy::tags::secret_policy::secret_policy_base>) {
-                if (axes_discharged_of_v<Policy> != DischargeAxis::None) ++count;
+                if (discharge_mask_of(member) != DischargeAxis::None) ++count;
             }
         }
     }
@@ -158,10 +163,10 @@ namespace detail {
 
 }  // namespace detail
 
-static_assert(detail::non_none_policy_count_() == 1,
-              "Exactly one secret_policy tag may carry a non-None axes_discharged_of mask, and that one is "
-              "AuthorizedReplay for Staleness.  Lifting a second policy requires bumping this count and adding a "
-              "sentinel above that names the axis the policy becomes authoritative on.");
+static_assert(detail::non_none_policy_count_() == 4,
+              "Exactly four secret_policy tags license a channel: AuthorizedReplay for Staleness, and "
+              "AuditedLogging, WireSerialize and UserDisplay for IO.  A policy that licenses a channel needs a "
+              "line in discharge_mask_of, a pin that names the channel, and a change of this count.");
 
 // ---------------------------------------------------------------------
 // Reading a grade.
@@ -180,38 +185,41 @@ using grade_on = typename ::fixy::collision::grades<Atoms...>::template on<A>;
 template <class... Atoms>
 using binding_row_on = ::fixy::atom::binding_row_of_t<grade_on<Axis::Effect, Atoms...>, Atoms...>;
 
-// The three Security readings, each a reading of the one closed relation
+// Whether a declassification licenses one channel: the mask of its
+// policy names the channel.  A grade that is not a declassification
+// licenses nothing.
+template <DischargeAxis Channel, class G>
+struct can_discharge_ : std::false_type {};
+template <DischargeAxis Channel, class Policy>
+struct can_discharge_<Channel, ::fixy::atom::declassify<Policy>>
+    : std::bool_constant<discharge_axis_contains(discharge_mask_of(^^Policy), Channel)> {};
+
+// The two Security readings, each a reading of the one closed relation
 // fixy/Atom.h declares beside the Security atoms.  A type that is not a
 // Security grade makes no Security claim, so each answers false for it.
 // Every Security atom IS a Security grade, which fixy/Atom.h's roster
 // walk proves, so a new point on the axis cannot fall through to that
 // false answer and pass as public.
 
-// Carrier-side Security: the grade is a classification.  The strict
-// pole counts, because a binding that says nothing about Security is
-// classified, and constant_time counts, because it states the
-// classification too.  A declassified grade is not a carrier: it is the
-// discharge side, and a matcher of the shape `has_secret &&
-// !has_declassify` that read it as a carrier would cancel itself on a
-// grade that is only a declassification.
-template <class G>
-struct is_secret_carrier_ : std::false_type {};
-template <::fixy::atom::IsSecurityGrade G>
-struct is_secret_carrier_<G> : std::bool_constant<::fixy::atom::is_classified_carrier_v<G>> {};
-
-// The grant form: a carrier or a declassification.  The staleness entry
-// reads this one, because a value declassified for export is still a
-// secret where replay is concerned; a policy authorizes exactly the
-// axis it names.
-template <class G>
-struct is_secret_grant_ : std::false_type {};
-template <::fixy::atom::IsSecurityGrade G>
-struct is_secret_grant_<G>
+// Whether the value is classified on one channel.  A classified carrier
+// is classified on every channel: the strict pole counts, because a
+// binding that says nothing about Security is classified, and
+// constant_time counts, because it states the classification too.  A
+// declassification is classified on each channel that its mask does not
+// name.  So an export policy leaves the value a secret where replay or a
+// background crossing is concerned, and the replay policy leaves it a
+// secret on the way out.
+template <DischargeAxis Channel, class G>
+struct is_classified_on_ : std::false_type {};
+template <DischargeAxis Channel, ::fixy::atom::IsSecurityGrade G>
+struct is_classified_on_<Channel, G>
     : std::bool_constant<::fixy::atom::is_classified_carrier_v<G>
-                         || ::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Declassified> {};
+                         || (::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Declassified
+                             && !can_discharge_<Channel, G>::value)> {};
 
 // The Internal tier sits below the strict pole, so a binding reaches it
-// only by writing as_internal.
+// only by writing as_internal.  It carries no declassification, so no
+// mask reaches it.
 template <class G>
 struct is_internal_ : std::false_type {};
 template <::fixy::atom::IsSecurityGrade G>
@@ -256,12 +264,6 @@ struct is_ghost_ : std::false_type {};
 template <>
 struct is_ghost_<::fixy::atom::ghost> : std::true_type {};
 
-template <DischargeAxis X, class G>
-struct can_discharge_ : std::false_type {};
-template <DischargeAxis X, class Policy>
-struct can_discharge_<X, ::fixy::atom::declassify<Policy>>
-    : std::bool_constant<discharge_axis_contains(axes_discharged_of_v<Policy>, X)> {};
-
 // The compile-time text search these self-tests read lives in
 // fixy/Axis.h, because Collision.h needs it too and sits below this
 // header.
@@ -296,25 +298,25 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
         "A classified value flows out of the program through an I/O channel, and no declassification "
         "policy licenses the export.";
     static constexpr std::string_view remediation =
-        "Drop the IO atom, or project Security below the classified carrier: atom::as_public, "
-        "atom::as_unclassified, or atom::declassify<Policy> naming the export the policy licenses.  No "
-        "shipping policy discharges the IO channel itself.";
+        "Drop the IO atom, project Security below the classified carrier with atom::as_public or "
+        "atom::as_unclassified, or name atom::declassify<Policy> with a policy whose mask licenses IO: "
+        "AuditedLogging, WireSerialize or UserDisplay.";
 
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
-        const bool has_secret = detail::is_secret_carrier_<Security>::value;
+        const bool classified_on_io = detail::is_classified_on_<DischargeAxis::IO, Security>::value;
         const bool has_io = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::IO>;
-        const bool has_declassify = detail::can_discharge_<DischargeAxis::IO, Security>::value;
-        return has_secret && has_io && !has_declassify;
+        return classified_on_io && has_io;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
         return "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 type-system foundation) — implicit "
                "information flow: classified value flows out of the program via I/O without a "
-               "declassification policy.  Drop the IO effect OR project Security to as_public / "
-               "as_unclassified; no shipping policy discharges IO.";
+               "declassification policy that licenses I/O.  Drop the IO effect, project Security to "
+               "as_public / as_unclassified, or declassify under AuditedLogging, WireSerialize or UserDisplay, "
+               "the policies whose mask names IO.";
     }
 
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
@@ -330,23 +332,22 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
     static constexpr std::string_view remediation =
         "Drop the Bg atom and run the body on the foreground thread, where scheduling is deterministic, or "
         "project Security below the classified carrier: atom::as_public or atom::as_unclassified.  No "
-        "shipping policy discharges the Bg channel.";
+        "policy licenses the Bg channel, so a declassification does not either.";
 
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
-        const bool has_secret = detail::is_secret_carrier_<Security>::value;
+        const bool classified_on_bg = detail::is_classified_on_<DischargeAxis::Bg, Security>::value;
         const bool has_bg = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::Bg>;
-        const bool has_declassify = detail::can_discharge_<DischargeAxis::Bg, Security>::value;
-        return has_secret && has_bg && !has_declassify;
+        return classified_on_bg && has_bg;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
         return "Smith-Volpano 1998 / Sabelfeld-Sands 2000 / Hedin-Sabelfeld 2012 — concurrent information "
                "flow: classified value crosses into a background-thread context without a declassification "
                "policy; the spawn is itself a scheduler-observable event.  Drop the Bg effect OR project "
-               "Security to a less restrictive level; no shipping policy discharges Bg.";
+               "Security to a less restrictive level; no policy discharges Bg.";
     }
 
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
@@ -368,10 +369,9 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Staleness = detail::grade_on<Axis::Staleness, Atoms...>;
-        const bool has_secret = detail::is_secret_grant_<Security>::value;
+        const bool classified_on_replay = detail::is_classified_on_<DischargeAxis::Staleness, Security>::value;
         const bool has_stale = detail::is_stale_<Staleness>::value;
-        const bool has_staleness_discharge = detail::can_discharge_<DischargeAxis::Staleness, Security>::value;
-        return has_secret && has_stale && !has_staleness_discharge;
+        return classified_on_replay && has_stale;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -386,7 +386,7 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
                "(Orientation only: Sabelfeld-Sands 2009 'Declassification: dimensions and principles' names "
                "the 'when' dimension — a survey that identifies the axis, NOT a formalization of this "
                "pattern.)  Remediation: name atom::declassify<tags::secret_policy::AuthorizedReplay> (the "
-               "only shipped policy whose axes_discharged_of mask carries Staleness) OR drop the "
+               "only shipped policy whose discharge mask carries Staleness) OR drop the "
                "stale_to<N> atom (Staleness defaults to Fresh) OR project Security to a less restrictive "
                "level.  The other declassify policies (AuditedLogging / WireSerialize / HashForCompare / "
                "LengthOnly / UserDisplay) do NOT silence this matcher — their authority lies on IO / "
@@ -437,28 +437,29 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
         "An org-internal value, below the classified carrier but above public, flows into an I/O sink with "
         "no declassification policy: a write-down.";
     static constexpr std::string_view remediation =
-        "Drop the IO atom, or project Security to atom::as_public or atom::as_unclassified.  No shipping "
-        "policy discharges the IO channel.";
+        "Drop the IO atom, project Security to atom::as_public or atom::as_unclassified, or replace "
+        "atom::as_internal with atom::declassify<Policy> for a policy whose mask licenses IO: AuditedLogging, "
+        "WireSerialize or UserDisplay.";
 
+    // One axis carries one grade, so as_internal and a declassification
+    // cannot both sit on Security, and no mask reaches this entry.  A
+    // binding that exports an internal value names the policy instead of
+    // as_internal, and classified_io_without_declassify reads that grade.
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
         const bool has_io = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::IO>;
-        // The carrier arm reads is_internal_ directly.  That predicate
-        // has no declassify specialization, so the two arms cannot be
-        // satisfied by one grade the way they can above.
-        const bool has_declassify = detail::can_discharge_<DischargeAxis::IO, Security>::value;
-        return has_internal && has_io && !has_declassify;
+        return has_internal && has_io;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
         return "Bell-LaPadula 1973 / Volpano-Smith-Irvine 1996 / Sabelfeld-Myers 2003 — no-write-down for "
                "Internal tier: org-internal value flows into an I/O sink without a declassification policy.  "
                "Internal data is below the strict pole (Classified) but ABOVE Public — every "
-               "non-Public→Public crossing requires audit-trail discharge.  Drop the IO effect OR project "
-               "Security to as_public / as_unclassified; no shipping policy discharges IO.";
+               "non-Public→Public crossing requires audit-trail discharge.  Drop the IO effect, project "
+               "Security to as_public / as_unclassified, or declassify under a policy whose mask names IO.";
     }
 
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
@@ -473,8 +474,7 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
         "it, with no declassification policy: a concurrent write-down.";
     static constexpr std::string_view remediation =
         "Drop the Bg atom and run the body on the foreground thread, where scheduling is deterministic, or "
-        "project Security to atom::as_public or atom::as_unclassified.  No shipping policy discharges the Bg "
-        "channel.";
+        "project Security to atom::as_public or atom::as_unclassified.  No policy licenses the Bg channel.";
 
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
@@ -482,8 +482,7 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
         using Effects = detail::binding_row_on<Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
         const bool has_bg = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::Bg>;
-        const bool has_declassify = detail::can_discharge_<DischargeAxis::Bg, Security>::value;
-        return has_internal && has_bg && !has_declassify;
+        return has_internal && has_bg;
     }
 
     [[nodiscard]] static constexpr std::string_view cite() noexcept {
@@ -494,7 +493,7 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
                "strict pole (Classified) but ABOVE Public — every non-Public crossing through a "
                "scheduler-observable channel requires audit-trail discharge.  Drop the Bg effect (run on the "
                "foreground thread where scheduling is deterministic) OR project Security to as_public / "
-               "as_unclassified; no shipping policy discharges Bg.";
+               "as_unclassified; no policy discharges Bg.";
     }
 
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
@@ -630,14 +629,20 @@ static_assert(is_in_corpus_v<int, ::fixy::atom::with_io>);
 static_assert(std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_io>, classified_io_without_declassify>);
 static_assert(!is_in_corpus_v<int, ::fixy::atom::with_io, ::fixy::atom::as_public>);
 
-// A declassification on the Security axis displaces the carrier, so
-// the export it licenses is not classified IO.
+// A declassification licenses the channels its policy names, and no
+// other.  The wire policy licenses IO.  The replay policy does not, so
+// the same IO row under it is classified IO.  No policy licenses Bg.
 static_assert(!is_in_corpus_v<int, ::fixy::atom::with_io,
                               ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
+static_assert(std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_io,
+                                                     ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
+                             classified_io_without_declassify>);
+static_assert(std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_bg,
+                                                     ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>,
+                             classified_bg_without_declassify>);
 
-// The staleness entry reads the grant form: an export policy leaves the
-// value a secret where replay is concerned, and only the replay policy
-// discharges the axis.
+// An export policy leaves the value a secret where replay is concerned,
+// and only the replay policy discharges the axis.
 static_assert(is_in_corpus_v<int, ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>,
                              ::fixy::atom::stale_to<5>>);
 static_assert(!is_in_corpus_v<int, ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>,

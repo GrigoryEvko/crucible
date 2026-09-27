@@ -98,9 +98,24 @@ static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_pub
 static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_unclassified, at::with_io>());
 static_assert(!corpus::classified_bg_without_declassify::matches<int, at::as_public, at::with_bg>());
 
-// A declassification displaces the carrier: the emission is licensed.
+// A declassification licenses the channels its policy names and no
+// other.  Each export policy licenses IO.
 static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_io>());
-static_assert(!corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::AuditedLogging>, at::with_bg>());
+static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::AuditedLogging>, at::with_io>());
+static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::UserDisplay>, at::with_io>());
+// A policy that names no channel, or another channel, leaves IO
+// classified.
+static_assert(only_this_entry_matches<corpus::classified_io_without_declassify,
+                                      at::declassify<policy::AuthorizedReplay>, at::with_io>());
+static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, at::declassify<policy::LengthOnly>,
+                                      at::with_io>());
+static_assert(corpus::classified_io_without_declassify::matches<int, at::declassify<policy::HashForCompare>, at::with_io>());
+// No policy licenses Bg, so every declassification leaves Bg classified.
+static_assert(only_this_entry_matches<corpus::classified_bg_without_declassify, at::declassify<policy::AuditedLogging>,
+                                      at::with_bg>());
+static_assert(corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_bg>());
+static_assert(corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::LengthOnly>, at::with_bg>());
+static_assert(corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::AuthorizedReplay>, at::with_bg>());
 
 // Internal is not classified, and classified is not internal.
 static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_internal, at::with_io>());
@@ -169,16 +184,16 @@ static_assert(!corpus::ghost_runtime_observable::matches<int, at::as_public, at:
 static_assert(!corpus::ghost_runtime_observable::matches<int, at::affine, at::as_public, at::with_io>());
 
 // ---------------------------------------------------------------------
-// The discharge masks are what the policies say, and exactly one policy
-// says anything.
+// The discharge masks are what the policies say: the replay policy names
+// Staleness, the three export policies name IO, and no policy names Bg.
 
-static_assert(corpus::axes_discharged_of_v<policy::AuthorizedReplay> == corpus::DischargeAxis::Staleness);
-static_assert(corpus::axes_discharged_of_v<policy::AuditedLogging> == corpus::DischargeAxis::None);
-static_assert(corpus::axes_discharged_of_v<policy::WireSerialize> == corpus::DischargeAxis::None);
-static_assert(corpus::axes_discharged_of_v<policy::HashForCompare> == corpus::DischargeAxis::None);
-static_assert(corpus::axes_discharged_of_v<policy::LengthOnly> == corpus::DischargeAxis::None);
-static_assert(corpus::axes_discharged_of_v<policy::UserDisplay> == corpus::DischargeAxis::None);
-static_assert(corpus::axes_discharged_of_v<int> == corpus::DischargeAxis::None, "a non-policy discharges nothing");
+static_assert(corpus::discharge_mask_of(^^policy::AuthorizedReplay) == corpus::DischargeAxis::Staleness);
+static_assert(corpus::discharge_mask_of(^^policy::AuditedLogging) == corpus::DischargeAxis::IO);
+static_assert(corpus::discharge_mask_of(^^policy::WireSerialize) == corpus::DischargeAxis::IO);
+static_assert(corpus::discharge_mask_of(^^policy::HashForCompare) == corpus::DischargeAxis::None);
+static_assert(corpus::discharge_mask_of(^^policy::LengthOnly) == corpus::DischargeAxis::None);
+static_assert(corpus::discharge_mask_of(^^policy::UserDisplay) == corpus::DischargeAxis::IO);
+static_assert(corpus::discharge_mask_of(^^int) == corpus::DischargeAxis::None, "a non-policy discharges nothing");
 
 static_assert(corpus::discharge_axis_contains(corpus::DischargeAxis::Staleness | corpus::DischargeAxis::IO,
                                               corpus::DischargeAxis::IO));
@@ -196,6 +211,10 @@ static_assert(IsAccepted<int, at::with_io, at::as_public>);
 static_assert(!IsAccepted<int, at::as_internal, at::with_bg>);
 static_assert(!IsAccepted<int, at::as_secret, at::stale_to<5>>);
 static_assert(IsAccepted<int, at::declassify<policy::AuthorizedReplay>, at::stale_to<5>>);
+static_assert(!IsAccepted<int, at::with_io, at::declassify<policy::AuthorizedReplay>>,
+              "the replay policy does not license an export");
+static_assert(!IsAccepted<int, at::with_bg, at::declassify<policy::LengthOnly>>, "no policy licenses Bg");
+static_assert(IsAccepted<int, at::with_io, at::declassify<policy::WireSerialize>>);
 
 // Corpus-only refusals: no collision rule reads these pairs.  P010
 // reads Alloc, IO and Block, so ghost x Bg on a public grade is the

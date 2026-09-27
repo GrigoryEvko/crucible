@@ -328,13 +328,18 @@ using PublicInt = ::fixy::fn<int, ::fixy::atom::as_public>;
 using UnclassifiedInt = ::fixy::fn<int, ::fixy::atom::as_unclassified>;
 using UnverifiedInt = ::fixy::fn<int, ::fixy::atom::trust_unverified>;
 
-// The Security axis merges, because every rule that reads it routes
-// through one predicate and that predicate answers alike for the strict
-// pole, as_classified and as_secret.  This is the establishment, asserted.
-static_assert(
-    ::fixy::corpus::detail::is_secret_carrier_<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>::value);
-static_assert(::fixy::corpus::detail::is_secret_carrier_<::fixy::atom::as_classified>::value);
-static_assert(::fixy::corpus::detail::is_secret_carrier_<::fixy::atom::as_secret>::value);
+// The Security axis merges, because every corpus entry that reads it
+// routes through one predicate, and that predicate answers alike on every
+// channel for the strict pole, as_classified and as_secret.  This is the
+// establishment, asserted.
+template <class Grade>
+inline constexpr bool classified_on_every_channel =
+    ::fixy::corpus::detail::is_classified_on_<::fixy::corpus::DischargeAxis::IO, Grade>::value
+    && ::fixy::corpus::detail::is_classified_on_<::fixy::corpus::DischargeAxis::Bg, Grade>::value
+    && ::fixy::corpus::detail::is_classified_on_<::fixy::corpus::DischargeAxis::Staleness, Grade>::value;
+static_assert(classified_on_every_channel<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>);
+static_assert(classified_on_every_channel<::fixy::atom::as_classified>);
+static_assert(classified_on_every_channel<::fixy::atom::as_secret>);
 
 // The corpus therefore gives the strict pole and as_classified one
 // verdict on every pack, and an IO row is the pack where the verdict

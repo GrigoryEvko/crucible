@@ -12,7 +12,7 @@
 // refused, because those policies authorize an export channel and say
 // nothing about temporal replay.  Only
 // declassify<secret_policy::AuthorizedReplay> discharges Staleness, and
-// it is the one policy whose axes_discharged_of mask carries it.
+// it is the one policy whose discharge mask carries it.
 // test/fixy/test_corpus.cpp holds all four of those cases.
 
 #include <fixy/Fn.h>

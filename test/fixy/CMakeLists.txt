@@ -688,6 +688,18 @@ fixy_neg_compile_test(neg_corpus_internal_bg
   "Corpus entry internal_bg_without_declassify"
   "Bell-LaPadula 1973")
 
+# A declassification licenses the channels its policy names and no
+# other.  The replay policy leaves an IO row classified, and an export
+# policy leaves a Bg crossing classified.
+fixy_neg_compile_test(neg_corpus_classified_io_replay_policy
+  "${_fixy_tier5_reason}"
+  "Corpus entry classified_io_without_declassify"
+  "fixy::fn<int, fixy::atom::with<foundation::effects::Effect::IO>, fixy::atom::declassify<fixy::tags::secret_policy::AuthorizedReplay> >::tier5_composition_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_corpus_classified_bg_export_policy
+  "${_fixy_tier5_reason}"
+  "Corpus entry classified_bg_without_declassify"
+  "fixy::fn<int, fixy::atom::with<foundation::effects::Effect::Bg>, fixy::atom::declassify<fixy::tags::secret_policy::AuditedLogging> >::tier5_composition_ok_.+ evaluates to false")
+
 # The tier chain itself: one message per bad pack.  fn asks the tiers in
 # order and stops at the first failure, because a later tier's question
 # is a hard error on a pack an earlier one refused — the uniqueness walk

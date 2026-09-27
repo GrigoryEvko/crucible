@@ -488,15 +488,16 @@ namespace foundation::diag {
 // spellings, and this is what puts them in one cache slot.
 //
 // What establishes the equivalence is a consumer, not the naming.  Every
-// rule in the tree that reads the Security axis reads it through
-// fixy/Corpus.h's `is_secret_carrier_`, which answers true for the strict
-// pole and for `as_classified` alike — "the strict pole counts, because a
-// binding that says nothing about Security is classified", in that
-// header's words.  No other predicate separates them: `is_internal_`
-// answers false for both, and the discharge side reads `declassify` only.
-// So the corpus gives the two spellings one verdict on every pack, and
-// the cells in test/fixy/test_row_hash_wrappers.cpp assert that rather
-// than cite it.
+// corpus entry that reads the Security axis for classification reads it
+// through fixy/Corpus.h's `is_classified_on_`, which answers true on
+// every channel for the strict pole and for `as_classified` alike — "the
+// strict pole counts, because a binding that says nothing about Security
+// is classified", in that header's words.  No other predicate separates
+// them: `is_internal_` answers false for both, and a mask reads
+// `declassify` only.  The collision rules read the same closed relation
+// of fixy/Atom.h, which gives both the class Classified.  So the two
+// spellings get one verdict on every pack, and the cells in
+// test/fixy/test_row_hash_wrappers.cpp assert that rather than cite it.
 //
 // fixy/Atom.h settles it a second way, definitionally: `as_classified`
 // "names the strict pole explicitly".  The atom exists in order to write

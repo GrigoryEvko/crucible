@@ -149,10 +149,11 @@ CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::classified_io_without_declassify, ::fo
                             "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 type-system foundation) "
                             "implicit information flow: a classified value reaches an I/O boundary without an "
                             "audit-discharging declassification policy.  Sequential IFC type systems require an "
-                            "explicit policy at every classified-to-IO transition, and no shipping policy "
-                            "discharges the IO channel itself.",
-                            "The Security grade is the strict pole, atom::as_secret or atom::as_classified, and "
-                            "the Effect grade is an atom::with<...> row naming IO.",
+                            "explicit policy at every classified-to-IO transition, and only a policy whose mask "
+                            "names IO discharges it: AuditedLogging, WireSerialize or UserDisplay.",
+                            "The Security grade is the strict pole, atom::as_secret, atom::as_classified, or an "
+                            "atom::declassify<Policy> whose policy does not license IO, and the Effect grade is "
+                            "an atom::with<...> row naming IO.",
                             "fixy::fn<T, atom::with_io, atom::as_public>  // role::IoFunction; or role::PublicEmit<T, "
                             "tags::secret_policy::WireSerialize> for a licensed export",
                             "fixy::fn<T, atom::as_secret, atom::with_io>  // classified IO");
@@ -161,9 +162,9 @@ CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::classified_bg_without_declassify, ::fo
                             "Smith-Volpano 1998 + Sabelfeld-Sands 2000 + Hedin-Sabelfeld 2012 concurrent "
                             "information flow: a classified value crosses into a background-thread context whose "
                             "scheduling becomes secret-dependent.  Sequential IFC is UNSOUND under concurrency, "
-                            "and no shipping policy discharges the Bg channel.",
-                            "The Security grade is the strict pole, atom::as_secret or atom::as_classified, and "
-                            "the Effect grade is an atom::with<...> row naming Bg.",
+                            "and no policy discharges the Bg channel.",
+                            "The Security grade is the strict pole, atom::as_secret, atom::as_classified, or an "
+                            "atom::declassify<Policy>, and the Effect grade is an atom::with<...> row naming Bg.",
                             "fixy::fn<T, atom::with<Effect::Bg, Effect::Alloc>, atom::as_public>  // role::BgWorker",
                             "fixy::fn<T, atom::as_secret, atom::with_bg>  // classified Bg");
 
@@ -186,7 +187,8 @@ CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::internal_io_without_declassify, ::foun
                             "no-write-down: org-internal data (atom::as_internal, below the strict pole but "
                             "above public) flows into an I/O sink without an audit-discharging declassification "
                             "policy.  Every non-public to public crossing requires a discharge, not just the "
-                            "classified and secret tiers, and no shipping policy discharges the IO channel.",
+                            "classified and secret tiers.  An internal value leaves through a policy whose mask "
+                            "names IO, written in place of atom::as_internal.",
                             "The Security grade is atom::as_internal and the Effect grade is an atom::with<...> "
                             "row naming IO.",
                             "fixy::fn<T, atom::with_io, atom::as_public>  // or drop the IO atom",
@@ -199,10 +201,9 @@ CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::internal_bg_without_declassify, ::foun
                             "fixy::fn<T, atom::with_bg, atom::as_public>  // or run on the foreground thread",
                             "fixy::fn<T, atom::as_internal, atom::with_bg>  // internal concurrent write-down");
 
-// The three policies below are named verbatim inside the inert
-// correct_example strings above, which no compiler ever checks.  These
-// pins put a rename or a removal in front of the reader who has to
-// update those strings.  They live here rather than beside the policy
+// The four policies below are named verbatim inside the inert strings
+// above, which no compiler ever checks.  These pins put a rename or a
+// removal in front of the reader who has to update those strings.  They live here rather than beside the policy
 // definitions because this is the citing site, and the citation is
 // what breaks.
 static_assert(::fixy::atom::IsDeclassificationPolicy<::fixy::tags::secret_policy::WireSerialize>,
@@ -214,7 +215,11 @@ static_assert(::fixy::atom::IsDeclassificationPolicy<::fixy::tags::secret_policy
               "one policy that discharges Staleness.");
 static_assert(::fixy::atom::IsDeclassificationPolicy<::fixy::tags::secret_policy::AuditedLogging>,
               "tags::secret_policy::AuditedLogging must exist and be a declassification policy: the roles and "
-              "the corpus self-tests spell it.");
+              "the corpus self-tests spell it, and the why_this_matters of classified_io_without_declassify "
+              "above names it.");
+static_assert(::fixy::atom::IsDeclassificationPolicy<::fixy::tags::secret_policy::UserDisplay>,
+              "tags::secret_policy::UserDisplay must exist and be a declassification policy: the "
+              "why_this_matters of classified_io_without_declassify above names it.");
 
 // ---------------------------------------------------------------------
 // The header proves its own claims here.

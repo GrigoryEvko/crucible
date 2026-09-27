@@ -93,7 +93,9 @@ using CtCrypto = ::fixy::fn<Type, ::fixy::atom::with<>, ::fixy::atom::constant_t
 // the declassification carries the policy that authorized the
 // emission, and the grade on the Security axis recovers it from the
 // type.  A plain pin would leave the emission auditable only by call
-// site.
+// site.  The policy must license IO: its mask in fixy/Corpus.h names IO.
+// Under any other policy the value stays classified on IO, and the gate
+// refuses the binding.
 template <class Type, class Policy>
 using PublicEmit = ::fixy::fn<Type, ::fixy::atom::with_io, ::fixy::atom::declassify<Policy>>;
 
