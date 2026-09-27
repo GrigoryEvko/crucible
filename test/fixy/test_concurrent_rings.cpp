@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <optional>
 #include <span>
 #include <thread>
@@ -70,6 +71,15 @@ static_assert(alignof(Spsc) >= 64);
 static_assert(alignof(Mpsc) >= 64);
 static_assert(alignof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
 static_assert(sizeof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
+
+// The MPSC capacity gate over the two positions a producer read.  A head
+// that trails the tail is stale, and the gate lets the compare-exchange
+// refuse it.  An unsigned difference wraps there and reads a full ring.
+static_assert(Mpsc::has_room_for(9, 2, 1), "seven items and room for one more");
+static_assert(!Mpsc::has_room_for(10, 2, 1), "eight items fill a ring of eight");
+static_assert(Mpsc::has_room_for(5, 7, 1), "a stale head that trails the tail is not a full ring");
+static_assert(Mpsc::has_room_for(3, 10, 4), "a stale head is not a full ring for a batch either");
+static_assert(!Mpsc::has_room_for(7, 2, 4), "a batch of four does not fit beside five items");
 
 // A ring whose capacity is below one bitmap word still gets one word,
 // and one that spans several gets several.  Both are exercised below.
@@ -339,6 +349,93 @@ using MpscWide = c::MpscRing<int, 128>;
     return 0;
 }
 
+// A producer reads the head and then the tail.  Between the two loads,
+// other producers can push and the consumer can pop past the head that
+// was read, so the head is stale and trails the tail.  The ring below
+// holds more cells than a round pushes, so it is never full, and each
+// refusal counts one stale head that the capacity gate read as a full
+// ring.  Half the producers push single items and half push batches.
+// The stale head needs many producers on the head line.  On the
+// development host the old gate refused pushes in three rounds of four
+// with 64 producers, and almost never with 8.
+namespace never_full {
+
+constexpr std::uint32_t kProducers = 64;
+constexpr std::uint64_t kPushesPerProducer = 4000;
+constexpr std::size_t kBatch = 4;
+constexpr std::size_t kCapacity = std::size_t{1} << 18;
+constexpr int kRounds = 4;
+static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold every push of a round");
+
+}  // namespace never_full
+
+[[nodiscard]] int mpsc_never_full_round() {
+    using namespace never_full;
+    auto ring = std::make_unique<c::MpscRing<std::uint64_t, kCapacity>>();
+    std::atomic<std::uint64_t> refused{0};
+    std::atomic<std::uint64_t> accepted{0};
+    std::atomic<std::uint32_t> finished{0};
+    std::uint64_t received = 0;
+
+    {
+        std::array<std::jthread, kProducers> producers{};
+        for (std::uint32_t p = 0; p < kProducers; ++p) {
+            const bool pushes_batches = (p % 2) == 1;
+            producers[p] = std::jthread([&ring, &refused, &accepted, &finished, pushes_batches] {
+                std::uint64_t taken = 0;
+                std::uint64_t refusals = 0;
+                if (pushes_batches) {
+                    const std::array<std::uint64_t, kBatch> batch{1, 2, 3, 4};
+                    for (std::uint64_t i = 0; i < kPushesPerProducer / kBatch; ++i) {
+                        const std::size_t pushed = ring->try_push_batch(std::span<const std::uint64_t>{batch});
+                        taken += pushed;
+                        refusals += (pushed == 0) ? 1 : 0;
+                    }
+                } else {
+                    for (std::uint64_t i = 0; i < kPushesPerProducer; ++i) {
+                        if (ring->try_push(i)) {
+                            ++taken;
+                        } else {
+                            ++refusals;
+                        }
+                    }
+                }
+                accepted.fetch_add(taken, std::memory_order_relaxed);
+                refused.fetch_add(refusals, std::memory_order_relaxed);
+                finished.fetch_add(1, std::memory_order_release);
+            });
+        }
+
+        for (;;) {
+            if (ring->try_pop().has_value()) {
+                ++received;
+            } else if (finished.load(std::memory_order_acquire) == kProducers && ring->empty_approx()) {
+                break;
+            }
+        }
+    }
+
+    if (const std::uint64_t spurious = refused.load(std::memory_order_relaxed); spurious != 0) {
+        std::fprintf(stderr, "a never-full MPSC ring refused %llu pushes: a stale head passed for a full ring\n",
+                     static_cast<unsigned long long>(spurious));
+        return 1;
+    }
+    if (received != accepted.load(std::memory_order_relaxed)) {
+        std::fprintf(stderr, "MPSC delivered %llu items of the %llu it accepted\n",
+                     static_cast<unsigned long long>(received),
+                     static_cast<unsigned long long>(accepted.load(std::memory_order_relaxed)));
+        return 1;
+    }
+    return 0;
+}
+
+[[nodiscard]] int mpsc_never_full_ring_refuses_nothing() {
+    for (int round = 0; round < never_full::kRounds; ++round) {
+        if (const int rc = mpsc_never_full_round(); rc != 0) return rc;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -347,5 +444,6 @@ int main() {
     if (const int rc = mpsc_bitmap_widths(); rc != 0) return rc;
     if (const int rc = spsc_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_many_producers(); rc != 0) return rc;
+    if (const int rc = mpsc_never_full_ring_refuses_nothing(); rc != 0) return rc;
     return 0;
 }

@@ -69,6 +69,21 @@ private:
 public:
     MpscRing() noexcept = default;
 
+    // The capacity gate, as a function of the head and the tail that a
+    // producer read, in that order.  Other producers can push and the
+    // consumer can pop between the two loads, so the tail can pass the
+    // head that was read.  The distance is then negative, the ring is not
+    // full, and the compare-exchange on the stale head fails and reads it
+    // again.  The difference is signed for that reason: as an unsigned
+    // value it wraps, and the gate reads a stale head as a full ring.
+    // A refusal is true at the load of the head, because the tail only
+    // grows after it.  Loading the tail first would refuse on a ring that
+    // was never full.
+    [[nodiscard]] static constexpr bool has_room_for(std::uint64_t head, std::uint64_t tail,
+                                                     std::uint64_t count) noexcept {
+        return static_cast<std::int64_t>(head + count - tail) <= static_cast<std::int64_t>(Capacity);
+    }
+
     // The head CAS is relaxed because it claims a ticket and carries no
     // payload.  The release on the bitmap set is what publishes the
     // cell write, and the caller owns the cell from CAS success until
@@ -81,9 +96,7 @@ public:
             // peek_relaxed does not hold here.
             const std::uint64_t pos = head_.load_relaxed();
             const std::uint64_t tail_val = tail_.get();
-            // The gate is pos + 1 - tail_val <= Capacity, rewritten to
-            // subtract first so it cannot overflow.
-            if (pos - tail_val >= Capacity) [[unlikely]] {
+            if (!has_room_for(pos, tail_val, 1)) [[unlikely]] {
                 return false;
             }
             std::uint64_t expected = pos;
@@ -114,7 +127,7 @@ public:
         for (;;) {
             const std::uint64_t pos = head_.load_relaxed();
             const std::uint64_t tail_val = tail_.get();
-            if (pos + N - tail_val > Capacity) [[unlikely]] {
+            if (!has_room_for(pos, tail_val, N)) [[unlikely]] {
                 return 0;
             }
             std::uint64_t expected = pos;
