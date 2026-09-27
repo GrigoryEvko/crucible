@@ -55,10 +55,17 @@
 //     weakened: SimpleTransfer answers false for every tag but the two,
 //     so a None reintroduced tomorrow is refused by the surviving
 //     conjunct without anyone remembering to add a sentinel check for it.
+//
+//  7. The zero-copy transfer is zerocopy_transfer, not a mint, because it
+//     synthesizes nothing.  It takes two OwnedFd handles, not two ints, so
+//     it moves bytes only between descriptors that the caller owns.  It
+//     asks again after a short transfer or EINTR, and the sendfile form
+//     takes no destination offset, which sendfile does not read.
 
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
+#include <fixy/os/Fs.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -306,9 +313,19 @@ concept CtxFitsIoUringMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...>
                           && detail::all_ring_flags_known_v<Atoms...>;
 
 template <typename Ctx, typename... Atoms>
-concept CtxFitsZerocopyMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...>
-                           && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::io::zerocopy, Atoms...>
-                           && SimpleTransfer<detail::zerocopy_of_t<Atoms...>>;
+concept CtxFitsZerocopyTransfer = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...>
+                               && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::io::zerocopy, Atoms...>
+                               && SimpleTransfer<detail::zerocopy_of_t<Atoms...>>;
+
+// One gate for each form of the transfer below, because the two forms
+// take different offsets.
+template <typename Ctx, typename... Atoms>
+concept CtxFitsSendfileTransfer =
+    CtxFitsZerocopyTransfer<Ctx, Atoms...> && std::is_same_v<detail::zerocopy_of_t<Atoms...>, zerocopy::Sendfile>;
+
+template <typename Ctx, typename... Atoms>
+concept CtxFitsCopyRangeTransfer = CtxFitsZerocopyTransfer<Ctx, Atoms...>
+                                && std::is_same_v<detail::zerocopy_of_t<Atoms...>, zerocopy::CopyFileRange>;
 
 // Declared before the class so the class can name it as its sole friend.
 // The definition follows the class, because it builds one.
@@ -509,32 +526,71 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
                                                 sqes_array_size, params.sq_entries, params.cq_entries});
 }
 
-// §XXI carve-out: cx=alloc — a zero-copy transfer is a kernel side effect.
+// A transfer moves the bytes of one descriptor to another inside the
+// kernel.  It is not a mint: it acts on two descriptors that the caller
+// owns, and it synthesizes nothing.
+//
+// One call can move fewer bytes than it asked for, and a signal can stop
+// it before it moves any.  Each form asks again for the rest until the
+// length is moved, the source ends, or an error other than EINTR occurs.
+// It returns the count that it moved, and a count short of the length
+// means that the source ended.  Another error returns its code and not
+// the count, so after an error the destination can hold a part of the
+// bytes.
+//
+namespace detail {
+
+// The loop that the two forms share.  step moves at most the count that
+// it takes, and returns the count that it moved, 0 at the end of the
+// source, or -1 with errno set.
+template <typename Step>
+[[nodiscard]] std::expected<std::size_t, std::error_code> transfer_all(::fixy::fs::OwnedFd const& source,
+                                                                       ::fixy::fs::OwnedFd const& destination,
+                                                                       std::size_t length, Step step) noexcept {
+    if (!source.is_open() || !destination.is_open()) {
+        return std::unexpected{std::error_code{EBADF, std::system_category()}};
+    }
+    std::size_t moved = 0;
+    while (moved < length) {
+        const ::ssize_t count = step(length - moved);
+        if (count == 0) break;
+        if (count < 0) {
+            if (errno == EINTR) continue;
+            return std::unexpected{std::error_code{errno, std::system_category()}};
+        }
+        moved += static_cast<std::size_t>(count);
+    }
+    return moved;
+}
+
+}  // namespace detail
+
+// sendfile writes at the file position of the destination and moves it,
+// so this form takes no destination offset.  It reads the source from
+// source_offset and does not move the file position of the source.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsZerocopyMint<Ctx, Atoms...>
+    requires CtxFitsSendfileTransfer<Ctx, Atoms...>
 [[nodiscard]] inline std::expected<std::size_t, std::error_code>
-mint_zerocopy_transfer(Ctx const&, int src_fd, int dst_fd, std::size_t length, ::off_t off_in = 0,
-                       ::off_t off_out = 0) noexcept {
-    using Z = detail::zerocopy_of_t<Atoms...>;
-    ::ssize_t moved = -1;
-    if constexpr (std::is_same_v<Z, zerocopy::Sendfile>) {
-        ::off_t offset = off_in;
-        moved = ::sendfile(dst_fd, src_fd, &offset,
-                           length);  // SYSCALL-CAP-OK: mint_zerocopy_transfer body (CtxFitsZerocopyMint, IO+Block)
-        (void)off_out;  // sendfile writes to dst_fd's current position.
-    } else if constexpr (std::is_same_v<Z, zerocopy::CopyFileRange>) {
-        ::off_t in_offset = off_in;
-        ::off_t out_offset = off_out;
-        moved = ::copy_file_range(src_fd, &in_offset, dst_fd, &out_offset, length,
-                                  0);  // SYSCALL-CAP-OK: mint_zerocopy_transfer body (CtxFitsZerocopyMint, IO+Block)
-    } else {
-        static_assert(sizeof(Z) == 0, "mint_zerocopy_transfer: unsupported zerocopy tag "
-                                      "reached body — concept gate should have rejected.");
-    }
-    if (moved < 0) {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
-    }
-    return static_cast<std::size_t>(moved);
+zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
+                  std::size_t length, ::off_t source_offset = 0) noexcept {
+    return detail::transfer_all(source, destination, length, [&, offset = source_offset](std::size_t rest) mutable {
+        return ::sendfile(destination.get(), source.get(), &offset, rest);  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsSendfileTransfer, IO+Block)
+    });
+}
+
+// copy_file_range reads from source_offset and writes at
+// destination_offset, and it moves neither file position.
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsCopyRangeTransfer<Ctx, Atoms...>
+[[nodiscard]] inline std::expected<std::size_t, std::error_code>
+zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
+                  std::size_t length, ::off_t source_offset = 0, ::off_t destination_offset = 0) noexcept {
+    return detail::transfer_all(
+        source, destination, length,
+        [&, in_offset = source_offset, out_offset = destination_offset](std::size_t rest) mutable {
+            return ::copy_file_range(  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsCopyRangeTransfer, IO+Block)
+                source.get(), &in_offset, destination.get(), &out_offset, rest, 0);
+        });
 }
 
 }  // namespace fixy::io
@@ -636,10 +692,12 @@ static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_Engine, A_Sq8, A_FutureFlag>,
 static_assert(!CtxFitsIoUringMint<IoBlockCtx, A_FutureEngine, A_Sq8>);
 static_assert(!CtxFitsIoUringMint<IoBlockCtx>);
 
-static_assert(CtxFitsZerocopyMint<IoBlockCtx, A_Sendfile>);
-static_assert(!CtxFitsZerocopyMint<IoOnlyCtx, A_Sendfile>);
-static_assert(!CtxFitsZerocopyMint<IoBlockCtx, A_Engine>);
-static_assert(!CtxFitsZerocopyMint<IoBlockCtx, A_Sendfile, A_Sendfile>, "two transfers in one pack.");
+static_assert(CtxFitsZerocopyTransfer<IoBlockCtx, A_Sendfile>);
+static_assert(!CtxFitsZerocopyTransfer<IoOnlyCtx, A_Sendfile>);
+static_assert(!CtxFitsZerocopyTransfer<IoBlockCtx, A_Engine>);
+static_assert(!CtxFitsZerocopyTransfer<IoBlockCtx, A_Sendfile, A_Sendfile>, "two transfers in one pack.");
+static_assert(CtxFitsSendfileTransfer<IoBlockCtx, A_Sendfile> && !CtxFitsCopyRangeTransfer<IoBlockCtx, A_Sendfile>,
+              "each form admits its own primitive only, so an offset that one form ignores is never taken.");
 
 // The handle owns a descriptor and three mappings, so it is move-only,
 // and the constructor that claims them is private with the mint as its

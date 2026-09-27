@@ -3904,6 +3904,15 @@ fixy_neg_compile_test(neg_os_thread_named_start_as_array
   "no matching function for call to .start_as_array<Witness>"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::ThreadNamed<")
 
+# The name mint asks for an init context.  One fixture for a background
+# context, and one for a value that is not a context.
+fixy_neg_compile_test(neg_os_thread_name_bg_ctx
+  "no matching function for call to .mint_thread_name<\"crux-bg\">\\(const \\{anonymous\\}::BgDrainCtx&\\)."
+  "required for the satisfaction of .CtxIsInitPhase<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+fixy_neg_compile_test(neg_os_thread_name_not_a_ctx
+  "no matching function for call to .mint_thread_name<\"crux-int\">\\(int\\)."
+  "required for the satisfaction of .CtxIsInitPhase<Ctx>. \\[with Ctx = int\\]")
+
 # ── The TSC reader recognises a pin by reflection ────────────────────
 #
 # IsSingletonCpuPin recognises a CpuPinned by the reflection query of
@@ -3976,6 +3985,18 @@ fixy_neg_compile_test(neg_os_sched_mint_priority_test_ctx
 # be off entirely, and copy_file_range refuses some filesystem pairs.
 fixy_test(test_os_mmap)
 fixy_test(test_os_io)
+
+# The ring mint: a context without Block, a submission count that is not
+# a power of two, and one ring flag named two times.
+fixy_neg_compile_test(neg_os_io_uring_ring_ctx_lacks_block
+  "no matching function for call to .mint_io_uring_ring<\\{anonymous\\}::Engine, \\{anonymous\\}::Sq8>\\(const \\{anonymous\\}::IoOnlyCtx&\\)."
+  "the expression .is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO>\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_io_uring_ring_sq_not_pow2
+  "no matching function for call to .mint_io_uring_ring<\\{anonymous\\}::Engine, \\{anonymous\\}::Sq7>\\(const \\{anonymous\\}::IoBlockCtx&\\)."
+  "the expression .sq_entries_is_pow2_v<Atoms ...> \\[with Atoms = \\{fixy::atom::io::engine<fixy::io::engine::IoUring>, fixy::atom::io::sq_entries<7>\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_io_uring_ring_repeated_flag
+  "no matching function for call to .mint_io_uring_ring<\\{anonymous\\}::Engine, \\{anonymous\\}::Sq8, \\{anonymous\\}::SqPoll, \\{anonymous\\}::SqPoll>\\(const \\{anonymous\\}::IoBlockCtx&\\)."
+  "the expression .!\\(RepeatsAnAtomOf<.*, Atoms ...>\\) \\[with Atoms = \\{.*fixy::atom::io::ring_flag<fixy::io::ring_flag::SqPoll>, fixy::atom::io::ring_flag<fixy::io::ring_flag::SqPoll>\\}\\]. evaluated to .false.")
 
 # ── A discard of pages takes the permission of the mapping ───────────
 #
@@ -4226,6 +4247,11 @@ fixy_neg_compile_test(neg_os_fs_sync_none
 fixy_neg_compile_test(neg_os_fs_commit_atomic_external_target
   "no matching function for call"
   "commit_atomic<fixy::fs::atomicity::Rename>\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+
+# atomicity::None renames nothing, so the commit gate refuses it.
+fixy_neg_compile_test(neg_os_fs_commit_atomic_none
+  "no matching function for call to .commit_atomic<fixy::fs::atomicity::None>\\("
+  "the expression .!\\(is_same_v<Atomicity, fixy::fs::atomicity::None>\\) \\[with Atomicity = fixy::fs::atomicity::None\\]. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_fs_durable_append_ctx_lacks_block
   "no matching function for call"

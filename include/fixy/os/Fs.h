@@ -380,8 +380,12 @@ concept CtxFitsFileMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...> && 
 template <typename Ctx, typename SyncOp>
 concept CtxFitsSync = CtxAdmitsFs<Ctx> && KnownSyncOp<SyncOp> && !std::is_same_v<SyncOp, sync_op::None>;
 
+// atomicity::None is refused.  It renames nothing, so a success from it
+// would say that a commit was made when none was.  A caller that needs
+// no commit does not call commit_atomic.
 template <typename Ctx, typename Atomicity>
-concept CtxFitsCommitAtomic = CtxAdmitsFs<Ctx> && KnownAtomicity<Atomicity>;
+concept CtxFitsCommitAtomic =
+    CtxAdmitsFs<Ctx> && KnownAtomicity<Atomicity> && !std::is_same_v<Atomicity, atomicity::None>;
 
 // The Atoms pack precedes Ctx because every explicit template argument
 // fills the pack and Ctx deduces from the first function argument.
@@ -491,7 +495,7 @@ template <typename SyncOp, eff::IsExecCtx Ctx>
 // flag reports EINVAL, and that is passed through rather than replaced
 // by a plain rename: the caller chose the no-replace semantics, and a
 // silent fallback would be a commit that overwrote what it promised not
-// to.  None succeeds without a syscall.
+// to.  The gate refuses None.
 //
 // Not a mint: this renames existing paths and synthesizes nothing.
 template <typename Atomicity, eff::IsExecCtx Ctx>
@@ -499,9 +503,7 @@ template <typename Atomicity, eff::IsExecCtx Ctx>
 [[nodiscard]] inline std::expected<void, std::error_code>
 commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp, Path<tags::source::Sanitized> target) noexcept {
     int rc = 0;
-    if constexpr (std::is_same_v<Atomicity, atomicity::None>) {
-        return {};
-    } else if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
+    if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
         rc = ::rename(tmp.value().c_str(),
                       target.value().c_str());  // SYSCALL-CAP-OK: commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
     } else {
@@ -698,7 +700,7 @@ static_assert(!KnownSyncOp<NotASyncOp> && !CtxFitsSync<IoBlockCtx, NotASyncOp>);
 
 static_assert(CtxFitsCommitAtomic<IoBlockCtx, atomicity::Rename>);
 static_assert(CtxFitsCommitAtomic<IoBlockCtx, atomicity::RenameAt2NoReplace>);
-static_assert(CtxFitsCommitAtomic<IoBlockCtx, atomicity::None>);
+static_assert(!CtxFitsCommitAtomic<IoBlockCtx, atomicity::None>, "None renames nothing, so it commits nothing.");
 static_assert(!CtxFitsCommitAtomic<IoOnlyCtx, atomicity::Rename>);
 struct NotAnAtomicity final {};
 static_assert(!KnownAtomicity<NotAnAtomicity> && !CtxFitsCommitAtomic<IoBlockCtx, NotAnAtomicity>);

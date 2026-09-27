@@ -1,15 +1,15 @@
 // The io_uring and zero-copy surfaces, run against the kernel.
 //
-// Neither fixy/os/Io.h nor the header it was ported from has ever had a
-// positive test.  Seven negative-compile fixtures stand over the old
-// one, which say what the gates refuse and nothing about what the mints
-// do, so every case here sets up a real ring or moves real bytes.
+// The negative-compile fixtures in test/fixy/neg say what the gates
+// refuse and nothing about what the ring mint and the transfer do, so
+// every case here sets up a real ring or moves real bytes.
 //
 // The bit folds, the power-of-two rule and the gate answers stay in the
 // header, where they fire wherever the surface is used.  What is here is
 // what only a running kernel can answer: that the ring the setup call
 // returns is mapped and sized as asked, and that a zero-copy transfer
-// puts the source bytes in the destination.
+// puts the source bytes in the destination and stops at the end of the
+// source.
 //
 // Legs the kernel refuses are skipped rather than failed.  io_uring can
 // be off entirely (ENOSYS), disabled by sysctl or seccomp (EPERM), and
@@ -17,6 +17,8 @@
 // defect in this code, and a test that fails on them reports the
 // environment rather than the tree.
 
+#include <fixy/Path.h>
+#include <fixy/os/Fs.h>
 #include <fixy/os/Io.h>
 
 #include <linux/io_uring.h>
@@ -27,10 +29,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <span>
+#include <string>
+#include <system_error>
 #include <utility>
 
 namespace eff = foundation::effects;
+namespace fs = fixy::fs;
+namespace src = fixy::tags::source;
 
 namespace {
 
@@ -45,19 +54,69 @@ using CopyFileRange = fixy::atom::io::zerocopy<fixy::io::zerocopy::CopyFileRange
 
 inline constexpr std::size_t kPayloadBytes = 4096;
 
-// A memfd with a known pattern in it, or -1 when memfd is unavailable.
-[[nodiscard]] int make_patterned_memfd(const char* name, const std::uint8_t* pattern, std::size_t length) {
-    const int fd = ::memfd_create(name, 0);
-    if (fd < 0) return -1;
-    if (::ftruncate(fd, static_cast<::off_t>(length)) != 0) {
-        ::close(fd);
-        return -1;
+// Every path the file surface takes is Path<Sanitized>, and the only way
+// to one is through the sanitizer.
+[[nodiscard]] fixy::Path<src::Sanitized> sanitized(const std::string& raw) {
+    auto laundered = fixy::sanitize::path_traversal::sanitize_path_no_dotdot(
+        fixy::mint_tagged<src::External>(std::filesystem::path{raw}));
+    if (!laundered) {
+        std::fprintf(stderr, "a test path failed to sanitize: %s\n", raw.c_str());
+        std::abort();
     }
-    if (pattern != nullptr && ::pwrite(fd, pattern, length, 0) != static_cast<::ssize_t>(length)) {
-        ::close(fd);
-        return -1;
+    return std::move(*laundered);
+}
+
+// The scratch directory, removed with everything in it when the test
+// ends, whichever way it ends.
+class ScratchDir final {
+    std::string path_;
+
+public:
+    ScratchDir() {
+        char pattern[] = "/tmp/fixy-io-test-XXXXXX";
+        if (const char* made = ::mkdtemp(pattern); made != nullptr) path_ = made;
     }
-    return fd;
+    ~ScratchDir() {
+        if (path_.empty()) return;
+        std::error_code ignored;
+        std::filesystem::remove_all(path_, ignored);
+    }
+    ScratchDir(const ScratchDir&) = delete("a scratch directory is removed one time");
+    ScratchDir& operator=(const ScratchDir&) = delete("a scratch directory is removed one time");
+
+    [[nodiscard]] bool is_ready() const noexcept { return !path_.empty(); }
+    [[nodiscard]] std::string file(const char* name) const { return path_ + "/" + name; }
+};
+
+// The source and the destination of one transfer: two files in a scratch
+// directory, the source filled with a pattern.  An empty handle in either
+// means that a file could not be made.
+struct TransferFiles final {
+    fs::OwnedFd source;
+    fs::OwnedFd destination;
+};
+
+[[nodiscard]] TransferFiles make_transfer_files(IoBlockCtx const& ctx, ScratchDir const& scratch,
+                                                std::span<const std::uint8_t> pattern) {
+    TransferFiles files{};
+    auto source = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("src")));
+    auto destination =
+        fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("dst")));
+    if (!source || !destination) return files;
+    files.source = std::move(*source).consume();
+    files.destination = std::move(*destination).consume();
+    if (!fs::write_full(ctx, files.source, std::as_bytes(pattern))) {
+        files.source = fs::OwnedFd{};
+    }
+    return files;
+}
+
+// Whether the destination holds the pattern at its start.
+[[nodiscard]] bool destination_holds(fs::OwnedFd const& destination, std::span<const std::uint8_t> pattern) {
+    std::uint8_t readback[kPayloadBytes];
+    const auto count = static_cast<::ssize_t>(pattern.size());
+    return ::pread(destination.get(), readback, pattern.size(), 0) == count
+        && std::memcmp(readback, pattern.data(), pattern.size()) == 0;
 }
 
 [[nodiscard]] int ring_setup_hands_back_a_mapped_ring() {
@@ -147,40 +206,40 @@ inline constexpr std::size_t kPayloadBytes = 4096;
         pattern[index] = static_cast<std::uint8_t>((index * 13u + 5u) & 0xFFu);
     }
 
-    const int src = make_patterned_memfd("fixy-io-src", pattern, kPayloadBytes);
-    if (src < 0) {
-        std::fprintf(stderr, "[skipped] memfd_create is unavailable here (errno %d)\n", errno);
+    ScratchDir scratch;
+    if (!scratch.is_ready()) {
+        std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
         return 0;
     }
-    const int dst = make_patterned_memfd("fixy-io-dst", nullptr, kPayloadBytes);
-    if (dst < 0) {
-        std::fprintf(stderr, "making the destination memfd failed (errno %d)\n", errno);
-        ::close(src);
+    TransferFiles files = make_transfer_files(ctx, scratch, pattern);
+    if (!files.source.is_open() || !files.destination.is_open()) {
+        std::fprintf(stderr, "making the two transfer files failed (errno %d)\n", errno);
         return 1;
     }
 
-    const auto moved = fixy::io::mint_zerocopy_transfer<Sendfile>(ctx, src, dst, kPayloadBytes);
-    int rc = 0;
+    const auto moved = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, kPayloadBytes);
     if (!moved) {
         std::fprintf(stderr, "sendfile failed (%s)\n", moved.error().message().c_str());
-        rc = 1;
-    } else if (*moved != kPayloadBytes) {
+        return 1;
+    }
+    if (*moved != kPayloadBytes) {
         std::fprintf(stderr, "sendfile moved %zu bytes of the %zu asked for\n", *moved, kPayloadBytes);
-        rc = 1;
-    } else {
-        std::uint8_t readback[kPayloadBytes];
-        if (::pread(dst, readback, kPayloadBytes, 0) != static_cast<::ssize_t>(kPayloadBytes)) {
-            std::fprintf(stderr, "reading the destination back failed (errno %d)\n", errno);
-            rc = 1;
-        } else if (std::memcmp(readback, pattern, kPayloadBytes) != 0) {
-            std::fprintf(stderr, "the destination does not hold the source bytes\n");
-            rc = 1;
-        }
+        return 1;
+    }
+    if (!destination_holds(files.destination, pattern)) {
+        std::fprintf(stderr, "the destination does not hold the source bytes\n");
+        return 1;
     }
 
-    ::close(dst);
-    ::close(src);
-    return rc;
+    // A length past the end of the source moves the whole source and
+    // stops there.  The count says where the source ended.
+    const auto past_end =
+        fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, 2 * kPayloadBytes);
+    if (!past_end || *past_end != kPayloadBytes) {
+        std::fprintf(stderr, "a transfer past the end of the source did not stop at the end\n");
+        return 1;
+    }
+    return 0;
 }
 
 [[nodiscard]] int copy_file_range_moves_the_source_bytes() {
@@ -191,41 +250,34 @@ inline constexpr std::size_t kPayloadBytes = 4096;
         pattern[index] = static_cast<std::uint8_t>((index * 31u + 17u) & 0xFFu);
     }
 
-    const int src = make_patterned_memfd("fixy-io-cfr-src", pattern, kPayloadBytes);
-    if (src < 0) {
-        std::fprintf(stderr, "[skipped] memfd_create is unavailable here (errno %d)\n", errno);
+    ScratchDir scratch;
+    if (!scratch.is_ready()) {
+        std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
         return 0;
     }
-    const int dst = make_patterned_memfd("fixy-io-cfr-dst", nullptr, kPayloadBytes);
-    if (dst < 0) {
-        std::fprintf(stderr, "making the destination memfd failed (errno %d)\n", errno);
-        ::close(src);
+    TransferFiles files = make_transfer_files(ctx, scratch, pattern);
+    if (!files.source.is_open() || !files.destination.is_open()) {
+        std::fprintf(stderr, "making the two transfer files failed (errno %d)\n", errno);
         return 1;
     }
 
-    const auto moved = fixy::io::mint_zerocopy_transfer<CopyFileRange>(ctx, src, dst, kPayloadBytes);
-    int rc = 0;
+    const auto moved =
+        fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source, files.destination, kPayloadBytes);
     if (!moved) {
         // copy_file_range refuses some filesystem pairs outright, and
         // which pairs it refuses has changed across kernels.
         std::fprintf(stderr, "[skipped] copy_file_range refused this pair (%s)\n", moved.error().message().c_str());
-    } else if (*moved != kPayloadBytes) {
-        std::fprintf(stderr, "copy_file_range moved %zu bytes of the %zu asked for\n", *moved, kPayloadBytes);
-        rc = 1;
-    } else {
-        std::uint8_t readback[kPayloadBytes];
-        if (::pread(dst, readback, kPayloadBytes, 0) != static_cast<::ssize_t>(kPayloadBytes)) {
-            std::fprintf(stderr, "reading the destination back failed (errno %d)\n", errno);
-            rc = 1;
-        } else if (std::memcmp(readback, pattern, kPayloadBytes) != 0) {
-            std::fprintf(stderr, "the destination does not hold the source bytes\n");
-            rc = 1;
-        }
+        return 0;
     }
-
-    ::close(dst);
-    ::close(src);
-    return rc;
+    if (*moved != kPayloadBytes) {
+        std::fprintf(stderr, "copy_file_range moved %zu bytes of the %zu asked for\n", *moved, kPayloadBytes);
+        return 1;
+    }
+    if (!destination_holds(files.destination, pattern)) {
+        std::fprintf(stderr, "the destination does not hold the source bytes\n");
+        return 1;
+    }
+    return 0;
 }
 
 }  // namespace

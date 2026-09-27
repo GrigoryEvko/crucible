@@ -230,7 +230,7 @@ apply to the row.
 | `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | · | HS14: 14 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 7 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 4 |
-| `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | · | HS14: 20 |
+| `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | · | HS14: 21 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
 | `mint_witnessed_at` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
@@ -274,7 +274,7 @@ apply to the row.
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 5 |
 | `mint_head_advancer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
+| `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
@@ -284,10 +284,9 @@ apply to the row.
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_spawn` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
+| `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
 | `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 4 |
 | `mint_warm_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_zerocopy_transfer` | `include/fixy/os/Io.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 0 ⚠ |
 
 ## include/fixy/session/
 
@@ -357,4 +356,4 @@ apply to the row.
 | tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
 |---|---|---|---|---|---|---|---|
 | old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 112 | 52 | 57 | 3 | 0 | · | 8 |
+| new (`include/foundation/`, `include/fixy/`) | 111 | 51 | 57 | 3 | 0 | · | 5 |
