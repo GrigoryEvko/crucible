@@ -38,10 +38,6 @@ include/crucible/safety/_SwissTableBuffer.h:start_lifetime_as_array<slot_type>
 # one proof type and must fail to compile, which proves that the proof
 # type is not an implicit-lifetime type.  The fixture that compiled would
 # fail its own test.
-test/effects_neg/neg_effects_bg_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<eff::Bg>
-test/effects_neg/neg_effects_bg_drain_ctx_forged_by_start_lifetime_as.cpp:start_lifetime_as<eff::BgDrainCtx>
-test/effects_neg/neg_effects_capability_forged_by_start_lifetime_as.cpp:start_lifetime_as<eff::Capability<eff::Effect::Block,eff::Bg>>
-test/effects_neg/neg_effects_epoch_ctx_over_bg_forged_by_start_lifetime_as.cpp:start_lifetime_as<proto::EpochExecCtx<1,1,eff::BgDrainCtx>>
 test/fixy/neg/neg_sess_event_forged_by_start_lifetime_as.cpp:start_lifetime_as<s::SessionEvent>
 test/fixy/neg/neg_sess_crash_reporter_by_start_lifetime_as.cpp:start_lifetime_as<s::CrashReporter>
 test/fixy/neg/neg_sess_delegated_session_forged_by_start_lifetime_as.cpp:start_lifetime_as<t::Carried>
