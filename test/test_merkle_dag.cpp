@@ -1,6 +1,6 @@
 #include <crucible/MerkleDag.h>
-#include <crucible/effects/_Capabilities.h>
-#include <crucible/safety/_IsSwmrHandle.h>
+#include <fixy/concurrent/HandleTraits.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <sys/wait.h>
 #include <unistd.h>
@@ -23,7 +23,7 @@ namespace {
 }  // namespace
 
 [[gnu::cold]] int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     crucible::Arena arena(1 << 16);
 
     crucible::TensorMeta m{};
@@ -131,12 +131,10 @@ namespace {
     static_assert(sizeof(KernelSlot) == 24);
     static_assert(alignof(KernelSlot) == 8);
     static_assert(sizeof(SlotSnapshot) == 24);
-    static_assert(crucible::safety::extract::IsSwmrWriter<KernelSlot::WriterHandle>);
-    static_assert(crucible::safety::extract::IsSwmrReader<KernelSlot::ReaderHandle>);
-    static_assert(
-        std::is_same_v<crucible::safety::extract::swmr_writer_value_t<KernelSlot::WriterHandle>, SlotSnapshot>);
-    static_assert(
-        std::is_same_v<crucible::safety::extract::swmr_reader_value_t<KernelSlot::ReaderHandle>, SlotSnapshot>);
+    static_assert(::fixy::concurrent::IsSwmrWriter<KernelSlot::WriterHandle>);
+    static_assert(::fixy::concurrent::IsSwmrReader<KernelSlot::ReaderHandle>);
+    static_assert(std::is_same_v<::fixy::concurrent::swmr_writer_value_t<KernelSlot::WriterHandle>, SlotSnapshot>);
+    static_assert(std::is_same_v<::fixy::concurrent::swmr_reader_value_t<KernelSlot::ReaderHandle>, SlotSnapshot>);
 
     assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == nullptr);
     struct FakeKernel {

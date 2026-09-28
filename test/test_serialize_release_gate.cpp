@@ -12,7 +12,7 @@
 // bytes still round-trip.
 
 #include <crucible/Serialize.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cstdint>
@@ -24,7 +24,7 @@ namespace {
 
 // Returns the number of bytes written, or zero if the region could not be
 // built.
-[[nodiscard]] size_t build_and_serialize(crucible::effects::Test bg, crucible::Arena& arena,
+[[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, crucible::Arena& arena,
                                          std::span<uint8_t> out_buf) {
     auto* ops = arena.alloc_array<crucible::TraceEntry>(bg.alloc, 1);
     std::uninitialized_value_construct_n(ops, 1);
@@ -82,7 +82,7 @@ constexpr size_t kMetaDevice = kMetaDtype + 1;  // device_type byte
 constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 
 // Rejection is no region coming back out of the boundary.
-[[nodiscard]] bool is_rejected(crucible::effects::Test bg, std::span<const uint8_t> bytes) {
+[[nodiscard]] bool is_rejected(::foundation::effects::Test bg, std::span<const uint8_t> bytes) {
     crucible::Arena arena(1 << 16);
     return !crucible::deserialize_region(bg.alloc, bytes, arena).has_value();
 }
@@ -90,7 +90,7 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 }  // namespace
 
 [[gnu::cold]] int main() {
-    auto bg = crucible::effects::testing::test();
+    auto bg = ::foundation::effects::testing::test();
     crucible::Arena arena(1 << 16);
 
     uint8_t buf[65536];

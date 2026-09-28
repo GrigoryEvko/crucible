@@ -1,5 +1,5 @@
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/vis/LiveTraceVisualizer.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 
@@ -12,7 +12,7 @@ namespace {
     return text.find(needle) != std::string::npos;
 }
 
-[[nodiscard]] crucible::RegionNode* make_one_op_region(crucible::effects::Alloc alloc, crucible::Arena& arena,
+[[nodiscard]] crucible::RegionNode* make_one_op_region(::foundation::effects::Alloc alloc, crucible::Arena& arena,
                                                        crucible::TraceEntry* op, std::uint64_t schema) {
     op->schema_hash = crucible::SchemaHash{schema};
     return crucible::make_region(alloc, arena, op, 1);
@@ -21,7 +21,7 @@ namespace {
 }  // namespace
 
 [[gnu::cold]] int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     crucible::Arena arena(1 << 16);
 
     crucible::TraceEntry arm0_op{};

@@ -61,7 +61,7 @@
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cstdint>
@@ -105,7 +105,7 @@ constexpr uint32_t kNumSlots = 12;
 // `data_ptr_base` is the only thing that differs between the two builds.
 // It stands for the run-to-run variation the allocator produces, and the
 // hashes must not see it.
-void build_ops(crucible::effects::Test ctx, Arena& arena, TraceEntry* ops, uint64_t data_ptr_base) noexcept {
+void build_ops(::foundation::effects::Test ctx, Arena& arena, TraceEntry* ops, uint64_t data_ptr_base) noexcept {
     for (uint32_t op_index = 0; op_index < kNumOps; op_index++) {
         TraceEntry& entry = ops[op_index];
         entry = TraceEntry{};
@@ -185,7 +185,7 @@ struct Built {
 // the tail's merkle hash), which is the O(1) subtree equality §L7 rests on,
 // and main() checks that the two values actually came out different so this
 // cannot silently decay back into one pin.
-[[nodiscard]] Built build_once(crucible::effects::Test ctx, uint64_t data_ptr_base) noexcept {
+[[nodiscard]] Built build_once(::foundation::effects::Test ctx, uint64_t data_ptr_base) noexcept {
     Arena arena(1 << 20);
     crucible::BackgroundThread bt;
 
@@ -228,7 +228,7 @@ constexpr uint64_t kReferencePoolBytes = 12544;
 }  // namespace
 
 int main() {
-    auto ctx = crucible::effects::testing::test();
+    auto ctx = ::foundation::effects::testing::test();
 
     // Two different address bases, two arenas, second built after the first
     // so it cannot land where the first did.

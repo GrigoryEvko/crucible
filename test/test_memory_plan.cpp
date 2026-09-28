@@ -1,12 +1,12 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <cstdio>
 #include <cstring>
 
 int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt;
 
     // The intervals are chosen so slot 2 can reuse slot 1's space: slot 1 dies at

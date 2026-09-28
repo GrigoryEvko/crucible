@@ -1,5 +1,5 @@
 #include <crucible/Serialize.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <bit>
 #include <cinttypes>
@@ -45,7 +45,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 }
 
 [[gnu::cold]] int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     crucible::Arena arena(1 << 16);
 
     constexpr uint32_t NUM_OPS = 3;

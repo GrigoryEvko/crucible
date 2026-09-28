@@ -1,13 +1,13 @@
 #include <crucible/Graph.h>
-#include <crucible/effects/_Capabilities.h>
 #include <crucible/ExprPool.h>
 #include <crucible/Types.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <cstdio>
 #include <span>
 
 [[gnu::cold]] int main() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     crucible::ExprPool pool(test.alloc);
     crucible::Graph graph(test.alloc, &pool);
 
