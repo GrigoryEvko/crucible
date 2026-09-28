@@ -1,197 +1,153 @@
-// ════════════════════════════════════════════════════════════════════
-// example_forge_phase — Phase 0 P0-5 / 5 (#1098)
+// example_forge_phase: a Forge compiler phase bound as a pure function.
 //
-// THE PATTERN: A FORGE COMPILER PHASE WRAPPED IN Fn<>
+// The twelve phases of Forge (FORGE.md section 5) lower the IR001 tensor
+// DAG to the IR002 portable kernel DAG.  Each phase takes a snapshot of
+// the IR and an arena, builds a new snapshot in the arena, and returns
+// it.
 //
-// Forge's 12-phase pipeline (FORGE.md §5) lowers an IR001 tensor
-// DAG to an IR002 portable kernel DAG.  Each phase is a function
-// that takes a snapshot of the IR + an arena, produces a NEW
-// snapshot in the arena, and returns the new IR.
+// A phase reads its input and does not change it.  It builds its output
+// in the arena.  This discipline makes the wall-clock budget of Forge
+// enforceable: each phase has a hard time limit, and with no in-place
+// mutation a retry or a rollback costs nothing.
 //
-// Phases are PURE-FUNCTIONAL: they read the input IR but never
-// mutate it; the output IR is constructed in the arena.  This
-// discipline is what makes Forge's wall-clock budget enforceable
-// (each phase has a hard time limit; no in-place mutation means
-// retry / rollback is free).
+// The binding records that the phase runs on the background thread, that
+// it allocates IR nodes in the arena, that it does no in-place mutation,
+// and that it is not reentrant, because the phases share one arena.
 //
-// The substrate must capture: bg-thread execution, allocation row
-// (every phase allocates new IR nodes in the arena), pure-functional
-// mutation discipline (Immutable on input), bit-exact precision
-// (IR transformations preserve numerical semantics), AND the
-// non-reentrancy that follows from sharing the arena across the
-// phase pipeline.
+// The contrast with example_custom_kernel.cpp: the kernel is a user
+// callable, from the user and tested.  The phase is internal, from
+// Crucible and verified.  In the design, the cross-vendor numerics CI of
+// MIMIC.md section 41 checks each Forge phase.  A consumer that asks for
+// trust_verified then accepts a Forge phase and refuses a user kernel.
 //
-// CONTRAST: example_custom_kernel binds a USER-supplied kernel
-// (source::FromUser, trust::Tested).  This binds an INTERNAL Forge
-// phase (source::FromInternal, trust::Verified — Forge phases are
-// CI-validated against the cross-vendor numerics matrix per
-// FORGE.md §41).
-//
-// THE KEY INSIGHT: same Fn<...> template, same callable shape, but
-// the trust axis flips from Tested → Verified because Forge phases
-// have a CROSS-VENDOR NUMERICS CI test, not just unit tests.  The
-// type system carries the distinction so a downstream consumer that
-// demands `Trust = trust::Verified` (e.g., the BITEXACT_STRICT
-// recipe path) accepts only Forge-internal callables.
-// ════════════════════════════════════════════════════════════════════
+// Two axes need no atom.  The strict pole of Mutation refuses in-place
+// mutation, and the strict pole of Reentrancy refuses a self-call.  So a
+// pure phase is the default, and the pack says nothing about either.
 
-#include <crucible/safety/_Fn.h>
+#include <fixy/Atom.h>
+#include <fixy/Axis.h>
+#include <fixy/Bands.h>
+#include <fixy/Ctx.h>
+#include <fixy/Fn.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdio>
-
-namespace fn = crucible::safety::fn;
-namespace fx = crucible::effects;
+#include <type_traits>
 
 namespace {
 
-// ── Stand-in IR types ──────────────────────────────────────────────
-//
-// In production the IR nodes carry shapes, dtypes, recipe pins, etc.
-// For the example, a minimal placeholder is enough — the binding's
-// per-axis grades describe the FUNCTION's contract, not the IR's
-// internal richness.
+namespace at = ::fixy::atom;
+namespace source = ::fixy::tags::source;
+using ::fixy::Axis;
+using ::fixy::axis_traits;
+using Effect = ::foundation::effects::Effect;
 
+// Stand-ins for the IR.  In production an IR node carries shapes, dtypes
+// and a recipe pin.  The grades describe the contract of the phase, not
+// the content of the IR, so a placeholder is sufficient.
 struct KernelGraph {
-    int num_nodes = 0;  // count of IR002 nodes
-    int num_edges = 0;  // count of producer-consumer edges
-    int generation = 0;  // monotonic across passes (for diagnostics)
+    int num_nodes = 0;  // the count of IR002 nodes
+    int num_edges = 0;  // the count of producer-consumer edges
+    int generation = 0;  // increases by one with each pass, for diagnostics
 };
 
 struct Arena {
-    // Bump-pointer allocator placeholder; a real Arena.h carries
-    // a memory block, generation counter, and per-block bookkeeping.
+    // A stand-in for the bump allocator.  The real Arena.h holds a memory
+    // block, a generation counter and the bookkeeping of each block.
     std::size_t bump = 0;
 };
 
-// ── Forge phase signature ──────────────────────────────────────────
-//
-// Phase D FUSE — example phase that fuses adjacent ops with single
-// producer-consumer chains.  Reads input IR (immutably), writes
-// output IR (newly allocated in the arena), returns the result.
-//
-// The reference implementation here is intentionally trivial — the
-// example is about the BINDING, not the fusion algorithm.
+// The IR at the bit-exact tier.  The Precision axis of fixy::fn names an
+// element type or a Higham bound, and no atom on it states a bit-exact
+// result.  A bit-exact claim is a claim about the bytes of a value, so it
+// rides on the value through the NumericalTier band of fixy/Bands.h.  The
+// phase takes and returns the IR at that tier.  That states that the
+// phase keeps the numerical recipe that its input pins.
+using BitExactGraph = ::fixy::numerical_tier::Bitexact<KernelGraph>;
 
-using ForgePhasePtr = KernelGraph (*)(const KernelGraph& input, Arena& arena);
+// Phase D, FUSE.  It merges each chain of ops with one producer and one
+// consumer into one IR node.  It reads its input, builds its output in
+// the arena and returns it.  The body is a stand-in: the example is about
+// the binding and not about the fusion algorithm.
+using ForgePhasePtr = BitExactGraph (*)(const BitExactGraph& input, Arena& arena) noexcept;
 
-KernelGraph fuse_phase_ref(const KernelGraph& input, Arena& arena) noexcept {
-    // A real fuse pass walks the producer-consumer graph and merges
-    // single-chain ops into one IR node.  Stand-in: increment
-    // generation, decrement node count by ~10% to mimic fusion.
+BitExactGraph fuse_phase_ref(const BitExactGraph& input, Arena& arena) noexcept {
+    // A real pass walks the producer-consumer graph.  The stand-in removes
+    // about 10% of the nodes and the edges, and increments the generation.
+    const KernelGraph& graph = input.peek();
     arena.bump += sizeof(KernelGraph);
-    return KernelGraph{.num_nodes = input.num_nodes - input.num_nodes / 10,
-                       .num_edges = input.num_edges - input.num_edges / 10,
-                       .generation = input.generation + 1};
+    return ::fixy::mint_band<BitExactGraph>(KernelGraph{.num_nodes = graph.num_nodes - graph.num_nodes / 10,
+                                                        .num_edges = graph.num_edges - graph.num_edges / 10,
+                                                        .generation = graph.generation + 1});
 }
 
-// ── The Fn<...> binding ────────────────────────────────────────────
+// The pack of an internal Forge phase, named one time.
+// fixy::mint_fn_for<ForgePhaseBinding> is its door.
 //
-// Per-axis grade choices for "Forge Phase D FUSE":
-//
-//   Type        : ForgePhasePtr                      — function pointer
-//   Refinement  : pred::True
-//   Usage       : Copy                               — fn ptr is freely copyable
-//   EffectRow   : Row<Bg, Alloc>                     — bg thread + arena alloc
-//   Security    : SecLevel::Internal                 — sees user IR (model graph)
-//   Protocol    : proto::None
-//   Lifetime    : lifetime::Static                   — Forge-internal free function
-//   Source      : source::FromInternal               — Crucible-authored
-//   Trust       : trust::Verified                    — CI-validated against
-//                                                       cross-vendor numerics matrix
-//                                                       (FORGE.md §41)
-//   Repr        : ReprKind::Opaque
-//   Cost        : cost::Linear<0>                    — O(N) in IR node count
-//   Precision   : precision::Exact                   — IR transformations are
-//                                                       bit-exact (BITEXACT_STRICT
-//                                                       under the recipe registry)
-//   Space       : space::Bounded<0>                  — bounded by arena capacity
-//                                                       (the actual bound is
-//                                                       declared at the arena's
-//                                                       construction site)
-//   Overflow    : OverflowMode::Trap
-//   Mutation    : MutationMode::Immutable            — phase is PURE-FUNCTIONAL
-//                                                       on input; output is newly
-//                                                       constructed in arena
-//   Reentrancy  : ReentrancyMode::NonReentrant       — phases share the pipeline
-//                                                       arena; concurrent calls
-//                                                       would race on bump cursor
-//   Size        : size_pol::Unstated
-//   Version     : 2                                  — IR002 phase version
-//   Staleness   : stale::Fresh
-//
-// THE LOAD-BEARING DELTA from custom_kernel/optimizer:
-//   - Mutation: Immutable (vs Mutable) — phases are pure functions
-//   - Trust:    Verified  (vs Tested)  — CI-validated numerics
-//   - Source:   FromInternal (vs FromUser) — Crucible-authored
-//   - Precision: Exact     (vs F32)    — IR is dtype-agnostic; the
-//                                         phase preserves whatever
-//                                         numerical recipe the IR
-//                                         already pinned
+// The pack names no Space atom.  The phase allocates in the arena that
+// its caller passes, and the arena states the bound.  The argument of
+// cost_linear is the bound on N, and zero states no bound.
+template <class Phase>
+using ForgePhaseBinding = ::fixy::fn<Phase,
+                                     at::copy,  // a function pointer is free to copy
+                                     at::with<Effect::Bg, Effect::Alloc>,  // the background thread, and the arena
+                                     at::as_public,  // the pointer holds no secret
+                                     at::from_source<source::FromInternal>,  // Crucible wrote the phase
+                                     at::trust_verified,  // the cross-vendor numerics CI is its check
+                                     at::cost_linear<0>,  // O(N) in the node count of the IR
+                                     at::version<2>>;  // the phase lowers to IR002
 
-using BoundForgePhase = fn::Fn<ForgePhasePtr,  // 1 Type
-                               // FIXY-DISCIPLINE-OK: this example exists to show
-                               // the raw 19-positional substrate signature.  It is
-                               // reached through the `fn` alias declared above,
-                               // which is the same reach as safety::fn::Fn<>.
-                               fn::pred::True,  // 2 Refinement
-                               fn::UsageMode::Copy,  // 3 Usage
-                               fx::Row<fx::Effect::Bg, fx::Effect::Alloc>,  // 4 EffectRow
-                               fn::SecLevel::Internal,  // 5 Security
-                               fn::proto::None,  // 6 Protocol
-                               fn::lifetime::Static,  // 7 Lifetime
-                               fn::source::FromInternal,  // 8 Source
-                               fn::trust::Verified,  // 9 Trust — CI-VERIFIED
-                               fn::ReprKind::Opaque,  // 10 Repr
-                               fn::cost::Linear<0>,  // 11 Cost — O(N)
-                               fn::precision::Exact,  // 12 Precision
-                               fn::space::Bounded<0>,  // 13 Space — bounded by arena
-                               fn::OverflowMode::Trap,  // 14 Overflow
-                               fn::MutationMode::Immutable,  // 15 Mutation — PURE-FUNCTIONAL
-                               fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
-                               fn::size_pol::Unstated,  // 17 Size
-                               /*Version=*/2,  // 18 Version — IR002 generation
-                               fn::stale::Fresh  // 19 Staleness
-                               >;
+using BoundForgePhase = ForgePhaseBinding<ForgePhasePtr>;
 
-// ── Compile-time invariants ────────────────────────────────────────
+static_assert(sizeof(BoundForgePhase) == sizeof(ForgePhasePtr), "a binding must be byte-equivalent to its payload");
+static_assert(sizeof(BitExactGraph) == sizeof(KernelGraph), "a band must be byte-equivalent to its value");
 
-static_assert(sizeof(BoundForgePhase) == sizeof(ForgePhasePtr), "EBO collapse failed for Forge phase binding.");
+// The axes that tell a Forge phase from a user callable.  A consumer that
+// asks for these grades accepts only an internal phase with no in-place
+// mutation, and the compiler checks that at the call site.
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Mutation>, axis_traits<Axis::Mutation>::strict>,
+              "a Forge phase does no in-place mutation on its input");
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Reentrancy>, axis_traits<Axis::Reentrancy>::strict>,
+              "the phases share one arena, so two calls at the same time race on the bump cursor");
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Trust>, at::trust_verified>,
+              "in the design, the cross-vendor numerics CI checks each Forge phase");
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Provenance>, at::from_source<source::FromInternal>>,
+              "Crucible wrote the phase, and the user did not supply it");
+static_assert(::fixy::band_tier_v<BitExactGraph> == ::fixy::Tolerance::BITEXACT,
+              "the phase keeps the bit-exact tier of the IR");
 
-// The discriminating axes — a downstream consumer that demands
-// `Trust = Verified` AND `Mutation = Immutable` accepts ONLY
-// Forge-internal pure-functional phases, never user-supplied
-// mutating callables.  The compiler enforces this at the call site.
-static_assert(BoundForgePhase::mutation_v == fn::MutationMode::Immutable,
-              "Forge phases must be pure-functional on input.");
-static_assert(std::is_same_v<BoundForgePhase::trust_t, fn::trust::Verified>,
-              "Forge phases carry CI-verified trust (cross-vendor numerics matrix).");
-static_assert(std::is_same_v<BoundForgePhase::source_t, fn::source::FromInternal>,
-              "Forge phases are Crucible-authored, not user-supplied.");
-static_assert(std::is_same_v<BoundForgePhase::precision_t, fn::precision::Exact>,
-              "Forge phases preserve bit-exact numerics under the IR's recipe pin.");
+// The version is part of the type.  A consumer that asks for version 1
+// refuses this binding, so a newer phase needs a deliberate change at the
+// consumer.
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Version>, at::version<2>>);
+static_assert(!std::is_same_v<BoundForgePhase::grade_on<Axis::Version>, at::version<1>>);
 
-// Version > 1 — the phase has been revised.  Downstream consumers
-// that pin Version = 1 reject this binding, forcing a deliberate
-// version bump rather than silent acceptance of newer phase output.
-static_assert(BoundForgePhase::version_v == 2, "Phase version drift — downstream consumers must opt in.");
+// A caller needs a context whose row holds Bg and Alloc.
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, BoundForgePhase>);
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, BoundForgePhase>);
 
 }  // namespace
 
 int main() {
-    BoundForgePhase bound{fuse_phase_ref};
+    const BoundForgePhase bound = ::fixy::mint_fn_for<ForgePhaseBinding>(&fuse_phase_ref);
 
-    // Simulate a Forge pipeline: input IR with 100 nodes / 200 edges
-    // through one fusion pass.
-    KernelGraph input{.num_nodes = 100, .num_edges = 200, .generation = 0};
+    // One pass of fusion over an IR of 100 nodes and 200 edges.
+    const BitExactGraph input =
+        ::fixy::mint_band<BitExactGraph>(KernelGraph{.num_nodes = 100, .num_edges = 200, .generation = 0});
     Arena arena{};
 
-    KernelGraph fused = bound.value()(input, arena);
+    const BitExactGraph fused = bound.value()(input, arena);
 
-    std::printf("forge_phase: input %d nodes / %d edges (gen %d) → "
-                "fused %d nodes / %d edges (gen %d), arena bumped %zu bytes\n",
-                input.num_nodes, input.num_edges, input.generation, fused.num_nodes, fused.num_edges, fused.generation,
-                arena.bump);
+    const KernelGraph& before = input.peek();
+    const KernelGraph& after = fused.peek();
+    std::printf("forge_phase: input %d nodes / %d edges (gen %d) -> fused %d nodes / %d edges (gen %d), "
+                "arena bumped %zu bytes\n",
+                before.num_nodes, before.num_edges, before.generation, after.num_nodes, after.num_edges,
+                after.generation, arena.bump);
+    if (after.num_nodes != 90 || after.num_edges != 180 || after.generation != 1) return 1;
+    if (arena.bump != sizeof(KernelGraph)) return 2;
 
     std::printf("BoundForgePhase sizeof = %zu (== sizeof(ForgePhasePtr) %zu)\n", sizeof(BoundForgePhase),
                 sizeof(ForgePhasePtr));

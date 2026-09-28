@@ -1,22 +1,18 @@
 # ════════════════════════════════════════════════════════════════════
-# examples/ — worked C++26 substrate demonstrations
+# examples/ — worked C++26 demonstrations of the substrate
 #
-# Phase 0 P0-5 (#1098) ships `examples/fn/` — five worked examples
-# of the safety::fn::Fn<...> aggregator at production-shape callsites
-# (custom kernel, custom optimizer, CNTP frame, Forge phase, Mimic
-# backend hook).
+# examples/fn/ holds five worked bindings of fixy::fn at call sites of
+# production shape: a custom kernel, a custom optimizer, a CNTP frame, a
+# Forge phase and a Mimic backend hook.
 #
-# Examples are EXECUTABLES, not tests.  They build under the same
-# warning matrix as tests so a regression in Fn.h's interface
-# surfaces here at compile time.  They also register as ctest entries
-# so a regression in their RUNTIME behavior surfaces at `ctest`
-# invocation.
+# Examples are executables, not tests.  They build under the same
+# warning matrix as tests, so a change to the interface of fixy/Fn.h
+# shows here at compile time.  They also register as ctest entries, so a
+# change to their behavior at run time shows in the ctest output.
 #
-# Future example trees (e.g., examples/session/, examples/permission/,
-# examples/fixy/ once the clean reimplementation per
-# misc/16_05_2026_fixy.md Phase E lands) follow the same structure:
-# one subdirectory per substrate concept, each with its own
-# CMakeLists.txt that the top-level wires here.
+# A new example tree has the same structure: one subdirectory for each
+# concept of the substrate, each with its own CMakeLists.txt, and one
+# add_subdirectory line here.
 # ════════════════════════════════════════════════════════════════════
 
 add_subdirectory(fn)

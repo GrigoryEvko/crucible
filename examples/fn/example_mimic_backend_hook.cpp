@@ -1,207 +1,164 @@
-// ════════════════════════════════════════════════════════════════════
-// example_mimic_backend_hook — Phase 0 P0-5 / 5 (#1098)
+// example_mimic_backend_hook: the kernel emitter of one vendor backend.
 //
-// THE PATTERN: A VENDOR-SPECIFIC MIMIC BACKEND EMITTER WRAPPED IN Fn<>
+// Each backend of Mimic (mimic/nv/, mimic/am/, mimic/tpu/, mimic/trn/,
+// mimic/cpu/, refer to MIMIC.md) lowers a portable IR002 kernel DAG to
+// native ISA.  Each backend has an emit_kernel function.  It takes an
+// IR002 KernelNode, the TargetCaps of the device (occupancy, register
+// budget, shared memory, MMA shape constraints) and an arena for the
+// compiled bytes.
 //
-// Mimic's per-vendor backends (mimic/nv/, mimic/am/, mimic/tpu/,
-// mimic/trn/, mimic/cpu/ — see MIMIC.md) lower IR002 portable
-// kernel DAGs to native ISA.  Each backend ships an `emit_kernel`
-// function that takes: (a) an IR002 KernelNode, (b) the target
-// device's TargetCaps (occupancy / register budgets / smem size /
-// MMA shape constraints), and (c) an arena to allocate the
-// compiled bytes into.
+// The binding records that the emitter runs on the background thread, and
+// it records three effect atoms: Bg, Alloc and IO.  IO is necessary
+// because the emitter can probe the kernel driver through ioctls, and
+// HS9 permits no vendor library.  The binding also records the vendor of
+// the emitter in its type.
 //
-// The substrate must capture: bg-thread execution, ALL THREE
-// effect atoms (Bg + Alloc + IO — IO because emit may probe the
-// kernel driver via ioctls per HS9), bit-exact precision pinning
-// (the per-recipe ReductionDeterminism tier propagates from IR002
-// into emission), AND vendor identity at the type level.
+// The vendor rides on the payload through the Vendor band of
+// fixy/Bands.h.  The binding is over fixy::vendor::Nv<EmitKernelPtr>, so
+// the type says that the emitter builds for NVIDIA.  A consumer that asks
+// for an AMD emitter refuses it, and an NVIDIA emitter and an AMD emitter
+// with the same pack take two federation cache slots.
 //
-// THE KEY INSIGHT: vendor identity flows through the Source axis
-// (nominally source::FromInternal, but the substrate's planned
-// subdivision lets us narrow to source::FromMimicNvidia /
-// FromMimicAmd / etc. once those tags ship).  For Phase 0 we use
-// source::FromInternal as the catch-all and demonstrate the
-// `EffectRow<Bg, Alloc, IO>` triple — the largest effect row in
-// the example set.
-//
-// CONTRAST: this binding has the BIGGEST EffectRow (3 atoms) and
-// the strongest set of "vendor-private" provenance.  It also pins
-// `Mutation = Mutable` because the emitter writes compiled bytes
-// into the output buffer, and `Reentrancy = Reentrant` because
-// per-kernel compilation can run in parallel across the kernel
-// compile pool.
-// ════════════════════════════════════════════════════════════════════
+// The contrast with the other examples: this binding has the largest
+// effect row, three atoms.  A caller needs a context that admits all
+// three, so the background drain context, which admits a Forge phase,
+// cannot call the emitter.  The binding is reentrant, because the compile
+// pool emits kernels in parallel, with one arena for each worker.
 
-#include <crucible/safety/_Fn.h>
+#include <fixy/Atom.h>
+#include <fixy/Axis.h>
+#include <fixy/Bands.h>
+#include <fixy/Ctx.h>
+#include <fixy/Fn.h>
+#include <fixy/Tags.h>
+#include <foundation/diag/RowHash.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-
-namespace fn = crucible::safety::fn;
-namespace fx = crucible::effects;
+#include <type_traits>
 
 namespace {
 
-// ── Stand-in IR002 kernel node + target caps ───────────────────────
-//
-// In production these are the real types from
-// crucible/forge/KernelNode.h and crucible/mimic/TargetCaps.h.
+namespace at = ::fixy::atom;
+namespace source = ::fixy::tags::source;
+using ::fixy::Axis;
+using Effect = ::foundation::effects::Effect;
 
+// Stand-ins for the IR002 kernel node and the target caps.  In
+// production the kernel node of Forge and the capabilities that the
+// calibration of Meridian measures for the device take their place.
 struct KernelNode {
-    int kernel_kind;  // GEMM / CONV / SDPA / etc.
-    int tile_m, tile_n, tile_k;
-    int recipe_id;  // index into the recipe registry
+    int kernel_kind = 0;  // GEMM, CONV, SDPA and the other kinds
+    int tile_m = 0, tile_n = 0, tile_k = 0;
+    int recipe_id = 0;  // the index into the recipe registry
 };
 
 struct TargetCaps {
-    int sm_count;
-    int regs_per_thread_max;
-    int smem_per_block_kb;
-    std::uint32_t arch_id;  // sm_90 / gfx1100 / etc.
+    int sm_count = 0;
+    int regs_per_thread_max = 0;
+    int smem_per_block_kb = 0;
+    std::uint32_t arch_id = 0;  // sm_90, gfx1100 and the other architectures
 };
 
 struct Arena {
     std::size_t bump = 0;
 };
 
+// Where the compiled bytes are in the arena.
 struct CompiledBytes {
-    void* ptr;
-    std::size_t size;
+    std::size_t offset = 0;
+    std::size_t size = 0;
 };
 
-// ── Mimic emit_kernel signature ────────────────────────────────────
-
-using EmitKernelPtr = CompiledBytes (*)(const KernelNode& kernel, const TargetCaps& caps, Arena& arena);
+using EmitKernelPtr = CompiledBytes (*)(const KernelNode& kernel, const TargetCaps& caps, Arena& arena) noexcept;
 
 CompiledBytes emit_nv_gemm_ref(const KernelNode& kernel, const TargetCaps& caps, Arena& arena) noexcept {
-    // A real NV emitter would generate SASS via the Mimic NV
-    // backend's instruction selector, register allocator, and
-    // peephole optimizer.  Stand-in: report a plausible byte
-    // count and bump the arena to mimic the allocation.
-    const std::size_t n_bytes = 4096;  // ~1 page of SASS for a small GEMM
+    // A real NVIDIA emitter makes SASS through the instruction selector,
+    // the register allocator and the peephole optimizer of the backend.
+    // The stand-in reports a plausible byte count and bumps the arena.
+    const std::size_t n_bytes = 4096;  // about one page of SASS for a small GEMM
+    const std::size_t offset = arena.bump;
     arena.bump += n_bytes;
-    (void)kernel;  // would drive instruction selection in production
-    (void)caps;  // would drive register/smem budgeting
-    return CompiledBytes{.ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0x1000)), .size = n_bytes};
+    (void)kernel;  // drives the instruction selection in production
+    (void)caps;  // drives the register and shared memory budget
+    return CompiledBytes{.offset = offset, .size = n_bytes};
 }
 
-// ── The Fn<...> binding ────────────────────────────────────────────
+// The emitter, with the vendor that it builds for in its type.
+using NvEmitKernel = ::fixy::vendor::Nv<EmitKernelPtr>;
+
+// The pack of a backend emitter, named one time.
+// fixy::mint_fn_for<BackendEmitter> is its door.
 //
-// Per-axis grade choices for "Mimic NVIDIA SASS emitter for GEMM
-// kernels":
-//
-//   Type        : EmitKernelPtr                      — function pointer
-//   Refinement  : pred::True
-//   Usage       : Copy                               — fn ptr is freely copyable
-//   EffectRow   : Row<Bg, Alloc, IO>                 — bg + alloc + ioctl probe
-//   Security    : SecLevel::Internal                 — sees user IR + caps
-//   Protocol    : proto::None
-//   Lifetime    : lifetime::Static                   — Mimic-internal free function
-//   Source      : source::FromInternal               — Crucible-authored backend
-//                                                       (a planned `source::FromMimicNV`
-//                                                       sub-tag would narrow this once
-//                                                       per-vendor source tags ship)
-//   Trust       : trust::Verified                    — cross-vendor CI validates
-//                                                       output against the CPU
-//                                                       reference oracle (MIMIC.md §41)
-//   Repr        : ReprKind::Opaque
-//   Cost        : cost::Linear<0>                    — O(N) in IR node count
-//   Precision   : precision::Exact                   — emission preserves the IR's
-//                                                       recipe pin (BITEXACT_TC /
-//                                                       BITEXACT_STRICT) bit-exactly
-//   Space       : space::Bounded<0>                  — bounded by arena capacity;
-//                                                       compiled-byte cap declared
-//                                                       at arena construction
-//   Overflow    : OverflowMode::Trap
-//   Mutation    : MutationMode::Mutable              — writes compiled bytes into
-//                                                       arena-allocated buffer
-//   Reentrancy  : ReentrancyMode::Reentrant          — multiple kernels compiled
-//                                                       in parallel by the compile
-//                                                       pool (one Arena per worker)
-//   Size        : size_pol::Unstated
-//   Version     : 3                                  — IR003-NV per-vendor IR
-//                                                       generation matches Mimic's
-//                                                       NV backend version
-//   Staleness   : stale::Fresh
-//
-// THE LOAD-BEARING DELTA from custom_kernel/optimizer/forge_phase:
-//   - EffectRow:   Row<Bg, Alloc, IO> — adds IO for driver ioctls.  This
-//                  is the LARGEST effect row in the example set.  A
-//                  caller that wants to invoke this emitter needs a
-//                  context that admits all three effects; pure-bg
-//                  contexts (Forge phases) cannot reach it.
-//   - Reentrancy:  Reentrant (vs Forge phase NonReentrant) — backend
-//                  emission is per-Arena, parallelizable across
-//                  multiple kernels in the compile pool.
-//   - Version:     3 (vs Forge's 2) — Mimic's per-vendor IR
-//                  generation moves at the vendor backend's pace,
-//                  decoupled from Forge's IR002 version.
+// The pack names no Space atom and no Precision atom.  The emitter writes
+// into the arena that its caller passes, and the arena states the bound.
+// The numerical recipe rides on the IR that the emitter reads, as
+// example_forge_phase.cpp shows.  The argument of cost_linear is the
+// bound on N, and zero states no bound.
+template <class Emitter>
+using BackendEmitter = ::fixy::fn<Emitter,
+                                  at::copy,  // a function pointer is free to copy
+                                  at::with<Effect::Bg, Effect::Alloc, Effect::IO>,  // plus IO for the driver ioctls
+                                  at::as_public,  // the pointer holds no secret
+                                  at::from_source<source::FromInternal>,  // Crucible wrote the backend
+                                  at::trust_verified,  // the CI against the CPU oracle is its check
+                                  at::cost_linear<0>,  // O(N) in the node count of the IR
+                                  at::mut_mutable,  // the emitter writes compiled bytes into the arena
+                                  at::reentrant,  // the compile pool emits kernels in parallel
+                                  at::version<3>>;  // the generation of the per-vendor IR003 of the backend
 
-using BoundMimicNvEmit = fn::Fn<EmitKernelPtr,  // 1 Type
-                                // FIXY-DISCIPLINE-OK: this example exists to show
-                                // the raw 19-positional substrate signature.  It is
-                                // reached through the `fn` alias declared above,
-                                // which is the same reach as safety::fn::Fn<>.
-                                fn::pred::True,  // 2 Refinement
-                                fn::UsageMode::Copy,  // 3 Usage
-                                fx::Row<fx::Effect::Bg,  // 4 EffectRow
-                                        fx::Effect::Alloc, fx::Effect::IO>,
-                                fn::SecLevel::Internal,  // 5 Security
-                                fn::proto::None,  // 6 Protocol
-                                fn::lifetime::Static,  // 7 Lifetime
-                                fn::source::FromInternal,  // 8 Source
-                                fn::trust::Verified,  // 9 Trust
-                                fn::ReprKind::Opaque,  // 10 Repr
-                                fn::cost::Linear<0>,  // 11 Cost
-                                fn::precision::Exact,  // 12 Precision
-                                fn::space::Bounded<0>,  // 13 Space
-                                fn::OverflowMode::Trap,  // 14 Overflow
-                                fn::MutationMode::Mutable,  // 15 Mutation
-                                fn::ReentrancyMode::Reentrant,  // 16 Reentrancy
-                                fn::size_pol::Unstated,  // 17 Size
-                                /*Version=*/3,  // 18 Version
-                                fn::stale::Fresh  // 19 Staleness
-                                >;
+using BoundMimicNvEmit = BackendEmitter<NvEmitKernel>;
 
-// ── Compile-time invariants ────────────────────────────────────────
+static_assert(sizeof(BoundMimicNvEmit) == sizeof(EmitKernelPtr),
+              "a binding over a band must be byte-equivalent to the function pointer");
 
-static_assert(sizeof(BoundMimicNvEmit) == sizeof(EmitKernelPtr), "EBO collapse failed for Mimic NV emit binding.");
+// The three-atom row, the largest in the example set.  A row is a set, and
+// binding_row_t gives it in the order of the enum.
+static_assert(std::is_same_v<::fixy::binding_row_t<BoundMimicNvEmit>,
+                             ::foundation::effects::Row<Effect::Alloc, Effect::IO, Effect::Bg>>,
+              "the emitter must declare Bg, Alloc and IO.  IO is necessary for the driver ioctls of HS9: no "
+              "vendor library, only the ioctls of the kernel driver.");
 
-// The 3-atom effect row — the largest in the example set.
-static_assert(
-    std::is_same_v<BoundMimicNvEmit::effect_row_t, fx::Row<fx::Effect::Bg, fx::Effect::Alloc, fx::Effect::IO>>,
-    "Mimic emit must declare {Bg, Alloc, IO} — IO is required for "
-    "driver ioctl probing per HS9 (no vendor libraries; kernel-driver "
-    "ioctls only).");
+// The compile context admits the row.  The drain context, which admits a
+// Forge phase, lacks IO and refuses the emitter.
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, BoundMimicNvEmit>);
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, BoundMimicNvEmit>);
 
-// Reentrancy distinguishes Mimic emission (parallel-friendly) from
-// Forge phases (single-threaded pipeline).
-static_assert(BoundMimicNvEmit::reentrancy_v == fn::ReentrancyMode::Reentrant,
-              "Mimic emission is parallelizable across the compile pool; "
-              "Forge phases share the pipeline arena and are NonReentrant.");
+// Emission can run in parallel.  Forge phases share one arena and are not
+// reentrant.
+static_assert(std::is_same_v<BoundMimicNvEmit::grade_on<Axis::Reentrancy>, at::reentrant>);
+static_assert(std::is_same_v<BoundMimicNvEmit::grade_on<Axis::Trust>, at::trust_verified>);
 
-// Trust: Verified — same as Forge phases.  Both subsystems are
-// CI-validated against the cross-vendor numerics matrix.
-static_assert(std::is_same_v<BoundMimicNvEmit::trust_t, fn::trust::Verified>);
+// The generation of the IR of the backend moves at its own pace,
+// separately from the IR002 version of Forge.
+static_assert(std::is_same_v<BoundMimicNvEmit::grade_on<Axis::Version>, at::version<3>>);
 
-// Version 3 — Mimic's per-vendor IR generation moves on its own
-// schedule, independent of Forge's IR002 version.
-static_assert(BoundMimicNvEmit::version_v == 3);
+// The vendor is in the type.  An NVIDIA emitter serves an NVIDIA consumer
+// and refuses an AMD one.  An AMD emitter with the same pack takes a
+// different federation cache slot, because the payload of the binding is
+// a part of the key.
+static_assert(::fixy::satisfies_v<NvEmitKernel, ::fixy::VendorBackend_v::NV>);
+static_assert(!::fixy::satisfies_v<NvEmitKernel, ::fixy::VendorBackend_v::AMD>);
+static_assert(::foundation::diag::row_hash_contribution_v<BoundMimicNvEmit>
+                  != ::foundation::diag::row_hash_contribution_v<BackendEmitter<::fixy::vendor::Amd<EmitKernelPtr>>>,
+              "two vendors must take two cache slots, or a kernel for one vendor serves the other");
 
 }  // namespace
 
 int main() {
-    BoundMimicNvEmit bound{emit_nv_gemm_ref};
+    const BoundMimicNvEmit bound =
+        ::fixy::mint_fn_for<BackendEmitter>(::fixy::mint_band<NvEmitKernel>(&emit_nv_gemm_ref));
 
-    // Simulate compiling one GEMM kernel for sm_90.
+    // Compile one GEMM kernel for sm_90.
     const KernelNode kernel{
         .kernel_kind = 1,  // GEMM
         .tile_m = 128,
         .tile_n = 128,
         .tile_k = 32,
-        .recipe_id = 7  // BITEXACT_TC for sm_90 wmma-fp16
+        .recipe_id = 7  // the index into the recipe registry
     };
     const TargetCaps caps{
         .sm_count = 132,
@@ -211,12 +168,13 @@ int main() {
     };
     Arena arena{};
 
-    CompiledBytes out = bound.value()(kernel, caps, arena);
+    const CompiledBytes out = bound.value().peek()(kernel, caps, arena);
 
-    std::printf("mimic_nv_emit: kernel kind=%d tile=%dx%dx%d recipe=%d "
-                "→ %zu bytes (arena bumped %zu)\n",
-                kernel.kernel_kind, kernel.tile_m, kernel.tile_n, kernel.tile_k, kernel.recipe_id, out.size,
+    std::printf("mimic_nv_emit: kernel kind=%d tile=%dx%dx%d recipe=%d -> %zu bytes at offset %zu "
+                "(arena bumped %zu)\n",
+                kernel.kernel_kind, kernel.tile_m, kernel.tile_n, kernel.tile_k, kernel.recipe_id, out.size, out.offset,
                 arena.bump);
+    if (out.size != 4096 || out.offset != 0 || arena.bump != 4096) return 1;
 
     std::printf("BoundMimicNvEmit sizeof = %zu (== sizeof(EmitKernelPtr) %zu)\n", sizeof(BoundMimicNvEmit),
                 sizeof(EmitKernelPtr));

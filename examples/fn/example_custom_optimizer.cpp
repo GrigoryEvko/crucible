@@ -1,50 +1,54 @@
-// ════════════════════════════════════════════════════════════════════
-// example_custom_optimizer — Phase 0 P0-5 / 5 (#1098)
+// example_custom_optimizer: a user optimizer step bound to the background
+// thread.
 //
-// THE PATTERN: A USER-SUPPLIED OPTIMIZER STEP FUNCTION
+// A user binds the step of their Adam optimizer (Kingma and Ba, 2015) to
+// the training pipeline of Crucible.  The step is:
 //
-// A user wants to bind their Adam (Kingma & Ba, 2015) optimizer
-// step to Crucible's training pipeline.  The step:
+//   m  = b1 * m + (1 - b1) * g
+//   v  = b2 * v + (1 - b2) * g^2
+//   m' = m / (1 - b1^t)
+//   v' = v / (1 - b2^t)
+//   p -= lr * m' / (sqrt(v') + eps)
 //
-//   m  = β₁·m + (1 - β₁)·∇L
-//   v  = β₂·v + (1 - β₂)·∇L²
-//   m̂  = m / (1 - β₁ᵗ)
-//   v̂  = v / (1 - β₂ᵗ)
-//   θ -= η · m̂ / (√v̂ + ε)
+// The step updates three buffers in place, one element at a time: the
+// parameters p, and the moments m and v.  The binding records that it runs on the background
+// thread, that it can allocate scratch memory, that its cost is linear in
+// the parameter count, and that it is not reentrant: the optimizer state
+// changes on each call, so two calls at the same time race on m and v.
 //
-// Three buffers (params, m, v) updated in place per parameter.
-// The substrate must capture: bg-thread execution, in-place mutation
-// across N-element arrays, linear cost in N, allocation row (some
-// optimizers keep scratch buffers), AND the non-reentrancy that
-// follows from optimizer state being mutable across calls.
-//
-// THIS FILE: contrasts with example_custom_kernel.cpp by ADDING
-// `Effect::Alloc` to the row, declaring `Cost::Linear<N>`, and
-// pinning `Reentrancy::NonReentrant`.  Same callable-binding shape;
-// different per-axis grade choices because the function's behavior
-// differs.
-// ════════════════════════════════════════════════════════════════════
+// The contrast with example_custom_kernel.cpp is in four axes.  The row
+// adds Alloc.  The pack states a linear cost and three buffers.  The pack
+// names no Reentrancy atom, so the step takes the strict pole, which
+// refuses a self-call.
 
-#include <crucible/safety/_Fn.h>
+#include <fixy/Atom.h>
+#include <fixy/Axis.h>
+#include <fixy/Ctx.h>
+#include <fixy/Fn.h>
+#include <fixy/Role.h>
+#include <fixy/Tags.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 
 #include <cmath>
 #include <cstdio>
-
-namespace fn = crucible::safety::fn;
-namespace fx = crucible::effects;
+#include <type_traits>
 
 namespace {
 
-// ── Adam step signature ─────────────────────────────────────────────
-//
-// A single step over an N-element parameter array.  In production
-// `params`, `m`, `v` are persistent across calls (the optimizer's
-// running state); `grad` is per-step (computed by backward).
-// `lr`, `beta1`, `beta2`, `eps` are hyperparameters; `step_t` is
-// the iteration counter (for bias correction).
+namespace at = ::fixy::atom;
+namespace source = ::fixy::tags::source;
+using ::fixy::Axis;
+using ::fixy::axis_traits;
+using Effect = ::foundation::effects::Effect;
 
+// One step over an array of n parameters.  In production p, m and v stay
+// alive across calls as the running state of the optimizer, and g comes
+// from the backward pass of each step.  lr, beta1, beta2 and eps are the
+// hyperparameters, and step_t is the iteration count for the bias
+// correction.
 using AdamStepPtr = void (*)(float* params, float* m, float* v, const float* grad, int n, float lr, float beta1,
-                             float beta2, float eps, int step_t);
+                             float beta2, float eps, int step_t) noexcept;
 
 void adam_step_ref(float* params, float* m, float* v, const float* grad, int n, float lr, float beta1, float beta2,
                    float eps, int step_t) noexcept {
@@ -60,91 +64,60 @@ void adam_step_ref(float* params, float* m, float* v, const float* grad, int n, 
     }
 }
 
-// ── The Fn<...> binding ────────────────────────────────────────────
+// The pack of a user optimizer step on the background thread, named one
+// time.  fixy::mint_fn_for<UserBgOptimizer> is its door.
 //
-// Per-axis grade choices for "user-supplied Adam optimizer step":
-//
-//   Type        : AdamStepPtr                       — function pointer
-//   Refinement  : pred::True
-//   Usage       : Copy                              — fn ptr is freely copyable
-//   EffectRow   : Row<Bg, Alloc>                    — bg thread + may alloc scratch
-//   Security    : SecLevel::Internal
-//   Protocol    : proto::None
-//   Lifetime    : lifetime::Static
-//   Source      : source::FromUser
-//   Trust       : trust::Tested
-//   Repr        : ReprKind::Opaque
-//   Cost        : cost::Linear<0>                   — O(N) per call (template param
-//                                                     would be the per-call N upper
-//                                                     bound; 0 = unspecified bound,
-//                                                     but axis declared linear)
-//   Precision   : precision::F32
-//   Space       : space::Bounded<3>                 — three persistent buffers
-//                                                     (params, m, v) per N elements
-//   Overflow    : OverflowMode::Trap
-//   Mutation    : MutationMode::Mutable             — in-place weight update
-//   Reentrancy  : ReentrancyMode::NonReentrant      — single optimizer per training
-//                                                     run; concurrent calls would
-//                                                     race on m, v
-//   Size        : size_pol::Unstated
-//   Version     : 1
-//   Staleness   : stale::Fresh
-//
-// The DELTA from example_custom_kernel.cpp is concentrated in 4 axes:
-// EffectRow (adds Alloc), Cost (declares Linear), Mutation (stays
-// Mutable), and Reentrancy (FLIPS to NonReentrant — optimizer state
-// is per-instance and cannot be shared across threads).
+// The argument of cost_linear is the bound on N.  Zero states no bound,
+// because the parameter count is not known here.  No rule reads the
+// argument, and it is a part of the cache key.
+template <class Step>
+using UserBgOptimizer = ::fixy::fn<Step,
+                                   at::copy,  // a function pointer is free to copy
+                                   at::with<Effect::Bg, Effect::Alloc>,  // the background thread, and scratch memory
+                                   at::as_public,  // the pointer holds no secret
+                                   at::from_source<source::FromUser>,  // the user supplied the step
+                                   at::trust_tested,  // the user has tests, and no proof
+                                   at::cost_linear<0>,  // O(N) in the parameter count
+                                   at::precision_f32,  // the step computes in FP32
+                                   at::space_bounded<3>,  // three persistent buffers: p, m and v
+                                   at::mut_mutable,  // the step updates the weights in place
+                                   at::version<1>>;  // the first revision of this binding
 
-using BoundOptimizer = fn::Fn<AdamStepPtr,  // 1 Type
-                              // FIXY-DISCIPLINE-OK: this example exists to show
-                              // the raw 19-positional substrate signature.  It is
-                              // reached through the `fn` alias declared above,
-                              // which is the same reach as safety::fn::Fn<>.
-                              fn::pred::True,  // 2 Refinement
-                              fn::UsageMode::Copy,  // 3 Usage
-                              fx::Row<fx::Effect::Bg, fx::Effect::Alloc>,  // 4 EffectRow
-                              fn::SecLevel::Internal,  // 5 Security
-                              fn::proto::None,  // 6 Protocol
-                              fn::lifetime::Static,  // 7 Lifetime
-                              fn::source::FromUser,  // 8 Source
-                              fn::trust::Tested,  // 9 Trust
-                              fn::ReprKind::Opaque,  // 10 Repr
-                              fn::cost::Linear<0>,  // 11 Cost — O(N) per step
-                              fn::precision::F32,  // 12 Precision
-                              fn::space::Bounded<3>,  // 13 Space — params + m + v
-                              fn::OverflowMode::Trap,  // 14 Overflow
-                              fn::MutationMode::Mutable,  // 15 Mutation
-                              fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
-                              fn::size_pol::Unstated,  // 17 Size
-                              /*Version=*/1,  // 18 Version
-                              fn::stale::Fresh  // 19 Staleness
-                              >;
+using BoundOptimizer = UserBgOptimizer<AdamStepPtr>;
 
-// ── Compile-time invariants ────────────────────────────────────────
+static_assert(sizeof(BoundOptimizer) == sizeof(AdamStepPtr), "a binding must be byte-equivalent to its payload");
 
-static_assert(sizeof(BoundOptimizer) == sizeof(AdamStepPtr), "EBO collapse failed for optimizer binding.");
+// The axes that differ from the kernel binding.
+static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Reentrancy>, axis_traits<Axis::Reentrancy>::strict>,
+              "the optimizer is not reentrant: two calls at the same time race on m and v");
+static_assert(!BoundOptimizer::mentions_axis<Axis::Reentrancy>);
+static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Mutation>, at::mut_mutable>);
+static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Complexity>, at::cost_linear<0>>);
+static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Space>, at::space_bounded<3>>);
 
-// Spot-check the axes that DIFFER from the kernel binding to make
-// the contrast surface visible to a reviewer.
-static_assert(BoundOptimizer::reentrancy_v == fn::ReentrancyMode::NonReentrant,
-              "Optimizer must be NonReentrant — concurrent calls would race on m, v.");
-static_assert(BoundOptimizer::mutation_v == fn::MutationMode::Mutable, "Optimizer mutates params, m, v in place.");
-static_assert(std::is_same_v<BoundOptimizer::cost_t, fn::cost::Linear<0>>,
-              "Optimizer step is O(N) in parameter count.");
-static_assert(std::is_same_v<BoundOptimizer::space_t, fn::space::Bounded<3>>,
-              "Optimizer holds exactly three N-sized persistent buffers.");
+// The row holds Bg and Alloc, so a caller needs a context that admits the
+// two.  The background drain context admits them, and the foreground
+// context admits neither.  A row is a set, and binding_row_t gives it in
+// the order of the enum.
+static_assert(
+    std::is_same_v<::fixy::binding_row_t<BoundOptimizer>, ::foundation::effects::Row<Effect::Alloc, Effect::Bg>>);
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, BoundOptimizer>);
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, BoundOptimizer>);
 
-// EffectRow contains BOTH Bg AND Alloc — this is the cross-cut signal
-// the row algebra uses at composition sites (a caller that wants to
-// invoke this step needs a context that admits both effects).
-static_assert(std::is_same_v<BoundOptimizer::effect_row_t, fx::Row<fx::Effect::Bg, fx::Effect::Alloc>>);
+// The Effect grade and the Security grade are those of the role BgWorker
+// in fixy/Role.h.  The step states more atoms than the role, so it names
+// a pack of its own.
+static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Effect>,
+                             ::fixy::role::BgWorker<AdamStepPtr>::grade_on<Axis::Effect>>);
+static_assert(std::is_same_v<BoundOptimizer::grade_on<Axis::Security>,
+                             ::fixy::role::BgWorker<AdamStepPtr>::grade_on<Axis::Security>>);
 
 }  // namespace
 
 int main() {
-    BoundOptimizer bound{adam_step_ref};
+    const BoundOptimizer bound = ::fixy::mint_fn_for<UserBgOptimizer>(&adam_step_ref);
 
-    // Toy 4-parameter "model" with one optimizer step.
+    // A model of four parameters, and one step of the optimizer.
     constexpr int N = 4;
     float params[N] = {1.0f, -0.5f, 2.0f, 0.0f};
     float m[N] = {};
@@ -155,10 +128,16 @@ int main() {
                   /*lr=*/0.01f, /*beta1=*/0.9f, /*beta2=*/0.999f,
                   /*eps=*/1e-8f, /*step_t=*/1);
 
-    std::printf("custom_optimizer params after 1 step: "
-                "[%g, %g, %g, %g]\n",
-                static_cast<double>(params[0]), static_cast<double>(params[1]), static_cast<double>(params[2]),
-                static_cast<double>(params[3]));
+    std::printf("custom_optimizer params after 1 step: [%g, %g, %g, %g]\n", static_cast<double>(params[0]),
+                static_cast<double>(params[1]), static_cast<double>(params[2]), static_cast<double>(params[3]));
+
+    // After the first step the bias correction gives m' = g and v' = g^2,
+    // so each parameter with a gradient moves by lr against the sign of
+    // its gradient.  The parameter with a zero gradient does not move.
+    const float expected[N] = {0.99f, -0.49f, 1.99f, 0.0f};
+    for (int i = 0; i < N; ++i) {
+        if (std::fabs(params[i] - expected[i]) > 1e-5f) return 1;
+    }
 
     std::printf("BoundOptimizer sizeof = %zu (== sizeof(AdamStepPtr) %zu)\n", sizeof(BoundOptimizer),
                 sizeof(AdamStepPtr));

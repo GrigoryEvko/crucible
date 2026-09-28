@@ -1,251 +1,217 @@
-// ════════════════════════════════════════════════════════════════════
-// example_cntp_frame — Phase 0 P0-5 / 5 (#1098)
+// example_cntp_frame: a wire frame from an untrusted source, and its
+// retag after validation.
 //
-// THE PATTERN: AN UNTRUSTED-INPUT WIRE FRAME WRAPPED IN Fn<>
+// CNTP (Crucible Network Transport Protocol) frames arrive over the wire
+// as raw bytes.  Before the runtime can act on a frame, the validator of
+// the Vessel must:
 //
-// CNTP (Crucible Network Transport Protocol) frames arrive over the
-// wire as raw bytes.  Before the runtime can act on the frame, the
-// Vessel-side validator must:
+//   1. Read the bytes as a packed header.
+//   2. Validate the magic, the version, the length and the checksum.
+//   3. Retag the frame: the source External becomes Sanitized, and the
+//      trust Unverified becomes Tested.
 //
-//   1. Cast bytes → PacketHeader (Repr::Packed POD)
-//   2. Validate magic, version, length, checksum
-//   3. RETAG: source::External → source::Sanitized
-//             trust::Unverified → trust::Tested
-//             refinement: pred::True → pred::ValidCntpFrame
+// Until step 3 succeeds, the frame must not reach an API that takes only
+// sanitized input.  The binding carries the trust state of the frame in
+// its type.  So a function that asks for from_source<Sanitized> refuses
+// an unvalidated frame at the call site, and not at run time.  The two
+// states are two types, and validate() below is the one function that
+// mints the second from the first.
 //
-// USAGE AXIS is `Borrow` here, not `Linear`: the Fn is a non-owning
-// view over storage held by the NetworkBuffer (whose lifetime the
-// `lifetime::In<NetworkBufferTag>` axis already documents).  A
-// `Linear` × `lifetime::In<Tag>` composition without a threaded
-// `Permission<Tag>` proof fires CollisionCatalog rule L004 (Linear
-// resource in a tagged region whose ownership is unproven).  See
-// neg_collision_L004_linear_region_lifetime in test/safety_neg/
-// for the compile-time witness of the catalog enforcement.
-//
-// Until step 3 succeeds, the frame must NOT cross any sanitized-only
-// API.  The Fn<...> wrapper carries the per-axis trust state at the
-// type level, so a function that demands `Source = source::Sanitized`
-// rejects an unvalidated frame at the call site — not at runtime.
-//
-// THIS FILE: shows the BEFORE-validation Fn binding.  The
-// AFTER-validation type would differ on three axes (Source, Trust,
-// Refinement); the retag is a function `validate :
-//   Fn<Header, pred::True, ..., External, Unverified> →
-//   std::expected<Fn<Header, ValidCntpFrame, ..., Sanitized, Tested>,
-//                 ValidationError>`.
-//
-// THE LIFETIME AXIS is also load-bearing here: the frame's storage
-// is owned by a NetworkBuffer, NOT by the Fn wrapper.  Setting
-// `Lifetime = lifetime::In<NetworkBufferTag>` documents that the
-// Fn's address-validity is bounded by the buffer's lifetime.
-//
-// CONTRAST: where example_custom_kernel and example_custom_optimizer
-// wrap CALLABLES (function pointers), this example wraps a DATA
-// STRUCT.  The Fn aggregator is the same template; the per-axis
-// grade choices reflect "data structure" rather than "callable".
-// ════════════════════════════════════════════════════════════════════
+// The contrast with the other examples: they bind callables, which are
+// function pointers.  This example binds a data struct.  fixy::fn is the
+// same template, and the atoms state the facts of a data struct rather
+// than those of a callable.
 
-#include <crucible/safety/_Fn.h>
+#include <fixy/Atom.h>
+#include <fixy/Axis.h>
+#include <fixy/Ctx.h>
+#include <fixy/Fn.h>
+#include <fixy/Tags.h>
+#include <foundation/diag/RowHash.h>
 
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
+#include <expected>
+#include <type_traits>
 
-namespace fn = crucible::safety::fn;
-namespace fx = crucible::effects;
+// The region of the network buffer that holds the frame.  in_region names
+// the region by a value, and the name of an atom is its key in the row
+// hash.  So the tag needs a name that is the same in each translation
+// unit, and it has a named namespace, not the anonymous namespace below.
+namespace example_cntp_frame {
+struct NetworkBufferTag final {};
+}  // namespace example_cntp_frame
 
 namespace {
 
-// ── Stand-in CNTP packet header ────────────────────────────────────
-//
-// A real CNTP frame would carry sequence numbers, peer identity,
-// session keys, etc.  This example uses the minimal shape that
-// demonstrates the binding pattern: a packed POD with a checksum.
-//
-// `[[gnu::packed]]` matches Repr::Packed at the type-system level —
-// the wrapper's per-axis grade and the struct's actual memory
-// layout agree, so a downstream consumer that demands packed
-// representation cannot be fooled by a misaligned struct.
-//
-// Field order is INTENTIONALLY misaligned (u8 flags between u32
-// magic and u16 version) — without [[gnu::packed]], the natural
-// layout would insert 3 padding bytes after `flags` and 4 after
-// `length` to align `checksum` on an 8-byte boundary, bloating
-// the struct from 17 bytes to 24.  Packing matters here:
-// `static_assert(sizeof(CntpHeader) == 17)` enforces the wire-
-// format invariant that there is NO padding.
+namespace at = ::fixy::atom;
+namespace source = ::fixy::tags::source;
+using ::fixy::Axis;
+using ::fixy::axis_traits;
 
+// A stand-in for the CNTP packet header.  A real frame also carries a
+// sequence number, the identity of the peer and session keys.  The
+// example uses the smallest shape that shows the binding: a packed POD
+// with a checksum.
+//
+// The field order does not align: a u8 sits between the u32 magic and
+// the u16 version.  Without [[gnu::packed]] the natural layout puts 3
+// bytes of padding after flags and 4 after length, so that checksum sits
+// on an 8-byte boundary, and the struct grows from 17 bytes to 24.  The
+// static_assert holds the wire format to no padding, and the atom
+// repr<Packed> states the same layout at the type level.
 struct [[gnu::packed]] CntpHeader {
     std::uint32_t magic;  // 'CNTP' = 0x434E5450
-    std::uint8_t flags;  // bit0=ack, bit1=fragment, ...
-    std::uint16_t version;  // wire format version
-    std::uint16_t length;  // total frame length including header
-    std::uint64_t checksum;  // FNV-1a over magic..length (excludes self)
+    std::uint8_t flags;  // bit0 = ack, bit1 = fragment
+    std::uint16_t version;  // the version of the wire format
+    std::uint16_t length;  // the length of the frame, with the header
+    std::uint64_t checksum;  // FNV-1a over magic thru length, without the checksum itself
 };
 
-static_assert(sizeof(CntpHeader) == 17, "CntpHeader must be exactly 17 bytes; packed-struct layout "
-                                        "guarantee is load-bearing for Repr::Packed correctness — "
-                                        "without packing, natural alignment would insert 7 bytes of "
-                                        "padding (3 after flags, 4 after length) and bloat to 24 bytes.");
+static_assert(sizeof(CntpHeader) == 17, "CntpHeader must be exactly 17 bytes.  The packed layout is what repr<Packed> "
+                                        "states.  Without packing, natural alignment adds 7 bytes of padding (3 after "
+                                        "flags, 4 after length) and the struct grows to 24 bytes.");
 
-// ── A region tag for the Lifetime axis ─────────────────────────────
+inline constexpr std::uint32_t cntp_magic = 0x434E5450;
+inline constexpr std::uint16_t cntp_version = 1;
+
+// The pack of a CNTP frame, named one time for both trust states.  Source
+// and Trust are the two axes that the retag changes.
 //
-// Tags don't need to be defined types — they're phantom types whose
-// only role is to discriminate one lifetime region from another at
-// the type level.  The empty struct is the canonical convention.
-struct NetworkBufferTag {};
-
-// ── BEFORE-validation Fn binding (untrusted) ───────────────────────
+// The Usage is borrow.  The frame is a view over storage that the
+// network buffer owns, and in_region names that buffer.  A borrow cannot
+// cross into a background context, because the buffer can die first:
+// rule L007 of fixy/Collision.h refuses a borrow with a Bg row.
 //
-// Per-axis grade choices for "raw CNTP frame just received from the
-// wire, not yet validated":
+// The axes that the pack does not name take their strict poles:
 //
-//   Type        : CntpHeader                          — POD struct
-//   Refinement  : pred::True                          — no compile-time gate yet
-//   Usage       : Borrow                              — non-owning view over
-//                                                       NetworkBuffer storage
-//                                                       (Linear × lifetime::In
-//                                                        without a Permission
-//                                                        proof would fire L004)
-//   EffectRow   : Row<>                               — pure data, no effects
-//   Security    : SecLevel::Public                    — wire-visible header
-//   Protocol    : proto::None                         — no session yet (handshake pending)
-//   Lifetime    : lifetime::In<NetworkBufferTag>      — storage owned by buffer
-//   Source      : source::External                    — UNTRUSTED — came over wire
-//   Trust       : trust::Unverified                   — no validation yet
-//   Repr        : ReprKind::Packed                    — matches [[gnu::packed]] above
-//   Cost        : cost::Constant                      — fixed-size header
-//   Precision   : precision::Exact                    — bit-exact wire format
-//   Space       : space::Bounded<sizeof(CntpHeader)>  — exactly 16 bytes
-//   Overflow    : OverflowMode::Trap                  — wire fields are integers
-//   Mutation    : MutationMode::Immutable             — read-only after receive
-//   Reentrancy  : ReentrancyMode::NonReentrant        — single owner per frame
-//   Size        : size_pol::Sized<sizeof(CntpHeader)> — fixed observation depth
-//   Version     : 1                                   — wire-protocol version
-//   Staleness   : stale::Fresh                        — no aging on receive
-
-using UnvalidatedCntpFrame = fn::Fn<CntpHeader,  // 1 Type
-                                    // FIXY-DISCIPLINE-OK: this example exists to
-                                    // show the raw 19-positional substrate
-                                    // signature.  Reached through the `fn` alias
-                                    // above, the same reach as safety::fn::Fn<>.
-                                    fn::pred::True,  // 2 Refinement (none yet)
-                                    fn::UsageMode::Borrow,  // 3 Usage
-                                    fx::Row<>,  // 4 EffectRow (pure data)
-                                    fn::SecLevel::Public,  // 5 Security
-                                    fn::proto::None,  // 6 Protocol
-                                    fn::lifetime::In<NetworkBufferTag{}>,  // 7 Lifetime
-                                    fn::source::External,  // 8 Source — untrusted
-                                    fn::trust::Unverified,  // 9 Trust — pending validation
-                                    fn::ReprKind::Packed,  // 10 Repr
-                                    fn::cost::Constant,  // 11 Cost
-                                    fn::precision::Exact,  // 12 Precision
-                                    fn::space::Bounded<sizeof(CntpHeader)>,  // 13 Space
-                                    fn::OverflowMode::Trap,  // 14 Overflow
-                                    fn::MutationMode::Immutable,  // 15 Mutation
-                                    fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
-                                    fn::size_pol::Sized<sizeof(CntpHeader)>,  // 17 Size
-                                    /*Version=*/1,  // 18 Version
-                                    fn::stale::Fresh  // 19 Staleness
-                                    >;
-
-// ── AFTER-validation Fn binding (sanitized) ───────────────────────
+//   - No session protocol, because the handshake is not complete.
+//   - No in-place mutation, because the frame is read-only after the
+//     receive.
+//   - No self-call, because one owner holds each frame.
+//   - Trap on overflow.
+//   - No stale read.
 //
-// In production, a refinement predicate would gate this:
-//
-//   struct ValidCntpFrame {
-//     [[nodiscard]] static constexpr bool check(const CntpHeader& h) noexcept {
-//       return h.magic == 0x434E5450 && h.version == 1 && h.length >= 16
-//              && fnv1a_check(h);
-//     }
-//   };
-//
-// The validator function would have signature:
-//
-//   std::expected<ValidatedCntpFrame, CntpError>
-//   validate(UnvalidatedCntpFrame&& raw);
-//
-// retagging Source from External → Sanitized, Trust from Unverified
-// → Tested, and Refinement from pred::True → ValidCntpFrame.  We
-// stub the predicate as pred::True here to keep the example focused
-// on the per-axis-grade contrast; a real refinement predicate would
-// run a checksum and structural check at construction time.
+// The wire format has no floating point, so the pack names no precision.
+template <class Header, class Source, class Trust>
+using CntpFrame = ::fixy::fn<Header,
+                             at::borrow,  // a view over the storage of the network buffer
+                             at::as_public,  // the header is visible on the wire
+                             at::in_region<example_cntp_frame::NetworkBufferTag{}>,  // the buffer owns the storage
+                             at::from_source<Source>,  // the retag changes this axis
+                             Trust,  // and this one
+                             at::repr<::fixy::pole::ReprKind::Packed>,  // no padding, as [[gnu::packed]] says
+                             at::cost_constant,  // a header of fixed size
+                             at::space_bounded<sizeof(Header)>,  // exactly the bytes of the header
+                             at::sized_at<sizeof(Header)>,  // a fixed observation depth
+                             at::version<cntp_version>>;  // the version of the wire protocol
 
-using ValidatedCntpFrame =
-    fn::Fn<CntpHeader,
-           // FIXY-DISCIPLINE-OK: the retag contrast this example draws is
-           // between two raw substrate spellings, so it has to write one.
-           fn::pred::True,  // would be ValidCntpFrame in prod
-           fn::UsageMode::Borrow,  // 3 same Borrow rationale as above
-           fx::Row<>, fn::SecLevel::Public, fn::proto::None, fn::lifetime::In<NetworkBufferTag{}>,
-           fn::source::Sanitized,  // 8  RETAG: External → Sanitized
-           fn::trust::Tested,  // 9  RETAG: Unverified → Tested
-           fn::ReprKind::Packed, fn::cost::Constant, fn::precision::Exact, fn::space::Bounded<sizeof(CntpHeader)>,
-           fn::OverflowMode::Trap, fn::MutationMode::Immutable, fn::ReentrancyMode::NonReentrant,
-           fn::size_pol::Sized<sizeof(CntpHeader)>, 1, fn::stale::Fresh>;
+// The frame as it comes from the wire.  trust_unverified names the strict
+// pole of Trust, and the two spellings take one cache slot.
+template <class Header>
+using UnvalidatedFrame = CntpFrame<Header, source::External, at::trust_unverified>;
 
-// ── Compile-time invariants ────────────────────────────────────────
-//
-// The two bindings are DIFFERENT types — a function demanding
-// `ValidatedCntpFrame` cannot be passed an `UnvalidatedCntpFrame`,
-// and the type system enforces this at the call site.
+// The frame after validation.  In production a refinement predicate also
+// gates this state, with at::refined_with<ValidCntpFrame>, and its check
+// runs the checksum and the structural test at construction.  The example
+// leaves the predicate out, so that the contrast stays on two axes.
+template <class Header>
+using ValidatedFrame = CntpFrame<Header, source::Sanitized, at::trust_tested>;
 
-static_assert(!std::is_same_v<UnvalidatedCntpFrame, ValidatedCntpFrame>,
-              "Validated and unvalidated frames MUST be distinct types — "
-              "otherwise the trust-state retag is unenforceable.");
+// The two states are different types.  A function that asks for a
+// validated frame cannot take an unvalidated one, and the type system
+// checks that at the call site.
+static_assert(!std::is_same_v<UnvalidatedFrame<CntpHeader>, ValidatedFrame<CntpHeader>>,
+              "the validated and the unvalidated frame must be different types, or the retag is not enforceable");
+static_assert(!std::is_convertible_v<UnvalidatedFrame<CntpHeader>, ValidatedFrame<CntpHeader>>);
 
-// EBO collapse: the 16-byte CntpHeader plus 18 type-level grades
-// equals 16 bytes (no per-axis runtime member added).
-static_assert(sizeof(UnvalidatedCntpFrame) == sizeof(CntpHeader));
-static_assert(sizeof(ValidatedCntpFrame) == sizeof(CntpHeader));
+// The atoms are empty types, so each binding is the 17-byte header.
+static_assert(sizeof(UnvalidatedFrame<CntpHeader>) == sizeof(CntpHeader));
+static_assert(sizeof(ValidatedFrame<CntpHeader>) == sizeof(CntpHeader));
 
-// Source axis discriminates: only the validated form carries source::Sanitized.
-static_assert(std::is_same_v<UnvalidatedCntpFrame::source_t, fn::source::External>);
-static_assert(std::is_same_v<ValidatedCntpFrame::source_t, fn::source::Sanitized>);
+// The Provenance axis tells the two states apart.
+static_assert(
+    std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Provenance>, at::from_source<source::External>>);
+static_assert(
+    std::is_same_v<ValidatedFrame<CntpHeader>::grade_on<Axis::Provenance>, at::from_source<source::Sanitized>>);
 
-// Trust axis discriminates: only the validated form carries trust::Tested.
-static_assert(std::is_same_v<UnvalidatedCntpFrame::trust_t, fn::trust::Unverified>);
-static_assert(std::is_same_v<ValidatedCntpFrame::trust_t, fn::trust::Tested>);
+// So does the Trust axis.
+static_assert(std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Trust>, at::trust_unverified>);
+static_assert(std::is_same_v<ValidatedFrame<CntpHeader>::grade_on<Axis::Trust>, at::trust_tested>);
 
-// Repr axis matches [[gnu::packed]] discipline.
-static_assert(UnvalidatedCntpFrame::repr_v == fn::ReprKind::Packed);
+// The Representation axis agrees with [[gnu::packed]].
+static_assert(std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Representation>,
+                             at::repr<::fixy::pole::ReprKind::Packed>>);
+
+// The Mutation axis takes the strict pole: no in-place mutation.
+static_assert(
+    std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Mutation>, axis_traits<Axis::Mutation>::strict>);
+
+// The two states take two federation cache slots.
+static_assert(::foundation::diag::row_hash_contribution_v<UnvalidatedFrame<CntpHeader>>
+              != ::foundation::diag::row_hash_contribution_v<ValidatedFrame<CntpHeader>>);
+
+// A frame is pure data, so each context admits it, the foreground
+// context too.  The same borrow with a Bg row is refused.
+static_assert(::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, UnvalidatedFrame<CntpHeader>>);
+static_assert(!::fixy::IsAccepted<CntpHeader, at::borrow, at::with_bg, at::as_public>,
+              "rule L007: a borrow cannot cross into a background context");
+
+// Why a frame fails validation.
+enum class CntpError : std::uint8_t {
+    BadMagic = 1,
+    BadVersion = 2,
+    BadLength = 3,
+};
+
+// The retag.  It mints a validated frame only after each check passes.
+// A production validator also checks the FNV-1a checksum.
+[[nodiscard]] std::expected<ValidatedFrame<CntpHeader>, CntpError>
+validate(const UnvalidatedFrame<CntpHeader>& raw) noexcept {
+    // The checks read one copy of the header.
+    const CntpHeader header = raw.value();
+    if (header.magic != cntp_magic) return std::unexpected(CntpError::BadMagic);
+    if (header.version != cntp_version) return std::unexpected(CntpError::BadVersion);
+    if (header.length < sizeof(CntpHeader)) return std::unexpected(CntpError::BadLength);
+    return ::fixy::mint_fn_for<ValidatedFrame>(header);
+}
 
 }  // namespace
 
 int main() {
-    // Simulate a frame just received from the wire.  In production,
-    // the bytes would come from a recv() / mmap()'d ring buffer.
+    // A frame from the wire.  In production the bytes come from recv() or
+    // from a ring buffer mapped with mmap().
     CntpHeader on_wire{};
-    on_wire.magic = 0x434E5450;  // 'CNTP'
+    on_wire.magic = cntp_magic;
     on_wire.flags = 0;
-    on_wire.version = 1;
+    on_wire.version = cntp_version;
     on_wire.length = sizeof(CntpHeader);
     on_wire.checksum = 0;  // a real frame computes FNV-1a here
 
-    UnvalidatedCntpFrame untrusted{on_wire};
+    const auto untrusted = ::fixy::mint_fn_for<UnvalidatedFrame>(on_wire);
 
-    // Packed-struct field reads require local copies — taking the
-    // address of a misaligned member would trigger -Werror=address-
-    // of-packed-member.
+    // A read of a packed field makes a local copy.  The address of a
+    // member that is not aligned trips -Werror=address-of-packed-member.
     {
         const auto magic = untrusted.value().magic;
         const auto version = untrusted.value().version;
         const auto length = untrusted.value().length;
-        std::printf("untrusted frame: magic=0x%08X version=%u length=%u "
-                    "(sizeof=%zu)\n",
-                    magic, version, length, sizeof(CntpHeader));
-    }
-
-    // A real validator would check magic + version + checksum and
-    // return std::expected<ValidatedCntpFrame, CntpError>.  Here we
-    // demonstrate the type-level retag by direct construction.
-    if (untrusted.value().magic == 0x434E5450 && untrusted.value().version == 1) {
-        ValidatedCntpFrame trusted{untrusted.value()};
-        std::printf("validated frame: source retagged External→Sanitized, "
-                    "trust retagged Unverified→Tested\n");
-        std::printf("ValidatedCntpFrame sizeof = %zu (== sizeof(CntpHeader) %zu)\n", sizeof(ValidatedCntpFrame),
+        std::printf("untrusted frame: magic=0x%08X version=%u length=%u (sizeof=%zu)\n", magic, version, length,
                     sizeof(CntpHeader));
     }
+
+    const auto trusted = validate(untrusted);
+    if (!trusted.has_value()) return 1;
+    std::printf("validated frame: source retagged External->Sanitized, trust retagged Unverified->Tested\n");
+    std::printf("ValidatedFrame sizeof = %zu (== sizeof(CntpHeader) %zu)\n", sizeof(ValidatedFrame<CntpHeader>),
+                sizeof(CntpHeader));
+
+    // A frame with a bad magic stays untrusted: validate() mints nothing.
+    CntpHeader forged = on_wire;
+    forged.magic = 0;
+    const auto refused = validate(::fixy::mint_fn_for<UnvalidatedFrame>(forged));
+    if (refused.has_value() || refused.error() != CntpError::BadMagic) return 2;
+    std::printf("forged frame: refused with BadMagic\n");
 
     return 0;
 }
