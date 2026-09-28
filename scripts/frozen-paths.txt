@@ -19,4 +19,3 @@ include/crucible/handles/
 include/crucible/concurrent/
 include/crucible/Fixy.h
 include/crucible/_Saturate.h
-src/fixy/_Fs.cpp

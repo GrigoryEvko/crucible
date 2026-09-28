@@ -337,7 +337,6 @@ add_library(crucible_dialect INTERFACE)
 # need `handle_contract_violation` at link time, because GCC 16 libstdc++
 # ships no default.  The weak symbol lets a production binary override it.
 add_library(crucible STATIC
-  src/fixy/_Fs.cpp
   src/canopy/Lifeguard.cpp
   src/cog/NumaNic.cpp
   src/cog/NicConfig.cpp

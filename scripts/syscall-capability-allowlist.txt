@@ -77,8 +77,6 @@ src/cntp/Pacing.cpp:if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_tim
 src/cntp/Pacing.cpp:const auto sent = ::send(nl.get(), &request, sizeof(request), 0);  — effects::IO via detail::query_active_qdisc_over (NETLINK send RTM_GETQDISC dump)
 src/cntp/Pacing.cpp:const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);  — effects::IO+Block via detail::query_active_qdisc_over (NETLINK recv, SO_RCVTIMEO-bounded)
 src/cntp/Pacing.cpp:::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value)));  — effects::IO+Block via detail::set_socket_pacing_rate_keyed (setsockopt SO_MAX_PACING_RATE, the key comes only from the CtxFitsSocketOption gate of set_socket_pacing_rate)
-src/fixy/_Fs.cpp:const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  — effects::IO via do_open_dirfd_impl, the body of open_dirfd (O_DIRECTORY|O_NOFOLLOW dirfd open)
-src/fixy/_Fs.cpp:rc = ::renameat2(AT_FDCWD, tmp, AT_FDCWD, target, RENAME_NOREPLACE);  — effects::IO via do_commit_atomic_impl (renameat2 with RENAME_NOREPLACE; the sole caller is commit_atomic<Atomicity> behind its CtxFitsCommitAtomic gate)
 src/perf/PmuSample.cpp:return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);  — effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
 src/perf/ProcGauges.cpp:r = ::close(fd_);  — effects::Bg via ScopedFd::close_ (close on RAII drop)
 src/perf/ProcGauges.cpp:fd = ::open(path, O_RDONLY | O_CLOEXEC);  — effects::Bg via open_ro (open /proc gauge O_RDONLY|O_CLOEXEC)
