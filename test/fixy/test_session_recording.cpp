@@ -60,8 +60,8 @@ constexpr bool round_trips(const s::SessionEvent& event) {
 }
 
 static_assert(round_trips(s::SessionEvent::send(kSelf, kPeer, s::default_schema_hash<int>)));
-static_assert(round_trips(
-    s::SessionEvent::send(kSelf, kPeer, s::default_schema_hash<int>, {}, s::DeliveryFate::LostToCrashedPeer)));
+static_assert(round_trips(s::SessionEvent::send(kSelf, kPeer, s::default_schema_hash<int>, {},
+                                                s::DeliveryFate::LostToCrashedPeer)));
 static_assert(round_trips(s::SessionEvent::recv(kSelf, kPeer, s::default_schema_hash<int>)));
 static_assert(round_trips(s::SessionEvent::select(kSelf, kPeer, 3)));
 static_assert(round_trips(s::SessionEvent::offer(kSelf, kPeer, 250)));
@@ -168,10 +168,9 @@ static_assert(error_of(with_byte(kLegacyBase, kReasonOffset, 2)) == s::EventDeco
 
 // An epoched hand-off decodes with its thresholds, and it writes the same
 // bytes back, although no factory writes one.
-constexpr auto kEpochedBytes =
-    with_byte(with_byte(s::SessionEvent::delegate_handoff(kSelf, kPeer, {5}, {6}).encode(), kOpOffset,
-                        std::to_underlying(s::SessionOp::EpochedDelegate)),
-              kEpochOffset, 7);
+constexpr auto kEpochedBytes = with_byte(with_byte(s::SessionEvent::delegate_handoff(kSelf, kPeer, {5}, {6}).encode(),
+                                                   kOpOffset, std::to_underlying(s::SessionOp::EpochedDelegate)),
+                                         kEpochOffset, 7);
 static_assert(s::decode_session_event(kEpochedBytes).has_value());
 static_assert(s::decode_session_event(kEpochedBytes)->op() == s::SessionOp::EpochedDelegate);
 static_assert(s::decode_session_event(kEpochedBytes)->min_epoch() == 7);
@@ -189,7 +188,8 @@ namespace {
 
 int check_log_decode() {
     std::vector<std::byte> block;
-    for (const auto& bytes : {kSendBytes, kCloseBytes, kStopBytes}) block.insert(block.end(), bytes.begin(), bytes.end());
+    for (const auto& bytes : {kSendBytes, kCloseBytes, kStopBytes})
+        block.insert(block.end(), bytes.begin(), bytes.end());
     const auto whole = s::decode_session_log(block);
     if (!whole || whole->size() != 3) return fail("a valid block of three records did not decode");
 
@@ -313,8 +313,9 @@ int check_crash_recording() {
         kPeer, kSelf);
 
     (void)std::move(q).crash(s::CrashCause::Throw);
-    if (log_q.size() != 1 || log_q[0].op() != s::SessionOp::Stop || log_q[0].stop_reason() != s::StopReasonKind::LocalAbort
-        || log_q[0].crash_cause() != s::CrashCause::Throw || log_q[0].stopped_role() != kPeer)
+    if (log_q.size() != 1 || log_q[0].op() != s::SessionOp::Stop
+        || log_q[0].stop_reason() != s::StopReasonKind::LocalAbort || log_q[0].crash_cause() != s::CrashCause::Throw
+        || log_q[0].stopped_role() != kPeer)
         return fail("the local crash was not recorded as a LocalAbort stop");
 
     auto p_sent = std::move(p).select<0>(push_label);
@@ -366,10 +367,10 @@ int check_checkpoint_recording() {
     Mailbox to_right;
     s::SessionEventLog log_left;
     s::SessionEventLog log_right;
-    auto left = s::mint_recorded_session(s::mint_checkpoint_session<Decide, Follow>(bg_ctx(), Port{&to_left, &to_right}),
-                                         log_left, kSelf, kPeer);
-    auto right = s::mint_recorded_session(s::mint_checkpoint_session<Follow, Decide>(bg_ctx(), Port{&to_right, &to_left}),
-                                          log_right, kPeer, kSelf);
+    auto left = s::mint_recorded_session(
+        s::mint_checkpoint_session<Decide, Follow>(bg_ctx(), Port{&to_left, &to_right}), log_left, kSelf, kPeer);
+    auto right = s::mint_recorded_session(
+        s::mint_checkpoint_session<Follow, Decide>(bg_ctx(), Port{&to_right, &to_left}), log_right, kPeer, kSelf);
     auto left_saved = std::move(left).select<0>(push_label);
     int got = 0;
     std::move(right).branch(pop_label, [&](auto branch) {
@@ -402,13 +403,13 @@ int check_checkpoint_recording() {
 // as a plain message.  The event holds the hash of the carried protocol and
 // the hash of the permission set that goes with it.
 //
-// The carried handle uses check::Off.  Under the default policy, GCC 16 at
-// -O3 reports -Wmaybe-uninitialized for the flag of the carried handle, in
-// the destructor of the moved-from parcel that Recorded::send passes on.
+// The carried handle keeps the default policy.  So the Release build of
+// this test compiles the send of a checked parcel through the recorder.
+// -Werror stops that build on each uninitialized read that GCC reports.
 
 using Carried = s::Send<int, s::End>;
 using NoPermissions = ::foundation::permissions::EmptyPermSet;
-using Parcel = s::DelegatedSession<Carried, Port, s::check::Off, NoPermissions>;
+using Parcel = s::DelegatedSession<Carried, Port, s::DefaultAbandonmentPolicy, NoPermissions>;
 
 // The outer channel holds one parcel.
 struct ParcelPort {
@@ -428,8 +429,7 @@ int check_handoff_recording() {
     auto receiver =
         s::mint_recorded_session(s::mint_session_handle<s::Recv<Parcel, s::End>>(ParcelPort{&held}), log, kPeer, kSelf);
 
-    auto parcel =
-        s::mint_delegated_session(s::mint_session_handle<Carried, Port, s::check::Off>(Port{&to_self, &to_peer}));
+    auto parcel = s::mint_delegated_session(s::mint_session_handle<Carried>(Port{&to_self, &to_peer}));
     (void)std::move(sender)
         .send(std::move(parcel),
               [](ParcelPort& port, Parcel& value) noexcept {
@@ -490,7 +490,8 @@ int check_keyed_recording() {
     auto left_value = std::move(left).select<1>(push_label);
     static_assert(std::is_same_v<typename decltype(left_value)::protocol, s::Send<int, s::End>>);
     (void)std::move(left_value).send(8, push_int).close();
-    if (to_right.slots.size() != 2) return fail("the keyed select did not put its label word and its value on the wire");
+    if (to_right.slots.size() != 2)
+        return fail("the keyed select did not put its label word and its value on the wire");
     int heard = 0;
     std::move(right).branch(pop_label, [&](auto right_value) {
         auto [value, right_end] = std::move(right_value).recv(pop_int);
@@ -500,7 +501,8 @@ int check_keyed_recording() {
     if (heard != 8) return fail("the value of the keyed message did not reach the receiver");
 
     constexpr s::LabelWord no_word{s::branch_wire_word_v<KeyedAsk, 1>};
-    if (log_left[0].op() != s::SessionOp::Select || log_left[0].branch_index() != 1 || log_left[0].label_word() != no_word)
+    if (log_left[0].op() != s::SessionOp::Select || log_left[0].branch_index() != 1
+        || log_left[0].label_word() != no_word)
         return fail("the keyed select did not record its index and its label word");
     if (log_right[0].op() != s::SessionOp::Offer || log_right[0].branch_index() != 0
         || log_right[0].label_word() != no_word)
@@ -525,8 +527,8 @@ int check_keyed_recording() {
     Mailbox step_in;
     s::SessionEventLog log_step;
     using SayNo = s::Send<s::PeerMsg<Carol, No, int>, s::End>;
-    auto stepper = s::mint_recorded_session(s::mint_session_handle<SayNo>(Port{&step_in, &step_out}), log_step, kSelf,
-                                            kPeer);
+    auto stepper =
+        s::mint_recorded_session(s::mint_session_handle<SayNo>(Port{&step_in, &step_out}), log_step, kSelf, kPeer);
     (void)std::move(stepper).send(push_label).send(9, push_int).close();
     if (step_out.slots.size() != 2 || step_out.slots.front() != s::step_wire_word_v<SayNo>
         || step_out.slots.front() != s::branch_wire_word_v<KeyedAsk, 1> || step_out.slots.back() != 9)

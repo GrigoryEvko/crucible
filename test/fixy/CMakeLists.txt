@@ -2620,7 +2620,7 @@ fixy_neg_compile_test(neg_sess_crash_token_send_without_refusal
   "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(typename P::message_type, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_recorded_token_send_without_refusal
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
-  "In instantiation of .static constexpr auto fixy::session::RecordingDoor::send\\(fixy::session::Recorded<Inner>&&, T, Transport\\)")
+  "In instantiation of .static constexpr auto fixy::session::RecordingDoor::send\\(fixy::session::Recorded<Inner>&&, T&&, Transport\\)")
 fixy_neg_compile_test(neg_sess_crash_send_transport_result
   ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
   "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(typename P::message_type, Transport\\)")

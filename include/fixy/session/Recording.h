@@ -160,7 +160,8 @@ template <typename T>
 
 template <typename Reason>
 [[nodiscard]] constexpr DetachReasonKind detach_kind() noexcept {
-    if constexpr (std::is_same_v<Reason, detach_reason::InfiniteLoopProtocol>) return DetachReasonKind::InfiniteLoopProtocol;
+    if constexpr (std::is_same_v<Reason, detach_reason::InfiniteLoopProtocol>)
+        return DetachReasonKind::InfiniteLoopProtocol;
     else if constexpr (std::is_same_v<Reason, detach_reason::TransportClosedOutOfBand>)
         return DetachReasonKind::TransportClosedOutOfBand;
     else if constexpr (std::is_same_v<Reason, detach_reason::TestInstrumentation>)
@@ -257,7 +258,7 @@ class RecordingDoor final {
                 using Branch = std::tuple_element_t<Is, Branches>;
                 if (taken == Is) {
                     if (const auto event = detail::recording::checkpoint_event<Branch>(recorder.self_, recorder.peer_,
-                                                                                      CheckpointRole::Passive))
+                                                                                       CheckpointRole::Passive))
                         record_(recorder, *event);
                 }
             }(),
@@ -279,18 +280,22 @@ public:
     // transport, which notes when the transport took the payload.  A payload
     // that no transport took, because the peer had crashed, is recorded as
     // lost to the crashed peer.
+    //
+    // The value goes by reference to the send of the inner handle, which
+    // takes it by value.  So the recorder moves a payload one time, as a
+    // plain send does.  It keeps no moved-from copy of the payload.
     template <typename Inner, typename T, typename Transport>
         requires is_send_v<typename Inner::protocol> && (!is_keyed_step_v<typename Inner::protocol>)
               && WriteTransport<Transport, typename Inner::resource_type, typename Inner::protocol::message_type>
-    [[nodiscard]] static constexpr auto send(Recorded<Inner>&& recorder, T value, Transport transport) {
+    [[nodiscard]] static constexpr auto send(Recorded<Inner>&& recorder, T&& value, Transport transport) {
         using Message = typename Inner::protocol::message_type;
         bool is_delivered = false;
         auto marked = detail::observed_write<Message, typename Inner::resource_type>(
             transport, [&is_delivered]() noexcept { is_delivered = true; });
-        auto result = std::move(recorder.inner_).send(std::move(value), marked);
-        record_(recorder, detail::recording::event_for_send<Message>(
-                              recorder.self_, recorder.peer_,
-                              is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
+        auto result = std::move(recorder.inner_).send(std::forward<T>(value), marked);
+        record_(recorder, detail::recording::event_for_send<Message>(recorder.self_, recorder.peer_,
+                                                                     is_delivered ? DeliveryFate::Delivered
+                                                                                  : DeliveryFate::LostToCrashedPeer));
         if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
             using Wrapped = decltype(wrap_(recorder, std::move(result.next)));
             return CrashSend<Wrapped, Message>{wrap_(recorder, std::move(result.next)), std::move(result.undelivered)};
@@ -323,9 +328,9 @@ public:
         auto marked = detail::observed_write<std::size_t, typename Inner::resource_type>(
             transport, [&is_delivered]() noexcept { is_delivered = true; });
         auto result = std::move(recorder.inner_).send(marked);
-        record_(recorder, detail::recording::event_for_send<Message>(
-                              recorder.self_, recorder.peer_,
-                              is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer));
+        record_(recorder, detail::recording::event_for_send<Message>(recorder.self_, recorder.peer_,
+                                                                     is_delivered ? DeliveryFate::Delivered
+                                                                                  : DeliveryFate::LostToCrashedPeer));
         if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
             using Wrapped = decltype(wrap_(recorder, std::move(result.next)));
             return CrashSend<Wrapped, Message>{wrap_(recorder, std::move(result.next)), std::move(result.undelivered)};
@@ -352,8 +357,8 @@ public:
         requires is_recv_v<typename Inner::protocol> && detail::recording::inner_can_detect_crash<Inner>
     [[nodiscard]] static constexpr auto recv(Recorded<Inner>&& recorder) {
         auto [record, next] = std::move(recorder.inner_).recv();
-        record_(recorder, SessionEvent::stop(recorder.self_, recorder.peer_, recorder.peer_, StopReasonKind::PeerCrashed,
-                                             record.cause));
+        record_(recorder, SessionEvent::stop(recorder.self_, recorder.peer_, recorder.peer_,
+                                             StopReasonKind::PeerCrashed, record.cause));
         return std::pair{record, wrap_(recorder, std::move(next))};
     }
 
@@ -412,7 +417,8 @@ public:
                     label = LabelWord{};
                 }
             }
-            record_(recorder, SessionEvent::offer(recorder.self_, recorder.peer_, static_cast<std::uint8_t>(taken), label));
+            record_(recorder,
+                    SessionEvent::offer(recorder.self_, recorder.peer_, static_cast<std::uint8_t>(taken), label));
             record_passive_checkpoint_<Branches>(recorder, taken, std::make_index_sequence<count>{});
             return std::invoke(handler, wrap_(recorder, std::move(next)));
         });
@@ -459,14 +465,14 @@ public:
     // refuses reaches the refusal of the inner handle.
     template <typename T, typename Transport>
         requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
-                 && WriteTransport<Transport, resource_type, typename protocol::message_type>
-    [[nodiscard]] constexpr auto send(T value, Transport transport) && {
-        return RecordingDoor::send(std::move(*this), std::move(value), std::move(transport));
+              && WriteTransport<Transport, resource_type, typename protocol::message_type>
+    [[nodiscard]] constexpr auto send(T&& value, Transport transport) && {
+        return RecordingDoor::send(std::move(*this), std::forward<T>(value), std::move(transport));
     }
 
     template <typename T, typename Transport>
         requires is_send_v<protocol> && (!is_keyed_step_v<protocol>)
-                 && (!WriteTransport<Transport, resource_type, typename protocol::message_type>)
+                  && (!WriteTransport<Transport, resource_type, typename protocol::message_type>)
     void send(T, Transport) && = delete("[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns "
                                         "false with the value unchanged while it has no room, or declares its wait, "
                                         "as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A write of "
@@ -475,14 +481,14 @@ public:
 
     template <typename Transport>
         requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
-                 && ReadTransport<Transport, resource_type, typename protocol::message_type>
+              && ReadTransport<Transport, resource_type, typename protocol::message_type>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         return RecordingDoor::recv(std::move(*this), std::move(transport));
     }
 
     template <typename Transport>
         requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
-                 && (!ReadTransport<Transport, resource_type, typename protocol::message_type>)
+                  && (!ReadTransport<Transport, resource_type, typename protocol::message_type>)
     void recv(Transport) && = delete("[Transport_Shape] a read either polls, as std::optional<T>(Resource&), and "
                                      "returns no value while nothing is there, or declares its wait, as "
                                      "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
@@ -493,14 +499,14 @@ public:
     // send.
     template <typename Transport>
         requires is_send_v<protocol> && is_keyed_step_v<protocol>
-                 && WriteTransport<Transport, resource_type, std::size_t>
+              && WriteTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {
         return RecordingDoor::send(std::move(*this), std::move(transport));
     }
 
     template <typename Transport>
         requires is_send_v<protocol> && is_keyed_step_v<protocol>
-                 && (!WriteTransport<Transport, resource_type, std::size_t>)
+                  && (!WriteTransport<Transport, resource_type, std::size_t>)
     void send(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
                                      "bool(Resource&, std::size_t), or declares its wait, as "
                                      "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
@@ -511,14 +517,14 @@ public:
     // value.
     template <typename Transport>
         requires is_recv_v<protocol> && is_keyed_step_v<protocol>
-                 && ReadTransport<Transport, resource_type, std::size_t>
+              && ReadTransport<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         return RecordingDoor::recv(std::move(*this), std::move(transport));
     }
 
     template <typename Transport>
         requires is_recv_v<protocol> && is_keyed_step_v<protocol>
-                 && (!ReadTransport<Transport, resource_type, std::size_t>)
+                  && (!ReadTransport<Transport, resource_type, std::size_t>)
     void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
                                      "std::optional<std::size_t>(Resource&), or declares its wait, as "
                                      "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of another "
@@ -574,7 +580,8 @@ public:
     template <typename Reason>
         requires DetachReason<Reason>
     void detach(Reason reason) && {
-        record_(SessionEvent::detach(self_, peer_, detail::recording::detach_kind<Reason>(), default_schema_hash<Reason>));
+        record_(
+            SessionEvent::detach(self_, peer_, detail::recording::detach_kind<Reason>(), default_schema_hash<Reason>));
         std::move(inner_).detach(reason);
     }
 
