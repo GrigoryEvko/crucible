@@ -182,7 +182,6 @@ static_assert(::fixy::axis_name(Axis::MemoryScope) == "MemoryScope");
 // base that closes their set.
 static_assert(std::is_empty_v<::fixy::tags::source::Sanitized>);
 static_assert(std::is_empty_v<::fixy::tags::vessel_trust::FromPytorch>);
-static_assert(std::is_empty_v<::fixy::tags::hash_family::FamilyB>);
 static_assert(std::is_empty_v<::fixy::tags::secret_policy::AuditedLogging>);
 static_assert(
     std::is_base_of_v<::fixy::tags::secret_policy::secret_policy_base, ::fixy::tags::secret_policy::AuthorizedReplay>);

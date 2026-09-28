@@ -12,10 +12,13 @@
 //
 // Old spellings: include/crucible/safety/_Tagged.h (source, trust,
 // access, version, vessel_trust), include/crucible/safety/source/_Path.h
-// and _Arch.h (the path and architecture members of source),
-// include/crucible/safety/_Secret.h (secret_policy) and
-// include/crucible/Types.h (hash_family), reached from the old
+// and _Arch.h (the path and architecture members of source) and
+// include/crucible/safety/_Secret.h (secret_policy), reached from the old
 // fixy tree through the aliases of include/crucible/fixy/_Source.h.
+//
+// The hash families are not here.  include/crucible/Types.h holds them
+// with the strong hash types and hash_family_of, which gives the family
+// of each hash type.
 
 namespace fixy::tags {
 
@@ -323,10 +326,5 @@ struct UserDisplay final : secret_policy_base {};  // display in UI (e.g., last-
 struct AuthorizedReplay final : secret_policy_base {};  // admits a bounded replay window
 
 }  // namespace secret_policy
-
-namespace hash_family {
-struct FamilyA {};
-struct FamilyB {};
-}  // namespace hash_family
 
 }  // namespace fixy::tags

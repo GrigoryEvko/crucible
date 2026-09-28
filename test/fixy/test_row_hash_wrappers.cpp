@@ -646,7 +646,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::tags::version, kGradeVocabulary},
     {^^::fixy::tags::vessel_trust, kGradeVocabulary},
     {^^::fixy::tags::secret_policy, kGradeVocabulary},
-    {^^::fixy::tags::hash_family, kGradeVocabulary},
     {^^::fixy::pole, kGradeVocabulary},
     {^^::fixy::pole::pred, kGradeVocabulary},
     {^^::fixy::pole::proto, kGradeVocabulary},
