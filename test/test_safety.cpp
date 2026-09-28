@@ -10,7 +10,6 @@
 #include <crucible/safety/_Secret.h>
 #include <crucible/safety/_Tagged.h>
 #include <crucible/sessions/_Session.h>
-#include <foundation/Platform.h>
 
 #include "test_assert.h"
 
@@ -619,26 +618,6 @@ static void test_mutation() {
     std::printf("  Mutation:       ok\n");
 }
 
-// Every macro here is given a true expression. A violation aborts, which
-// would take the test binary with it, so the firing side is not exercised.
-static void test_assertion_triad() {
-    int x = 42;
-    CRUCIBLE_ASSERT(x == 42);
-    CRUCIBLE_DEBUG_ASSERT(x > 0);
-    CRUCIBLE_INVARIANT(x > 0);
-
-    // The answer depends on how the binary was started, so only the fact
-    // that the probe links and returns a defined bool is checked.
-    bool dbg = ::foundation::detail::is_debugger_present();
-    (void)dbg;
-
-    // The call traps only under a debugger, and the test runner attaches
-    // none, so it is a no-op here.
-    ::foundation::detail::breakpoint_if_debugging();
-
-    std::printf("  AssertionTriad: ok (debugger_present=%s)\n", dbg ? "true" : "false");
-}
-
 static void test_file_handle() {
     static_assert(sizeof(FileHandle) == sizeof(int), "FileHandle must be a zero-cost int wrapper");
     static_assert(!std::is_copy_constructible_v<FileHandle>);
@@ -871,7 +850,6 @@ int main() {
     test_mutation();
     test_file_handle();
     test_constant_time();
-    test_assertion_triad();
     test_not_inherited();
     test_publish_slot();
     std::printf("All safety wrappers compile and pass smoke test.\n");

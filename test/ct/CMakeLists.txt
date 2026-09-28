@@ -75,7 +75,7 @@ set(CRUCIBLE_CT_TAINT_FLAGS
   -march=x86-64-v3 -DNDEBUG -g -fno-sanitize=all
   -freflection -fcontracts -fcontract-evaluation-semantic=observe)
 
-# One taint test per tree and optimization level.  The same binary also
+# One taint test per source and optimization level.  The same binary also
 # runs the two leaking controls, which pass only when memcheck reports the
 # leak, so a blind harness fails.
 function(ct_taint_test source opt)
@@ -97,5 +97,3 @@ endfunction()
 
 ct_taint_test(test_ct_taint_fixy O2)
 ct_taint_test(test_ct_taint_fixy O3)
-ct_taint_test(test_ct_taint_safety O2)
-ct_taint_test(test_ct_taint_safety O3)

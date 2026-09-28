@@ -1,10 +1,9 @@
 #pragma once
 
-// The taint checks that both trees share.  `Ct` names one tree's
-// constant-time primitives through static member functions, so the same
-// check runs over fixy::ct and over the old crucible::safety::ct.  Each
-// check marks its operands secret, runs the primitive inline and out of
-// line, and makes only the result public.
+// The taint checks of the constant-time primitives.  `Ct` names the
+// primitives through static member functions, so a check does not spell
+// the namespace of fixy::ct.  Each check marks its operands secret, runs
+// the primitive inline and out of line, and makes only the result public.
 
 #include "taint.h"
 
@@ -181,7 +180,7 @@ int run_control(Leak&& leak) noexcept {
 }
 
 // The shared entry: a control mode when one is named, the checks
-// otherwise.  `run_checks` is the tree's own list.
+// otherwise.  `run_checks` is the list of checks of the test.
 template <typename Checks>
 int run(int argc, char** argv, char const* tree, Checks&& run_checks) noexcept {
     require_valgrind();

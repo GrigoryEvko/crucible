@@ -3,10 +3,10 @@
 
 The taint tests run under valgrind, which cannot decode AVX-512, so they
 build for x86-64-v3.  This guard covers the code that the release build
-really emits.  It compiles one wrapper per constant-time primitive, per
-unsigned width and per tree (fixy::ct and the old crucible::safety::ct), at
--O2 and -O3, for -march=native, x86-64-v3 and the x86-64 baseline.  Then
-it reads the disassembly of every wrapper and refuses:
+really emits.  It compiles one wrapper per constant-time primitive of
+fixy::ct and per unsigned width, at -O2 and -O3, for -march=native,
+x86-64-v3 and the x86-64 baseline.  Then it reads the disassembly of every
+wrapper and refuses:
 
   - a conditional branch (any jcc, jrcxz, loop): its direction would leak
     the operand it tests
@@ -55,7 +55,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 import tsast  # noqa: E402
 
 WIDTHS = (("u8", "std::uint8_t"), ("u16", "std::uint16_t"), ("u32", "std::uint32_t"), ("u64", "std::uint64_t"))
-TREES = (("fixy", "::fixy::ct", "fixy/ConstantTime.h"), ("safety", "::crucible::safety::ct", "crucible/safety/_ConstantTime.h"))
+CT_NAMESPACE = "::fixy::ct"
 STATIC_EQ_LENGTHS = (16, 32)
 MARCHES = ("native", "x86-64-v3", "x86-64")
 OPTS = ("-O2", "-O3")
@@ -139,38 +139,34 @@ def census_prelude() -> str:
 def wrapper_source() -> tuple[str, dict[str, bool]]:
     """Return the generated translation unit and {wrapper name: takes pointers}."""
     names: dict[str, bool] = {}
+    ns = CT_NAMESPACE
     lines = [
         "#include <fixy/ConstantTime.h>",
-        "#include <crucible/safety/_ConstantTime.h>",
         "#include <cstddef>",
         "#include <cstdint>",
         census_prelude(),
+        f"static_assert(ct_disassembly::covers_every_primitive(^^{ns}), \"{ns} holds a function that "
+        "scripts/check-ct-disassembly.py does not wrap. Add its wrappers and its name to COVERED_NAMES, "
+        "so the compiled code of the new primitive is checked for branches.\");",
     ]
-    for prefix, ns, _ in TREES:
-        lines.append(
-            f"static_assert(ct_disassembly::covers_every_primitive(^^{ns}), \"{ns} holds a function that "
-            "scripts/check-ct-disassembly.py does not wrap. Add its wrappers and its name to COVERED_NAMES, "
-            "so the compiled code of the new primitive is checked for branches.\");"
+    for tn, ty in WIDTHS:
+        specs = (
+            ("mask_from_bit", f"{ty} b", f"return {ns}::mask_from_bit<{ty}>(b);", ty),
+            ("select", f"{ty} b, {ty} x, {ty} y", f"return {ns}::select<{ty}>(b, x, y);", ty),
+            ("less", f"{ty} x, {ty} y", f"return {ns}::less<{ty}>(x, y);", ty),
+            ("is_zero", f"{ty} x", f"return {ns}::is_zero<{ty}>(x);", ty),
+            ("cswap", f"{ty} c, {ty}* x, {ty}* y", f"{ns}::cswap<{ty}>(c, *x, *y);", "void"),
         )
-    for prefix, ns, _ in TREES:
-        for tn, ty in WIDTHS:
-            specs = (
-                ("mask_from_bit", f"{ty} b", f"return {ns}::mask_from_bit<{ty}>(b);", ty),
-                ("select", f"{ty} b, {ty} x, {ty} y", f"return {ns}::select<{ty}>(b, x, y);", ty),
-                ("less", f"{ty} x, {ty} y", f"return {ns}::less<{ty}>(x, y);", ty),
-                ("is_zero", f"{ty} x", f"return {ns}::is_zero<{ty}>(x);", ty),
-                ("cswap", f"{ty} c, {ty}* x, {ty}* y", f"{ns}::cswap<{ty}>(c, *x, *y);", "void"),
-            )
-            for fn, params, body, ret in specs:
-                name = f"ct_{prefix}_{fn}_{tn}"
-                names[name] = "*" in params
-                lines.append(f'extern "C" {ret} {name}({params}) noexcept {{ {body} }}')
+        for fn, params, body, ret in specs:
+            name = f"ct_fixy_{fn}_{tn}"
+            names[name] = "*" in params
+            lines.append(f'extern "C" {ret} {name}({params}) noexcept {{ {body} }}')
     for n in STATIC_EQ_LENGTHS:
         name = f"ct_fixy_eq_static_{n}"
         names[name] = True
         lines.append(
             f'extern "C" bool {name}(const std::byte* a, const std::byte* b) noexcept {{ '
-            f"return ::fixy::ct::eq(std::span<const std::byte, {n}>{{a, {n}}}, "
+            f"return {ns}::eq(std::span<const std::byte, {n}>{{a, {n}}}, "
             f"std::span<const std::byte, {n}>{{b, {n}}}); }}"
         )
     for rel, file_cases in CTCRYPTO_CASES.items():
@@ -391,7 +387,7 @@ def ctcrypto_problems(repo: pathlib.Path, cases: dict[str, tuple[tuple[str, bool
 
 
 def run_guard(cxx: str) -> int:
-    """Check every wrapper of both trees; return the exit code."""
+    """Check every wrapper; return the exit code."""
     source_text, names = wrapper_source()
     with tempfile.TemporaryDirectory(prefix="ct-disassembly-") as tmp:
         workdir = pathlib.Path(tmp)
@@ -491,7 +487,7 @@ def run_self_test(cxx: str) -> int:
         print(f"self-test: the clean function was flagged: {clean_hits}")
         failures += 1
     source_text, names = wrapper_source()
-    if len(names) != len(TREES) * len(WIDTHS) * 5 + len(STATIC_EQ_LENGTHS):
+    if len(names) != len(WIDTHS) * 5 + len(STATIC_EQ_LENGTHS):
         print("self-test: the wrapper list lost a primitive")
         failures += 1
     # The census must stop a compile when a namespace of primitives gains

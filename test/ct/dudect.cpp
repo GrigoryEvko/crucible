@@ -17,7 +17,6 @@
 // and the harness exits 1 when the control does not show a leak, because
 // a harness that sees nothing proves nothing.
 
-#include <crucible/safety/_ConstantTime.h>
 #include <fixy/ConstantTime.h>
 
 #include <algorithm>
@@ -151,7 +150,7 @@ template <typename Ct>
     return 1;
 }
 
-// The two trees' primitives at 64 bits.
+// The fixy::ct primitives at 64 bits, spelled for the probes.
 struct FixyCt {
     static std::uint64_t mask_from_bit(std::uint64_t bit) noexcept { return ::fixy::ct::mask_from_bit(bit); }
     static std::uint64_t select(std::uint64_t bit, std::uint64_t a, std::uint64_t b) noexcept {
@@ -161,23 +160,6 @@ struct FixyCt {
     static std::uint64_t is_zero(std::uint64_t x) noexcept { return ::fixy::ct::is_zero(x); }
     static void cswap(std::uint64_t bit, std::uint64_t& a, std::uint64_t& b) noexcept { ::fixy::ct::cswap(bit, a, b); }
     static bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept { return ::fixy::ct::eq(a, b); }
-};
-
-struct SafetyCt {
-    static std::uint64_t mask_from_bit(std::uint64_t bit) noexcept {
-        return ::crucible::safety::ct::mask_from_bit(bit);
-    }
-    static std::uint64_t select(std::uint64_t bit, std::uint64_t a, std::uint64_t b) noexcept {
-        return ::crucible::safety::ct::select(bit, a, b);
-    }
-    static std::uint64_t less(std::uint64_t a, std::uint64_t b) noexcept { return ::crucible::safety::ct::less(a, b); }
-    static std::uint64_t is_zero(std::uint64_t x) noexcept { return ::crucible::safety::ct::is_zero(x); }
-    static void cswap(std::uint64_t bit, std::uint64_t& a, std::uint64_t& b) noexcept {
-        ::crucible::safety::ct::cswap(bit, a, b);
-    }
-    static bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept {
-        return ::crucible::safety::ct::eq(a, b);
-    }
 };
 
 struct Target {
@@ -193,12 +175,6 @@ constexpr std::array kTargets{
     Target{"fixy cswap", probe_cswap<FixyCt>},
     Target{"fixy eq, 32 bytes", probe_eq<FixyCt>},
     Target{"fixy eq, static 32 bytes", probe_fixy_eq_static},
-    Target{"safety mask_from_bit", probe_mask_from_bit<SafetyCt>},
-    Target{"safety select", probe_select<SafetyCt>},
-    Target{"safety less", probe_less<SafetyCt>},
-    Target{"safety is_zero", probe_is_zero<SafetyCt>},
-    Target{"safety cswap", probe_cswap<SafetyCt>},
-    Target{"safety eq, 32 bytes", probe_eq<SafetyCt>},
 };
 
 // Time one batch of calls.  The classes and the inputs are ready before

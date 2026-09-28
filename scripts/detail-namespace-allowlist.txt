@@ -76,7 +76,7 @@ test/foundation/test_effects_core.cpp ::foundation::effects::detail x14 — runs
 test/foundation/test_lattices_bands.cpp ::foundation::algebra::lattices::detail x18 — runs the band lattice self-test namespaces
 test/foundation/test_lattices_core.cpp ::foundation::algebra::lattices::detail x8 — runs the core lattice self-test namespaces
 test/foundation/test_permissions_compile.cpp ::foundation::permissions::detail x1 — runs the permission-set smoke namespace
+test/foundation/test_platform.cpp ::foundation::detail x2 — asks the layer whether a debugger is attached
 test/foundation/test_reflect.cpp ::foundation::reflect::detail x2 — runs the reflection self-test namespace
 test/foundation/test_row_hash.cpp ::foundation::diag::detail x16 — tests the sort helper of the row hash
 test/foundation/test_row_mismatch.cpp ::foundation::diag::detail x3 — reads the text of a row mismatch diagnostic
-test/test_safety.cpp ::foundation::detail x2 — asks the layer whether a debugger is attached

@@ -1,12 +1,14 @@
-// The ctgrind check of the new-tree constant-time surface: every fixy::ct
-// primitive at every unsigned width, the byte comparison at several
-// lengths and in its static-extent form, the constant-time session
-// carrier, and a Secret derived through the primitives.  Each secret
-// operand is undefined to memcheck, so a branch or an address that depends
-// on it is a memcheck error, and --error-exitcode fails the test.
+// The ctgrind check of the constant-time surface: every fixy::ct primitive
+// at every unsigned width, the byte comparison at several lengths and in
+// its static-extent form, the constant-time session carrier, a Secret
+// derived through the primitives, and the admission of the mTLS private
+// key.  Each secret operand is undefined to memcheck, so a branch or an
+// address that depends on it is a memcheck error, and --error-exitcode
+// fails the test.
 
 #include "checks.h"
 
+#include <crucible/cntp/MtlsTransport.h>
 #include <fixy/ConstantTime.h>
 #include <fixy/Secret.h>
 #include <fixy/Tags.h>
@@ -86,6 +88,26 @@ void check_secret_derivation(Tally& tally) noexcept {
     }
 }
 
+// The mTLS private key is the one key the production tree holds.  Its
+// admission copies the secret bytes into the key buffer, the key moves
+// into the Secret, and the destructor zeroizes each copy.  The length of
+// the key is public, so only the bytes are secret.
+void check_mtls_private_key(Tally& tally) noexcept {
+    using ::crucible::cntp::MtlsKeyAlgorithm;
+    std::array<std::byte, 64> pem{};
+    for (std::size_t i = 0; i < pem.size(); ++i)
+        pem[i] = static_cast<std::byte>(opaque(static_cast<unsigned>(i * 13u + 5u)));
+    ct_taint::make_secret_bytes(pem.data(), pem.size());
+    {
+        auto admitted =
+            ::crucible::cntp::admit_private_key_pem<MtlsKeyAlgorithm::Ed25519>(std::span<const std::byte>{pem});
+        tally.expect(admitted.has_value(), "mTLS private key admission");
+        auto key = std::move(admitted).value();
+        auto moved = std::move(key);
+        tally.expect(moved.size() == pem.size(), "mTLS private key length");
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -94,5 +116,6 @@ int main(int argc, char** argv) {
         ct_taint::check_eq<FixyCt>(tally);
         check_session_payload(tally);
         check_secret_derivation(tally);
+        check_mtls_private_key(tally);
     });
 }
