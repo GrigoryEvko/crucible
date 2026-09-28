@@ -1,5 +1,5 @@
 #include <crucible/Vigil.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include <bit>
@@ -260,7 +260,7 @@ static void test_cache_miss_fallback() {
 }
 
 static void test_cache_dedup_and_cap() {
-    auto test = effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     RegionCache cache;
 
     assert(cache.size() == 0);
@@ -379,7 +379,7 @@ static void test_cache_repeated_switching() {
 // argument for deleting the repair path, not for keeping a cache whose
 // entries can be silently unfindable: insert is public and takes any region.
 static void test_find_alternate_tracks_live_plan() {
-    auto test = effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     RegionCache cache;
     Arena arena(1 << 14);
 

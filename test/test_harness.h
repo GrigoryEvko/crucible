@@ -4,8 +4,9 @@
 // add sleep_for, yield, futex or condition_variable.
 
 #include <crucible/Vigil.h>
-#include <crucible/effects/_ExecCtx.h>
-#include <crucible/fixy/_Sched.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/Sched.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <cstdint>
 #include <expected>
@@ -25,7 +26,11 @@ inline void elevate_priority() {
     // The affinity probe stays a raw sched_setaffinity because it pins to the
     // calling thread's current cpu, which is a runtime choice.  The mint path
     // takes the mask as a template argument and cannot express it.
-    auto p = ::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()});
+    //
+    // The priority mint admits only a context that owns Bg or Init, and a
+    // test context owns neither.  So the harness takes the Init source from
+    // the test witness and mints through the cold init context.
+    auto p = ::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     (void)p;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
@@ -38,10 +43,10 @@ inline void elevate_priority() {
 // TU that includes this header.
 #ifdef __linux__
 static_assert(
-    std::is_same_v<decltype(::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::TestRunnerCtx{::crucible::effects::testing::test()})),
-                   std::expected<::crucible::fixy::sched::SchedPriority<-10>, int>>,
+    std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{::foundation::effects::testing::init()})),
+                   std::expected<::fixy::sched::SchedPriority<-10>, int>>,
     "elevate_priority must mint SchedPriority<-10> via "
-    "fixy::sched::mint_priority<-10>(TestRunnerCtx).");
+    "fixy::sched::mint_priority<-10>(ColdInitCtx).");
 #endif
 
 // Waits for the background thread to publish a region.  Replay has not
