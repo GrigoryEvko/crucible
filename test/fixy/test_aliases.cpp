@@ -59,6 +59,13 @@ static_assert(fixy::band_tier_v<TotIoMove> == fixy::DetSafeTier_v::Pure);
 static_assert(std::is_same_v<fixy::band_value_t<PureMove>, Computation<Row<>, MoveOnlyValue>>);
 static_assert(std::is_same_v<fixy::band_value_t<TotIoInt>::row_type, Row<Effect::IO>>);
 
+// Tot keeps the row it names.  It is Pure exactly at the pure row, so an
+// effectful Tot does not collapse into Pure.
+template <typename R>
+inline constexpr bool tot_is_pure = std::is_same_v<fixy::Tot<R, int>, fixy::Pure<int>>;
+static_assert(tot_is_pure<fixy::PureRow> && !tot_is_pure<Row<Effect::IO>> && !tot_is_pure<fixy::DivRow>
+              && !tot_is_pure<fixy::STRow> && !tot_is_pure<fixy::AllRow>);
+
 static_assert(std::is_copy_constructible_v<PureInt>);
 static_assert(!std::is_copy_constructible_v<PureMove>);
 static_assert(std::is_move_constructible_v<PureMove>);

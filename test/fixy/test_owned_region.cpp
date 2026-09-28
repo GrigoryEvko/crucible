@@ -104,6 +104,17 @@ static_assert(!::fixy::ArrayArena<Arena, ::foundation::permissions::Permission<D
 
 inline ::foundation::effects::Alloc test_alloc_token() noexcept { return ::foundation::effects::Alloc{}; }
 
+// A lookalike declares the two member types that the extractors read, so
+// a refusal of it is the constraint's and not a missing member's.
+struct RegionLookalike {
+    using value_type = int;
+    using tag_type = DataA;
+};
+template <typename T>
+concept HasRegionValue = requires { typename ::fixy::owned_region_value_t<T>; };
+template <typename T>
+concept HasRegionTag = requires { typename ::fixy::owned_region_tag_t<T>; };
+
 void test_compile_time_properties() {
     // A region is a pointer and a count.  The permission token costs
     // nothing because it has no state to store.
@@ -150,6 +161,9 @@ void test_compile_time_properties() {
     static_assert(::fixy::IsOwnedRegion<OR_int_y const&>);
     static_assert(std::is_same_v<::fixy::owned_region_value_t<OR_float_x&&>, float>);
     static_assert(std::is_same_v<::fixy::owned_region_tag_t<OR_int_y const&>, DataB>);
+    static_assert(HasRegionValue<OR_int_x> && HasRegionTag<OR_int_x>);
+    static_assert(!HasRegionValue<RegionLookalike> && !HasRegionTag<RegionLookalike>);
+    static_assert(!HasRegionValue<int> && !HasRegionTag<void>);
 }
 
 void test_adopt_and_view() {

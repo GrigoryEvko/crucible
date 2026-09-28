@@ -117,6 +117,23 @@ static_assert(count_lamp_single_bit_enumerators() == 3);
 }
 static_assert(magenta_spells_red_and_blue());
 
+// An unscoped enum converts to its integer on its own, so the typed walks
+// refuse it by the ScopedEnum constraint.  It has an underlying type, so
+// the refusal is the constraint's and not a failed underlying_type_t.
+enum LegacyLamp : std::uint8_t {
+    LegacyRed = 0x01,
+    LegacyBlue = 0x04,
+};
+
+template <typename E>
+concept RendersBits =
+    requires(char* out, std::size_t cap) { fr::bits_to_string<E>(std::underlying_type_t<E>{}, out, cap); };
+template <typename E>
+concept WalksEnumerators = requires { fr::for_each_enumerator<E>([](E, std::string_view) noexcept {}); };
+
+static_assert(RendersBits<Lamp> && !RendersBits<LegacyLamp>);
+static_assert(WalksEnumerators<Lamp> && !WalksEnumerators<LegacyLamp>);
+
 // Two distinct types take distinct ids, and two spellings of one type take
 // one id.
 using test_reflect_types::Alpha;

@@ -141,6 +141,13 @@ foundation_neg_compile_test(neg_graded_element_grade_outside_the_order
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "TrivialChainLattice, unsigned char>::Graded\\(9\\)")
 
+# Where the grade is the value, the grade that the keyed constructor
+# takes is a witness.  The same guard refuses a witness inside the order
+# that names another grade.
+foundation_neg_compile_test(neg_graded_witness_names_another_grade
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
+  "MonotoneLattice<int, std::less<int> >, int>::Graded<\\{anonymous\\}::fixture_authority>\\(\\{anonymous\\}::fixture_authority::key\\(\\), 5, 10\\)")
+
 # A stored grade is a claim about the value, and each door that makes one
 # asks for a grade_key<Authority>.  Braces with no key meet no
 # constructor, a key built outside its authority meets the private
@@ -584,6 +591,19 @@ foundation_neg_compile_test(neg_post_violated_at_consteval
 # registers test_reflect for test/test_reflect.cpp, and a CMake target
 # name is global.
 foundation_test(test_reflect_foundation test_reflect.cpp)
+
+# The enumerator walk calls its callback with a value and a name, so a
+# callback of another arity meets no call.  bits_to_string admits a null
+# buffer only with a capacity of 0, and its precondition stops a constant
+# evaluation that breaks the rule.  GCC names no call site for a failed
+# contract predicate, so the second regex of that fixture is the header
+# that holds the contract.
+foundation_neg_compile_test(neg_reflect_for_each_enumerator_zero_arg_callback
+  "foundation/reflect/EnumName\\.h:[0-9]+:[0-9]+: error: no match for call to .\\(main\\(\\)::<lambda\\(\\)>\\) \\(const \\{anonymous\\}::Signal&, const std::basic_string_view<char>&\\)."
+  "candidate expects 0 arguments, 2 provided")
+foundation_neg_compile_test(neg_reflect_bits_to_string_null_buffer_with_capacity
+  "error: contract predicate is false in constant expression"
+  "foundation/reflect/Enumerate\\.h:[0-9]+:[0-9]+: error: contract predicate")
 
 # The namespace-member relation of foundation/diag/FailClosed.h.
 foundation_test(test_fail_closed)
@@ -1339,6 +1359,16 @@ foundation_neg_compile_test(neg_diag_mint_diagnostic_refuses_a_class_without_the
 foundation_neg_compile_test(neg_diag_mint_diagnostic_refuses_the_tag_base_itself
   "no matching function for call to .mint_diagnostic<foundation::diag::tag_base>\\(\\)."
   "the expression .is_diagnostic_class_v<Tag> \\[with Tag = foundation::diag::tag_base\\]. evaluated to .false.")
+
+# A tag accessor over a plain type, and category_of_v over a tag that the
+# closed Catalog does not hold, each reach a static_assert in the header.
+# The second regex names the instantiation the compiler refused.
+foundation_neg_compile_test(neg_diag_accessor_refuses_a_non_tag
+  "static assertion failed: foundation::diag \\[DiagnosticAccessor_NonTag\\]"
+  "required from .constexpr const std::string_view foundation::diag::diagnostic_name_v<int>.")
+foundation_neg_compile_test(neg_diag_category_of_refuses_an_unregistered_tag
+  "static assertion failed: category_of_v<Tag>: Tag is not registered in the foundation Catalog"
+  "In instantiation of .struct foundation::diag::detail::category_of_impl<\\{anonymous\\}::user_local_tag>.")
 
 # ── The row hash, as one fold ─────────────────────────────────────────
 #

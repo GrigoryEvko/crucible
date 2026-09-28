@@ -272,6 +272,21 @@ static_assert(!fa::is_graded_wrapper_v<int>);
 static_assert(!fa::is_graded_wrapper_v<void*>);
 static_assert(!fa::is_graded_wrapper_v<std::string_view>);
 
+// A class that forwards the whole surface of a real substrate and names
+// no lattice_type is not a wrapper.  The same class with lattice_type is
+// one, so the refusal is the missing member's.
+struct NamesNoLattice {
+    using value_type = int;
+    using graded_type = Linear<int>::graded_type;
+    static constexpr fa::ModalityKind modality = graded_type::modality;
+    static consteval std::string_view value_type_name() noexcept { return graded_type::value_type_name(); }
+    static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
+};
+struct NamesTheLattice : NamesNoLattice {
+    using lattice_type = graded_type::lattice_type;
+};
+static_assert(!fa::is_graded_wrapper_v<NamesNoLattice> && fa::is_graded_wrapper_v<NamesTheLattice>);
+
 // The concept compares each forwarder's string with the substrate's.
 // This repeats that comparison outside the concept, so that the two
 // cannot drift together.

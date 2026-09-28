@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <ctime>
 #include <limits>
+#include <meta>
 #include <optional>
 #include <system_error>
 #include <thread>
@@ -42,6 +43,35 @@ namespace {
 
 using BootU64 = fixy::BootClockBytes<std::uint64_t>;
 using MonoU64 = fixy::MonotonicClockBytes<std::uint64_t>;
+
+template <typename A, typename B>
+concept compares_with = requires(A const& lhs, B const& rhs) { lhs == rhs; };
+
+// A reading of one clock never becomes a reading of another: no
+// conversion, construction, assignment, swap or comparison crosses two
+// sources.  One source copies, assigns, swaps and compares with itself,
+// so each refusal is not vacuous.
+[[nodiscard]] consteval bool sources_stay_apart() noexcept {
+    static constexpr auto sources = std::define_static_array(std::meta::enumerators_of(^^fixy::ClockSource_v));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto held_info : sources) {
+        using Held = fixy::ClockSource<([:held_info:]), std::uint64_t>;
+        template for (constexpr auto other_info : sources) {
+            using Other = fixy::ClockSource<([:other_info:]), std::uint64_t>;
+            constexpr bool is_same_source = std::is_same_v<Held, Other>;
+            if (std::is_convertible_v<Other, Held> != is_same_source) return false;
+            if (std::is_constructible_v<Held, Other const&> != is_same_source) return false;
+            if (std::is_assignable_v<Held&, Other const&> != is_same_source) return false;
+            if (std::is_assignable_v<Held&, Other&&> != is_same_source) return false;
+            if (std::is_swappable_with_v<Held&, Other&> != is_same_source) return false;
+            if (compares_with<Held, Other> != is_same_source) return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(sources_stay_apart());
 
 // Each context is handed the capability it claims: a context is not
 // evidence of a capability, it carries one.

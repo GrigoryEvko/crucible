@@ -127,6 +127,21 @@ static_assert(minted_and_consumed == 7);
 constexpr int affine_minted = ::fixy::mint_affine<int>(9).peek();
 static_assert(affine_minted == 9);
 
+// Each mint builds the payload from its arguments, and it refuses
+// arguments that no constructor of the payload takes.
+struct OnlyIntCtor {
+    int value;
+    constexpr explicit OnlyIntCtor(int held) noexcept : value{held} {}
+};
+
+template <typename T, typename... Args>
+concept MintsLinear = requires(Args&&... args) { ::fixy::mint_linear<T>(std::forward<Args>(args)...); };
+template <typename T, typename... Args>
+concept MintsAffine = requires(Args&&... args) { ::fixy::mint_affine<T>(std::forward<Args>(args)...); };
+
+static_assert(MintsLinear<OnlyIntCtor, int> && !MintsLinear<OnlyIntCtor, char const*> && !MintsLinear<OnlyIntCtor>);
+static_assert(MintsAffine<OnlyIntCtor, int> && !MintsAffine<OnlyIntCtor, char const*> && !MintsAffine<OnlyIntCtor>);
+
 // A destructor counter that distinguishes drop's two branches: a Linear
 // drop destroys the value inside drop, an Affine drop destroys nothing.
 struct Tracked {

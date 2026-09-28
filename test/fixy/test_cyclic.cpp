@@ -9,6 +9,7 @@
 
 #include <fixy/Cyclic.h>
 
+#include <concepts>
 #include <cstdint>
 #include <type_traits>
 
@@ -30,6 +31,18 @@ static_assert(CanNameCyclic<std::uint32_t{8}>);
 static_assert(CanNameCyclic<std::uint32_t{1}>);
 static_assert(!CanNameCyclic<std::uint32_t{0}>, "a zero capacity has no slots");
 static_assert(!CanNameCyclic<std::uint32_t{6}>, "the mask needs a power of two");
+
+// The counter wraps at the type ceiling, and only an unsigned counter
+// wraps without undefined behavior.
+template <class T>
+concept CanNameCyclicOver = requires { typename Cyclic<T, T{8}>; };
+
+template <class... Counters>
+inline constexpr bool names_unsigned_counters_only =
+    ((CanNameCyclicOver<Counters> == std::unsigned_integral<Counters>) && ...);
+
+static_assert(names_unsigned_counters_only<std::int8_t, std::uint8_t, std::int16_t, std::uint16_t, std::int32_t,
+                                           std::uint32_t, std::int64_t, std::uint64_t>);
 
 // index() is raw() mod N at every step of a full lap and one past it.
 [[nodiscard]] consteval bool index_tracks_counter_over_a_lap() noexcept {

@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <meta>
 #include <source_location>
 #include <string_view>
 #include <type_traits>
@@ -215,6 +216,22 @@ void graded_runs_at_run_time() {
     expect(chain_element.compose(GChainElement{opaque(static_cast<unsigned char>(1))}).grade() == 2);
     const GChainElement chain_raised = chain_element.weaken(opaque(static_cast<unsigned char>(3)));
     expect(chain_raised.grade() == 3 && chain_raised.peek() == 3);
+
+    // Each door of the carrier opens under one modality.  A stored grade
+    // that is not empty names the value under every modality but Absolute,
+    // so only Absolute opens the keyed write in place.
+    static constexpr auto kinds = std::define_static_array(std::meta::enumerators_of(^^ModalityKind));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto kind_info : kinds) {
+        constexpr ModalityKind kind = [:kind_info:];
+        using OverBool = Graded<kind, TrivialBoolLattice, EmptyValue>;
+        static_assert(CanExtract<OverBool> == (kind == ModalityKind::Comonad));
+        static_assert(CanInject<OverBool> == (kind == ModalityKind::RelativeMonad));
+        static_assert(CanPeekMutWithKey<OverBool> == (kind == ModalityKind::Absolute));
+        static_assert(!CanPeekMut<OverBool>);
+    }
+#pragma GCC diagnostic pop
 }
 
 // The traits have nothing to run.  The function builds a substrate that

@@ -31,6 +31,8 @@
 #include <foundation/algebra/lattices/WaitLattice.h>
 #include <foundation/reflect/Enumerate.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <iterator>
@@ -38,6 +40,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -178,6 +181,111 @@ static_assert(fl::ClockSourceLattice::arity == 3);
 static_assert(fa::BoundedLattice<fl::ClockSourceLattice>);
 static_assert(fl::ClockSourceLattice::get<0>(fl::clock_source_project(fl::ClockSource::TscSerialized))
               == fl::DetSafeTier::MonotonicClockRead);
+
+// A variable template and not a concept, so that a reflection can
+// substitute it and read the answer.
+template <typename L, typename A, typename B>
+inline constexpr bool leq_accepts_v = requires(A lhs, B rhs) { L::leq(lhs, rhs); };
+
+template <typename L>
+using element_of_t = typename L::element_type;
+
+[[nodiscard]] consteval std::meta::info element_of(std::meta::info lattice) {
+    return std::meta::dealias(std::meta::substitute(^^element_of_t, {lattice}));
+}
+
+[[nodiscard]] consteval bool leq_accepts(std::meta::info lattice, std::meta::info lhs, std::meta::info rhs) {
+    return std::meta::extract<bool>(std::meta::substitute(^^leq_accepts_v, {lattice, lhs, rhs}));
+}
+
+// Every pinned grade of L, one reflection for each tier.  E is a
+// parameter because the clock lattice pins an enum that is not its
+// element type.
+template <typename L, typename E = typename L::element_type>
+consteval void append_pins(std::vector<std::meta::info>& pins) {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        pins.push_back(std::meta::dealias(^^typename L::template At<([:en:])>));
+    }
+#pragma GCC diagnostic pop
+}
+
+// Two pinned grades never meet, in one lattice or across two.  The
+// element of one does not convert to the element of the other, and the
+// leq of one does not take the element of the other.  Each grade takes
+// its own element, so the refusals are not vacuous.  O(n^2) in the
+// number of pins, at compile time only.
+[[nodiscard]] consteval bool pins_stay_apart() {
+    std::vector<std::meta::info> pins;
+    append_pins<fl::DetSafeLattice>(pins);
+    append_pins<fl::AllocClassLattice>(pins);
+    append_pins<fl::HotPathLattice>(pins);
+    append_pins<fl::CipherTierLattice>(pins);
+    append_pins<fl::ResidencyHeatLattice>(pins);
+    append_pins<fl::ToleranceLattice>(pins);
+    append_pins<fl::WaitLattice>(pins);
+    append_pins<fl::LifetimeLattice>(pins);
+    append_pins<fl::BarrierStrengthLattice>(pins);
+    append_pins<fl::SuspendBehaviorLattice>(pins);
+    append_pins<fl::PinningRequirementLattice>(pins);
+    append_pins<fl::SchedulerPolicyLattice>(pins);
+    append_pins<fl::VendorLattice>(pins);
+    append_pins<fl::MemoryScopeLattice>(pins);
+    append_pins<fl::ClockSourceLattice, fl::ClockSource>(pins);
+    for (const std::meta::info held : pins) {
+        const std::meta::info held_element = element_of(held);
+        for (const std::meta::info other : pins) {
+            const std::meta::info other_element = element_of(other);
+            const bool is_same_pin = held == other;
+            if (std::meta::is_convertible_type(other_element, held_element) != is_same_pin) return false;
+            if (leq_accepts(held, held_element, other_element) != is_same_pin) return false;
+        }
+    }
+    return true;
+}
+static_assert(pins_stay_apart());
+
+// The leq of one lattice does not take the element of another.  The
+// lattices hold pairwise different elements, and each leq takes its
+// own, so the walk proves a refusal at every pair.
+template <typename... Lattices>
+[[nodiscard]] consteval bool leq_refuses_foreign_elements() {
+    constexpr std::array<std::meta::info, sizeof...(Lattices)> lattices{^^Lattices...};
+    for (const std::meta::info held : lattices) {
+        for (const std::meta::info other : lattices) {
+            const bool is_same_lattice = held == other;
+            if ((element_of(held) == element_of(other)) != is_same_lattice) return false;
+            if (leq_accepts(held, element_of(held), element_of(other)) != is_same_lattice) return false;
+        }
+    }
+    return true;
+}
+static_assert(leq_refuses_foreign_elements<
+              fl::DetSafeLattice, fl::AllocClassLattice, fl::HotPathLattice, fl::CipherTierLattice,
+              fl::ResidencyHeatLattice, fl::ToleranceLattice, fl::WaitLattice, fl::LifetimeLattice,
+              fl::BarrierStrengthLattice, fl::SuspendBehaviorLattice, fl::PinningRequirementLattice,
+              fl::SchedulerPolicyLattice, fl::VendorLattice, fl::MemoryScopeLattice, fl::RecipeFamilyLattice,
+              fl::NumaNodeLattice, fl::AffinityLattice, fl::ClockSourceLattice>());
+
+// The clock lattice orders projected points, not sources, and each slot
+// of a point takes the enum of its own axis only.
+static_assert(!leq_accepts_v<fl::ClockSourceLattice, fl::ClockSource, fl::ClockSource>);
+
+template <typename L, std::size_t Slot, typename V>
+inline constexpr bool slot_takes_v = requires(element_of_t<L> point, V value) { L::template get<Slot>(point) = value; };
+
+template <typename L, std::size_t Slot, std::size_t... Axes>
+inline constexpr bool slot_takes_only_its_axis =
+    ((slot_takes_v<L, Slot, element_of_t<typename L::template nth_lattice<Axes>>> == (Slot == Axes)) && ...);
+
+template <typename L, std::size_t... Slots>
+[[nodiscard]] consteval bool slots_take_their_own_axis(std::index_sequence<Slots...>) noexcept {
+    return (slot_takes_only_its_axis<L, Slots, Slots...> && ...);
+}
+static_assert(
+    slots_take_their_own_axis<fl::ClockSourceLattice>(std::make_index_sequence<fl::ClockSourceLattice::arity>{}));
 
 // Each body below was an inline runtime_smoke_test in its header,
 // compiled into every translation unit that included it.  They are

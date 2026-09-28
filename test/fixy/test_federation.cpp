@@ -10,6 +10,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -66,6 +67,32 @@ static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, 
 static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[8] == std::byte{1});
 static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[16] == std::byte{2});
 static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[24] == std::byte{3});
+
+// Each field is a type of its own.  No word converts into another word or
+// comes from a raw integer, so a call that swaps two fields names no
+// candidate.  <cstdint> brings std::uint64_t in with a using-declaration,
+// which ^^ does not reflect, so an alias names the raw word.
+using raw_word = std::uint64_t;
+
+[[nodiscard]] consteval bool words_stay_apart() {
+    const std::array words{std::meta::dealias(^^fed::OrgId), std::meta::dealias(^^fed::PeerKeyFingerprint),
+                           std::meta::dealias(^^fed::Nonce), std::meta::dealias(^^fed::HandshakeMac)};
+    for (const std::meta::info held : words) {
+        if (std::meta::is_convertible_type(^^raw_word, held)) return false;
+        for (const std::meta::info other : words) {
+            if (std::meta::is_convertible_type(held, other) != (held == other)) return false;
+        }
+    }
+    return true;
+}
+static_assert(words_stay_apart());
+
+template <typename... Fields>
+inline constexpr bool handshake_takes = std::is_invocable_v<decltype(&fed::handshake_message), Fields...>;
+static_assert(handshake_takes<fed::OrgId, fed::PeerKeyFingerprint, fed::Nonce>);
+static_assert(!handshake_takes<fed::PeerKeyFingerprint, fed::OrgId, fed::Nonce>
+              && !handshake_takes<fed::OrgId, fed::Nonce, fed::PeerKeyFingerprint>
+              && !handshake_takes<std::uint64_t, std::uint64_t, std::uint64_t>);
 
 // The MAC word and the tag are the same eight bytes.
 static_assert(fed::mac_of(fed::tag_of(fed::HandshakeMac{0x0123456789abcdefULL})).raw() == 0x0123456789abcdefULL);

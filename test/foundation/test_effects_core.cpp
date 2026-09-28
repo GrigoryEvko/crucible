@@ -120,6 +120,23 @@ static_assert(::foundation::algebra::Row<fe::EffectRowLattice>);
 }
 static_assert(every_atom_agrees_across_spellings());
 
+// The three projections between a row and a mask take a row and nothing
+// else: not a bare atom, not the mask itself, and not a plain type.
+template <class R>
+concept ProjectsToMask = requires { fe::bits_from_row<R>(); };
+template <class R>
+concept ChecksMaskAgainstRow = requires(fe::EffectMask sample) { fe::row_subsumes_bits<R>(sample); };
+template <class R>
+concept ChecksRowAgainstMask = requires(fe::EffectMask sample) { fe::bits_subsumes_row<R>(sample); };
+
+template <class R>
+inline constexpr int projections_taking =
+    int{ProjectsToMask<R>} + int{ChecksMaskAgainstRow<R>} + int{ChecksRowAgainstMask<R>};
+
+static_assert(projections_taking<fe::Row<>> == 3 && projections_taking<fe::Row<fe::Effect::Bg, fe::Effect::IO>> == 3);
+static_assert(projections_taking<int> == 0 && projections_taking<fe::Effect> == 0
+              && projections_taking<fe::EffectMask> == 0 && projections_taking<RowProbe<fe::Effect::Bg>> == 0);
+
 // The tag type is the entire gate: no other parameter admits a call.
 [[nodiscard]] int with_alloc(fe::cap::Alloc) noexcept { return 42; }
 

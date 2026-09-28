@@ -84,6 +84,13 @@ static_assert(std::is_same_v<typename wrapped_t::diagnostic_class, diag::EffectR
 static_assert(std::is_same_v<typename wrapped_t::context, std::tuple<int, float>>);
 static_assert(wrapped_t::name == "EffectRowMismatch");
 
+// Only a tag names the wrapper.  The constraint on the class template
+// refuses a plain type and the root tag_base, as the factory refuses them.
+template <typename Tag>
+concept NamesDiagnostic = requires { typename diag::Diagnostic<Tag, float, double>; };
+static_assert(NamesDiagnostic<diag::EffectRowMismatch> && NamesDiagnostic<anonymous_local_tag>);
+static_assert(!NamesDiagnostic<int> && !NamesDiagnostic<diag::tag_base>);
+
 // The factory strips qualifiers, so two call sites that differ only in
 // constness produce one type.
 static_assert(std::is_same_v<decltype(diag::mint_diagnostic<diag::EffectRowMismatch>(int{}, float{})),

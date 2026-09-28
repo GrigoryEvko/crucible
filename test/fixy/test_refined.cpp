@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <meta>
 #include <span>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -187,6 +188,22 @@ static_assert(!CheckedMintable<fixy::exact_size<3>, int>);
 static_assert(CheckedMintable<fixy::in_range<0, 100>, int>);
 static_assert(!CheckedMintable<fixy::in_range<0, 100>, OnlyAtMost>);
 static_assert(!CheckedMintable<fixy::in_range<0, 100>, Unordered>);
+
+// The other named refinements are defined on the payload that they are
+// for, and on no payload that their predicate cannot read.  The checked
+// door asks PredicateInvocableOn, so each refusal is a refusal at the mint.
+template <auto Pred, typename... Payloads>
+inline constexpr bool refuses_each_payload = (!fixy::PredicateInvocableOn<Pred, Payloads> && ...);
+
+static_assert(fixy::PredicateInvocableOn<fixy::aligned<64>, int*> && refuses_each_payload<fixy::aligned<64>, int, int&>,
+              "AlignedTo<N, T> takes a pointer only");
+static_assert(fixy::PredicateInvocableOn<fixy::bounded_above<10u>, unsigned>
+                  && refuses_each_payload<fixy::bounded_above<10u>, Unordered, std::string>,
+              "MaxBounded<Max, T> needs a T that holds Max exactly");
+static_assert(fixy::PredicateInvocableOn<fixy::non_empty, std::span<int>> && refuses_each_payload<fixy::non_empty, int>,
+              "NonEmpty<T> needs T::empty()");
+static_assert(fixy::PredicateInvocableOn<fixy::non_zero, int> && refuses_each_payload<fixy::non_zero, Unordered>,
+              "NonZero<T> needs raw() or a comparison with T{}");
 
 // ── The implication relation is the namespace ────────────────────────
 

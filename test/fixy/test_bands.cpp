@@ -195,6 +195,67 @@ static_assert(!can_relax_rvalue<fixy::opaque_lifetime::PerRequest<int>, fixy::Li
               "A request-scoped value dies with the request; nothing widens it "
               "to fleet scope.");
 
+// The direction of the order at the production fences.  A heap block
+// does not claim an arena, a cold value does not claim a warmer tier,
+// and a parked wait does not reach a consumer that budgets a spin.
+static_assert(!can_relax_rvalue<fixy::alloc_class::Heap<int>, fixy::AllocClassTag_v::Arena>);
+static_assert(!can_relax_rvalue<fixy::cipher_tier::Cold<int>, fixy::CipherTierTag_v::Warm>);
+static_assert(!can_relax_rvalue<fixy::residency_heat::Cold<int>, fixy::ResidencyHeatTag_v::Warm>);
+static_assert(!can_relax_rvalue<fixy::wait::Park<int>, fixy::WaitStrategy_v::SpinPause>);
+static_assert(!fixy::satisfies_v<fixy::wait::Park<int>, fixy::WaitStrategy_v::SpinPause>);
+
+template <typename A, typename B>
+concept member_swaps_with = requires(A& lhs, B& rhs) { lhs.swap(rhs); };
+
+// A direct probe.  std::equality_comparable_with also asks for a common
+// reference, which two bands never have, so it answers no even with an
+// operator== that crosses the tiers.
+template <typename A, typename B>
+concept compares_with = requires(A const& lhs, B const& rhs) { lhs == rhs; };
+
+// Two tiers of one band are two types that never meet.  No assignment,
+// conversion, swap or comparison crosses a tier, and relax and
+// satisfies_v answer as the outer order does.  At one tier the
+// assignment and the swap exist, so each refusal is not vacuous.
+template <typename L, template <auto, class> class Band>
+[[nodiscard]] consteval bool tiers_stay_apart() noexcept {
+    using E = typename L::element_type;
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto held_info : enumerators) {
+        constexpr E held = [:held_info:];
+        using Held = Band<held, int>;
+        template for (constexpr auto other_info : enumerators) {
+            constexpr E other = [:other_info:];
+            using Other = Band<other, int>;
+            constexpr bool is_same_tier = held == other;
+            constexpr bool is_below = L::leq(other, held);
+            if (std::is_assignable_v<Held&, Other const&> != is_same_tier) return false;
+            if (std::is_assignable_v<Held&, Other&&> != is_same_tier) return false;
+            if (std::is_constructible_v<Held, Other> != is_same_tier) return false;
+            if (std::is_swappable_with_v<Held&, Other&> != is_same_tier) return false;
+            if (member_swaps_with<Held, Other> != is_same_tier) return false;
+            if (!is_same_tier && compares_with<Held, Other>) return false;
+            if (can_relax_rvalue<Held, other> != is_below) return false;
+            if (fixy::satisfies_v<Held, other> != is_below) return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+
+static_assert(tiers_stay_apart<fixy::DetSafeLattice, fixy::DetSafe>());
+static_assert(tiers_stay_apart<fixy::AllocClassLattice, fixy::AllocClass>());
+static_assert(tiers_stay_apart<fixy::HotPathLattice, fixy::HotPath>());
+static_assert(tiers_stay_apart<fixy::CipherTierLattice, fixy::CipherTier>());
+static_assert(tiers_stay_apart<fixy::WaitLattice, fixy::Wait>());
+static_assert(tiers_stay_apart<fixy::ToleranceLattice, fixy::NumericalTier>());
+static_assert(tiers_stay_apart<fixy::LifetimeLattice, fixy::OpaqueLifetime>());
+static_assert(tiers_stay_apart<fixy::MemoryScopeLattice, fixy::ScopedFence>());
+static_assert(tiers_stay_apart<fixy::VendorLattice, fixy::Vendor>());
+static_assert(tiers_stay_apart<fixy::ResidencyHeatLattice, fixy::ResidencyHeat>());
+
 // The Cipher consumer's gate, written against the generic surface: a
 // generic W is admitted when it is a lifetime band that satisfies the
 // required scope.

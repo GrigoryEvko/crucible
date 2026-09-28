@@ -1584,6 +1584,12 @@ fixy_neg_compile_test(neg_recipe_spec_weaken_to_a_tighter_tier
 fixy_test(test_owned_file)
 fixy_test(test_owned_mmap)
 fixy_test(test_constant_time)
+
+# A length mismatch in ct::eq is a caller bug.  The precondition traps at
+# consteval, and the expansion note names the macro inside the header.
+fixy_neg_compile_test(neg_ct_eq_length_mismatch_at_consteval
+  "non-constant condition for static assertion"
+  "fixy/ConstantTime\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_test(test_cyclic)
 fixy_test(test_cyclic_buffer)
 
@@ -3921,6 +3927,13 @@ fixy_neg_compile_test(neg_os_ptp_clock_reader_ctx_lacks_block
   "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
   "Es = \\{foundation::effects::Effect::IO, foundation::effects::Effect::Block\\}\\]. evaluated to .false.")
 fixy_test(test_os_sched)
+
+# A SCHED_DEADLINE class carries its CBS budget in the type.  A budget
+# that the kernel does not admit fails the class-body static_assert at the
+# instantiation of the class.
+fixy_neg_compile_test(neg_os_sched_class_deadline_runtime_exceeds_deadline
+  "static assertion failed: SchedClass<Deadline, \\.\\.\\.>: SCHED_DEADLINE requires RuntimeNs < DeadlineNs <= PeriodNs"
+  "In instantiation of .class fixy::SchedClass<foundation::algebra::lattices::SchedulerPolicy::Deadline, int, 100, 50, 200>.")
 
 # ── The pin proof has one door ───────────────────────────────────────
 #

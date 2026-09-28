@@ -39,6 +39,16 @@ static_assert(!std::is_convertible_v<fe::Computation<Row<Effect::Bg>, int>&, fe:
               "the base is private, so no conversion reaches the substrate and its unchecked consume");
 static_assert(fe::Computation<Row<Effect::Bg>, int>::modality == fa::ModalityKind::Relative);
 
+// Only a row names a substrate.  A class, a bare atom or a plain type has
+// no grade.  A request for one is a substitution failure, not a grade
+// that means nothing.
+template <typename R>
+concept LiftsRowToGrade = requires { typename fe::ComputationGraded<R, int>; };
+
+struct NotARow {};
+static_assert(LiftsRowToGrade<Row<>> && LiftsRowToGrade<Row<Effect::Bg, Effect::IO>>);
+static_assert(!LiftsRowToGrade<NotARow> && !LiftsRowToGrade<int> && !LiftsRowToGrade<Effect>);
+
 // The contexts of the test door that witness an engaged row.
 using BgCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoCtx = fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
