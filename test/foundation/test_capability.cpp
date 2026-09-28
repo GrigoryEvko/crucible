@@ -33,15 +33,18 @@ concept MintsFromCtx = requires(Ctx const& ctx) { fe::mint_from_ctx<E>(ctx); };
 
 inline constexpr auto atoms = std::define_static_array(std::meta::enumerators_of(^^fe::Effect));
 
-// True when the context mints the atoms of its row and no other atom.
-// Complexity: one probe for each atom of the catalog.
+// True when the context mints the atoms of its row and no other atom, and
+// CapMatchesCtx admits a capability for exactly the same atoms, whatever
+// its source.  Complexity: one probe for each atom of the catalog.
 template <class Ctx>
 [[nodiscard]] consteval bool mints_exactly_its_row() noexcept {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto atom : atoms) {
         constexpr Effect effect = [:atom:];
-        if constexpr (MintsFromCtx<effect, Ctx> != fe::row_contains_v<typename Ctx::row_type, effect>) return false;
+        constexpr bool claims = fe::row_contains_v<typename Ctx::row_type, effect>;
+        if constexpr (MintsFromCtx<effect, Ctx> != claims) return false;
+        if constexpr (fe::CapMatchesCtx<fe::Capability<effect, fe::Init>, Ctx> != claims) return false;
     }
 #pragma GCC diagnostic pop
     return true;
@@ -59,6 +62,12 @@ static_assert(mints_exactly_its_row<w::TestWitnessCtx>());
 // Block as well.  The source is not the bound.
 static_assert(fe::CanMintCap<Effect::IO, fe::Bg> && !MintsFromCtx<Effect::IO, w::BgWitness>);
 static_assert(fe::CanMintCap<Effect::Block, fe::Bg> && !MintsFromCtx<Effect::Block, w::BgWitness>);
+
+// The bare tag of an atom that the row claims is not a capability, so it
+// does not match the context.
+static_assert(fe::CapMatchesCtx<fe::Capability<Effect::IO, fe::Bg>, w::BgIoWitness>);
+static_assert(!fe::CapMatchesCtx<fe::cap::IO, w::BgIoWitness>);
+static_assert(!fe::CapMatchesCtx<int, w::BgIoWitness>);
 
 // A token is spent once, by a function that takes it by value.
 template <Effect E, class Source>

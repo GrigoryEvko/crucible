@@ -33,6 +33,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -130,6 +131,46 @@ static_assert(every_at_name_is_reflected<fl::LifetimeLattice>());
 static_assert(every_at_name_is_reflected<fl::VendorLattice>());
 static_assert(every_at_name_is_reflected<fl::ResidencyHeatLattice>());
 static_assert(every_at_name_is_reflected<fl::ClockSourceLattice, fl::ClockSource>());
+
+// Each memory scope belongs to one chain or to none.  The table spells out
+// the chain of every enumerator, so a scope in the wrong nibble or with no
+// chain is refused, and a new scope needs a row before the walk passes.
+enum class ScopeChain : unsigned char {
+    None,
+    Accelerator,
+    Host,
+};
+struct ScopeRow {
+    fl::MemoryScope scope = fl::MemoryScope::Thread;
+    ScopeChain chain = ScopeChain::None;
+};
+inline constexpr ScopeRow kScopeChains[] = {
+    {fl::MemoryScope::Thread, ScopeChain::None},     {fl::MemoryScope::Warp, ScopeChain::Accelerator},
+    {fl::MemoryScope::Cta, ScopeChain::Accelerator}, {fl::MemoryScope::Cluster, ScopeChain::Accelerator},
+    {fl::MemoryScope::Gpu, ScopeChain::Accelerator}, {fl::MemoryScope::Inner, ScopeChain::Host},
+    {fl::MemoryScope::Outer, ScopeChain::Host},      {fl::MemoryScope::System, ScopeChain::None},
+};
+
+// Complexity: O(n^2) in the number of enumerators.
+[[nodiscard]] consteval bool every_scope_is_in_its_chain() noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^fl::MemoryScope));
+    if (std::size(kScopeChains) != enumerators.size()) return false;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        bool has_row = false;
+        for (const ScopeRow row : kScopeChains)
+            has_row = has_row || row.scope == [:en:];
+        if (!has_row) return false;
+    }
+#pragma GCC diagnostic pop
+    for (const ScopeRow row : kScopeChains) {
+        if (fl::mem_scope_is_accel(row.scope) != (row.chain == ScopeChain::Accelerator)) return false;
+        if (fl::mem_scope_is_arm(row.scope) != (row.chain == ScopeChain::Host)) return false;
+    }
+    return true;
+}
+static_assert(every_scope_is_in_its_chain());
 
 // The clock lattice is a product of three axes and its At<> pins the
 // source only; the projected point is a free function.

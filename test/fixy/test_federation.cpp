@@ -15,6 +15,9 @@
 
 struct FederationTestOrg {};
 struct FederationOtherOrg {};
+struct FederationStatefulOrg {
+    int id = 0;
+};
 
 namespace {
 
@@ -43,6 +46,19 @@ static_assert(fed::federation_org_id<FederationTestOrg>.is_set());
 static_assert(fed::federation_org_id<FederationTestOrg> != fed::federation_org_id<FederationOtherOrg>);
 static_assert(TestPolicy::admits<FederationTestOrg>);
 static_assert(!TestPolicy::admits<FederationOtherOrg>);
+
+// An organization is an empty class.  The door that signs a handshake,
+// and the identity on the wire, refuse a type that is not a class and a
+// class that holds state.
+template <typename Org>
+concept SignsHandshakeFor = requires(Secret<sh::Key>&& key) {
+    fed::sign_handshake<Org>(std::move(key), fed::PeerKeyFingerprint{1}, fed::Nonce{1});
+};
+template <typename Org>
+concept HasOrgId = requires { fed::federation_org_id<Org>; };
+static_assert(SignsHandshakeFor<FederationTestOrg> && HasOrgId<FederationTestOrg>);
+static_assert(!SignsHandshakeFor<int> && !HasOrgId<int>);
+static_assert(!SignsHandshakeFor<FederationStatefulOrg> && !HasOrgId<FederationStatefulOrg>);
 
 // The message is the domain word and the three fields, little-endian.
 static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[0] == std::byte{'c'});

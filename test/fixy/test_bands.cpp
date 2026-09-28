@@ -105,10 +105,25 @@ static_assert(every_tier_is_a_band<fixy::LifetimeLattice, fixy::OpaqueLifetime>(
 static_assert(every_tier_is_a_band<fixy::VendorLattice, fixy::Vendor>());
 static_assert(every_tier_is_a_band<fixy::ResidencyHeatLattice, fixy::ResidencyHeat>());
 
-// The old spellings resolve to the same carriers.
+// The old spellings resolve to the same carriers.  The header checks that
+// each tier has an alias.  The DetSafe and Vendor aliases are pinned here
+// one by one, so two aliases that change places are refused as well.
 static_assert(std::is_same_v<fixy::det_safe::Pure<int>, fixy::DetSafe<fixy::DetSafeTier_v::Pure, int>>);
+static_assert(std::is_same_v<fixy::det_safe::PhiloxRng<int>, fixy::DetSafe<fixy::DetSafeTier_v::PhiloxRng, int>>);
+static_assert(
+    std::is_same_v<fixy::det_safe::MonoClock<int>, fixy::DetSafe<fixy::DetSafeTier_v::MonotonicClockRead, int>>);
+static_assert(std::is_same_v<fixy::det_safe::WallClock<int>, fixy::DetSafe<fixy::DetSafeTier_v::WallClockRead, int>>);
+static_assert(std::is_same_v<fixy::det_safe::EntropyRead<int>, fixy::DetSafe<fixy::DetSafeTier_v::EntropyRead, int>>);
+static_assert(std::is_same_v<fixy::det_safe::FsMtime<int>, fixy::DetSafe<fixy::DetSafeTier_v::FilesystemMtime, int>>);
 static_assert(
     std::is_same_v<fixy::det_safe::NDS<int>, fixy::DetSafe<fixy::DetSafeTier_v::NonDeterministicSyscall, int>>);
+static_assert(std::is_same_v<fixy::vendor::None<int>, fixy::Vendor<fixy::VendorBackend_v::None, int>>);
+static_assert(std::is_same_v<fixy::vendor::Cpu<int>, fixy::Vendor<fixy::VendorBackend_v::CPU, int>>);
+static_assert(std::is_same_v<fixy::vendor::Amd<int>, fixy::Vendor<fixy::VendorBackend_v::AMD, int>>);
+static_assert(std::is_same_v<fixy::vendor::Tpu<int>, fixy::Vendor<fixy::VendorBackend_v::TPU, int>>);
+static_assert(std::is_same_v<fixy::vendor::Trn<int>, fixy::Vendor<fixy::VendorBackend_v::TRN, int>>);
+static_assert(std::is_same_v<fixy::vendor::Cer<int>, fixy::Vendor<fixy::VendorBackend_v::CER, int>>);
+static_assert(std::is_same_v<fixy::vendor::Portable<int>, fixy::Vendor<fixy::VendorBackend_v::Portable, int>>);
 static_assert(std::is_same_v<fixy::alloc_class::Arena<void*>, fixy::AllocClass<fixy::AllocClassTag_v::Arena, void*>>);
 static_assert(std::is_same_v<fixy::hot_path::Hot<bool>, fixy::HotPath<fixy::HotPathTier_v::Hot, bool>>);
 static_assert(std::is_same_v<fixy::cipher_tier::Warm<int>, fixy::CipherTier<fixy::CipherTierTag_v::Warm, int>>);

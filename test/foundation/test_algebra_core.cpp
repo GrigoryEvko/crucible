@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <source_location>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -35,6 +36,26 @@ static_assert(fa::has_grade_only_v<fa::ModalityKind::Stepping>);
 // first witness.
 static_assert(fa::Row<fa::detail::lattice_self_test::TrivialRow>);
 static_assert(!fa::Row<fa::detail::lattice_self_test::TrivialBoolLattice>);
+
+// A lattice with no name() is still a lattice.  HasLatticeName refuses it
+// although lattice_name gives it the sentinel, so the sentinel is not a
+// name.
+struct UnnamedLattice {
+    using element_type = bool;
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return false; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return true; }
+    [[nodiscard]] static constexpr bool leq(element_type lhs, element_type rhs) noexcept { return !lhs || rhs; }
+    [[nodiscard]] static constexpr element_type join(element_type lhs, element_type rhs) noexcept { return lhs || rhs; }
+    [[nodiscard]] static constexpr element_type meet(element_type lhs, element_type rhs) noexcept { return lhs && rhs; }
+};
+struct NamedLattice : UnnamedLattice {
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "NamedLattice"; }
+};
+static_assert(fa::Lattice<UnnamedLattice>);
+static_assert(!fa::HasLatticeName<UnnamedLattice>);
+static_assert(fa::lattice_name<UnnamedLattice>() == "<unnamed lattice>");
+static_assert(fa::HasLatticeName<NamedLattice>);
+static_assert(fa::lattice_name<NamedLattice>() == "NamedLattice");
 
 // The primary template over an empty grade still collapses to sizeof(T).
 using EmptyGraded = fa::Graded<fa::ModalityKind::Absolute, fa::detail::graded_self_test::TrivialEmptyLattice, int>;

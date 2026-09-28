@@ -192,6 +192,10 @@ template <std::integral T>
 //
 // Every one of those assertions opens with a bracketed tag so an audit
 // can find each compile-time arithmetic failure site by grep.
+//
+// When the optional is empty, its assertion stops the build.  The value
+// then reads value_or and not operator*, so the report holds that one
+// error and not a second one from inside <optional>.
 
 namespace detail {
 
@@ -200,7 +204,7 @@ struct safe_add_impl {
     static constexpr auto _opt = checked_add<T>(A, B);
     static_assert(_opt.has_value(), "[Checked_Capacity_Overflow] safe_add: A + B overflows the "
                                     "destination integer type.  Pick a wider T or smaller operands.");
-    static constexpr T value = *_opt;
+    static constexpr T value = _opt.value_or(T{0});
 };
 
 template <std::integral T, T A, T B>
@@ -208,7 +212,7 @@ struct safe_sub_impl {
     static constexpr auto _opt = checked_sub<T>(A, B);
     static_assert(_opt.has_value(), "[Checked_Capacity_Overflow] safe_sub: A - B underflows the "
                                     "destination integer type.  For unsigned T, A must be >= B.");
-    static constexpr T value = *_opt;
+    static constexpr T value = _opt.value_or(T{0});
 };
 
 template <std::integral T, T A, T B>
@@ -216,7 +220,7 @@ struct safe_mul_impl {
     static constexpr auto _opt = checked_mul<T>(A, B);
     static_assert(_opt.has_value(), "[Checked_Capacity_Overflow] safe_mul: A * B overflows the "
                                     "destination integer type.  Pick a wider T or smaller operands.");
-    static constexpr T value = *_opt;
+    static constexpr T value = _opt.value_or(T{0});
 };
 
 }  // namespace detail
@@ -260,7 +264,7 @@ struct safe_add_all_impl<T, X, Y, Rest...> {
                                     "in the variadic sum exceeds the remaining budget; split the "
                                     "sum into smaller chunks, pick a wider T, or reduce an "
                                     "operand.");
-    static constexpr T value = safe_add_all_impl<T, *_opt, Rest...>::value;
+    static constexpr T value = safe_add_all_impl<T, _opt.value_or(T{0}), Rest...>::value;
 };
 
 }  // namespace detail

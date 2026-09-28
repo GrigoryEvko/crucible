@@ -95,6 +95,13 @@ static_assert(std::is_same_v<decltype(fe::testing::init().alloc), fe::cap::Alloc
 static_assert(std::is_same_v<decltype(fe::testing::init().block), fe::cap::Block>);
 static_assert(std::is_same_v<decltype(fe::testing::bg().block), fe::cap::Block>);
 
+// The row recognizer strips cv and reference before it matches, so a
+// forwarded row is still a row, and a forwarded non-row is still refused.
+static_assert(fe::IsEffectRow<fe::Row<fe::Effect::Bg> const&>);
+static_assert(fe::IsEffectRow<fe::Row<>&&>);
+static_assert(!fe::IsEffectRow<int&&>);
+static_assert(!fe::IsEffectRow<fe::Effect const&>);
+
 // The mask lattice is a Row, and the two row spellings agree on
 // membership for every atom.
 static_assert(::foundation::algebra::Row<fe::EffectRowLattice>);

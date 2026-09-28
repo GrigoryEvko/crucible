@@ -1621,6 +1621,25 @@ fixy_neg_compile_test(neg_sat_det_cross_tier_assignment
   "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
   "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>,\\[\\.\\.\\.\\]>. requested")
 fixy_test(test_checked_fixy test_checked.cpp)
+
+# Each compile-time gate of fixy/Checked.h stops the build at a value the
+# destination type cannot hold.  The first regex is the bracketed tag of
+# the gate, and the second names the instantiation that fired it.
+fixy_neg_compile_test(neg_safe_add_overflow
+  "static assertion failed: \\[Checked_Capacity_Overflow\\] safe_add: A \\+ B overflows the destination integer type"
+  "In instantiation of .struct fixy::detail::safe_add_impl<unsigned int, 4294967295, 1>.")
+fixy_neg_compile_test(neg_safe_sub_underflow
+  "static assertion failed: \\[Checked_Capacity_Overflow\\] safe_sub: A - B underflows the destination integer type"
+  "In instantiation of .struct fixy::detail::safe_sub_impl<long unsigned int, 10, 100>.")
+fixy_neg_compile_test(neg_safe_capacity_overflow
+  "static assertion failed: \\[Checked_Capacity_Overflow\\] safe_mul: A \\* B overflows the destination integer type"
+  "required from .constexpr const std::size_t fixy::safe_capacity<18446744073709551615, 2>.")
+fixy_neg_compile_test(neg_safe_add_all_partial_sum_overflow
+  "static assertion failed: \\[Checked_Capacity_Overflow\\] safe_add_all: partial sum overflows the destination integer type"
+  "In instantiation of .struct fixy::detail::safe_add_all_impl<unsigned int, 2147483648, 2147483648, 100>.")
+fixy_neg_compile_test(neg_bytes_fit_exceeded
+  "static assertion failed: \\[Byte_Budget_Exceeded\\] ensure_bytes_fit<Budget, Used>\\(\\): the computed byte usage exceeds the declared budget"
+  "fixy::bytes_fit_v<64, 72>. evaluates to false")
 fixy_test(test_bits)
 fixy_test(test_fixed_array)
 
@@ -4459,9 +4478,14 @@ fixy_neg_compile_test(neg_cheat_graded_modality_injection
 
 # ── The spin gate, the throws walk, fp, and spawn ─────────────────────
 #
-# fixy/Throws.h and fixy/fp/Canonicalize.h carry their whole claim as
-# static assertions, so they have no runtime unit of their own; the two
-# below are the parts that only a constructed sequence of calls can show.
+# fixy/Throws.h carries its whole claim as static assertions, so it has
+# no runtime unit of its own.  The units below are the parts that only a
+# constructed sequence of calls can show.
+#
+# test_fp_canonicalize runs the projection of fixy/fp/Canonicalize.h on
+# the host at run time, and it compares each result with an oracle that
+# reads the IEEE 754 fields.
+fixy_test(test_fp_canonicalize)
 #
 # test_fp_polynomial re-checks at run time every value the header pins at
 # compile time.  The two are different arithmetic engines, GCC's constant

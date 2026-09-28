@@ -23,6 +23,7 @@
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 // A tag with external linkage, the positive control for the identity read.
 namespace atom_test_tags {
@@ -150,6 +151,19 @@ static_assert(!fa::IsAtom<volatile fa::affine>);
 static_assert(!fa::IsAtom<fa::affine&>);
 static_assert(!fa::IsAtom<const fa::affine&>);
 static_assert(!fa::IsAtom<fa::affine&&>);
+
+// The same holds for every atom of every family.
+template <typename A>
+[[nodiscard]] consteval bool refuses_every_qualified_form() noexcept {
+    return !fa::IsAtom<const A> && !fa::IsAtom<volatile A> && !fa::IsAtom<A&> && !fa::IsAtom<const A&>
+        && !fa::IsAtom<A&&>;
+}
+template <typename Roster, std::size_t... Index>
+[[nodiscard]] consteval bool every_qualified_atom_is_refused(std::index_sequence<Index...>) noexcept {
+    return (refuses_every_qualified_form<std::tuple_element_t<Index, Roster>>() && ...);
+}
+static_assert(every_qualified_atom_is_refused<every_atom_roster>(
+    std::make_index_sequence<std::tuple_size_v<every_atom_roster>>{}));
 
 // A roster that lists a non-atom fails the walk, so the walk is a
 // real check and not a restatement.

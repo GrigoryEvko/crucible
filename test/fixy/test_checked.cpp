@@ -32,6 +32,9 @@ using ::fixy::saturating_add;
 using ::fixy::saturating_mul;
 using ::fixy::saturating_sub;
 using ::fixy::trapping_add;
+using ::fixy::trapping_div;
+using ::fixy::trapping_mul;
+using ::fixy::trapping_sub;
 using ::fixy::wrapping_add;
 using ::fixy::wrapping_mul;
 using ::fixy::wrapping_sub;
@@ -160,8 +163,48 @@ static_assert(saturating_mul<I8>(-16, -16) == i8_max);
 }
 static_assert(families_agree_where_the_result_fits_u8());
 
+// The trapping family returns the exact result, and it stops the process
+// where the checked family gives no value.  The stop calls std::abort,
+// which is not constexpr, so a constant evaluation of the stop is not a
+// constant.  A trap that returned a wrapped value would fold, and the
+// refusals below would then fail.
+template <auto Operation, auto Lhs, auto Rhs>
+concept FoldsToAConstant = requires { typename std::integral_constant<decltype(Lhs), Operation(Lhs, Rhs)>; };
+
+static_assert(trapping_sub<U8>(10, 3) == 7);
+static_assert(trapping_mul<U8>(16, 15) == 240);
+static_assert(trapping_div<I8>(-7, 2) == -3);
+static_assert(trapping_div<U8>(255, 5) == 51);
+
+static_assert(FoldsToAConstant<&trapping_add<U8>, U8{200}, U8{55}>);
+static_assert(!FoldsToAConstant<&trapping_add<U8>, U8{200}, U8{56}>);
+static_assert(FoldsToAConstant<&trapping_sub<U8>, U8{1}, U8{1}>);
+static_assert(!FoldsToAConstant<&trapping_sub<U8>, U8{0}, U8{1}>);
+static_assert(!FoldsToAConstant<&trapping_sub<I8>, i8_min, I8{1}>);
+static_assert(FoldsToAConstant<&trapping_mul<U8>, U8{16}, U8{15}>);
+static_assert(!FoldsToAConstant<&trapping_mul<U8>, U8{16}, U8{16}>);
+static_assert(!FoldsToAConstant<&trapping_mul<I8>, I8{-16}, I8{-16}>);
+static_assert(FoldsToAConstant<&trapping_div<I8>, i8_min, I8{1}>);
+static_assert(!FoldsToAConstant<&trapping_div<I8>, I8{7}, I8{0}>);
+static_assert(!FoldsToAConstant<&trapping_div<I8>, i8_min, I8{-1}>);
+static_assert(!FoldsToAConstant<&trapping_div<U8>, U8{7}, U8{0}>);
+
+// Each family takes an integer and nothing else.  A floating-point
+// operand has no overflow flag to report, so each door refuses it.
+template <typename T>
+concept SomeFamilyTakes =
+    requires(T value) { checked_add(value, value); } || requires(T value) { wrapping_add(value, value); }
+    || requires(T value) { trapping_add(value, value); } || requires(T value) { saturating_add(value, value); }
+    || requires(T value) { checked_shl<T>(value, 1); };
+static_assert(SomeFamilyTakes<int>);
+static_assert(!SomeFamilyTakes<double>);
+static_assert(!SomeFamilyTakes<float>);
+
 // The compile-time budget helpers carry the check through every step of
 // a sum of products.
+static_assert(::fixy::safe_add<std::size_t, 40u, 24u> == 64u);
+static_assert(::fixy::safe_sub<std::size_t, 64u, 24u> == 40u);
+static_assert(::fixy::safe_mul<std::size_t, std::size_t{1} << 20, std::size_t{1} << 20> == std::size_t{1} << 40);
 static_assert(::fixy::safe_capacity<64u, 64u> == 4096u);
 static_assert(::fixy::safe_array_bytes<std::uint32_t, 16u> == 64u);
 static_assert(::fixy::safe_add_all<std::size_t, 8u, 16u, 40u> == 64u);
@@ -180,6 +223,9 @@ int check_runtime_matches_consteval() {
     if (wrapping_add(a, b) != 0u) return 11;
     if (saturating_add(a, b) != 255u) return 12;
     if (trapping_add<U8>(a, U8{55}) != 255u) return 13;
+    if (trapping_sub<U8>(a, b) != 144u) return 14;
+    if (trapping_mul<U8>(b, U8{4}) != 224u) return 15;
+    if (trapping_div<U8>(a, b) != 3u) return 16;
 
     volatile I8 low = i8_min;
     volatile I8 minus_one = -1;
