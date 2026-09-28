@@ -1,44 +1,33 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Expr-1 #911, mismatch class #2 of 2:
-// Tagged<u64, FamilyA> CANNOT MASQUERADE AS Tagged<u64, FamilyB>.
+// Mismatch class 2 of 2 for Expr::hash: a Family-A hash cannot take the
+// place of the Family-B hash that the field holds.
 //
-// Expr::hash carries the Family-B (process-local intern key) lane;
-// it MUST NOT silently swap with a Family-A hash (ContentHash,
-// MerkleHash, etc.) because Family-A values flow into Cipher and
-// merkle-DAG persistence — accidentally feeding the ASLR-mixed
-// Family-B value into a Family-A computation breaks byte-stability
-// across processes (CRUCIBLE.md §10).
+// Expr::hash is process-local, because the intern table mixes the
+// addresses of the child array into it.  Family-A values (ContentHash,
+// MerkleHash) go into Cipher and into the merkle DAG, and they must be the
+// same in each process.  If the two families are one type, a Family-B
+// value can reach a persistent key and break byte stability across
+// processes.  Tagged<uint64_t, FamilyA> and Tagged<uint64_t, FamilyB> are
+// different types, and the retag catalog has no edge between the two.
 //
-// Tagged<u64, FamilyA> and Tagged<u64, FamilyB> are distinct types
-// (different NTTPs); assignment between them is rejected by Tagged's
-// fail-closed retag_policy primary template (no admission specified
-// between the two families).
+// The fixture takes the type from the production field, so a change to
+// Expr::hash changes what the fixture checks.
 //
-// Distinct from the bare-u64 fixture which fails because the SOURCE
-// side has no wrap at all; here both sides ARE wrapped, but the
-// source-lattice families disagree.
-//
-// Expected diagnostic: no match for 'operator=' / cannot convert /
-// no viable / conversion from.
+// Companion: neg_expr_hash_bare_u64_assign.cpp refuses a bare uint64_t.
 
-#include <crucible/safety/_Tagged.h>
-#include <crucible/Types.h>
+#include <crucible/Expr.h>
 
 #include <cstdint>
+#include <type_traits>
 
 int main() {
-    using FamilyAHash = ::crucible::safety::Tagged<std::uint64_t, ::crucible::hash_family::FamilyA>;
-    using FamilyBHash = ::crucible::safety::Tagged<std::uint64_t, ::crucible::hash_family::FamilyB>;
+    using ExprHash = std::remove_const_t<decltype(crucible::Expr::hash)>;
 
-    FamilyAHash family_a_value{std::uint64_t{0xdeadbeefULL}};
-    FamilyBHash family_b_slot{std::uint64_t{0x12345678ULL}};
+    auto family_a_value = ::fixy::mint_tagged<crucible::hash_family::FamilyA>(std::uint64_t{0xdeadbeefULL});
+    ExprHash family_b_slot = ::fixy::mint_tagged<crucible::hash_family::FamilyB>(std::uint64_t{0x12345678ULL});
 
-    // Should FAIL: Tagged<u64, FamilyA> and Tagged<u64, FamilyB>
-    // are unrelated wrapper types (distinct family NTTPs); no
-    // implicit conversion / retag_policy admission exists between
-    // them.
+    // The compiler must reject this line: the two families are different types.
     family_b_slot = family_a_value;
-
     return 0;
 }

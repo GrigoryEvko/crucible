@@ -1,47 +1,47 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Cipher-3 #886, mismatch class #2 of 2:
-// FromUserPath CANNOT MASQUERADE AS CipherPath.
+// Mismatch class 2 of 2 for Cipher::obj_path: a path under
+// tags::source::FromUserPath cannot take the place of the path that the
+// function returns, which holds tags::source::CipherPath.
 //
-// Each path-provenance tag pins a DISTINCT lane in the retag-policy
-// matrix, and Cipher's CipherPath lane carries the invariant that
-// the bytes were assembled INSIDE Cipher from a sanitized root plus
-// a hex-formatted content hash — they never traversed an untrusted
-// boundary.  A Tagged<std::string, source::FromUserPath> value came
-// from CLI / argv input — it MUST NOT be silently relabelled as a
-// Cipher-emitted path, otherwise user-supplied paths could land in
-// Cipher's openat() helpers via a future Sanitized retag admission.
+// A FromUserPath value came from the command line or from argv.  Cipher
+// builds each CipherPath value from its sanitized root and a hex content
+// hash.  The two tags wrap the same std::string, but they are
+// different types.  The retag catalog lets FromUserPath go only into
+// Sanitized, and no tag reaches CipherPath: Cipher mints it with its own
+// helpers.  If this fixture compiles, a path from the user can reach the
+// openat helpers of Cipher.
 //
-// The fail-closed retag_policy primary template (V-022, Tagged.h)
-// rejects cross-lane assignment between distinct provenance NTTPs;
-// V-232's catalog ships ONLY the laundering FORWARD into Sanitized
-// for the three external lanes.  CipherPath is intentionally NOT in
-// that forward catalog — Cipher must mint CipherPath via its
-// internal helpers, not by retagging from FromUserPath.
+// obj_path is private, so the fixture reads its return type by
+// reflection.  A change to the signature changes what the fixture checks.
 //
-// Distinct from the bare-string fixture which fails because the
-// SOURCE side has no wrap at all; here both sides ARE wrapped, but
-// the source-lattice tags disagree.
-//
-// Expected diagnostic: no match for 'operator=' / cannot convert /
-// no viable / conversion from.
+// Companion: neg_cipher_obj_path_bare_string_assign.cpp refuses a bare
+// std::string.
 
-#include <crucible/safety/_Tagged.h>
-#include <crucible/safety/source/_Path.h>
+#include <crucible/Cipher.h>
 
+#include <meta>
 #include <string>
 
+consteval std::meta::info obj_path_return_type() {
+    for (const std::meta::info member :
+         std::meta::members_of(^^crucible::Cipher, std::meta::access_context::unchecked())) {
+        if (std::meta::is_function(member) && std::meta::has_identifier(member)
+            && std::meta::identifier_of(member) == "obj_path") {
+            return std::meta::return_type_of(member);
+        }
+    }
+    return ^^void;
+}
+
+using CipherObjPath = typename[:obj_path_return_type():];
+
 int main() {
-    using UserPathString = ::crucible::safety::Tagged<std::string, ::crucible::safety::source::FromUserPath>;
-    using CipherPathString = ::crucible::safety::Tagged<std::string, ::crucible::safety::source::CipherPath>;
+    auto user_path = ::fixy::mint_tagged<::fixy::tags::source::FromUserPath>(std::string{"/etc/passwd"});
+    CipherObjPath cipher_slot =
+        ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::string{"/cipher/objects/00/zero"});
 
-    UserPathString user_path{std::string{"/etc/passwd"}};
-    CipherPathString cipher_slot{std::string{"/cipher/objects/00/zero"}};
-
-    // Should FAIL: FromUserPath and CipherPath are distinct lanes;
-    // no implicit conversion / no retag_policy admission exists
-    // between them.
+    // The compiler must reject this line: the two sources are different types.
     cipher_slot = user_path;
-
     return 0;
 }

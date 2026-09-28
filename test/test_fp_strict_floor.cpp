@@ -3,12 +3,13 @@
 // floor is not engaged for downstream consumers, and the cross-vendor
 // bit-exactness invariants lose their guarantee without any build failure.
 
-#include <crucible/fixy/fp/_Canonicalize.h>
+#include <fixy/fp/Canonicalize.h>
 
 #include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 namespace {
 
@@ -43,14 +44,14 @@ void witness_canonicalize_under_floor() {
     volatile std::uint64_t nan_payload = 0x7FF1234567890ABCULL;
     const double nan_value = std::bit_cast<double>(nan_payload);
 
-    const auto canonical = crucible::fixy::fp::canonicalize(nan_value);
-    if (canonical != crucible::fixy::fp::kCanonicalQNaN64) {
+    const auto canonical = ::fixy::fp::canonicalize(nan_value);
+    if (canonical != ::fixy::fp::kCanonicalQNaN64) {
         std::fprintf(stderr,
                      "fp-strict floor: canonicalize(NaN) returned "
                      "0x%016lx, expected 0x%016lx. The floor is not engaged "
                      "on this translation unit despite the compile "
                      "definition being set.\n",
-                     canonical, crucible::fixy::fp::kCanonicalQNaN64);
+                     canonical, ::fixy::fp::kCanonicalQNaN64);
         std::abort();
     }
 
@@ -65,7 +66,7 @@ void witness_canonicalize_under_floor() {
                              "and the signed-zero canonicalization is broken.\n");
         std::abort();
     }
-    if (crucible::fixy::fp::canonicalize(neg_zero) != 0) {
+    if (::fixy::fp::canonicalize(neg_zero) != 0) {
         std::fprintf(stderr, "fp-strict floor: canonicalize(-0.0) returned "
                              "non-zero. The signed-zero projection failed.\n");
         std::abort();

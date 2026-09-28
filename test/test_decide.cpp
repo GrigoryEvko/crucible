@@ -10,7 +10,6 @@
 #include <crucible/algebra/lattices/_CipherTierLattice.h>
 #include <crucible/algebra/lattices/_DetSafeLattice.h>
 #include <crucible/algebra/lattices/_HotPathLattice.h>
-#include <crucible/Types.h>
 #include <crucible/safety/_Decide.h>
 #include <crucible/safety/_Pre.h>
 
@@ -1035,43 +1034,6 @@ static_assert(dc::is_non_zero(AggregateZero{0xDEADBEEF, 0xCAFEBABE}));
 
 static_assert(hash_aggregate(AggregateZero{1, 2}) == (1u ^ 2u));
 static_assert(hash_aggregate(AggregateZero{0xDEADBEEF, 0}) == 0xDEADBEEFu);
-
-static_assert(!dc::not_sentinel_hash(crucible::SchemaHash::sentinel()));
-static_assert(dc::not_sentinel_hash(crucible::SchemaHash{}));
-static_assert(dc::not_sentinel_hash(crucible::SchemaHash{0xDEADBEEFULL}));
-
-// A default-constructed hash is zero, which is not the sentinel.
-// Excluding zero is the job of the companion non-zero test below.
-static_assert(!dc::not_sentinel_hash(crucible::ContentHash::sentinel()));
-static_assert(dc::not_sentinel_hash(crucible::ContentHash{}));
-static_assert(dc::not_sentinel_hash(crucible::ContentHash{1ULL}));
-static_assert(dc::not_sentinel_hash(crucible::ContentHash{0xCAFEBABEULL}));
-
-static_assert(!dc::not_sentinel_hash(crucible::RowHash::sentinel()));
-static_assert(dc::not_sentinel_hash(crucible::RowHash{}));
-static_assert(dc::not_sentinel_hash(crucible::RowHash{0xFEEDFACEULL}));
-
-static_assert(!dc::not_sentinel_hash(crucible::RecipeHash::sentinel()));
-static_assert(dc::not_sentinel_hash(crucible::RecipeHash{0x123ULL}));
-static_assert(!dc::not_sentinel_hash(crucible::MerkleHash::sentinel()));
-static_assert(dc::not_sentinel_hash(crucible::MerkleHash{0x456ULL}));
-static_assert(!dc::not_sentinel_hash(crucible::ShapeHash::sentinel()));
-static_assert(dc::not_sentinel_hash(crucible::ShapeHash{0x789ULL}));
-
-// A usable cache key has to be both non-zero and not the sentinel.
-// Neither test alone suffices.
-[[nodiscard]] constexpr bool is_admissible_cache_key(crucible::ContentHash const& h) noexcept {
-    return dc::is_non_zero(h) && dc::not_sentinel_hash(h);
-}
-
-// zero: the non-zero test rejects
-static_assert(!is_admissible_cache_key(crucible::ContentHash{}));
-// sentinel: the sentinel test rejects
-static_assert(!is_admissible_cache_key(crucible::ContentHash::sentinel()));
-// neither: both tests pass
-static_assert(is_admissible_cache_key(crucible::ContentHash{1ULL}));
-static_assert(is_admissible_cache_key(crucible::ContentHash{0xCAFEBABEULL}));
-static_assert(is_admissible_cache_key(crucible::ContentHash{crucible::ContentHash::sentinel().raw() - 1}));
 
 static_assert(!dc::positive(std::uint8_t{0}));
 static_assert(!dc::positive(std::uint16_t{0}));

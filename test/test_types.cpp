@@ -1,4 +1,5 @@
 #include <crucible/Types.h>
+#include <foundation/contracts/Decide.h>
 
 #include "test_assert.h"
 
@@ -83,6 +84,47 @@ static void test_hash_sentinel_distinct_from_default() {
     std::printf("  test_hash_sentinel:             PASSED\n");
 }
 
+// A usable cache key is not zero and not the sentinel.  Each of the two
+// catalog predicates rejects only one of the two reserved values.
+[[nodiscard]] static constexpr bool is_admissible_cache_key(ContentHash const& hash) noexcept {
+    return ::foundation::decide::is_non_zero(hash) && ::foundation::decide::not_sentinel_hash(hash);
+}
+
+static void test_hash_sentinel_under_decide() {
+    namespace dc = ::foundation::decide;
+
+    // The catalog predicate reads is_sentinel() of each production strong
+    // hash.  The default value is zero, and zero is not the sentinel.
+    static_assert(!dc::not_sentinel_hash(SchemaHash::sentinel()));
+    static_assert(dc::not_sentinel_hash(SchemaHash{}));
+    static_assert(dc::not_sentinel_hash(SchemaHash{0xDEADBEEFULL}));
+
+    static_assert(!dc::not_sentinel_hash(ContentHash::sentinel()));
+    static_assert(dc::not_sentinel_hash(ContentHash{}));
+    static_assert(dc::not_sentinel_hash(ContentHash{1ULL}));
+    static_assert(dc::not_sentinel_hash(ContentHash{0xCAFEBABEULL}));
+
+    static_assert(!dc::not_sentinel_hash(RowHash::sentinel()));
+    static_assert(dc::not_sentinel_hash(RowHash{}));
+    static_assert(dc::not_sentinel_hash(RowHash{0xFEEDFACEULL}));
+
+    static_assert(!dc::not_sentinel_hash(RecipeHash::sentinel()));
+    static_assert(dc::not_sentinel_hash(RecipeHash{0x123ULL}));
+    static_assert(!dc::not_sentinel_hash(MerkleHash::sentinel()));
+    static_assert(dc::not_sentinel_hash(MerkleHash{0x456ULL}));
+    static_assert(!dc::not_sentinel_hash(ShapeHash::sentinel()));
+    static_assert(dc::not_sentinel_hash(ShapeHash{0x789ULL}));
+
+    // The non-zero test rejects zero, and the sentinel test rejects the sentinel.
+    static_assert(!is_admissible_cache_key(ContentHash{}));
+    static_assert(!is_admissible_cache_key(ContentHash::sentinel()));
+    static_assert(is_admissible_cache_key(ContentHash{1ULL}));
+    static_assert(is_admissible_cache_key(ContentHash{0xCAFEBABEULL}));
+    static_assert(is_admissible_cache_key(ContentHash{ContentHash::sentinel().raw() - 1}));
+
+    std::printf("  test_hash_sentinel_decide:      PASSED\n");
+}
+
 static void test_noexcept_ctors_propagate() {
     // Both constructors must be noexcept, or every containing type loses
     // its own noexcept guarantee through the default-construction chain.
@@ -136,9 +178,10 @@ int main() {
     test_explicit_construction();
     test_three_way_compare();
     test_hash_sentinel_distinct_from_default();
+    test_hash_sentinel_under_decide();
     test_noexcept_ctors_propagate();
     test_scalar_type_element_sizes();
     test_bit_cast_round_trip();
-    std::printf("test_types: 8 groups, all passed\n");
+    std::printf("test_types: 9 groups, all passed\n");
     return 0;
 }

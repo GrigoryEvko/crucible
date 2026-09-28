@@ -1,42 +1,31 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Expr-1 #911, mismatch class #1 of 2:
-// BARE u64 CANNOT MASQUERADE AS Tagged<u64, hash_family::FamilyB>.
+// Mismatch class 1 of 2 for Expr::hash: a bare uint64_t cannot enter the
+// type of that field, fixy::Tagged<uint64_t, hash_family::FamilyB>.
 //
-// After the migration, Expr::hash is Tagged<uint64_t,
-// hash_family::FamilyB> (regime-1 EBO-collapsed to 8B).  A bare
-// uint64_t has no FamilyB provenance witness; assigning it to a
-// Tagged slot is rejected by Tagged's explicit-only ctor + no
-// assignment-from-T operator.
+// The constructor of Tagged from its value is explicit and private, so
+// mint_tagged is the one door, and it names the family at the call site.
+// A bare integer names no family.  If this fixture compiles, the field is
+// a bare uint64_t, and a process-local Family-B hash can reach a
+// Family-A computation (a Cipher key, a merkle hash, a ContentHash) with
+// no compile error.
 //
-// If this fixture starts compiling, the wrap silently degraded back
-// to bare uint64_t and every Family-B vs Family-A discipline at the
-// Expr::hash boundary disappeared (in particular, a future
-// regression could feed Expr::hash into a Family-A computation
-// — Cipher key, merkle_hash, ContentHash — without compile-time
-// rejection).
+// The fixture takes the type from the production field, so a change to
+// Expr::hash changes what the fixture checks.
 //
-// Distinct from the cross-family fixture, which fails because TWO
-// Tagged wrappers (different families) collide; here the failure is
-// a bare uint64_t trying to land in a wrapped slot.
-//
-// Expected diagnostic: no match for 'operator=' / cannot convert /
-// no viable / conversion from.
+// Companion: neg_expr_hash_cross_family.cpp refuses a Family-A hash.
 
-#include <crucible/safety/_Tagged.h>
-#include <crucible/Types.h>
+#include <crucible/Expr.h>
 
 #include <cstdint>
+#include <type_traits>
 
 int main() {
-    using FamilyBHash = ::crucible::safety::Tagged<std::uint64_t, ::crucible::hash_family::FamilyB>;
+    using ExprHash = std::remove_const_t<decltype(crucible::Expr::hash)>;
 
-    FamilyBHash slot{std::uint64_t{0xdeadbeefULL}};
+    ExprHash slot = ::fixy::mint_tagged<crucible::hash_family::FamilyB>(std::uint64_t{0xdeadbeefULL});
 
-    // Should FAIL: bare std::uint64_t has no implicit conversion to
-    // Tagged<uint64_t, hash_family::FamilyB>.  The explicit ctor
-    // exists; cross-T assignment does not.
+    // The compiler must reject this line: no assignment takes a bare uint64_t.
     slot = std::uint64_t{0x12345678ULL};
-
     return 0;
 }

@@ -1,49 +1,31 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-BgThread-4 #875 (Tagged half), mismatch class #2 of 2:
-// `Tagged<uint64_t, source::Calibrated>` CANNOT BE ASSIGNED TO A
-// `Tagged<uint64_t, source::Meridian>` FIELD WITHOUT EXPLICIT RETAG.
+// Mismatch class 2 of 2 for BackgroundThread::device_capability: the
+// compiler rejects an assignment of a value under tags::source::Calibrated,
+// because the field holds tags::source::Meridian (provenance laundering).
 //
-// Companion to neg_device_capability_raw_assignment.cpp.  The raw-
-// uint64_t fixture catches a caller bypassing the provenance gate
-// entirely.  THIS fixture catches the SUBTLER defect mode:
-// provenance LAUNDERING via cross-source mixing.  A caller has a
-// `Tagged<uint64_t, source::Calibrated>` (e.g. a result from a
-// general-purpose runtime calibration probe — not the Meridian
-// startup pass), and tries to assign it to the `Tagged<uint64_t,
-// source::Meridian>` field.  Both wrap `uint64_t`, but the Tag
-// distinguishes them as nominally distinct types and the type system
-// refuses the swap.
+// Calibrated marks the result of a runtime calibration probe.  Meridian
+// marks a value that the startup calibration pass measured on real
+// silicon.  The two tags wrap the same uint64_t, but they are different
+// types, and the retag catalog has no edge from Calibrated to Meridian.
+// If this fixture compiles, a value that a probe measured at run time can
+// take the place of the startup measurement.
 //
-// Without this gate, a runtime-calibrated value would silently take
-// residence in device_capability and the source::Meridian invariant
-// ("measured from real silicon at startup, not synthesized or
-// recalibrated mid-runtime") would be subverted — Forge phase
-// E.RecipeSelect would receive an off-spec hardware-identity value
-// and pick an incompatible kernel.
-//
-// Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
-// demonstrating a distinct mismatch class.  Mirror of the
-// WRAP-CCtx-2 #904 active_region_ cross-source fixture (same Tagged
-// shape, different source-tag axis: source::Arena vs source::Vigil →
-// here, source::Calibrated vs source::Meridian).
+// Companion: neg_device_capability_raw_assignment.cpp refuses a raw
+// uint64_t (provenance bypass).
 
-#include <crucible/safety/_Tagged.h>
+#include <crucible/BackgroundThread.h>
+
 #include <cstdint>
 
+static void assign_calibrated_capability(crucible::BackgroundThread& background) {
+    auto calibrated = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::uint64_t{90});
+
+    // The compiler must reject this line: the two sources are different types.
+    background.device_capability = calibrated;
+}
+
 int main() {
-    using MeridianCap = ::crucible::safety::Tagged<std::uint64_t, ::crucible::safety::source::Meridian>;
-    using CalibratedCap = ::crucible::safety::Tagged<std::uint64_t, ::crucible::safety::source::Calibrated>;
-
-    CalibratedCap calibrated_tagged{90};
-
-    // Should FAIL: Tagged<T, source::Calibrated> and Tagged<T,
-    // source::Meridian> are DISTINCT nominal types despite identical
-    // value_type T.  The Tag is the type-level provenance witness;
-    // cross-source assignment requires explicit `Tagged<T, NewTag>{old.value()}`
-    // re-wrapping (provenance is re-asserted at the call site, not
-    // auto-laundered).
-    MeridianCap field = calibrated_tagged;
-    (void)field;
+    (void)&assign_calibrated_capability;
     return 0;
 }

@@ -52,3 +52,9 @@ test/fixy/test_refined.cpp — walks the admitted implications to check the seal
 test/fixy/test_secret.cpp — walks the secret-policy namespace to check the policy roster
 test/fixy/test_splice_access_attacks.cpp — the ledger reproducer: a splice of a private member still writes it
 test/fixy/test_tagged.cpp — walks the admitted retags to check the sealed relation
+
+# Negative fixtures that read the return type of a private member function,
+# so that the fixture follows the production signature.  They keep the
+# reflection of that one function only, and they splice nothing.
+test/safety_neg/neg_cipher_obj_path_bare_string_assign.cpp — reads the return type of the private Cipher::obj_path
+test/safety_neg/neg_cipher_obj_path_cross_source.cpp — reads the return type of the private Cipher::obj_path

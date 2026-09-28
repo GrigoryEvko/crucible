@@ -224,7 +224,7 @@ crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice
 crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrappers + composite + row_hash + DimensionTraits
 crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
 crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
-crucible_test(test_fixy_v_094_fp_strict_floor)  # FIXY-V-094 crucible_fp_strict INTERFACE floor — compile-def + runtime witness
+crucible_test(test_fp_strict_floor)  # the crucible_fp_strict floor reaches a crucible consumer: compile definition and runtime witness
 crucible_test(test_philox_box_muller_polynomial)  # Philox::box_muller_polynomial_det runtime witness and tier
 crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness
 target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
@@ -7844,23 +7844,21 @@ crucible_neg_compile_multi_test(neg_active_region_ptr_cross_source_assignment
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::Vigil>. requested"
   "neg_active_region_ptr_cross_source_assignment.cpp:35")
 
-# ─── WRAP-BgThread-4 #875 (Tagged half) neg-compile tests ───────────
-#
-# BackgroundThread::device_capability migrates from raw `uint64_t` to
-# `safety::Tagged<uint64_t, source::Meridian>`.  Meridian source tag
-# (Tagged.h, near source::Vigil) encodes "this value was measured from
-# real silicon at startup via the Meridian calibration pass" — distinct
-# from source::Calibrated (general-purpose runtime calibration result).
-# Two fixtures per HS14, demonstrating distinct mismatch classes
-# (mirror of WRAP-CCtx-2 #904 active_region_ pair):
-#   * neg_device_capability_raw_assignment — provenance BYPASS.
-#   * neg_device_capability_cross_source_assignment — provenance LAUNDERING.
-# The "+ Refined" half of WRAP-BgThread-4 is deferred — vendor-specific
-# encoded-value ranges are opaque at the BgThread layer.
-crucible_neg_compile_test(neg_device_capability_raw_assignment
-  "no match|cannot convert|no viable|could not convert|explicit|constructor")
-crucible_neg_compile_test(neg_device_capability_cross_source_assignment
-  "no match|cannot convert|no viable|could not convert|Tagged|source")
+# BackgroundThread::device_capability holds a DeviceCapability,
+# fixy::Tagged<uint64_t, tags::source::Meridian>.  The tag says that the
+# startup calibration pass measured the value on real silicon.
+#   * neg_device_capability_raw_assignment: a raw uint64_t does not
+#     convert, because the constructor from the value is explicit and
+#     private (bypass).
+#   * neg_device_capability_cross_source_assignment: a value under
+#     tags::source::Calibrated does not convert, because no retag edge
+#     joins the two tags (laundering).
+crucible_neg_compile_multi_test(neg_device_capability_raw_assignment
+  "neg_device_capability_raw_assignment.cpp:23:36: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .uint64_t."
+  "no known conversion for argument 1 from .uint64_t. \\{aka .long unsigned int.\\} to .const fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>&.")
+crucible_neg_compile_multi_test(neg_device_capability_cross_source_assignment
+  "neg_device_capability_cross_source_assignment.cpp:25:36: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .fixy::Tagged<long unsigned int, fixy::tags::source::Calibrated>.\\)"
+  "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, fixy::tags::source::Calibrated>. to .const fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>&.")
 
 # RegionCache::ops_ holds fixy::Tagged<const TraceEntry*, source::RegionOps>.
 #   * neg_region_ops_ptr_raw_assignment: a raw pointer does not convert,
@@ -8342,13 +8340,18 @@ crucible_neg_compile_multi_test(neg_transaction_ts_ns_cross_source
   "neg_transaction_ts_ns_cross_source.cpp:25:34: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>."
   "error: no matching function for call to .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>::ClockSource\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\).")
 
-# ─── WRAP-Cipher-3 #886 HS14 negative-compile fixtures ─────────────
-#   - neg_cipher_obj_path_bare_string_assign  (no implicit string→Tagged)
-#   - neg_cipher_obj_path_cross_source        (FromUserPath ≠ CipherPath)
-crucible_neg_compile_test(neg_cipher_obj_path_bare_string_assign
-  "conversion from|cannot convert|no viable|no match for")
-crucible_neg_compile_test(neg_cipher_obj_path_cross_source
-  "conversion from|cannot convert|no viable|no match for")
+# Cipher::obj_path returns fixy::Tagged<std::string, tags::source::CipherPath>.
+# The two fixtures read that return type by reflection.
+#   - neg_cipher_obj_path_bare_string_assign: a bare std::string does not
+#     convert, because the constructor from the value is explicit and private.
+#   - neg_cipher_obj_path_cross_source: a path under FromUserPath does not
+#     convert, because no retag edge reaches CipherPath.
+crucible_neg_compile_multi_test(neg_cipher_obj_path_bare_string_assign
+  "neg_cipher_obj_path_bare_string_assign.cpp:41:45: error: no match for .operator=. \\(operand types are .CipherObjPath. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>.\\} and .std::string."
+  "no known conversion for argument 1 from .std::string. \\{aka .std::__cxx11::basic_string<char>.\\} to .const fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>&.")
+crucible_neg_compile_multi_test(neg_cipher_obj_path_cross_source
+  "neg_cipher_obj_path_cross_source.cpp:45:19: error: no match for .operator=. \\(operand types are .CipherObjPath. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>.\\} and .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>.\\)"
+  "no known conversion for argument 1 from .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>. to .const fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>&.")
 
 # ─── WRAP-Types-3 #1069 HS14 negative-compile fixtures ─────────────
 #   - neg_types_hash_family_unspecialized  (incomplete primary template)
@@ -8358,13 +8361,18 @@ crucible_neg_compile_test(neg_types_hash_family_unspecialized
 crucible_neg_compile_test(neg_types_hash_family_cross_lane
   "static assertion failed|WRAP-Types-3|Family-B|IsFamilyB")
 
-# ─── WRAP-Expr-1 #911 HS14 negative-compile fixtures ───────────────
-#   - neg_expr_hash_bare_u64_assign    (no implicit u64 → Tagged<u64, FamilyB>)
-#   - neg_expr_hash_cross_family       (FamilyA ≠ FamilyB Tagged)
-crucible_neg_compile_test(neg_expr_hash_bare_u64_assign
-  "conversion from|cannot convert|no viable|no match for")
-crucible_neg_compile_test(neg_expr_hash_cross_family
-  "conversion from|cannot convert|no viable|no match for")
+# Expr::hash is fixy::Tagged<uint64_t, hash_family::FamilyB>.  The two
+# fixtures take that type from the field.
+#   - neg_expr_hash_bare_u64_assign: a bare uint64_t does not convert,
+#     because the constructor from the value is explicit and private.
+#   - neg_expr_hash_cross_family: a Family-A hash does not convert,
+#     because the two families are different types.
+crucible_neg_compile_multi_test(neg_expr_hash_bare_u64_assign
+  "neg_expr_hash_bare_u64_assign.cpp:29:39: error: no match for .operator=. \\(operand types are .ExprHash. \\{aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.\\} and .uint64_t."
+  "no known conversion for argument 1 from .uint64_t. \\{aka .long unsigned int.\\} to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
+crucible_neg_compile_multi_test(neg_expr_hash_cross_family
+  "neg_expr_hash_cross_family.cpp:31:21: error: no match for .operator=. \\(operand types are .ExprHash. \\{aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.\\} and .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>.\\)"
+  "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>. to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
 
 # ─── WRAP-Reflect-4 #985 HS14 negative-compile fixtures ────────────
 #   - neg_reflect_supported_void           (void excluded from allow-list)
