@@ -13,8 +13,7 @@ type names.  When each ordered pair of roles has its own channel
 channels.  When two pairs share a channel, as in an explicit-channel
 global type, they share one queue.  A receive that names no channel
 (channel -1) takes the oldest message sent to its role, whoever sent
-it.  That is the only way to run a local type of the frozen tree, whose
-Recv names no peer.
+it.
 
 The bad states:
 
@@ -36,7 +35,6 @@ states stops with the verdict ``unknown``.
 
 from __future__ import annotations
 
-import itertools
 from collections import deque
 from dataclasses import dataclass
 
@@ -535,100 +533,3 @@ def _starvation(roles: list[int], states: list[tuple],
             if fair:
                 return r, min(comp, key=lambda st: (len(st[1]), repr(st)))
     return None
-
-
-# ── Peer bindings for local types that name no peer ──────────────────
-
-
-def _positions(e: Local, prefix: tuple[int, ...] = ()) -> list[tuple[tuple[int, ...], bool]]:
-    """Return the path and the direction of every action in ``e``, preorder."""
-    if isinstance(e, (LEnd, LVar)):
-        return []
-    if isinstance(e, LRec):
-        return _positions(e.body, prefix + (0,))
-    out = [(prefix, e.send)]
-    if isinstance(e, LMsg):
-        return out + _positions(e.cont, prefix + (0,))
-    for k, b in enumerate(e.branches):
-        out += _positions(b, prefix + (k,))
-    return out
-
-
-def _bind(e: Local, me: int, peers: dict[tuple[int, ...], int],
-          prefix: tuple[int, ...] = ()) -> Local:
-    """Give each action of ``e`` the peer that ``peers`` names for its path."""
-    if isinstance(e, (LEnd, LVar)):
-        return e
-    if isinstance(e, LRec):
-        return LRec(_bind(e.body, me, peers, prefix + (0,)))
-    peer = peers.get(prefix)
-    if peer is None:
-        ch = -1
-    else:
-        ch = me * 8 + peer if e.send else peer * 8 + me
-    if isinstance(e, LMsg):
-        return LMsg(e.send, ch, e.sort, _bind(e.cont, me, peers, prefix + (0,)))
-    return LBranch(e.send, ch, tuple(_bind(b, me, peers, prefix + (k,))
-                                     for k, b in enumerate(e.branches)))
-
-
-MAX_BINDINGS = 729
-
-
-@dataclass(frozen=True, slots=True)
-class BindingReport:
-    """The verdicts of every peer binding of a system with peerless roles."""
-
-    total: int
-    safe: tuple[str, ...]
-    failures: tuple[tuple[str, Verdict], ...]
-    skipped: bool
-
-    def text(self) -> str:
-        """Return a one-line form for the golden file."""
-        if self.skipped:
-            return f"not explored: more than {MAX_BINDINGS} peer bindings"
-        if self.safe:
-            return f"{len(self.safe)} of {self.total} peer bindings safe, e.g. {self.safe[0]}"
-        binding, verdict = self.failures[0]
-        return f"all {self.total} peer bindings fail, e.g. {binding}: {verdict.text()}"
-
-
-def explore_bindings(fixed: dict[int, Local], peerless: dict[int, Local],
-                     candidates: dict[int, list[int]], inbox: bool) -> BindingReport:
-    """Explore every static peer binding of the ``peerless`` roles.
-
-    A static binding gives each action position one peer, the same on
-    every loop iteration, because a local type is all that an
-    implementation of the role knows.  With ``inbox`` true the receives
-    stay unbound and read the inbox head, and only the sends are bound.
-    ``fixed`` roles keep their channels.  O(bindings × explore).
-    """
-    slots: list[tuple[int, tuple[int, ...]]] = []
-    for r, e in sorted(peerless.items()):
-        for path, send in _positions(e):
-            if send or not inbox:
-                slots.append((r, path))
-    options = [candidates[r] for r, _ in slots]
-    total = 1
-    for o in options:
-        total *= max(len(o), 1)
-    if total > MAX_BINDINGS or any(not o for o in options):
-        return BindingReport(total, (), (), True)
-    safe: list[str] = []
-    failures: list[tuple[str, Verdict]] = []
-    for choice in itertools.product(*options):
-        peers: dict[int, dict[tuple[int, ...], int]] = {r: {} for r in peerless}
-        for (r, path), peer in zip(slots, choice, strict=True):
-            peers[r][path] = peer
-        system = dict(fixed)
-        for r, e in peerless.items():
-            system[r] = _bind(e, r, peers[r])
-        name = ";".join(f"{r}@{'.'.join(map(str, p)) or 'top'}->{q}"
-                        for (r, p), q in zip(slots, choice, strict=True)) or "no action to bind"
-        verdict = explore(system)
-        if verdict.is_safe:
-            safe.append(name)
-        else:
-            failures.append((name, verdict))
-    return BindingReport(total, tuple(safe), tuple(failures), False)
