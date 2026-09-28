@@ -41,6 +41,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <meta>
 #include <optional>
 #include <source_location>
 #include <string_view>
@@ -105,6 +106,7 @@ static_assert(s::SteppingGraded<AtSend>);
 static_assert(s::SteppingGraded<AtRecv>);
 static_assert(s::SteppingGraded<AtSelect>);
 static_assert(s::SteppingGraded<AtOffer>);
+static_assert(!s::SteppingGraded<int> && !s::SteppingGraded<ValueWire>, "a value that is not a handle does not step");
 
 // The modality is the one Modality.h reserved for session handles, and
 // it is the same for every head — the protocol advances, the modality
@@ -129,6 +131,21 @@ static_assert(AtSend::protocol_name().find("Send") != std::string_view::npos);
 static_assert(!std::is_copy_constructible_v<AtSend>);
 static_assert(!std::is_copy_assignable_v<AtSend>);
 static_assert(std::is_move_constructible_v<AtSend>);
+
+// A handle offers the step of its head and no other step.  A handle at a
+// Recv cannot send before its message arrives, and a handle at a Send
+// cannot receive.  The check reads the members that each head declares.
+[[nodiscard]] consteval bool declares_member(std::meta::info handle, std::string_view name) {
+    for (const std::meta::info member : std::meta::members_of(handle, std::meta::access_context::current())) {
+        if (std::meta::has_identifier(member) && std::meta::identifier_of(member) == name) return true;
+    }
+    return false;
+}
+static_assert(declares_member(^^AtSend, "send") && !declares_member(^^AtSend, "recv"));
+static_assert(declares_member(^^AtRecv, "recv") && !declares_member(^^AtRecv, "send"));
+static_assert(!declares_member(^^AtEnd, "send") && !declares_member(^^AtEnd, "recv"));
+static_assert(!declares_member(^^AtSelect, "send") && !declares_member(^^AtSelect, "recv"));
+static_assert(!declares_member(^^AtOffer, "send") && !declares_member(^^AtOffer, "recv"));
 
 // A call site cannot build a handle directly: every value constructor
 // is private and befriends only the factory and the handle family, so
@@ -261,6 +278,27 @@ static_assert(s::PermissionFlowCloses<s::Loop<s::Send<Token, s::Recv<Token, s::C
 static_assert(!s::PermissionFlowCloses<s::Loop<s::Send<Token, s::Continue>>, HoldsRegion>,
               "one iteration gives the region away");
 static_assert(s::PermissionFlowCloses<s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>, NoPerms>);
+
+// The same rules hold for each payload that moves the token: a bare
+// Permission, a Transferable and a Returned.  A send needs the region.  A
+// loop that receives the region must give it back in the same iteration,
+// and a loop that gives it away must receive it back.  A nested loop that
+// sends it on each inner iteration has no region after the first, unless
+// the inner iteration receives it back.
+template <class Moves>
+[[nodiscard]] consteval bool moves_the_region() noexcept {
+    return s::PermissionFlowCloses<s::Send<Moves, s::End>, HoldsRegion>
+        && !s::PermissionFlowCloses<s::Send<Moves, s::End>, NoPerms>
+        && s::PermissionFlowCloses<s::Loop<s::Recv<Moves, s::Send<Moves, s::Continue>>>, NoPerms>
+        && !s::PermissionFlowCloses<s::Loop<s::Recv<Moves, s::Continue>>, NoPerms>
+        && !s::PermissionFlowCloses<s::Loop<s::Send<Moves, s::Continue>>, HoldsRegion>
+        && !s::PermissionFlowCloses<s::Loop<s::Recv<Moves, s::Loop<s::Send<Moves, s::Continue>>>>, NoPerms>
+        && s::PermissionFlowCloses<s::Loop<s::Recv<Moves, s::Loop<s::Send<Moves, s::Recv<Moves, s::Continue>>>>>,
+                                   NoPerms>;
+}
+static_assert(moves_the_region<Token>());
+static_assert(moves_the_region<s::Transferable<int, Region>>());
+static_assert(moves_the_region<s::Returned<int, Region>>());
 
 // A vendor pin is a declaration for the layer above.  The handle steps the
 // protocol that the pin wraps, at the top and after a step.

@@ -401,6 +401,7 @@ using RelaxedTile = ::fixy::NumericalTier<Tolerance::RELAXED, TensorTile>;
 static_assert(s::is_payload_subsort_v<BitexactTile, RelaxedTile> && s::is_payload_subsort_v<Fp32Tile, Fp16Tile>);
 static_assert(!s::is_payload_subsort_v<RelaxedTile, BitexactTile> && !s::is_payload_subsort_v<Fp16Tile, Fp32Tile>);
 static_assert(!s::is_payload_subsort_v<BitexactTile, TensorTile>, "a tier does not drop to the bare value");
+static_assert(!s::is_payload_subsort_v<TensorTile, BitexactTile>, "a bare value does not gain a tier");
 
 // Send lifts the order covariantly, Recv contravariantly.
 static_assert(s::is_subtype_sync_v<Send<BitexactTile, End>, Send<RelaxedTile, End>>);
@@ -410,6 +411,9 @@ static_assert(!s::is_subtype_sync_v<Recv<BitexactTile, End>, Recv<RelaxedTile, E
 static_assert(s::CompatibleClient<Send<BitexactTile, End>, Recv<RelaxedTile, End>>);
 static_assert(!s::CompatibleClient<Send<RelaxedTile, End>, Recv<BitexactTile, End>>);
 static_assert(s::CompatibleClient<Loop<Send<BitexactTile, Continue>>, Loop<Recv<RelaxedTile, Continue>>>);
+static_assert(!s::is_subtype_sync_v<Loop<Send<BitexactTile, Send<RelaxedTile, Continue>>>,
+                                    Loop<Send<BitexactTile, Send<BitexactTile, Continue>>>>,
+              "one step of a loop body that sends a weaker tier makes the whole loop weaker");
 static_assert(s::is_subtype_sync_v<Send<Refined<::fixy::positive, int>, End>, Send<int, End>>);
 static_assert(!s::is_subtype_sync_v<Send<int, End>, Send<Refined<::fixy::positive, int>, End>>);
 static_assert(s::is_subtype_sync_v<Recv<int, End>, Recv<Refined<::fixy::positive, int>, End>>);

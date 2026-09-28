@@ -1553,3 +1553,15 @@ foundation_neg_compile_test(neg_thread_local_ref_needs_a_default
 foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
   "no matching function for call to .foundation::ThreadLocalRef<\\{anonymous\\}::CounterTag, \\{anonymous\\}::Counter>::store\\(\\{anonymous\\}::Label\\) const."
   "the expression .is_assignable_v<T&, U&&> \\[with T = <unnamed>::Counter; U = <unnamed>::Label\\]. evaluated to .false.")
+
+# ── Hard errors in a body ─────────────────────────────────────────────
+#
+# Neither template has a constraint.  The refusal is an error in the body
+# of the template, and no concept can read it.  For that reason each
+# refusal has a fixture.
+foundation_neg_compile_test(neg_signature_traits_of_a_non_function
+  "In instantiation of .struct foundation::reflect::signature_traits<42>."
+  "reflection does not represent a function or function type")
+foundation_neg_compile_test(neg_simd_iota_of_a_scalar
+  "In instantiation of .constexpr V foundation::simd::iota_v\\(\\) \\[with V = int\\]."
+  ".int. is not a class, struct, or union type")

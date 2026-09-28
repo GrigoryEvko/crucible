@@ -16,6 +16,8 @@
 #include <fixy/Reject.h>
 #include <fixy/Tags.h>
 
+#include <cstddef>
+#include <meta>
 #include <type_traits>
 
 namespace {
@@ -135,6 +137,88 @@ static_assert(every_role_mints_the_value());
 // The value constructor stays private through a role.
 static_assert(!std::is_constructible_v<role::IoFunction<int>, int>);
 static_assert(!std::is_constructible_v<role::PublicEmit<int, policy::WireSerialize>, int>);
+
+// ---------------------------------------------------------------------
+// What every role refuses, over every role there is.
+//
+// The walk reads the roles out of fixy::role.  A role that a later change
+// declares is in the walk at once.  A unary role mints through
+// mint_fn_for, and the walk asks IsRoleFor, the gate of that door.  A
+// binary role mints through mint_fn, and the walk asks IsAccepted, the
+// gate of that door, about the fn that the role names.  For each role
+// the walk also checks four things: the gate admits an int payload, the
+// value constructor stays private, the binding is not an atom, and a
+// binary role takes no policy outside the closed set of fixy/Tags.h.
+
+template <class F>
+struct is_admitted_fn : std::false_type {};
+template <class T, class... Atoms>
+struct is_admitted_fn<fn<T, Atoms...>> : std::bool_constant<IsAccepted<T, Atoms...>> {};
+
+struct policy_outside_the_catalog final {};
+
+// The payloads that tier 1 of the gate refuses.
+inline constexpr std::meta::info unholdable_payloads[] = {^^void,      ^^int[4],       ^^int&,    ^^int&&,
+                                                          ^^const int, ^^volatile int, ^^int(int)};
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+template <class Binding>
+[[nodiscard]] consteval bool is_a_closed_binding() noexcept {
+    return is_admitted_fn<Binding>::value && !std::is_constructible_v<Binding, int> && !::fixy::atom::IsAtom<Binding>;
+}
+
+[[nodiscard]] consteval bool unary_role_refuses_each_unholdable_payload(std::meta::info role_member) {
+    for (const std::meta::info payload : unholdable_payloads) {
+        if (std::meta::extract<bool>(std::meta::substitute(^^::fixy::IsRoleFor, {role_member, payload}))) return false;
+    }
+    return true;
+}
+
+struct role_walk {
+    std::size_t declared = 0;
+    std::size_t proven = 0;
+};
+
+[[nodiscard]] consteval role_walk walk_the_roles() noexcept {
+    role_walk walk{};
+    static constexpr auto role_members =
+        std::define_static_array(std::meta::members_of(^^::fixy::role, std::meta::access_context::current()));
+    constexpr auto policy_arg = ^^policy::WireSerialize;
+    template for (constexpr auto role_member : role_members) {
+        ++walk.declared;
+        if constexpr (std::meta::can_substitute(^^::fixy::IsRoleFor, {role_member, ^^int})) {
+            using Binding = [:std::meta::substitute(role_member, {^^int}):];
+            if (is_a_closed_binding<Binding>()
+                && std::meta::extract<bool>(std::meta::substitute(^^::fixy::IsRoleFor, {role_member, ^^int}))
+                && unary_role_refuses_each_unholdable_payload(role_member)) {
+                ++walk.proven;
+            }
+        } else if constexpr (std::meta::can_substitute(role_member, {^^int, policy_arg})) {
+            using Binding = [:std::meta::substitute(role_member, {^^int, policy_arg}):];
+            bool refuses_each_payload = true;
+            template for (constexpr auto payload : unholdable_payloads) {
+                using Refused = [:std::meta::substitute(role_member, {payload, policy_arg}):];
+                refuses_each_payload = refuses_each_payload && !is_admitted_fn<Refused>::value;
+            }
+            const bool refuses_each_non_policy =
+                !std::meta::can_substitute(role_member, {^^int, ^^void})
+                && !std::meta::can_substitute(role_member, {^^int, ^^policy::WireSerialize& })
+                && !std::meta::can_substitute(role_member, {^^int, ^^policy_outside_the_catalog});
+            if (is_a_closed_binding<Binding>() && refuses_each_payload && refuses_each_non_policy) ++walk.proven;
+        }
+    }
+    return walk;
+}
+
+#pragma GCC diagnostic pop
+
+constexpr role_walk the_roles = walk_the_roles();
+static_assert(the_roles.declared > 0, "the walk found no role in fixy::role, so it proves nothing");
+static_assert(the_roles.proven == the_roles.declared,
+              "a role admits a payload or a policy that its door must refuse, or it has an arity that is neither the "
+              "payload alone nor a payload and a policy");
 
 // ---------------------------------------------------------------------
 // A static_assert proves the constant-evaluated path only.  These run.

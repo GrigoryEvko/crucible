@@ -152,6 +152,18 @@ static_assert(s::DelegatableHandle<decltype(s::mint_session_handle<Inner, Wire>(
 static_assert(!s::DelegatableHandle<int>);
 static_assert(s::payload_conveys_delegation_v<Carried>);
 
+// A hand-off moves the tags of its endpoint as a token does.  The sender
+// must hold them, and a recipient that holds them already cannot take a
+// second owner.
+struct HandedRegion {
+    using permission_row = eff::Row<>;
+};
+using CarriesRegion = s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, fp::PermSet<HandedRegion>>;
+static_assert(s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>);
+static_assert(!s::PermissionFlowCloses<s::Send<CarriesRegion, s::End>, fp::EmptyPermSet>);
+static_assert(s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::EmptyPermSet>);
+static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermSet<HandedRegion>>);
+
 [[nodiscard]] static int fail(const char* what) {
     std::fprintf(stderr, "test_session_delegation: %s\n", what);
     return 1;

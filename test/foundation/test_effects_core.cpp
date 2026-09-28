@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <string_view>
 #include <type_traits>
 
@@ -28,6 +29,25 @@ static_assert(!std::is_default_constructible_v<fe::Bg>);
 static_assert(!std::is_default_constructible_v<fe::Init>);
 static_assert(!std::is_default_constructible_v<fe::Test>);
 static_assert(noexcept(fe::testing::bg()) && noexcept(fe::testing::init()) && noexcept(fe::testing::test()));
+
+// No class derives from a context.  A class that a translation unit
+// declares cannot become a context by derivation, and a copy of it
+// cannot become a context either.  The walk asks IsContext about each
+// type of the namespace, and a context that a later change adds is in the
+// walk at once.
+[[nodiscard]] consteval std::size_t contexts_that_are_not_final() {
+    std::size_t contexts = 0;
+    std::size_t open = 0;
+    for (const std::meta::info member :
+         std::meta::members_of(^^::foundation::effects, std::meta::access_context::current())) {
+        if (!std::meta::is_type(member) || !std::meta::can_substitute(^^fe::IsContext, {member})) continue;
+        if (!std::meta::extract<bool>(std::meta::substitute(^^fe::IsContext, {member}))) continue;
+        ++contexts;
+        if (!std::meta::is_final_type(member)) ++open;
+    }
+    return contexts == 0 ? 1 : open;
+}
+static_assert(contexts_that_are_not_final() == 0, "a context is not final, or the walk found no context");
 
 // The owners are defined in the header of their keys, so they are
 // complete in every TU that can name a key, and no TU can define one

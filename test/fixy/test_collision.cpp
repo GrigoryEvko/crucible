@@ -812,6 +812,11 @@ static_assert(col::every_pending_axis_is_still_empty());
 static_assert(col::pending_axis_count == axes_without_an_atom(),
               "pending_axes must list exactly the axes with no atom, once each");
 
+// The walk above does not look at Axis::Type.  The grade on that axis is
+// the payload, and fixy/Fn.h reads it from the payload and never from the
+// pack.  An atom on Axis::Type passes the gate and changes nothing.
+static_assert(!col::axis_has_an_atom<Axis::Type>, "an atom names Axis::Type, and fixy::fn ignores such an atom");
+
 // ---------------------------------------------------------------------
 // The corpus accounts for all 54 codes.
 //

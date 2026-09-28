@@ -165,6 +165,14 @@ static_assert(std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s:
                              s::Select<s::Sender<Peer>, s::Send<int, s::End>, s::End>>);
 static_assert(std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s::End>>, s::Select<s::Sender<Peer>, s::End>>);
 
+// The handle steps the erased protocol, and the erasure decides where the
+// handle is terminal.  A branch that commits and then sends is not a
+// terminal position.  A branch that commits and ends, rolls or aborts is.
+static_assert(!s::is_terminal_state_v<s::checkpoint_erase_t<s::Commit<s::Send<int, s::End>>>>);
+static_assert(s::is_terminal_state_v<s::checkpoint_erase_t<s::Commit<s::End>>>);
+static_assert(s::is_terminal_state_v<s::checkpoint_erase_t<s::Roll>>
+              && s::is_terminal_state_v<s::checkpoint_erase_t<s::Abort>>);
+
 // A loop that rolls back to a checkpoint inside it.
 using LoopDecide = s::Loop<s::Select<s::Commit<s::Send<int, s::Continue>>, s::Roll, s::End>>;
 using LoopFollow = s::Loop<s::Offer<s::Commit<s::Recv<int, s::Continue>>, s::Roll, s::End>>;

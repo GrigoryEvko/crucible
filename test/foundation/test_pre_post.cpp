@@ -6,8 +6,9 @@
 // just the shape that happens to work natively.
 //
 // The file is silent on success and exits zero. A violated contract aborts,
-// which is how a failure surfaces. The violating direction cannot be written
-// here at all and lives in compile-failure fixtures.
+// which is how a failure surfaces at run time. At compile time a violated
+// clause makes the call a non-constant expression. A concept below reads
+// that as false, and it checks each shape with a violated predicate too.
 
 #include <foundation/contracts/Post.h>
 
@@ -15,6 +16,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <type_traits>
 
 namespace {
 
@@ -108,6 +110,27 @@ static_assert(post_struct_field(5).v == 6, "shape 7 positive");
 static_assert(pre_and_post(10) == 30, "shape 8 positive");
 static_assert(mid_body_assert(5) == 11, "shape 9 positive");
 
+// A call is a constant expression only when no clause on its path is
+// violated. The lambda is a template argument. A call that is not a
+// constant expression is then a substitution failure, and the concept is
+// false.
+template <auto Call>
+concept evaluates_at_compile_time = requires { typename std::integral_constant<decltype(Call()), Call()>; };
+
+constexpr S ZERO_S{};
+
+static_assert(evaluates_at_compile_time<[] { return pre_scalar(5); }>, "the concept admits a clean call");
+static_assert(!evaluates_at_compile_time<[] { return pre_scalar(0); }>, "shape 1 negative");
+static_assert(!evaluates_at_compile_time<[] { return pre_struct_cref(ZERO_S); }>, "shape 2 negative");
+static_assert(!evaluates_at_compile_time<[] { return pre_struct_cval(ZERO_S); }>, "shape 3 negative");
+static_assert(!evaluates_at_compile_time<[] { return pre_struct_val(ZERO_S); }>, "shape 4 negative");
+static_assert(!evaluates_at_compile_time<[] { return pre_struct_cptr(&ZERO_S); }>, "shape 5 negative, second conjunct");
+static_assert(!evaluates_at_compile_time<[] { return pre_struct_cptr(nullptr); }>, "shape 5 negative, first conjunct");
+static_assert(!evaluates_at_compile_time<[] { return post_scalar(-1); }>, "shape 6 negative");
+static_assert(!evaluates_at_compile_time<[] { return post_struct_field(-1); }>, "shape 7 negative");
+static_assert(!evaluates_at_compile_time<[] { return pre_and_post(0); }>, "shape 8 negative");
+static_assert(!evaluates_at_compile_time<[] { return mid_body_assert(0); }>, "shape 9 negative");
+
 // Under the ignore semantic the postcondition leaves an assumption behind
 // that a caller can exploit. Under a semantic that checks, the check stops a
 // false result before the caller sees it. Nothing here measures the generated
@@ -125,8 +148,8 @@ static_assert(mid_body_assert(5) == 11, "shape 9 positive");
 static_assert(relies_on_post(5) == 6, "post hint propagation");
 
 // The fast variant traps directly instead of routing through the violation
-// handler. Its consteval branch is identical, so it shares the regular
-// macro's compile-failure fixtures and needs only positive coverage here.
+// handler. Its consteval branch is identical, and the concept above checks
+// it with a violated predicate as it checks the regular macro.
 
 [[nodiscard]] constexpr int pre_fast_scalar(int x) noexcept {
     CRUCIBLE_PRE_FAST(x > 0);
@@ -164,6 +187,12 @@ static_assert(pre_fast_struct(OK_S) == 42, "PRE_FAST struct positive");
 static_assert(pre_msg_scalar(3) == 103, "PRE_MSG scalar positive");
 static_assert(post_msg_struct(7).v == 57, "POST_MSG struct positive");
 static_assert(post_fast_scalar(11) == 18, "POST_FAST scalar positive");
+
+static_assert(!evaluates_at_compile_time<[] { return pre_fast_scalar(0); }>, "PRE_FAST scalar negative");
+static_assert(!evaluates_at_compile_time<[] { return pre_fast_struct(ZERO_S); }>, "PRE_FAST struct negative");
+static_assert(!evaluates_at_compile_time<[] { return pre_msg_scalar(0); }>, "PRE_MSG scalar negative");
+static_assert(!evaluates_at_compile_time<[] { return post_msg_struct(-50); }>, "POST_MSG struct negative");
+static_assert(!evaluates_at_compile_time<[] { return post_fast_scalar(-7); }>, "POST_FAST scalar negative");
 
 // The native clause, with an always-true predicate, so it pins that the
 // native form still compiles and evaluates at consteval alongside the macros.

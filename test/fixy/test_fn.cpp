@@ -4,12 +4,14 @@
 // non-atom, the duplicate diagnostic names the axis, and a context gate
 // reads the lifts of the atoms as well as the Effect grade.
 //
-// The header self-tests prove these for a sample.  What this file adds
-// is the walk over every atom the tree ships: each one is checked
-// against every axis, so an atom whose declared axis disagrees with the
-// axis it actually resolves is caught here rather than by whichever
-// binding happens to use it.
+// The header self-tests prove these for a sample.  This file adds two
+// walks.  The first walk takes each atom of fixy/Atom.h that the gate
+// admits alone, and it checks the atom against every axis.  An atom that
+// relaxes an axis other than its own fails that walk.  The second walk
+// takes each axis that carries two atoms, and it checks that the gate
+// refuses the two atoms together.
 
+#include <fixy/Collision.h>
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/Reject.h>
@@ -21,6 +23,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
+#include <array>
 #include <cstddef>
 #include <meta>
 #include <string_view>
@@ -84,8 +87,8 @@ template <class Binding>
 
 #pragma GCC diagnostic pop
 
-// One atom from each family the tree ships, each checked the same way:
-// its own axis carries it, every other axis stays strict.
+// The walk below checks each atom the same way: its own axis carries it,
+// and every other axis stays strict.
 template <class Atom>
 [[nodiscard]] consteval bool relaxes_exactly_its_own_axis() noexcept {
     using Binding = fn<int, Atom>;
@@ -94,15 +97,103 @@ template <class Atom>
         && Binding::template mentions_axis<Atom::axis> && Binding::atom_count == 1 && every_axis_resolves<Binding>();
 }
 
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::copy>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::affine>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::ghost>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::borrow>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::mut_mutable>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::mut_append>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::mut_monotonic>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::reentrant>());
-static_assert(relaxes_exactly_its_own_axis<::fixy::atom::coroutine>());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+// The walks read the public roster of every atom that the tree ships.
+inline constexpr auto every_atom = std::define_static_array(
+    std::meta::template_arguments_of(std::meta::dealias(^^::fixy::collision::all_atom_roster)));
+
+// True for an atom that fixy/Atom.h declares in fixy::atom itself.  A
+// parametric atom is declared where its template is declared.
+[[nodiscard]] consteval bool is_declared_in_fixy_atom(std::meta::info atom) {
+    const std::meta::info declared = std::meta::dealias(atom);
+    const std::meta::info owner = std::meta::has_template_arguments(declared)
+                                    ? std::meta::parent_of(std::meta::template_of(declared))
+                                    : std::meta::parent_of(declared);
+    return owner == ^^::fixy::atom;
+}
+
+// The first walk takes the atoms that fixy/Atom.h declares in fixy::atom.
+// They sit on many axes, and the points of the Security and Trust lattices
+// are among them.  Each family header under fixy/atoms/ puts its atoms on
+// one axis, and the roster walk of that header proves it.  The walk does
+// not check an atom that a collision rule or the corpus refuses alone,
+// because fn<int, Atom> refuses that atom.
+struct atom_walk {
+    std::size_t admitted_alone = 0;
+    std::size_t relaxes_its_own_axis = 0;
+};
+
+[[nodiscard]] consteval atom_walk walk_the_atoms() noexcept {
+    atom_walk walk{};
+    template for (constexpr auto member : every_atom) {
+        if constexpr (is_declared_in_fixy_atom(member)) {
+            using Atom = [:member:];
+            if constexpr (IsAccepted<int, Atom>) {
+                ++walk.admitted_alone;
+                if (relaxes_exactly_its_own_axis<Atom>()) ++walk.relaxes_its_own_axis;
+            }
+        }
+    }
+    return walk;
+}
+
+constexpr atom_walk the_atoms = walk_the_atoms();
+static_assert(the_atoms.admitted_alone > 0, "the walk admitted no atom, so it proves nothing");
+static_assert(the_atoms.relaxes_its_own_axis == the_atoms.admitted_alone,
+              "an atom of fixy/Atom.h relaxes an axis other than its own, or leaves its own axis strict");
+
+// ---------------------------------------------------------------------
+// Two atoms on one axis, on every axis that carries two.
+//
+// The walk uses the first two atoms of the whole roster on each axis.
+// Tier 4 counts the atoms on each axis and reads nothing else.  Two
+// different atoms of one axis give the same answer.
+
+template <Axis A>
+[[nodiscard]] consteval std::array<std::meta::info, 2> first_two_atoms_on() noexcept {
+    std::array<std::meta::info, 2> found{};
+    std::size_t count = 0;
+    template for (constexpr auto member : every_atom) {
+        using Candidate = [:member:];
+        if constexpr (Candidate::axis == A) {
+            if (count < found.size()) found[count] = member;
+            ++count;
+        }
+    }
+    return found;
+}
+
+struct duplicate_walk {
+    std::size_t axes_with_two_atoms = 0;
+    std::size_t axes_that_refuse_the_pair = 0;
+};
+
+[[nodiscard]] consteval duplicate_walk walk_the_axes() noexcept {
+    duplicate_walk walk{};
+    template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
+        constexpr Axis axis = [:axis_member:];
+        static constexpr auto pair = first_two_atoms_on<axis>();
+        if constexpr (pair[1] != std::meta::info{}) {
+            ++walk.axes_with_two_atoms;
+            using First = [:pair[0]:];
+            using Second = [:pair[1]:];
+            if (!::fixy::UniqueAtomPerAxis<First, Second> && !IsAccepted<int, First, Second>
+                && std::is_same_v<::fixy::duplicate_tag_or_void_t<First, Second>, ::fixy::duplicate_atom_on<axis>>) {
+                ++walk.axes_that_refuse_the_pair;
+            }
+        }
+    }
+    return walk;
+}
+
+#pragma GCC diagnostic pop
+
+constexpr duplicate_walk the_axes = walk_the_axes();
+static_assert(the_axes.axes_with_two_atoms > 0, "no axis carries two atoms, so the walk proves nothing");
+static_assert(the_axes.axes_that_refuse_the_pair == the_axes.axes_with_two_atoms,
+              "an axis admits two atoms together, or the refusal names a different axis");
 
 // The empty pack leaves every axis but Type strict, which is the same
 // claim with nothing relaxed.  Axis::Type is not an axis any atom can

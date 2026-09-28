@@ -55,6 +55,17 @@ using DeadlineInt = fixy::SchedClass<fixy::SchedulerPolicy_v::Deadline, int, 500
 // evidence of a capability, it carries one.
 using BgWitness = fixy::BgDrainCtx;
 
+// The runtime pin is not a mint, and it has its own requires-clause.
+// fixy/os/Sched.h proves the concept of that clause.  This proves that
+// the function asks the concept: the foreground context and a value that
+// is not a context cannot call it.
+template <class Ctx>
+concept can_apply_affinity = requires(Ctx const& ctx) { fixy::sched::apply_affinity_to_cpu(ctx, 0); };
+static_assert(can_apply_affinity<BgWitness>);
+static_assert(can_apply_affinity<fixy::ColdInitCtx>);
+static_assert(!can_apply_affinity<fixy::HotFgCtx>);
+static_assert(!can_apply_affinity<int>);
+
 // Every pin here is earned.  CpuPinned has one constructor, it is
 // private, and fixy::sched::mint_affinity is its sole friend, so the
 // only way into this leg is a sched_setaffinity that returned 0.  The

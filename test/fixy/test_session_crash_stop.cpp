@@ -117,6 +117,12 @@ static_assert(std::is_same_v<s::dual_of_t<s::Stop>, s::Stop>);
 static_assert(!s::is_well_formed_v<s::Stop>);
 static_assert(!s::is_well_formed_v<s::Send<int, s::Stop>>);
 static_assert(!s::is_well_formed_v<s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<Q>, s::Stop>>>);
+// A delegated protocol is a session of its own, and well-formedness
+// refuses a Stop in it too.  A peer cannot take over a crashed endpoint.
+// test_session_delegation.cpp checks the Delegate head, and these check
+// the receiving head.
+static_assert(!s::is_well_formed_v<s::Accept<s::Stop, s::End>>);
+static_assert(!s::is_well_formed_v<s::Accept<s::Send<int, s::Stop>, s::End>>);
 
 // ── Crash index and crash dual ──────────────────────────────────────
 static_assert(s::crash_branch_index_v<Guarded, Q> == 1);
