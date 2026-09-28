@@ -184,6 +184,12 @@ fixy_neg_compile_test(neg_mutation_bounded_monotonic_negative_bound
   "required for the satisfaction of .BoundedMonotoneCarrier<T, Max, Cmp>. \\[with T = unsigned int. Max = -1. Cmp = std::less<unsigned int>\\]"
   "the expression .\\(in_range<T>\\)\\(Max\\) \\[with T = unsigned int. Max = -1\\]. evaluated to .false.")
 
+# At max(), the precondition of bump() refuses the step.  Under constant
+# evaluation, the refusal stops the evaluation.
+fixy_neg_compile_test(neg_mutation_bounded_monotonic_bump_past_max
+  "in .constexpr. expansion of .counter\\.fixy::BoundedMonotonic<unsigned int, 2, std::less<unsigned int> >::bump\\(\\)."
+  ".__builtin_trap\\(\\). is not a constant expression")
+
 # The door of each mutation wrapper refuses a type argument its concept
 # does not admit.
 fixy_neg_compile_test(neg_mutation_append_only_storage_without_index
