@@ -158,8 +158,7 @@ def main() -> int:
     # semantics are mandatory: a merged TU whose first cell's regex
     # matched but whose later cells silently stopped failing would
     # otherwise pass spuriously.  See test/CMakeLists.txt
-    # `crucible_neg_compile_fixy_multi_test` and the binary-per-TU
-    # soundness note above that function.
+    # `crucible_neg_compile_multi_test` and the note above that function.
     if len(sys.argv) < 5:
         print(
             "usage: neg_compile_driver.py <build-dir> <source> "
