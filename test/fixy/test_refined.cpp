@@ -165,6 +165,29 @@ inline constexpr auto returns_void = [](auto) constexpr noexcept -> void {};
 static_assert(!CheckedMintable<returns_void, int>);
 static_assert(TrustedMintable<returns_void, int>);
 
+// A size predicate refuses a value with no size, and a refinement does not
+// lend the size of the value it holds.  A range predicate refuses a value
+// that does not hold its bounds, so an order in one direction is not
+// enough.  Each refusal is at the gate of the mint, not in the body of the
+// predicate.
+struct OnlyAtMost {
+    int payload = 0;
+    constexpr bool operator<=(int rhs) const noexcept { return payload <= rhs; }
+};
+struct Unordered {
+    int payload = 0;
+};
+static_assert(std::is_same_v<fixy::MinLength<5, std::span<int>>, Refined<fixy::length_ge<5>, std::span<int>>>);
+static_assert(std::is_same_v<fixy::WithinRange<0, 100, int>, Refined<fixy::in_range<0, 100>, int>>);
+static_assert(CheckedMintable<fixy::length_ge<5>, std::span<int>>);
+static_assert(!CheckedMintable<fixy::length_ge<5>, int>);
+static_assert(!CheckedMintable<fixy::length_ge<5>, fixy::NonEmptySpan<int>>);
+static_assert(CheckedMintable<fixy::exact_size<3>, std::array<int, 3>>);
+static_assert(!CheckedMintable<fixy::exact_size<3>, int>);
+static_assert(CheckedMintable<fixy::in_range<0, 100>, int>);
+static_assert(!CheckedMintable<fixy::in_range<0, 100>, OnlyAtMost>);
+static_assert(!CheckedMintable<fixy::in_range<0, 100>, Unordered>);
+
 // ── The implication relation is the namespace ────────────────────────
 
 namespace ffc = ::foundation::fail_closed;

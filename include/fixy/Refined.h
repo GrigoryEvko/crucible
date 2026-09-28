@@ -279,9 +279,16 @@ struct BoundedAbove {
 template <auto Max>
 inline constexpr BoundedAbove<Max> bounded_above{};
 
+// The two size predicates are defined only on a value with a size, as
+// non_empty is.  The clause keeps a type with no size out of the checked
+// mint, so the refusal is at the gate and not inside the predicate body.
 template <std::size_t N>
 struct LengthGe {
-    constexpr bool operator()(const auto& c) const noexcept { return c.size() >= N; }
+    constexpr bool operator()(const auto& c) const noexcept
+        requires requires { c.size() >= N; }
+    {
+        return c.size() >= N;
+    }
 };
 
 template <std::size_t N>
@@ -289,7 +296,11 @@ inline constexpr LengthGe<N> length_ge{};
 
 template <std::size_t N>
 struct ExactSize {
-    constexpr bool operator()(auto const& c) const noexcept { return c.size() == N; }
+    constexpr bool operator()(auto const& c) const noexcept
+        requires requires { c.size() == N; }
+    {
+        return c.size() == N;
+    }
 };
 
 template <std::size_t N>
