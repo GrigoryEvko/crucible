@@ -1,26 +1,26 @@
-// Microbench for crucible::sat::add_sat / sub_sat / mul_sat.
+// Microbench for the saturating helpers of fixy::sat.
 //
-// Establishes that the P0543 polyfill compiles to the same conditional-
-// move shape as hand-written clamps — one __builtin_*_overflow
-// (CMP+CMOV on x86-64) plus a branchless select on the rare overflow
-// path. Target: ≤1 ns/op for the common case.
+// add_sat, sub_sat and mul_sat come from foundation/Saturate.h. Each one
+// gives the exact result when no overflow occurs, and calls the library
+// clamp only on overflow. The *_sat_from forms give the result in a
+// Saturated<T>, and the *_sat_into forms also write it back.
 
 #include <cstdint>
 #include <cstdio>
 
-#include <crucible/_Saturate.h>
+#include <fixy/Saturate.h>
 
 #include "bench_harness.h"
 
-using crucible::sat::add_sat;
-using crucible::sat::add_sat_from;
-using crucible::sat::add_sat_into;
-using crucible::sat::mul_sat;
-using crucible::sat::mul_sat_from;
-using crucible::sat::mul_sat_into;
-using crucible::sat::sub_sat;
-using crucible::sat::sub_sat_from;
-using crucible::sat::sub_sat_into;
+using fixy::sat::add_sat;
+using fixy::sat::add_sat_from;
+using fixy::sat::add_sat_into;
+using fixy::sat::mul_sat;
+using fixy::sat::mul_sat_from;
+using fixy::sat::mul_sat_into;
+using fixy::sat::sub_sat;
+using fixy::sat::sub_sat_from;
+using fixy::sat::sub_sat_into;
 
 int main() {
     bench::print_system_info();
@@ -39,9 +39,8 @@ int main() {
     volatile int64_t S_a = 0x123456789abcdef0LL;
     volatile int64_t S_b = 0x0000000000000100LL;
 
-    // Overflow-path operands — saturate every call. Slightly slower than
-    // the common case because the [[unlikely]] branch fires, but the
-    // cmov-based clamp stays branchless.
+    // Overflow-path operands. Each call saturates, so each call takes the
+    // clamp path of the helper.
     volatile uint64_t big_a = ~uint64_t{0};
     volatile uint64_t big_b = ~uint64_t{0};
     volatile int32_t imin = INT32_MIN;

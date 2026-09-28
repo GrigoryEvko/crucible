@@ -9,36 +9,5 @@
 # The scan roots are include/crucible, src, vessel, bench, tools, examples
 # and fuzz.  check-flip-list.py --scan prints the consumers it finds.
 #
-# Flip order.  Each group names the old substrate only after the groups
-# before it are drained, so flip a group only when the group before it is
-# off this list.
-#
-#   1. Platform.h, Types.h, TensorMeta.h
-#   2. Saturate.h, StorageNbytes.h, Arena.h, TraceRing.h, MetaLog.h
-#   3. Expr.h, ExprPool.h, Graph.h, SymbolTable.h, Lower.h
-#   4. CKernel.h, NumericalRecipe.h, RecipePool.h, RecipeRegistry.h
-#   5. MerkleDag.h, TraceGraph.h, IterationDetector.h,
-#      IterationDetectorState.h, PoolAllocator.h, ReplayEngine.h,
-#      CrucibleContext.h, Transaction.h, RegionCache.h, Serialize.h,
-#      TraceLoader.h, SchemaTable.h, Cipher.h, CallSiteTable.h, DimHash.h,
-#      Philox.h, PhiloxSimd.h, SwissTable.h, CostModel.h
-#   6. BackgroundThread.h, Vigil.h
-#   7. the runtime module directories under include/crucible: warden,
-#      perf, cntp, topology, observe, cog, vis, canopy, ledger, forge,
-#      mimic, cipher
-#   8. src
-#   9. vessel, bench, tools, examples, fuzz
-#
-# Notes on the order, as of the list's first commit:
-#   - Platform.h names no old substrate and is not listed.  It stays first
-#     because every other group includes it.
-#   - Saturate.h is ported to include/foundation/Saturate.h and marked
-#     superseded as _Saturate.h.  _Saturate.h still names the old
-#     substrate and is listed.  It drains by deletion, with its entry.
-#   - IterationDetectorState.h and PhiloxSimd.h are in no group of the
-#     plan.  They include IterationDetector.h and Philox.h, so they go in
-#     group 5 with them.
-#   - vis holds no consumer, and examples holds none outside the frozen
-#     examples/fn.
-
-include/crucible/_Saturate.h
+# The list is empty.  No file under the scan roots names the old
+# substrate, and the guard refuses each file that names it.

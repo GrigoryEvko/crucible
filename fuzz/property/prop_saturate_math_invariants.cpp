@@ -1,11 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_saturate_math_invariants — crucible::sat::{add,sub,mul}_sat
+// prop_saturate_math_invariants — foundation::sat::{add,sub,mul}_sat
 // mathematical properties under random stress.
 //
-// Saturate.h is a drop-in polyfill for C++26 P0543 until libstdc++
-// ships __cpp_lib_saturation_arithmetic.  When that switch-over
-// happens this fuzzer is the regression net: same properties, new
-// backend.  It must stay green.
+// foundation/Saturate.h gives the exact result when no overflow occurs.
+// On overflow it calls std::saturating_add, std::saturating_sub or
+// std::saturating_mul.  This test compares the two paths with a
+// reference from the overflow builtins.
 //
 // ─── Bug classes this catches ──────────────────────────────────────
 //
@@ -17,10 +17,10 @@
 //    as a mismatch against the naïve `a + b` reference on non-overflow
 //    inputs, or as a non-MAX result on overflow inputs.
 //
-// 2. Sign-direction bug in signed saturation.  Saturate.h picks
-//    MIN vs MAX by inspecting `a < 0` for add/sub, XOR of sign bits
-//    for mul.  A typo ("a < 0" → "a > 0") passes add_sat(MAX, 1)
-//    but fails add_sat(MIN, -1).  The fuzzer covers both halves.
+// 2. Sign-direction bug in signed saturation.  The clamp must pick
+//    MIN or MAX from the sign of the exact result.  A clamp that gives
+//    MAX for add_sat(MAX, 1) and also for add_sat(MIN, -1) is wrong.
+//    The fuzzer covers both halves.
 //
 // 3. Saturation direction confusion for mul_sat.  Sign of the
 //    mathematical product is neg iff exactly one operand is negative.
@@ -40,8 +40,8 @@
 //
 // 6. Unsigned sub_sat wrapping to UINT_MAX instead of clamping to 0.
 //    Standard-library implementations have historically gotten this
-//    wrong; our branch returns `std::numeric_limits<T>::min()` which
-//    is 0 for unsigned.  Any change must preserve that.
+//    wrong.  The clamp must give 0 for an unsigned type, and this
+//    test holds that.
 //
 // ─── Strategy ──────────────────────────────────────────────────────
 //
@@ -54,13 +54,12 @@
 // The properties are checked for both uint64_t and int64_t to cover
 // the signed/unsigned code paths independently.  A parallel
 // uint32_t / int32_t pair verifies the template works for narrower
-// types too (the only thing size-sensitive in Saturate.h is
-// std::numeric_limits<T>).
+// types too.
 // ═══════════════════════════════════════════════════════════════════
 
 #include "property_runner.h"
 
-#include <crucible/_Saturate.h>
+#include <foundation/Saturate.h>
 
 #include <cstdint>
 #include <limits>
@@ -177,7 +176,7 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] bool check_sat_props(T a, T b) noexcept {
-    using namespace crucible::sat;
+    using namespace foundation::sat;
     constexpr T kZero = T{0};
     constexpr T kOne = T{1};
     constexpr T kMin = std::numeric_limits<T>::min();

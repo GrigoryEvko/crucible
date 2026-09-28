@@ -40,7 +40,8 @@ WHAT NAMES THE OLD SUBSTRATE
          target resolves to crucible::N the same way;
       3. a namespace definition whose full name, inline namespaces left out,
          starts with crucible::N, as `namespace crucible { namespace N {`;
-      4. an include of crucible/N/... or of the frozen umbrella crucible/Fixy.h;
+      4. an include of crucible/N/..., or of a header under a prefix of
+         scripts/frozen-paths.txt, such as the umbrella crucible/Fixy.h;
       5. a string literal whose content spells crucible::N, or an unqualified
          N:: for an N other than fixy, such as a reflected type name in a
          golden.
@@ -90,7 +91,8 @@ OLD_NAMES = ("safety", "fixy", "algebra", "effects", "permissions", "sessions", 
              "concurrent")
 OLD = frozenset(OLD_NAMES)
 OLD_NO_FIXY = OLD - {"fixy"}
-UMBRELLA = "crucible/Fixy.h"
+# The directory that an include path is relative to.
+INCLUDE_ROOT = "include/"
 # The two name spellings inside literal content, which counts as a use.
 IN_LITERAL = (re.compile(r"\bcrucible::(?:" + "|".join(OLD_NAMES) + r")\b"),
               re.compile(r"(?<![\w:])(?:" + "|".join(sorted(OLD_NO_FIXY)) + r")::"))
@@ -183,15 +185,24 @@ def resolves_old(parts: tuple[str, ...], is_global: bool, at: tsast.Node, aliase
     return False
 
 
-def include_is_old(path: tsast.Node) -> bool:
-    """Return True when an include path names crucible/N/... or the frozen umbrella.
+def frozen_headers(prefixes: list[str]) -> list[str]:
+    """Return the frozen prefixes under include/, spelled as an include path spells them."""
+    return [p[len(INCLUDE_ROOT):] for p in prefixes if p.startswith(INCLUDE_ROOT)]
+
+
+def include_is_old(path: tsast.Node, headers: list[str]) -> bool:
+    """Return True when an include path names crucible/N/... or a header under a frozen prefix.
 
     A path that a macro names, as `#include HEADER`, is no literal and names nothing here.
+
+    Args:
+        path: The path node of an include directive
+        headers: The frozen prefixes under include/, from frozen_headers
     """
     if path.type not in ("string_literal", "system_lib_string"):
         return False
     inner = tsast.prose_text(path).strip()[1:-1].strip()
-    return inner == UMBRELLA or any(inner.startswith(f"crucible/{name}/") for name in OLD_NAMES)
+    return is_frozen(inner, headers) or any(inner.startswith(f"crucible/{name}/") for name in OLD_NAMES)
 
 
 def macro_names_old(tree: tsast.Tree) -> bool:
@@ -212,12 +223,16 @@ def macro_names_old(tree: tsast.Tree) -> bool:
     return False
 
 
-def names_old(tree: tsast.Tree) -> bool:
+def names_old(tree: tsast.Tree, headers: list[str]) -> bool:
     """Return True when a parsed file names the old substrate in one of the five shapes.
+
+    Args:
+        tree: The parse of one file
+        headers: The frozen prefixes under include/, from frozen_headers
 
     Complexity: linear in the node count of the file, times the candidates of each name.
     """
-    if any(include_is_old(path) for node in tree.find("preproc_include")
+    if any(include_is_old(path, headers) for node in tree.find("preproc_include")
            if (path := node.child_by_field("path")) is not None):
         return True
     if any(p.search(tsast.prose_text(node)) for node in tree.find("string_content", "raw_string_content")
@@ -243,19 +258,20 @@ def names_old(tree: tsast.Tree) -> bool:
     return macro_names_old(tree)
 
 
-def consumers(root: Path, files: list[str]) -> tuple[list[str], list[str]]:
+def consumers(root: Path, files: list[str], prefixes: list[str]) -> tuple[list[str], list[str]]:
     """Return the files that name the old substrate, and a problem line for each file that does not parse.
 
     Complexity: one parse of each file, in one run of the kit.
     """
     found: list[str] = []
     problems: list[str] = []
+    headers = frozen_headers(prefixes)
     for tree in tsast.parse([root / p for p in files], strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
             problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot tell what it "
                             f"names: {tree.diagnostic}")
-        elif names_old(tree):
+        elif names_old(tree, headers):
             found.append(rel)
     return sorted(found), problems
 
@@ -271,7 +287,7 @@ def check(root: Path, mode: str) -> int:
     except Refused as exc:
         print(f"check-flip-list: {exc}", file=sys.stderr)
         return 2
-    found, problems = consumers(root, candidate_files(root, prefixes))
+    found, problems = consumers(root, candidate_files(root, prefixes), prefixes)
     if mode == "scan":
         for path in found:
             print(path)
@@ -365,10 +381,12 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         throwaway_repo.init(root)
-        write(root, PATHS_FILE, "# planted\ninclude/crucible/safety/\ninclude/crucible/Fixy.h\n")
+        write(root, PATHS_FILE, "# planted\ninclude/crucible/safety/\ninclude/crucible/Fixy.h\n"
+                                "include/crucible/_Old.h\n")
         write(root, "include/crucible/safety/Linear.h",
               "#pragma once\nnamespace crucible::safety::detail { struct Linear {}; }\n")
         write(root, "include/crucible/Fixy.h", "#pragma once\n#include <crucible/safety/Linear.h>\n")
+        write(root, "include/crucible/_Old.h", "#pragma once\nnamespace crucible::sat { int old_value; }\n")
         write(root, "test/test_linear.cpp", "#include <crucible/safety/Linear.h>\n")
         write(root, "include/fixy/Linear.h", "#pragma once\nnamespace fixy { struct Linear {}; }\n")
         write(root, "src/Clean.cpp",
@@ -379,6 +397,9 @@ def self_test() -> int:
               "namespace foundation { effects::Row<> r2; }\nconcurrent::Queue* q2 = nullptr;\n")
         listing(root)
         expect(root, 0, "0 listed file(s) remain", "an empty list over a clean tree")
+        write(root, "src/AfterDrain.cpp", "#include <crucible/safety/Linear.h>\n")
+        expect(root, 1, "UNLISTED  src/AfterDrain.cpp", "an empty list refuses a consumer", True)
+        (root / "src/AfterDrain.cpp").unlink()
 
         write(root, "include/crucible/ByInclude.h", "#include <crucible/safety/Linear.h>\n")
         write(root, "src/ByQualified.cpp", "int x = sizeof(crucible::safety::Linear);\n")
@@ -408,6 +429,7 @@ def self_test() -> int:
             "src/CommentInRaw.cpp": 'const char* r = R"(/*)"; int h = sizeof(crucible::safety::Linear);\n',
             "src/MacroBody.cpp": "#define USE_OLD crucible::safety::Linear\n",
             "src/QuotedInclude.cpp": '#include "crucible/effects/Row.h"\n',
+            "src/FrozenHeader.cpp": "#include <crucible/_Old.h>\n",
             "src/AliasOfCrucible.cpp": "namespace cr = crucible;\nint x = sizeof(cr::safety::Linear);\n",
             "src/DirectiveThenRelative.cpp": "using namespace crucible;\neffects::Row<> r;\n",
             "src/RelativeDirective.cpp": "namespace crucible { using namespace safety; }\n",
