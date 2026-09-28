@@ -413,6 +413,8 @@ set_tests_properties(test_serialize test_serialize_release_gate PROPERTIES
   LABELS "determinism;axiom-detsafe")
 crucible_test(test_cipher)
 crucible_test(test_transaction)
+# The executable has its own clock_gettime, so a case can make a clock read fail.
+crucible_test(test_clock_failed_read)
 crucible_test(test_permissioned_moved_from_handles)
 crucible_test(test_transaction_owner)
 crucible_test(test_vigil)
