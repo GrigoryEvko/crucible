@@ -3,8 +3,7 @@
 A probe declares ``session_oracle_show<T> probe;`` for each value it
 measures.  The template has no definition, so the compiler reports the
 declaration as an error and spells T in full.  The spelling is the
-measurement.  A relation that fails with a hard error, for example the
-frozen tree's plain merge on diverging branches, is measured as a
+measurement.  A relation that fails with a hard error is measured as a
 rejection with its bracketed diagnostic tag.
 
 Probes run only when the golden file is regenerated.  The check that CI
@@ -24,11 +23,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from model import (LBranch, LChoice, LEnd, LMsg, LRec, LVar, Local, PRELUDE_NS, cpp_prelude)
+from model import (LChoice, LEnd, LRec, LVar, Local, PRELUDE_NS, cpp_prelude)
 
 LOG = logging.getLogger("session_oracle.probe")
 
-OLD_NS = "crucible::safety::proto"
 FIXY_NS = "fixy::session"
 
 # GCC quotes names with ASCII quotes in the C locale and with curly
@@ -52,9 +50,8 @@ def canonical(spelling: str) -> str:
 
 
 # Each probe starts with one of these heads.  pch_heads compiles them once
-# per run, which cuts a frozen-tree probe from about 2.7 s to 0.5 s.
+# per run, so a probe does not parse its head again.
 HEADS = {
-    "old": "#include <crucible/sessions/_SessionGlobal.h>\n#include <type_traits>\n",
     "fixy": "#include <fixy/session/Protocol.h>\n#include <type_traits>\n",
     "multi": "#include <fixy/session/Liveness.h>\n#include <fixy/session/Network.h>\n"
              "#include <fixy/session/Projection.h>\n#include <type_traits>\n",
@@ -161,35 +158,6 @@ def _sort_of(spelling: str) -> str:
     return table[spelling]
 
 
-def read_protocol(spelling: str, ns: str, labelled: bool) -> Local:
-    """Parse a canonical protocol spelling into the local-type IR.
-
-    ``labelled`` is true for the frozen tree, whose Select and Offer
-    branches start with a Send or Recv of ``Label<k>``.  The channel of
-    every action is -1, because our protocols record no channel.
-    """
-    name, args = _split(spelling)
-    short = name.removeprefix(ns + "::")
-    if short == "End":
-        return LEnd()
-    if short == "Continue":
-        return LVar(0)
-    if short == "Loop":
-        return LRec(read_protocol(args[0], ns, labelled))
-    if short in ("Send", "Recv"):
-        return LMsg(short == "Send", -1, _sort_of(args[0]), read_protocol(args[1], ns, labelled))
-    if short in ("Select", "Offer"):
-        branches = []
-        for arg in args:
-            if labelled:
-                bname, bargs = _split(arg)
-                branches.append(read_protocol(bargs[1], ns, labelled))
-            else:
-                branches.append(read_protocol(arg, ns, labelled))
-        return LBranch(short == "Select", -1, tuple(branches))
-    raise SpellingError(f"unknown protocol constructor {name!r} in {spelling!r}")
-
-
 def _role_of(spelling: str) -> int:
     prefix = f"{PRELUDE_NS}::R"
     if not spelling.startswith(prefix) or not spelling[len(prefix):].isdigit():
@@ -292,40 +260,3 @@ def read_fixy_peer_local(spelling: str, role: int) -> Local:
         return LChoice(send, role * 8 + peer if send else peer * 8 + role,
                        tuple(branch for _, branch in arms))
     raise SpellingError(f"unknown fixy local constructor {name!r} in {spelling!r}")
-
-
-def erase_channels(e: Local) -> Local:
-    """Return ``e`` with every channel set to -1."""
-    if isinstance(e, (LEnd, LVar)):
-        return e
-    if isinstance(e, LRec):
-        return LRec(erase_channels(e.body))
-    if isinstance(e, LMsg):
-        return LMsg(e.send, -1, e.sort, erase_channels(e.cont))
-    return LBranch(e.send, -1, tuple(erase_channels(b) for b in e.branches))
-
-
-def drop_unguarded_loops(e: Local) -> Local:
-    """Replace every Loop whose body reaches Continue before an action by End.
-
-    This is the rule of the oracle's ``trans`` for a recursion whose
-    projected body is not guarded.  The classifier uses it to recognise
-    the divergence where our projection keeps such a Loop.
-    """
-    def guarded(x: Local) -> bool:
-        if isinstance(x, LVar):
-            return False
-        if isinstance(x, LEnd):
-            return True
-        if isinstance(x, LRec):
-            return guarded(x.body)
-        return True
-
-    if isinstance(e, (LEnd, LVar)):
-        return e
-    if isinstance(e, LRec):
-        body = drop_unguarded_loops(e.body)
-        return LRec(body) if guarded(body) else LEnd()
-    if isinstance(e, LMsg):
-        return LMsg(e.send, e.channel, e.sort, drop_unguarded_loops(e.cont))
-    return LBranch(e.send, e.channel, tuple(drop_unguarded_loops(b) for b in e.branches))

@@ -3,7 +3,7 @@
 The golden file is a CSV table with one row per measured property.
 Lines that start with ``#`` are metadata.  The columns:
 
-    family   the relation and property, for example ``old.projection``
+    family   the relation and property, for example ``fixy.projection``
     case     the case identifier: a corpus letter and a number, or
              ``p_`` and the name of a paper example (see CORPORA)
     role     the role of a projection, or ``-``
@@ -43,18 +43,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import labelled
-from model import (Local, cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_old_global,
-                   cpp_old_local, cpp_prelude, cpp_role, dual_local, local_of, mutations, read_global,
-                   read_local, show_global)
+from model import (Local, cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_prelude, cpp_role,
+                   dual_local, local_of, mutations, read_global, read_local, show_global)
 
 COLUMNS = ("family", "case", "role", "global", "oracle", "ours", "status", "class", "note")
 
-# The corpora, in the order of the golden file.  For the frozen tree: r
-# random, a adversarial, o types whose inner loop jumps to an outer
-# binder, h hand-written review cases, m minimal forms of the divergences
-# that the shrinker found.  p holds the paper examples of the two trees.
-# fr, fa, fh and fm are the random, adversarial, hand-written and minimal
-# corpora of the fixy tree.
+# The corpora, in the order of the golden file.  For the multiparty
+# relations: r random, a adversarial, o types whose inner loop jumps to
+# an outer binder, h hand-written review cases, m minimal forms of the
+# divergences that the shrinker found.  p holds the paper examples of the
+# two kinds.  fr, fa, fh and fm are the random, adversarial, hand-written
+# and minimal corpora of the two-party relations.
 CORPORA = ("r", "a", "o", "h", "p", "m", "fr", "fa", "fh", "fm")
 
 FIXY_FAMILIES = ("fixy.dual", "fixy.is_dual", "fixy.involution", "fixy.involutive_flag",
@@ -90,7 +89,6 @@ def subtype_channel_decl() -> str:
             f"}};\n")
 
 
-OLD_FAMILIES = ("old.projection", "old.well_formed")
 # Keyed choices: pairs of keyed binary protocols, and multiparty global
 # types whose choices carry labels in an order that depends on the path.
 # The golden file stores the global type of a keyed multiparty row in the
@@ -111,20 +109,19 @@ ENROUTE_FAMILIES = ("fixy.enroute_projection", "fixy.enroute_live", "fixy.enrout
 # "<pair role>/<spelling>/s<seed>", and the ours column is the outcome.
 WIRE_FAMILIES = ("fixy.wire",)
 WIRE_SEEDS = (0, 1)
-# Families that no C++ test can assert: the execution verdict of the
-# frozen tree's projection, the run of the oracle's own projection, the
-# run of the subject-reduction development's projection, mpstk's model
-# check of fixy's crash-stop context, the coqc-checked verdict of the
-# ITP 2025 subtyping relation on each synchronous subtyping pair, the
-# coqc-checked liveness of fixy's projected context by the ITP 2026
-# liveness theorem, the implementability verdict of Sprout(A) on each
-# kind of network, and the walks of the transition systems of Semantics.h
-# along the run of each projected context.
-RECORD_FAMILIES = ("old.execution", "oracle.safety", "sr.safety", "mpstk.crash", "ekici.subtype",
+# Families that no C++ test can assert: the run of the oracle's own
+# projection, the run of the subject-reduction development's projection,
+# mpstk's model check of fixy's crash-stop context, the coqc-checked
+# verdict of the ITP 2025 subtyping relation on each synchronous
+# subtyping pair, the coqc-checked liveness of fixy's projected context
+# by the ITP 2026 liveness theorem, the implementability verdict of
+# Sprout(A) on each kind of network, and the walks of the transition
+# systems of Semantics.h along the run of each projected context.
+RECORD_FAMILIES = ("oracle.safety", "sr.safety", "mpstk.crash", "ekici.subtype",
                    "keskin.live", "sprout.implementable", "fixy.global_lts", "fixy.config_lts",
                    "fixy.crash_association")
 FAMILIES = (FIXY_FAMILIES + MULTI_FAMILIES + SUBTYPE_FAMILIES + KEYED_SUBTYPE_FAMILIES + KEYED_MULTI_FAMILIES
-            + CRASH_FAMILIES + ENROUTE_FAMILIES + WIRE_FAMILIES + OLD_FAMILIES + RECORD_FAMILIES)
+            + CRASH_FAMILIES + ENROUTE_FAMILIES + WIRE_FAMILIES + RECORD_FAMILIES)
 # The roles that a multiparty case is projected onto: every role it names,
 # and at least three.
 MIN_ROLES = 3
@@ -459,7 +456,7 @@ def fixy_accepts_expression() -> str:
 
 def _hard_error(row: Row) -> bool:
     """Return true for a row whose relation stopped the build, which no test can assert."""
-    return row.ours.startswith("reject:") and row.family not in ("old.projection",)
+    return row.ours.startswith("reject:")
 
 
 def _fixy_assert(row: Row, hoister: _Hoister) -> str:
@@ -510,50 +507,6 @@ def emit_fixy(rows: list[Row]) -> str:
             out.append(_fixy_assert(row, hoister))
         out.append(f"}}  // namespace {_namespace(case)}\n\n")
     out.append("}  // namespace session_oracle::fixy_duality\n\nint main() { return 0; }\n")
-    return "".join(out)
-
-
-def emit_old(rows: list[Row]) -> str:
-    """Return the frozen-tree test translation unit.  O(rows)."""
-    cases: dict[str, list[Row]] = {}
-    for row in rows:
-        if row.family in OLD_FAMILIES and row.status != "gap":
-            cases.setdefault(row.case, []).append(row)
-    out = [GENERATED_NOTICE, "//\n",
-           "// Projection and well-formedness of the frozen tree against the projection\n",
-           "// oracle.  A row whose projection rejects with a hard error is not asserted;\n",
-           "// the golden file records it.\n\n",
-           "#include <crucible/sessions/_SessionGlobal.h>\n\n#include <type_traits>\n\n",
-           cpp_prelude(), "\nnamespace pr = ::crucible::safety::proto;\n\n",
-           "namespace session_oracle::old_projection {\n\n"]
-    hoister = _Hoister()
-    for case in sorted(cases, key=case_key):
-        group = sorted(cases[case], key=lambda r: (OLD_FAMILIES.index(r.family), r.role))
-        g = read_global(group[0].global_text)
-        out.append(f"// {group[0].global_text}\nnamespace {_namespace(case)} {{\n")
-        out.append(hoister.line("using G = ", cpp_type(cpp_old_global(g)), ";\n"))
-        for row in group:
-            msg = _message(row)
-            if row.family == "old.well_formed":
-                out.append(f"static_assert(pr::is_global_well_formed_v<G> == {row.ours}, \"{msg}\");\n")
-                continue
-            if row.ours.startswith("reject:"):
-                out.append(f"// role {row.role}: our projection rejects ({row.ours[7:]}); "
-                           f"oracle {row.oracle}\n")
-                continue
-            if row.ours == "=":
-                expected = read_local(row.oracle)
-                if expected is None:
-                    raise GoldenError(f"old.projection case {row.case}: '=' needs an oracle type")
-                target = cpp_old_local(expected)
-            else:
-                target = _pin(row.ours)
-            out.append(hoister.line(
-                "static_assert(",
-                cpp_type(f"std::is_same_v<pr::project_t<G, {cpp_role(int(row.role))}>, {target}>"),
-                f", \"{msg}\");\n"))
-        out.append(f"}}  // namespace {_namespace(case)}\n\n")
-    out.append("}  // namespace session_oracle::old_projection\n\nint main() { return 0; }\n")
     return "".join(out)
 
 
@@ -938,5 +891,4 @@ def emit_all(rows: list[Row]) -> dict[str, str]:
         ("generated_fixy_keyed_projection.cpp", emit_keyed_multi(rows)),
         ("generated_fixy_crash.cpp", emit_crash(rows)),
         ("generated_fixy_enroute.cpp", emit_enroute(rows)),
-        ("generated_fixy_wire.cpp", emit_wire(rows)),
-        ("generated_old_projection.cpp", emit_old(rows))))
+        ("generated_fixy_wire.cpp", emit_wire(rows))))

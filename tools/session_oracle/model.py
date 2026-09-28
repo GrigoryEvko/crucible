@@ -4,16 +4,16 @@ The global types are the syntax of Tirore, Bengtson and Carbone (ITP
 2023) with one payload sort per message: end, a message, a choice with
 any number of branches, recursion and a recursion variable.  A variable
 carries a de Bruijn index.  Index 0 names the nearest enclosing
-recursion, which is the only variable that ``Var_G`` in the frozen tree
-and ``Continue`` in fixy can spell.  A variable with a larger index, a
+recursion, which is the only variable that ``Var`` and ``Continue`` in
+fixy can spell.  A variable with a larger index, a
 choice with no branch, a message from a role to itself and a recursion
 whose body is a variable are legal here, because the adversarial corpus
 needs them.
 
 The local types are the decoded result of the oracle.  A local type
-records the direction and the channel of each action.  The protocols of
-the frozen tree and the binary fixy protocols record the direction
-only, so their printers drop the channel.  The multiparty local types of
+records the direction and the channel of each action.  The binary fixy
+protocols record the direction only, so their printer drops the
+channel.  The multiparty local types of
 fixy name the peer of each action, and the channel gives that peer.
 
 Every function here is pure and deterministic.  The generator takes a
@@ -141,7 +141,7 @@ class UntranslatableError(ValueError):
     """A type has no spelling in one of our C++ protocol languages.
 
     The only such shape is a variable that skips a binder, because
-    ``Var_G`` and ``Continue`` always name the nearest binder.
+    ``Var`` and ``Continue`` always name the nearest binder.
     """
 
 
@@ -335,8 +335,8 @@ def generate_outer(seed: int, count: int, roles: int) -> list[Global]:
     Each type is mu X. a. mu Y. choice(b. X, c. Y, [d. end]): the inner
     loop has a branch that continues the outer loop, which is Tirore,
     Bengtson and Carbone (ITP 2023), equation (7), with random roles and
-    prefixes.  Var_G and Continue name only the nearest binder, so our
-    DSLs cannot spell these types, and the rows record the oracle's answer
+    prefixes.  Var and Continue name only the nearest binder, so fixy
+    cannot spell these types, and the rows record the oracle's answer
     and the run of its projection.  Every variable is guarded, so each type
     is contractive.  Deterministic in the arguments.  O(count).
     """
@@ -1033,50 +1033,6 @@ def cpp_sort(sort: str) -> str:
 def cpp_role(role: int) -> str:
     """Return the role tag for ``role``."""
     return f"{PRELUDE_NS}::R{role}"
-
-
-def cpp_old_global(g: Global, ns: str = "pr") -> str:
-    """Spell ``g`` in the global-type DSL of the frozen tree."""
-    if isinstance(g, GEnd):
-        return f"{ns}::End_G"
-    if isinstance(g, GVar):
-        if g.index != 0:
-            raise UntranslatableError(f"variable var{g.index} skips a binder")
-        return f"{ns}::Var_G"
-    if isinstance(g, GRec):
-        return f"{ns}::Rec_G<{cpp_old_global(g.body, ns)}>"
-    if isinstance(g, GMsg):
-        return (f"{ns}::Transmission<{cpp_role(g.frm)}, {cpp_role(g.to)}, "
-                f"{cpp_sort(g.sort)}, {cpp_old_global(g.cont, ns)}>")
-    inner = "".join(
-        f", {ns}::BranchG<{PRELUDE_NS}::Label<{k}>, {cpp_old_global(b, ns)}>"
-        for k, b in enumerate(g.branches))
-    return f"{ns}::Choice<{cpp_role(g.frm)}, {cpp_role(g.to)}{inner}>"
-
-
-def cpp_old_local(e: Local, ns: str = "pr") -> str:
-    """Spell an oracle local type as a frozen-tree protocol.
-
-    The frozen tree projects a choice to a Select or an Offer whose
-    branch k first sends or receives the label ``Label<k>``, so a
-    branch of the oracle maps to that shape.
-    """
-    if isinstance(e, LEnd):
-        return f"{ns}::End"
-    if isinstance(e, LVar):
-        if e.index != 0:
-            raise UntranslatableError(f"variable var{e.index} skips a binder")
-        return f"{ns}::Continue"
-    if isinstance(e, LRec):
-        return f"{ns}::Loop<{cpp_old_local(e.body, ns)}>"
-    if isinstance(e, LMsg):
-        head = "Send" if e.send else "Recv"
-        return f"{ns}::{head}<{cpp_sort(e.sort)}, {cpp_old_local(e.cont, ns)}>"
-    step = "Send" if e.send else "Recv"
-    inner = ", ".join(
-        f"{ns}::{step}<{PRELUDE_NS}::Label<{k}>, {cpp_old_local(b, ns)}>"
-        for k, b in enumerate(e.branches))
-    return f"{ns}::{'Select' if e.send else 'Offer'}<{inner}>"
 
 
 def cpp_fixy_local(e: Local, ns: str = "fs") -> str:

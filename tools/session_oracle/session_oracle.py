@@ -50,10 +50,6 @@ The relations under test:
                    flag and is_well_formed_v are measured on that pair.
   fixy acceptance  fixy's verdict on the naive reading of the global type
                    (model.local_of), against the oracle's projection.
-  frozen-tree      project_t and is_global_well_formed_v of
-  projection       crucible/sessions/_SessionGlobal.h, against the
-                   oracle's projection onto each role, and an execution
-                   of our projection for every type that we accept.
   fixy subtyping   is_subtype_sync_v and is_subtype_async_v of
                    fixy/session/Subtype.h on pairs (T, U), where U is the
                    naive reading of a two-party global type and T one
@@ -102,11 +98,11 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from emit import GoldenError, Row, emit_all, read_golden, write_golden  # noqa: E402
-from execution import equal_up_to_unfolding, explore, explore_bindings  # noqa: E402
+from execution import equal_up_to_unfolding, explore  # noqa: E402
 from model import (GBranch, GEnd, GMsg, GRec, GVar, Global, Local,  # noqa: E402
                    UntranslatableError, action_ok, canonical_roles, contractive, has_empty_choice,
                    has_idle_loop,
-                   cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local, cpp_old_global,
+                   cpp_fixy_global, cpp_fixy_local, cpp_fixy_peer_local,
                    generate, generate_adversarial, generate_outer, local_of, roles_of, show_global,
                    show_local, shrinks, size, size_ok)
 
@@ -118,10 +114,10 @@ GOLDEN = TEST_DIR / "golden.csv"
 
 FIXY_SEED, FIXY_COUNT, FIXY_DEPTH = 20260923, 160, 6
 FIXY_ADV_SEED, FIXY_ADV_COUNT, FIXY_ADV_DEPTH = 20260925, 120, 8
-OLD_SEED, OLD_COUNT, OLD_DEPTH = 20260924, 100, 6
-OLD_ADV_SEED, OLD_ADV_COUNT, OLD_ADV_DEPTH = 20260926, 120, 8
+MULTI_SEED, MULTI_COUNT, MULTI_DEPTH = 20260924, 100, 6
+MULTI_ADV_SEED, MULTI_ADV_COUNT, MULTI_ADV_DEPTH = 20260926, 120, 8
 OUTER_SEED, OUTER_COUNT = 20260927, 40
-OLD_ROLES = 3
+MULTI_ROLES = 3
 SHRINK_ROUNDS = 400
 SHRINK_BATCH = 10
 SHRINK_PER_CLASS = 3
@@ -192,7 +188,7 @@ HAND_CASES: tuple[Case, ...] = (
          cite="on a bag, two labels to one receiver with no order between the two messages"),
 )
 
-PAPER_OLD: tuple[Case, ...] = (
+PAPER_MULTI: tuple[Case, ...] = (
     Case("p_tirore23_eq2", GRec(GMsg(0, 1, "nat", GBranch(2, 3, (GVar(), GVar())))),
          cite=f"{ITP23}, equation (2)"),
     Case("p_tirore23_eq3", GMsg(0, 1, "nat", GRec(GBranch(2, 3, (GEnd(), GVar())))),
@@ -241,20 +237,6 @@ PAPER_FIXY: tuple[Case, ...] = (
          cite="Ekici, Kamegai, Yoshida, ITP 2025, Example 18, the local type T"),
 )
 
-NOTE_UNGUARDED = (
-    "ours wrong: our Rec_G rule keeps a Loop whose body reaches Continue before an action "
-    f"of this role.  The oracle projects such a recursion to End ({ITP23}, indProj.v, "
-    "trans, the GRec case with eguarded).  The role can then never act and never close.")
-NOTE_PEERLESS = (
-    "ours wrong: the oracle rejects because the merged branches use different channels, "
-    "and with one channel for all pairs it accepts.  Our Send and Recv name no peer, so "
-    "the plain merge sees equal branches and accepts.  A multiparty local type must name "
-    f"the peer of each action ({ITP23}, plain merge over channel-annotated local types; "
-    f"{ECOOP25}, section 1: one shared queue breaks subject reduction).")
-NOTE_WF = (
-    "ours wrong: is_global_well_formed checks variable scope, self-messages and empty "
-    "choices only.  The oracle rejects the projection onto role {roles}, so no set of "
-    f"local types implements this global type ({ITP23}, proj).")
 NOTE_OUTER = (
     "our DSL cannot spell a variable that names an outer binder: Var_G and Continue name "
     f"the nearest binder.  The paper's projection needs one ({ITP23}).")
@@ -291,14 +273,6 @@ def _expand(spelling: str, alias: str, target: str) -> str:
     return canonical(spelling.replace(f"{alias}::", f"{target}::"))
 
 
-def _translatable_old(g: Global) -> bool:
-    try:
-        cpp_old_global(g)
-    except UntranslatableError:
-        return False
-    return True
-
-
 def _fixy_spelling(e: Local | None) -> str | None:
     if e is None:
         return None
@@ -308,7 +282,7 @@ def _fixy_spelling(e: Local | None) -> str | None:
         return None
 
 
-def old_roles(g: Global) -> list[int]:
+def projected_roles(g: Global) -> list[int]:
     """Return the roles onto which a multiparty case is projected."""
     from emit import multiparty_roles
     return multiparty_roles(roles_of(g))
@@ -341,184 +315,6 @@ def _oracle_safety_row(c: Case, family_roles: list[int], answers: dict[int, Loca
                "oracle-accepts-and-fails",
                f"unclassified: the oracle's proj accepts and the run of its projection "
                f"fails: {verdict.text()}")
-
-
-def _old_projection_row(c: Case, role: int, oracle: Local | None, single: Local | None,
-                        measured) -> Row:  # type: ignore[no-untyped-def]
-    from model import cpp_old_local
-    from probe import (OLD_NS, SpellingError, drop_unguarded_loops, erase_channels,
-                       read_protocol)
-    text = show_global(c.g)
-    oracle_text = show_local(oracle)
-    # A hard error is a rejection even when the compiler still printed a
-    # type: plain_merge_impl fires its static_assert and then defines its
-    # type as the first branch, so the show line carries a spelling.
-    value = None if measured.rejection is not None else measured.values.get("proj")
-    fam, ident, rs = "old.projection", c.ident, str(role)
-    pred = _domain_pred(c.g)
-    if value is None:
-        ours = f"reject:{measured.rejection}"
-        if oracle is None:
-            return Row(fam, ident, rs, text, oracle_text, ours, "agree", "", "")
-        if pred:
-            return Row(fam, ident, rs, text, oracle_text, ours, "divergence",
-                       "outside-oracle-domain",
-                       f"oracle wrong: its proj accepts a type that the development excludes "
-                       f"with {pred} (elimination.v); our projection rejects it")
-        return Row(fam, ident, rs, text, oracle_text, ours, "divergence", "ours-rejects",
-                   f"ours too strict: our projection rejects ({measured.rejection}) where the "
-                   "oracle projects.  Our plain merge compares branches as written and does "
-                   f"not unfold a recursion ({ITP23}, section 2, equation (7))")
-    if oracle is not None:
-        try:
-            expected = _expand(cpp_old_local(oracle), "pr", OLD_NS)
-        except UntranslatableError as exc:
-            return Row(fam, ident, rs, text, oracle_text, value, "gap", "inexpressible",
-                       f"the oracle's answer names an outer binder ({exc}).  {NOTE_OUTER}")
-        if value == expected:
-            return Row(fam, ident, rs, text, oracle_text, "=", "agree", "", "")
-    try:
-        ours_ir = erase_channels(read_protocol(value, OLD_NS, labelled=True))
-    except SpellingError as exc:
-        return Row(fam, ident, rs, text, oracle_text, value, "divergence", "unclassified",
-                   f"unclassified: {exc}")
-    if oracle is not None:
-        if drop_unguarded_loops(ours_ir) == erase_channels(oracle):
-            return Row(fam, ident, rs, text, oracle_text, value, "divergence", "unguarded-loop",
-                       NOTE_UNGUARDED)
-        return Row(fam, ident, rs, text, oracle_text, value, "divergence", "unclassified",
-                   "unclassified: our projection differs from the oracle's")
-    if single is not None:
-        base = erase_channels(single)
-        if ours_ir == base:
-            return Row(fam, ident, rs, text, oracle_text, value, "divergence", "peerless",
-                       NOTE_PEERLESS)
-        if drop_unguarded_loops(ours_ir) == base:
-            return Row(fam, ident, rs, text, oracle_text, value, "divergence",
-                       "peerless-and-unguarded", NOTE_PEERLESS + "  " + NOTE_UNGUARDED)
-    if not contractive(c.g):
-        return Row(fam, ident, rs, text, oracle_text, value, "divergence", "non-contractive",
-                   "ours wrong: our projection accepts a recursion whose body loops back before "
-                   "an action, and gives a Loop that can never act.  The oracle rejects a type "
-                   f"that is not contractive ({ITP23}, gcontractive in elimination.v, and proj)")
-    if pred:
-        return Row(fam, ident, rs, text, oracle_text, value, "divergence", "outside-oracle-domain",
-                   f"the type is outside the oracle's domain ({pred}, elimination.v); our "
-                   "projection gives a local type for it")
-    return Row(fam, ident, rs, text, oracle_text, value, "divergence", "accepts-unprojectable",
-               "ours wrong: our projection accepts a role that the oracle rejects with and "
-               f"without channels ({ITP23}, proj)")
-
-
-def _old_execution_row(c: Case, roles: list[int], values: dict[int, str],
-                       answers: dict[int, Local | None]) -> Row:
-    """Run our projection of an accepted type, and compare with the oracle's run."""
-    from probe import OLD_NS, erase_channels, read_protocol
-    text = show_global(c.g)
-    fixed: dict[int, Local] = {}
-    peerless: dict[int, Local] = {}
-    for r in roles:
-        ours_ir = erase_channels(read_protocol(values[r], OLD_NS, labelled=True))
-        oracle = answers[r]
-        if oracle is not None and erase_channels(oracle) == ours_ir:
-            fixed[r] = oracle
-        else:
-            peerless[r] = ours_ir
-    participants = roles_of(c.g)
-    candidates = {r: sorted(participants - {r}) for r in peerless}
-    if not peerless:
-        verdict = explore(fixed)
-        ours_text, ours_safe = verdict.text(), verdict.is_safe
-        pair_safe = ours_safe
-    else:
-        pair = explore_bindings(fixed, peerless, candidates, inbox=False)
-        inbox = explore_bindings(fixed, peerless, candidates, inbox=True)
-        ours_text = f"per-pair queues: {pair.text()} | one inbox per role: {inbox.text()}"
-        pair_safe = bool(pair.safe) or pair.skipped
-        ours_safe = pair_safe or bool(inbox.safe) or inbox.skipped
-    rejected = [r for r in roles if answers[r] is None]
-    oracle_safe: bool | None
-    if rejected:
-        oracle_text, oracle_safe = f"rejects role {','.join(map(str, rejected))}", None
-    else:
-        oracle_verdict = explore({r: answers[r] for r in roles})  # type: ignore[misc]
-        oracle_text, oracle_safe = oracle_verdict.text(), oracle_verdict.is_safe
-    fam = "old.execution"
-    if oracle_safe and ours_safe:
-        return Row(fam, c.ident, "-", text, oracle_text, ours_text, "agree", "", "")
-    if oracle_safe is None and not ours_safe:
-        return Row(fam, c.ident, "-", text, oracle_text, ours_text, "divergence",
-                   "accepted-and-fails",
-                   "ours wrong: our relations accept this global type, the oracle rejects it, "
-                   "and every implementation of our projection that a local type can describe "
-                   "fails when it runs")
-    if oracle_safe is None and not pair_safe:
-        return Row(fam, c.ident, "-", text, oracle_text, ours_text, "divergence",
-                   "needs-shared-inbox",
-                   "ours wrong for per-pair queues: every static peer binding of our projection "
-                   "deadlocks or fails, and only one shared inbox per role runs it.  A shared "
-                   f"queue is the model in which subject reduction fails ({ECOOP25}, section 1)")
-    if oracle_safe is None:
-        return Row(fam, c.ident, "-", text, oracle_text, ours_text, "divergence",
-                   "accepted-no-failure-found",
-                   "ours accepts and the oracle rejects, but a run of our projection with the "
-                   "right peers finds no failure within the bounds of execution.py")
-    if not oracle_safe:
-        return Row(fam, c.ident, "-", text, oracle_text, ours_text, "divergence",
-                   "oracle-run-fails",
-                   "the oracle's own projection fails when it runs; see the oracle.safety row")
-    return Row(fam, c.ident, "-", text, oracle_text, ours_text, "divergence", "ours-fails",
-               "ours wrong: the oracle's projection runs safely and ours fails")
-
-
-def classify_old(c: Case, answers: dict[tuple[int, str], Local | None],
-                 measured: dict[int, object]) -> list[Row]:
-    """Return every row of one frozen-tree case."""
-    text = show_global(c.g)
-    roles = old_roles(c.g)
-    pair = {r: answers[(r, c.chan)] for r in roles}
-    rows: list[Row] = []
-    if not _translatable_old(c.g):
-        summary = " || ".join(show_local(pair[r]) for r in roles)
-        rows.append(Row("old.projection", c.ident, "-", text, summary, "untranslatable", "gap",
-                        "inexpressible", NOTE_OUTER))
-        safety = _oracle_safety_row(c, roles, pair, "untranslatable")
-        return rows + ([safety] if safety else [])
-    values: dict[int, str] = {}
-    for r in roles:
-        m = measured[r]
-        rows.append(_old_projection_row(c, r, pair[r], answers[(r, "single")], m))
-        if "proj" in m.values and m.rejection is None:  # type: ignore[attr-defined]
-            values[r] = m.values["proj"]  # type: ignore[attr-defined]
-    wf = _bool(measured[roles[0]].values.get("wf"))  # type: ignore[attr-defined]
-    if wf is None:
-        raise RuntimeError(f"old case {c.ident}: no well-formedness measurement: "
-                           f"{measured[roles[0]]}")
-    rejecting = [r for r in roles if pair[r] is None]
-    oracle_wf = "false" if (rejecting or _domain_pred(c.g)) else "true"
-    if wf == oracle_wf:
-        rows.append(Row("old.well_formed", c.ident, "-", text, oracle_wf, wf, "agree", "", ""))
-    elif wf == "true" and not contractive(c.g):
-        rows.append(Row("old.well_formed", c.ident, "-", text, oracle_wf, wf, "divergence",
-                        "non-contractive",
-                        "ours wrong: is_global_well_formed accepts a recursion whose body loops "
-                        "back before an action.  The oracle's gcontractive (elimination.v) and "
-                        f"its proj reject it ({ITP23})"))
-    elif wf == "true":
-        rows.append(Row("old.well_formed", c.ident, "-", text, oracle_wf, wf, "divergence",
-                        "accepts-unprojectable",
-                        NOTE_WF.format(roles=", ".join(map(str, rejecting)))))
-    else:
-        rows.append(Row("old.well_formed", c.ident, "-", text, oracle_wf, wf, "divergence",
-                        "rejects-projectable",
-                        "ours too strict: is_global_well_formed rejects a global type that the "
-                        f"oracle projects onto every role ({ITP23}, proj)"))
-    if wf == "true" and len(values) == len(roles):
-        rows.append(_old_execution_row(c, roles, values, pair))
-    safety = _oracle_safety_row(c, roles, pair, f"well_formed {wf}")
-    if safety:
-        rows.append(safety)
-    return rows
 
 
 def classify_fixy(c: Case, e0: Local | None, e1: Local | None,
@@ -623,7 +419,7 @@ def classify_fixy_multi(c: Case, pair: dict[int, Local | None],
     """Return the fixy multiparty rows of one case of the multiparty corpora."""
     from probe import FIXY_NS, SpellingError, read_fixy_projection
     text = show_global(c.g)
-    roles = old_roles(c.g)
+    roles = projected_roles(c.g)
     rows: list[Row] = []
     if not _translatable_fixy_global(c.g):
         return [Row("fixy.projection", c.ident, "-", text,
@@ -806,17 +602,6 @@ def _fixy_probe(t0: str | None, t1: str | None, n0: str | None, n1: str | None) 
     return src
 
 
-def _old_probe(g: Global, role: int, with_wf: bool) -> str:
-    from model import cpp_role
-    from probe import probe_header, show
-    src = (probe_header("old", "namespace pr = ::crucible::safety::proto;")
-           + f"using G = {cpp_old_global(g)};\n"
-           + show("proj", f"pr::project_t<G, {cpp_role(role)}>"))
-    if with_wf:
-        src += show("wf", "std::bool_constant<pr::is_global_well_formed_v<G>>")
-    return src
-
-
 @dataclass(slots=True)
 class Env:
     """What an evaluation needs: the compiler, the compiled heads, the pool size.
@@ -839,53 +624,51 @@ def _timeout_row(family: str, c: Case) -> Row:
                f"check unfolds recursion ({ITP23}, section 5)")
 
 
-def evaluate_old(cases: list[Case], env: Env) -> dict[str, list[Row]]:
-    """Run the oracles and the probes for frozen-tree cases.  O(cases × roles)."""
+def evaluate_multi(cases: list[Case], env: Env) -> dict[str, list[Row]]:
+    """Run the oracles and the probes for multiparty cases.  O(cases × roles).
+
+    A case whose projection query gets no answer in time gets one
+    oracle.safety gap row and no other row, because each other row
+    compares with that answer.
+    """
     import rocq
     import sr
     from probe import run_many
     queries: list[rocq.Query] = []
-    where: dict[str, dict[tuple[int, str], int]] = {}
+    where: dict[str, dict[int, int]] = {}
     for c in cases:
         slots = where.setdefault(c.ident, {})
-        for r in old_roles(c.g):
-            for chan in dict.fromkeys((c.chan, "single")):
-                slots[(r, chan)] = len(queries)
-                queries.append(rocq.Query(len(queries), c.g, r, chan))
+        for r in projected_roles(c.g):
+            slots[r] = len(queries)
+            queries.append(rocq.Query(len(queries), c.g, r, c.chan))
     answers = rocq.run(queries) if queries else {}
     slow = {c.ident for c in cases
             if any(answers[q] is rocq.TIMEOUT for q in where[c.ident].values())}
-    jobs = [(c, r) for c in cases if c.ident not in slow and _translatable_old(c.g)
-            for r in old_roles(c.g)]
     multi = [c for c in cases if c.ident not in slow and c.chan == "pair"]
     keyed = [(c, kg) for c in multi if (kg := keyed_global(c)) is not None]
-    sr_queries = [(kg, r, "pair") for c, kg in keyed for r in old_roles(c.g)]
+    sr_queries = [(kg, r, "pair") for c, kg in keyed for r in projected_roles(c.g)]
     sr_flat = sr.project(sr_queries) if sr_queries else []
     sr_answers: dict[str, dict[int, object]] = {}
     position = 0
     for c, _ in keyed:
-        for r in old_roles(c.g):
+        for r in projected_roles(c.g):
             sr_answers.setdefault(c.ident, {})[r] = sr_flat[position]
             position += 1
-    sources = ([_old_probe(c.g, r, r == 0) for c, r in jobs]
-               + [_multi_probe(c.g, old_roles(c.g)) if _translatable_fixy_global(c.g) else ""
-                  for c in multi]
-               + [_keyed_multi_probe(kg, c.g, old_roles(c.g)) for c, kg in keyed])
+    sources = ([_multi_probe(c.g, projected_roles(c.g)) if _translatable_fixy_global(c.g) else ""
+                for c in multi]
+               + [_keyed_multi_probe(kg, c.g, projected_roles(c.g)) for c, kg in keyed])
     measured = run_many(env.cxx, env.include, sources, env.workers, env.heads)
-    by_case: dict[str, dict[int, object]] = {}
-    for (c, r), m in zip(jobs, measured[:len(jobs)], strict=True):
-        by_case.setdefault(c.ident, {})[r] = m
-    by_multi = dict(zip((c.ident for c in multi), measured[len(jobs):len(jobs) + len(multi)], strict=True))
-    by_keyed = {c.ident: (kg, m) for (c, kg), m in zip(keyed, measured[len(jobs) + len(multi):], strict=True)}
+    by_multi = dict(zip((c.ident for c in multi), measured[:len(multi)], strict=True))
+    by_keyed = {c.ident: (kg, m) for (c, kg), m in zip(keyed, measured[len(multi):], strict=True)}
     out: dict[str, list[Row]] = {}
     for c in cases:
         if c.ident in slow:
-            out[c.ident] = [_timeout_row("old.projection", c)]
+            out[c.ident] = [_timeout_row("oracle.safety", c)]
             continue
-        answers_c = {k: answers[q] for k, q in where[c.ident].items()}
-        rows = classify_old(c, answers_c, by_case.get(c.ident, {}))
+        pair = {r: answers[q] for r, q in where[c.ident].items()}
+        safety = _oracle_safety_row(c, projected_roles(c.g), pair, "-")
+        rows = [safety] if safety else []
         if c.ident in by_multi:
-            pair = {r: answers_c[(r, c.chan)] for r in old_roles(c.g)}
             rows += classify_fixy_multi(c, pair, by_multi[c.ident])
             if c.ident in by_keyed:
                 kg, m = by_keyed[c.ident]
@@ -1652,7 +1435,7 @@ def classify_keyed_multi(c: Case, kg, sr_answers: dict[int, object],  # type: ig
     from labelled import show as show_labelled
     from probe import SpellingError, read_fixy_projection
     text = show_labelled(kg)
-    roles = old_roles(c.g)
+    roles = projected_roles(c.g)
     if measured.rejection is not None:
         return [Row("fixy.keyed_live", c.ident, "-", text, "-", f"reject:{measured.rejection}", "divergence",
                     "hard-error", "ours wrong: a fixy global relation stops the build with a hard error on a "
@@ -1792,7 +1575,7 @@ def evaluate_sr_safety(cases: list[Case]) -> dict[str, list[Row]]:
     for c in cases:
         if c.chan != "pair":
             continue
-        roles = old_roles(c.g)
+        roles = projected_roles(c.g)
         for layout in SR_LAYOUTS:
             work.append((c, layout, sr_channel_spec(layout, roles), roles))
     lg = {c.ident: from_positional(c.g, identity_scheme) for c in cases}
@@ -1941,7 +1724,7 @@ def evaluate_crash(cases: list[Case], env: Env) -> dict[str, list[Row]]:
     from probe import SpellingError, read_fixy_projection, run_many
     work = [(c, prefix, unreliable, lg) for c in cases for prefix, unreliable, lg in crash_variants(c)]
     measured = run_many(env.cxx, env.include,
-                        [_crash_probe(lg, c.g, old_roles(c.g), unreliable) for c, _, unreliable, lg in work],
+                        [_crash_probe(lg, c.g, projected_roles(c.g), unreliable) for c, _, unreliable, lg in work],
                         env.workers, env.heads)
     out: dict[str, list[Row]] = {}
     pending: list[tuple[str, list[Row], str, str, str]] = []
@@ -1949,7 +1732,7 @@ def evaluate_crash(cases: list[Case], env: Env) -> dict[str, list[Row]]:
     for (c, prefix, unreliable, lg), m in zip(work, measured, strict=True):
         text = show_labelled(lg)
         rows = out.setdefault(c.ident, [])
-        roles = old_roles(c.g)
+        roles = projected_roles(c.g)
         if m.rejection is not None:
             rows.append(Row("fixy.crash_live", c.ident, prefix, text, "-", f"reject:{m.rejection}", "divergence",
                             "hard-error", "ours wrong: a crash-stop relation stops the build with a hard error "
@@ -2101,11 +1884,11 @@ def evaluate_enroute(cases: list[Case], env: Env) -> dict[str, list[Row]]:
     from labelled import enroute_variants, show as show_labelled
     from probe import SpellingError, read_fixy_projection, read_fixy_projection_with_queue, run_many
     base_cases = [c for c in cases if c.chan == "pair" and _translatable_fixy_global(c.g) and enroute_variants(c.g)]
-    base_measured = run_many(env.cxx, env.include, [_multi_probe(c.g, old_roles(c.g)) for c in base_cases],
+    base_measured = run_many(env.cxx, env.include, [_multi_probe(c.g, projected_roles(c.g)) for c in base_cases],
                              env.workers, env.heads)
     work = []
     for c, m in zip(base_cases, base_measured, strict=True):
-        roles = old_roles(c.g)
+        roles = projected_roles(c.g)
         base: dict[int, Local] = {}
         base_live = _bool(m.values.get("flive")) if m.rejection is None else None
         base_wf = _bool(m.values.get("fwf")) if m.rejection is None else None
@@ -2121,14 +1904,14 @@ def evaluate_enroute(cases: list[Case], env: Env) -> dict[str, list[Row]]:
             ctx = (_stepped_context(roles, base, sender, receiver, label, sort)
                    if len(base) == len(roles) else None)
             work.append((c, tag, lg, sender, receiver, label, sort, base_live, base_wf, ctx))
-    measured = run_many(env.cxx, env.include, [_enroute_probe(w[2], old_roles(w[0].g), w[9]) for w in work],
+    measured = run_many(env.cxx, env.include, [_enroute_probe(w[2], projected_roles(w[0].g), w[9]) for w in work],
                         env.workers, env.heads)
     out: dict[str, list[Row]] = {}
     for (c, tag, lg, sender, receiver, label, sort, base_live, base_wf, ctx), m in zip(work, measured,
                                                                                     strict=True):
         rows = out.setdefault(c.ident, [])
         text = show_labelled(lg)
-        roles = old_roles(c.g)
+        roles = projected_roles(c.g)
         if m.rejection is not None:
             rows.append(Row("fixy.enroute_live", c.ident, tag, text, "-", f"reject:{m.rejection}", "divergence",
                             "hard-error", "ours wrong: a relation stops the build with a hard error on a runtime "
@@ -2232,12 +2015,11 @@ class Target:
 
 
 def _keeps(rows: list[Row], t: Target) -> bool:
-    return any(r.family == t.family and r.klass == t.klass and r.status == "divergence"
-               and (t.family != "old.projection" or r.role == t.role) for r in rows)
+    return any(r.family == t.family and r.klass == t.klass and r.status == "divergence" for r in rows)
 
 
 class Evaluator:
-    """Evaluate candidate types once each, for the two trees."""
+    """Evaluate candidate types once each, for the multiparty and the two-party kind."""
 
     def __init__(self, env: Env) -> None:
         self.env = env
@@ -2248,9 +2030,9 @@ class Evaluator:
         fresh = [g for g in dict.fromkeys(gs) if (kind, g) not in self.memo]
         if not fresh:
             return
-        prefix = "m" if kind == "old" else "fm"
+        prefix = "m" if kind == "multi" else "fm"
         cases = [Case(f"{prefix}{i}", g) for i, g in enumerate(fresh)]
-        rows = (evaluate_old if kind == "old" else evaluate_fixy)(cases, self.env)
+        rows = (evaluate_multi if kind == "multi" else evaluate_fixy)(cases, self.env)
         for c in cases:
             self.memo[(kind, c.g)] = rows[c.ident]
 
@@ -2276,7 +2058,7 @@ def shrink(targets: list[Target], ev: Evaluator) -> list[Global]:
         if not active:
             break
         batch = {i: cands[i][offset[i]:offset[i] + SHRINK_BATCH] for i in active}
-        for kind in ("old", "fixy"):
+        for kind in ("multi", "fixy"):
             ev.run(kind, [g for i, gs in batch.items() if targets[i].kind == kind for g in gs])
         moved = 0
         for i in sorted(active):
@@ -2293,15 +2075,15 @@ def shrink(targets: list[Target], ev: Evaluator) -> list[Global]:
 
 
 def _kind_of(case: str) -> str:
-    return "fixy" if case.startswith("f") else "old"
+    return "fixy" if case.startswith("f") else "multi"
 
 
 def minimal_corpus(rows: list[Row], cases: dict[tuple[str, str], Case], ev: Evaluator,
                    shrinkable: frozenset[str]) -> list[Row]:
     """Shrink every divergence of the generated and hand corpora.  Return the minimal rows.
 
-    Each minimal type becomes one case of corpus m (frozen tree) or fm
-    (fixy).  Its divergence rows name the cases that shrank to it.
+    Each minimal type becomes one case of corpus m (multiparty) or fm
+    (two-party).  Its divergence rows name the cases that shrank to it.
     ``shrinkable`` holds the families that the Evaluator measures.  The
     other families are not shrunk: a subtyping pair is one change of U
     already, and the crash, en-route and record families measure variants
@@ -2334,14 +2116,14 @@ def minimal_corpus(rows: list[Row], cases: dict[tuple[str, str], Case], ev: Eval
     shrunk = shrink(targets, ev)
     finals: list[tuple[Target, Global]] = []
     relabel = [(t, *canonical_roles(g, int(t.role) if t.role != "-" else None))
-               for t, g in zip(targets, shrunk, strict=True) if t.kind == "old"]
-    ev.run("old", [g2 for _, g2, _ in relabel])
+               for t, g in zip(targets, shrunk, strict=True) if t.kind == "multi"]
+    ev.run("multi", [g2 for _, g2, _ in relabel])
     relabelled = {id(t): (g2, role2) for t, g2, role2 in relabel}
     for t, g in zip(targets, shrunk, strict=True):
         if id(t) in relabelled:
             g2, role2 = relabelled[id(t)]
             moved = dataclasses.replace(t, role=t.role if role2 is None else str(role2))
-            if _keeps(ev.rows("old", g2), moved):
+            if _keeps(ev.rows("multi", g2), moved):
                 finals.append((moved, g2))
                 continue
         finals.append((t, g))
@@ -2350,14 +2132,14 @@ def minimal_corpus(rows: list[Row], cases: dict[tuple[str, str], Case], ev: Eval
         groups.setdefault((t.kind, g), []).append(t)
     # A target that never moved keeps its original type, which only the
     # full pass evaluated, so every final type is evaluated here.
-    for kind in ("old", "fixy"):
+    for kind in ("multi", "fixy"):
         ev.run(kind, [g for k, g in groups if k == kind])
     out: list[Row] = []
-    for kind in ("old", "fixy"):
+    for kind in ("multi", "fixy"):
         keys = sorted((k for k in groups if k[0] == kind),
                       key=lambda k: (size(k[1]), show_global(k[1])))
         for n, key in enumerate(keys):
-            ident = f"{'m' if kind == 'old' else 'fm'}{n}"
+            ident = f"{'m' if kind == 'multi' else 'fm'}{n}"
             for row in ev.rows(kind, key[1]):
                 row = dataclasses.replace(row, case=ident)
                 names = sorted({t.source + (f" role {t.role}" if t.role != "-" else "")
@@ -2377,19 +2159,19 @@ def minimal_corpus(rows: list[Row], cases: dict[tuple[str, str], Case], ev: Eval
 
 
 def corpora() -> tuple[list[Case], list[Case]]:
-    """Return the frozen-tree cases and the fixy cases of every corpus but the minimal ones."""
-    old = [Case(f"r{i}", g) for i, g in enumerate(
-        generate(OLD_SEED, OLD_COUNT, roles=OLD_ROLES, max_depth=OLD_DEPTH))]
-    old += [Case(f"a{i}", g) for i, g in enumerate(
-        generate_adversarial(OLD_ADV_SEED, OLD_ADV_COUNT, OLD_ROLES, OLD_ADV_DEPTH))]
-    old += [Case(f"o{i}", g) for i, g in enumerate(generate_outer(OUTER_SEED, OUTER_COUNT, OLD_ROLES))]
-    old += list(HAND_CASES) + list(PAPER_OLD)
+    """Return the multiparty cases and the two-party cases of every corpus but the minimal ones."""
+    multi = [Case(f"r{i}", g) for i, g in enumerate(
+        generate(MULTI_SEED, MULTI_COUNT, roles=MULTI_ROLES, max_depth=MULTI_DEPTH))]
+    multi += [Case(f"a{i}", g) for i, g in enumerate(
+        generate_adversarial(MULTI_ADV_SEED, MULTI_ADV_COUNT, MULTI_ROLES, MULTI_ADV_DEPTH))]
+    multi += [Case(f"o{i}", g) for i, g in enumerate(generate_outer(OUTER_SEED, OUTER_COUNT, MULTI_ROLES))]
+    multi += list(HAND_CASES) + list(PAPER_MULTI)
     fixy = [Case(f"fr{i}", g) for i, g in enumerate(
         generate(FIXY_SEED, FIXY_COUNT, roles=2, max_depth=FIXY_DEPTH))]
     fixy += [Case(f"fa{i}", g) for i, g in enumerate(
         generate_adversarial(FIXY_ADV_SEED, FIXY_ADV_COUNT, 2, FIXY_ADV_DEPTH))]
     fixy += list(FIXY_HAND) + list(PAPER_FIXY)
-    return old, fixy
+    return multi, fixy
 
 
 @contextlib.contextmanager
@@ -2433,12 +2215,12 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
     import rocq
     from probe import pch_heads
 
-    old, fixy = corpora()
+    multi, fixy = corpora()
     with pch_heads(cxx, include) as heads:
         env = Env(cxx, heads, workers, include)
-        LOG.info("evaluating %d frozen-tree cases and %d fixy cases against %s", len(old),
+        LOG.info("evaluating %d multiparty cases and %d two-party cases against %s", len(multi),
                  len(fixy), include)
-        rows = [r for rs in evaluate_old(old, env).values() for r in rs]
+        rows = [r for rs in evaluate_multi(multi, env).values() for r in rs]
         rows += [r for rs in evaluate_fixy(fixy, env).values() for r in rs]
         shrinkable = frozenset(r.family for r in rows)
         small = [c for c in fixy if size(c.g) <= SUBTYPE_MAX_SIZE]
@@ -2450,12 +2232,12 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
         rows += subtype_rows
         rows += [r for rs in evaluate_ekici(subtype_cases, subtype_rows).values() for r in rs]
         rows += [r for rs in evaluate_wire(subtype_cases, subtype_rows, env).values() for r in rs]
-        rows += [r for rs in evaluate_sr_safety(old).values() for r in rs]
-        rows += [r for rs in evaluate_crash(old, env).values() for r in rs]
-        rows += [r for rs in evaluate_enroute(old, env).values() for r in rs]
+        rows += [r for rs in evaluate_sr_safety(multi).values() for r in rs]
+        rows += [r for rs in evaluate_crash(multi, env).values() for r in rs]
+        rows += [r for rs in evaluate_enroute(multi, env).values() for r in rs]
         minimal: list[Row] = []
         if do_shrink:
-            cases = {("old", c.ident): c for c in old} | {("fixy", c.ident): c for c in fixy}
+            cases = {("multi", c.ident): c for c in multi} | {("fixy", c.ident): c for c in fixy}
             minimal = minimal_corpus(rows, cases, Evaluator(env), shrinkable)
         rows += minimal
         rows += evaluate_semantics(rows, env)
@@ -2476,12 +2258,12 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
         f"{NETWORK_MARKER}{measured}",
         f"# fixy corpora: fr seed {FIXY_SEED}, {FIXY_COUNT} types, depth {FIXY_DEPTH}; "
         f"fa seed {FIXY_ADV_SEED}, {FIXY_ADV_COUNT} types, depth {FIXY_ADV_DEPTH}",
-        f"# frozen-tree corpora: r seed {OLD_SEED}, {OLD_COUNT} types over {OLD_ROLES} roles, "
-        f"depth {OLD_DEPTH}; a seed {OLD_ADV_SEED}, {OLD_ADV_COUNT} types, depth {OLD_ADV_DEPTH}; "
+        f"# multiparty corpora: r seed {MULTI_SEED}, {MULTI_COUNT} types over {MULTI_ROLES} roles, "
+        f"depth {MULTI_DEPTH}; a seed {MULTI_ADV_SEED}, {MULTI_ADV_COUNT} types, depth {MULTI_ADV_DEPTH}; "
         f"o seed {OUTER_SEED}, {OUTER_COUNT} types",
         f"# minimal cases: {len({r.case for r in minimal})}",
     ]
-    meta += [f"# {c.ident}: {c.cite}" for c in (*HAND_CASES, *PAPER_OLD, *FIXY_HAND, *PAPER_FIXY)]
+    meta += [f"# {c.ident}: {c.cite}" for c in (*HAND_CASES, *PAPER_MULTI, *FIXY_HAND, *PAPER_FIXY)]
     GOLDEN.parent.mkdir(parents=True, exist_ok=True)
     write_golden(GOLDEN, meta, rows)
     _write_tests(read_golden(GOLDEN)[1])
@@ -2545,7 +2327,7 @@ def derive(cxx: str | None, workers: int) -> int:
         meta = [line for line in meta if not line.startswith(NETWORK_MARKER)]
         relations = next(i for i, line in enumerate(meta) if line.startswith(marker))
         meta.insert(relations + 1, f"{NETWORK_MARKER}{network_commit}")
-    cited = (*HAND_CASES, *PAPER_OLD, *FIXY_HAND, *PAPER_FIXY)
+    cited = (*HAND_CASES, *PAPER_MULTI, *FIXY_HAND, *PAPER_FIXY)
     ours = (f"# oracle: github.com/{keskin.REPO} ", f"# oracle: doi {sprout.ARTIFACT}",
             f"# toolchain for {keskin.REPO}:", *(f"# {c.ident}: " for c in cited))
     kept = [line for line in meta if not line.startswith(ours)]
@@ -2642,11 +2424,6 @@ def _plant(rows: list[Row]) -> tuple[list[Row], dict[str, str]]:
     plant("generated_fixy_wire.cpp",
           lambda r: r.family == "fixy.wire" and r.status == "agree",
           lambda r: "abort")
-    old_end = "crucible::safety::proto::End"
-    plant("generated_old_projection.cpp",
-          lambda r: r.family == "old.projection" and r.status == "agree" and r.ours == "=",
-          lambda r: old_end if r.oracle != "end"
-          else "crucible::safety::proto::Loop<crucible::safety::proto::Continue>")
     missing = set(emit_all(rows)) - set(labels)
     if missing:
         raise RuntimeError(f"self-test: no planted row for {sorted(missing)}")

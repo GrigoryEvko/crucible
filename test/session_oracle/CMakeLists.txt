@@ -3,7 +3,7 @@
 # 2023), their subject-reduction development (ECOOP 2025), the subtyping
 # relation of Ekici (ITP 2025), and mpstk-crash-stop (CONCUR 2022).
 #
-# tools/session_oracle/ writes golden.csv and the nine generated_*.cpp
+# tools/session_oracle/ writes golden.csv and the eight generated_*.cpp
 # files.  Each generated file holds one static_assert for each measured
 # row, so a relation that changes its answer fails the build of that
 # test.  The wire test is the one exception: it runs each row and fails
@@ -59,7 +59,3 @@ session_oracle_test(test_session_oracle_fixy_enroute generated_fixy_enroute.cpp 
 # queue of words, each run in a child process (wire_driver.h).
 session_oracle_test(test_session_oracle_fixy_wire generated_fixy_wire.cpp fixy)
 target_link_options(test_session_oracle_fixy_wire PRIVATE -pthread)
-
-# crucible/sessions/_SessionGlobal.h (the frozen tree): projection and
-# well-formedness.
-session_oracle_test(test_session_oracle_old_projection generated_old_projection.cpp crucible)
