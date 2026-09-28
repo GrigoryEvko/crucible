@@ -940,6 +940,7 @@ crucible/sessions/_SwmrSession.h:mint_writer_session  → include/fixy/concurren
 crucible/sessions/_SwmrSession.h:ReaderProto  → include/fixy/concurrent/SwmrSession.h  — The reader loop over Borrowed<T, Tag> had no production consumer, and ReaderRuntimeProto is the plain reader loop that the port keeps.
 crucible/sessions/_SwmrSession.h:WriterProto  → include/fixy/concurrent/SwmrSession.h  — The writer loop over ContentAddressed<T> had no production consumer, and WriterRuntimeProto is the plain writer loop that the port keeps.
 
+crucible/sessions/_SessionContentAddressed.h:content_addressed_depth_v  — Dropped, because no reader in the new tree counts the layers of the marker. The payload order removes every layer with unwrap_content_addressed_t.
 crucible/sessions/_SessionContentAddressed.h:is_subsort  → include/fixy/session/Subtype.h  — Four partial specializations that related a payload to its marked form, one layer deep or through every layer. The payload order holds them as the content_addressed axiom, which strips every layer from both sides, so it also relates depths two or more apart.
 crucible/permissions/_FederationPermission.h:default_peer_key_fingerprint  → include/fixy/Federation.h  — The default fingerprint was a mix of the public organization identity, so fixy/Federation.h has no default and each caller gives the fingerprint of its peer key.
 crucible/permissions/_FederationPermission.h:FederatedPeer  → include/foundation/permissions/Permission.h  — The permission tag moves to foundation::permissions::tag with an IO row, and the source tag of the same name is not carried, because the admitted peer token carries the provenance.
@@ -2110,6 +2111,8 @@ crucible/sessions/_SessionCrash.h:is_crash_v  → include/fixy/session/Crash.h  
 crucible/sessions/_SessionCrash.h:is_dual_involutive  — Dropped. Stop is registered with the protocol registry as self-dual, and fixy/session/Protocol.h makes duality an involution on each registered combinator.
 crucible/sessions/_SessionCrash.h:is_reliable  → include/fixy/session/Crash.h  — Renamed is_in_reliable_set.
 crucible/sessions/_SessionCrash.h:is_reliable_v  — Dropped with is_reliable. is_in_reliable_set has no variable form.
+crucible/sessions/_SessionCrash.h:is_stop  — Dropped, because no reader in the new tree asks if a head is Stop. The registration of Stop in fixy/session/Protocol.h gives each answer that the walks read.
+crucible/sessions/_SessionCrash.h:is_stop_v  — Dropped with is_stop, for the same reason.
 crucible/sessions/_SessionCrash.h:is_subtype_sync_structural  — Dropped. The old rule made Stop the bottom of the subtype order, and the new registration relates Stop only to itself, as rule Sub-stop says.
 crucible/sessions/_SessionCrash.h:Stop_g  → include/fixy/session/Crash.h  — Replaced by Stop, which carries no crash class. The calculus has no crash classes, and the crash cause travels on the crash record.
 crucible/sessions/_SessionCrash.h:UnavailableQueue  → include/fixy/session/CrashTransport.h  — Dropped, because no reader asks for the state. The crash transport drops a send into a crashed peer at run time (rule r-send-↯).
@@ -2343,6 +2346,7 @@ crucible/safety/_IsReduceInto.h:is_reduce_into_smoke_test  — An inline smoke t
 crucible/safety/_IsReduceInto.h:is_reduce_into_v  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
 crucible/safety/_IsReduceInto.h:reduce_into_accumulator_t  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
 crucible/safety/_IsReduceInto.h:reduce_into_reducer_t  — Dropped with the reduce_into accumulator, whose only reader outside the old tests was the dropped Reduction shape.
+crucible/safety/_PipelineStage.h:is_pipeline_stage_v  — Dropped. The variable was a copy of the concept PipelineStage of fixy/concurrent/StageShape.h, and no reader in the new tree used it.
 crucible/safety/_ProducerEndpoint.h:is_producer_endpoint_v  — Dropped with the concept it spells, because no production file and no header of the new tree asks this question.
 crucible/safety/_ProducerEndpoint.h:ProducerEndpoint  — Dropped with its shape family, because no production file and no header of the new tree classifies a function by this shape.
 crucible/safety/_ProducerEndpoint.h:producer_endpoint_handle_value_t  — Dropped with its shape concept, because no production file and no header of the new tree reads this part of a signature.

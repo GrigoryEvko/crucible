@@ -143,12 +143,6 @@ namespace fixy::session {
 // no program can specialize one to change its answer.  The registry and
 // the crash walk below give every answer.
 
-template <typename P>
-using is_stop = std::bool_constant<detail::head_is(^^P, ^^Stop)>;
-
-template <typename P>
-concept is_stop_v = detail::head_is(^^P, ^^Stop);
-
 // ── The crash label and its metadata ─────────────────────────────────
 
 // How the stopped peer ended, as the detector saw it.  The byte values
@@ -205,8 +199,8 @@ namespace detail::crash {
 // A reception at the head of a branch: a plain input step whose payload
 // is no protocol.
 [[nodiscard]] consteval bool is_branch_reception(const tr::node& head) {
-    return head.is_registered && head.entry.kind == tr::shape_kind::step
-        && head.entry.direction == tr::polarity::input && head.entry.is_plain && !head.entry.payload_is_protocol;
+    return head.is_registered && head.entry.kind == tr::shape_kind::step && head.entry.direction == tr::polarity::input
+        && head.entry.is_plain && !head.entry.payload_is_protocol;
 }
 
 // A crash branch of an Offer: a reception of the crash label, with no
@@ -309,12 +303,12 @@ struct verdict {
 };
 
 inline constexpr verdict refused{};
-inline constexpr verdict admitted{.is_structured = true, .is_covered = true, .is_watched = true,
-                                  .is_delegation_free = true};
+inline constexpr verdict admitted{
+    .is_structured = true, .is_covered = true, .is_watched = true, .is_delegation_free = true};
 
 [[nodiscard]] consteval verdict both(const verdict& lhs, const verdict& rhs) {
-    return {lhs.is_structured && rhs.is_structured, lhs.is_covered && rhs.is_covered,
-            lhs.is_watched && rhs.is_watched, lhs.is_delegation_free && rhs.is_delegation_free};
+    return {lhs.is_structured && rhs.is_structured, lhs.is_covered && rhs.is_covered, lhs.is_watched && rhs.is_watched,
+            lhs.is_delegation_free && rhs.is_delegation_free};
 }
 
 // The channel of the walk: the peer that the cell watches and the set of
@@ -399,7 +393,8 @@ struct crash_algebra {
         if (!view.entry.is_plain) return refused;
         if (view.entry.direction != tr::polarity::input) {
             verdict answer = admitted;
-            for (const std::meta::info branch : view.branches) answer = both(answer, child(branch, on));
+            for (const std::meta::info branch : view.branches)
+                answer = both(answer, child(branch, on));
             return answer;
         }
         return offer(view, on, child);
@@ -501,8 +496,8 @@ using is_crash_well_formed = std::bool_constant<is_crash_well_formed_v<P>>;
 // True when Proto, on a channel to Peer and with the reliable roles,
 // handles each crash it can see and no crash it cannot.
 template <typename Proto, typename Peer, typename Reliable>
-concept every_reception_handles_crash_v =
-    detail::crash::is_reliable_set_type(^^Reliable) && detail::crash::verdict_of(^^Proto, ^^Peer, ^^Reliable).is_covered;
+concept every_reception_handles_crash_v = detail::crash::is_reliable_set_type(^^Reliable)
+                                       && detail::crash::verdict_of(^^Proto, ^^Peer, ^^Reliable).is_covered;
 
 // The same question as one type, so that the predicate below takes one
 // argument and can hold an armed cell.
@@ -584,7 +579,10 @@ inline constexpr std::size_t crash_branch_index_v = [] {
 
 namespace detail {
 
-enum class erasure : std::uint8_t { crash_branches, checkpoints };
+enum class erasure : std::uint8_t {
+    crash_branches,
+    checkpoints
+};
 
 struct erase_algebra {
     using result = std::meta::info;
@@ -610,8 +608,8 @@ struct erase_algebra {
     consteval std::meta::info choice(const crash::tr::node& view, context ctx, const Child& child) const {
         std::vector<std::meta::info> kept;
         for (const std::meta::info branch : view.branches) {
-            const bool drops = removes == erasure::crash_branches
-                            && view.entry.direction == crash::tr::polarity::input && crash::is_crash_branch_type(branch);
+            const bool drops = removes == erasure::crash_branches && view.entry.direction == crash::tr::polarity::input
+                            && crash::is_crash_branch_type(branch);
             if (!drops) kept.push_back(child(branch, ctx));
         }
         return std::meta::substitute(
@@ -682,12 +680,6 @@ using GuardedLoop = Loop<Offer<Recv<Msg, Continue>, AliceCrash>>;
 }  // namespace fixy::session::detail::crash::armed_witness
 
 template <>
-struct foundation::contracts::armed_cell<::fixy::session::is_stop> {
-    using accepts = witnesses<::fixy::session::Stop>;
-    using refuses = witnesses<::fixy::session::End, ::fixy::session::Send<int, ::fixy::session::Stop>>;
-};
-
-template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_crash_payload> {
     using accepts = witnesses<::fixy::session::Crash<::fixy::session::detail::crash::armed_witness::Alice>>;
     using refuses = witnesses<int, ::fixy::session::detail::crash::armed_witness::Alice>;
@@ -728,26 +720,25 @@ struct foundation::contracts::armed_cell<::fixy::session::is_crash_covered> {
         ::fixy::session::CrashCoverage<::fixy::session::detail::crash::armed_witness::Guarded,
                                        ::fixy::session::detail::crash::armed_witness::Alice,
                                        ::fixy::session::ReliableSet<>>,
-        ::fixy::session::CrashCoverage<::fixy::session::Recv<int, ::fixy::session::End>,
-                                       ::fixy::session::detail::crash::armed_witness::Alice,
-                                       ::fixy::session::ReliableSet<::fixy::session::detail::crash::armed_witness::Alice>>>;
-    using refuses = witnesses<
-        int,
-        ::fixy::session::CrashCoverage<::fixy::session::Recv<int, ::fixy::session::End>,
-                                       ::fixy::session::detail::crash::armed_witness::Alice,
-                                       ::fixy::session::ReliableSet<>>,
-        ::fixy::session::CrashCoverage<::fixy::session::detail::crash::armed_witness::Guarded,
-                                       ::fixy::session::detail::crash::armed_witness::Bob,
-                                       ::fixy::session::ReliableSet<>>,
-        ::fixy::session::CrashCoverage<::fixy::session::detail::crash::armed_witness::Guarded,
-                                       ::fixy::session::detail::crash::armed_witness::Alice,
-                                       ::fixy::session::ReliableSet<::fixy::session::detail::crash::armed_witness::Alice>>>;
+        ::fixy::session::CrashCoverage<
+            ::fixy::session::Recv<int, ::fixy::session::End>, ::fixy::session::detail::crash::armed_witness::Alice,
+            ::fixy::session::ReliableSet<::fixy::session::detail::crash::armed_witness::Alice>>>;
+    using refuses = witnesses<int,
+                              ::fixy::session::CrashCoverage<::fixy::session::Recv<int, ::fixy::session::End>,
+                                                             ::fixy::session::detail::crash::armed_witness::Alice,
+                                                             ::fixy::session::ReliableSet<>>,
+                              ::fixy::session::CrashCoverage<::fixy::session::detail::crash::armed_witness::Guarded,
+                                                             ::fixy::session::detail::crash::armed_witness::Bob,
+                                                             ::fixy::session::ReliableSet<>>,
+                              ::fixy::session::CrashCoverage<
+                                  ::fixy::session::detail::crash::armed_witness::Guarded,
+                                  ::fixy::session::detail::crash::armed_witness::Alice,
+                                  ::fixy::session::ReliableSet<::fixy::session::detail::crash::armed_witness::Alice>>>;
 };
 
 // The traits above are aliases, and the roster walk of
 // foundation/contracts/Armed.h finds class templates only.  These
 // assertions read their cells.
-static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_stop>);
 static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_payload>);
 static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_crash_branch>);
 static_assert(::foundation::contracts::armed_cell_holds_v<::fixy::session::is_reliable_set>);
@@ -777,7 +768,8 @@ static_assert(answers<Offer<Sender<Bob>, Recv<Msg, End>>, Alice, ReliableSet<Bob
 // A vendor pin passes each answer to the protocol it pins.
 using Pinned = VendorPinned<VendorBackend::NV, Guarded>;
 static_assert(answers<Pinned, Alice, ReliableSet<>>.is_structured && answers<Pinned, Alice, ReliableSet<>>.is_covered
-              && answers<Pinned, Alice, ReliableSet<>>.is_watched && answers<Pinned, Alice, ReliableSet<>>.is_delegation_free);
+              && answers<Pinned, Alice, ReliableSet<>>.is_watched
+              && answers<Pinned, Alice, ReliableSet<>>.is_delegation_free);
 
 // A step whose payload is a protocol, and a combinator that is not plain,
 // fail every answer.

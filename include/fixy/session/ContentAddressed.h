@@ -26,7 +26,6 @@
 
 #include <foundation/contracts/Armed.h>
 
-#include <cstddef>
 #include <type_traits>
 
 namespace fixy::session {
@@ -72,19 +71,6 @@ struct unwrap_content_addressed<ContentAddressed<T>> : unwrap_content_addressed<
 template <typename T>
 using unwrap_content_addressed_t = typename unwrap_content_addressed<T>::type;
 
-namespace detail::ca {
-
-template <typename T>
-struct depth : std::integral_constant<std::size_t, 0> {};
-
-template <typename T>
-struct depth<ContentAddressed<T>> : std::integral_constant<std::size_t, 1 + depth<T>::value> {};
-
-}  // namespace detail::ca
-
-template <typename T>
-inline constexpr std::size_t content_addressed_depth_v = detail::ca::depth<T>::value;
-
 // Two payloads stand for the same content when the marker is on at
 // least one side and stripping every layer of it from both sides leaves
 // one type.  The payload order reads this relation in both directions.
@@ -120,12 +106,6 @@ static_assert(std::is_same_v<unwrap_content_addressed_t<ContentAddressed<Msg>>, 
 static_assert(std::is_same_v<unwrap_content_addressed_t<ContentAddressed<ContentAddressed<Msg>>>, Msg>);
 static_assert(
     std::is_same_v<unwrap_content_addressed_t<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>, Msg>);
-
-static_assert(content_addressed_depth_v<Msg> == 0);
-static_assert(content_addressed_depth_v<int> == 0);
-static_assert(content_addressed_depth_v<ContentAddressed<Msg>> == 1);
-static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<Msg>>> == 2);
-static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>> == 3);
 
 static_assert(content_addressed_equivalent_v<ContentAddressed<Msg>, Msg>);
 static_assert(content_addressed_equivalent_v<Msg, ContentAddressed<Msg>>);

@@ -83,17 +83,13 @@ public:
 
 template <auto FnPtr>
 concept VariadicPipelineStage =
-    ::foundation::reflect::arity_v<FnPtr> >= 2
-    && std::is_void_v<::foundation::reflect::return_type_t<FnPtr>> && StageArity<FnPtr>::ordered
-    && StageArity<FnPtr>::input_count > 0 && StageArity<FnPtr>::output_count > 0
+    ::foundation::reflect::arity_v<FnPtr> >= 2 && std::is_void_v<::foundation::reflect::return_type_t<FnPtr>>
+    && StageArity<FnPtr>::ordered && StageArity<FnPtr>::input_count > 0 && StageArity<FnPtr>::output_count > 0
     && StageArity<FnPtr>::input_count + StageArity<FnPtr>::output_count == ::foundation::reflect::arity_v<FnPtr>;
 
 template <auto FnPtr>
 concept PipelineStage =
     VariadicPipelineStage<FnPtr> && StageArity<FnPtr>::input_count == 1 && StageArity<FnPtr>::output_count == 1;
-
-template <auto FnPtr>
-inline constexpr bool is_pipeline_stage_v = PipelineStage<FnPtr>;
 
 template <auto FnPtr, std::size_t I>
     requires VariadicPipelineStage<FnPtr> && (I < StageArity<FnPtr>::input_count)
