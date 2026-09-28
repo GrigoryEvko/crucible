@@ -150,196 +150,28 @@ function(crucible_test name)
   crucible_dump_asm(${name})
 endfunction()
 
-crucible_test(test_safety)
-crucible_test(test_pre_post)
-crucible_test(test_decide)
-
 # A regression test for the constant-evaluator defect that the patch
 # series in toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
 # an offset pointer.  A compiler without the fix cannot compile it.
 crucible_test(test_gcc_memchr_fold)
 
-# ── FIXY-CLEAN Phase A — engagement-gate test corpus ────────────────
-#
-# Clean reimplementation per misc/16_05_2026_fixy.md §4 Phase A.  Three
-# sentinel TUs cover the positive surface (engagement accepts), the
-# 12 neg-compile fixtures cover the per-axis rejection surface, and the
-# cheat-probe round covers IsAccepted trait-spec-injection resistance.
-#
-# Substrate composition (per §2.1):
-#   - fixy/Dim.h        aliases safety::DimensionAxis (the 20-axis enum)
-#   - fixy/Default.h    aliases safety::fn::Fn<int> defaults per axis
-#   - fixy/Grant.h      uses safety::NotInherited final-class discipline
-#   - fixy/Reject.h     delegates to safety/CollisionCatalog.h's
-#                         ValidComposition (Phase B activation) and
-#                         registers per-axis diag tags via safety/
-#                         Diagnostic.h's tag_base.
-
-crucible_test(test_fixy_engaged)
-crucible_test(test_fixy_cheat_probe)
-crucible_test(test_fixy_cheat_probe_theory)
-crucible_test(test_fixy_l11_short_circuit)  # fixy-L-11 OR-fold short-circuit + chain-order coherence positive proofs
-crucible_test(test_fixy_fn)
-crucible_test(test_fixy_profile)
-crucible_test(test_fixy_rule_helpers)
-crucible_test(test_fixy_perm)
-crucible_test(test_fixy_handle)  # FIXY-U-016 — per-namespace test_fixy_handle sentinel TU
-# The chain concepts and the two mints of the old pipeline headers.
-crucible_test(test_fixy_pipe_chain)
-
-# The cache-size constants of concurrent/_TopologyConstexpr.h.  This build
-# defines no CRUCIBLE_L*_BYTES macro, so each constant must equal its
-# conservative floor.
-crucible_test(test_fixy_pipe_topology_constexpr)
-
-# The same constants with the three CRUCIBLE_L*_BYTES macros defined on
-# the command line.  Each constant must equal its macro.
-crucible_test(test_fixy_pipe_topology_override)
-target_compile_definitions(test_fixy_pipe_topology_override PRIVATE
-    CRUCIBLE_L1D_PER_CORE_BYTES=65536      # 64 KiB
-    CRUCIBLE_L2_PER_CORE_BYTES=1048576     #  1 MiB
-    CRUCIBLE_L3_TOTAL_BYTES=33554432       # 32 MiB
-)
-crucible_test(test_fixy_mach_transitions)  # FIXY-AUDIT-C1
-crucible_test(test_fixy_wrap)
-crucible_test(test_fixy_struct)
-crucible_test(test_fixy_is)
-
-# ── FIXY-DIAG / SOURCE — Phase D surfaces ─────────────────────────
-#
-# Diag: Category + Catalog + tag_of_t / category_of_v bijection +
-#   28 tag classes + stable_name / type_id / function_id +
-#   canonicalize_pack + insight_provider + row_hash_contribution.
-# Source: source::* / trust::* / access::* / version::* /
-#   vessel_trust::* / secret_policy::* / hash_family::* tag
-#   namespaces — pure phantom-type aliases.
-crucible_test(test_fixy_diag)
-crucible_test(test_fixy_diag_catalog)  # FIXY-AUDIT-C8 reconciliation
-crucible_test(test_fixy_insights)      # fixy-H-14 insight_provider sentinel
-crucible_test(test_fixy_a3_007_insights)  # fixy-A3-007 substrate-tag insight closure
-crucible_test(test_fixy_a3_008_synchronization)  # fixy-A3-008 Wait + MemOrder → Synchronization
-crucible_test(test_fixy_a3_009_regime)  # fixy-A3-009 HotPath → Regime (Progress stays on Complexity)
-crucible_test(test_fixy_v_088_fp_mode)  # FIXY-V-088 DimensionAxis::FpMode + 11 sub-axis enum scaffolding
-crucible_test(test_fixy_v_089_fp_lattices)  # FIXY-V-089 11 FP-mode ChainLattice algebras + umbrella registration
-crucible_test(test_fixy_v_090_fp_wrappers)  # FIXY-V-090 11 safety/FpMode.h wrappers + composite + row_hash + DimensionTraits
-crucible_test(test_fixy_v_091_collision_fp_mode)  # FIXY-V-091 CollisionCatalog F101-F105 — FP-mode cross-axis rules
-crucible_test(test_fixy_v_093_fp_canonicalize)  # FIXY-V-093 fixy::fp::canonicalize — merkle-hash-safe FP canonicalization
 crucible_test(test_fp_strict_floor)  # the crucible_fp_strict floor reaches a crucible consumer: compile definition and runtime witness
 crucible_test(test_philox_box_muller_polynomial)  # Philox::box_muller_polynomial_det runtime witness and tier
 crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness
 target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
-crucible_test(test_fixy_v_097_syscall_family)  # FIXY-V-097 DimensionAxis::SyscallSurface + SyscallFamilyLattice 9-tier chain
-crucible_test(test_fixy_v_239_control_flow)    # FIXY-V-239 DimensionAxis::ControlFlow + ControlFlowLattice 5-tier escape chain
-crucible_test(test_fixy_v_240_call_shape)      # FIXY-V-240 DimensionAxis::CallShape + CallShapeLattice 5-tier dispatch chain
-crucible_test(test_fixy_v_241_stack_global_stdio) # FIXY-V-241 StackUse/GlobalState/Stdio — 3 hazard-axis 4-tier chains
-crucible_test(test_fixy_v_242_hazard_wrappers)    # FIXY-V-242 5 safety/* Graded carriers (ControlFlow/CallShape/StackUse/GlobalState/Stdio)
-crucible_test(test_fixy_v_243_control_flow_collisions)  # FIXY-V-243 CollisionCatalog C001/D001/D002/G001/L006/P003/S001/S004 hazard-axis cross-axis rules
-crucible_test(test_fixy_v_260_hw_collisions)  # FIXY-V-260 CollisionCatalog V001/V002/V101/V102/V201/V202/V203/V301 hardware-axis cross-axis rules
-crucible_test(test_fixy_v_249_thread_local_atomic)      # FIXY-V-249 CollisionCatalog G002 thread_local × atomic (Scenario E)
-crucible_test(test_fixy_v_250_simd_isa)                 # FIXY-V-250 SimdIsaLattice — non-distributive x86×ARM ISA partial order
-crucible_test(test_fixy_v_251_hw_instruction)           # FIXY-V-251 HwInstructionLattice — 5-tier hw-instruction capability chain
-crucible_test(test_fixy_v_252_barrier_strength)         # FIXY-V-252 BarrierStrengthLattice — 7-tier memory-fence strength chain
-crucible_test(test_fixy_v_181_suspend_behavior)         # FIXY-V-181 SuspendBehaviorLattice — 3-element clock-pause-on-suspend chain (Agent 6 clock-axis foundation)
-crucible_test(test_fixy_v_182_pinning_requirement)      # FIXY-V-182 PinningRequirementLattice — 4-element CPU-coherence-domain chain (rdtsc-affinity, Agent 6 clock-axis foundation)
-crucible_test(test_fixy_v_183_scheduler_policy)         # FIXY-V-183 SchedulerPolicyLattice — 6-element Linux scheduler-class preemption chain (Agent 6 sched-axis foundation)
-crucible_test(test_fixy_v_184_clock_source)             # FIXY-V-184 ClockSourceLattice — DetSafe×Suspend×Pinning product composite + 9-source projection (Agent 6 §3.1)
-crucible_test(test_fixy_v_185_clock_source)             # FIXY-V-185 safety/ClockSource.h — regime-1 Graded provenance carrier + per-source aliases + IsClockSource + row_hash (Agent 6 §3.3)
-crucible_test(test_fixy_v_186_sched_class)              # FIXY-V-186 safety/SchedClass.h — regime-1 Graded scheduler-class carrier + pool-fit + DEADLINE CBS budget + IsSchedClass + row_hash (Agent 6 §3.3)
-crucible_test(test_fixy_v_187_cpu_pinned)               # FIXY-V-187 safety/CpuPinned.h — move-only AffinityMask×PinningPosture pin proof + singleton/posture gates + IsCpuPinned + row_hash 0x32 (Agent 6 §3.3)
-crucible_test(test_fixy_v_188_suspend_behavior)         # FIXY-V-188 safety/SuspendBehavior.h — regime-1 pause-on-suspend witness + KeepsTicking watchdog gate + IsSuspendBehavior + row_hash 0x33 (Agent 6 §3.3)
-crucible_test(test_fixy_v_189_thread_name)              # FIXY-V-189 safety/ThreadName.h — TASK_COMM_LEN-bounded literal + ThreadNamed witness + Init-row mint_thread_name (Agent 6 §3.3 item 6)
-crucible_test(test_fixy_v_265_memory_scope)             # FIXY-V-265 MemoryScopeLattice — non-distributive accel×ARM visibility-scope partial order (WMEM keystone)
-crucible_test(test_fixy_v_267_scoped_fence)             # FIXY-V-267 safety/ScopedFence.h — partial-order provider Graded carrier for MemoryScope axis + IsScopedFence + row_hash
-crucible_test(test_fixy_v_268_scope_collisions)         # FIXY-V-268 CollisionCatalog V401 (scope⊒Gpu × strength⊏AcqRel) + V402 (scope-trunk × host-arch) dual-wired
-crucible_test(test_fixy_v_190_time)                     # FIXY-V-190 fixy/Time.h — grant::time::{clock_read,tsc_read,sleep} + mint_clock_reader / mint_tsc_reader (single-core pin) / mint_bounded_sleep (Agent 6 §3.4)
-crucible_test(test_fixy_v_191_sched)                    # FIXY-V-191 fixy/Sched.h — grant::sched::{affinity,scheduler_policy,priority,thread_name} + mint_affinity (→CpuPinned) / mint_scheduler_policy (→SchedClass, CBS) / mint_priority (Agent 6 §3.5)
 crucible_test(test_fixy_v_272_fence)                    # FIXY-V-272 mimic/Fence.h — lower_fence<Strength,Scope,Arch>() consteval lowering table (V401/V402 gated) + fence_mnemonic
-crucible_test(test_fixy_v_273_async_pipeline_session)   # FIXY-V-273 sessions/AsyncPipelineSession.h — binary producer/consumer mbarrier protocol + Linear<SmemSlot> + 2 ctx-bound mints
-crucible_test(test_fixy_v_203_spawn_join_policy)        # FIXY-V-203 fixy/spawn/JoinPolicy.h — spawn-MECHANISM phantom tag tree (AutoJoin/ManualJoin/Detached/Cloned/Forked/PosixSpawn) + IsJoinMechanismTag identity allowlist (Agent 7 §fixy::spawn::; orthogonal to V-078 strictness lattice)
 crucible_test(test_hardening_syscall_atoms) # warden/Hardening.h: the syscall atoms of the apply path, their ordinals and the rows they lift to
 crucible_test(test_perf_syscall_atoms) # perf/*.h: the gate row of each of the seven hub mints covers the rows of the calls its load makes
-crucible_test(test_fixy_v_004_wrapper_for)              # FIXY-V-004 safety/DimensionTraits.h + fixy/Dim.h — WrapperKind enum (33 entries, append-only) + wrapper_kind_to_axis switch + count_wrappers_on_axis + wrapper_for<DimensionAxis>() reverse-lookup metafunction (one-to-many inverse of wrapper_dimension<W>::value, reflection-driven via template for over enumerators_of)
-crucible_test(test_fixy_v_254_hw_wrapper)               # FIXY-V-254 safety/Hw.h — Graded<Absolute,HwInstructionLattice::At<Tier>,P> regime-1 wrapper + IsHw + row_hash
-crucible_test(test_fixy_v_255_barrier_guarded)          # FIXY-V-255 safety/BarrierGuarded.h — floor-semantics Graded carrier + IsBarrierGuarded + row_hash + Tagged composition
-crucible_test(test_fixy_v_256_simd_width_pinned)        # FIXY-V-256 safety/SimdWidthPinned.h — partial-order provider Graded carrier + IsSimdWidthPinned + row_hash
-crucible_test(test_fixy_v_257_hw_grants)                # FIXY-V-257 fixy/Hw.h — 10 grant::hw::* families (cache/barrier/tsc/rng/cpuid/msr/port_io/asm_/simd_width/vendor_intrinsic) + 5 §XXI mints
-crucible_test(test_fixy_v_261_arch_pinned)              # FIXY-V-261 safety/source/_Arch.h — source::ArchPinned<Arch> tag + ArchComposable cross-arch gate + Portable→concrete retag admittance
 crucible_test(test_hardware_axis_pins)  # the hot headers pin their compile-time hardware constructs as fixy atoms
-crucible_test(test_fixy_v_244_ctrl_grants)  # FIXY-V-244 fixy/grant/Ctrl.h — 6 grant::ctrl::* grants + V-087 throws re-home
-crucible_test(test_fixy_v_234_release_aware_permission)  # FIXY-V-234 advise_release_aware<DontNeed, RegionTag> + SharedPermission composition — Agent 9 Bug 5 HIGH
-crucible_test(test_fixy_source)
-crucible_test(test_fixy_source_federation)  # FIXY-AUDIT-C9
-
-# FIXY-LAT-Security + FIXY-LAT-Trust — every SecLevel and every
-# safety::trust::* tag is reachable through one named grant tag.
-# Positive-compile witnesses live in test_fixy_lattice_points; the
-# matching HS14 neg-compile fixtures land below.
-crucible_test(test_fixy_lattice_points)
-
-# ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
-#
-# For every fuzzable Decide procedure, the harness runs the production
-# fast path against a deliberately SLOW reference oracle (different
-# algorithm) on Philox4x32-10–derived random inputs.  10K iterations
-# × 11 procedures = 110K equality checks; mismatch fails the test
-# with a reproducible (counter, key) tuple.  Oracles live in
-# include/crucible/safety/DecideOracle.h.
-crucible_test(test_decide_fuzz)
 crucible_test(test_hdr_histogram)
 crucible_test(test_synthetic_probe)
 
 crucible_test(test_simd)
 
-# ── The zero-cost sentinel for CRUCIBLE_PRE under the ignore semantic ─
-#
-# Special test target: built with `-O3` and
-# CRUCIBLE_CONTRACT_IGNORE_OPTIONS instead of the preset's `-Og -g`.
-# Only the ignore arm of CRUCIBLE_PRE claims zero cost, and the define
-# in the list selects that arm.
-#
-# Implementation: two probe functions with identical bodies — one
-# routed through CRUCIBLE_PRE, the other through bare `[[assume]]`
-# — must compile to byte-identical machine code.  The test
-# compares ELF section sizes via `__start_/__stop_` linker
-# symbols.  See test/test_pre_post_cost.cpp for the full design.
-add_executable(test_pre_post_cost test_pre_post_cost.cpp)
-target_link_libraries(test_pre_post_cost PRIVATE crucible)
-target_compile_options(test_pre_post_cost PRIVATE
-    # Override the preset's debug flags.  We want production codegen
-    # so the cost-model claim is measured under the same conditions
-    # users will run release binaries.
-    -O3
-    # Each function in its own section so __start_/__stop_ symbols
-    # land at the right boundaries.  Also lets `-fgc-sections` work
-    # cleanly, though we use volatile-sink references to keep the
-    # probe functions live regardless.
-    -ffunction-sections
-)
-target_compile_options(test_pre_post_cost PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
-add_test(NAME test_pre_post_cost COMMAND test_pre_post_cost)
-crucible_dump_asm(test_pre_post_cost)
-
 crucible_test(test_types)
 crucible_test(test_kernel_cache_key)
-crucible_test(test_row_hash_fold)
-crucible_test(test_row_hash_contribution_sentinel)
-crucible_test(test_row_hash_distinctness)
-# An old-tree row hash is a function of the type alone, so two
-# translation units of one build compute one hash for one type.  The
-# second unit declares generic closures before its includes.
-crucible_test(test_row_hash_translation_units_safety
-  test_row_hash_translation_units_safety.cpp
-  test_row_hash_translation_units_safety_shifted.cpp)
-# fix-14 — SchedClass SCHED_DEADLINE budget NTTPs were folded with a
-# collidable shift-XOR pre-mix; now per-field combine_ids.  Witnesses an
-# old-collision triple pair now produces distinct row_hash.
-crucible_test(test_row_hash_sched_class_collision)
-crucible_test(test_canonical_order)              # FIXY-FOUND-048
-crucible_test(test_fixy_sess_mint_handle_reach)  # FIXY-U-022
 crucible_test(test_cost_model)
-crucible_test(test_saturate)
-crucible_test(test_checked)
 crucible_test(test_call_site_table)
 crucible_test(test_swiss_table)
 crucible_test(test_meta_log)
@@ -380,7 +212,6 @@ crucible_test(test_cntp_gossip_multicast)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
-crucible_test(test_effects)
 crucible_test(test_iteration_detector)
 crucible_test(test_arena)
 crucible_test(test_trace_ring)
@@ -415,7 +246,6 @@ crucible_test(test_cipher)
 crucible_test(test_transaction)
 # The executable has its own clock_gettime, so a case can make a clock read fail.
 crucible_test(test_clock_failed_read)
-crucible_test(test_permissioned_moved_from_handles)
 crucible_test(test_transaction_owner)
 crucible_test(test_vigil)
 crucible_test(test_ckernel)
@@ -449,30 +279,13 @@ crucible_test(test_philox_simd)
 crucible_test(test_philox_det)
 crucible_test(test_arena_alloc_class)
 crucible_test(test_pool_allocator_alloc_class)
-crucible_test(test_one_shot_flag_crash)
-crucible_test(test_atomic_snapshot_wait)
 crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
 crucible_test(test_cipher_tier_promotion)
 crucible_test(test_kernel_cache_levels)
 crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
-crucible_test(test_atomic_snapshot_mem_order)
-crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
-crucible_test(test_mpsc_ring)
-crucible_test(test_algebra_compile)
-crucible_test(test_safety_compile)
-crucible_test(test_migration_verification)
-crucible_test(test_concept_cheat_probe)
-# fixy-A3-021: sentinel TU for the 8 algebra/* + effects/* headers that
-# shipped header-only static_assert coverage of inline bodies.  Each
-# header now exports inline runtime_smoke_test(); this TU calls them
-# from main() under project warning flags, closing the header-only
-# static_assert blind spot.  See
-# feedback_header_only_static_assert_blind_spot.md +
-# feedback_algebra_runtime_smoke_test_discipline.md.
-crucible_test(test_smoke_algebra_effects)
 # The two properties -fno-exceptions and -fno-rtti stood for, held on the
 # artifact of THIS build rather than asserted by flags neither preset has
 # ever carried.  The self-test needs the project compiler, because the
@@ -1187,15 +1000,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
   set_tests_properties(row_hash_foundation_golden_diff PROPERTIES
       LABELS "ci_guard")
 endif()
-crucible_test(test_permissions_compile)
-crucible_test(test_handles_compile)
-crucible_test(test_sessions_compile)
-crucible_test(test_bridges_compile)
-crucible_test(test_effects_compile)
-crucible_test(test_effects_ctx_forge_attacks)
-crucible_test(test_resources)
-crucible_test(test_concurrent)
-crucible_test(test_concurrent_spinlock)
 crucible_test(test_calibrate)
 crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
@@ -1230,54 +1034,6 @@ crucible_test(test_topology_ptp)
 crucible_test(test_topology_telemetry)
 crucible_test(test_congestion_telemetry)
 crucible_test(test_asymmetric_failure)
-crucible_test(test_concurrent_compile)
-crucible_test(test_auto_split)
-crucible_test(test_diagnostic_compile)
-crucible_test(test_stable_name_compile)
-crucible_test(test_signature_traits)
-crucible_test(test_is_alloc_class)
-crucible_test(test_is_bits)
-crucible_test(test_is_borrowed)
-crucible_test(test_is_borrowed_ref)
-crucible_test(test_is_hot_path)
-crucible_test(test_is_mem_order)
-crucible_test(test_is_progress)
-crucible_test(test_is_wait)
-crucible_test(test_is_linear)
-crucible_test(test_is_refined)
-crucible_test(test_is_secret)
-crucible_test(test_is_stale)
-crucible_test(test_is_tagged)
-crucible_test(test_is_owned_region)
-crucible_test(test_is_permission)
-crucible_test(test_is_reduce_into)
-crucible_test(test_graded_extract)
-crucible_test(test_inferred_permission_tags)
-crucible_test(test_unary_transform)
-crucible_test(test_binary_transform)
-crucible_test(test_reduction)
-crucible_test(test_producer_endpoint)
-crucible_test(test_consumer_endpoint)
-crucible_test(test_swmr_writer)
-crucible_test(test_swmr_reader)
-crucible_test(test_pipeline_stage)
-crucible_test(test_canonical_shape)
-crucible_test(test_is_numerical_tier)
-crucible_test(test_is_consistency)
-crucible_test(test_is_opaque_lifetime)
-crucible_test(test_is_det_safe)
-crucible_test(test_is_cipher_tier)
-crucible_test(test_is_residency_heat)
-crucible_test(test_is_vendor)
-crucible_test(test_is_crash)
-crucible_test(test_is_budgeted)
-crucible_test(test_is_epoch_versioned)
-crucible_test(test_is_numa_placement)
-crucible_test(test_is_recipe_spec)
-crucible_test(test_inferred_row)
-crucible_test(test_cheat_probe_wrappers)
-crucible_test(test_h10_algebra_diag_bridge)
-crucible_test(test_fusion)
 crucible_test(test_computation_cache)
 crucible_test(test_computation_cache_integration)
 crucible_test(test_computation_cache_invalidation)
@@ -1285,7 +1041,6 @@ crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
 crucible_test(test_background_thread_run_in_row)
 crucible_test(test_computation_cache_federation)
-crucible_test(test_federation_permission)
 
 # Only the grant catalogs open namespace crucible::fixy::grant.
 # scripts/check-fixy-grant-namespace-purity.py reads the parse tree of each C++
@@ -1332,94 +1087,10 @@ set_tests_properties(federation_admission federation_admission_self_test PROPERT
     LABELS "safety_attack;ci_guard;ast"
     SKIP_RETURN_CODE 3)
 
-crucible_test(test_fx_aliases)
-crucible_test(test_fx_alias_diagnostic)
-crucible_test(test_effect_row_lattice)
-crucible_test(test_os_universe)
-crucible_test(test_computation_graded)
-crucible_test(test_d25_d29_detector_headers)
-crucible_test(test_is_producer_handle)
-crucible_test(test_is_consumer_handle)
-crucible_test(test_is_session_handle)
-crucible_test(test_is_swmr_handle)
-crucible_test(test_row_mismatch_compile)
-crucible_test(test_insights_compile)
-
-# ── Both substrate trees in one translation unit ──────────────
-#
-# test_two_tree_coexistence.cpp includes every header of both trees, so a
-# macro or a declaration of one tree that collides with the other stops
-# its build.  The frozen half comes from scripts/frozen-paths.txt and the
-# new half is the glob of include/foundation and include/fixy, so a header
-# added to either tree joins at the next configure.  Two frozen headers
-# take a note.  crucible/bridges/_SessionPersistence.h uses the whole
-# Cipher class in inline bodies and does not include crucible/Cipher.h,
-# so the generated header includes Cipher.h first.
-# crucible/fixy/spawn/_Spawn.h stops on -Werror=redundant-tags in its own
-# self-test, and only negative fixtures include it, so it is left out.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/scripts/frozen-paths.txt)
-file(STRINGS ${CMAKE_SOURCE_DIR}/scripts/frozen-paths.txt _two_tree_frozen_lines)
-set(_two_tree_globs
-  ${CMAKE_SOURCE_DIR}/include/foundation/*.h
-  ${CMAKE_SOURCE_DIR}/include/fixy/*.h)
-foreach(_two_tree_line IN LISTS _two_tree_frozen_lines)
-  string(STRIP "${_two_tree_line}" _two_tree_line)
-  if(_two_tree_line MATCHES "^include/.*/$")
-    list(APPEND _two_tree_globs ${CMAKE_SOURCE_DIR}/${_two_tree_line}*.h)
-  elseif(_two_tree_line MATCHES "^include/.*\\.h$")
-    list(APPEND _two_tree_globs ${CMAKE_SOURCE_DIR}/${_two_tree_line})
-  endif()
-endforeach()
-file(GLOB_RECURSE _two_tree_headers CONFIGURE_DEPENDS
-  RELATIVE ${CMAKE_SOURCE_DIR}/include
-  ${_two_tree_globs})
-list(REMOVE_ITEM _two_tree_headers crucible/fixy/spawn/_Spawn.h)
-list(SORT _two_tree_headers)
-set(_two_tree_include_lines "#include <crucible/Cipher.h>\n")
-foreach(_two_tree_header IN LISTS _two_tree_headers)
-  string(APPEND _two_tree_include_lines "#include <${_two_tree_header}>\n")
-endforeach()
-file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/two_tree/every_substrate_header.h
-  CONTENT "#pragma once\n${_two_tree_include_lines}")
-crucible_test(test_two_tree_coexistence)
-target_include_directories(test_two_tree_coexistence PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/two_tree)
-
-crucible_test(test_diag_json_emitter)
 crucible_test(test_vessel_api_typed)
-crucible_test(test_graded_wrapper_gate)
 crucible_test(test_storage_nbytes_simd)
 crucible_test(test_trace_ring_pop_batch)
 crucible_test(test_expr_pool_fast_symbol)
-crucible_test(test_sharded_grid)
-crucible_test(test_queue_facade)
-crucible_test(test_permission_shared)
-crucible_test(test_fair_permission_shared)
-crucible_test(test_owned_region)
-crucible_test(test_smoke_safety_wrappers)  # fixy-A1-016 — per-header runtime_smoke_test() sentinel
-crucible_test(test_permission_tree_generator)
-crucible_test(test_permission_grid_generator)
-crucible_test(test_read_view)
-crucible_test(test_permission_shared_xor_exclusive)  # fix-06 exploit-guard
-crucible_test(test_topology)
-crucible_test(test_parallelism_rule)
-crucible_test(test_pipeline_dispatch)
-crucible_test(test_pipeline_dag)
-crucible_test(test_workload_budget_coherent)
-crucible_test(test_permissioned_snapshot)
-crucible_test(test_auto_router)
-crucible_test(test_permissioned_mpsc_channel)
-crucible_test(test_permissioned_mpmc_channel)
-crucible_test(test_permissioned_sharded_grid)
-crucible_test(test_permissioned_chase_lev_deque)
-crucible_test(test_chaselev_deque_session)
-crucible_test(test_chaselev_substrate_session_bridge)
-crucible_test(test_sharded_grid_substrate_session_bridge)
-crucible_test(test_calendar_grid_substrate_session_bridge)
-crucible_test(test_sharded_calendar_grid_substrate_session_bridge)
-crucible_test(test_permissioned_cross_primitive)
-crucible_test(test_permissioned_calendar_grid)
-crucible_test(test_scheduler_policies)
-crucible_test(test_concurrency_collision_fuzzer)
 crucible_test(test_region_cache)
 crucible_test(test_numerical_recipe)
 crucible_test(test_recipe_pool)
@@ -1494,56 +1165,6 @@ crucible_test(test_vigil_deadline_watchdog)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
-# ── safety::ScopedView positive + negative tests ─────────────────────
-#
-# Positive: test_safety_view links normally, must compile + pass.
-# Negative: each safety_neg/neg_*.cpp MUST FAIL TO COMPILE; the Tier 1
-# (private ctor / deleted assign) or Tier 2 (reflection audit) mechanism
-# fires a diagnostic.  CMake builds each via EXCLUDE_FROM_ALL, then
-# wraps each in a ctest with WILL_FAIL=TRUE so that a successful build
-# is reported as a test failure.
-crucible_test(test_safety_view)
-
-# Gay-Hole synchronous session subtyping (SEPLOG-H2a+subtype, task #338).
-# Header-only L6 layer; the bulk of coverage is in-header static_asserts,
-# this test adds a small runtime harness for ctest integration.
-crucible_test(test_session_subtype)
-
-# GAPS-069 protocol ProductLattice grade projection.
-crucible_test(test_session_grade)
-
-# Session delegation — Honda 1998 throw/catch higher-order sessions
-# (SEPLOG-H2a+delegate, task #337).  Exercises Delegate<T, K> /
-# Accept<T, K> runtime via an in-memory mock transport.
-crucible_test(test_session_delegate)
-
-# Session-type pattern library (SEPLOG-H2p, task #341) — RequestResponse,
-# FanOut / FanIn / Broadcast / ScatterGather, PipelineSource / Stage /
-# Sink, Transaction, TwoPhaseCommit, MpmcProducer / Consumer, SwimProbe,
-# Handshake.  Most coverage is in-header static_asserts; this harness
-# exercises four patterns end-to-end through an in-memory wire.
-crucible_test(test_session_patterns)
-
-# PermissionedSessionHandle integration (FOUND-C Phase 3, tasks
-# #610-#615) — end-to-end exercises of the CSL × session integration:
-# End round trip, plain Send, Transferable Send (PS shrinks),
-# Recv Transferable + Send Returned (PS grows then shrinks), Loop
-# balance enforcement (Decision D3), Select branch convergence
-# (Decision D4 structural).  In-header smoke covers shape and sizeof;
-# this harness exercises real Transports through a FakeChannel
-# Resource so the runtime path is verified, not just the type level.
-crucible_test(test_permissioned_session_handle)
-
-# SpscSession.h (SEPLOG-INT-1 / SAFEINT-R31, #384/#413) — first
-# production-shaped wiring of FOUND-C v1 atop concurrent/Permissioned-
-# SpscChannel.  Three tiers: (A) file-scope sizeof witness pinned to
-# this TU's build flags (catches ABI drift); (B) two-jthread round-
-# trip exchanging 1024 items via the typed-session API; (C) immediate-
-# detach validation for the canonical shutdown pattern.  Closes the
-# Part IX.2 critique of "no production caller exists" — this test is
-# the framework's first wired-in end-to-end exercise.
-crucible_test(test_spsc_session)
-
 # MetaLogSession.h — the typed-session facade over the production MetaLog
 # TensorMeta side channel.  Covers the permissioned endpoints, a session
 # round trip, and the handle that a session gives back at End.
@@ -1553,276 +1174,9 @@ crucible_test(test_metalog_session)
 # that refuses a cycle in their lazy-initialization graph.
 crucible_test(test_singleton_init_graph)
 
-# The ten mints of the session substrates chaselev, metalog, swmr,
-# calendar, sharded_grid and sharded_calendar.  The test calls each mint
-# and pins its noexcept with a static_assert.  The pool mints (thief,
-# swmr_reader) are not in the test, because an atomic refcount cannot be
-# constant evaluated.
-crucible_test(test_session_substrate_mint_constexpr)
-
-# MpmcChannelSession.h (SEPLOG-H2 / #326) — typed-session facade over
-# PermissionedMpmcChannel (Nikolaev SCQ).  Covers single-producer
-# round-trip, multi-producer × multi-consumer concurrent stream
-# (set-equality drain), immediate-detach, and endpoint forwarder
-# helpers.  The fractional × fractional cell of the channel-permission
-# family — last of the four cells to receive a session-typed facade.
-crucible_test(test_mpmc_channel_session)
-
-# sessions/_SwmrSession.h — typed-session facade for
-# AtomicSnapshot + SharedPermissionPool.  Covers writer publication,
-# multi-reader lifetime accounting, late-reader visibility, matching
-# SharedPermission proof minting, and PSH send/recv wrapper execution.
-crucible_test(test_swmr_session)
-
-# SnapshotSession.h (fixy-A4-022) — typed-session facade for
-# PermissionedSnapshot (thin protocol layer over the substrate's
-# writer/reader endpoints).  Loop<Send/Recv<T,Continue>> with
-# EmptyPermSet; covers publish/load round-trip and immediate detach.
-crucible_test(test_snapshot_session)
 crucible_test(test_observe_metrics_swmr)
 crucible_test(test_observe_health)
 crucible_test(test_observe_sdc_detect)
-
-# L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
-# compose_context_t, lookup_context_t, contains_key_v, domain_of_t,
-# update_entry_t, remove_entry_t.  Gateway to L5 (association),
-# L7 (φ safety), L8 (crash-stop) and L9 (CSL × session).
-crucible_test(test_session_context)
-
-# L8 crash-stop extensions (SEPLOG-I5, task #347) — Stop combinator,
-# Crash<PeerTag> payload marker, UnavailableQueue, ReliableSet,
-# has_crash_branch_for_peer_v.  Stop as the bottom of the subtype
-# order (BSYZ22); crash-branch dispatch via Offer<>; ReliableSet
-# membership; Crash<Server> round-trip through an in-memory wire.
-crucible_test(test_session_crash)
-
-# L3 queue types σ (SEPLOG-I2, task #344) — QueuedMsg, Queue,
-# enqueue_queue_t, head_queue_t, tail_queue_t, queue_contains_v,
-# count_matching_v, is_bounded_queue_v, is_unavailable_queue_v.
-# Foundation for L7 async reasoning (φ_precise_async_safe) and
-# L6.5 SISO async subtyping.
-crucible_test(test_session_queue)
-
-# L4 global types + projection (SEPLOG-H2g, task #339) — End_G,
-# Transmission, Choice, Rec_G, Var_G, StopG; RoleList + insert_unique
-# + union_roles + RolesOf; is_global_well_formed_v; plain_merge_t;
-# Project<G, Role> / project_t<G, Role>.  Gates L5 association
-# (Δ ⊑_s G) and L7 multiparty φ-aggregate.
-crucible_test(test_session_global)
-
-# L5 association Δ ⊑_s G (SEPLOG-I3, task #345) — HYK24's corrected
-# invariant connecting L2 Γ to L4 G via L6 subtyping.  Ships
-# is_associated_v<Γ, G, SessionTag>, projected_context_t<G, S>,
-# AssociatedWith concept, assert_associated helper, and the
-# gated per-role refinement check.  Payoff: write G once, prove G's
-# properties once, inherit the proofs for every associated Δ.
-crucible_test(test_session_assoc)
-
-# CheckpointedSession combinator (SEPLOG-L2, task #362,
-# session_types.md Appendix D.2) — first-class structural combinator
-# with base/rollback branches; dual/compose/well-formed/subtype
-# specialisations + SessionHandle with .base() / .rollback() methods.
-# Supports speculative decoding, Transaction (#101), FLR recovery.
-crucible_test(test_session_checkpoint)
-
-# L11 diagnostic vocabulary (SEPLOG-H2d, task #342) — 11 manifest-
-# bug classification tag types (ProtocolViolation_*, Deadlock_Detected,
-# SubtypeMismatch, CrashBranch_Missing, UnboundedQueue, etc.), each
-# with ::name / ::description / ::remediation constexpr strings.
-# Provides CRUCIBLE_SESSION_ASSERT_CLASSIFIED macro for greppable,
-# classified build-log diagnostics.
-crucible_test(test_session_diagnostic)
-
-# AdaptiveScheduler Pool<Policy> (GAPS-032) — runnable policy-parametric
-# worker pool over scheduler/Policies.h, with dispatch(), topology
-# consultation for locality-aware policies, completion smoke coverage
-# across all shipped queue-template policies, and the Substrate
-# recommendation bridge.
-crucible_test(test_adaptive_scheduler)
-
-# ContentAddressed<T> quotient combinator (SEPLOG-L1, task #361,
-# session_types.md Appendix D.5) — payload wrapper marking a value
-# type as eligible for wire-level dedup at the transport layer.
-# Mutual is_subsort integration makes Send<ContentAddressed<T>, K>
-# and Send<T, K> interchangeable at the session-type level.
-# Supports Cipher publication, KernelCache broadcast, PagedKVCache
-# prefix sharing, replay trace dedup.
-crucible_test(test_session_content_addressed)
-
-# Cipher federation MPST facade (GAPS-039) — projects the three-role
-# Sender/Receiver/Coord global protocol into typed local PSH handles.
-# Covers announce/ack and pull/payload loops plus role/protocol matching.
-crucible_test(test_federation_session)
-
-# SessionHandle lifetime mechanics (SEPLOG-I7, task #349) — the CRTP
-# SessionHandleBase<Proto> that adds abandoned-protocol detection to
-# every specialisation.  Debug destructor aborts when a non-terminal,
-# non-consumed handle leaves scope; release is a 1-byte-field no-op.
-# .detach() is the explicit escape hatch for infinite-Loop protocols
-# or out-of-band transport close.
-crucible_test(test_session_lifetime)
-
-# Per-derived-class abandonment diagnostic (#429) — SessionHandleBase
-# now takes an OPTIONAL `Derived` template argument naming the wrapper
-# class.  C++26 P2996 reflection (std::meta::identifier_of(template_of(
-# ^^Derived))) extracts the bare wrapper template name ("SessionHandle" /
-# "CrashWatchedHandle" / "RecordingSessionHandle") so the destructor's
-# abandonment diagnostic distinguishes which wrapper aborted, even when
-# many wrappers share the same Proto.  The witness fired by #400's
-# debugging episode.  This test verifies wrapper_name() at compile time
-# for all three production wrapper classes across multiple Proto heads.
-crucible_test(test_session_wrapper_name)
-
-# PermissionedSpscChannel<T, N, UserTag> — SPSC worked example
-# backing SEPLOG-INT-1 (task #384, TraceRing wiring) and the broader
-# K-series production-integration work.  Validates: role
-# discrimination via concept, move-only handles with reference-bound
-# channel (move-assign deliberately deleted), splits_into auto-
-# specialisation per UserTag, sizeof EBO promise, single-threaded
-# FIFO + capacity bound + cross-thread jthread handoff.
-crucible_test(test_permissioned_spsc_channel)
-
-# Tagged-provenance + Refined payload subsort axioms (task #395,
-# SAFEINT-S6 from misc/24_04_2026_safety_integration.md §6).  The
-# new safety/SessionPayloadSubsort.h header bridges Tagged + Refined
-# through the session-type subsumption lattice.  Test verifies the
-# positive axioms (Sanitized / Validated / FromInternal / FromConfig
-# / FromDb / Durable / Computed flow to bare T), the negative
-# non-axioms (External / FromUser / FromPytorch / trust::* /
-# access::* / version::* deliberately do NOT flow), Send covariance
-# + Recv contravariance through the wrappers, and a runtime worked
-# scenario for the Vessel-FFI flow (raw FromPytorch input → validate
-# → Validated → internal pipeline accepts via subtype subsumption).
-crucible_test(test_session_payload_subsort)
-
-# Machine ↔ Session bridge — single-party typestate carriers (#399,
-# SAFEINT-A10).  Verifies SessionFromMachine<State, Proto> exposes
-# both Machine and SessionHandle views over the same underlying
-# machine, is Pinned for address stability, and machine_from_session
-# recovers the underlying pointer from both End-state and mid-
-# protocol handles without firing the abandonment-check.
-crucible_test(test_machine_session_bridge)
-
-# Non-consuming protocol-position views (#405, SAFEINT-B16).
-# Position-tagged ScopedView<SessionHandle, At*> borrows that let
-# external code inspect a handle's protocol position without
-# consuming it.  Verifies handle_is_at_v positives + negatives
-# across all SessionHandle specialisations, view_ok ADL hook,
-# mint_session_view requires-clause rejection, multiple-coexisting-
-# views, and the typed-metrics callback pattern from §16.
-crucible_test(test_session_view)
-
-# Rich subtype-rejection diagnostics (#380, SEPLOG-STRUCT-6).
-# subtype_rejection_reason_t<T, U> walks the protocol tree in
-# lockstep with is_subtype_sync but returns either SubtypeOk or a
-# tagged RejectionReason naming the FIRST failing inner pair.
-# Verifies per-rule reason tagging, deeply-nested bubble-up,
-# is_subtype_sync_diag_v / is_subtype_sync_v agreement, and the
-# protocol-evolution classify pattern that drives structured error
-# reports from the rejection tag.
-crucible_test(test_session_subtype_reason)
-
-# φ predicate family (FIXY-V-069, tasks #346/#348/#381) —
-# FX paper §11.18's 7-level safety hierarchy (safe / df / term /
-# nterm / live / live+ / live++) implemented as compile-time
-# variable templates over the substrate protocol-tree universe.
-# Each predicate uses structural refutation (find a deadlock /
-# non-termination / dead-branch witness): SOUND (accepted ⇒ has
-# the property) but conservatively incomplete (some FX-safe
-# protocols may be rejected).  Lattice ordering verified via
-# implication chain phi_live_pp ⇒ phi_live_plus ⇒ phi_live ⇒
-# phi_df ⇒ phi_safe; phi_term ∧ phi_nterm proven mutually
-# exclusive.
-crucible_test(test_session_phi)
-
-# Lazy-established session channels (#403, SAFEINT-B14).
-# LazyEstablishedChannel<Proto, Resource> wraps PublishOnce so
-# session establishment is asynchronous and structurally correct:
-# the publisher calls establish(Resource*) once, observers call
-# observe() and either get a SessionHandle or std::nullopt before
-# the publication is visible.  Verifies pre/post-establish behaviour,
-# multi-observer fan-out, the Vessel-startup pattern, and worker-
-# before-publisher fallback.  Resolves the init-flag-and-condvar
-# pattern documented in §14.
-crucible_test(test_lazy_established_channel)
-
-# DeclassifyOnSend payload wrapper (#402, SAFEINT-B13).
-# DeclassifyOnSend<T, Policy> puts the wire-classification policy
-# IN THE PROTOCOL TYPE so audit-grep `DeclassifyOnSend<` finds every
-# wire-classified payload.  Move-only wrapping over Secret<T>; the
-# transport's declassify_for_wire() is the single chokepoint where
-# the Secret bytes escape classification.  Verifies the load-bearing
-# subsort asymmetry (DeclassifyOnSend ⩽ bare T is FALSE — defeating
-# audit-discoverability), the trait extraction path, and the typed
-# auth-handshake worked example from §13.
-crucible_test(test_session_declassify)
-
-# Dedicated TUs re-enabling every session-type self-test namespace
-# (#372 SEPLOG-PERF-2).  Each *_self_test namespace across the session
-# headers is gated on `CRUCIBLE_SESSION_SELF_TESTS`; these TUs define
-# the macro before including focused header groups.  The split keeps
-# the coverage identical while avoiding one giant serial cc1plus tail.
-crucible_test(test_session_self_core)
-crucible_test(test_session_self_crash)
-crucible_test(test_session_self_patterns_basic)
-crucible_test(test_session_self_patterns_fan)
-crucible_test(test_session_self_patterns_subtype)
-crucible_test(test_session_self_patterns_crash)
-crucible_test(test_session_self_patterns_delegate)
-crucible_test(test_session_self_patterns_compose)
-crucible_test(test_session_self_payload)
-crucible_test(test_session_self_subtype)
-crucible_test(test_session_self_view)
-
-# Protocol-tree crash-branch walker (#368, SEPLOG-BUG-4).
-# every_offer_has_crash_branch_for_peer_v<Proto, PeerTag> recurses
-# through End/Stop/Continue/Send/Recv/Select/Offer/Loop/Delegate/
-# Accept; catches the "outer Offer has a crash branch, inner Offer
-# doesn't" pattern that `has_crash_branch_for_peer_v` alone misses.
-# Pure compile-time; main() just confirms the consteval assertion
-# point passed for crash-safe protocols.
-crucible_test(test_session_crash_walker)
-
-# Sender<Role> role annotation for Offer<> (#367, SEPLOG-STRUCT-1).
-# MPST crash analysis needs to know which role sends each Offer to
-# answer correctly "does this Offer need a Recv<Crash<PeerTag>, _>
-# branch?" — the answer is YES only when PeerTag is the Offer's
-# sender.  Offer<Sender<Role>, Branches...> declares the sender;
-# unannotated Offer<> keeps 2-party semantics via AnonymousPeer.
-crucible_test(test_session_sender_role)
-
-# OneShotFlag × runtime crash transport (#400, SAFEINT-A11).
-# Wires the type-level Stop/Crash semantics from SessionCrash.h into
-# a runtime wire: CrashWatchedHandle<Proto, R, PeerTag, CrashClass C, LoopCtx, PS>
-# wraps a PermissionedSessionHandle with a OneShotFlag& and returns
-# std::expected<NextHandle, survivor-aware CrashEvent> from every
-# consumer method.
-# On-crash the per-op peek routes into the unexpected branch;
-# happy-path overhead is one relaxed atomic load.  Validates happy
-# path, crash-before-send, crash-mid-protocol, cross-thread crash
-# detection (jthread producer + spinning consumer), multi-peer
-# independent watches, and the CNTP request/reply + retry pattern.
-crucible_test(test_crash_transport)
-
-# GAPS-046 — CrashWatchedPSH permission-recovery race harness.
-# Runs under every preset, and under the `tsan` preset with
-# -fsanitize=thread through the shared crucible_test factory.  The
-# body stress-runs 50 iterations covering clean peer death, death
-# racing a send, concurrent deaths, and fallback survivor observation.
-crucible_test(test_crash_watched_psh_tsan
-  tsan/test_crash_watched_psh_tsan.cpp)
-
-# fixy-A2-031 — CrashWatchedHandle mid-transport TOCTOU witness.
-# Pins the race window between `flag_->peek()` (relaxed) and
-# `inner_.send/recv(transport)` — the existing psh_tsan suite
-# covers flag-set-before-op and concurrent-without-pin paths but
-# never lands the kill strictly BETWEEN peek and transport-return.
-# This test orchestrates barrier atomics so the kill happens
-# deterministically mid-call across recv/send/close heads, with
-# WorkerTag → CoordTag → MasterTag survivor inheritance.  Each
-# scenario runs 50× under default + tsan presets.
-crucible_test(test_crash_watched_recv_toctou_tsan
-  tsan/test_crash_watched_recv_toctou_tsan.cpp)
 
 # Registration against the seal on the schema and kernel tables.  Writers
 # register through a view minted before the seal, and a reader reads the
@@ -1830,29 +1184,6 @@ crucible_test(test_crash_watched_recv_toctou_tsan
 # races the reader and stops the test.
 crucible_test(test_registration_seal_race
   tsan/test_registration_seal_race.cpp)
-
-# AppendOnly session event log + RecordingSessionHandle wrapper
-# (#404, SAFEINT-B15).  Promotes bit-exact-replay discipline from an
-# ad-hoc trace into a typed structure: SessionEventLog (Pinned,
-# OrderedAppendOnly-backed, monotonic step counter) plus
-# RecordingSessionHandle<Proto, R> wrapper that records every
-# Send/Recv/Select/Offer/close into the log.  Validates the log
-# primitive, the per-combinator wrapper specialisations, the
-# bilateral request/reply capture pattern, the replay-determinism
-# property (same protocol → same event sequence modulo step offset),
-# the payload-hash opt-in via default_payload_hash_fn specialisation,
-# and Offer branch dispatch capture.
-crucible_test(test_session_event_log)
-
-# CTPayload + ct::eq for crypto-payload sessions (#409, SAFEINT-C20).
-# CTPayload<T> raises constant-time-comparison discipline to the API
-# surface: requires_ct<T> trait opt-in, move-only wrapper with
-# explicitly-deleted operator==/!= (forces ct::eq), .bytes() byte-
-# view for CT byte-comparison, .declassify_ct<Policy>() for explicit
-# extraction.  Verifies the API-level rejection of naive comparison,
-# subsort asymmetry, and the HMAC-tag verification worked example
-# from §20.
-crucible_test(test_session_ct)
 
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
@@ -3072,15 +2403,6 @@ crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_mint_no_ctx
 # neg_ckernel_register_with_sealed_view and neg_cipher_wrong_tag.  Each
 # is an overload-set rejection in production code, and each has an
 # annotated comment below.
-
-# Two companions of test_row_hash_distinctness.  Each fixture holds a
-# copy of one consteval gate of that test and must not compile:
-# neg_row_hash_collision holds two equal hashes, and
-# neg_row_hash_sentinel holds the reserved value 0.
-crucible_neg_compile_test(neg_row_hash_collision
-  "row_hash collision")
-crucible_neg_compile_test(neg_row_hash_sentinel
-  "EMPTY-slot sentinel")
 
 # WRAP-Types-1 (#1067) — ElementBytes::value_ wraps Refined<bounded_above<16>,
 # uint8_t>; constructing ElementBytes{17} in constexpr context drives the
@@ -5932,12 +5254,6 @@ crucible_neg_compile_test(neg_federation_deserialize_without_permission
 crucible_neg_compile_test(neg_federation_deserialize_wrong_org_permission
     "no matching function|could not convert|invalid initialization")
 
-# compose_at_branch_t<P, I, Q> — branch-asymmetric composition (#378).
-# Replaces only branch I's continuation in the first reachable
-# Select<Bs...> / Offer<Bs...> in P's spine.  Two named diagnostics
-# fire on misuse: out-of-range I and no-choice-in-spine.
-crucible_test(test_session_compose_at_branch)
-
 crucible_neg_compile_multi_test(neg_vigil_copy_attempt
     "use of deleted function .crucible::Vigil::Vigil\\(const crucible::Vigil&\\)."
     "Vigil owns the runtime organism. not copyable")
@@ -6060,18 +5376,6 @@ crucible_neg_compile_multi_test(neg_schema_name_typed_wrong_tag
     "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
     "neg_schema_name_typed_wrong_tag.cpp:25")
 
-# Each endpoint session mint states its context gate in its clause: the
-# context must admit the protocol with no permission in hand.  The test asks
-# every mint whether a context fits.
-crucible_test(test_session_endpoint_ctx_gate)
-
-# A context that claims a session epoch takes the claim from the one live
-# epoch source.  The test proves a true claim is admitted, and a false, stale
-# or orphaned claim and a second live source end the process.
-crucible_test(test_session_epoch_source)
-# Two advancers at once must not lose an advance or leave the sequence odd.
-crucible_test(test_session_epoch_attacks)
-
 # CONTRACT-112 fixtures — pin crucible::live_intervals_disjoint_at<MaxLive>,
 # the production cite that lifts decide::intervals_pairwise_disjoint to
 # the MemoryPlan invariant: at every op boundary `t`, the simultaneously-
@@ -6116,19 +5420,6 @@ crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_bare_string
 crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_sanitized_input
     "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, std::remove_reference<fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>&>::type."
     "aka .fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>... to type .fixy::Path<fixy::tags::source::External>.")
-
-# ── FIXY-V-233 — sanitize::path_traversal runtime predicates ────────
-# Runtime smoke test exercising both V-233 predicates
-# (check_no_dotdot + check_absolute_root_locked) plus the two
-# compositional sanitize_path_* entry-points across every V-232 source
-# tag → Sanitized admittance.  The two HS14 fixtures called out in the
-# V-233 task description are pinned at the top of main():
-#   * ../etc/passwd                → DotDotComponent
-#   * /abs/path under /home/user   → EscapesAnchor
-# Followed by per-rule coverage for every PathTraversalError enumerator
-# and per-source-tag happy-path coverage (External + FromUserPath +
-# FromEnvPath + FromConfigPath).
-crucible_test(test_path_traversal_predicates)
 
 # ── FIXY-V-180 — warden/Hardening.h syscall-grant annotation
 #                 HS14 floor (Agent 3 Phase Σ4).

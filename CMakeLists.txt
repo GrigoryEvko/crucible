@@ -1633,8 +1633,8 @@ endif()
 # under that option.  One consequence is worth stating plainly: with
 # the plain `release` preset (CRUCIBLE_BENCH=OFF) this block does
 # nothing, so every TU in that build evaluates its contracts.  The one
-# exception is the test_pre_post_cost sentinel, which measures the ignore
-# arm (test/CMakeLists.txt).
+# exception is the test_contracts_pre_post_cost sentinel, which measures
+# the ignore arm (test/foundation/CMakeLists.txt).
 if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
   set(CRUCIBLE_CONTRACT_IGNORE_TUS
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_trace_ring.cpp     # TraceRing push/pop

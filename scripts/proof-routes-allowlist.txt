@@ -11,8 +11,6 @@
 include/fixy/SelfContained.h:union:EitherPointer
 include/fixy/SelfContained.h:union:EitherValue
 test/foundation/test_permissions_compile.cpp:union:UnionTag
-test/test_permissions_compile.cpp:union:UnionTag
-test/test_is_permission.cpp:union:test_union_tag
 
 # Unions of scalars in the stable-id tests.  GCC prints a union value
 # without its active member, so the stable id refuses a union value.  These
@@ -37,13 +35,6 @@ test/fixy/test_forgeable_proofs.cpp:union:ProofOrByte
 test/fixy/test_scoped_view.cpp:union:Storage
 test/fixy/test_session_crash_attack.cpp:union:HoldsEndpointInUnion
 test/fixy/test_session_ownership_attacks.cpp:union:RawUnion
-test/test_effects_ctx_forge_attacks.cpp:union:BgDrainOrByte
-
-# The reproducer of the void-pointer route in the context attack test.  It
-# counts the pointer that the cast gives and never reads through it.  The
-# cast names BgDrainCtx, an alias that a header declares, so the guard
-# sees this site since it reads the aliases of each header.
-test/test_effects_ctx_forge_attacks.cpp:pointer-cast:static_cast<const eff::BgDrainCtx*>
 
 # Explicit instantiations over integer arguments.  They name no proof type
 # and no member pointer, so the access check they turn off reaches no

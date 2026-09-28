@@ -14,6 +14,26 @@ namespace eff = ::foundation::effects;
 
 constexpr uint16_t NUM_FLAGS = ExprFlags::IS_INTEGER;
 
+// detail::fmix64 is the Murmur3 finalizer.  It is a bijection on uint64_t
+// with f(0) equal to 0, so a non-zero seed never gives a zero hash.
+static_assert(detail::fmix64(0) == 0);
+static_assert(detail::fmix64(1) != 0);
+static_assert(detail::fmix64(42) != 0);
+static_assert(detail::fmix64(0xDEADBEEFULL) != 0);
+static_assert(detail::fmix64(0x9E3779B97F4A7C15ULL) != 0);
+static_assert(detail::fmix64(0xDEADBEEFCAFEBABEULL) != 0);
+static_assert(detail::fmix64(0xFFFFFFFFFFFFFFFFULL) != 0);
+
+// The same two properties on a value that the compiler cannot fold.
+static void test_fmix64_zero_and_non_zero() {
+    volatile uint64_t zero_seed = 0;
+    volatile uint64_t non_zero_seed = 0xDEADBEEFCAFEBABEULL;
+    assert(detail::fmix64(zero_seed) == 0);
+    assert(detail::fmix64(non_zero_seed) != 0);
+
+    std::printf("  test_fmix64_zero_and_non_zero: PASSED\n");
+}
+
 static void test_unregistered_returns_nullptr() {
     auto t = eff::testing::test();
     const auto a = t.alloc;
@@ -320,11 +340,11 @@ static void test_folded_constant_nests_at_the_ceiling() {
 
 int main() {
     std::printf("test_expr_pool_fast_symbol:\n");
-    static_assert(
-        std::is_same_v<ExprPool::InternedExpr, ::fixy::Tagged<const Expr*, ::fixy::tags::source::Interned>>);
+    static_assert(std::is_same_v<ExprPool::InternedExpr, ::fixy::Tagged<const Expr*, ::fixy::tags::source::Interned>>);
     static_assert(std::is_same_v<ExprPool::PureInternedExpr, ::fixy::det_safe::Pure<ExprPool::InternedExpr>>);
     static_assert(sizeof(ExprPool::PureInternedExpr) == sizeof(const Expr*));
 
+    test_fmix64_zero_and_non_zero();
     test_unregistered_returns_nullptr();
     test_matches_slow_path();
     test_sparse_sids();

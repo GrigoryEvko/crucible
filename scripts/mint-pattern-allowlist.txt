@@ -101,8 +101,7 @@
 # No `ctxfit-ok` entry remains.  The 26 endpoint session mints that
 # stood here each state the gate of mint_permissioned_session in their
 # own clause, so a caller can probe it and a refusal names the mint.
-# test_session_endpoint_ctx_gate asks each of them whether a context
-# fits.  A new entry in this category is a defect, not an exemption.
+# A new entry in this category is a defect, not an exemption.
 #
 # An earlier revision of this file attributed the `mint_pipeline` entry,
 # and a further

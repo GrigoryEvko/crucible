@@ -3,6 +3,3 @@
 # `path:NAME — reason`, keyed by the name of the constant, so a row survives
 # a line shift and goes stale only when the pin is gone.  The list can only
 # shrink.
-
-# A test of the old session handle factory.  It goes with the old tree.
-test/test_fixy_sess_mint_handle_reach.cpp:kFixyFriendMintHandleCount — a test of the old session handle factory, which goes with the old tree

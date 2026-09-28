@@ -22,32 +22,10 @@ test/fixy/test_channel_moved_from.cpp:binding_after_move:first
 test/fixy/test_channel_moved_from.cpp:mpsc_consumer:consumer
 test/fixy/test_channel_moved_from.cpp:spsc_consumer:consumer
 test/fixy/test_channel_moved_from.cpp:spsc_producer:producer
-test/test_permissioned_moved_from_handles.cpp:calendar_consumer:consumer
-test/test_permissioned_moved_from_handles.cpp:calendar_producer:producer
-test/test_permissioned_moved_from_handles.cpp:deque_owner:owner
-test/test_permissioned_moved_from_handles.cpp:grid_consumer:consumer
-test/test_permissioned_moved_from_handles.cpp:grid_producer:producer
 test/test_metalog_session.cpp:log_consumer:consumer
 test/test_metalog_session.cpp:log_producer:producer
-test/test_permissioned_moved_from_handles.cpp:mpsc_consumer:consumer
-test/test_permissioned_moved_from_handles.cpp:queue_mpsc_consumer:consumer
-test/test_permissioned_moved_from_handles.cpp:queue_spsc_producer:producer
-test/test_permissioned_moved_from_handles.cpp:sharded_calendar_consumer:consumer
-test/test_permissioned_moved_from_handles.cpp:sharded_calendar_producer:producer
-test/test_permissioned_moved_from_handles.cpp:snapshot_writer:writer
-test/test_permissioned_moved_from_handles.cpp:snapshot_writer_after_release:writer
-test/test_permissioned_moved_from_handles.cpp:spsc_consumer:consumer
-test/test_permissioned_moved_from_handles.cpp:spsc_producer:producer
 test/fixy/test_channel_moved_from.cpp:mpsc_producer:*producer
 test/fixy/test_channel_moved_from.cpp:mpsc_producer_in_drained_window:*producer
-test/test_permissioned_moved_from_handles.cpp:mpsc_producer:*producer
-test/test_permissioned_moved_from_handles.cpp:mpsc_producer_in_drained_window:*producer
-test/test_permissioned_moved_from_handles.cpp:mpmc_producer:*producer
-test/test_permissioned_moved_from_handles.cpp:mpmc_consumer:*consumer
-test/test_permissioned_moved_from_handles.cpp:mpmc_producer_after_close:*producer
-test/test_permissioned_moved_from_handles.cpp:mpmc_consumer_after_close:*consumer
-test/test_permissioned_moved_from_handles.cpp:snapshot_reader:*reader
-test/test_permissioned_moved_from_handles.cpp:deque_thief:*thief
 
 # Probe: a moved-from or released mapping is unmapped, so the pages are
 # unmapped one time.
@@ -61,8 +39,6 @@ test/fixy/test_owned_mmap.cpp:check_release_hands_the_region_back:r
 test/fixy/test_owned_file.cpp:check_move_transfers_ownership:dst
 test/fixy/test_owned_file.cpp:check_move_transfers_ownership:src
 test/fixy/test_owned_file.cpp:check_release_hands_the_handle_back:f
-test/test_fixy_handle.cpp:main:a
-test/test_safety.cpp:test_file_handle:a
 
 # Probe: a consumed region is empty, whether the move, the move assignment,
 # the erasure, the split, the recombine or the shared door consumed it.
