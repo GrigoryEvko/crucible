@@ -1,19 +1,22 @@
 // The diamond graph, run for real: four stages over a StageGraph whose
 // edges fan out from one source and back into one sink, each stage body
-// counted exactly once.
+// counted exactly once.  Static assertions check the ports of a fan-out
+// stage and the row of a pipeline.
 //
-// Old spelling: test/test_pipeline_dag.cpp.  Its three other cases build
-// their stages from channel endpoints through the endpoint bridge, and
-// arrive with that bridge.
+// Old spelling: test/test_pipeline_dag.cpp.  test/fixy/test_endpoint.cpp
+// runs a fan-in stage that it builds from channel endpoints.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
+#include <foundation/effects/Row.h>
 
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 
 namespace cc = fixy::concurrent;
@@ -54,6 +57,31 @@ static void one_to_one_body(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {
 }
 
 using PlainStage = cc::Stage<&one_to_one_body, fixy::HotFgCtx>;
+
+// A fan-out stage has two output ports, and each edge names the port it
+// leaves.  An edge from a port that the stage does not have joins nothing.
+static void fan_out_body(FakeConsumer<int>&&, FakeProducer<int>&&, FakeProducer<int>&&) noexcept {}
+
+using FanOutStage = cc::MpmcStage<&fan_out_body, fixy::HotFgCtx, std::tuple<FakeConsumer<int>>,
+                                  std::tuple<FakeProducer<int>, FakeProducer<int>>>;
+template <std::size_t SecondPort>
+using FanOutGraph = cc::StageGraph<cc::StagePack<FanOutStage, PlainStage, PlainStage>,
+                                   cc::EdgePack<cc::StageEdge<0, 1, 0>, cc::StageEdge<0, 2, SecondPort>>>;
+
+static_assert(cc::stage_input_count_v<FanOutStage> == 1 && cc::stage_output_count_v<FanOutStage> == 2);
+static_assert(cc::StageGraphWellFormed<FanOutGraph<1>>);
+static_assert(!cc::StageGraphWellFormed<FanOutGraph<2>>);
+
+// The coordinating context must admit the row of every stage, so the row
+// of a pipeline is the union of the stage rows, and no effect more.
+namespace eff = ::foundation::effects;
+using BgStage = cc::Stage<&one_to_one_body, fixy::BgDrainCtx>;
+using InitStage = cc::Stage<&one_to_one_body, fixy::ColdInitCtx>;
+using BgAndInitRow = eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Init, eff::Effect::IO>;
+using MixedRow = cc::pipeline_row_union_t<BgStage, PlainStage, InitStage>;
+
+static_assert(std::is_same_v<cc::pipeline_row_union_t<PlainStage, PlainStage>, eff::Row<>>);
+static_assert(eff::Subrow<MixedRow, BgAndInitRow> && eff::Subrow<BgAndInitRow, MixedRow>);
 
 static void test_diamond_dag_runtime() {
     reset();

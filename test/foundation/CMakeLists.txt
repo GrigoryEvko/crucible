@@ -728,6 +728,12 @@ foundation_neg_compile_test(neg_permission_split_undeclared_subregion
   "static assertion failed"
   "foundation/permissions/Permission\\.h:[0-9]+:[0-9]+: error: static assertion failed: mint_permission_split<L, R>\\(Permission<In>&&\\) requires can_split_into<In, L, R>::value")
 
+# A union of two permission sets that share a tag.  The location regex
+# proves the refusal came from the union's own class in PermSet.h.
+foundation_neg_compile_test(neg_perm_set_union_shared_tag
+  "foundation/permissions/PermSet\\.h:[0-9]+:[0-9]+: error: static assertion failed: foundation::permissions \\[PermissionImbalance\\]: perm_set_union_t requires disjoint operands"
+  "In instantiation of .struct foundation::permissions::perm_set_union<foundation::permissions::PermSet<user_code::Alpha, user_code::Beta>, foundation::permissions::PermSet<user_code::Alpha> >.")
+
 # A fork whose child pack is not a declared partition of the parent.
 # The satisfaction notes name the fork's fit concept and the pack trait
 # that evaluated false.

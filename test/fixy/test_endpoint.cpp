@@ -42,6 +42,10 @@ constexpr auto pop_int = [](auto& handle) noexcept -> std::optional<int> { retur
 struct BridgeTag {};
 using BridgeSpsc = c::PermissionedSpscChannel<int, 8, BridgeTag>;
 
+// The table bridges the two directions of a channel.  A value that names
+// no direction has no handle of its pole, so the channel does not bridge it.
+static_assert(!c::IsBridgeableDirection<BridgeSpsc, static_cast<c::Direction>(2)>);
+
 [[nodiscard]] int bridge_round_trip() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     BridgeSpsc channel{};

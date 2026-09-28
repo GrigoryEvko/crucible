@@ -6,17 +6,22 @@
 // the decoder must refuse, and checks the reason it gives.  A stored log
 // that holds a crash graded "no throw" must decode with the cause Unknown.
 //
-// The recorder half records three sessions: a plain one, Example 3.2 of
-// LMCS 2025 with the receiver crashed, and a checkpoint exchange.  It
-// checks each recorded event, and then that the log survives a round
-// trip through bytes.
+// The recorder half records a plain session, Example 3.2 of LMCS 2025 with
+// the receiver crashed, a checkpoint exchange and the hand-off of an
+// endpoint.  It checks each recorded event, and then that the log survives
+// a round trip through bytes.
 
+#include <fixy/session/Delegate.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Recording.h>
 
 #include <foundation/effects/Ctx.h>
+#include <foundation/permissions/PermSet.h>
+#include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/Hash.h>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -73,6 +78,44 @@ static_assert(round_trips(s::SessionEvent::cipher_event(s::SessionOp::TierPromot
                                                         s::CipherTierTag::Warm, s::CipherTierTag::Hot)));
 
 static_assert(s::session_op_name(s::SessionOp::CheckpointRoll) == "CheckpointRoll");
+
+// The operations that each cipher question admits, over every enumerator
+// of SessionOp.  A kind that commits the head of a tier is a persistence
+// kind, and a pending store or a load commits nothing.
+consteval std::uint64_t ops_admitted_by(bool (*admits)(s::SessionOp) noexcept) {
+    std::uint64_t admitted = 0;
+    ::foundation::reflect::for_each_enumerator<s::SessionOp>(
+        [&admitted, admits](s::SessionOp op, std::string_view) noexcept {
+            if (admits(op)) admitted |= std::uint64_t{1} << std::to_underlying(op);
+        });
+    return admitted;
+}
+consteval std::uint64_t op_bits(std::same_as<s::SessionOp> auto... ops) {
+    return ((std::uint64_t{1} << std::to_underlying(ops)) | ...);
+}
+static_assert(ops_admitted_by(s::session_op_is_cipher)
+              == op_bits(s::SessionOp::StorePending, s::SessionOp::StoreCommitted, s::SessionOp::LoadFromTier,
+                         s::SessionOp::TierPromote, s::SessionOp::TierDemote, s::SessionOp::TierRestore));
+static_assert(ops_admitted_by(s::session_op_commits_cipher_head)
+              == op_bits(s::SessionOp::StoreCommitted, s::SessionOp::TierPromote, s::SessionOp::TierDemote,
+                         s::SessionOp::TierRestore));
+
+// Each identifier is its own type, so no call site swaps two of them.  The
+// payload lane holds a payload hash, a saved state or a permission set.
+template <typename Id, typename... Others>
+inline constexpr bool converts_to_no_other =
+    ((std::is_same_v<Id, Others> || !std::is_convertible_v<Id, Others>) && ...);
+template <typename... Ids>
+inline constexpr bool are_distinct_ids = (converts_to_no_other<Ids, Ids...> && ...);
+static_assert(are_distinct_ids<s::SessionTagId, s::RoleTagId, s::SchemaHash, s::PayloadHash, s::RecoveryPathHash,
+                               s::StateHash, s::InnerPermSetHash, s::LabelWord, s::StepId>);
+
+// A writer that hashes its payload gives the hash to the factory, and the
+// event keeps it.
+static_assert(s::SessionEvent::send(kSelf, kPeer, s::default_schema_hash<int>, s::PayloadHash{7}).payload_hash()
+              == s::PayloadHash{7});
+static_assert(s::SessionEvent::recv(kSelf, kPeer, s::default_schema_hash<int>, s::PayloadHash{8}).payload_hash()
+              == s::PayloadHash{8});
 
 // The public step key reads the step of an event and orders two steps.
 static_assert(s::StepIdKeyFn{}(s::SessionEvent::cipher_event(s::SessionOp::StoreCommitted, s::StepId{9}, {1}, 0)).value
@@ -233,8 +276,10 @@ int check_plain_recording() {
     });
     if (got != 9) return fail("the plain session read the wrong value");
     if (log.size() != 4) return fail("the plain session did not record four events");
+    // The recorder hashes no payload, so it writes the zero of "not hashed".
     if (log[0].op() != s::SessionOp::Send || log[0].delivery_fate() != s::DeliveryFate::Delivered
-        || log[0].payload_schema() != s::default_schema_hash<int> || log[0].from_role() != kSelf)
+        || log[0].payload_schema() != s::default_schema_hash<int> || log[0].from_role() != kSelf
+        || log[0].payload_hash() != s::PayloadHash{})
         return fail("the send event is wrong");
     if (log[1].op() != s::SessionOp::Offer || log[1].branch_index() != 0) return fail("the offer event is wrong");
     if (log[2].op() != s::SessionOp::Recv || log[2].to_role() != kSelf) return fail("the recv event is wrong");
@@ -346,6 +391,71 @@ int check_checkpoint_recording() {
         || log_right[1].op() != s::SessionOp::CheckpointCommit
         || log_right[1].checkpoint_role() != s::CheckpointRole::Passive)
         return fail("the follower did not record a passive commit");
+    return 0;
+}
+
+}  // namespace
+
+// ── The hand-off of an endpoint ─────────────────────────────────────
+//
+// A payload that carries an endpoint is recorded as a hand-off and never
+// as a plain message.  The event holds the hash of the carried protocol and
+// the hash of the permission set that goes with it.
+//
+// The carried handle uses check::Off.  Under the default policy, GCC 16 at
+// -O3 reports -Wmaybe-uninitialized for the flag of the carried handle, in
+// the destructor of the moved-from parcel that Recorded::send passes on.
+
+using Carried = s::Send<int, s::End>;
+using NoPermissions = ::foundation::permissions::EmptyPermSet;
+using Parcel = s::DelegatedSession<Carried, Port, s::check::Off, NoPermissions>;
+
+// The outer channel holds one parcel.
+struct ParcelPort {
+    std::optional<Parcel>* held = nullptr;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+
+namespace {
+
+int check_handoff_recording() {
+    Mailbox to_self;
+    Mailbox to_peer;
+    std::optional<Parcel> held;
+    s::SessionEventLog log;
+    auto sender =
+        s::mint_recorded_session(s::mint_session_handle<s::Send<Parcel, s::End>>(ParcelPort{&held}), log, kSelf, kPeer);
+    auto receiver =
+        s::mint_recorded_session(s::mint_session_handle<s::Recv<Parcel, s::End>>(ParcelPort{&held}), log, kPeer, kSelf);
+
+    auto parcel =
+        s::mint_delegated_session(s::mint_session_handle<Carried, Port, s::check::Off>(Port{&to_self, &to_peer}));
+    (void)std::move(sender)
+        .send(std::move(parcel),
+              [](ParcelPort& port, Parcel& value) noexcept {
+                  port.held->emplace(std::move(value));
+                  return true;
+              })
+        .close();
+    auto [received, at_end] = std::move(receiver).recv([](ParcelPort& port) noexcept {
+        std::optional<Parcel> taken{std::move(*port.held)};
+        port.held->reset();
+        return taken;
+    });
+    (void)std::move(at_end).close();
+    (void)std::move(received).accept().send(3, push_int).close();
+    if (to_peer.slots.size() != 1) return fail("the accepted endpoint did not step its own session");
+
+    constexpr s::StateHash carried_hash = s::default_proto_hash<Carried>;
+    constexpr s::InnerPermSetHash no_permissions_hash{::foundation::reflect::stable_type_id<NoPermissions>};
+    static_assert(carried_hash != s::default_proto_hash<s::End>);
+    if (log.size() != 4) return fail("the hand-off did not record four events");
+    if (log[0].op() != s::SessionOp::Delegate || log[0].from_role() != kSelf || log[0].to_role() != kPeer
+        || log[0].delegated_proto() != carried_hash || log[0].inner_perm_set() != no_permissions_hash)
+        return fail("the send of a parcel was not recorded as the hand-off of the carried protocol");
+    if (log[2].op() != s::SessionOp::Accept || log[2].from_role() != kSelf || log[2].to_role() != kPeer
+        || log[2].delegated_proto() != carried_hash || log[2].inner_perm_set() != no_permissions_hash)
+        return fail("the receive of a parcel was not recorded as the accept of the carried protocol");
     return 0;
 }
 
@@ -493,6 +603,7 @@ int main() {
     if (const int rc = check_plain_recording(); rc != 0) return rc;
     if (const int rc = check_crash_recording(); rc != 0) return rc;
     if (const int rc = check_checkpoint_recording(); rc != 0) return rc;
+    if (const int rc = check_handoff_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_checkpoint(); rc != 0) return rc;
     return 0;
