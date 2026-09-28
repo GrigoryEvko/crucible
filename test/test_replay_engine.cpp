@@ -1,6 +1,6 @@
 #include <crucible/ReplayEngine.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
@@ -341,7 +341,7 @@ static void test_current_entry() {
 // fixed-stride helper above, so the offsets are whatever the planner
 // chooses and the assertions never name one.
 static void test_integration_with_pool() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt;
 
     // Slot 2 is external: it stands for a parameter whose storage the

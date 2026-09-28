@@ -3,7 +3,6 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
-#include <crucible/safety/_Tagged.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 
@@ -68,16 +67,14 @@ static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 // a value carrying the container's tag cannot take its place.
 static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::ABIBoundary>, ExternalDataPtr>);
 static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::Sanitized>, ExternalDataPtr>);
-// The old tree and the new tree give two distinct classes, so a pointer
-// tagged by the old tree cannot enter a meta either.
-static_assert(!std::is_convertible_v<crucible::safety::Tagged<void*, crucible::safety::source::External>,
-                                     ExternalDataPtr>);
+// A tag is a type, not a name.  The trust family also has a tag named
+// External, and a pointer under that tag cannot enter a meta either.
+static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::trust::External>, ExternalDataPtr>);
 
 // A validated name and raw input from the boundary cannot be confused
 // for one another.
 static_assert(!std::is_convertible_v<
-              crucible::safety::Tagged<crucible::SchemaTable::BorrowedName, crucible::safety::source::External>,
-              TypedSchemaName>);
+              ::fixy::Tagged<crucible::SchemaTable::BorrowedName, ::fixy::tags::source::External>, TypedSchemaName>);
 
 int g_failures = 0;
 

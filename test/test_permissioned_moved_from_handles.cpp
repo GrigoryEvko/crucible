@@ -11,9 +11,6 @@
 // The positive half checks that the moved-into handle still works, so that a
 // binding which broke every handle would not pass as a fix.
 
-#include <crucible/MetaLog.h>
-#include <crucible/PermissionedMetaLog.h>
-#include <crucible/Types.h>
 #include <crucible/concurrent/_PermissionedCalendarGrid.h>
 #include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/_PermissionedMpmcChannel.h>
@@ -33,7 +30,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -51,7 +47,6 @@ struct GridTag {};
 struct CalendarTag {};
 struct ShardedCalendarTag {};
 struct DequeTag {};
-struct LogTag {};
 struct QueueSpscTag {};
 struct QueueMpscTag {};
 
@@ -71,7 +66,6 @@ using Grid = cc::PermissionedShardedGrid<int, 2, 2, 8, GridTag>;
 using Calendar = cc::PermissionedCalendarGrid<std::uint64_t, 2, 8, 4, IdentityKey, 1, CalendarTag>;
 using ShardedCalendar = cc::PermissionedShardedCalendarGrid<std::uint64_t, 2, 8, 4, IdentityKey, 1, ShardedCalendarTag>;
 using Deque = cc::PermissionedChaseLevDeque<int, 16, DequeTag>;
-using Log = crucible::PermissionedMetaLog<LogTag>;
 using SpscQueue = cc::Queue<int, cc::kind::spsc<8>>;
 using MpscQueue = cc::Queue<int, cc::kind::mpsc<8>>;
 
@@ -80,7 +74,6 @@ static_assert(sizeof(Spsc::ProducerHandle) == sizeof(void*));
 static_assert(sizeof(Spsc::ConsumerHandle) == sizeof(void*));
 static_assert(sizeof(Grid::ProducerHandle<0>) == sizeof(void*));
 static_assert(sizeof(Deque::OwnerHandle) == sizeof(void*));
-static_assert(sizeof(Log::ProducerHandle) == sizeof(void*));
 static_assert(sizeof(Snapshot::WriterHandle) == sizeof(void*));
 
 [[nodiscard]] auto spsc_handles(Spsc& channel) {
@@ -111,13 +104,6 @@ static_assert(sizeof(Snapshot::WriterHandle) == sizeof(void*));
                      grid.template consumer<0>(std::move(std::get<0>(perms.consumers)))};
 }
 
-[[nodiscard]] auto log_handles(Log& log) {
-    namespace fp = ::foundation::permissions;
-    auto whole = fp::mint_permission_root<Log::whole_tag>();
-    auto [producer, consumer] = fp::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(whole));
-    return std::pair{log.producer(std::move(producer)), log.consumer(std::move(consumer))};
-}
-
 template <typename Queue, typename UserTag>
 [[nodiscard]] auto queue_handles(Queue& queue) {
     auto whole = cs::mint_permission_root<cc::queue_tag::Whole<UserTag>>();
@@ -125,17 +111,6 @@ template <typename Queue, typename UserTag>
         cs::mint_permission_split<cc::queue_tag::Producer<UserTag>, cc::queue_tag::Consumer<UserTag>>(
             std::move(whole));
     return std::pair{queue.producer_handle(std::move(producer)), queue.consumer_handle(std::move(consumer))};
-}
-
-[[nodiscard]] crucible::TensorMeta sample_meta() {
-    crucible::TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = ::crucible::tensor_dim(4);
-    meta.strides[0] = ::crucible::tensor_dim(1);
-    meta.dtype = crucible::ScalarType::Float;
-    meta.device_type = crucible::DeviceType::CPU;
-    meta.device_idx = -1;
-    return meta;
 }
 
 // ── The attacks: each uses a handle after moving it ──────────────────
@@ -293,22 +268,6 @@ void deque_thief() {
     (void)opaque_ref(*thief).try_steal();
 }
 
-void log_producer() {
-    auto raw_log = std::make_unique<crucible::MetaLog>();
-    Log log{*raw_log};
-    auto [producer, consumer] = log_handles(log);
-    [[maybe_unused]] auto moved = std::move(producer);
-    (void)opaque_ref(producer).try_append_one(sample_meta());
-}
-
-void log_consumer() {
-    auto raw_log = std::make_unique<crucible::MetaLog>();
-    Log log{*raw_log};
-    auto [producer, consumer] = log_handles(log);
-    [[maybe_unused]] auto moved = std::move(consumer);
-    (void)opaque_ref(consumer).try_drain_one();
-}
-
 void queue_spsc_producer() {
     SpscQueue queue{};
     auto [producer, consumer] = queue_handles<SpscQueue, QueueSpscTag>(queue);
@@ -349,8 +308,6 @@ constexpr Attack kAttacks[] = {
     {"sharded calendar grid consumer", &sharded_calendar_consumer},
     {"chase-lev owner", &deque_owner},
     {"chase-lev thief", &deque_thief},
-    {"metalog producer", &log_producer},
-    {"metalog consumer", &log_consumer},
     {"spsc queue producer", &queue_spsc_producer},
     {"mpsc queue consumer", &queue_mpsc_consumer},
 };

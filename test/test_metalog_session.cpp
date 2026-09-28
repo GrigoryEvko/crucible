@@ -1,7 +1,12 @@
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <thread>
 #include <type_traits>
@@ -39,6 +44,12 @@ static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, Permiss
               "the producer mint takes a producer");
 static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ProducerHandle&>,
               "the mint takes the handle by move");
+
+// A mint cannot throw.
+static_assert(noexcept(ms::mint_metalog_producer_session<PermissionedLog>(
+    std::declval<FgCtx const&>(), std::declval<PermissionedLog::ProducerHandle&&>())));
+static_assert(noexcept(ms::mint_metalog_consumer_session<PermissionedLog>(
+    std::declval<FgCtx const&>(), std::declval<PermissionedLog::ConsumerHandle&&>())));
 
 using ProducerSession = ms::ProducerSessionHandle<PermissionedLog, FgCtx>;
 using ConsumerSession = ms::ConsumerSessionHandle<PermissionedLog, FgCtx>;
@@ -316,10 +327,81 @@ void test_session_gives_the_handle_back() {
     CRUCIBLE_TEST_REQUIRE(same_meta(*drained, make_meta(7)));
 }
 
+// A use of a moved-from handle ends the process.  The move gives the
+// permission and the log to the new handle, so the source has nothing to
+// act on.  Each attack runs in a child process, and a signal must end the
+// child.
+//
+// Each attack reaches the moved-from handle through a call that the
+// optimizer cannot see into.  Inlined, the empty binding is visible at
+// compile time, and -Wstringop-overflow refuses the null access that the
+// attack makes on purpose.
+template <typename Handle>
+[[gnu::noipa]] Handle& opaque_ref(Handle& handle) {
+    return handle;
+}
+
+void log_producer() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [producer, consumer] = mint_handles(log);
+    [[maybe_unused]] auto moved = std::move(producer);
+    (void)opaque_ref(producer).try_append_one(make_meta(1));
+}
+
+void log_consumer() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [producer, consumer] = mint_handles(log);
+    [[maybe_unused]] auto moved = std::move(consumer);
+    (void)opaque_ref(consumer).try_drain_one();
+}
+
+struct Attack {
+    const char* name;
+    void (*run)();
+};
+
+constexpr Attack kAttacks[] = {
+    {"producer", &log_producer},
+    {"consumer", &log_consumer},
+};
+
+[[nodiscard]] bool ends_the_process(void (*attack)()) {
+    std::fflush(stderr);
+    const pid_t pid = ::fork();  // SPAWN-PROCESS-OK: death test
+    if (pid < 0) {
+        std::fprintf(stderr, "fork failed\n");
+        std::_Exit(2);
+    }
+    if (pid == 0) {
+        attack();
+        std::_Exit(0);
+    }
+    int status = 0;
+    if (::waitpid(pid, &status, 0) != pid) {  // SPAWN-PROCESS-OK: death test
+        std::fprintf(stderr, "waitpid failed\n");
+        std::_Exit(2);
+    }
+    return WIFSIGNALED(status) != 0;
+}
+
+void test_moved_from_handles_end_the_process() {
+    std::fprintf(stderr, "\n  [expected] each attack prints the invariant report of a child process\n");
+    for (const Attack& attack : kAttacks) {
+        if (!ends_the_process(attack.run)) {
+            std::fprintf(stderr, "  a moved-from %s still acted on its log\n", attack.name);
+            ++total_failed;
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "[test_metalog_session]\n");
+    // The attacks fork, so they run before a test starts a thread.
+    run_test("moved_from_handles_end_the_process", test_moved_from_handles_end_the_process);
     run_test("permissioned_bulk_drain", test_permissioned_bulk_drain);
     run_test("single_append_drain", test_single_append_drain);
     run_test("partial_drain", test_partial_drain);

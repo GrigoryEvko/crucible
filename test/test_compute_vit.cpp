@@ -15,7 +15,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cmath>
@@ -116,7 +116,7 @@ static constexpr uint64_t SZ_BD = B * D * 4;
 static constexpr uint64_t SZ_BNCLS = B * N_CLS * 4;
 
 int main() {
-    auto test = effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     std::printf("test_compute_vit:\n");
 
     std::mt19937 rng(7);

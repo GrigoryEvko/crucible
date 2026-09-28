@@ -27,8 +27,8 @@ test/test_permissioned_moved_from_handles.cpp:calendar_producer:producer
 test/test_permissioned_moved_from_handles.cpp:deque_owner:owner
 test/test_permissioned_moved_from_handles.cpp:grid_consumer:consumer
 test/test_permissioned_moved_from_handles.cpp:grid_producer:producer
-test/test_permissioned_moved_from_handles.cpp:log_consumer:consumer
-test/test_permissioned_moved_from_handles.cpp:log_producer:producer
+test/test_metalog_session.cpp:log_consumer:consumer
+test/test_metalog_session.cpp:log_producer:producer
 test/test_permissioned_moved_from_handles.cpp:mpsc_consumer:consumer
 test/test_permissioned_moved_from_handles.cpp:queue_mpsc_consumer:consumer
 test/test_permissioned_moved_from_handles.cpp:queue_spsc_producer:producer

@@ -12,8 +12,6 @@
 // is not eligible for constant evaluation, and an atomic refcount
 // misrepresents runtime cost in the same way a heap allocation does.
 
-#include <crucible/MetaLogSession.h>
-#include <crucible/PermissionedMetaLog.h>
 #include <crucible/concurrent/_PermissionedCalendarGrid.h>
 #include <crucible/concurrent/_PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/_PermissionedShardedCalendarGrid.h>
@@ -24,8 +22,6 @@
 #include <crucible/sessions/_ShardedCalendarGridSession.h>
 #include <crucible/sessions/_ShardedGridSession.h>
 #include <crucible/sessions/_SwmrSession.h>
-
-#include <fixy/Ctx.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -38,7 +34,6 @@ namespace safety = ::crucible::safety;
 namespace concur = ::crucible::concurrent;
 
 struct ChaseLevTag {};
-struct MetaLogTag {};
 struct SwmrTag {};
 struct CalendarTag {};
 struct ShardedGridTag {};
@@ -52,7 +47,6 @@ struct DeadlineKey {
 };
 
 using Deque = concur::PermissionedChaseLevDeque<int, 64, ChaseLevTag>;
-using MetaLog = ::crucible::PermissionedMetaLog<MetaLogTag>;
 using Swmr = safety::proto::swmr_session::SwmrSession<int, WriterTag, ReaderTag>;
 using Calendar =
     concur::PermissionedCalendarGrid<int, /*M=*/2, /*Buckets=*/8, /*BucketCap=*/4, DeadlineKey, 1ULL, CalendarTag>;
@@ -61,7 +55,6 @@ using ShardedCal = concur::PermissionedShardedCalendarGrid<int, /*Shards=*/2, /*
                                                            DeadlineKey, 1ULL, ShardedCalendarTag>;
 
 namespace cs = ::crucible::safety::proto::chaselev_session;
-namespace ms = ::crucible::metalog_session;
 namespace ws = ::crucible::safety::proto::swmr_session;
 namespace cgs = ::crucible::safety::proto::calendar_grid_session;
 namespace sgs = ::crucible::safety::proto::sharded_grid_session;
@@ -74,27 +67,6 @@ void exercise_chaselev_owner() {
     static_assert(noexcept(cs::mint_chaselev_owner<Deque>(std::declval<Deque&>(),
                                                           std::declval<safety::Permission<Deque::owner_tag>&&>())));
     (void)owner;
-}
-
-// The permissioned MetaLog makes its handles through member accessors, so
-// its mints are the two session mints, which take a handle by move and
-// give it back at End.
-void exercise_metalog_pair() {
-    namespace fp = ::foundation::permissions;
-    using FgCtx = ::fixy::HotFgCtx;
-    const FgCtx ctx = ::foundation::effects::testing::foreground();
-    ::crucible::MetaLog raw_log;
-    MetaLog log{raw_log};
-    auto whole = fp::mint_permission_root<MetaLog::whole_tag>();
-    auto [pp, cp] = fp::mint_permission_split<MetaLog::producer_tag, MetaLog::consumer_tag>(std::move(whole));
-    auto producer = ms::mint_metalog_producer_session<MetaLog>(ctx, log.producer(std::move(pp)));
-    auto consumer = ms::mint_metalog_consumer_session<MetaLog>(ctx, log.consumer(std::move(cp)));
-    static_assert(noexcept(ms::mint_metalog_producer_session<MetaLog>(
-        std::declval<FgCtx const&>(), std::declval<MetaLog::ProducerHandle&&>())));
-    static_assert(noexcept(ms::mint_metalog_consumer_session<MetaLog>(
-        std::declval<FgCtx const&>(), std::declval<MetaLog::ConsumerHandle&&>())));
-    (void)std::move(producer).select<1>(::fixy::session::no_label).close();
-    (void)std::move(consumer).select<1>(::fixy::session::no_label).close();
 }
 
 void exercise_swmr_writer() {
@@ -161,11 +133,10 @@ void exercise_sharded_calendar_pair() {
 
 int main() {
     exercise_chaselev_owner();
-    exercise_metalog_pair();
     exercise_swmr_writer();
     exercise_calendar_pair();
     exercise_sharded_grid_pair();
     exercise_sharded_calendar_pair();
-    std::fprintf(stderr, "session substrate mints: 10 OK\n");
+    std::fprintf(stderr, "session substrate mints: 8 OK\n");
     return 0;
 }

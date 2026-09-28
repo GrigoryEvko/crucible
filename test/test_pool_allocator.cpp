@@ -1,6 +1,6 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include "test_abort_probe.h"
 #include <bit>
@@ -341,7 +341,7 @@ static void test_reinit() {
 // picked so that slot 2 outlives slot 1's death and can legitimately be
 // placed in the space slot 1 vacated.
 static void test_integration_with_sweep_line() {
-    auto test = crucible::effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt;
 
     constexpr uint32_t N = 4;

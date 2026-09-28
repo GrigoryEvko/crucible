@@ -12,7 +12,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
-#include <crucible/effects/_Capabilities.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cmath>
@@ -56,7 +56,7 @@ static constexpr uint32_t N_SLOTS = 7;
 static constexpr uint32_t N_OPS = 4;
 
 int main() {
-    auto test = effects::testing::test();
+    auto test = ::foundation::effects::testing::test();
     std::printf("test_compute:\n");
 
     // A fixed seed, so the same numbers flow through on every run and
