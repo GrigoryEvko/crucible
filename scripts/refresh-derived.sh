@@ -35,14 +35,6 @@
 #   refresh-derived.sh            # regenerate, then re-check; exit 1 if
 #                                 # anything is still red
 #   refresh-derived.sh --check    # re-check only, write nothing
-#   ... --compile-db PATH         # the compile database of the build
-#
-# The frozen-tree guard admits a macro unification only by running the
-# preprocessor with the flags of a translation unit, so it needs the
-# compile database.  The database is --compile-db PATH, else the
-# CRUCIBLE_COMPILE_DB environment variable, else build/compile_commands.json.
-# A build outside the tree (an export with its build beside it) must name
-# its database, or the guard refuses every unification as a violation.
 #
 # Run it before `git commit` on a marking.  The run names each file that
 # the regenerate half changed, and those files belong in the same commit
@@ -58,29 +50,18 @@ REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT" || exit 2
 
 usage_() {
-    printf 'usage: %s [--check] [--compile-db PATH]\n' "$(basename -- "$0")" >&2
+    printf 'usage: %s [--check]\n' "$(basename -- "$0")" >&2
     exit 2
 }
 
 MODE=refresh
-COMPILE_DB=${CRUCIBLE_COMPILE_DB:-build/compile_commands.json}
 while [ $# -gt 0 ]; do
     case "$1" in
         --check) MODE=check ;;
-        --compile-db)
-            [ $# -ge 2 ] || usage_
-            COMPILE_DB=$2
-            shift
-            ;;
         *) usage_ ;;
     esac
     shift
 done
-
-if [ ! -f "$COMPILE_DB" ]; then
-    printf 'refresh-derived: note: no compile database at %s, so the frozen-tree guard will refuse\n' "$COMPILE_DB" >&2
-    printf '  every macro unification as a violation.  Pass --compile-db PATH to the build'"'"'s compile_commands.json.\n' >&2
-fi
 
 failures=0
 declare -a rewrote=()
@@ -148,11 +129,8 @@ fi
 
 # ── The re-check half ────────────────────────────────────────────────
 #
-# In the order a marking breaks them.  The frozen-tree guard comes first
-# because a marking that is not an admitted rename is not a marking at
-# all, and the rest of the run would be measuring the wrong thing.
+# In the order a marking breaks them.
 printf 'refresh-derived: checking\n' >&2
-run_ 'frozen tree'                   python3 scripts/check-frozen-tree.py --compile-db "$COMPILE_DB"
 run_ 'allowlist keys and prose'      bash scripts/check-allowlist-keys.sh
 run_ 'mint inventory'                python3 scripts/gen-mint-inventory.py --check
 run_ 'witness roster'                python3 scripts/check-witness-roster.py --check

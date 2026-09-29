@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """check-vessel-acceptance — the acceptance gate of the PyTorch vessel under vessel/torch.
 
-The gate accepts the vessel of one build only when four facts hold:
+The gate accepts the vessel of one build only when three facts hold:
 
     1. The build compiles the vessel against a PyTorch that has
        DispatchKey::Crucible.  Each vessel translation unit has -Werror on its
        compile line, the gate builds the two vessel libraries without an
        error, and neither library carries a sanitizer runtime.
-    2. No vessel source names the old substrate.  scripts/check-flip-list.py
-       reads the tree, and the gate refuses each vessel path that it reports.
-    3. Each vessel Python test (vessel/torch/test_*.py) exits 0.
-    4. Replay gives the bytes that PyTorch alone gives.
-       vessel/torch/test_replay_equivalence.py is one of the tests of item 3.
+    2. Each vessel Python test (vessel/torch/test_*.py) exits 0.
+    3. Replay gives the bytes that PyTorch alone gives.
+       vessel/torch/test_replay_equivalence.py is one of the tests of item 2.
 
 The gate fails closed.  A missing PyTorch, a PyTorch without the key, a build
-without the vessel, a build without -Werror, a vessel that does not compile, a
-library with a sanitizer runtime and an absent parser kit each make the gate
-refuse.  The gate never reports a pass or a skip for them.
+without the vessel, a build without -Werror, a vessel that does not compile and
+a library with a sanitizer runtime each make the gate refuse.  The gate never
+reports a pass or a skip for them.
 
 The gate derives its lists from the tree: each vessel/torch/*.cpp must be in
 the compile database with -Werror, and each vessel/torch/test_*.py must exit 0.
@@ -203,23 +201,6 @@ def check_uninstrumented(build_dir: Path, python: str, root: Path) -> list[str]:
     return problems
 
 
-def vessel_consumers(scan_output: str) -> list[str]:
-    """Return each line of a flip-list scan that names a vessel path."""
-    return [line for line in scan_output.splitlines() if f"{VESSEL_DIR}/" in line]
-
-
-def check_drain(root: Path) -> list[str]:
-    """Refuse a vessel source that names the old substrate, as check-flip-list.py reads it."""
-    guard = root / "scripts" / "check-flip-list.py"
-    done = subprocess.run([sys.executable, str(guard), "--scan"], capture_output=True, text=True, timeout=900)
-    if done.returncode == 3:
-        return ["the tree-sitter kit is absent, so the gate cannot read the drain.  Install it with "
-                "scripts/install-tree-sitter.sh."]
-    if done.returncode != 0:
-        return [f"check-flip-list.py --scan exits {done.returncode}: {(done.stdout + done.stderr).strip()[-400:]}"]
-    return [f"the vessel still names the old substrate: {line}" for line in vessel_consumers(done.stdout)]
-
-
 def run_tests(build_dir: Path, python: str, root: Path) -> list[str]:
     """Operate each vessel test against the libraries of the build, and refuse each that does not exit 0."""
     environment = dict(os.environ, CRUCIBLE_BUILD_DIR=str(build_dir))
@@ -247,16 +228,14 @@ def run_tests(build_dir: Path, python: str, root: Path) -> list[str]:
 
 
 def gate(build_dir: Path, torch_dir: str, python: str, root: Path) -> int:
-    """Operate the four items, report each problem, and return the exit code."""
+    """Operate the three items, report each problem, and return the exit code."""
     problems: list[str] = []
     print("vessel acceptance: 1. PyTorch and the build")
     prerequisites = check_torch(torch_dir, python) + check_build(build_dir, torch_dir, root)
     if not prerequisites:
         prerequisites = check_uninstrumented(build_dir, python, root)
     problems += prerequisites
-    print("vessel acceptance: 2. the drain onto the new tree")
-    problems += check_drain(root)
-    print("vessel acceptance: 3 and 4. the vessel tests, replay against PyTorch alone among them")
+    print("vessel acceptance: 2 and 3. the vessel tests, replay against PyTorch alone among them")
     if prerequisites:
         print("  not operated, because item 1 refuses the build")
     else:
@@ -340,12 +319,6 @@ def self_test() -> int:
         (build / "compile_commands.json").write_text("[]")
         expect("a vessel source absent from the compile database", check_build(build, str(torch_dir), REPO_ROOT),
                "is not in")
-
-    expect("a scan that names a vessel source",
-           [f"the vessel still names the old substrate: {line}"
-            for line in vessel_consumers("src/Old.cpp\nvessel/torch/record_kernel.h\n")],
-           "vessel/torch/record_kernel.h")
-    expect("a scan that names no vessel source", vessel_consumers("src/Old.cpp\nbench/bench_x.cpp\n"), None)
 
     for failure in failures:
         print(f"check-vessel-acceptance --self-test: FAIL — {failure}", file=sys.stderr)

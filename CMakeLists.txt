@@ -374,8 +374,7 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # discharge mechanisms; include/fixy/ (namespace ::fixy) is the axis table,
 # the atoms, the gate and the OS leaves.  Neither names crucible:: —
 # scripts/check-layer-boundary.py enforces the order foundation < fixy <
-# crucible, and scripts/check-frozen-tree.py freezes the old substrate under
-# include/crucible/ until the old tree is deleted.
+# crucible.
 #
 # `foundation` is a static library for one reason: it owns the weak contract
 # handler and the CRUCIBLE_PRE / CRUCIBLE_POST failure arm for every binary

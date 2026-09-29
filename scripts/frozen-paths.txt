@@ -1,13 +1,12 @@
-# frozen-paths — the old substrate, frozen until it is deleted.
+# frozen-paths — the prefixes of the old substrate, until it is deleted.
 #
 # One repo-relative prefix per line.  A directory ends in '/', and a single
 # file does not.  A '#' line is a comment, and a blank line is skipped.
 #
-# scripts/check-frozen-tree.py refuses an add or a modify under these
-# prefixes.  scripts/check-flip-list.py reads them to tell the old substrate
-# from its consumers, and scripts/check-start-lifetime.py reads them to admit
-# a frozen file.  This file is the one list the three guards share, so they
-# cannot disagree about what is old.
+# scripts/check-start-lifetime.py reads these prefixes to admit a file of the
+# old substrate.  scripts/check-derived-pins.py, check-mint-pattern.py,
+# check-no-unchecked-access.py and check-row-contains-discipline.py read them
+# to exempt such a file from some of their rules.
 include/crucible/safety/
 include/crucible/algebra/
 include/crucible/effects/

@@ -202,7 +202,7 @@ def read_frozen(path: Path = FROZEN_PATHS) -> tuple[str, ...]:
     """Return the frozen path prefixes.
 
     Args:
-        path: The list that the frozen-tree guard also reads
+        path: The list of the frozen prefixes, scripts/frozen-paths.txt
 
     Returns:
         One prefix for each live line

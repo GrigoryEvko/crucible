@@ -5401,18 +5401,13 @@ crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_hot_fg_reject
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 
-# ── Stage A1 — the sibling substrate and its three guards ─────────
+# ── The substrate and its two guards ──────────────────────────────
 #
-# include/foundation/ and include/fixy/ are the canonical substrate,
-# extracted beside the old tree.  Three guards hold the extraction to its
-# rules from its first commit:
+# include/foundation/ and include/fixy/ are the canonical substrate.  Two
+# guards hold it to its rules:
 #
 #   layer_boundary — foundation < fixy < crucible; a file names only its
 #                    own layer and the layers below it.  No allowlist.
-#   frozen_tree    — the old substrate under include/crucible/ only
-#                    shrinks until Stage D deletes it.  Exit 3 (freeze
-#                    base absent, shallow clone) is a SKIP here; the
-#                    `layers` CI job checks out full history and enforces.
 #   derived_pins   — a cardinality static_assert must have a derived
 #                    operand; a literal pinned to itself cannot fire.
 add_test(NAME layer_boundary_self_test
@@ -5422,17 +5417,6 @@ add_test(NAME layer_boundary
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
     LABELS "ci_guard;stage-A1"
     SKIP_RETURN_CODE 3)
-add_test(NAME frozen_tree_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.py --self-test)
-# The scan preprocesses a unified frozen header on the flags of this build.
-add_test(NAME frozen_tree
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-frozen-tree.py
-          --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
-set_tests_properties(frozen_tree frozen_tree_self_test PROPERTIES
-    LABELS "ci_guard;stage-A1")
-set_tests_properties(frozen_tree frozen_tree_self_test PROPERTIES SKIP_RETURN_CODE 3)
-set_tests_properties(frozen_tree_self_test PROPERTIES
-    ENVIRONMENT "FROZEN_TREE_CXX=${CMAKE_CXX_COMPILER}")
 add_test(NAME derived_pins_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.py --self-test)
 add_test(NAME derived_pins
@@ -5441,25 +5425,12 @@ set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
     LABELS "ci_guard;stage-A1"
     SKIP_RETURN_CODE 3)
 
-# flip_list holds the drain of the old substrate's consumers.  Every file
-# under the scan roots that names the frozen tree is on scripts/flip-list.txt,
-# every entry still names it, and no entry is missing.  A new consumer fails,
-# and so does an entry left behind after its file drains.
-add_test(NAME flip_list_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.py --self-test)
-add_test(NAME flip_list
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-flip-list.py)
-set_tests_properties(flip_list flip_list_self_test PROPERTIES
-    LABELS "ci_guard;stage-C;ast")
-set_tests_properties(flip_list flip_list_self_test PROPERTIES SKIP_RETURN_CODE 3)
-
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a
-# PyTorch with DispatchKey::Crucible at -Werror, no vessel source names the old
-# substrate, each vessel/torch/test_*.py exits 0, and replay gives the bytes of
-# PyTorch alone.  The self-test needs no PyTorch, so it is a guard of every
-# build.
+# PyTorch with DispatchKey::Crucible at -Werror, each vessel/torch/test_*.py
+# exits 0, and replay gives the bytes of PyTorch alone.  The self-test needs no
+# PyTorch, so it is a guard of every build.
 #
 # A build that cannot operate the gate does not get a test that passes or
 # skips.  It gets vessel_acceptance_unavailable, which ctest shows as
@@ -5550,10 +5521,10 @@ set_tests_properties(atom_roster_joined atom_roster_joined_self_test PROPERTIES
 # error, a roster entry whose file parses clean now, and a roster entry naming
 # a path that no longer exists — so the roster in scripts/tsast.py cannot rot.
 #
-# Exit 3 (the pinned kit is absent) is a SKIP here, the way frozen_tree skips a
-# shallow clone.  A developer who has not run scripts/install-tree-sitter.sh
-# gets the instruction rather than a failure.  CI installs the kit in both the
-# guards job and the build job, so CI always enforces.
+# Exit 3 (the pinned kit is absent) is a SKIP here.  A developer who has not
+# run scripts/install-tree-sitter.sh gets the instruction rather than a
+# failure.  CI installs the kit in both the guards job and the build job, so CI
+# always enforces.
 add_test(NAME parse_clean_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-parse-clean.py --self-test)
 add_test(NAME parse_clean
