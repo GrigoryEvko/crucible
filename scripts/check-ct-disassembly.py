@@ -80,16 +80,13 @@ CTCRYPTO_DEFINITION_FILES = {
     "include/fixy/Atom.h",
     "include/fixy/Collision.h",
     "include/fixy/Role.h",
-    "include/crucible/fixy/_Fn.h",
 }
 
 # A binding states the grade through the role or through the atom.  The
-# role is a name whose part is CtCrypto, unless the part before it is the
-# old tree's stance alias, which carries no binding.  The atom is a name
-# whose part is constant_time after a qualifier that is atom, at, or a
-# namespace alias of fixy::atom.
+# role is a name whose part is CtCrypto.  The atom is a name whose part is
+# constant_time after a qualifier that is atom, at, or a namespace alias of
+# fixy::atom.
 CTCRYPTO_ROLE = "CtCrypto"
-CTCRYPTO_STANCE = "stance"
 CTCRYPTO_ATOM = "constant_time"
 CTCRYPTO_ATOM_QUALIFIERS = frozenset({"atom", "at"})
 CTCRYPTO_ROOTS = ("include", "src", "vessel")
@@ -317,7 +314,7 @@ def states_grade(name: tsast.Node, aliases: list) -> bool:
     is_global, parts = qualified
     for index, part in enumerate(parts):
         before = parts[:index]
-        if part == CTCRYPTO_ROLE and before[-1:] != (CTCRYPTO_STANCE,):
+        if part == CTCRYPTO_ROLE:
             return True
         if part == CTCRYPTO_ATOM and before:
             resolved = tsast.resolve_namespace(before, name, aliases, is_global=is_global)
@@ -431,7 +428,6 @@ def self_test_case_list() -> int:
     literal = 'inline constexpr char spelled[] = "role::CtCrypto and atom::constant_time";\n'
     split = "using Seal = ::fixy::fn<int, ::fixy::atom::\n    constant_time>;\n"
     aliased = "namespace grade = ::fixy::atom;\nusing Seal = ::fixy::fn<int, grade::constant_time>;\n"
-    stance = "using Old = ::crucible::safety::stance::CtCrypto;\n"
     wrapper = ("ct_case_seal", False, 'extern "C" int ct_case_seal(int x) noexcept { return x; }')
     trials = (
         ("an atom binding with no case", {"include/a.h": binding}, {}, 1),
@@ -441,7 +437,6 @@ def self_test_case_list() -> int:
         ("a string literal only", {"include/c.h": literal}, {}, 0),
         ("an atom binding split over two lines", {"include/a.h": split}, {}, 1),
         ("an atom binding through a namespace alias", {"include/a.h": aliased}, {}, 1),
-        ("the old stance alias", {"include/c.h": stance}, {}, 0),
         ("a binding with a case", {"include/a.h": binding}, {"include/a.h": (wrapper,)}, 0),
         ("a case entry with no wrapper", {"include/a.h": binding}, {"include/a.h": ()}, 1),
         ("a case entry for a file with no binding", {"include/c.h": comment}, {"include/c.h": (wrapper,)}, 1),

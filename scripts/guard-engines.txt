@@ -29,7 +29,6 @@ scripts/check-federation-admission.py | tsast,preprocessor,json | the compile da
 scripts/check-fixy-clean-headers.py | tsast,text | the registry scripts/fixy-clean-headers.txt
 scripts/check-fixy-dim-prose.py | tsast |
 scripts/check-fixy-discipline.py | tsast,text | scripts/fixy-only-paths.txt and the allowlist rows
-scripts/check-fixy-grant-namespace-purity.py | tsast |
 scripts/check-fixy-hw-discipline.py | tsast |
 scripts/check-flip-list.py | tsast,text | scripts/flip-list.txt and scripts/frozen-paths.txt
 scripts/check-frozen-tree.py | tsast,preprocessor,compiler,git,json,text | the frozen lists, the ledgers and the -E -dD output of the compiler

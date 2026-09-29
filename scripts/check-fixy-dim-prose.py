@@ -9,9 +9,9 @@ WHY
     This guard refuses a regression to the FX spelling.
 
 THE ENGINE
-    The scan reads the parse tree of each C++ file under include/fixy and
-    include/crucible/fixy, and applies the two patterns below to the text of the
-    prose nodes only: comments, string literals and raw string literals.  A
+    The scan reads the parse tree of each C++ file under include/fixy, and
+    applies the two patterns below to the text of the prose nodes only:
+    comments, string literals and raw string literals.  A
     macro body or any other code is not prose, so a code token that happens to
     read "Dim 22" is not a finding.
         \\bDim [0-9]{1,2}\\b    the header form "Dim 1 Type"
@@ -36,7 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
-SCAN_DIRS = ("include/fixy", "include/crucible/fixy")
+SCAN_DIRS = ("include/fixy",)
 FX_ORDINAL = re.compile(r"\bDim [0-9]{1,2}\b|\(dim [0-9]{1,2}[,)]")
 
 
@@ -104,9 +104,9 @@ def self_test() -> int:
         root = Path(work)
         expect("no scan directory is a refusal, not a pass", root, 2, [], [])
 
-        old = root / "include" / "crucible" / "fixy"
-        old.mkdir(parents=True)
-        (old / "planted.h").write_text(
+        fixy_dir = root / "include" / "fixy"
+        fixy_dir.mkdir(parents=True)
+        (fixy_dir / "planted.h").write_text(
             "// Dim 22 Staleness is the retired header form.\n"
             "// Staleness (dim 22) is the retired parenthetical form.\n"
             "// DimensionAxis::Staleness = 19 is the enum spelling.\n"
@@ -115,15 +115,13 @@ def self_test() -> int:
         )
         expect("both FX forms are caught and the enum spelling is not", root, 1,
                ["planted.h:1", "planted.h:2"], ["planted.h:3"])
-        (old / "planted.h").write_text("// DimensionAxis::Staleness = 19\n#pragma once\n", encoding="utf-8")
+        (fixy_dir / "planted.h").write_text("// DimensionAxis::Staleness = 19\n#pragma once\n", encoding="utf-8")
         expect("a header with the enum spelling alone passes", root, 0, [], [])
 
         # Positive controls: the grep of the old shell guard got each of these wrong.
-        new = root / "include" / "fixy"
-        new.mkdir(parents=True)
-        (new / "Moved.h").write_text("#pragma once\n/* Staleness (dim 22, stale reads) */\n", encoding="utf-8")
-        expect("a header under include/fixy is scanned", root, 1, ["include/fixy/Moved.h:2"], [])
-        (new / "Moved.h").write_text(
+        (fixy_dir / "Moved.h").write_text("#pragma once\n/* Staleness (dim 22, stale reads) */\n", encoding="utf-8")
+        expect("a second header under include/fixy is scanned", root, 1, ["include/fixy/Moved.h:2"], [])
+        (fixy_dir / "Moved.h").write_text(
             "#pragma once\n#define Dim 22\n"
             'inline constexpr char note[] = "Dim 7 in a string is prose";\n',
             encoding="utf-8",

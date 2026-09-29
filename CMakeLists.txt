@@ -780,24 +780,6 @@ else()
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=0)
 endif()
 
-# ── fixy::Profile — strict / sketch mode selector ─────────────────
-#
-# Per misc/16_05_2026_fixy.md §82,§132,§347-369 and FIXY-AUDIT-B2.
-# STRICT (default ON) — every fixy:: binding routes through the full
-# `IsAccepted` gate (engagement + grant well-formedness + uniqueness
-# + theory corpus).  SKETCH (`OFF`) — IsAccepted's gate is replaced
-# by an always-true concept so hot-loop migration TUs compile against
-# partially-specified Grants packs.  See include/crucible/fixy/_Profile.h
-# for the concept-toggle semantics.
-option(CRUCIBLE_FIXY_STRICT
-  "Build fixy:: in STRICT mode (default).  Set OFF to enable SKETCH mode for hot-loop migration."
-  ON)
-if(CRUCIBLE_FIXY_STRICT)
-  target_compile_definitions(crucible PUBLIC CRUCIBLE_FIXY_STRICT=1)
-else()
-  target_compile_definitions(crucible PUBLIC CRUCIBLE_FIXY_STRICT=0)
-endif()
-
 # `libstdc++exp.a` holds the parts of libstdc++ 16 that libstdc++.so does
 # not have: the contract runtime, and parts of <print>, <debugging>,
 # <stacktrace> and <text_encoding>.  Each consumer of the dialect links it,

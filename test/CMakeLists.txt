@@ -725,9 +725,9 @@ set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
 # The fixy doc-blocks name an axis by the enum spelling
 # "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
 # longer matches the enum ordinals.  scripts/check-fixy-dim-prose.py reads the
-# comments and string literals of include/fixy and include/crucible/fixy from
-# the parse tree and refuses the FX spellings "Dim <N>" and "(dim <N>)".  Code
-# is not prose.  Exit 3 when the kit is absent reports a skip.
+# comments and string literals of include/fixy from the parse tree and refuses
+# the FX spellings "Dim <N>" and "(dim <N>)".  Code is not prose.  Exit 3 when
+# the kit is absent reports a skip.
 add_test(NAME fixy_dim_prose_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.py --self-test)
 add_test(NAME fixy_dim_prose
@@ -1005,21 +1005,6 @@ crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
 crucible_test(test_background_thread_run_in_row)
 crucible_test(test_computation_cache_federation)
-
-# Only the grant catalogs open namespace crucible::fixy::grant.
-# scripts/check-fixy-grant-namespace-purity.py reads the parse tree of each C++
-# file and fails on a namespace definition that reaches the namespace, or a
-# declaration whose qualified name reaches into it.  An attack fixture or a
-# cheat probe that reopens it on purpose carries a comment that holds "known
-# residual gap".  Exit 3 when the kit is absent reports a skip.
-add_test(NAME fixy_grant_namespace_purity_self_test
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.py --self-test)
-add_test(NAME fixy_grant_namespace_purity
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-grant-namespace-purity.py)
-set_tests_properties(fixy_grant_namespace_purity
-                     fixy_grant_namespace_purity_self_test PROPERTIES
-    LABELS "safety_attack;ci_guard;ast"
-    SKIP_RETURN_CODE 3)
 
 # A specialization of a split trait, or of one of its variables, is legal
 # only in the file that defines every tag it names, or in an authoring

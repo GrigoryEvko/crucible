@@ -266,11 +266,6 @@ jobs:
           python3 scripts/gen-mint-inventory.py --check
           python3 scripts/gen-mint-inventory.py --check-floor
 
-      - name: fixy::grant namespace purity (self-test + scan)
-        run: |
-          python3 scripts/check-fixy-grant-namespace-purity.py --self-test
-          python3 scripts/check-fixy-grant-namespace-purity.py
-
       - name: split trait orphan specializations (self-test + scan)
         run: |
           python3 scripts/check-splits-orphan.py --self-test

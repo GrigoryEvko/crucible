@@ -96,7 +96,7 @@ find_cxx() {
 # message.
 sentinel_flags=(-std=c++26 -freflection -fcontracts -fsyntax-only -w
                 -fdiagnostics-color=never -fconstexpr-ops-limit=100000000
-                -DCRUCIBLE_FIXY_STRICT=1 -DCRUCIBLE_FP_STRICT_FLOOR=1)
+                -DCRUCIBLE_FP_STRICT_FLOOR=1)
 
 # The marker every violation message begins with.  Both diagnostics in
 # Collision.h open with it, so one substring separates "the guard found
