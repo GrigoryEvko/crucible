@@ -6,8 +6,6 @@
 // Each distinct global needs its own tag type. Two globals that share one
 // tag collapse to a single atom and become indistinguishable to any
 // consumer that walks the atoms of a binding.
-//
-// Old spelling: include/crucible/fixy/grant/Global.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

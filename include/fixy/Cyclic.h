@@ -14,8 +14,6 @@
 // wraps past its own 2^bits ceiling the slot stays correct because N
 // divides 2^bits, so the low log2(N) bits — the only bits the mask
 // reads — are unaffected by the high-bit wrap.
-//
-// Old spelling: include/crucible/safety/Cyclic.h.
 
 #include <foundation/Platform.h>
 

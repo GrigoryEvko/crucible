@@ -10,18 +10,14 @@
 // beside the state structs it joins, so the transition graph reads
 // locally.
 //
-// The old header stated the relation as a trait, machine_transition
-// <From, To>, with one specialization per edge.  A trait is open: any
-// translation unit that sees the primary can add a pair.  The relation
-// is now a namespace of foundation::fail_closed::edge variables, read
-// through Admitted, so its pairs are exactly the edges declared in the
-// namespace the machine names.  Each machine names its own namespace as
-// the Edges parameter; a machine that names none reads the shared
-// fixy::machine::admitted_transitions, which the macro at the foot of
-// this file appends to.
-//
-// Old spelling: include/crucible/safety/Machine.h and the three
-// helpers of include/crucible/fixy/Mach.h.
+// The relation is a namespace of foundation::fail_closed::edge
+// variables, read through Admitted, so its pairs are exactly the edges
+// declared in the namespace the machine names.  A trait with one
+// specialization for each edge would be open: any translation unit that
+// sees the primary can add a pair.  Each machine names its own
+// namespace as the Edges parameter.  A machine that names none reads
+// the shared fixy::machine::admitted_transitions, which the macro at the
+// foot of this file appends to.
 
 #include <foundation/Platform.h>
 #include <foundation/diag/FailClosed.h>
@@ -137,7 +133,7 @@ transition_to(Machine<OldState, Edges>&& m, NewState s) noexcept(std::is_nothrow
 static_assert(sizeof(Machine<int>) == sizeof(int));
 static_assert(sizeof(Machine<void*>) == sizeof(void*));
 
-// The three helpers of the old fixy/Mach.h.
+// Three queries over a machine type.
 
 namespace mach {
 
@@ -247,10 +243,6 @@ static_assert(walks_the_relation());
 // edges under the same counter value do not collide.  The relation is read the
 // first time a pair is checked against it, so every edge comes before
 // the first transition in the translation unit.
-//
-// The frozen tree defines CRUCIBLE_ALLOW_MACHINE_TRANSITION over its own
-// trait.  This macro carries a different name, so one translation unit
-// can include both trees.
 #define CRUCIBLE_MACHINE_EDGE_CAT2_(a, b) a##b
 #define CRUCIBLE_MACHINE_EDGE_CAT_(a, b) CRUCIBLE_MACHINE_EDGE_CAT2_(a, b)
 #define CRUCIBLE_ADMIT_MACHINE_TRANSITION(From, To)                                                               \

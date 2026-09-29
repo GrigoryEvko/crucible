@@ -4,17 +4,15 @@
 // so that a translation unit which only builds endpoints never pulls in the
 // stage machinery.
 //
-// Old spelling: include/crucible/concurrent/_StageEndpointBridge.h.  Three
-// things changed.
-//   - Each mint takes its endpoints by move and refuses an lvalue.  The old
-//     mints took forwarding references and moved from them, so an lvalue
-//     endpoint was consumed without a std::move at the call site.
+// Design notes:
+//   - Each mint takes its endpoints by move and refuses an lvalue, so no
+//     endpoint is consumed without a std::move at the call site.
 //   - MpmcStage and SwmrStage are built through StageEndpointDoor, a final
 //     class with private static members and the two mints as its friends.
-//     The old unconstrained helpers were callable from any code.
+//     No other code can build them.
 //   - The two mints check the row in the requires clause alone, as
-//     mint_stage of fixy/concurrent/Stage.h does.  The old mints also
-//     repeated the check in the body, where a refused row never arrives.
+//     mint_stage of fixy/concurrent/Stage.h does.  A refused row never
+//     arrives in the body.
 
 #include <fixy/concurrent/Endpoint.h>
 #include <fixy/concurrent/HandleTraits.h>

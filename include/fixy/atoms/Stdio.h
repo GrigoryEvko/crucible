@@ -7,8 +7,6 @@
 // lock of the stream, and a flush writes to a descriptor that can be a
 // pipe or a terminal, so the write can park the caller.  The lift puts
 // both effects in the row that a binding requires of its context.
-//
-// Old spelling: include/crucible/fixy/grant/Stdio.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

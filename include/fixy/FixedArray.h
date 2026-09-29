@@ -24,8 +24,6 @@
 // The bound is a structural property of the storage rather than a
 // graded one, so no lattice applies and this joins the wrappers that
 // are deliberately not graded.
-//
-// Old spelling: include/crucible/safety/FixedArray.h.
 
 #include <fixy/Refined.h>
 #include <foundation/Platform.h>

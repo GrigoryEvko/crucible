@@ -300,10 +300,6 @@ inline constexpr auto& row_mismatch_message_v =
 
 // Parenthesise a condition containing a comma. The preprocessor splits
 // the argument at a template-argument list otherwise.
-//
-// The frozen tree defines CRUCIBLE_ROW_MISMATCH_ASSERT over its own
-// catalog.  This macro carries a different name, so one translation unit
-// can include both trees.
 
 #define CRUCIBLE_DIAG_ROW_MISMATCH_ASSERT(cond, tag, fn, caller, callee, offending) \
     static_assert(                                                                  \

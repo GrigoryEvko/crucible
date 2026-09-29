@@ -16,12 +16,10 @@
 // site otherwise.  A callee that wants a view of a particular carrier
 // asks for the carrier's brand, and a view of another carrier of the
 // same type fails to unify.  A view spelled without a brand is on the
-// erased identity, which is what every view was before brands.
+// erased identity.
 //
 // A carrier opts into the field audit by writing a static_assert on
 // no_scoped_view_field_check for its own type.
-//
-// Old spelling: include/crucible/safety/ScopedView.h.
 
 #include <fixy/Qtt.h>
 #include <foundation/Brand.h>
@@ -67,13 +65,13 @@ using view_brand_t = ::foundation::brand::inherited_or_fresh_brand_t<Carrier, Fr
 // that state is the other half, and it stays the precondition below,
 // because it reads the carrier's run-time state.
 //
-// The two were one gate before, and conflating them let the factory
-// look callable everywhere.  Measured: `requires { mint_view<Tag>(c) }`
-// answered true for a carrier that declares no view_ok at all, and true
-// for a tag the carrier declares no predicate for.  Both then failed
-// inside this header rather than at the call, and a caller that
-// dispatched on that answer chose this factory believing a view of an
-// unsupported state was mintable.
+// The two halves are two gates.  One gate for both would make the
+// factory look callable everywhere: `requires { mint_view<Tag>(c) }`
+// would answer true for a carrier that declares no view_ok at all, and
+// true for a tag the carrier declares no predicate for.  Both would
+// then fail inside this header rather than at the call.  A caller that
+// dispatches on that answer would choose this factory for a view of an
+// unsupported state.
 //
 // The noexcept and bool requirements are the predicate's own contract,
 // which fixy/SessView.h states as a static_assert for one carrier.  The
@@ -94,11 +92,11 @@ template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{}));
 
-// Measured, not suspected: mint_view<Ready>(Carrier{}) compiled and
-// handed back a view of a carrier that was gone at the end of the
-// statement.  This twin is what refuses it.  The deduced parameter is a
-// const rvalue reference rather than a forwarding reference, so a
-// non-const lvalue carrier still reaches the factory above.
+// Without this twin, mint_view<Ready>(Carrier{}) compiles and hands back
+// a view of a carrier that is gone at the end of the statement.  This
+// twin refuses it.  The deduced parameter is a const rvalue reference
+// rather than a forwarding reference, so a non-const lvalue carrier
+// still reaches the factory above.
 //
 // The twin carries the same constraint as the factory, so a carrier
 // that declares no predicate for the tag is refused by the gate that
@@ -230,17 +228,16 @@ consteval bool contains_scoped_view();
 
 namespace detail {
 
-// The audit used to open eight container shapes by name — optional,
-// vector, array, unique_ptr, shared_ptr, weak_ptr, a C array, Linear —
-// and three product shapes — pair, tuple, variant — through partial
-// specializations that named each one's payload.  The walk below
-// reaches every one of them without a list: a base class is walked
-// like a member, a union like a class, an array through its element,
-// and the reflection reads private members.  optional and variant keep
-// their payload in a union inside a base; tuple keeps its elements in
-// a chain of bases; array and a C array are arrays; Linear keeps its
-// payload in a private member; the pointer-holding containers are
-// covered by the associated-type rule below.
+// The walk below reaches each container and product shape without a
+// list of names.  A base class is walked like a member, a union like a
+// class, an array through its element, and the reflection reads private
+// members.
+//
+// optional and variant keep their payload in a union inside a base.
+// tuple keeps its elements in a chain of bases, and pair keeps them in
+// members.  array and a C array are arrays, and Linear keeps its payload
+// in a private member.  vector, unique_ptr, shared_ptr and weak_ptr hold
+// a pointer, and the associated-type rule below covers them.
 //
 // Node-based and type-erased containers keep their elements behind a
 // pointer or a raw byte buffer, so the reflective walk over their
@@ -248,25 +245,24 @@ namespace detail {
 // every such container does expose is its element typedef.  Recursing
 // through that typedef is a structural rule rather than an
 // enumeration, so a container shape the tree has not used yet is
-// covered the day someone uses it: std::deque, std::list,
-// std::forward_list, std::span, std::inplace_vector, std::expected and
-// the associative containers all audited clean before this.
+// covered the day someone uses it.  Without the rule, std::deque,
+// std::list, std::forward_list, std::span, std::inplace_vector,
+// std::expected and the associative containers would audit clean.
 //
 // The sizeof() probe keeps an incomplete, void or reference associated
 // type out, since naming it would be ill-formed and a container whose
 // element type is not complete here cannot be storing a view anyway.
 // The is_same guard stops a self-referential typedef recursing forever.
 // nonstatic_data_members_of throws on an incomplete class, so the walk
-// has to stop at one.  It could not reach one before: a pimpl keeps its
+// has to stop at one.  A pimpl reaches one: it keeps its
 // `unique_ptr<State>` private and State forward-declared, and under
-// access_context::current() the private member was invisible, so the
-// incomplete State was never named.  Under unchecked() it is.
+// unchecked() the walk names the private member and so the incomplete
+// State.
 //
 // Stopping there leaves the one hole this audit knowingly has: a State
 // defined in a .cpp could hold a view and nothing here would see it.
-// That hole is not new — the whole pimpl was invisible before — and it
-// is the same shape as the existing rule that the walk does not follow
-// a raw pointer.  Everything reachable by value is still audited.
+// The hole has the same shape as the rule that the walk does not follow
+// a raw pointer.  Everything reachable by value is audited.
 //
 // The Visited pack is the set of classes already open on the walk.  A
 // type cannot hold itself by value, so the member walk alone always
@@ -308,13 +304,13 @@ consteval bool reflect_contains_view() {
     using namespace std::meta;
     // unchecked(), not current().  access_context::current() is fixed
     // at the point it is written, which is inside this namespace, so
-    // the walk saw only the members this namespace may name.  A
-    // carrier that made its ScopedView field private — ordinary
-    // encapsulation, not evasion — audited clean.  The audit asks a
+    // the walk would see only the members this namespace may name.  A
+    // carrier that makes its ScopedView field private — ordinary
+    // encapsulation, not evasion — would audit clean.  The audit asks a
     // structural question about layout, not an access question, so it
     // takes the context that answers the question it is asking.
-    // Secret.h's policy-roster walk already uses unchecked() for the
-    // same reason.
+    // Secret.h's policy-roster walk uses unchecked() for the same
+    // reason.
     constexpr auto ctx = access_context::unchecked();
     bool found = false;
     static constexpr auto bases = std::define_static_array(bases_of(^^T, ctx));
@@ -431,12 +427,12 @@ namespace detail::scoped_view_self_test {
 }
 static_assert(mints_brand());
 
-// ── The gate answers, where it used to fail inside the header ────────
+// ── The gate answers at the call, not inside the header ──────────────
 //
-// Each pair below was `true` before CarrierDeclaresViewState, for both
-// factories, and each then failed on the contract predicate inside
-// mint_view rather than at the call.  The four assertions are what
-// holds that: a caller may now ask whether a view of this state is
+// Without CarrierDeclaresViewState, each refused pair below would
+// answer `true` for both factories, and each would then fail on the
+// contract predicate inside mint_view rather than at the call.  The
+// four refusals hold that a caller can ask if a view of this state is
 // mintable and get an answer.
 template <typename Tag, typename Carrier>
 concept ViewMintable = requires(Carrier const& c) { mint_view<Tag>(c); };

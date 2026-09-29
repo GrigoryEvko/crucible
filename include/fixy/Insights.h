@@ -8,24 +8,18 @@
 // duplicate tag of fixy/Reject.h and the corpus entries of
 // fixy/Corpus.h.
 //
-// The per-axis text is generated, not written.  The old Insights.h
-// wrote one provider per axis by hand, and its prose named each
-// axis's strict default; ten of those defaults contradicted Default.h,
-// and nothing could tell, because prose is not read by the compiler.
-// Here one partial specialisation serves every axis and splices the
-// axis name and the strict pole's name out of Axis.h by reflection, so
-// the text cannot say a default the table does not.  The self-test at
-// the foot walks the enum and asks each axis for its provider, so an
-// axis added to the enum is covered the day it is declared.
+// The per-axis text is generated, not written.  Prose that names the
+// strict pole of an axis by hand can contradict the table, and the
+// compiler does not read prose.  So one partial specialisation serves
+// every axis and splices the axis name and the strict pole's name out
+// of Axis.h by reflection.  The text then cannot say a pole that the
+// table does not.  The self-test at the foot walks the enum and asks each axis for
+// its provider, so an axis added to the enum is covered the day it is
+// declared.
 //
-// The six corpus entries keep hand-written text carried from the old
-// Theory.h and Insights.h.  The atom spellings in the examples are the
-// ones the tree ships: grant::as_linear, grant::trust::Verified,
-// grant::lifetime::Static and grant::with_sync named nothing that
-// existed, and the pins at the foot hold the three policies the
-// examples cite.
-//
-// Old spelling: include/crucible/fixy/_Insights.h.
+// The six corpus entries have hand-written text.  The atom spellings in
+// the examples are the ones the tree ships, and the pins at the foot
+// hold the policies that the examples cite.
 
 #include <fixy/Axis.h>
 #include <fixy/Corpus.h>

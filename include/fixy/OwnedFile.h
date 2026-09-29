@@ -2,16 +2,12 @@
 
 // Exclusive ownership of one stdio stream, closed on destruction.
 //
-// Old spelling: include/crucible/safety/OwnedFile.h.  Three deviations:
-// the construction door, the context that the door asks for, and the
-// release door.
-//
-// The old constructor took a FILE* and was public, and the destructor
-// calls std::fclose on whatever it holds.  So `OwnedFile f{stdin};` was
-// one line of ordinary-looking code that closed the process's standard
-// input on scope exit, and a stream owned by some other handle could be
-// closed twice.  That is the same defect fixy/OwnedMmap.h had over an
-// address, and it takes the same repair: the constructor is private.
+// The destructor calls std::fclose on whatever the handle holds.  With a
+// public constructor over a FILE*, `OwnedFile f{stdin};` is one line of
+// ordinary-looking code that closes the process's standard input on
+// scope exit, and a stream owned by some other handle can be closed
+// twice.  So the constructor is private, as the constructor of
+// fixy/OwnedMmap.h is over an address.
 // OwnedFileDoor below is its one caller, and the door performs the open
 // itself, so a stream that exists is one std::fopen or std::tmpfile
 // returned to this class.
@@ -30,9 +26,8 @@
 // specialization of a mint still has to satisfy the context gate, and
 // through the door it reaches only a real open.
 //
-// The old release took no argument and bound to any handle.  The new one
-// has the two gates of OwnedMmap::release: a leak atom that names why the
-// stream leaves without a close, and an rvalue handle.
+// The release has the two gates of OwnedMmap::release: a leak atom that
+// names why the stream leaves without a close, and an rvalue handle.
 //
 // The empty handle stays default-constructible for the reason the empty
 // region does: it claims nothing and closes nothing.  A failed open is
@@ -67,7 +62,7 @@ class OwnedFileDoor;
 class [[nodiscard]] OwnedFile {
     std::FILE* fp_ = nullptr;
 
-    // Private, and OwnedFileDoor is its one caller.  A public one let any
+    // Private, and OwnedFileDoor is its one caller.  A public one lets any
     // stream be claimed, and the destructor closes whatever was claimed.
     explicit OwnedFile(std::FILE* fp) noexcept : fp_{fp} {}
 
@@ -195,9 +190,9 @@ static_assert(std::is_nothrow_default_constructible_v<OwnedFile>);
 static_assert(std::is_nothrow_destructible_v<OwnedFile>);
 
 // The construction door, checked from a scope the class does not
-// befriend.  A public constructor over a FILE* let a caller claim a
+// befriend.  A public constructor over a FILE* lets a caller claim a
 // stream it never opened, and the destructor closes whatever it holds,
-// so `OwnedFile{stdin}` closed standard input on scope exit.  The two
+// so `OwnedFile{stdin}` closes standard input on scope exit.  The two
 // mints are the only way to a live handle, and each builds one only from
 // what libc returned.
 static_assert(!std::is_constructible_v<OwnedFile, std::FILE*>,

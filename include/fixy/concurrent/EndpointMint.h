@@ -6,12 +6,10 @@
 // every endpoint user.  As a free function in a dedicated header the
 // include cost is opt-in.
 //
-// Old spelling: include/crucible/bridges/_EndpointMint.h.  The old header
-// also wrapped an endpoint in a crash watch over a one-shot flag.  The new
-// crash session (fixy/session/CrashTransport.h) admits only a protocol in
-// which every receive has a branch for the crash of the peer, and the
-// default protocol of an endpoint has no such branch, so that wrapper has no
-// carrier.
+// No mint wraps an endpoint in a crash watch.  The crash session
+// (fixy/session/CrashTransport.h) admits only a protocol in which every
+// receive has a branch for the crash of the peer.  The default protocol of
+// an endpoint has no such branch.
 
 #include <fixy/concurrent/Endpoint.h>
 #include <fixy/session/EventLog.h>

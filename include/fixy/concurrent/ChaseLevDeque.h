@@ -23,8 +23,6 @@
 // T lives in std::atomic<T> and must be always-lock-free, which in
 // practice caps it at the width of the target's widest atomic
 // instruction.  Anything larger is passed as a pointer.
-//
-// Old spelling: include/crucible/concurrent/_ChaseLevDeque.h.
 
 #include <fixy/Mutation.h>
 

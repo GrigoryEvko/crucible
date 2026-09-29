@@ -8,8 +8,8 @@
 // private, and the sole friend is fixy::sched::mint_affinity, which
 // hands one back only after sched_setaffinity succeeded for the same
 // mask.  A caller that never pinned has no path to a CpuPinned, so the
-// singleton-and-posture gate on the TSC reader now stands on the pin
-// rather than on the shape of a token anyone could build.
+// singleton-and-posture gate on the TSC reader stands on the pin rather
+// than on the shape of a token anyone could build.
 //
 // A pin holds for one thread, and only until that thread pins again.  So
 // the proof names one pin event.  Each successful sched_setaffinity
@@ -21,7 +21,8 @@
 // that reads the counter of one core refuses it.  The proof can move, and
 // a move takes the event from the source, so one claim is never held
 // two times.  It is neither default-constructible nor constructible from
-// a value: both of those were open doors, and both are closed.
+// a value, because each of those doors claims a pin that nobody
+// performed.
 //
 // A pin that does not go through this header is not recorded.  A raw
 // sched_setaffinity call, a call from another thread that names this
@@ -42,19 +43,8 @@
 // the sole friend fixes it.  Other units remain nameable so the shape
 // checks here and in fixy/os/Time.h can keep naming them.
 //
-// Old spelling: include/crucible/safety/_CpuPinned.h.  The old tree
-// forges a pin in its own smoke test, at include/crucible/fixy/_Time.h,
-// and reads the counter through it.  That is how the open door survived
-// review: the canonical example of using CpuPinned was an example of
-// forging it.  The leg is not ported in that shape.  test/fixy/
-// test_os_time.cpp earns its pin from mint_affinity instead, and skips
-// when the cpuset refuses.
-//
-// row_hash_contribution is NOT ported.  The old specialization folds
-// the mask words and the posture into the federation key.  The rework
-// that replaces all 52 such specializations with one fold over the
-// Graded nesting has to land first, and that rework is itself blocked:
-// changing the fold changes every published federation key.
+// No example forges a pin.  test/fixy/test_os_time.cpp earns its pin
+// from mint_affinity, and skips when the cpuset refuses.
 
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
@@ -136,7 +126,7 @@ CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_pin_event 
 // pin event.  Returns the event, or the errno of a failed call.  A failed
 // call leaves the affinity as it was, so the event in force stays.
 //
-// Each change of affinity in the new tree comes through this function,
+// Each change of affinity that fixy makes comes through this function,
 // so a proof of an earlier pin on this thread stops being in force.  The
 // function mints nothing.  The proof is built by mint_affinity, on its
 // success, and nowhere else.
@@ -234,8 +224,7 @@ private:
     // so a proof in force names a pin of the thread that asks.
     //
     // Keep this friend a function that PERFORMS AND CHECKS the syscall.
-    // A friend that merely forwards an argument would prove nothing, and
-    // that is exactly what the three constructors this replaced did.
+    // A friend that merely forwards an argument proves nothing.
     // The trailing return type is not a style choice.  Written the other
     // way round the declaration ends `..., int> ::fixy::sched::...`, and
     // the parser takes the `>::` as a nested-name-specifier inside the
@@ -312,9 +301,9 @@ using TwoBitC = CpuPinned<kTwoBit, PinningPosture::PinnedExplicit, int>;
 
 // The gate, from a scope that mint_affinity does not befriend.  These
 // three cells are the whole self-test on the door: each names a route
-// that built a proof out of nothing before, and each fails the moment
-// that route reopens.  test/fixy/neg/ carries the same three as
-// negative-compile fixtures, so a reopened door is caught whether or not
+// that builds a proof out of nothing, and each fails the moment that
+// route opens.  test/fixy/neg/ carries the same three as
+// negative-compile fixtures, so an open door is caught whether or not
 // this header is the thing that was edited.
 static_assert(!std::is_default_constructible_v<PinnedC0>,
               "The default constructor of CpuPinned must not be public.  It claimed a pin that nobody performed.");
@@ -359,14 +348,9 @@ static_assert(!CtxFitsAffinityMint<InitOnlyCtx, PinningPosture::NotPinned>,
 static_assert(!CtxFitsAffinityMint<ForegroundCtx, PinningPosture::PinnedExplicit>,
               "the foreground hot path owns neither Bg nor Init, so it must not be able to pin a thread.");
 
-// The three row-hash distinctness assertions the old header carried are
-// not ported, because the specialization they read is not ported.  The
-// row-hash rework restores both together.
-//
-// consume_moves_out, peek_mut_works and cpu_pinned_mint_works are not
-// ported in this shape.  Each built a proof out of nothing to reach the
-// accessor it was testing, which is the forgery this header now
-// refuses.  The accessors are exercised in test/fixy/test_os_sched.cpp
-// through a pin earned from mint_affinity.
+// No check here reaches an accessor, because a proof built out of
+// nothing is the forgery this header refuses.  The accessors are
+// exercised in test/fixy/test_os_sched.cpp through a pin earned from
+// mint_affinity.
 
 }  // namespace fixy::detail::cpu_pinned_invariants

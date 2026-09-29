@@ -27,12 +27,11 @@
 // of its scope with the obligation still open must be reported.  Both
 // read one bit of state per wrapper.
 //
-// That bit used to be rejected here, and the reason given was sound as
-// far as it went.  A member keyed on NDEBUG changes sizeof(Linear<T>),
-// the release preset builds the library with NDEBUG and builds the
-// tests without it, and the two then disagree about the layout with
-// nothing to say so.  The repair is not to drop the bit.  It is to
-// stop keying on NDEBUG and to make the disagreement loud.
+// The bit is not keyed on NDEBUG.  A member keyed on NDEBUG changes
+// sizeof(Linear<T>), the release preset builds the library with NDEBUG
+// and builds the tests without it, and the two then disagree about the
+// layout with nothing to say so.  The bit has its own key, and the
+// disagreement is loud.
 //
 //   - CRUCIBLE_QTT_TRACK_CONSUME is the key, and the build system sets
 //     it once per preset for every target in it, so a library and the
@@ -45,9 +44,9 @@
 //     fail to link, naming the tagged type, and two compiled with it at
 //     the same setting link.
 //
-// With the bit off the wrapper is what it was.  sizeof(Linear<T>) ==
-// sizeof(T), the move is trivial and the destructor is trivial, because
-// the state lives in a base that is empty and collapses.
+// With the bit off, sizeof(Linear<T>) == sizeof(T), the move is trivial
+// and the destructor is trivial, because the state lives in a base that
+// is empty and collapses.
 //
 // What the bit reads, once it is on:
 //
@@ -91,10 +90,9 @@
 // Declared, not included.  The two recognisers below name these
 // templates and instantiate neither, so a declaration is the whole
 // dependency and foundation/permissions/Permission.h does not become a
-// prerequisite of every file that wraps a value.  The old tree declared
-// them the same way, in include/crucible/safety/_Linear.h:29.  A change
-// to either template's parameter list breaks this declaration at the
-// compile that follows, which is the intended failure.
+// prerequisite of every file that wraps a value.  A change to either
+// template's parameter list breaks this declaration at the compile that
+// follows, which is the intended failure.
 // The declarations live in foundation/permissions/Fwd.h, which carries
 // the defaulted brand and nothing else.
 
@@ -233,20 +231,18 @@ using Affine = Qtt<::foundation::algebra::lattices::QttGrade::Zero, T>;
 // first in Linear adds no guarantee; wrapping the second in Affine
 // makes a required consume optional.
 //
-// Both answers used to come from a table with a false primary and one
-// specialization per token.  That shape is what this file is now
-// written against: the port carried both gates and neither table's
-// arms, so for a release Affine<Linear<int>> compiled and an
-// exactly-once obligation became at-most-once.  A table with no arms
-// and a table whose arms all refuse are the same text, and nothing read
-// the difference.
+// Neither answer is a table with a false primary and one
+// specialization per token.  A table with no arms and a table whose
+// arms all refuse are the same text, and nothing reads the difference.
+// With the arms missing, Affine<Linear<int>> compiles in a release
+// build, and an exactly-once obligation becomes at-most-once.
 //
-// So neither answer is a table any more.  Qtt IS the discipline, and
-// one reflection query recognises every grade of it without an arm per
-// instantiation.  The two permission tokens are a family written once,
-// inside a concept body, and a concept cannot be specialized.  The
-// witnesses at the foot of this header pin both recognisers in both
-// directions, so an arm cannot be removed silently again.
+// Qtt IS the discipline, and one reflection query recognises every
+// grade of it without an arm per instantiation.  The two permission
+// tokens are a family written once, inside a concept body, and a
+// concept cannot be specialized.  The witnesses at the foot of this
+// header pin both recognisers in both directions, so an arm cannot be
+// removed silently.
 //
 // A new token family whose own type encodes an exactly-once obligation
 // is added to IsPermissionToken below and to the witnesses beside it.
@@ -487,12 +483,11 @@ using SharedToken = ::foundation::permissions::SharedPermission<tag>;
 
 }  // namespace detail::qtt_witness
 
-// Both recognisers, pinned in both directions.  This is the cell that
-// was missing: a port can carry a gate and drop its arms, and until
-// something asserts that the arms still answer, the gate reads as a
-// gate and admits everything.  Each line names types the recogniser
-// must accept and types it must refuse, and an empty recogniser fails
-// the first, a universal one the second.
+// Both recognisers, pinned in both directions.  A gate that loses its
+// arms still reads as a gate and admits everything, until something
+// asserts that the arms still answer.  Each line names types the
+// recogniser must accept and types it must refuse, and an empty
+// recogniser fails the first, a universal one the second.
 static_assert(::foundation::contracts::predicate_accepts<
               is_already_linear, Linear<int>, Linear<int> const&, Linear<int>&&, Linear<void*>,
               detail::qtt_witness::ExclusiveToken, detail::qtt_witness::SharedToken const&>());

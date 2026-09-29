@@ -16,8 +16,6 @@
 // call producer() — so there is no requires-clause for a negative
 // fixture to fire, and naming them mint_ would claim a gate they do not
 // have.
-//
-// Old spelling: include/crucible/concurrent/_PermissionedSpscChannel.h.
 
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>

@@ -41,14 +41,10 @@
 // The object is pinned because a reader can be holding the address of
 // the sequence counter at any moment.
 //
-// Old spelling: include/crucible/concurrent/_AtomicSnapshot.h.  Three
-// deviations.  SnapshotValue also requires ImplicitLifetimeThroughout,
-// because the checked lifetime start refuses any other T.  The payload
-// bytes and the read buffers are std::array, because the new tree
-// refuses a C array data member.  The three memory-order overlays
-// (load_mo_pinned, try_load_mo_pinned, version_mo_pinned) are not
-// carried: the new tree has no memory-order band, and nothing called
-// them.  load_pinned is not carried either, because only tests read it.
+// SnapshotValue also requires ImplicitLifetimeThroughout, because the
+// checked lifetime start refuses any other T.  The payload bytes and the
+// read buffers are std::array, because
+// scripts/check-no-raw-array-member.py refuses a C array data member.
 
 #include <fixy/Mutation.h>
 

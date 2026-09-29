@@ -25,23 +25,12 @@
 // template argument can catch.
 //
 // The surrendered Permission is the one door: the constructor is
-// private, and adopt and wrap each take a token by rvalue.  The old
-// header also befriended the three structured-parallel helpers of
-// safety/Workload.h so they could rebuild the parent region after a
-// join through a private static.  Those helpers are not ported, and a
-// friend naming an absent function is an open door, so the friends
-// and the static are gone.  A join rebuilds the parent by surrendering
-// the shards to `recombine`, which combines their Slice permissions
-// back into the parent's.
-//
-// It briefly did so through `rebuild_parent_after_fork_<Whole>()`
-// instead.  That helper took no argument, so it proved nothing, and it
-// minted a Permission for any tag from any translation unit.  It is
-// gone.  A rebuild has to consume the thing it reissues.
-//
-// Old spelling: include/crucible/safety/OwnedRegion.h, the detection
-// surface of include/crucible/safety/IsOwnedRegion.h and the Slice half
-// of include/crucible/safety/_PermissionTreeGenerator.h.
+// private, and adopt and wrap each take a token by rvalue.  A join
+// rebuilds the parent by surrendering the shards to `recombine`, which
+// combines their Slice permissions back into the parent's.  A rebuild
+// has to consume the thing it reissues.  A helper that takes no
+// argument proves nothing, and it can mint a Permission for any tag
+// from any translation unit.
 
 #include <fixy/Borrowed.h>
 #include <foundation/Brand.h>
@@ -67,9 +56,7 @@ namespace fixy {
 
 // A generated tag tree: the shards of a parent, indexed.  Index-pack
 // deduction covers every arity in one specialization, so a caller
-// splitting a parent into N shards declares nothing per N.  It comes
-// from safety/_PermissionTreeGenerator.h.  The rest of that header
-// (auto_split_n, can_split_n_v) is dropped, because nothing reads it.
+// splitting a parent into N shards declares nothing per N.
 //
 // parent_type is also how a shard finds its effect row: the row
 // relation reads a derived tag's parent, so a shard touches the region
@@ -119,10 +106,10 @@ struct split_mint_t {};
 //
 // What the receipt catches.
 //
-//   A rebuild from shards nobody split.  recombine took a tuple and
-//   nothing else before this, so a caller who held shards could
-//   assemble a tuple and get a whole.  There is no public constructor
-//   here, so a tuple alone no longer reaches recombine.
+//   A rebuild from shards nobody split.  Without a receipt, a caller
+//   who held shards could assemble a tuple and get a whole.  The
+//   receipt has no public constructor, so a tuple alone does not reach
+//   recombine.
 //
 //   A copied receipt.  The type is move-only, and the copy is deleted
 //   with its reason.  A second move of one receipt compiles, because a
@@ -240,10 +227,10 @@ struct has_split_pack_authoring_witness<Parent, ::fixy::Slice<Parent, Is, SplitN
 
 namespace fixy {
 
-// The old signature named the crucible Arena, which this layer cannot.
-// What adopt reads of it is one member template, so that is the whole
-// requirement: alloc_array<T>(token, count) returning T*, with a null
-// result for a zero count left to adopt itself.
+// This layer cannot name the crucible Arena.  What adopt reads of an
+// allocator is one member template, so that is the whole requirement:
+// alloc_array<T>(token, count) returning T*, with a null result for a
+// zero count left to adopt itself.
 template <typename Allocator, typename T>
 concept ArrayArena = requires(Allocator& arena, ::foundation::effects::Alloc token, std::size_t count) {
     { arena.template alloc_array<T>(token, count) } -> std::same_as<T*>;
@@ -397,9 +384,9 @@ public:
     // rebuild is the only one that split authorizes.
     //
     // This is the only way to recover a parent permission after a split.
-    // There is deliberately no nullary rebuild: one that took no
-    // argument would prove nothing, and the previous such helper minted
-    // a Permission for any tag from any translation unit.
+    // There is deliberately no nullary rebuild.  One that took no
+    // argument would prove nothing, and it could mint a Permission for
+    // any tag from any translation unit.
     template <typename SplitName, std::size_t... Is>
     [[nodiscard]] static OwnedRegion
     recombine(Disjoint<Tag, Brand, SplitName, sizeof...(Is)>&& witness,
@@ -507,11 +494,11 @@ auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) &&
             std::move(std::get<Is>(sub_perms))}...}};
 }
 
-// The detection surface of the old IsOwnedRegion.h.  One reflection
-// query answers it, and the associated types are read off the
-// wrapper's own typedefs.  The two extractors are constrained rather
-// than left to a primary template, which would hand back void for an
-// unrelated argument instead of failing.
+// The detection surface of OwnedRegion.  One reflection query answers
+// it, and the associated types are read off the wrapper's own typedefs.
+// The two extractors are constrained rather than left to a primary
+// template, which would hand back void for an unrelated argument
+// instead of failing.
 
 // The concept is the question; the value spelling is derived from it
 // and read by nothing that gates.
@@ -644,8 +631,8 @@ static_assert(!std::is_constructible_v<OR_int_a_branded, OR_int_a&&>, "an erased
 static_assert(!std::is_constructible_v<OR_int_a, OR_int_a_branded const&>, "erasure consumes the branded region");
 
 // The smallest thing adopt asks of an arena: one bump pointer over a
-// fixed block.  The old smoke test used the crucible Arena, which this
-// layer cannot name.  The lifetime start gives a live object only to a
+// fixed block.  This layer cannot name the crucible Arena, so the self
+// test holds its own.  The lifetime start gives a live object only to a
 // type whose every subobject is an implicit-lifetime type.  For a proof
 // type, or an aggregate that holds one, it gives a pointer to an object
 // whose lifetime never started, so the constraint refuses that type.

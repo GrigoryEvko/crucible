@@ -6,16 +6,13 @@
 // questions the same way every time: what it wraps, what lattice grades
 // it, which modality that grading is, what the substrate instantiation
 // is, and the two names the diagnostic surface reads off that
-// instantiation.  Each of the seven wrappers in fixy wrote all six by
-// hand, and the two name forwarders were the same one-line body seven
-// times over.
+// instantiation.  This base writes the six one time for every wrapper.
 //
-// The repetition was not free.  GradedWrapper in
-// foundation/algebra/GradedTrait.h compares each forwarder's string
-// against the substrate's precisely because a hand-written forwarder
-// can return something the wrapper does not have.  One base answers
-// from graded_type in every case, so that class of drift has nowhere
-// left to start.
+// GradedWrapper in foundation/algebra/GradedTrait.h compares each
+// forwarder's string against the substrate's precisely because a
+// hand-written forwarder can return something the wrapper does not
+// have.  One base answers from graded_type in every case, so that class
+// of drift has no place to start.
 //
 // The base is empty, so a wrapper that inherits it keeps its size: the
 // grade lives in the wrapper's own graded_type member, not here.  It is

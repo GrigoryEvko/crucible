@@ -60,9 +60,7 @@ void report_violation_at_and_abort(Category cat, std::string_view detail,
 
 }  // namespace foundation::diag
 
-// The frozen tree defines CRUCIBLE_RUNTIME_VIOLATION over its own
-// Category.  These macros carry a different name, so one translation unit
-// can include both trees.
+// Report a violation of one Category at the location of the macro.
 #define CRUCIBLE_DIAG_RUNTIME_VIOLATION(category, detail) ::foundation::diag::report_violation_at((category), (detail))
 
 #define CRUCIBLE_DIAG_RUNTIME_VIOLATION_AND_ABORT(category, detail) \

@@ -18,14 +18,6 @@
 // admission is therefore refused as the last name of a qualified
 // definition anywhere else in the tree, and each member name must be
 // distinctive.
-//
-// Old spelling: include/crucible/permissions/_FederationPermission.h.
-// Its signature was a mix of public values with no key, it kept no
-// record of the nonces it had seen, and the admission read a borrowed
-// local permission that it then discarded.  Here each admittance takes
-// the token of the local cipher and gives it back beside its result.
-// The self-signed handshake, the mixer and the intra-organization split
-// are not carried.
 
 #include <fixy/SipHash.h>
 #include <fixy/Secret.h>

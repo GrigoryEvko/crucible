@@ -11,16 +11,9 @@
 // from, because the citation is the reason the binding is refused and
 // the message a reader gets.
 //
-// Six entries carry over from the old corpus.  The four it also held
-// are deleted (decision Q3, 2026-09-16): external_to_verified_without_
-// attest, secret_unbounded_termination_channel, secret_catastrophic_
-// staleness and secret_payload_without_security_claim.  No test
-// referenced any of them, and each waited on a discharge no shipped
-// policy could give: a Termination or CatastrophicReplay mask nothing
-// lifts, or a Secret<T> payload read off the type.  DischargeAxis::
-// Crash and ::Reentrancy were declared and never consumed; they go
-// with the four, as do Termination and CatastrophicReplay, which only
-// the deleted entries read.
+// The corpus holds no entry that needs a discharge the tree cannot
+// give: a mask for termination or for catastrophic replay, which no
+// policy has, or a Secret<T> payload read off the type.
 //
 // What a declassification discharges
 // ----------------------------------
@@ -47,8 +40,6 @@
 // question about the Security grade and the channel: the grade is a
 // classified carrier, or it is a declassification whose mask does not
 // name the channel.
-//
-// Old spelling: include/crucible/fixy/Theory.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

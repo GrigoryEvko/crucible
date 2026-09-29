@@ -7,17 +7,13 @@
 // whole life.
 //
 // The table holds the SPSC and the MPSC channel of fixy/concurrent.  Those
-// are the only permissioned channels of the new tree, so each other row of
-// the old table left with its channel.
+// are the only permissioned channels of fixy/concurrent.
 //
-// Old spelling: include/crucible/concurrent/_SubstrateSessionBridge.h.  The
-// old mint took the handle by reference and put its address in the
-// session.  fixy/session/Handle.h refuses a raw pointer to a channel handle
-// as a session resource, because the handle can move or die first.  So the
-// session takes the handle by move.  The old mint also asked that the
-// footprint of one call fits the residency tier of the context.  The new
-// context carries no residency tier (foundation/effects/Ctx.h), so that
-// clause has no carrier.
+// fixy/session/Handle.h refuses a raw pointer to a channel handle as a
+// session resource, because the handle can move or die first.  So the
+// session takes the handle by move.  The gate does not ask that the
+// footprint of one call fits a residency tier, because a context carries
+// no residency tier (foundation/effects/Ctx.h).
 
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>

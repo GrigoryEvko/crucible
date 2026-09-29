@@ -10,8 +10,6 @@
 // The build refuses both constructs with -Wvla and -Walloca under
 // -Werror, whatever a binding states.  An atom that names one would state
 // a thing that the build forbids.
-//
-// Old spelling: include/crucible/fixy/grant/Stack.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

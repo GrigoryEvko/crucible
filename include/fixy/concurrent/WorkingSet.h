@@ -7,8 +7,6 @@
 // has read the topology: is this work small enough that a second core
 // would only add cache-line ping-pong?  A footprint declared per
 // operation is what makes that answerable without measuring.
-//
-// Old spelling: include/crucible/concurrent/_WorkingSet.h.
 
 #include <concepts>
 #include <cstddef>
@@ -23,10 +21,9 @@ inline constexpr std::size_t unknown_per_call_working_set = std::numeric_limits<
 // Lower bounds on the cache of every supported host, for the decisions
 // that have to be made before the topology has been read.  They live
 // here because this is the one header both consumers already reach: the
-// residency-tier classifier and the workload-budget concept.  They were
-// two separate sets before, one of them naming the same quantity with a
-// _bytes suffix and a different number, so a caller who picked the
-// wrong spelling got a different answer to the same question.
+// residency-tier classifier and the workload-budget concept.  One set
+// serves the two consumers, so a caller cannot get two different
+// answers to the same question.
 //
 // Every use is a lower bound, in both directions of comparison.  The
 // tier classifier asks "does this footprint fit the cache on every
@@ -39,10 +36,9 @@ inline constexpr std::size_t unknown_per_call_working_set = std::numeric_limits<
 //
 // The figures are the per-core cache of the declared x86 baseline,
 // Haswell.  Its L3 varies by part from two to eight megabytes, so four
-// sits inside the range rather than above it.  The previous value of
-// sixteen exceeded every Haswell client part and the eight-megabyte
-// system-level cache of the baseline arm part, so it was not a bound at
-// all.
+// sits inside the range rather than above it.  A value of sixteen
+// exceeds every Haswell client part and the eight-megabyte system-level
+// cache of the baseline arm part, so it is not a bound at all.
 //
 // These are not the figures the cost model uses once the topology has
 // been read.  Topology probes the real machine, and its own fallbacks
@@ -74,13 +70,10 @@ inline constexpr std::size_t lines_plus_cell_working_set_v =
     return a + b;
 }
 
-// True when T declares its own per-call footprint as a constant.  The
-// ported tree wrote this as a void_t trait — a primary, a partial
-// specialization over decltype(integral_constant<...>{}), and a _v
-// alias — which is the pre-concepts spelling of exactly this
-// requires-expression.  Naming integral_constant rather than the member
-// directly is deliberate: it is what forces the member to be a constant
-// expression convertible to size_t, rather than merely present.
+// True when T declares its own per-call footprint as a constant.
+// Naming integral_constant rather than the member directly is
+// deliberate: it is what forces the member to be a constant expression
+// convertible to size_t, rather than merely present.
 template <typename T>
 concept HasStaticPerCallWorkingSet =
     requires { std::integral_constant<std::size_t, std::remove_cvref_t<T>::per_call_working_set>{}; };

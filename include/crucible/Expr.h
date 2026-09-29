@@ -201,10 +201,8 @@ constexpr uint64_t fmix64(uint64_t k) {
 // and change the shared key while every assertion against it still passed.
 // scripts/check-no-combine-ids-duplicate.py is the gate on that.
 //
-// It lives here rather than in safety/diag/StableName.h, where it was
-// written, because MerkleDag.h, Graph.h and ExprPool.h fold with it and
-// are fixy-certified — they cannot name `safety::` to reach it.  Expr.h is
-// upstream of all of them and of StableName.h, which now uses it from here.
+// MerkleDag.h, Graph.h and ExprPool.h fold with it, and Expr.h is upstream
+// of all of them.
 [[nodiscard]] constexpr uint64_t combine_ids(uint64_t a, uint64_t b) noexcept {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
     return fmix64(a);

@@ -9,13 +9,9 @@
 // The vocabulary is borrowed at the effect level only.  There are no
 // refinement types, no decreases-clauses and no termination metric.
 //
-// Old spelling: include/crucible/effects/FxAliases.h.  The old value
-// forms wrapped the DetSafe band in a Progress band, which pinned the
-// termination class of the work.  Progress had no consumer outside the
-// old substrate and did not survive the port, so Pure and Tot are the
-// DetSafe band alone over the Computation, and Div has no value form:
-// without Progress it would be the same type as Tot under a second
-// name.  DivRow, the row form, stays.
+// Pure and Tot are the DetSafe band alone over the Computation.  Div
+// has only its row form, DivRow.  A value form of Div would be the type
+// `Tot<DivRow, T>` under a second name.
 
 #include <fixy/Bands.h>
 #include <foundation/effects/Computation.h>
@@ -67,9 +63,9 @@ concept IsST = Subrow<R, STRow>;
 template <typename R>
 concept IsAll = Subrow<R, AllRow>;
 
-// Value-carrying forms.  A row is the one discrete component that
-// survived, so the two aliases below name every cell worth a name: ST
-// and All are row names.
+// Value-carrying forms.  In a value form the DetSafe tier is always
+// Pure and only the row changes.  So the two aliases below name every
+// cell worth a name, and ST and All are row names.
 //
 // The alias `Pure` and the enum value `DetSafeTier_v::Pure` share a
 // spelling.  The expansions qualify the enum value so the two cannot be

@@ -9,13 +9,8 @@
 // the retag catalog admits the edge and the value constructor of
 // Tagged is private.
 //
-// Old spellings: include/crucible/safety/Path.h and
-// include/crucible/safety/sanitize/_PathTraversal.h.  The two are one
-// header here.  The old pair included each other — Path.h named the
-// sanitizer at its foot, and the sanitizer named Path.h at its head —
-// and the old header comment apologized for the ordering that made
-// that work.  The sanitize directory held that one file.  Declaration
-// order inside a single header carries the same dependency without the
+// The path type and its sanitizer are one header.  Declaration order
+// inside it carries the dependency between the two, with no include
 // cycle.
 
 #include <fixy/Tagged.h>

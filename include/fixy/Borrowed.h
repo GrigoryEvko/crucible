@@ -18,11 +18,10 @@
 // brand of a carrier that has one, and a callee that wants two borrows
 // of the same thing asks for one brand on both.  The constructors are
 // the erased doors: a borrow built through one names no brand and is
-// interchangeable with every other erased borrow of its type, which is
-// the behaviour the tree had before brands.  A branded borrow has no
-// public constructor, so a brand cannot be claimed for a different
-// object by spelling it.  foundation/Brand.h states the facts a brand
-// rests on.
+// interchangeable with every other erased borrow of its type.  A
+// branded borrow has no public constructor, so a brand cannot be
+// claimed for a different object by spelling it.  foundation/Brand.h
+// states the facts a brand rests on.
 //
 // WeakRef is the nullable member of the family: the slot starts empty,
 // holds a borrowed pointer, and may be evicted.  There is no control
@@ -40,11 +39,6 @@
 // borrow taken from a temporary.  Each binding constructor and each
 // mint therefore has a deleted rvalue twin, so the temporary selects
 // the deleted overload and the compiler names the reason.
-//
-// Old spelling: include/crucible/safety/Borrowed.h and
-// include/crucible/safety/WeakRef.h, and the detection surfaces of
-// include/crucible/safety/IsBorrowed.h and
-// include/crucible/safety/IsBorrowedRef.h.
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
@@ -66,11 +60,10 @@ namespace fixy {
 
 namespace detail {
 
-// "structural::" followed by the wrapper's own identifier.  Each of the
-// three wrappers below spelled its name twice, once as the class and
-// once inside a literal on the next line, and a rename moved only one
-// of them.  Reflection reads the identifier off the class, so there is
-// one spelling now.
+// "structural::" followed by the wrapper's own identifier.  Reflection
+// reads the identifier off the class, so the name has one spelling.  A
+// literal beside the class would be a second spelling, and a rename can
+// move only one of the two.
 //
 // The text lives in static storage, so the view stays valid for the
 // whole program.  This is the shape ChainLattice.h uses for
@@ -126,11 +119,11 @@ template <class T, class Tag, class Brand>
 [[nodiscard]] constexpr Borrowed<T, Tag, Brand>
 mint_borrowed(OwnedRegion<T, Tag, Brand>& region CRUCIBLE_LIFETIMEBOUND) noexcept;
 
-// The detection surface of the old IsBorrowed.h and IsBorrowedRef.h.
-// One reflection query answers each, and the associated types are read
-// off the wrapper's own typedefs.  Each concept is the question; the
-// value spelling beside it is derived from it and read by nothing that
-// gates.  They are declared ahead of the classes because the deleted
+// The detection surface of Borrowed and BorrowedRef.  One reflection
+// query answers each, and the associated types are read off the
+// wrapper's own typedefs.  Each concept is the question.  The value
+// spelling beside it is derived from it, and nothing that gates reads
+// it.  They are declared ahead of the classes because the deleted
 // rvalue twins below exclude a Borrowed from the ranges they refuse.
 
 template <typename T>

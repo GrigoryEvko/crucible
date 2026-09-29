@@ -38,43 +38,19 @@
 // fixy/concurrent/Pipeline.h ask is_core_resident or recommend rather
 // than compare sizes of their own.
 //
-// Old spelling: include/crucible/concurrent/ParallelismRule.h.
+// Design notes:
 //
-// Deviations, each deliberate:
+//  1. The working set is the saturated sum of the read and written bytes,
+//     and budget_for_span saturates its product.  A wrapped size reads as
+//     a small set, and the rule would keep a huge set sequential.
 //
-//  1. One WorkBudget.  The old header kept a duplicate of the budget type
-//     of the workload layer, so that layer could include it without a
-//     cycle.  The workload layer did not come to this tree, so this is
-//     the only budget type.
+//  2. One boundary rule: a set fits a tier when it is no larger than the
+//     capacity of the tier.  The rule and the dispatch choice of Pipeline
+//     read the same boundary, so a set of exactly L2 bytes is
+//     core-resident to both.
 //
-//  2. The working set is the saturated sum of the read and written bytes,
-//     and budget_for_span saturates its product.  The old sum and product
-//     could wrap, and a wrapped size reads as a small set, so the rule
-//     kept a huge set sequential.
-//
-//  3. One boundary rule: a set fits a tier when it is no larger than the
-//     capacity of the tier.  The old classify compared strictly, while the
-//     old dispatch choice of Pipeline compared with no-larger-than.  A set
-//     of exactly L2 bytes was then L3-resident to the rule and
-//     core-resident to Pipeline.
-//
-//  4. is_core_private_tier and is_core_resident name the one question the
-//     callers ask.  The old callers each wrote their own comparison.
-//
-//  5. The static tier math did not come: the fleet floors of
-//     TopologyConstexpr.h, fits_in_tier_v, required_tier_for_footprint and
-//     the substrate gates of SubstrateCtxFit.h.  The gates read the
-//     substrate descriptor and the residency axis of the old context, and
-//     neither exists in this tree.  Without the gates, nothing read the
-//     math.  The recommend_parallelism alias did not come either, because
-//     each caller names ParallelismRule::recommend.  The conservative
-//     floors of WorkingSet.h stay, because a compile-time check that must
-//     hold on the smallest supported host reads them.
-//
-//  6. ParallelismRule deletes every constructor and has a user-provided
-//     destructor, the shape of the other static-only holders in this tree.
-//     The old class deleted only its default constructor, so it stayed
-//     trivially copyable, and a byte route could make an object of it.
+//  3. is_core_private_tier and is_core_resident name the one question the
+//     callers ask, so no caller writes its own comparison.
 
 #include <fixy/concurrent/Topology.h>
 #include <foundation/Saturate.h>
@@ -276,7 +252,7 @@ static_assert(ladder::round_to_factor_ladder(16) == ladder::kMaxFactor);
 static_assert(ladder::round_to_factor_ladder(kMaxSize) == ladder::kMaxFactor);
 static_assert(ladder::round_to_factor_ladder(ladder::kL3ResidentMaxFactor) == ladder::kL3ResidentMaxFactor);
 
-// Deviation 2: neither the sum nor the product wraps.
+// Design note 1: neither the sum nor the product wraps.
 static_assert(WorkBudget{.read_bytes = kMaxSize, .write_bytes = 1}.working_set_bytes() == kMaxSize);
 static_assert(WorkBudget{.read_bytes = 3, .write_bytes = 4}.working_set_bytes() == 7);
 static_assert(ParallelismRule::budget_for_span<std::uint64_t>(kMaxSize / 2).read_bytes == kMaxSize);

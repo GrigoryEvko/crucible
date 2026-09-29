@@ -3,8 +3,6 @@
 // The call-shape atoms: how a binding reaches the code it calls.
 // Every atom here engages Axis::CallShape.  Each atom here has a rule
 // that reads it.
-//
-// Old spelling: include/crucible/fixy/grant/Dispatch.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>

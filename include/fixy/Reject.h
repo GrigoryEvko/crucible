@@ -15,11 +15,10 @@
 // earlier tier already failed, so a reader sees one message and not a
 // cascade.
 //
-// The diagnostics are class templates, not 66 hand-stamped classes.
-// The old tree wrote one FixyNotEngaged_* and one FixyDuplicate_* tag
-// per axis, so adding an axis meant editing two more places and the
-// cardinality pins could not tell a missing tag from a renamed one.  A
-// tag parameterised on the axis is generated the moment the axis is
+// The diagnostics are class templates, not one hand-stamped class per
+// axis.  A hand-stamped tag per axis needs an edit for each new axis,
+// and a count of the tags cannot tell a missing tag from a renamed one.
+// A tag parameterised on the axis is generated the moment the axis is
 // declared, and its name is the axis identifier read by reflection.
 //
 // These tags derive foundation::diag::tag_base, which is what makes
@@ -27,8 +26,6 @@
 // NOT join foundation::diag::Category: that enum is append-only and its
 // ordinals are pinned into federation cache keys, so a per-axis family
 // has no business there.
-//
-// Old spelling: include/crucible/fixy/_Reject.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -71,9 +68,9 @@ concept AllAtomsWellFormed = (::fixy::atom::IsAtom<Atoms> && ...);
 //
 // There is no tier 3.  An axis the pack says nothing about resolves to
 // its strict pole, silently, so a missing atom is not a rejection and
-// needs no check.  The old tree had a tier here that demanded an
-// explicit accept_default_strict_for marker on every unmentioned axis;
-// with 33 axes that made the common binding unwritable.
+// needs no check.  A tier that demanded a marker on each unmentioned
+// axis would make the common binding unwritable, because the table has
+// 33 axes.
 
 namespace detail::reject {
 

@@ -11,15 +11,10 @@
 // The tags the atoms take as arguments live beside the family that
 // reads them, under fixy::io, fixy::fs and fixy::mmap.  The bit maps
 // from a tag to its O_*, PROT_*, MAP_* or IORING_SETUP_* value need the
-// OS headers and belong to the os/ ports, so this header includes no
-// <sys/*.h>, <linux/*.h> or <fcntl.h>.
+// OS headers and belong to the headers under fixy/os/, so this header
+// includes no <sys/*.h>, <linux/*.h> or <fcntl.h>.
 //
-// Old spellings: include/crucible/fixy/Io.h (io), include/crucible/fixy/Fs.h
-// (fs), include/crucible/fixy/Mmap.h (mmap and leak).  Only the tags that
-// reach a real operation are ported: the engines, zero-copy paths and
-// ring flags that no mint accepted, the TmpFile mode, the Directory,
-// NonBlock and Path flags, the Msync sync and the LinkAtomic commit stay
-// in the old tree.
+// Each tag here reaches a real operation.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -160,10 +155,7 @@ using fs_row = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::f
 
 // Mapping and unmapping can both park the caller — on page-cache
 // pressure, on a NUMA-remote page fault, on write-back — so Block is
-// required alongside IO.  The old syscall bridge said a mapping carries
-// IO alone because the cost is paid later by page faults; the old mmap
-// mint gated the real call on IO and Block, and the gate that reached a
-// call is the one this row follows.
+// required alongside IO.
 using mmap_row = ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
 // A deliberate leak is the absence of the matching unmap call.  It
@@ -302,12 +294,11 @@ using leak_atom_roster = std::tuple<leak::resource<leak_sample_rationale>>;
 
 using os_atom_roster = roster_cat_t<io_atom_roster, fs_atom_roster, mmap_atom_roster, leak_atom_roster>;
 
-// The nine namespaces the OS tags live in.  A hand-written roster of
-// the thirty-five tag types stood here, and a check that walks a hand
-// list cannot see what the list omits: a tag added to one of these
-// namespaces and forgotten in the roster was never checked at all.
-// The walk below reads each namespace instead, so a new tag is checked
-// the moment it is declared.
+// The ten namespaces that the OS tags live in.  A check that walks a
+// hand list cannot see what the list omits: a tag added to one of these
+// namespaces and forgotten in the list is never checked.  So the walk
+// below reads each namespace, and a new tag is checked the moment it is
+// declared.
 //
 // The shape is the one fail_closed::every_class_in_has_edge uses at
 // foundation/diag/FailClosed.h: a member that is not a type, is a type

@@ -11,25 +11,9 @@
 // which is the same type; the role is then the spelling a reader
 // recognises, not a second door.
 //
-// The old tree spelled each stance with thirty-two accept-the-default
-// markers beside the one or two atoms that said anything.  Those
-// markers went with the engagement tier, so a role here is the
-// atoms it names and the strict poles it does not.
-//
-// Six old stances are not carried: NamedSession, SyncBlocking,
-// RealtimeHot, InternalApi, UnclassifiedScratch and AsyncEndpoint.  No
-// production site spelled any of them.  The search
-// `rg 'stance::(NamedSession|SyncBlocking|RealtimeHot|InternalApi|
-// UnclassifiedScratch|AsyncEndpoint)'` over include/crucible/*.h, src
-// and vessel finds nothing; widened to every tree, the hits are the old
-// sentinel test/test_fixy_fn.cpp, fifteen fixtures under
-// test/fixy_neg/ and test/test_row_hash_distinctness.cpp, each of which
-// includes the old Fn.h and goes with it.  Every one of the six was one or two atoms
-// over a pack a caller can write; InternalApi and UnclassifiedScratch
-// existed only so that every security level was reachable through
-// some stance, and as_internal and as_unclassified are atoms.
-//
-// Old spelling: include/crucible/fixy/_Fn.h, namespace stance.
+// A role is the atoms it names and the strict poles of the axes it does
+// not name.  It spells no marker that accepts a default, because fn has
+// no engagement tier.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -225,9 +209,8 @@ static_assert(::foundation::diag::row_hash_contribution_v<::fixy::role::PureLine
 //
 // The pairs above pin one axis-family each, which is what a regression
 // produces.  This is the floor under all of them, and it is the check
-// that would have caught the row-hash fold going missing in the first
-// place: with no fold, every role answers the primary template's zero and
-// every row below reddens at once.
+// that catches a missing row-hash fold: with no fold, every role answers
+// the primary template's zero and every row below reddens at once.
 //
 // Zero is a sound floor and not an arbitrary one.  It is the answer the
 // primary template gives a type carrying no row, so a binding that folds

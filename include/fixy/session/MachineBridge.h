@@ -19,8 +19,6 @@
 // protocols whose local view is a perfectly valid session over this
 // machine.  Single-party typestate is the intended use and is left to
 // caller discipline.
-//
-// Old spelling: include/crucible/bridges/_MachineSessionBridge.h.
 
 #include <fixy/Machine.h>
 #include <fixy/session/Entry.h>

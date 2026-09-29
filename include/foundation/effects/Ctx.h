@@ -677,10 +677,8 @@ namespace detail::ctx_witnesses {
 // They live in the header rather than in a test because Capability.h,
 // Computation.h, Permission.h and the fixtures of all three name them.
 // The assertions below are invariants of the shipped concepts read
-// against these shapes.  The scenarios that once sat here — building a
-// promotion chain, probing with_cap, driving every operation at run
-// time — moved to test/foundation/test_ctx.cpp, which is why this
-// namespace no longer says self_test.
+// against these shapes.  test/foundation/test_ctx.cpp builds a promotion
+// chain, probes with_cap and drives every operation at run time.
 using FgWitness = ExecCtx<ctx_cap::Fg, Row<>>;
 using BgWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
@@ -689,18 +687,10 @@ using InitWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>;
 using InitBlockWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>;
 using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>;
 
-// The five named contexts of include/crucible/effects/_ExecCtx.h, with
-// the six policy axes this layer dropped removed and the two that
-// survive — the capability source and the row — kept exactly.  The
-// port handed these to fixy/Ctx.h by name and recorded their rows nowhere
-// that deleting the old tree would not erase; this is that record.
-// Each is one witness above, and the assertion after each restates the
-// row the old tree declared, so the layer that promotes them to
-// production contexts starts from a declaration rather than from
-// memory.  The comment on each is the old tree's.
-//
-// The two load contexts are not in the old tree.  Each claims Block on
-// top of a row of the old tree, and the comment on each is new.
+// The seven named contexts.  Each has two axes, the capability source
+// and the row.  Each is one witness above, and the assertion after each
+// states its row, so the layer that promotes them to production
+// contexts starts from a declaration.
 
 // The context of the foreground thread that runs dispatch.
 using HotFgCtx = FgWitness;

@@ -2,27 +2,15 @@
 
 // Clock and counter readers, each minted against an execution context.
 //
-// Old spelling: include/crucible/fixy/_Time.h.
-//
-// Three things the old header carried are gone.  The grant tags
-// grant::time::{clock_read, tsc_read, sleep} and their which_dim rows
-// are decoration: nothing outside their own self-test reads them.  Hw.h
-// came in for TscMode alone, which is declared below instead.
-//
-// Two things the old tree carried elsewhere, in safety/_Mutation.h's
-// MonotonicClock, are here now: the gate that keeps a clock read off the
+// The header also holds the gate that keeps a clock read off the
 // replay-bound foreground path, and the clamp that keeps two reads
-// through one reader from regressing.  Neither came with the first port
-// of this header, because its source never had them, and the wrapper
-// port that dropped the class did not say so.
+// through one reader from regressing.
 //
 // The PTP hardware clock has a reader of its own, PtpClockReader.  The
-// old tree had none.  src/topology/Ptp.cpp read the clock itself and
-// stamped the value through mint_clock_source, a factory that stamps any
-// value with any source.  Before the stamp, Ptp.cpp clamped a negative
-// field to zero.  The stamp then claimed a reading that the clock never
-// returned.  The reader here owns the /dev/ptpN descriptor, stamps only
-// what clock_gettime returned on it, and refuses a negative field.
+// reader owns the /dev/ptpN descriptor, stamps only what clock_gettime
+// returned on it, and refuses a negative field.  It clamps no field to
+// zero, because a stamp of a clamped value claims a reading that the
+// clock never returned.
 
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -54,9 +42,7 @@
 
 namespace fixy::time {
 
-// The old tree read these names out of its safety namespace, which is
-// fixy now.  Keeping the alias keeps every use site below spelled as it
-// was.
+// sf names ::fixy, where the clock-source wrapper and the pin proof live.
 namespace sf = ::fixy;
 namespace eff = ::foundation::effects;
 namespace ml = ::foundation::algebra::lattices;
@@ -64,8 +50,6 @@ namespace ml = ::foundation::algebra::lattices;
 using sf::ClockSource_v;
 using sf::MonotonicClockBytes;
 
-// Moved in from include/crucible/fixy/_Hw.h, which the port no longer
-// includes.  Hw.h supplied this one enum and nothing else.
 enum class TscMode : std::uint8_t {
     NotAllowed,
     SerializedPinned,  // rdtscp + lfence
@@ -200,19 +184,18 @@ namespace detail {
 // A multi-core mask still lets the thread migrate, and the counter is
 // per-core, so only a single-core pin makes two reads comparable.
 //
-// This concept reads the mask off the type, and the type is now enough.
+// This concept reads the mask off the type, and the type is enough.
 // CpuPinned has one constructor, it is private, and its sole friend is
 // fixy::sched::mint_affinity, which hands a proof back only after
 // sched_setaffinity returned 0 for that same mask.  So a PinT that
 // satisfies this concept was pinned, and the gate stands on the pin
 // rather than on the shape of a token anyone could build.
 //
-// It did not, until the doors were closed.  Three public constructors
-// and a free mint built one out of nothing, and a forged single-core
-// pin passed this concept on a thread that could migrate — which makes
-// two TSC reads two different counters, with no crash and no diagnostic
-// to say so.  test/fixy/neg/neg_os_cpu_pinned_*.cpp is the standing
-// witness on each closed route.
+// A forged single-core pin passes this concept on a thread that can
+// migrate, and two TSC reads then come from two different counters,
+// with no crash and no diagnostic to say so.
+// test/fixy/neg/neg_os_cpu_pinned_*.cpp is the standing witness that each
+// route to a forged pin is closed.
 //
 // The recognition is the reflection query of foundation/reflect/
 // Instance.h, which no translation unit can specialize.  A variable
@@ -227,7 +210,7 @@ concept IsSingletonCpuPin =
 // explicit posture, because an auto pin can still migrate.  The reader
 // owns it, so the caller gives up its pin: an lvalue or a const pin is
 // refused, and the call site names the move.  A forwarding reference
-// that took an lvalue moved the caller's pin out with no std::move in
+// that takes an lvalue moves the caller's pin out with no std::move in
 // sight.
 template <typename PinT>
 concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_reference_v<PinT> && !std::is_const_v<PinT>
@@ -257,8 +240,7 @@ concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_refere
     }
 }
 
-// The clamp safety/_Mutation.h's MonotonicClock carried, verbatim in
-// effect: if the underlying clock goes backward, the previously observed
+// The clamp: if the underlying clock goes backward, the previously observed
 // value is returned instead, so two reads through one reader never
 // regress.  Detecting the clock fault is the host monitoring layer's
 // job, not this one's.  It is a free function over the caller's floor so
@@ -272,9 +254,9 @@ concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_refere
 
 // Reading a clock on the replay-bound foreground path makes replay
 // diverge across machines, so a reader is minted only by a context that
-// owns Bg, Init or Test.  The name is the one safety/_Mutation.h gave
-// this gate; it holds for every clock-backed source, because the replay
-// argument does not depend on which clock diverges.
+// owns Bg, Init or Test.  The name says monotonic, but the gate holds
+// for every clock-backed source, because the replay argument does not
+// depend on which clock diverges.
 template <typename Ctx>
 concept CtxFitsMonotonicClock =
     eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Init, eff::Effect::Test>;
@@ -379,8 +361,7 @@ private:
     mutable clamp_state last_;
 };
 
-// The name safety/_Mutation.h gave the clamped, gated monotonic reader.
-// It names the same thing here.
+// The clamped, gated monotonic reader.
 using MonotonicClock = ClockReader<ClockSource_v::Monotonic>;
 
 template <typename Ctx, TscMode Mode, typename PinT>
@@ -660,9 +641,6 @@ template <eff::IsExecCtx Ctx>
 
 namespace fixy::time::detail::clock_reader_invariants {
 
-// The nine grant-tag assertions the old self-test carried are not
-// ported, because the tags they read are not ported.
-
 static_assert(ClockBacked<ClockSource_v::Monotonic>);
 static_assert(ClockBacked<ClockSource_v::Boot>);
 static_assert(!ClockBacked<ClockSource_v::TscRaw>);
@@ -777,9 +755,6 @@ static_assert((~static_cast<unsigned int>(detail::ptp_clockid_from_fd(3)) >> 3u)
 // The readers and the sleeper are exercised in test/fixy/test_os_time.cpp,
 // which is also where the TSC leg lives: a TSC read needs a pin from
 // fixy::sched::mint_affinity, and that lives in fixy/os/Sched.h, so the
-// case belongs in a translation unit that includes both headers.  The
-// old tree read the TSC through a pin its own smoke test minted for
-// itself with no sched_setaffinity on the path, which is the forgery
-// the proof exists to prevent.
+// case belongs in a translation unit that includes both headers.
 
 }  // namespace fixy::time::detail::clock_reader_invariants

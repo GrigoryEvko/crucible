@@ -2,11 +2,11 @@
 
 // One bounded chain over a 64-bit counter, instantiated once per axis.
 //
-// Four axes of the old tree were the same lattice under four names: the
-// fleet epoch, the node generation, the peak byte count and the bits
-// budget.  Each is the numeric order on a 64-bit unsigned count, with
-// zero at the bottom, the largest value at the top, the maximum as join
-// and the minimum as meet.  This header states the lattice one time, and
+// Four axes are the same lattice under four names: the fleet epoch, the
+// node generation, the peak byte count and the bits budget.  Each is the
+// numeric order on a 64-bit unsigned count, with zero at the bottom, the
+// largest value at the top, the maximum as join and the minimum as meet.
+// This header states the lattice one time, and
 // the tag parameter keeps the four axes apart: each instantiation has its
 // own nested element type, so an epoch cannot be assigned from a
 // generation, compared with one or joined with one.
@@ -69,9 +69,6 @@
 // that states neither, and Graded refuses a version counter in its
 // numeric order at the template head.  A value graded by its version uses
 // the order dual, as fixy/EpochVersioned.h does through DualLattice.h.
-//
-// Old spellings: include/crucible/algebra/lattices/{_EpochLattice,
-// _GenerationLattice,_PeakBytesLattice,_BitsBudgetLattice}.h.
 
 #include <foundation/Lifetime.h>
 #include <foundation/Saturate.h>

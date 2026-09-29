@@ -704,8 +704,9 @@ static_assert(!detail::extract_admits_payload_v<::foundation::permissions::Permi
 static_assert(!detail::extract_admits_payload_v<::foundation::permissions::SharedPermission<AuthorityProbeTag>>);
 static_assert(!detail::extract_admits_payload_v<ExecCtx<Bg, Row<Effect::Bg>>>);
 
-// And each one through a pure carrier, which is the exact shape the old
-// primary admitted: the row is empty and the authority is inside.
+// And each one through a pure carrier.  The row is empty and the
+// authority is inside, so a relation that read only the row would admit
+// it.
 
 static_assert(!detail::extract_admits_payload_v<Computation<Row<>, Capability<Effect::IO, Bg>>>);
 static_assert(

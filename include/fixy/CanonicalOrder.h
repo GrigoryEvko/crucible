@@ -12,13 +12,6 @@
 // out-of-order stack where it is written, instead of leaving it to
 // surface later as a cache miss. A site that wants a deliberately
 // different slot simply does not constrain.
-//
-// The old order also held MemOrder and Progress between Wait and Stale.
-// Neither band has a carrier in this tree, so the positions close up
-// over the gap.
-//
-// Old spelling: include/crucible/safety/diag/CanonicalOrder.h, namespace
-// crucible::safety::diag::canonical_order.
 
 #include <fixy/Bands.h>
 #include <fixy/Qtt.h>

@@ -22,19 +22,14 @@
 // enumerator in every case — reassociation forbidden, contraction off,
 // subnormals preserved, denormals honored.
 //
-// The four setting enums are the ones a collision rule reads.  The old
-// FpModeLattice carried seven more — rounding, trap mask, NaN and Inf
-// policy, complex layout, libm policy, constant rounding — and no rule
-// reads any of them.  An atom no rule can reject on is decoration, so
-// they are not restated here; the product accepts any enum, and the day
-// a rule reads one of the seven, adding it is one enum and one line in
-// the self-test.
+// The four setting enums are the ones a collision rule reads.  Other FP
+// settings exist — rounding, trap mask, NaN and Inf policy, complex
+// layout, libm policy, constant rounding — and no rule reads them.  An
+// atom that no rule can reject on is decoration, so this header declares
+// no enum for them.  The rule that first reads one adds its enum to the
+// product.
 //
-// The enums are declared here verbatim because foundation ports no
-// FpMode lattice and the old one at
-// include/crucible/algebra/lattices/FpModeLattice.h is not carried
-// across, and port-drops.txt records each of its symbols against this
-// header.  Same names, same values.
+// The enums are declared here because foundation has no FpMode lattice.
 //
 // ---------------------------------------------------------------------
 // No lift
@@ -67,9 +62,8 @@ namespace fixy::atom::fp {
 
 inline constexpr atom_seal atom_namespace_seal{};
 
-// Old spellings: crucible::algebra::lattices::{FpReassociate, FpContract,
-// FpFtz, FpDenormalInput}.  The first enumerator of each is the strict
-// value a mode takes when it does not name the setting.
+// The first enumerator of each enum is the strict value that a mode takes
+// when it does not name the setting.
 enum class FpReassociate : std::uint8_t {
     Forbidden = 0,
     BoundedTreeDepth = 1,  // log-N tree only, so the topology stays pinned

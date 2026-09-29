@@ -60,8 +60,8 @@ namespace fixy::mmap {
 // The PROT_* word of each protection tag and the MAP_* bits of each share
 // tag.  A tag reaches mmap only through a row of these tables, and
 // fixy/os/AtomPack.h says why a table is closed: a class template map
-// took a specialization for a class of the caller, and that class then
-// brought PROT_WRITE | PROT_EXEC to the door.  No row is PROT_NONE or a
+// takes a specialization for a class of the caller, and that class can
+// then bring PROT_WRITE | PROT_EXEC to the door.  No row is PROT_NONE or a
 // zero share word, so a tag with no row is refused rather than mapped as
 // a page that nobody may touch.
 inline constexpr ::fixy::atom_pack::tag_row<int> prot_table[] = {
@@ -206,7 +206,7 @@ class [[nodiscard]] OwnedMmap {
     void* addr_ = MAP_FAILED;
     std::size_t len_ = 0;
 
-    // Private, and mint_region is its only caller.  A public one let any
+    // Private, and mint_region is its only caller.  A public one lets any
     // address be claimed, and the destructor unmaps whatever it was
     // claimed over.
     explicit OwnedMmap(void* address, std::size_t length) noexcept : addr_{address}, len_{length} {}
@@ -313,7 +313,7 @@ static_assert(sizeof(SmokeOwnedMmap) == sizeof(void*) + sizeof(std::size_t),
               "OwnedMmap is exactly {addr, len} — no hidden padding");
 
 // The construction door, checked from a scope the class does not
-// befriend.  A public constructor over an address let a caller claim a
+// befriend.  A public constructor over an address lets a caller claim a
 // mapping it never made, and the destructor unmaps whatever it holds, so
 // a stack address handed in here is a stack address unmapped on scope
 // exit.  mint_region is the only way to a non-empty region, and it builds

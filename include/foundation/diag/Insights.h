@@ -104,10 +104,6 @@ struct insight_provider {
 // A second invocation for one tag is a redefinition. Changing a
 // severity means removing the first invocation, which puts the change in
 // front of a reviewer.
-//
-// The frozen tree defines CRUCIBLE_DEFINE_INSIGHTS, which registers into
-// its own catalog with its own severity type.  These macros carry a
-// different name, so one translation unit can include both trees.
 #define CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating) \
     namespace foundation::diag {                                                 \
     template <>                                                                  \

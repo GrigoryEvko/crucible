@@ -10,13 +10,9 @@
 // the second — a cell is overwritten in place and never destroyed, so a
 // type that owns anything would leak once per slot per lap.
 //
-// The ported tree stated this predicate twice, as SpscValue in
-// SpscRing.h and as RingValue in MpscRing.h, with identical bodies.
-// Two names for one rule read as two rules, and a reader has to compare
-// them to find out they agree.  One name, stated once.
-//
-// Old spelling: include/crucible/concurrent/_SpscRing.h (SpscValue) and
-// include/crucible/concurrent/_MpscRing.h (RingValue).
+// SpscRing.h and MpscRing.h both constrain their cells with this one
+// concept.  Two names for one rule read as two rules, so the rule has
+// one name.
 
 #include <type_traits>
 

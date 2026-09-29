@@ -7,8 +7,6 @@
 // The wrapper does not know which flags exclude each other.  A pair of
 // mutually exclusive flags can still be set together, and enforcing
 // that would need a per-enum statement of which sets are exclusive.
-//
-// Old spelling: include/crucible/safety/Bits.h.
 
 #include <foundation/Platform.h>
 

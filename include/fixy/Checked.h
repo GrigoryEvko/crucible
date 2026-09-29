@@ -1,8 +1,6 @@
 #pragma once
 
 // Arithmetic that names its overflow behaviour at the call site.
-//
-// Old spelling: include/crucible/safety/Checked.h.
 
 #include <foundation/Platform.h>
 #include <foundation/Saturate.h>

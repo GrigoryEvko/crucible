@@ -9,13 +9,11 @@
 // "strictest on all 33 axes", and every atom the author writes relaxes
 // exactly one axis away from strict.
 //
-// The old tree made the opposite choice.  It had an engagement tier
-// that demanded an `accept_default_strict_for<Axis>` marker on every
-// axis the pack did not mention, so the shortest honest binding named
-// 32 axes it had nothing to say about.  With 33 axes that is not a
-// discipline, it is a tax, and the markers carried no information
-// because they could not say anything but "default".  They are gone,
-// along with Profile.h, sketch mode and CRUCIBLE_FIXY_STRICT.
+// There is no engagement tier.  A marker that accepts the default on
+// each axis the pack does not mention would make the shortest honest
+// binding name 32 axes it has nothing to say about.  With 33 axes that
+// is not a discipline, it is a tax, and such a marker carries no
+// information, because it cannot say anything but "default".
 //
 // The resolver is one fold and not 45 specializations, and it is
 // fixy::collision::grades in fixy/Collision.h, which the collision rules
@@ -23,8 +21,6 @@
 // and takes the entry whose axis agrees, or the strict pole of the axis
 // when no entry agrees.  An axis added to the enum takes no edit here,
 // and an atom takes no edit other than its own declaration.
-//
-// Old spelling: include/crucible/fixy/_Fn.h, include/crucible/safety/_Fn.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -197,11 +193,10 @@ public:
     constexpr fn() = default;
 
     // The accessors read and consume; none of them hands out a mutable
-    // lvalue reference.  The old tree published one deducing-this
-    // `auto&& value()`, which returns Type& for a non-const lvalue, and
-    // that reopened the door the private constructor closes: with a
-    // public default constructor, `fn<T, atoms...>{}.value() = x` wraps
-    // any value under any pack without naming a mint.  Consuming
+    // lvalue reference.  An accessor that returns Type& for a non-const
+    // lvalue would reopen the door the private constructor closes: with
+    // a public default constructor, `fn<T, atoms...>{}.value() = x` would
+    // wrap any value under any pack without naming a mint.  Consuming
     // through the rvalue overload still moves the payload out, which is
     // the only mutation a binding's own discipline permits.
     [[nodiscard]] constexpr const held_& value() const& noexcept { return value_; }
@@ -322,9 +317,9 @@ concept CtxAdmitsBinding =
 // offer.  It folds its own axes instead.
 //
 // The roster is derived from the Axis enum rather than listed, so an axis
-// added to the table folds in without an edit here.  A listed roster is
-// how the old tree lost axes: it spelled nineteen template parameters by
-// hand, and an axis outside that list could not reach the key at all.
+// added to the table folds in without an edit here.  A listed roster can
+// lose an axis, and an axis outside the list cannot reach the key at
+// all.
 //
 // Three shapes of grade fold three ways.
 //
@@ -453,9 +448,7 @@ namespace foundation::diag {
 // fixy/Atom.h settles it a second way, definitionally: `as_classified`
 // "names the strict pole explicitly".  The atom exists in order to write
 // the default out, and the fold above already holds that writing an axis
-// out is a diagnostic distinction rather than an identity one.  Before
-// this, the one atom whose whole purpose was to spell the default was
-// also the one that moved the key.
+// out is a diagnostic distinction rather than an identity one.
 //
 // `as_secret` is the third spelling the same predicate accepts, and it is
 // deliberately NOT mapped here.  fixy/Atom.h gives it a residual claim

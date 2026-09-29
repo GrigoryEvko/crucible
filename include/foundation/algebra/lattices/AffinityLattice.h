@@ -12,8 +12,6 @@
 // std::bitset.  A bitset is functionally equivalent, but its
 // implementation is not guaranteed trivially relocatable, and this type
 // is the grade of a layout-critical carrier.
-//
-// Old spelling: include/crucible/algebra/lattices/AffinityLattice.h.
 
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>

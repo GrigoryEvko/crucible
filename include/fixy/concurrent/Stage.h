@@ -11,10 +11,9 @@
 // fixy/concurrent/Pipeline.h checks it: the producer handle of one stage and
 // the consumer handle of the next name the same channel.
 //
-// Old spelling: include/crucible/concurrent/Stage.h.  MpmcStage and
-// SwmrStage have a private constructor.  Their one friend is the door of
-// fixy/concurrent/StageEndpointBridge.h, which builds each stage for its
-// mint.
+// MpmcStage and SwmrStage have a private constructor.  Their one friend is
+// the door of fixy/concurrent/StageEndpointBridge.h, which builds each
+// stage for its mint.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -448,8 +447,7 @@ struct FakeProducer {
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
 
-// The single-writer pole, which the old self-test never stood a witness
-// for.  SwmrStage below is instantiated over it.
+// The single-writer pole.  SwmrStage below is instantiated over it.
 template <typename T>
 struct FakeWriter {
     using channel_type = FakeCell<T>;
@@ -539,11 +537,10 @@ static_assert(!MintStageCallable<&stage_io_output, HotFgCtx>);
 static_assert(MintStageCallable<&stage_pass_through, HotFgCtx> == CtxFitsStage<&stage_pass_through, HotFgCtx>);
 static_assert(MintStageCallable<&stage_bg_input, HotFgCtx> == CtxFitsStage<&stage_bg_input, HotFgCtx>);
 
-// The two other stage shapes, which the old self-test stated the gates
-// for and never instantiated.  A fan-in body with two consumer handles
-// and one producer handle, and a body that publishes into a
-// single-writer cell.  Both have a private door, so the witness roster
-// forges them through these names.
+// The two other stage shapes, each instantiated here and not only gated.
+// A fan-in body with two consumer handles and one producer handle, and a
+// body that publishes into a single-writer cell.  Both have a private
+// door, so the witness roster forges them through these names.
 
 inline void stage_fan_in_two(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 static_assert(VariadicPipelineStage<&stage_fan_in_two>);

@@ -4,8 +4,6 @@
 // exactly one publisher over its whole lifetime.  PublishSlot takes a
 // publisher again and again and lets a consumer take the pointer back
 // out.
-//
-// Old spelling: include/crucible/handles/PublishOnce.h.
 
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>

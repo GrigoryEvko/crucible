@@ -7,17 +7,14 @@
 // to the first observer that asks.  The channel refuses each later
 // request.
 //
-// Old spelling: include/crucible/handles/LazyEstablishedChannel.h.
+// ── Design notes ─────────────────────────────────────────────────────
 //
-// ── Differences from the old spelling ────────────────────────────────
-//
-//   * The old observe() minted a new handle on each call.  Any number of
-//     live handles then held one protocol position over one resource,
-//     each handle owed the next step, and no handle knew of the others.
-//     mint_established_session gives one handle, one time.
+//   * mint_established_session gives one handle, one time.  Two live
+//     handles at one protocol position over one resource would each owe
+//     the next step, and neither would know of the other.
 //   * The Resource is a Pinned object, and the session holds it by
-//     lvalue reference.  The old handle held a raw pointer, which
-//     fixy::session::SessionResource refuses.
+//     lvalue reference.  fixy::session::SessionResource refuses a raw
+//     pointer.
 //   * The mint takes an execution context.  The gate of
 //     fixy::session::mint_session decides if the context can run the
 //     protocol.

@@ -9,32 +9,27 @@
 // can reject it by searching the type tree rather than trusting the
 // declaration.
 //
-// Old spelling: include/crucible/fixy/ctrl/Throws.h.
+// Design notes:
 //
-// Deviations, each deliberate:
-//
-//  1. The needle is the template, not one specialization of it.  The old
-//     header aliased `throws = grant::ctrl::throws<>` and searched for
-//     that one type, so a callable carrying throws<MyException> passed
-//     the gate: the atom is parametric on the exception family, the
-//     default family is only one of its specializations, and the walk
-//     descended into the family argument without ever matching the
-//     carrier.  Both trees had that hole and neither disclosed it.  The
+//  1. The needle is the template, not one specialization of it.  The
+//     atom is parametric on the exception family, and the default family
+//     is only one of its specializations.  A search for throws<> alone
+//     passes a callable carrying throws<MyException>: the walk descends
+//     into the family argument without ever matching the carrier.  The
 //     match here is the reflection query of foundation/reflect/Instance.h
 //     asked of the template, so every family is caught.  A gate that
 //     rejects a throwing callable has to reject all of them.
 //
-//  2. The walk takes a predicate rather than a type.  One recursion now
-//     serves both the exact-type search the old header exported and the
-//     template search the throws gate wants, instead of a second copy of
-//     the descent.  type_tree_contains_v keeps the old exact-match
-//     meaning for every other caller.
+//  2. The walk takes a predicate rather than a type.  One recursion
+//     serves both the exact-type search and the template search the
+//     throws gate wants, so there is no second copy of the descent.
+//     type_tree_contains_v is the exact-type search.
 //
-//  3. There is no `fixy::throws` alias.  The old one named the
-//     default-family specialization, which is exactly the type this
-//     header no longer treats as the whole answer, so a short name for
-//     it would invite the bug deviation 1 closes.  Callers name
-//     fixy::atom::ctrl::throws<> when they mean that one specialization.
+//  3. There is no `fixy::throws` alias.  A short name for the
+//     default-family specialization invites the bug design note 1
+//     closes, because that one type is not the whole answer.  Callers
+//     name fixy::atom::ctrl::throws<> when they mean that one
+//     specialization.
 //
 // The walk is foundation/reflect/TypeComponents.h.  It reads each type
 // argument and the type of each value argument, so a carrier with a
@@ -130,7 +125,8 @@ static_assert(type_tree_contains_throws_v<std::tuple<int, ctrl::throws<> const&>
 static_assert(type_tree_contains_throws_v<std::tuple<int, std::tuple<ctrl::throws<>, double>>>);
 static_assert(type_tree_contains_throws_v<std::tuple<int, std::tuple<unrelated_tag, std::tuple<ctrl::throws<>>>>>);
 
-// A named family nested, which is the case the old needle missed.
+// A named family nested, which is the case that a search for throws<>
+// alone misses.
 static_assert(type_tree_contains_throws_v<std::tuple<int, ctrl::throws<sample_exception>>>);
 static_assert(type_tree_contains_throws_v<std::tuple<std::tuple<ctrl::throws<sample_exception>>, double>>);
 
@@ -155,7 +151,7 @@ static_assert(!type_tree_contains_throws_v<std::tuple<ctrl::any_exception>>);
 static_assert(std::is_final_v<ctrl::throws<>>);
 static_assert(std::is_final_v<ctrl::throws<sample_exception>>);
 
-// The exact-type search keeps its old meaning, including for a needle
+// The exact-type search matches an exact type, including for a needle
 // that has nothing to do with control flow.
 static_assert(type_tree_contains_v<unrelated_tag, unrelated_tag>);
 static_assert(type_tree_contains_v<unrelated_tag, std::tuple<int, unrelated_tag>>);
@@ -168,8 +164,7 @@ static_assert(!type_tree_contains_v<ctrl::throws<>, ctrl::throws<sample_exceptio
 static_assert(type_tree_contains_throws_v<ctrl::throws<sample_exception>>);
 
 // A carrier with a non-type parameter is descended through its type
-// arguments.  The old recursion matched only templates whose parameters
-// were all types, so this atom was not found.
+// arguments.
 template <int N, typename T>
 struct nttp_carrier {};
 static_assert(type_tree_contains_throws_v<nttp_carrier<1, ctrl::throws<>>>);
@@ -177,8 +172,8 @@ static_assert(type_tree_contains_throws_v<std::tuple<int, nttp_carrier<2, ctrl::
 static_assert(!type_tree_contains_throws_v<nttp_carrier<1, int>>);
 
 // A plain class that holds a throwing wrapper in a member is found.  A
-// template argument never names that member, so the old recursion
-// could not see it.
+// template argument never names that member, so a walk over template
+// arguments alone does not see it.
 struct holds_throwing_member {
     std::tuple<int, ctrl::throws<>> held;
 };

@@ -14,11 +14,10 @@
 // nearer to a second node than to a third is a different lattice, with
 // a type of its own.
 //
-// Old spelling: include/crucible/algebra/lattices/NumaNodeLattice.h.  The
-// order, the two sentinel values and the witnesses are the same.  The
-// runtime smoke test moved to test/foundation/test_lattices_bands.cpp,
-// and the predicate is_concrete_numa_node is new.  fixy/os/NumaPlacement.h
-// reads it, because the kernel binds memory to a concrete node only.
+// The predicate is_concrete_numa_node refuses the two sentinel values.
+// fixy/os/NumaPlacement.h reads it, because the kernel binds memory to a
+// concrete node only.  test/foundation/test_lattices_bands.cpp runs the
+// lattice at run time.
 
 #include <foundation/algebra/Lattice.h>
 

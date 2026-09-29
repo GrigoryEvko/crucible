@@ -4,13 +4,6 @@
 // CAP_SYS_NICE and fails for an unprivileged thread. A proof that claims the
 // thread is pinned, real-time or niced must not exist when the syscall failed,
 // so every mint here returns the errno and lets the caller decide.
-//
-// Old spelling: include/crucible/fixy/_Sched.h.
-//
-// The grant tags grant::sched::{affinity, scheduler_policy, priority,
-// thread_name} and their four which_dim rows are decoration: nothing
-// outside the header's own self-test reads them, so the port drops both
-// and the eleven assertions that read them.
 
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
@@ -34,9 +27,8 @@
 
 namespace fixy::sched {
 
-// The old tree read these names out of its safety namespace, which is
-// fixy now.  Keeping the alias keeps every use site below spelled as it
-// was.
+// sf names ::fixy, where the pin proof and the scheduling-class proof
+// live.
 namespace sf = ::fixy;
 namespace eff = ::foundation::effects;
 namespace ml = ::foundation::algebra::lattices;
@@ -82,10 +74,9 @@ public:
 
 namespace detail {
 
-// fill_cpu_set moved to fixy/os/CpuPinned.h, beside the pin proof it
-// serves.  mint_affinity was its only caller, and the proof's sole
-// constructor is now private to that mint, so the syscall and the type
-// it authorizes have to share a header.
+// fill_cpu_set is in fixy/os/CpuPinned.h, beside the pin proof it
+// serves.  The proof's sole constructor is private to mint_affinity, so
+// the syscall and the type it authorizes share a header.
 
 [[nodiscard]] consteval int sched_policy_constant(SchedulerPolicy_v policy) noexcept {
     switch (policy) {
@@ -148,9 +139,9 @@ template <SchedulerPolicy_v Policy>
 
 }  // namespace detail
 
-// CtxFitsAffinityMint moved to fixy/os/CpuPinned.h with mint_affinity's
-// declaration, which had to move because the proof names that mint as
-// its sole friend and a friend must already have been declared.  The
+// CtxFitsAffinityMint is in fixy/os/CpuPinned.h with mint_affinity's
+// declaration, because the proof names that mint as its sole friend and
+// a friend must already have been declared.  The
 // definition below names the gate as ::fixy::CtxFitsAffinityMint, the
 // spelling of the declaration.
 
@@ -191,8 +182,7 @@ concept CtxFitsPriorityMint = CtxFitsRuntimeAffinity<Ctx> && (Nice >= -20 && Nic
 //
 // This is the one door that earns a CpuPinned.  The proof comes back
 // only after sched_setaffinity returned 0 for this same mask, and no
-// other path to one exists: the three public constructors the port
-// inherited are gone.
+// other path to one exists.
 template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
     requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>
 [[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, sf::PinProofUnit>, int> mint_affinity(Ctx const&) noexcept {
@@ -322,9 +312,6 @@ template <eff::IsExecCtx Ctx>
 
 namespace fixy::sched::detail::scheduler_mint_invariants {
 
-// The eleven grant-tag assertions the old self-test carried are not
-// ported, because the tags they read are not ported.
-
 using BgWitness = ::fixy::BgDrainCtx;
 using InitWitness = ::fixy::ColdInitCtx;
 using FgWitness = ::fixy::HotFgCtx;
@@ -368,8 +355,8 @@ static_assert(!CtxFitsPriorityMint<BgWitness, 50>,
               "not in the immediate context of the function template, so GCC 16 raises a hard error instead "
               "of discarding the candidate.");
 
-// The shared scheduling gate, on each of the three mints.  The
-// foreground context is the one IsExecCtx alone used to admit.
+// The shared scheduling gate, on each of the three mints.  IsExecCtx
+// alone admits the foreground context, and the shared gate refuses it.
 static_assert(CtxFitsSchedPolicyMint<InitWitness, SchedulerPolicy_v::Other>);
 static_assert(!CtxFitsSchedPolicyMint<FgWitness, SchedulerPolicy_v::Other>,
               "the foreground hot path owns neither Bg nor Init, so it must not change a scheduler policy.");

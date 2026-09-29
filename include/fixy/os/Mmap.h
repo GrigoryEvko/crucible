@@ -8,49 +8,29 @@
 // OwnedMmap::mint_region calculates the PROT_* and MAP_* bits, and once
 // for the effect row the calling context has to admit.
 //
-// Old spelling: include/crucible/fixy/Mmap.h.
+// Design notes:
 //
-// Deviations from that header, each deliberate:
+//  1. The atoms fixy::atom::mmap::{with_prot, with_share, trusted_jit}
+//     carry the axis and the row.  The context gate reads the row off
+//     the pack instead of naming IO and Block by hand.  The two answers
+//     agree, and the pin below says so.  They stop agreeing the moment
+//     an atom lifts to something else, and the derived one is the one
+//     that stays right.
 //
-//  1. Grants became atoms.  fixy::atom::mmap::{with_prot, with_share,
-//     trusted_jit} carry the axis and the row, so the which_dim
-//     specializations the old header wrote by hand are gone with the
-//     grant system that needed them.
+//  2. No atom carries an advice tag: advise takes an Advice directly.
+//     The tags themselves are declared in fixy/atoms/Os.h beside the
+//     other nine tag namespaces, so the one walk there covers all ten.
+//     Their MADV_* values are here, and so is the only clause that walk
+//     cannot express: that every tag declared there has one.
 //
-//  2. The context gate reads the row off the pack instead of naming IO
-//     and Block by hand.  Both answers are the same today, and the pin
-//     below says so.  They stop being the same the moment an atom lifts
-//     to something else, and the derived one is the one that stays
-//     right.
+//  3. The Permission argument on advise_release_aware is what admits
+//     the advice that discards pages.  The gate compares the tag and the
+//     brand of the permission with the mapping's own, so a permission of
+//     another region does not admit a discard of this mapping.
 //
-//  3. The old with_advice grant is gone, because nothing lifts an advice
-//     tag: advise takes an Advice directly, never an atom, so the grant
-//     was decoration in the same sense the sched grants were.  The tags
-//     themselves are declared in fixy/atoms/Os.h beside the other nine
-//     tag namespaces, so the one walk there covers all ten.  Their MADV_*
-//     values stay here, and so does the only clause that walk cannot
-//     express: that every tag declared there has one.
-//
-//  4. is_leak_grant is not here.  fixy/OwnedMmap.h already took that
-//     witness to fixy::atom::IsLeakAtom, which is one reflection query
-//     over the atom catalog rather than a trait any translation unit
-//     could specialize.
-//
-//  5. The release_aware grant and its two predicates are dropped.  The
-//     grant was dead in the old header: the concept was written
-//     `CtxAdmitsIoBlock<Ctx> && is_dangerous_advice_v<Advice>` and named
-//     neither the grant nor RegionTag, so the tag was a parameter the
-//     gate never read.  The Permission argument on advise_release_aware
-//     is what admits the dangerous advice.  The old header took it as
-//     Permission<RegionTag> with RegionTag free, so a permission of any
-//     region admitted a discard of any mapping.  Here the gate compares
-//     the tag and the brand of the permission with the mapping's own.
-//
-//  6. A mapping carries a brand.  mint_mmap and mint_mmap_anon read the
-//     tag and the brand of the exclusive permission the caller presents.
-//     The old mints took the tag as a template argument, and a mapping
-//     had no identity past its tag, so two mappings of one tag were one
-//     type.
+//  4. A mapping carries a brand.  mint_mmap and mint_mmap_anon read the
+//     tag and the brand of the exclusive permission the caller presents,
+//     so a mapping has an identity past its tag.
 
 #include <fixy/OwnedMmap.h>
 #include <fixy/Qtt.h>
@@ -109,9 +89,9 @@ namespace fixy::mmap {
 
 // The MADV_* value of each advice tag.  A tag reaches madvise only
 // through a row of this table, and fixy/os/AtomPack.h says why a table
-// is closed.  A class template map took a specialization for a class of
-// the caller, and the plain surface then discarded pages under a tag that
-// it did not know.
+// is closed.  A class template map takes a specialization for a class of
+// the caller, and the plain surface can then discard pages under a tag
+// that it does not know.
 inline constexpr ::fixy::atom_pack::tag_row<int> advice_table[] = {
     {^^advice::HugePage, MADV_HUGEPAGE},     {^^advice::NoHugePage, MADV_NOHUGEPAGE},
     {^^advice::Collapse, MADV_COLLAPSE},     {^^advice::Sequential, MADV_SEQUENTIAL},
@@ -303,9 +283,8 @@ concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Atoms...> && detail::pack_has
 // the same syscall as the mints above and can park for the same
 // reasons.
 //
-// Still true after atom::with<Es...> gained its lift: an advice tag is
-// not an effect declaration, it selects which madvise the call makes.
-// What changed is that a pack reaching the mints above may now carry a
+// An advice tag is not an effect declaration.  It selects which madvise
+// the call makes.  A pack that reaches the mints above can carry a
 // with atom, whose effects fold into the required row and widen it.
 template <typename Ctx>
 concept CtxAdmitsAdvise =
@@ -502,8 +481,8 @@ static_assert(std::is_same_v<region_modifiers_t<A_RO, A_Shared>, region_modifier
 static_assert(std::is_same_v<region_modifiers_t<A_Shared, A_Exec, A_Locked, A_Jit>,
                              region_modifiers<share::Locked, ::fixy::atom::mmap::trusted_jit>>);
 
-// The derived row and the row the old header named by hand are the same
-// answer.  This is the pin on that equality: it fails if an mmap atom
+// The row derived from the pack is IO and Block.  This is the pin on
+// that equality: it fails if an mmap atom
 // stops lifting to IO and Block, which is a decision somebody has to
 // make rather than discover.
 using ExpectedMmapRow = eff::Row<eff::Effect::IO, eff::Effect::Block>;

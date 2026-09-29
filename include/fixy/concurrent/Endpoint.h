@@ -8,21 +8,16 @@
 // construction, and the handle releases its permission when the endpoint
 // ends.
 //
-// Old spelling: include/crucible/concurrent/_Endpoint.h.  Three things
-// changed, each for a reason that the new tree states.
-//   - The old endpoint held a pointer to a handle that the caller kept.
-//     After into_handle, the caller's handle still reached the ring, so two
-//     objects could act on one channel.  A handle of fixy/concurrent is
-//     move-constructible, and its move clears the binding, so the endpoint
-//     takes the handle by move and owns it.
-//   - The old gate also asked that the footprint of one call fits the
-//     residency tier of the context, and that the channel topology fits the
-//     workload hint of the context.  The new context carries neither axis
-//     (foundation/effects/Ctx.h), so the gate is the gate of the session
-//     that the endpoint can start.
-//   - The endpoint keeps a copy of the minting context, where the old one
-//     built a context of its own.  A context of the new tree has no public
-//     default constructor.
+// Design notes:
+//   - A handle of fixy/concurrent is move-constructible, and its move
+//     clears the binding.  So the endpoint takes the handle by move and
+//     owns it, and no handle that the caller keeps acts on the channel
+//     beside the endpoint.
+//   - The gate is the gate of the session that the endpoint can start.  A
+//     context carries no residency tier and no workload hint
+//     (foundation/effects/Ctx.h), so the gate checks neither.
+//   - The endpoint keeps a copy of the minting context, because a context
+//     has no public default constructor.
 
 #include <fixy/concurrent/SubstrateSessionBridge.h>
 #include <fixy/session/Handle.h>

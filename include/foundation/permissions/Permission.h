@@ -38,16 +38,11 @@
 // context, or with two for the asymmetric split, and the permissions
 // come last; the leading contexts are counted off the argument list,
 // and the fit of each tag to each context is one concept on the
-// template head.  The old header spelled each mint as a token overload
-// and a context overload that repeated the same checks and body, and
-// befriended both.
+// template head.
 //
-// Old spelling: include/crucible/permissions/Permission.h, namespaces
-// crucible::safety and crucible::permissions::tag.  The friend that
-// reached the private constructor from the inheritance header is not
-// carried, because that header is dropped.  A federation peer token has
-// a key of its own, federation_admission_key below, and the one friend
-// of that key is the admission that fixy/Federation.h defines.
+// A federation peer token has a key of its own, federation_admission_key
+// below, and the one friend of that key is the admission that
+// fixy/Federation.h defines.
 
 #include <foundation/Brand.h>
 #include <foundation/Pinned.h>

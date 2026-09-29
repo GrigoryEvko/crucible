@@ -43,13 +43,12 @@
 // FX catalog this vocabulary is derived from.  Two of those dimensions
 // are deliberately absent, marked where they would have fallen.
 //
-// Old spellings: include/crucible/safety/_DimensionTraits.h
-// (DimensionAxis, tier_of_axis), include/crucible/fixy/Default.h
-// (strict_default_for) and include/crucible/safety/_Fn.h (the pole
-// sentinel types, here under fixy::pole).  The old tier kinds S, L,
-// T, F and V become the shape; the old Tier S was a catch-all whose
-// chains are lattices here, and only the two counted resources keep
-// the semiring.
+// The letter on each arm is the tier kind of the axis in the FX scheme:
+// S semiring, L lattice, T typestate, F foundational, V versioned.  In
+// this table the shape of an axis takes the place of its tier kind.
+// Many Tier S axes are chains, and each chain is a Lattice here.  Only
+// the two counted resources, Usage and Staleness, keep the Semiring
+// shape.
 
 #include <foundation/algebra/lattices/ConfLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
@@ -137,8 +136,9 @@ enum class Axis : std::uint8_t {
     // into one bit. This axis names the kernel-surface family instead, which
     // admission gates have to tell apart.
     SyscallSurface = 23,  // S  (Crucible extension)
-    // Control-flow escape used to fold into the effect row. Call shape, stack
-    // use, global state and standard-io had no axis at all.
+    // The effect row does not carry control-flow escape. Control flow, call
+    // shape, stack use, global state and standard-io each have an axis of
+    // their own.
     ControlFlow = 24,  // S  (Crucible extension)
     CallShape = 25,  // S  (Crucible extension)
     StackUse = 26,  // S  (Crucible extension)
@@ -312,11 +312,10 @@ concept PoleFitsClaim = (C == Claim::Fact) == pole_claims_nothing(^^Pole);
 // nothing.  The primary below is that sentence, and this roster is the
 // opt-in to it.
 //
-// The roster is what keeps a defined primary from failing open.  An
-// undefined primary used to reject a new axis by being incomplete at
-// the walk's sizeof; a defined one would hand that axis a claim nobody
-// gave it.  Naming the thirteen here restores the rejection and costs
-// one line per axis instead of eight.
+// The roster is what keeps a defined primary from failing open.  A
+// defined primary alone would hand a new axis a claim nobody gave it.
+// The roster keeps the rejection, and an axis on it costs one line
+// instead of the eight lines of a specialisation.
 inline constexpr Axis defaulted_axes[] = {
     Axis::Size,          Axis::Synchronization, Axis::FpMode,          Axis::SyscallSurface, Axis::ControlFlow,
     Axis::CallShape,     Axis::StackUse,        Axis::GlobalState,     Axis::Stdio,          Axis::HwInstruction,
@@ -397,9 +396,8 @@ struct axis_traits<Axis::Security> {
     static constexpr Discharge discharge = Discharge::TypeLevel;
     static constexpr Wrapper wrapper = Wrapper::Secret;
     static constexpr Claim claim = Claim::Right;
-    // Classified: observation requires a named declassification.  The
-    // old five-level SecLevel collapsed into the two points of
-    // ConfLattice when Secret was extracted, and this is its top.
+    // Classified: observation requires a named declassification.
+    // ConfLattice has two points, and this is its top.
     using strict =
         std::integral_constant<::foundation::algebra::lattices::Conf, ::foundation::algebra::lattices::Conf::Secret>;
 };
@@ -582,9 +580,9 @@ concept TakesDefaultTraits = requires {
 // The roster and the specialisations partition the enum, and this one
 // comparison catches both ways of breaking that.  A new axis nobody
 // classified lands on the primary while off the roster.  A roster
-// entry that has since grown a specialisation is stale.  The undefined
-// primary this table used to carry caught only the first, and only by
-// being incomplete at a sizeof.
+// entry that has since grown a specialisation is stale.  An undefined
+// primary would catch only the first, and only by being incomplete at a
+// sizeof.
 //
 // Only the first of the two is witnessed from outside, by the
 // assertion below and by neg_axis_unclassified_axis.  Witnessing the
@@ -719,8 +717,7 @@ static_assert(!PoleFitsClaim<Claim::Fact, std::integral_constant<std::uint32_t, 
 // enumerator somebody adds: it reaches the primary, like that
 // enumerator would, and it is not on the roster, like that enumerator
 // would not be.  Without this line the partition check could pass by
-// being vacuous, which is how the undefined primary it replaces would
-// have been quietly weakened.
+// being vacuous.
 static_assert(!AxisIsClassified<static_cast<Axis>(axis_count)>,
               "fixy::Axis: the partition check must reject an axis the table has not classified.  "
               "It answers yes for a value one past the enum, so it would answer yes for a new "

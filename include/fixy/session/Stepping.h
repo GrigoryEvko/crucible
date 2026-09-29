@@ -9,10 +9,9 @@
 // handle at one grade produces a handle at the NEXT grade rather than
 // a handle at the same grade over a new value.  Graded's operations
 // are the wrong shape for that.  The note ends by naming the contract
-// such a handle satisfies instead — a SteppingGraded concept — which
-// did not exist until this header.  Writing it is the point: without
-// it "satisfies the Stepping contract" was a sentence in a comment
-// with nothing to check it.
+// such a handle satisfies instead, a SteppingGraded concept.  This
+// header states that concept, so the claim "satisfies the Stepping
+// contract" has a check.
 //
 // ── The abandonment policy ───────────────────────────────────────────
 //

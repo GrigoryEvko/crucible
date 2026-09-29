@@ -16,8 +16,6 @@
 // load of tail synchronizes with that store, so the clear is visible
 // before the producer's set.  Bit K therefore moves 0, 1, 0, 1 in that
 // order, each step a distinct atomic operation.
-//
-// Old spelling: include/crucible/concurrent/_MpscRing.h.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>

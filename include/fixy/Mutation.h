@@ -238,11 +238,10 @@ static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(std::vector<std::uint6
 // members collapse into the AppendOnly through [[no_unique_address]]
 // only while they have nothing to store.
 //
-// Before this constraint the members existed but were dead: append
-// constructed a fresh KeyFn{} and Cmp{} per call instead of reading
-// them, so a stateful functor was accepted and then ignored. append now
-// reads the members, which is equivalent for an empty functor and keeps
-// the code honest if the constraint is ever relaxed.
+// append reads the members, and it does not construct a fresh KeyFn{}
+// and Cmp{} for each call. The two are equivalent for an empty functor.
+// Reading the members keeps the code honest if the constraint is ever
+// relaxed, because a stateful functor is then read and not ignored.
 
 template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>,
           template <typename...> class Storage = std::vector>

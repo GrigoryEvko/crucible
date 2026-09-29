@@ -7,17 +7,11 @@
 // permits.  So the answer for a payload nobody classified decides
 // whether an unclassified payload passes every gate downstream or none.
 //
-// Old spelling: payload_row in include/crucible/sessions/
-// SessionRowExtraction.h, 36 arms of a class-template specialization
-// ladder, one per wrapper, with a primary template answering Row<>.
-// That primary is fail-open, and the header said so: "a wrapper with no
-// specialisation reports the empty row, which makes an omitted
-// specialisation a soundness bug rather than a missing feature: the
-// walker then undercounts the effects of anything the unrecognised
-// wrapper hides."  An empty row means "this payload needs no
-// capability", so a wrapper nobody wrote an arm for satisfied every
-// context.  A class template can also be specialized from any
-// translation unit, so the ladder was open at both ends.
+// No primary template answers Row<>.  An empty row means "this payload
+// needs no capability", so such a default is fail-open: a wrapper that
+// nobody classified would satisfy every context.  A class template can
+// also be specialized from any translation unit, so a specialization
+// ladder is open at both ends.
 //
 // Here a type that cannot be classified is a compile error naming the
 // type, and the answer for a specialization comes from three rosters
@@ -106,9 +100,8 @@ namespace detail {
 // ── the three rosters ───────────────────────────────────────────────
 //
 // Each entry is the reflection of a class TEMPLATE, so one entry covers
-// every specialization of that family.  The Graded entry is why this is
-// nine lines rather than thirty-six: every band wrapper is a Graded
-// spelling, so they arrive together.
+// every specialization of that family.  The Graded entry covers every
+// band wrapper, because every band wrapper is a Graded spelling.
 
 inline constexpr std::meta::info row_carrying_payload_families[] = {
     ^^::foundation::effects::Computation,
@@ -412,14 +405,11 @@ struct payload_row_under {
 template <class T, auto const& LayerRules>
 using payload_row_under_t = typename payload_row_under<T, LayerRules>::type;
 
-// The two consumers want different things.  A row-admission check wants
-// the effect row alone and uses payload_effect_row_t; the old tree kept
-// a second spelling that preserved a numerical-tolerance grade beside
-// the row, for an audit of the full payload contract.  Nothing in the
-// new tree reads that second spelling, and a grade-preserving pair is a
-// different question from row admission, so this layer ships the one
-// projection and payload_effect_row_t is its name at the call sites that
-// already spell it.
+// A row-admission check wants the effect row alone, and
+// payload_effect_row_t is its name at the call sites that spell it.  A
+// pair that keeps a numerical-tolerance grade beside the row answers a
+// different question from row admission, so this layer gives the one
+// projection.
 template <class T>
 using payload_effect_row_t = payload_row_t<T>;
 
@@ -453,10 +443,8 @@ static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::IO, eff:
 
 // ── a transparent wrapper reports what it hides ─────────────────────
 //
-// One Graded entry covers every band, which is the whole of the
-// consolidation: the old tree wrote one arm for each of DetSafe,
-// HotPath, AllocClass, CipherTier, Wait, MemOrder, Progress,
-// NumericalTier, ResidencyHeat, RecipeSpec and OpaqueLifetime.
+// One Graded entry covers every band, so no band needs an arm of its
+// own.
 using BgComp = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
 
 static_assert(std::is_same_v<payload_row_t<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>, eff::Row<>>);

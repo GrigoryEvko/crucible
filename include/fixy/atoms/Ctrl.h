@@ -2,8 +2,6 @@
 
 // The control-flow atoms: the ways a binding can leave its frame other
 // than by returning.  Every atom here engages Axis::ControlFlow.
-//
-// Old spelling: include/crucible/fixy/grant/Ctrl.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -75,8 +73,7 @@ struct unreachable_ok final : atom_of<Axis::ControlFlow> {};
 
 // The binding raises a signal, or it runs code that a signal can
 // interrupt at any instruction boundary.  A rule on async-signal safety
-// reads this atom.  Old spelling: the MaySignal tier of
-// crucible::algebra::lattices::ControlFlow.
+// reads this atom.
 struct raises_signal final : atom_of<Axis::ControlFlow> {};
 
 template <class SuspensionPolicy>

@@ -379,10 +379,6 @@ deserialize_federation_entry(
 //
 // No production file makes the handle of a role, so this header carries
 // the types and no mint.
-//
-// Old spelling: include/crucible/sessions/_FederationProtocol.h, on the
-// old session layer, with no label on a message and with a mint for
-// each role.
 
 struct SenderRole {};
 struct ReceiverRole {};

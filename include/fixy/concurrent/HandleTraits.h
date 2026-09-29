@@ -9,11 +9,7 @@
 // rather than through a call expression: a call needs the payload type up
 // front, and recovering it is the point.
 //
-// Old spelling: include/crucible/safety/{_IsConsumerHandle,
-// _IsProducerHandle,_IsSwmrHandle}.h, all three in namespace
-// crucible::safety::extract.  That namespace was not a location — 57
-// headers reopened it, each adding the aliases for the thing it examined
-// — so the three arrive here, beside the channels whose handles they
+// The predicates sit here, beside the channels whose handles they
 // examine, under the plain names.
 //
 // The four decompositions are deliberately not folded into one
@@ -458,9 +454,8 @@ static_assert(std::is_same_v<swmr_reader_value_t<synthetic_reader const&>, int>)
 
 // ── the four poles are mutually exclusive ───────────────────────────
 //
-// Each synthetic above answers yes to exactly one predicate.  The old
-// tree asserted this pole by pole within three separate headers, which
-// could not see each other; one home makes the whole matrix one claim.
+// Each synthetic above answers yes to exactly one predicate.  The four
+// predicates share one header, so the whole matrix is one claim.
 
 static_assert(is_consumer_handle_v<synthetic_consumer> && !is_producer_handle_v<synthetic_consumer>
               && !is_swmr_writer_v<synthetic_consumer> && !is_swmr_reader_v<synthetic_consumer>);

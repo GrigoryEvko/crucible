@@ -1,21 +1,20 @@
 #pragma once
 
 // The named execution contexts of the runtime, as production types.
-// Each is one capability source and one effect row, the two axes
-// foundation/effects/Ctx.h kept of the eight the old context carried.
+// Each is one capability source and one effect row, the two axes of
+// the context in foundation/effects/Ctx.h.
 //
 // foundation/effects/Ctx.h states each row one time, in its record of
 // the named contexts (namespace detail::ctx_witnesses), with the reason
 // for each row.  Each name here is that record, so the production name
 // and the recorded row are one declaration and cannot drift apart.
-// Five rows are the old tree's, and the two load contexts each claim
-// Block on top of a row of the old tree.
+// The two load contexts each claim Block on top of the row of another
+// context.
 //
-// A context describes the surrounding scope, not a value.  Where the
-// old aliases also said where memory lands, how hot the path is and
-// what it promises about termination, those claims ride on the value
-// through the band wrappers now, and a channel or a fork that wants a
-// budget takes it as its own parameter.
+// A context describes the surrounding scope, not a value.  A claim
+// about where memory lands or how hot the path is rides on the value,
+// through the band wrappers.  A channel or a fork that wants a budget
+// takes it as its own parameter.
 //
 // No context builds from nothing.  Each is handed the capability it
 // claims, because a context is not evidence of a capability: it carries
@@ -23,9 +22,6 @@
 // foreground, from the key that the producer claim holds.  The record
 // in foundation/effects/Ctx.h proves the properties of each row, and
 // test/fixy/test_contexts.cpp proves them again through these names.
-//
-// Old spelling: include/crucible/effects/_ExecCtx.h (HotFgCtx,
-// BgDrainCtx, BgCompileCtx, ColdInitCtx, TestRunnerCtx).
 
 #include <foundation/effects/Ctx.h>
 

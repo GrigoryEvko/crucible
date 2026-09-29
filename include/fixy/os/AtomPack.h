@@ -13,9 +13,9 @@
 // is one constant array of rows, and each row holds the reflection of a
 // tag.  No other translation unit can add a row to an array, specialize
 // it or overload a lookup over it.  So the set of tags that reach a
-// syscall is the set that the header of the table wrote.  A class
-// template map was open: a specialization for a class that a caller
-// declared brought any bits that it liked to the door.
+// syscall is the set that the header of the table wrote.  A map that is
+// a class template is open: a caller can specialize it for a class of
+// its own, and that specialization brings any bits to the door.
 //
 // Each query that a gate reads is a concept or a lookup over a closed
 // table.  A concept cannot be specialized.  Each header calls its lookups

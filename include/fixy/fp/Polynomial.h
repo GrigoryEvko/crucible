@@ -25,45 +25,34 @@
 // Constants are hex float literals so every bit of every coefficient is
 // unambiguous.
 //
-// Old spelling: include/crucible/fixy/fp/Polynomial.h.
-//
-// Deviations, each deliberate:
+// Design notes:
 //
 //  1. Every function is constexpr.  C++26 makes std::sqrt usable in a
-//     constant expression, which was the one call that stopped it, so the
-//     pinned values at the foot of this header are static assertions
-//     rather than a function that computes them and discards the result.
-//     Each one is checked in every translation unit that includes this
-//     header.  The functions are still callable at runtime.
+//     constant expression, so the pinned values at the foot of this
+//     header are static assertions rather than a function that computes
+//     them and discards the result.  Each one is checked in every
+//     translation unit that includes this header.  The functions are
+//     still callable at runtime.
 //
-//  2. There is no runtime_smoke_test.  The old one called each function
-//     into a volatile local and asserted nothing, which is the shape
-//     the port removed: compiled into every translation unit and called
-//     by nothing.  The value cells below replace it, and test/fixy/
-//     test_fp_polynomial.cpp calls each function once at runtime so the
-//     non-constant path is exercised too.
+//  2. The value cells below are the checks of this header, and
+//     test/fixy/test_fp_polynomial.cpp calls each function once at
+//     runtime so the non-constant path is exercised too.
 //
 //  3. The two unreachable switch arms are std::unreachable().  The
-//     quadrant is masked to two bits, so the four arms are exhaustive and
-//     the old `default: return 0.0f;` was a value no input could produce.
-//     Returning zero for an impossible quadrant would have turned a
-//     future reduction bug into a silently wrong sine rather than a
-//     crash.
+//     quadrant is masked to two bits, so the four arms are exhaustive,
+//     and a default value is a value no input can produce.  A zero for an
+//     impossible quadrant turns a future reduction bug into a silently
+//     wrong sine rather than a crash.
 //
 //  4. Every value pin compares bit patterns, never floats.  A float
 //     equality compare is a build error in this tree, and the bit pattern
 //     is the stronger claim anyway: it is what a content hash folds.
 //
-//  5. Every product that feeds a sum is an explicit std::fma, where the
-//     old header wrote a * b + c and let the contraction flag decide the
-//     rounding.  The pinned pair at the foot of this header moved with it.
-//
-//  6. log_poly, reduce_quarter_pi, sin_poly and cos_poly state their
-//     domains as preconditions.  The old header stated the domain of
-//     log_poly in a comment only.  The old reduction accepted every float
-//     and converted the nearest multiple of pi/2 to int32, which is
-//     undefined behaviour past about 3.4e9 and for an infinity or a NaN.
-//     The angle domain is one turn, where the answer is accurate.
+//  5. log_poly, reduce_quarter_pi, sin_poly and cos_poly state their
+//     domains as preconditions.  A reduction that accepts every float
+//     converts the nearest multiple of pi/2 to int32, which is undefined
+//     behaviour past about 3.4e9 and for an infinity or a NaN.  The angle
+//     domain is one turn, where the answer is accurate.
 
 #include <foundation/contracts/Pre.h>
 

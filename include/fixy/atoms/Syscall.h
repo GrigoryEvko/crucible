@@ -7,20 +7,13 @@
 // per<Id> names one call.  family<F> names a whole family, for a site
 // that issues several calls of one family and wants to say so once.
 //
-// Old spelling: include/crucible/fixy/syscall/Per.h (the per grant and
-// the SyscallId catalog), include/crucible/fixy/syscall/Family.h (the
-// family grants) and include/crucible/fixy/syscall/Bridge.h (the map
-// from a family to a row).
-//
 // ---------------------------------------------------------------------
 // The enums live here, and why
 //
-// foundation ports no SyscallFamily lattice.  The old one at
-// include/crucible/algebra/lattices/SyscallFamilyLattice.h is not carried
-// across.  The atoms need its nine enumerators and their order, so they
-// are declared here with the same names and the same values, the way
-// fixy/atoms/Hw.h declares the instruction tiers.  A later foundation
-// port can alias to these or these to it.  The values are the contract
+// foundation has no SyscallFamily lattice.  The atoms need nine families
+// and their order, so this header declares them, the way fixy/atoms/Hw.h
+// declares the instruction tiers.  A lattice that foundation adds later
+// can alias to these, or these to it.  The values are the contract
 // either way.
 //
 // The ordinals of SyscallId are frozen.  The stable identity of an atom
@@ -32,21 +25,20 @@
 // ---------------------------------------------------------------------
 // The family of a call is a table
 //
-// The old classifier was a switch with a default arm that returned
-// Privilege.  A call with no arm then fell to the top of the chain, and
-// only a hand-written list of every enumerator noticed.  Here the family
-// of a call is one row of a table, and the self-test walks the
-// enumerators of SyscallId by reflection and requires each to hold
-// exactly one row.  A new call with no row fails the build.
+// A switch with a default arm would send a call that has no arm to the
+// top of the chain, and only a hand-written list of every enumerator
+// would notice.  So the family of a call is one row of a table.  The
+// self-test walks the enumerators of SyscallId by reflection and
+// requires each to hold exactly one row.  A new call with no row fails
+// the build.
 //
 // ---------------------------------------------------------------------
 // The row of a family
 //
-// The map is the old bridge's, with one change.  A mapping call lifts to
-// IO and Block, not to IO alone.  fixy/atoms/Os.h makes the same
-// decision for its mmap atoms: the old gate that reached a real mapping
-// call asked for both, because a mapping can park the caller on page
-// cache pressure or on a remote page fault.
+// syscall_family_effects_table gives the row of each family.  A mapping
+// call lifts to IO and Block, not to IO alone, because a mapping can park
+// the caller on page cache pressure or on a remote page fault.
+// fixy/atoms/Os.h makes the same decision for its mmap atoms.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -68,8 +60,7 @@ namespace fixy::atom::syscall {
 inline constexpr atom_seal atom_namespace_seal{};
 
 // A chain.  Each family stands for a wider kernel surface than the
-// family below it.  Old spelling:
-// crucible::algebra::lattices::SyscallFamily.
+// family below it.
 enum class SyscallFamily : std::uint8_t {
     NoSyscall = 0,  // no kernel transition at all
     VdsoOnly = 1,  // clock_gettime and getcpu through the vDSO, still no kernel transition
@@ -82,8 +73,7 @@ enum class SyscallFamily : std::uint8_t {
     Privilege = 8,  // ptrace, capset, prctl, bpf, perf_event_open
 };
 
-// Old spelling: crucible::fixy::grant::syscall::SyscallId.  The
-// ordinals are frozen; the head of this file says why.
+// The ordinals are frozen.  The head of this file says why.
 enum class SyscallId : std::uint16_t {
     clock_gettime = 0,
     clock_getres = 1,
@@ -207,7 +197,7 @@ inline constexpr std::array<std::pair<sc::SyscallId, sc::SyscallFamily>, 50> sys
     {sc::SyscallId::sched_getattr, sc::SyscallFamily::ThreadSync},
     // A wait on a descriptor and a sleep each park the caller until an
     // event or a deadline.  eventfd makes the descriptor that such a wait
-    // reads, and the old SyscallFamily chain files it with the waits.
+    // reads, so the table files it with the waits.
     {sc::SyscallId::poll, sc::SyscallFamily::ThreadSync},
     {sc::SyscallId::epoll_wait, sc::SyscallFamily::ThreadSync},
     {sc::SyscallId::eventfd, sc::SyscallFamily::ThreadSync},

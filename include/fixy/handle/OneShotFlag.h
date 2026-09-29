@@ -3,30 +3,15 @@
 // A one-shot cross-thread signal.  A producer raises the flag, and a
 // consumer runs a body once for each time it finds the flag raised.
 //
-// Old spelling: include/crucible/handles/OneShotFlag.h.
+// Design notes:
 //
-// Deviations, each deliberate:
+//  1. check_and_run takes the flag down with one exchange before the
+//     body runs, so no signal is lost.  A signal that arrives during the
+//     body raises the flag again, and the next check runs the body again.
 //
-//  1. The crash classes folded into the fixy ctrl atoms, and nothing in
-//     this tree throws.  peek_nothrow was an acquire load typed
-//     Crash<NoThrow, bool>, and NoThrow is the strict default, so it is
-//     peek_acquire and returns bool.  signal_throw raised the flag and
-//     returned Crash<Throw, signal_marker>, a class nothing can have
-//     here, so it and signal_marker are gone: call signal.
-//     try_acknowledge_error_return returned Crash<ErrorReturn, bool> over
-//     check_and_run, and check_and_run is now [[nodiscard]], so its bool
-//     return is the error return.
-//
-//  2. check_and_run lost a signal.  It ran the body and then stored
-//     false, so a signal that arrived while the body ran was erased.  It
-//     now takes the flag down with one exchange before the body runs.  A
-//     signal that arrives during the body raises the flag again, and the
-//     next check runs the body again.
-//
-//  3. The old check was correct only for one consumer.  Two consumers
-//     could both read the flag raised and both run the body for one
-//     signal.  The exchange gives each raise to one consumer, so several
-//     consumers no longer need a rule the type cannot state.
+//  2. The exchange gives each raise to one consumer.  Two consumers
+//     cannot both run the body for one signal, so several consumers need
+//     no rule that the type cannot state.
 
 #include <foundation/Platform.h>
 

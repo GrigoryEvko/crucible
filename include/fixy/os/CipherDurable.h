@@ -6,35 +6,30 @@
 // types — and a handle over a descriptor that was opened with exactly
 // that stance's flags.
 //
-// Old spelling: include/crucible/fixy/CipherDurable.h.
+// Design notes:
 //
-// Deviations, each deliberate:
+//  1. cold_writer_stance commits with atomicity::Rename, so a cold
+//     commit replaces an existing target.  The warm stance and the HEAD
+//     stance commit with atomicity::RenameAt2NoReplace, which refuses an
+//     existing target with EEXIST.
 //
-//  1. cold_writer_stance pins atomicity::Rename.  It pinned LinkAtomic,
-//     which was a hard ENOSYS in the old commit body, so every cold
-//     commit failed before a filesystem was consulted.  A probe against
-//     the old unit on this host: LinkAtomic errno 38 unconditionally,
-//     Rename OK, RenameAt2NoReplace OK on a fresh target and EEXIST on
-//     an existing one.  That is the ENOSYS commit path, and it is
-//     closed.
-//
-//  2. Three concepts that were textually identical apart from their
-//     names are one CtxFitsDurableMint<Ctx, Stance, Extras...>, and it
-//     folds the stance's own atoms into fs::CtxFitsFileMint rather than
-//     naming the row by hand, so the known-tag checks and the derived
-//     row apply to a stance the same way they apply to a bare pack.
+//  2. One concept, CtxFitsDurableMint<Ctx, Stance, Extras...>, gates
+//     the three mints.  It folds the stance's own atoms into
+//     fs::CtxFitsFileMint and does not name the row by hand, so the
+//     known-tag checks and the derived row apply to a stance the same
+//     way they apply to a bare pack.
 //
 //  3. A DurableStance concept constrains the handle and the mints.  A
-//     stance has to name all four types, and each must be a tag the
-//     file surface knows.  The two stances that had no flag name
+//     stance names all four types, and each is a tag the file surface
+//     knows.  The warm stance and the HEAD stance name
 //     flag::CloseOnExec, which mint_file folds in unconditionally, so
 //     naming it changes no bit.
 //
-//  4. The handle wraps fixy::fs::OwnedFd rather than the old FileHandle.
-//     Its constructor stays private with the three mints as its sole
-//     friends: an OwnedFd is evidence of a descriptor the caller owns,
-//     not of the flags it was opened with, and the stance is a claim
-//     about those flags.  Only the mint that chose them can make it.
+//  4. The handle wraps fixy::fs::OwnedFd.  Its constructor is private,
+//     and the three mints are its sole friends: an OwnedFd is evidence
+//     of a descriptor the caller owns, not of the flags it was opened
+//     with, and the stance is a claim about those flags.  Only the mint
+//     that chose them can make it.
 
 #include <fixy/Path.h>
 #include <fixy/Qtt.h>

@@ -5,13 +5,8 @@
 // non-const rvalue reference.  The order is the data-flow order, so a
 // producer parameter ahead of a consumer parameter is not a stage.
 //
-// Old spelling: include/crucible/safety/_PipelineStage.h, namespace
-// crucible::safety::extract.  The shape it recognizes is a stage's, so
-// it lands beside the stage rather than in a namespace named for the
-// act of reading it.  The name changed with the home: the concept
-// PipelineStage kept its name, and the header no longer carries the
-// concept's name, because sessions/SessionPatterns.h also declares a
-// PipelineStage and the two are different things.
+// The shape this header recognizes is the shape of a stage, so the
+// header sits beside the stage.
 
 #include <fixy/concurrent/HandleTraits.h>
 #include <foundation/reflect/Signature.h>
@@ -166,8 +161,8 @@ static_assert(!PipelineStage<&f_interleaved>);
 // A stage whose parameters are the right handles but taken by lvalue
 // reference or by value is not a stage: the body consumes its handles,
 // and a stage that did not would leave the caller holding a moved-from
-// endpoint.  The old tree pinned this on CtxFitsStage in the Stage
-// header; the shape alone decides it, so it is pinned here.
+// endpoint.  The shape alone decides it, so the witness is here and
+// not on CtxFitsStage.
 inline void f_lvalue_in(fake_consumer<int>&, fake_producer<int>&&) noexcept {}
 inline void f_const_rvalue_in(fake_consumer<int> const&&, fake_producer<int>&&) noexcept {}
 inline void f_by_value_in(fake_consumer<int>, fake_producer<int>&&) noexcept {}

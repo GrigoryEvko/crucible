@@ -8,59 +8,42 @@
 // Once for the O_* word the syscall takes, and once for the effect row
 // the calling context has to admit.
 //
-// Old spelling: include/crucible/fixy/Fs.h and src/fixy/Fs.cpp.  The
-// five syscall bodies lived in that translation unit so the templates
-// would share one wrapper; they are inline here because fixy is
-// header-only and the old unit is frozen.  Each body is a few lines
-// around one call, so the instantiation cost the split was for is not
-// worth a second file.
+// The syscall bodies are inline, because fixy is header-only.  Each body
+// is a few lines around one call, so a second file does not pay for
+// itself.
 //
-// Deviations, each deliberate:
+// Design notes:
 //
-//  1. Grants became atoms.  fixy::atom::fs::{mode, with_flag, durable,
-//     atomic_write} carry the axis and the row, so the which_dim
-//     specializations are gone with the grant system that needed them.
+//  1. The atoms fixy::atom::fs::{mode, with_flag, durable, atomic_write}
+//     carry the axis and the row.  The context gate reads the row off
+//     the pack and does not name IO and Block by hand.  A check at the
+//     foot of this header pins the derived row to IO and Block.
 //
-//  2. The context gate reads the row off the pack rather than naming IO
-//     and Block by hand.  Same answer today, pinned below.
+//  2. A tag exists only when it reaches an operation that works.  A mode
+//     that the open gate refuses, a flag that nothing reads, a sync that
+//     fails with EINVAL or a commit that fails with ENOSYS has no tag.
 //
-//  3. Six tags did not come across, because fixy/atoms/Os.h ported only
-//     the tags that reach an operation that works.  open_mode::TmpFile
-//     was a placeholder the open gate refused.  flag::{Directory,
-//     NonBlock, Path} folded bits nothing gated or consumed.
-//     sync_op::Msync was a hard EINVAL.  atomicity::LinkAtomic was a
-//     hard ENOSYS — and cold_writer_stance pinned it, so every cold
-//     commit in the old tree failed before a filesystem was consulted.
-//     That is the ENOSYS commit path, and it is closed by not existing:
-//     fixy/os/CipherDurable.h pins Rename, and mint_durable_truncate_file
-//     below hands out atomic_write<Rename> where it handed out the one
-//     atomicity that could not succeed.
-//
-//  4. The open modes and the flags are closed tables, and the sync and
+//  3. The open modes and the flags are closed tables, and the sync and
 //     atomicity tags are closed lists.  A tag with no row has no bits, so
 //     a read of its bits is a compile error and not O_RDONLY or zero.
 //     The known-tag concepts that the gates read are the tables, and
 //     walks over the fixy::fs namespaces check that each declared tag has
 //     a row.
 //
-//  5. The descriptor handle.  The old tree returned its FileHandle,
-//     whose constructor took an int and whose destructor closed it.
-//     OwnedFd below has a private constructor, and three door classes
-//     make the ::open and ::socket calls: FileDoor here, SocketDoor in
-//     fixy/os/Socket.h and PtpDeviceDoor in fixy/os/Time.h.  The members
-//     of each door are private, and its friends are the gated mints that
-//     use it.  So a descriptor that is owned is a descriptor the kernel
-//     handed out to a gated mint.
+//  4. The descriptor handle.  OwnedFd below has a private constructor,
+//     and three door classes make the ::open and ::socket calls: FileDoor
+//     here, SocketDoor in fixy/os/Socket.h and PtpDeviceDoor in
+//     fixy/os/Time.h.  The members of each door are private, and its
+//     friends are the gated mints that use it.  So a descriptor that is
+//     owned is a descriptor the kernel handed out to a gated mint.
 //
-//  6. open_dirfd takes a context and a sanitized path.  It took a bare
-//     std::filesystem::path and no context, which made it the one call
-//     in the family that neither the path discipline nor the effect row
-//     reached, and its ::open carried no marker.
+//  5. open_dirfd takes a context and a sanitized path, so the path
+//     discipline and the effect row reach it as they reach each other
+//     call in the family.
 //
-//  7. The two durable mints carry a requires-clause of their own rather
-//     than relying on the one inside mint_file.  A constraint failure a
-//     layer down is a hard error at the call site, and the guard flagged
-//     the missing clause as a defect the old tree allowlisted.
+//  6. The two durable mints carry a requires-clause of their own and do
+//     not rely on the one inside mint_file.  A constraint failure a
+//     layer down is a hard error at the call site.
 
 #include <fixy/Path.h>
 #include <fixy/Qtt.h>
@@ -91,9 +74,10 @@ namespace eff = ::foundation::effects;
 // The O_* word of each open mode and the O_* bits of each flag.  A tag
 // reaches the open call only through a row of these tables, and
 // fixy/os/AtomPack.h says why a table is closed.  O_RDONLY is zero, so a
-// map that answered zero for an unknown mode opened it for reading.  A
-// class template map also took a specialization for a class of the
-// caller, and that class added O_TRUNC to an open whose mode is ReadOnly.
+// map that answers zero for an unknown mode opens it for reading.  A
+// class template map also takes a specialization for a class of the
+// caller, and that class can add O_TRUNC to an open whose mode is
+// ReadOnly.
 inline constexpr ::fixy::atom_pack::tag_row<int> open_mode_table[] = {
     {^^open_mode::ReadOnly, O_RDONLY},
     {^^open_mode::WriteCreate, O_WRONLY | O_CREAT},
@@ -157,10 +141,10 @@ namespace fixy::fs {
 
 // Exclusive ownership of one descriptor, closed on destruction.
 //
-// The constructor that claims a descriptor is private.  A public one
-// took an int and the destructor closed it, so a caller could hand it
-// any small integer — stdin, a descriptor another object still owns —
-// and have it closed on scope exit.  The three door classes below are
+// The constructor that claims a descriptor is private.  With a public
+// one, a caller can hand the handle any small integer — stdin, a
+// descriptor another object still owns — and the destructor closes it
+// on scope exit.  The three door classes below are
 // its only friends.  Each makes the ::open or ::socket call itself and
 // builds a handle only from what the kernel returned, and each admits
 // only the gated mints that use it.
@@ -331,7 +315,7 @@ using extract_atomicity_t = typename extract_atomicity<std::remove_cvref_t<A>>::
 //
 // The branches are discarded statements, not a conditional expression.
 // A conditional instantiates the bits of each arm, and a mode atom has
-// no flag, so the closed map refused the arm that the atom did not take.
+// no flag, so the closed map refuses the arm that the atom does not take.
 template <typename A>
 [[nodiscard]] consteval int atom_open_flags() noexcept {
     if constexpr (is_mode_atom_v<A>) {
@@ -531,10 +515,8 @@ template <eff::IsExecCtx Ctx>
 // error returns.  read_full stops at the end of the file, so it returns
 // fewer bytes than the span holds only there.
 //
-// Old spelling: read_full, write_full and file_size in
-// include/crucible/handles/FileHandle.h.  Each took the old FileHandle and
-// no context.  Each takes an OwnedFd here, and the context the other calls
-// in this header take, because each call can park the caller on the disk.
+// Each takes an OwnedFd, and the context that the other calls in this
+// header take, because each call can park the caller on the disk.
 //
 // Not mints: these act on an existing handle and synthesize nothing.
 template <eff::IsExecCtx Ctx>
@@ -591,20 +573,12 @@ template <eff::IsExecCtx Ctx>
     return status.st_size;
 }
 
-// The read-only open, spelled once.  The old header exported the same
-// alias over its grant, and include/crucible/fixy/Wrap.h:409 re-exports
-// it.  That re-export is the only reader.  When the old header that
-// holds it is deleted, this alias has no consumer, and
-// mode<open_mode::ReadOnly> is the spelling that stays.
+// The read-only open, spelled once.
 using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
 
 // The durable and atomic_write atoms only declare intent.  The mint
 // opens the file.  The caller still calls sync<Fsync> after writing and
 // then commit_atomic<Rename> to move the result into place.
-//
-// This handed out atomic_write<LinkAtomic> and told the caller to commit
-// through it, and LinkAtomic was a hard ENOSYS: the canonical durable
-// open named the one commit that could not succeed.
 //
 // §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <eff::IsExecCtx Ctx>
@@ -675,8 +649,8 @@ static_assert(all_atom_tags_known_v<A_RO, A_NoFollow, A_Fsync, A_Rename>);
 static_assert(!all_atom_tags_known_v<::fixy::atom::fs::mode<NotAMode>>);
 static_assert(!all_atom_tags_known_v<A_RO, ::fixy::atom::fs::with_flag<NotAFlag>>);
 
-// The derived row and the row the old header named by hand agree, and
-// this is the pin on that.
+// The row derived from the pack is IO and Block, and this is the pin on
+// that.
 using ExpectedFsRow = eff::Row<eff::Effect::IO, eff::Effect::Block>;
 static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_RO>, ExpectedFsRow>);
 static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_Trunc, A_Fsync, A_Rename>, ExpectedFsRow>);

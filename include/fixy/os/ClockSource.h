@@ -9,8 +9,6 @@
 // the wrapper does expose is the tier each source projects to on the
 // determinism, suspend and pinning axes, so a consumer can gate on the
 // one property it actually depends on.
-//
-// Old spelling: include/crucible/safety/_ClockSource.h.
 
 #include <fixy/GradedFacade.h>
 #include <foundation/Lifetime.h>
@@ -73,7 +71,7 @@ private:
 
 public:
     // There is no default constructor, no in_place constructor and no
-    // free mint.  Each built a reading that no clock returned.
+    // free mint.  Each of them builds a reading that no clock returned.
     ClockSource() = delete("a default-constructed ClockSource would claim a reading that no clock returned.  Read "
                            "the clock through a reader from fixy::time::mint_clock_reader, mint_tsc_reader or "
                            "mint_ptp_clock_reader.");
@@ -204,8 +202,8 @@ using RealU64 = RealtimeClockBytes<unsigned long long>;
 using TscU64 = TscBytes<unsigned long long>;
 using ThreadU64 = ThreadCpuBytes<unsigned long long>;
 
-// The value cells that stood here built readings out of literals, which
-// is the forgery the closed constructor refuses.  The behavior of a real
+// These checks build no reading out of a literal, because that is the
+// forgery the closed constructor refuses.  The behavior of a real
 // reading (copy, swap, equality) is exercised in test/fixy/test_os_time.cpp
 // over readings that a clock returned.
 static_assert(BootU64::source == ClockSource_v::Boot);

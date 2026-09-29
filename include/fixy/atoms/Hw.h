@@ -3,25 +3,19 @@
 // The hardware-instruction atoms.  Every atom here engages
 // Axis::HwInstruction.
 //
-// The ladder is the old HwInstructionLattice's, and its own words say
-// what the grades are: a total-order chain over the hardware-instruction
-// classes a function may issue, where each tier admits every class below
-// it plus its own, so the bottom is the narrowest claim and the top the
-// widest.  A tier states intent, not authority.  Declaring the
-// privileged tier does not grant ring-0 access; that needs a separate
-// ownership token.
+// The ladder is a total-order chain over the hardware-instruction classes
+// that a function can issue.  Each tier admits every class below it plus
+// its own, so the bottom is the narrowest claim and the top the widest.
+// A tier states intent, not authority.  Declaring the privileged tier
+// does not grant ring-0 access; that needs a separate ownership token.
 //
 // ---------------------------------------------------------------------
 // The enum lives here, and why
 //
-// foundation ports no HwInstruction lattice: the old one at
-// include/crucible/algebra/lattices/HwInstructionLattice.h is not
-// carried across, and port-drops.txt records each of its symbols against
-// this header.  The atoms need the five
-// enumerators and their order, so they are declared here verbatim — same
-// names, same values — and nothing else of the lattice comes with them.
-// A later foundation port can alias to these or these to it; the values
-// are the contract either way.
+// foundation has no HwInstruction lattice.  The atoms need the five
+// enumerators and their order, so this header declares them, and nothing
+// else of a lattice.  A lattice that foundation adds later can alias to
+// these, or these to it.  The values are the contract either way.
 //
 // ---------------------------------------------------------------------
 // No lift
@@ -31,9 +25,8 @@
 // requires nothing, and no lift names no operation.  An instruction
 // class is an admitted SET of operations, not one operation, so the
 // family declares no lift.  The one tier that does carry a requirement,
-// PrivilegedMsr needing an Init context, is a collision rule (V202)
-// reading the Effect row rather than a lift, which is where the old
-// catalog read it too.
+// PrivilegedMsr needing an Init context, is collision rule V202, which
+// reads the Effect row and not a lift.
 //
 // ---------------------------------------------------------------------
 // One atom per tier
@@ -57,7 +50,6 @@ namespace fixy::atom::hw {
 
 inline constexpr atom_seal atom_namespace_seal{};
 
-// Old spelling: crucible::algebra::lattices::HwInstruction.
 enum class HwInstruction : std::uint8_t {
     NoneAllowed = 0,  // no hardware-specific instruction at all
     Scalar = 1,  // scalar arithmetic and control flow, no SIMD

@@ -4,15 +4,9 @@
 // frame has to state, and the two mints that fan work out and collect it
 // again.
 //
-// Old spelling: include/crucible/fixy/spawn/Spawn.h,
-// include/crucible/fixy/spawn/JoinPolicy.h and
-// include/crucible/fixy/spawn/SpawnGrant.h, three headers because the
-// grant system needed its which_dim specializations in a namespace of
-// its own.  Atoms carry their axis, so the three are one here.
+// Design notes:
 //
-// Deviations, each deliberate:
-//
-//  1. mint_spawn re-adds the throws gate.  foundation/permissions/
+//  1. mint_spawn carries the throws gate.  foundation/permissions/
 //     PermissionFork.h checks a callable's own noexcept specification and
 //     nothing else, because the control-flow atom is a fixy name and that
 //     header is below fixy.  Its comment assigns the structural check
@@ -21,42 +15,26 @@
 //     declaration is a promise the callable can break, and a throw
 //     through a structured join tears the join rather than unwinding it.
 //
-//  2. fork_parent<ParentTag> and exec_ctx<Ctx> are gone.  Both were
-//     grants whose comment said they "thread the parent identity and the
-//     execution context through the grant pack, so the coherence check
-//     below reads them without the call site retyping them", and the
-//     coherence check read neither.  Nothing else read them either.  A
-//     parameter no gate consumes is decoration.
+//  2. The three rationale atoms live here rather than in fixy/atoms/,
+//     because nothing lifts them.  They carry Axis::Protocol and no
+//     effect row, because stating a justification performs no operation.
+//     The roster and the two roster checks sit beside them.  Rule L003 of
+//     fixy/Collision.h reads detach_with and syscall_only: a borrow
+//     together with a spawn that no join ties to the frame is refused.
 //
-//  3. The three rationale atoms live here rather than in fixy/atoms/,
-//     for the reason fixy/os/Mmap.h gives for the advice tags: nothing
-//     lifts them.  They carry Axis::Protocol, which is the routing the
-//     old which_dim specializations gave them, and no effect row, because
-//     stating a justification performs no operation.  The roster and the
-//     two roster checks sit beside them.  Rule L003 of fixy/Collision.h
-//     reads detach_with and syscall_only: a borrow together with a spawn
-//     that no join ties to the frame is refused.
+//  3. mint_parallel_for's body takes its shard by mutable reference and
+//     the shards are recombined, not rebuilt.  A rebuild has to consume
+//     the thing it reissues, so no helper mints a parent Permission from
+//     nothing.  The shards stay in the tuple, each worker mutates its own
+//     element, and recombine consumes all of them to reissue the parent.
 //
-//  4. mint_parallel_for's body takes its shard by mutable reference and
-//     the shards are recombined, not rebuilt.  The old one handed each
-//     shard to the body by rvalue, let the body consume it, and then
-//     called a private rebuild_parent_ helper that minted a fresh parent
-//     Permission from nothing.  That helper is the forgeable path
-//     fixy/OwnedRegion.h removed: a rebuild has to consume the thing it
-//     reissues.  So the shards stay in the tuple, each worker mutates its
-//     own element, and recombine consumes all of them to reissue the
-//     parent.  The body signature changes with it; both mints had no
-//     callers outside the old header, so nothing had to be adapted.
-//
-//  5. mint_spawn takes the budget of its children as a parameter, and
+//  4. mint_spawn takes the budget of its children as a parameter, and
 //     fixy/concurrent/ParallelismRule.h chooses the arm from it.
 //     foundation ships two arms: mint_permission_fork (one thread per
 //     child, needs Effect::Bg) and mint_permission_fork_inline (bodies in
 //     child order on the calling thread).  A working set in the private
 //     cache of one core runs inline, and a larger one starts one thread
-//     per child.  The old choice read ctx_workbudget and
-//     parallelism_decision_for, which read a workload axis of the old
-//     context.  The new context carries no such axis, and
+//     per child.  The context carries no workload axis, and
 //     foundation/effects/Ctx.h tells a fork to take its budget as a
 //     parameter.  The context must still own Effect::Bg, because the
 //     choice happens at run time and the spawning arm must be admissible.
@@ -67,15 +45,11 @@
 //     whole decision.  A sequential decision runs every shard on the
 //     calling thread.  A parallel one starts no more threads than its
 //     factor, and a thread runs every shard whose index is its own
-//     modulo the thread count.  The old one started one thread per shard
-//     whatever the size of the work, so a region in the private cache of
-//     one core paid for N threads and ran slower than a loop.  Two shards
-//     can run one after the other on one thread, so bodies that wait on
-//     each other must not share a parallel-for either.
-//
-//  6. The join-mechanism tags and the concept that tied a mechanism to
-//     its rationale atom are gone.  No mint read them, so the concept
-//     refused nothing that a caller could reach.
+//     modulo the thread count.  One thread per shard, whatever the size
+//     of the work, makes a region in the private cache of one core pay
+//     for N threads, and it runs slower than a loop.  Two shards can run
+//     one after the other on one thread, so bodies that wait on each
+//     other must not share a parallel-for either.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -98,7 +72,7 @@
 #include <utility>
 
 // The three atoms that put a non-default spawn engagement in the type,
-// per deviation 3.  Each routes to Axis::Protocol, because a spawn
+// per design note 2.  Each routes to Axis::Protocol, because a spawn
 // engagement is itself a parent-child protocol, the same shape a binary
 // session declares.
 //
@@ -198,7 +172,7 @@ struct can_ctx_fit_spawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple
                                                                          std::tuple<Callables...>>> {};
 
 // True when no callable's type carries the throws atom anywhere in its
-// type tree.  Read by the mint's body, per deviation 1.
+// type tree.  Read by the mint's body, per design note 1.
 template <typename... Callables>
 inline constexpr bool no_callable_throws_v =
     !(::fixy::type_tree_contains_throws_v<std::decay_t<Callables>> || ...);
@@ -212,14 +186,14 @@ concept CtxFitsSpawn = detail::can_ctx_fit_spawn<Ctx, Parent, Brand, ChildrenTup
 
 // The call returns once every child has joined.  The budget states the
 // bytes the children touch together, and the parallelism rule chooses
-// the arm from it, per deviation 5.  Each body borrows its child through
+// the arm from it, per design note 4.  Each body borrows its child through
 // a WriteView of the parent's brand, as the fork lends it.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsSpawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple<std::decay_t<Callables>...>>
 [[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
                                                         perm::Permission<Parent, Brand>&& parent,
                                                         Callables&&... callables) noexcept {
-    // Deviation 1.  The clause above has already checked each callable's
+    // Design note 1.  The clause above has already checked each callable's
     // noexcept specification through foundation's gate; this is the
     // structural half, which foundation cannot express because the atom is
     // a fixy name.
@@ -286,8 +260,9 @@ template <std::size_t N>
 // The member is private and static, the mint is the only friend, and the
 // class is final and cannot be built.  The member also asks for the
 // background effect itself, so the check stands where the threads start.
-// A free function in a detail namespace once held this fan-out, and any
-// translation unit could call it with no context at all.
+// A free function in a detail namespace is not a place for this
+// fan-out, because any translation unit can call it with no context at
+// all.
 class ParallelForRunner final {
     // No object of the runner exists.  Every constructor is deleted and
     // the destructor is user-provided, so the class is neither trivially
@@ -324,7 +299,7 @@ class ParallelForRunner final {
 // The call returns once every shard has run its body, and the region it
 // hands back is recombined from the shards.  The budget states the bytes
 // the bodies touch together, and the parallelism rule chooses the thread
-// count from it, per deviation 5.
+// count from it, per design note 4.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
@@ -354,7 +329,7 @@ template <std::size_t N, typename Ctx, typename T, typename Whole, typename Bran
         }
     }
 
-    // Deviation 4: every shard is surrendered here, and their Slice
+    // Design note 3: every shard is surrendered here, and their Slice
     // permissions are what reissue the parent's.  The receipt the split
     // wrote is surrendered with them, so this rebuild is the one that
     // split authorized and there is no second one.
@@ -374,7 +349,7 @@ static_assert(atom_spawn::rationale_nonempty_v<::fixy::atom::ctrl::rationale{"x"
 static_assert(atom_spawn::rationale_nonempty_v<::fixy::atom::ctrl::rationale{"reason"}>);
 static_assert(!atom_spawn::rationale_nonempty_v<::fixy::atom::ctrl::rationale{""}>);
 
-// Each one is an atom, on the axis deviation 3 names.
+// Each one is an atom, on the axis design note 2 names.
 static_assert(IsAtom<atom_spawn::detach_with<"r">>);
 static_assert(IsAtom<atom_spawn::syscall_only<"r">>);
 static_assert(IsAtom<atom_spawn::subprocess<"r">>);
@@ -410,7 +385,7 @@ struct PlainCallable {
 };
 
 // A callable whose type names the atom, at the default family and at a
-// named one.  The second is the case the old needle missed.
+// named one.
 template <typename Marker>
 struct MarkedCallable {
     void operator()() const noexcept {}

@@ -3,8 +3,6 @@
 // Three initialize-once handles: a non-atomic pointer slot that refuses
 // a second set, a cross-thread once-gate that spins rather than parks,
 // and a lazily-constructed value built on top of it.
-//
-// Old spelling: include/crucible/handles/_Once.h.
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>

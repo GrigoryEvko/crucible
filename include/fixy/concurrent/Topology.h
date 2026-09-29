@@ -9,8 +9,6 @@
 // A NUMA node is named by its node id, and node ids can be sparse: a
 // host can have node0 and node2 and no node1.  Every NUMA accessor takes
 // a node id and never uses it as a position.
-//
-// Old spelling: include/crucible/concurrent/Topology.h.
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>

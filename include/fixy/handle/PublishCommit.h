@@ -9,8 +9,6 @@
 // WriteAuth names the type that performs the publication.  The friend list is
 // the whole gate, so there is no token to thread through call sites, and a
 // second writer costs a second friend declaration that a reviewer sees.
-//
-// Old spelling: include/crucible/safety/PublishCommit.h.
 
 #include <foundation/Platform.h>
 

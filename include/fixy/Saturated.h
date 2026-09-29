@@ -7,8 +7,6 @@
 // that fact away, leaving a caller unable to tell a genuine maximum from
 // an overflow that landed on one.  Carrying the observation costs a
 // single byte.
-//
-// Old spelling: include/crucible/safety/Saturated.h.
 
 #include <foundation/Platform.h>
 
@@ -79,10 +77,9 @@ public:
 
 // The three below split the work: the builtin answers whether the exact
 // result fits, and the library supplies the clamped value when it does
-// not.  The old spelling computed the clamp itself, once per operation,
-// with a sign rule written out by hand — three chances to get the end of
-// the range wrong, for a value the library already knows.  What stays
-// here is the part the library does not carry: the flag.
+// not.  A clamp with a sign rule written out by hand is a chance to get
+// the end of the range wrong, for a value the library already knows.
+// This header adds only the part the library does not carry: the flag.
 
 template <std::integral T>
 [[nodiscard]] constexpr Saturated<T> add_sat_checked(T a, T b) noexcept {

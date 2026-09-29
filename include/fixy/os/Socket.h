@@ -57,9 +57,9 @@ struct socket_triple final {
 
 // The domain, type and protocol of each kind.  A kind reaches ::socket
 // only through a row of this table, and fixy/os/AtomPack.h says why a
-// table is closed: a class template map took a specialization for a
-// class of the caller, and the gated mint then opened a raw packet socket
-// as a known kind.  A kind with no row has no triple, so the mint refuses
+// table is closed: a class template map takes a specialization for a
+// class of the caller, and the gated mint can then open a raw packet
+// socket as a known kind.  A kind with no row has no triple, so the mint refuses
 // it and ::socket never sees a guessed triple.
 inline constexpr ::fixy::atom_pack::tag_row<detail::socket_triple> socket_table[] = {
     {^^socket_kind::NetlinkRoute, {AF_NETLINK, SOCK_RAW, NETLINK_ROUTE}},

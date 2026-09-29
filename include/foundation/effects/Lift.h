@@ -14,10 +14,6 @@
 // instantiates the mapping at each one, so an enumerator the mapping
 // forgot fails as an incomplete type inside the walk rather than as a
 // missing arm nobody noticed.
-//
-// Old spelling: include/crucible/fixy/syscall/Bridge.h, whose
-// row_for_family map and every_syscall_family_lifted walk were bound to
-// one enum and one grant family.
 
 #include <foundation/effects/Row.h>
 

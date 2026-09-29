@@ -11,8 +11,6 @@
 // Do not read that direction as the comonadic one.  Narrowing a
 // fleet-scoped value to a program-scoped view runs opposite to ⊑ and is
 // a separate operation on the wrapper, not a use of this order.
-//
-// Old spelling: include/crucible/algebra/lattices/LifetimeLattice.h.
 
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>

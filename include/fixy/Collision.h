@@ -2,8 +2,7 @@
 
 // Pairs of grades that must not coexist on one binding.
 //
-// Each rule here is a theorem about two axes, carried over from
-// include/crucible/safety/_CollisionCatalog.h with its citation.  The
+// Each rule here is a theorem about two axes, with its citation.  The
 // rules are knowledge, not boilerplate: the reason a pair is refused is
 // the point, and the message a reader sees is the theorem.
 //
@@ -18,10 +17,10 @@
 // A rule that cannot fire is a comment.  A rule that cannot fire and
 // that nobody can tell cannot fire is worse than a comment: it looks
 // like coverage and demands nothing.  That shape — something that looks
-// like a gate and asks for nothing — is the one this migration has
-// found repeatedly, so the pending rules here are not marked with a
-// TODO and left to be believed.  They are registered against the axis
-// they wait on, and `every_pending_axis_is_still_empty()` FIRES the day
+// like a gate and asks for nothing — recurs, so the pending rules here
+// are not marked with a TODO and left to be believed.  They are
+// registered against the axis they wait on, and
+// `every_pending_axis_is_still_empty()` FIRES the day
 // that axis gains its first atom, naming the rules that must then be
 // wired.  Forgetting is not possible, because forgetting reddens.
 //
@@ -50,8 +49,6 @@
 // complete fn, and the cycle above closes.  live_rules<Atoms...> is the
 // same struct with void for the payload, under which every payload rule
 // stands down, so a pack-only cell keeps meaning what it says.
-//
-// Old spelling: include/crucible/safety/_CollisionCatalog.h.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -281,10 +278,10 @@ enum class RuleCode : std::uint8_t {
     P002,  // ghost x an emitting surface other than the effect row
     // Pending: the axis each waits on is named in pending_rules below.
     B001,
-    // B002 is NEW, not a renaming of B001.  B001's theorem is the
-    // back-pressure trap and it has its own remedy; the containment
+    // B002 is a code of its own, not a renaming of B001.  B001's theorem
+    // is the back-pressure trap, with its own remedy.  The containment
     // invariant below is a different theorem about the same axis, and the
-    // codes above are stable API that is never reused, so it gets its own.
+    // codes are stable API that is never reused.
     B002,
     H001,
     H002,
@@ -300,8 +297,8 @@ enum class RuleCode : std::uint8_t {
     // why: this enum holds exactly the codes a rule in this file can be
     // named by, and any other code is named only by the corpus, as a
     // string.  Nothing is renamed and nothing is reused: the corpus
-    // carries each string, with the reason it cannot fire or is not
-    // carried.
+    // carries each string, with the reason that it cannot fire or is
+    // retired.
     V101,
     V201,
     V202,
@@ -309,9 +306,7 @@ enum class RuleCode : std::uint8_t {
     V301,
     V401,
     V402,
-    // Written after the migration: each premise turned out to be
-    // writable in the new tree, where the old tree read a marker trait
-    // nothing specialised.
+    // Each premise of these three is a grade that a binding states.
     S011,
     D001,
     L003,
@@ -326,11 +321,11 @@ enum class RuleCode : std::uint8_t {
     I004,
     I003,
     I002,
-    // Written here, not inherited.  It reads the session atom of
+    // A code that this file adds.  It reads the session atom of
     // fixy/atoms/Session.h and the payload of a binding that is a
     // session handle.
     R004,
-    // Written here, not inherited.  It reads the same live handle as
+    // A code that this file adds.  It reads the same live handle as
     // R004, against the regime and a stated wait strategy.
     W003,
 };
@@ -370,28 +365,26 @@ inline constexpr std::array<pending_rule, 0> pending_rules{};
 inline constexpr std::size_t pending_rule_count = pending_rules.size();
 
 // ---------------------------------------------------------------------
-// The corpus: every rule code the old catalog defines, and what became
-// of each one here.
+// The corpus: every rule code, and the disposition of each one here.
 //
 // This list is the external specification, written out by name.  That is
-// the whole point of it.  A rule that was never written is absent from
+// the whole point of it.  A rule that nobody writes is absent from
 // RuleCode, so any quantity computed FROM RuleCode — including a count —
 // agrees with itself for a roster of the wrong size and cannot see the
-// absence.  The first shape of this file pinned `live == roster - pending`,
-// which is arithmetic rather than a measurement, and it held at 32 of 54.
+// absence.  A pin such as `live == roster - pending` is arithmetic rather
+// than a measurement.
 //
 // The three pins below compare this list against the RuleCode enum and
 // against the members live_rules actually defines, so no one of the three
 // can drift without one of the others reporting it.
 //
-// Source: include/crucible/safety/_CollisionCatalog.h, whose RuleCode enum
-// has 54 enumerators.
+// The specification names 54 codes, and this file adds three.
 
 enum class Disposition : std::uint8_t {
     Live,     // implemented in live_rules below, and able to fire today
-    Pending,  // carried as a theorem, waiting on an axis that has no atom
+    Pending,  // kept as a theorem, waiting on an axis that has no atom
     Absent,   // not implemented; the note names what is missing
-    Retired,  // not carried further; the note says why
+    Retired,  // needs no rule, and the note says why
 };
 
 struct corpus_entry {
@@ -434,9 +427,9 @@ inline constexpr corpus_entry rule_corpus[] = {
     // The observability family, which reads the surface atom of
     // fixy/atoms/Observe.h.  Two theorems, not one: B002 is the
     // containment of the observability row in the effect row, and B001 is
-    // the back-pressure trap this catalog already recorded.  B002 is a new
-    // code rather than a rereading of B001, because the codes are stable
-    // API and the negative corpus greps them.
+    // the back-pressure trap.  B002 is a code of its own rather than a
+    // rereading of B001, because the codes are stable API and the negative
+    // corpus greps them.
     {"B001", Disposition::Live, "Row<Bg> x an observable surface x an unbounded resource"},
     {"B002", Disposition::Live, "an observability row outside the binding's effect row"},
 
@@ -467,9 +460,8 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"F101", Disposition::Live, "a replay-deterministic payload x FP reassociation permitted"},
     {"F102", Disposition::Live, "a replay-deterministic payload x FP contraction across statements"},
 
-    // Three the old tree carried as marker traits nothing specialised,
-    // and whose premises the new tree states as grades.  S011 reads the
-    // payload's replay claim as the family above does.
+    // Three whose premises are grades that a binding states.  S011 reads
+    // the payload's replay claim as the family above does.
     {"S011", Disposition::Live, "capability x a replay-deterministic payload"},
     {"D001", Disposition::Live, "an indirect call whose family names no noexcept signature"},
     {"L003", Disposition::Live, "borrow x a spawn that no structured join ties to the frame"},
@@ -489,14 +481,14 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"I003", Disposition::Live, "constant time x a failure path"},
     {"I002", Disposition::Live, "classified x a failure whose error type is not Secret"},
 
-    // The session family.  R004 is written here and has no row in the old
-    // catalog.  It reads the live-handle atom of fixy/atoms/Session.h, or
-    // a payload that is a session handle, against a suspension.
+    // The session family, whose two codes this file adds.  R004 reads the
+    // live-handle atom of fixy/atoms/Session.h, or a payload that is a
+    // session handle, against a suspension.
     {"R004", Disposition::Live, "a suspension x a live session handle x a frame that is not linear"},
     {"W003", Disposition::Live, "hot x a live session handle x no stated wait"},
 
-    // Nothing waits on an atom any more.  pending_rules above is empty and
-    // says why in two parts; the rest of this list is the second part.
+    // Nothing waits on an atom.  pending_rules above is empty and says why
+    // in two parts, and the rest of this list is the second part.
 
     // The rules this layer cannot state yet.  Each note names the thing
     // that is missing, so the entry is a claim someone can check rather
@@ -527,11 +519,11 @@ inline constexpr corpus_entry rule_corpus[] = {
      "crucible/SingletonInitGraph.h states the edges and refuses a cycle at its own gate, and no gate takes the "
      "set of bindings that would read the graph"},
 
-    // Retired: the rule is not carried further, and the note says why.
-    // Each of these is discharged by the shape of the new tree — the
-    // combination it refused cannot be written — or never had a theorem.
-    // A retired rule is not a rule deferred, so it leaves the Absent set
-    // rather than waiting in it.
+    // Retired: the code needs no rule, and the note says why.  Each of
+    // these is discharged by the shape of the tree — the combination it
+    // names cannot be written — or has no theorem.  A retired rule is not
+    // a rule deferred, so it is outside the Absent set rather than waiting
+    // in it.
     {"C001", Disposition::Retired,
      "discharged: ctrl::abort<Reason> IS the binding's ControlFlow grade, so the abort declaration and the "
      "tier the old rule compared it with are one claim and cannot disagree"},
@@ -826,24 +818,22 @@ static_assert(every_pending_axis_is_still_empty(),
 // Each compares two things that were written separately.  None computes
 // one side from the other.
 
-// Fifty-four inherited codes plus three written here.
+// Fifty-four codes of the specification, plus three that this file adds.
 //
-// The 54 come from the RuleCode enum of
-// include/crucible/safety/_CollisionCatalog.h and the count is stated
-// against that external list, so a code dropped from this one stops being
-// reported as absent — the failure this list exists to prevent.
+// The count is stated against the specification, an external list, so a
+// code dropped from this list stops being reported as absent — the
+// failure this list exists to prevent.
 //
-// B002 is one addition, and it is an addition rather than a rereading
-// of an inherited code.  Axis::Observability carries two theorems where
-// the old catalog recorded one: B001's back-pressure trap, which keeps
-// its code, and the containment of the observability row in the effect
-// row, which had no code.  Reusing B001
-// for the second would have discarded a theorem that has its own remedy,
-// and the codes are stable API precisely so that cannot happen quietly.
+// B002 is one addition, and it is an addition rather than a rereading of
+// a code of the specification.  Axis::Observability carries two
+// theorems: B001's back-pressure trap, and the containment of the
+// observability row in the effect row.  Reusing B001 for the second
+// would discard a theorem that has its own remedy, and the codes are
+// stable API precisely so that cannot happen quietly.
 //
-// R004 and W003 are the other two.  The old catalog has no rule for a
-// continuation that captures a live session handle, and none for a hot
-// binding that holds one and states no wait.
+// R004 and W003 are the other two.  R004 refuses a continuation that
+// captures a live session handle in a frame that is not linear, and W003
+// refuses a hot binding that holds one and states no wait.
 static_assert(rule_corpus_size == 57,
               "fixy/Collision.h: the rule corpus must account for the 54 codes inherited from the RuleCode "
               "enum of include/crucible/safety/_CollisionCatalog.h, plus B002, R004 and W003, which are written "
@@ -855,7 +845,7 @@ static_assert(rule_corpus_size == 57,
 //
 // Both checks answer with the offending code rather than with a bool, so
 // the diagnostic names the rule instead of asking the reader to diff two
-// lists of fifty-four.
+// lists of fifty-seven.
 
 namespace detail {
 
@@ -904,8 +894,8 @@ static_assert(detail::code_the_corpus_never_listed_().empty(),
 //
 // So the set is written out a second time, here, and the two lists must
 // name the same codes.  The list only shrinks.  A code leaves it when its
-// rule is written and its row turns Live, or when its row records why the
-// rule is not carried further.  A code never joins it: adding a name here
+// rule is written and its row turns Live, or when its row turns Retired
+// and records why the code needs no rule.  A code never joins it: adding a name here
 // is the one edit that grows the set, and it is a visible line in a diff
 // rather than a disposition changed in passing.
 inline constexpr std::string_view absent_rule_codes[] = {
@@ -1041,13 +1031,10 @@ struct row_admits_observable_<::foundation::effects::Row<Es...>>
 // that makes the reduction order host-dependent, a timestamp read, a
 // capability that replay cannot mint again.
 //
-// The old catalog carried this premise as marks_replay_required, a
-// marker trait with a false_type primary that nothing ever specialised,
-// so none of those five rules fired structurally in the old tree either.
-// fixy/Collision.h's corpus already re-read the premise as the band; this
-// is the read.  The primary is false: a payload with no band claims
-// nothing about replay, and every replay rule stands down for it.  void,
-// the pack-only view's payload, takes that primary.
+// The premise is the band, and this is the read.  The primary is false:
+// a payload with no band claims nothing about replay, and every replay
+// rule stands down for it.  void, the pack-only view's payload, takes
+// that primary.
 //
 // A band of another lattice grades the payload and does not change it, so
 // the claim is read through it.  The canonical order puts HotPath outside
@@ -1067,15 +1054,13 @@ struct is_replay_deterministic_<Payload> : is_replay_deterministic_<::fixy::band
 
 // The Observability row, extracted from its grade.
 //
-// The Effect row is NOT extracted here any more.  This file used to
-// carry its own two-arm map with a primary answering Row<> for a grade
-// it did not recognise, which was safe for B002's comparison direction
-// and was still a second copy of a relation.  fixy/Atom.h now carries
-// the one closed relation — atom::effect_row_of_t, over the stated
-// with<Es...> and the bare Row the strict pole leaves behind — and
+// The Effect row is NOT extracted here.  fixy/Atom.h carries the one
+// closed relation — atom::effect_row_of_t, over the stated with<Es...>
+// and the bare Row the strict pole leaves behind — and
 // atom::binding_row_of_t joins it with the lifts of the pack.  The rules
-// below read that join.  A grade of any other shape fails there by name
-// rather than passing as the empty row.
+// below read that join, so this file holds no second copy of the
+// relation.  A grade of any other shape fails there by name rather than
+// passing as the empty row.
 //
 // Observability keeps its own map, because its shape is different: its
 // pole is derived from Effect's, so the pole is that same empty row, and
@@ -1489,8 +1474,7 @@ inline constexpr TrustClass trust_class_of_v = *detail::trust_class_of_(^^Grade)
 // The live rules.
 //
 // Each reads grades<Atoms...> and nothing else.  The message is the
-// theorem, carried from the old catalog with its citation, because the
-// message is what a reader gets.
+// theorem, with its citation, because the message is what a reader gets.
 
 // The rules over one binding: its payload and its pack.
 //
@@ -1583,8 +1567,8 @@ struct rules_of {
 
     // The one premise read from the payload rather than the pack: the
     // DetSafe band's claim that the bytes are replay-deterministic.  See
-    // detail::is_replay_deterministic_ for what the claim is and where the
-    // old catalog left it.  False under the pack-only view.
+    // detail::is_replay_deterministic_ for what the claim is.  False under
+    // the pack-only view.
     static constexpr bool replay_deterministic = detail::is_replay_deterministic_<Payload>::value;
     static constexpr bool row_alloc_or_io =
         ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Alloc>
@@ -1669,10 +1653,9 @@ struct rules_of {
     // and a passive surface that can do that is not passive — CLAUDE.md
     // L15 says Observe records facts and does not enforce policy.
     //
-    // B001 is the back-pressure trap, and it is the theorem the catalog
-    // recorded for this axis before any atom existed.  It is kept rather
-    // than overwritten: a rule code is stable API here, so B002 above is
-    // a new code rather than a reinterpretation of this one.
+    // B001 is the back-pressure trap.  A rule code is stable API here, so
+    // B002 above is a code of its own rather than a reinterpretation of
+    // this one.
     using observability_row = typename detail::observability_row_of_<
         typename G::template on<Axis::Observability>>::type;
 
@@ -1695,8 +1678,7 @@ struct rules_of {
     //
     // The ladder is a chain where each tier admits every class below it,
     // so "at or above NonDeterministicTsc" covers PrivilegedMsr too, and
-    // V201's old name — HotPathNondetTscOrPrivileged — needs no second
-    // clause.  V203 is the first rule to consume the payload's replay
+    // V201 needs no second clause for it.  V203 is the first rule to consume the payload's replay
     // claim: the same tier that is too slow for the hot path is also
     // non-deterministic by construction, and a payload claiming
     // replay-determinism cannot survive it.
@@ -1751,8 +1733,8 @@ struct rules_of {
     // nothing and Portable is by definition one kernel for every set, so
     // both stand down.
     //
-    // V402 is the coherence of a pinned scope with a pinned ISA, and it
-    // is structural where the old rule was a marker no atom ever set.
+    // V402 is the coherence of a pinned scope with a pinned ISA, read
+    // structurally from the two grades.
     // The host shareability trunk — Inner and Outer, the DMB ISH/OSH
     // family — is the ARM trunk's, so it coheres with an ARM ISA and with
     // nothing else; the accelerator trunk is GPU scope and coheres with
@@ -1796,7 +1778,7 @@ struct rules_of {
     static constexpr bool F101_ok = !(replay_deterministic && fp_reassociates);
     static constexpr bool F102_ok = !(replay_deterministic && fp_contracts_across_statements);
 
-    // ── Three rules the old tree carried as markers ───────────────────
+    // ── Three rules whose premises are grades ─────────────────────────
     //
     // S011 is the capability against the replay claim.  A capability is
     // an authorization token minted for one run, so a replay cannot mint
@@ -2164,13 +2146,11 @@ struct rules_of {
     // Folded over verdicts() rather than written as a conjunction of the
     // same codes a third time.
     //
-    // This file used to carry the list three ways: the verdicts array,
-    // validate()'s return, and this.  Adding a rule to two of the three
-    // left a rule that reports itself in the tier-5 message and refuses
-    // nothing — the exact shape of a gate that asks for nothing, which is
-    // what this migration keeps finding.  The fold makes verdicts() the
-    // single list, and every_ok_member_has_a_verdict_row_ below is what
-    // keeps a new `_ok` member from staying out of it.
+    // A list kept in three places lets a rule join two of them, and that
+    // rule reports itself in the tier-5 message and refuses nothing — the
+    // exact shape of a gate that asks for nothing.  The fold makes
+    // verdicts() the single list, and every_ok_member_has_a_verdict_row_
+    // below is what keeps a new `_ok` member from staying out of it.
     static constexpr bool valid = [] {
         for (const rule_verdict& verdict : verdicts()) {
             if (!verdict.ok) return false;
@@ -2192,8 +2172,8 @@ using live_rules = rules_of<void, Atoms...>;
 // two checks below walk those members: the first asks that every code the
 // corpus calls Live has one, the second that no `_ok` member exists
 // without a Live entry.  Together they bind the corpus to the code that
-// actually runs, which is the step the original `live == roster - pending`
-// arithmetic skipped.
+// actually runs, which is the step that `live == roster - pending`
+// arithmetic skips.
 
 namespace detail {
 

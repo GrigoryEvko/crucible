@@ -22,8 +22,7 @@
 // Each enum is one hand-written table and one call.  The table is the format,
 // and foundation::reflect::pin_enum compares it with the enum.
 //
-// Only enums whose lattice was extracted to foundation are pinned here.
-// The roster is the set of pinned enums itself; a new lattice enum whose
+// The roster is the set of pinned enums itself.  A new lattice enum whose
 // value reaches a cache key adds its own table and call below.
 
 #include <foundation/algebra/lattices/AllocClassLattice.h>
@@ -113,7 +112,6 @@ static_assert(pin_lattice_enum(memory_scope_pins), "MemoryScope drifted from mem
 inline constexpr std::array<enum_pin<CipherTierTag>, 3> cipher_tier_tag_pins{{{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
 static_assert(pin_lattice_enum(cipher_tier_tag_pins), "CipherTierTag drifted from cipher_tier_tag_pins.");
 
-// These are the values that the old tree pinned for this enum.
 inline constexpr std::array<enum_pin<ResidencyHeatTag>, 3> residency_heat_tag_pins{
     {{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
 static_assert(pin_lattice_enum(residency_heat_tag_pins), "ResidencyHeatTag drifted from residency_heat_tag_pins.");
@@ -142,18 +140,15 @@ inline constexpr std::array<enum_pin<ClockSource>, 10> clock_source_pins{{{"Real
                                                                           {"PtpHwClock", 9}}};
 static_assert(pin_lattice_enum(clock_source_pins), "ClockSource drifted from clock_source_pins.");
 
-// Lifetime reached foundation with the OpaqueLifetime band.  The old
-// tree carried no pins for it; these pin the values it arrived with.
 inline constexpr std::array<enum_pin<Lifetime>, 3> lifetime_pins{
     {{"PER_REQUEST", 0}, {"PER_PROGRAM", 1}, {"PER_FLEET", 2}}};
 static_assert(pin_lattice_enum(lifetime_pins), "Lifetime drifted from lifetime_pins.");
 
 // A recipe family is part of a KernelCache key: the (content_hash,
 // device_capability) slot a compiled kernel lands in is derived from the
-// NumericalRecipe pinned on it.  The old tree never pinned this enum;
-// these pin the values it arrived with.  None is the bottom sentinel and
-// Any the top one, so the last two values are 254 and 255, and a new
-// family takes the next free value after BlockStable.
+// NumericalRecipe pinned on it.  None is the bottom sentinel and Any the
+// top one, so the last two values are 254 and 255, and a new family
+// takes the next free value after BlockStable.
 inline constexpr std::array<enum_pin<RecipeFamily>, 6> recipe_family_pins{
     {{"Linear", 0}, {"Pairwise", 1}, {"Kahan", 2}, {"BlockStable", 3}, {"None", 254}, {"Any", 255}}};
 static_assert(pin_lattice_enum(recipe_family_pins), "RecipeFamily drifted from recipe_family_pins.");

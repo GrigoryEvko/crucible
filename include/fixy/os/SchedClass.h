@@ -21,14 +21,12 @@
 // returns one only after the kernel set the policy for the calling
 // thread.  So the one constructor takes the key of
 // fixy::sched::SchedProofDoor in fixy/os/Sched.h, and only that door
-// builds the key, after the syscall returned.  A public constructor let
+// builds the key, after the syscall returned.  A public constructor lets
 // any code claim a real-time policy that no syscall set.  The proof is
 // neither copyable nor movable, because the policy belongs to the thread
 // that set it, and a copy or a move could carry the claim to another
 // thread.  The pool rule, runnable_on, is a fact about the type, and a
 // caller reads it without an object.
-//
-// Old spelling: include/crucible/safety/_SchedClass.h.
 
 #include <fixy/GradedFacade.h>
 #include <foundation/Platform.h>
@@ -149,7 +147,7 @@ static_assert(FifoInt::policy == SchedulerPolicy_v::Fifo);
 static_assert(FifoInt::modality == ::foundation::algebra::ModalityKind::Absolute);
 
 // The doors that let any code build a proof are closed.  Each cell names
-// a route that built one with no syscall.
+// a route that builds one with no syscall.
 static_assert(!std::is_default_constructible_v<FifoInt>);
 static_assert(!std::is_constructible_v<FifoInt, int>);
 static_assert(!std::is_constructible_v<FifoInt, std::in_place_t, int>);

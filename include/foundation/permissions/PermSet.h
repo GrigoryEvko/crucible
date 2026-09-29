@@ -1,7 +1,8 @@
 #pragma once
 
-// Old spelling: include/crucible/permissions/PermSet.h, namespace
-// crucible::safety::proto.
+// PermSet<Tags...> is the set of permission tags that a session handle
+// holds at one position of its protocol.  The traits below ask set
+// questions of it: contains, insert, remove, subset, union, difference.
 
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
@@ -41,11 +42,8 @@ struct PermSet {
 using EmptyPermSet = PermSet<>;
 
 // Every question this header asks of a PermSet is a question about its
-// tag list, and the template arguments are that list.  The old header
-// asked each question with a primary template plus a partial
-// specialization that destructured the pack, and so spelled the same
-// destructuring once per question.  The helpers below destructure by
-// reflection instead, and each public trait is one call.
+// tag list, and the template arguments are that list.  The helpers below
+// destructure the list by reflection, and each public trait is one call.
 //
 // A reflection is compared after dealias, so a tag written against
 // `using Alias = Concrete;` is the tag Concrete.  An empty PermSet
@@ -63,7 +61,7 @@ namespace detail {
 }
 
 // Every tag of sub is a tag of super.  An empty sub is a subset of
-// every set, which is what the empty conjunction answered.
+// every set.
 [[nodiscard]] consteval bool perm_set_subset_(std::meta::info sub, std::meta::info super) noexcept {
     for (std::meta::info tag : std::meta::template_arguments_of(sub)) {
         if (!perm_set_names_(super, tag)) return false;
@@ -72,7 +70,7 @@ namespace detail {
 }
 
 // No tag of lhs is a tag of rhs.  An empty operand makes the two
-// disjoint, which is what the empty conjunction answered.
+// disjoint.
 [[nodiscard]] consteval bool perm_set_disjoint_(std::meta::info lhs, std::meta::info rhs) noexcept {
     for (std::meta::info tag : std::meta::template_arguments_of(lhs)) {
         if (perm_set_names_(rhs, tag)) return false;
@@ -81,8 +79,7 @@ namespace detail {
 }
 
 // The reflection of set with tag at the head, or of set itself when set
-// already names tag.  The head position is where the old insert branch
-// put a new tag.  The already-present arm returns the operand rather
+// already names tag.  The already-present arm returns the operand rather
 // than a rebuilt one, so it cannot differ from it in any way.
 [[nodiscard]] consteval std::meta::info perm_set_insert_(std::meta::info set, std::meta::info tag) {
     if (perm_set_names_(set, tag)) return set;

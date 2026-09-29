@@ -30,9 +30,8 @@
 // refuse that.  A value graded by its clock uses the order dual
 // (DualLattice.h).
 //
-// Old spelling: include/crucible/algebra/lattices/_HappensBefore.h.  The
-// preconditions moved from native pre() clauses into the function bodies,
-// where CRUCIBLE_PRE fires during constant evaluation too.
+// The preconditions are CRUCIBLE_PRE in the function bodies, so they
+// fire during constant evaluation too.
 
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>

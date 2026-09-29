@@ -2,15 +2,14 @@
 
 // The SIMD-ISA atoms.  Every atom here engages Axis::SimdIsa.
 //
-// The grades are the old SimdIsaLattice's, and its shape is the same as
-// MemoryScope's: two vendor trunks that meet only at a shared bottom and
-// a shared top.  Scalar is the bottom — no SIMD at all, so it runs on
-// any processor — and Portable is the top, one kernel that runs under
-// any instruction set.  Between them the x86 trunk (SSE2 through
-// AVX-512BW) and the ARM trunk (NEON through SVE2) order internally and
-// have no relation to one another: x86 code never runs on ARM and vice
-// versa, and the old lattice's cross-trunk leq was false for exactly
-// that reason.  The trunk is the high nibble of the enumerator value.
+// The grades have the same shape as MemoryScope's: two vendor trunks
+// that meet only at a shared bottom and a shared top.  Scalar is the
+// bottom — no SIMD at all, so it runs on any processor — and Portable is
+// the top, one kernel that runs under any instruction set.  Between them
+// the x86 trunk (SSE2 through AVX-512BW) and the ARM trunk (NEON through
+// SVE2) order internally and have no relation to one another, because
+// x86 code never runs on ARM and ARM code never runs on x86.  The trunk
+// is the high nibble of the enumerator value.
 //
 // fixy/Axis.h files this under Tier L rather than Tier S for the same
 // reason as MemoryScope: a non-distributive partial order.
@@ -18,13 +17,10 @@
 // ---------------------------------------------------------------------
 // The enum lives here, and why
 //
-// foundation ports no SimdIsa lattice, and the old one at
-// include/crucible/algebra/lattices/SimdIsaLattice.h is not carried
-// across, and port-drops.txt records each of its symbols against this
-// header.  The fifteen enumerators and
-// their values are restated here verbatim, with the trunk nibble they
-// encode, and nothing else of the lattice comes with them.  A later
-// foundation port can alias either way; the values are the contract.
+// foundation has no SimdIsa lattice.  The fifteen enumerators and their
+// values are declared here, with the trunk nibble that they encode, and
+// nothing else of a lattice.  A lattice that foundation adds later can
+// alias either way.  The values are the contract.
 //
 // ---------------------------------------------------------------------
 // No lift
@@ -52,9 +48,8 @@ namespace fixy::atom::simd {
 
 inline constexpr atom_seal atom_namespace_seal{};
 
-// Old spelling: crucible::algebra::lattices::SimdIsa.  The high nibble
-// names the trunk: 0x0 the shared bottom, 0x1 x86, 0x2 ARM, 0xF the
-// shared top.
+// The high nibble names the trunk: 0x0 the shared bottom, 0x1 x86, 0x2
+// ARM, 0xF the shared top.
 enum class SimdIsa : std::uint8_t {
     Scalar = 0x00,  // no SIMD at all, so it runs on any processor
     Sse2 = 0x10,
@@ -134,8 +129,7 @@ struct portable final : atom_of<Axis::SimdIsa> {
 // Whether an ISA is pinned to ONE vendor trunk — neither the shared
 // bottom nor the shared top.  Scalar runs anywhere and Portable is by
 // definition one kernel for every set, so neither pins anything and
-// V101 and V402 stand down for both.  This is the old
-// simd_isa_pins_specific_vector, read from the value.
+// V101 and V402 stand down for both.
 [[nodiscard]] consteval bool is_trunk_pinned(SimdIsa isa) noexcept {
     return isa != SimdIsa::Scalar && isa != SimdIsa::Portable;
 }

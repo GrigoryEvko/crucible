@@ -7,27 +7,25 @@
 // binary.  Every NaN projects to one quiet pattern and both zeros
 // project to zero.
 //
-// Old spelling: include/crucible/fixy/fp/Canonicalize.h.
+// Design notes:
 //
-// Deviations, each deliberate:
-//
-//  1. The two axes the gate reads are fixy's own enums.  The old header
-//     included crucible/NumericalRecipe.h, a chain header above this
-//     layer, purely to name RoundingMode and ReductionDeterminism and to
-//     offer a converting constructor from a recipe.  fixy cannot include
-//     it.  CanonicalizeRecipeSpec below carries the two axes and nothing
-//     else, and the crucible side builds the spec at its own boundary.
+//  1. The two axes the gate reads are fixy's own enums.
+//     crucible/NumericalRecipe.h names RoundingMode and
+//     ReductionDeterminism, but it is a chain header above this layer,
+//     and fixy cannot include it.  CanonicalizeRecipeSpec below carries
+//     the two axes and nothing else, and the crucible side builds the
+//     spec at its own boundary.
 //
 //  2. The enumerator values are pinned.  Crucible converts a recipe's two
 //     fields into this spec, and the cheapest correct conversion is a
 //     cast, which is only correct while the ordinals agree.  The cells at
 //     the foot of this header pin every value and the cardinality of each
 //     enum, so a reordering here or there is a build error rather than a
-//     silently different spec.  The values are the ones the crucible
-//     enums arrived with.
+//     silently different spec.  The values are the values of the crucible
+//     enums.
 //
-//  3. There is no converting constructor from a recipe, because the type
-//     it converted from is not visible here.  The spec's two-argument
+//  3. There is no converting constructor from a recipe, because the
+//     recipe type is not visible here.  The spec's two-argument
 //     constructor is what the crucible side calls.
 
 #include <bit>
@@ -41,7 +39,7 @@
 namespace fixy::fp {
 
 // The rounding mode a kernel realizes.  Same enumerators and same values
-// as the crucible RoundingMode enum, per deviation 2.
+// as the crucible RoundingMode enum, per design note 2.
 enum class RoundingMode : std::uint8_t {
     RN = 0,  // to nearest, ties to even
     RZ = 1,  // toward zero
@@ -50,7 +48,7 @@ enum class RoundingMode : std::uint8_t {
 };
 
 // How much reordering a reduction may do.  Same enumerators and same
-// values as the crucible ReductionDeterminism enum, per deviation 2.
+// values as the crucible ReductionDeterminism enum, per design note 2.
 enum class ReductionDeterminism : std::uint8_t {
     UNORDERED = 0,
     ORDERED = 1,
@@ -155,7 +153,7 @@ constexpr std::uint32_t canonicalize_for(float x) noexcept {
 
 namespace fixy::fp::detail::canonicalize_self_test {
 
-// ── The pinned enumerator values (deviation 2) ───────────────────────
+// ── The pinned enumerator values (design note 2) ─────────────────────
 //
 // Crucible converts its RoundingMode and ReductionDeterminism
 // enums into the two above.  These cells
@@ -212,8 +210,7 @@ static_assert(canonicalize(-std::numeric_limits<double>::infinity())
                   == std::bit_cast<std::uint64_t>(-std::numeric_limits<double>::infinity()),
               "cell (c): -Inf passes through (sign preserved)");
 
-// A subnormal has one well-defined pattern, so it passes through.  The
-// old header claimed this in a comment and never pinned it.
+// A subnormal has one well-defined pattern, so it passes through.
 static_assert(canonicalize(std::numeric_limits<double>::denorm_min())
                   == std::bit_cast<std::uint64_t>(std::numeric_limits<double>::denorm_min()),
               "cell (c): a subnormal passes through");

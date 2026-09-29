@@ -4,21 +4,16 @@
 // witnessed gate over it, whose acquisition costs a Permission and a
 // context that the strategy admits.
 //
-// Old spelling: include/crucible/fixy/concurrent/_SpinLock.h for the
-// witnessed half and include/crucible/concurrent/_SpinLock.h for the bare
-// one.  Both live here, because the witnessed gate embeds the bare lock
-// and nothing else in the new tree has a use for it.
+// The bare lock and the witnessed gate live in one header, because the
+// witnessed gate embeds the bare lock and nothing else has a use for it.
 //
-// Deviations, each deliberate:
+// Design notes:
 //
 //  1. The guard is the one way in and the one way out.  lock(), try_lock()
 //     and unlock() are private, and GateGuard is the only friend.  The
 //     guard takes a context and a Permission, and its clause states which
-//     contexts may wait on the gate.  The old header had the doors public,
-//     so the eleven production sites in
-//     include/crucible/cntp/ConnectionPoolRuntime.h took the ungated one
-//     and no context rule ever applied to them.  A gate with a public
-//     bypass beside it is not a gate.
+//     contexts may wait on the gate.  A gate with a public bypass beside
+//     it is not a gate.
 //
 //  2. The context rule is read off the wait strategy, and WaitLattice
 //     splits the strategies at the kernel.  A spin wait stays in user
@@ -31,36 +26,30 @@
 //     is a block.  Background work that needs mutual exclusion takes the
 //     blocking gate.
 //
-//  3. No release is public.  A public unlock that took any Permission of
-//     the tag let a thread that did not hold the gate release it, and let
-//     one holder release it two times.  The guard releases in its
+//  3. No release is public.  A public unlock that takes any Permission of
+//     the tag lets a thread that does not hold the gate release it, and
+//     lets one holder release it two times.  The guard releases in its
 //     destructor, and only when it acquired, so each acquisition has one
 //     release, by its holder.  A guard neither copies nor moves.
 //
 //  4. The spin wait reads the flag and pauses while the flag is set, and
 //     tries the exchange only when a read finds the flag clear.  A wait
-//     that did the exchange at each turn took the cache line in exclusive
-//     state at each turn, away from the holder.  The spin never yields,
-//     because sched_yield is a system call, and the context rule of
-//     deviation 2 keeps the holder out of the kernel as well.
+//     that does the exchange at each turn takes the cache line in
+//     exclusive state at each turn, away from the holder.  The spin never
+//     yields, because sched_yield is a system call, and the context rule
+//     of design note 2 keeps the holder out of the kernel as well.
 //
-//  5. cache_tier_hot is gone.  It was a namespace-scope constant that
-//     restated SpinLock<Tag>::cache_tier, and nothing read it.
+//  5. There is no unwitnessed guard, and no accessor hands the bare lock
+//     out of the witnessed one.  Either one locks the gate without a
+//     Permission, and the Permission is the discipline this header exists
+//     to impose.  The bare locks are here, spelled Unwitnessed so that
+//     choosing one reads as the choice it is.  A class that serializes
+//     its own members declares a private gate tag and mints a token of it
+//     at each acquisition: the token then witnesses that the acquisition
+//     comes from inside the class.  A bare lock is not a gate, so the
+//     rules of design notes 1 and 3 do not apply to it.
 //
-//  6. There is no unwitnessed guard and no substrate() accessor.  The old
-//     tree had both: a guard over the bare lock, and an escape hatch that
-//     handed the bare lock out of the witnessed one "for interoperating
-//     with lock adaptors".  Either one locks the gate without a
-//     Permission, which is the discipline this header exists to impose,
-//     and the accessor had no callers at all.  The bare locks are still
-//     here, spelled Unwitnessed so that choosing one reads as the choice
-//     it is.  A class that serializes its own members declares a private
-//     gate tag and mints a token of it at each acquisition: the token then
-//     witnesses that the acquisition comes from inside the class.  A bare
-//     lock is not a gate, so the rules of deviations 1 and 3 do not apply
-//     to it.
-//
-//  7. One template, Gate<Tag, W>, carries the witnessing for every
+//  6. One template, Gate<Tag, W>, carries the witnessing for every
 //     strategy, so the spin gate and the blocking gate cannot drift apart.
 //     SpinLock and BlockingLock name its two instances, SpinGuard and
 //     BlockingGuard their guards.  A strategy that no bare lock implements
@@ -131,8 +120,8 @@ public:
     // The waiter reads the flag and pauses while it is set, so the cache
     // line stays shared while the holder runs.  Only a read that finds
     // the flag clear is followed by the exchange, which takes the line
-    // in exclusive state.  An exchange at each turn took the line away
-    // from the holder at each turn, and the holder then paid a miss to
+    // in exclusive state.  An exchange at each turn takes the line away
+    // from the holder at each turn, and the holder then pays a miss to
     // release.  The wait does not yield, because sched_yield is a system
     // call and a spin gate is a hot-path gate.  A holder that loses its
     // core keeps its waiters spinning until it runs again.  Work that can
@@ -266,7 +255,7 @@ concept CtxMayAcquireSpin =
 template <typename Ctx>
 concept CtxMayBlock = eff::CtxOwnsCapability<Ctx, eff::Effect::Block>;
 
-// The rule of deviation 2, one clause for both guards.
+// The rule of design note 2, one clause for both guards.
 // A strategy on either side of the kernel split picks its rule, so the
 // clause has no case to forget.
 template <typename Ctx, WaitStrategy Strategy>
@@ -303,7 +292,7 @@ public:
     Gate& operator=(Gate&&) = delete("a gate is an identity; moving one would leave a waiter on the old address");
 
 private:
-    // Private, per deviations 1 and 3.  The guard is the only friend: it
+    // Private, per design notes 1 and 3.  The guard is the only friend: it
     // checks the context and takes the Permission before it calls lock or
     // try_lock, and it calls unlock once, and only after an acquisition.
     template <typename, WaitStrategy, typename>
@@ -423,7 +412,7 @@ static_assert(SpinLock<ProbeTag>::cache_tier == cache_tier_t::Hot && BlockingLoc
 
 static_assert(std::is_same_v<SpinLock<ProbeTag>::tag_type, ProbeTag>);
 
-// The kernel split of deviation 2, read off the lattice.
+// The kernel split of design note 2, read off the lattice.
 static_assert(waits_in_kernel(WaitStrategy::Block) && waits_in_kernel(WaitStrategy::Park)
               && waits_in_kernel(WaitStrategy::AcquireWait));
 static_assert(!waits_in_kernel(WaitStrategy::UmwaitC01) && !waits_in_kernel(WaitStrategy::BoundedSpin)
@@ -441,7 +430,7 @@ static_assert(!std::is_copy_constructible_v<UnwitnessedSpinLock> && !std::is_mov
 static_assert(!std::is_copy_constructible_v<UnwitnessedBlockingLock>
               && !std::is_move_constructible_v<UnwitnessedBlockingLock>);
 
-// Deviation 2 as cells: each clause admits the contexts its wait allows
+// Design note 2 as cells: each clause admits the contexts its wait allows
 // and refuses the rest.  The contexts are built here, the way the sibling
 // os headers build theirs.
 using ForegroundCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;

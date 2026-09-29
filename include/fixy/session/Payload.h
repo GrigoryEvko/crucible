@@ -52,12 +52,12 @@
 //
 // ── How the header finds the tokens ─────────────────────────────────
 //
-// The old header read the marker only at the top of the payload.  So
-// std::pair<Transferable<int, X>, int> travelled with an empty set, and
-// the sender kept X in its set while the recipient held the token.  Here
-// the walk reads every component of the payload, as
-// foundation/reflect/TypeComponents.h defines a component, and it knows
-// how each component was reached:
+// The walk reads every component of the payload, as
+// foundation/reflect/TypeComponents.h defines a component.  A walk that
+// read the marker only at the top of the payload would send
+// std::pair<Transferable<int, X>, int> with an empty set, and the sender
+// would keep X in its set while the recipient held the token.  The walk
+// also knows how each component was reached:
 //
 //   owned      the root, a base, a by-value member of an owned class, and
 //              the value that a marker carries
@@ -149,9 +149,8 @@
 //                      itself.  Each handle, decorator and bridge of this
 //                      tree has that shape: SessionHandle and its base,
 //                      CrashWatched, CheckpointHandle, Recorded and
-//                      SessionFromMachine.  Each handle of the old tree
-//                      has it too, and so does the handle of a library
-//                      that fixy does not know
+//                      SessionFromMachine.  The handle of a library that
+//                      fixy does not know has it too
 //
 // The walk reads the members of each class it reaches.  A specialization
 // that the payload points at or names is instantiated for the read, so a
@@ -182,9 +181,6 @@
 //     pointers is a channel held as plain data, and no type marks it.
 //
 // The crash attack campaign pins each of these on its ledger.
-//
-// Old spelling: include/crucible/sessions/_SessionPermPayloads.h,
-// namespace crucible::safety::proto.
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>

@@ -28,9 +28,7 @@
 // bodies run on their own threads or inline in child order.  It offers
 // the two arms as two mints and the layer above chooses.  The spawning
 // arm requires a context that owns the background effect; the inline
-// arm requires no effect beyond what the tags themselves need.  The old
-// header made the choice itself from the context's workload budget,
-// which foundation's ExecCtx does not carry.
+// arm requires no effect beyond what the tags themselves need.
 //
 // The two arms share one body and one set of checks; the arm is a bool
 // parameter of both, and the checks' diagnostics name the arm they
@@ -42,12 +40,8 @@
 // tasks, which want a work-stealing pool instead.
 //
 // A callable's own noexcept specification is all that is checked here.
-// The old header also rejected a callable whose type carried the
-// crucible::fixy::ctrl::throws grant; that name is above this layer, so
-// the structural check belongs to fixy/os/Spawn.h.
-//
-// Old spelling: include/crucible/permissions/PermissionFork.h, namespace
-// crucible::safety.
+// The fixy::atom::ctrl::throws atom is above this layer.  fixy/os/Spawn.h
+// refuses a callable whose type carries it.
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>

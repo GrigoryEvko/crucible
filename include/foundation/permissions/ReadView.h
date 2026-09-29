@@ -36,9 +36,6 @@
 // undefined behavior, which no property of a type refuses.  A result
 // that names a view is refused, so the dangling pointer cannot leave
 // through the return value.
-//
-// Old spelling: include/crucible/permissions/ReadView.h, namespace
-// crucible::safety.
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>

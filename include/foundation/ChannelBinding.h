@@ -35,9 +35,8 @@
 // another state, such as a close() that consumes the open handle, moves
 // the binding into the new handle so that the consumed one is left empty.
 //
-// The binding lives in foundation because the channels of both trees use
-// it, and the old tree cannot include a header that opens namespace fixy:
-// its tests alias that name to the old fixy namespace.
+// The permissioned channels of fixy/concurrent and crucible/
+// PermissionedMetaLog.h hold their channel through this binding.
 
 #include <foundation/Platform.h>
 

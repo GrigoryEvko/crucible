@@ -4,22 +4,17 @@
 // more than the strict pole of one axis: `affine` relaxes Usage,
 // `with<IO>` relaxes Effect, `declassify<Policy>` relaxes Security.
 // Every atom is an empty final type that derives `atom_base` and
-// carries the axis it engages as `static constexpr Axis axis`.  That
-// member replaces the `which_dim` partial specialisation of the old
-// tree: the axis is one line on the atom itself, so no header reopens
-// a namespace to register it and no table of witnesses has to agree
-// with it.
+// carries the axis it engages as `static constexpr Axis axis`.  The axis
+// is one line on the atom itself, so no header reopens a namespace to
+// register it and no table of witnesses has to agree with it.
 //
 // An atom-less axis resolves to the strict pole in fixy/Axis.h.  That
 // table is the only default.  There is no marker that accepts a
 // default explicitly and no list of the axes that ship no atom.
 //
-// Old spelling: include/crucible/fixy/Grant.h (grant_base, IsGrantTag,
-// which_dim, the tags of eighteen axes).  A grant is renamed an atom
-// throughout, because a grant is an effect atom.  The families that
-// reach the operating system live in fixy/atoms/Os.h and the
-// control-flow, call-shape, stack, global-state and stdio families in
-// fixy/atoms/{Ctrl,Dispatch,Stack,Global,Stdio}.h.
+// The families that reach the operating system live in fixy/atoms/Os.h,
+// and the control-flow, call-shape, stack, global-state and stdio
+// families in fixy/atoms/{Ctrl,Dispatch,Stack,Global,Stdio}.h.
 
 #include <fixy/Axis.h>
 #include <fixy/Tags.h>
@@ -328,13 +323,11 @@ struct capability_usage final : atom_of<Axis::Usage> {};
 // has to recognise both spellings.
 //
 // It lifts, and the lift is what lets a context be gated on a binding's
-// declared effects.  Until it did, the Effect axis's own atom was the one
-// thing foundation/effects/Lift.h could not see: the syscall and wait
-// atoms lifted, so the os mints could fold a pack into a required row,
-// and a binding that had declared it performs IO could still be called
-// from a context admitting nothing, because the row nobody computed is
-// the empty row and the empty row is a Subrow of every context's.  A
-// caller who wanted the gate wrote the row a second time by hand.
+// declared effects.  Without the lift, foundation/effects/Lift.h could
+// not see the Effect axis's own atom.  A binding that declared IO could
+// then be called from a context that admits nothing, because the row
+// nobody computed is the empty row, and the empty row is a Subrow of
+// every context's.
 template <::foundation::effects::Effect... Es>
 struct with final : lifting_atom_of<Axis::Effect, ::foundation::effects::Row<Es...>> {};
 
@@ -359,8 +352,8 @@ using with_test = with<::foundation::effects::Effect::Test>;
 // answered with the empty row, because the empty row is a Subrow of
 // every context's: a quiet default here would admit the binding
 // everywhere, which is the failure the relation exists to stop.  That is
-// the same shape as foundation/diag/FailClosed.h's relations and as the
-// repair to payload_effect_row_t.
+// the same shape as foundation/diag/FailClosed.h's relations and as
+// payload_effect_row_t.
 namespace detail {
 
 template <class Grade>
@@ -488,12 +481,12 @@ struct constant_time final : atom_of<Axis::Security> {};
 //
 // A rule asks one of three questions of the Security grade: is the data
 // classified, is it in constant time, is it declassified under a policy.
-// Each reader used to answer with its own partial specialisation and a
-// false primary, so a new point on the axis read as "public" in every
-// reader that nobody updated.  On this axis "public" is the answer that
-// lets a binding through, so that default failed open.
+// A reader with its own partial specialisation and a false primary would
+// read a new point on the axis as "public" until somebody updated it.
+// On this axis "public" is the answer that lets a binding through, so
+// that default fails open.
 //
-// Here the primary is declared and not defined.  A grade this relation
+// So the primary is declared and not defined.  A grade this relation
 // does not name fails at the use with its own name in the diagnostic, and
 // the walk in the self-test below makes sure every Security atom in the
 // roster has an answer.
@@ -569,8 +562,8 @@ struct from_source final : atom_of<Axis::Provenance> {};
 template <auto Rationale>
 struct trust_assumed final : atom_of<Axis::Trust> {};
 
-// One atom per remaining trust level.  `trust_verified` names the level the
-// old default asserted; the strict pole in fixy/Axis.h is Unverified, so a
+// One atom per remaining trust level.  `trust_verified` names the
+// Verified level.  The strict pole in fixy/Axis.h is Unverified, so a
 // binding names this atom only after it has discharged the proof.
 // `trust_external` delegates the claim to a foreign source such as a vendor
 // library or firmware, and a binding that takes it has to confirm that

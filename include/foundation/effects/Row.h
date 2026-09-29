@@ -678,17 +678,11 @@ static_assert(L::leq(row_descriptor_v<Row<Effect::IO>>, row_descriptor_v<Row<Eff
 // value-level set of Effect atoms that can be recorded, transmitted and
 // compared against a declared row.
 //
-// Old spelling: include/crucible/effects/_EffectRowProjection.h.
-//
 // The carrier is the lattice element, so a mask and the descriptor of a
 // row are one encoding: bit n is the atom whose underlying value is n.
-// The old carrier was one byte wide against the lattice's eight.
 //
-// The sibling bit-set wrapper in the safety tree is not reusable here.
-// It takes each enumerator as an already-shifted mask and ORs it in
-// directly, whereas Effect is position-encoded, so `set(Effect::Bg)`
-// would set bits 0 and 1 rather than bit 3.  This newtype does the
-// position-to-mask shift itself.
+// Effect is position-encoded, so this newtype does the position-to-mask
+// shift itself: `set(Effect::Bg)` sets bit 3.
 //
 // IsEffectRow strips cv-qualifiers and references, so the projections
 // below take a qualified Row type as well as a bare one.

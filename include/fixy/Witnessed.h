@@ -39,24 +39,19 @@
 //   UnderRow<Tag> — EFFECT.  A borrow of a region carries the region's
 //     owner tag, and permission_row<Tag> says what touching that region
 //     costs: DiskSpilledRegionTag is Row<IO, Block>, GpuMemoryTag is
-//     Row<Alloc>.  The row was always on the region and never reached
-//     the borrow.  Here the borrow is read only against a context whose
-//     own row admits the tag's, which is the same Subrow test the
-//     permission pool already applies to a lend.
+//     Row<Alloc>.  A plain borrow does not check that row.  A witnessed
+//     borrow is read only against a context whose own row admits the
+//     tag's, which is the same Subrow test the permission pool applies
+//     to a lend.
 //
 //   EPOCH is not built.  It needs an advance that mints a fresh epoch
 //     brand and consumes the old one, and neither include/foundation
-//     nor include/fixy has a replay engine or an epoch type.  Measured
-//     2026-09-20: the word appears twice in the two trees, once in an
-//     arena comment and once in a sentence in fixy/session/Handle.h
-//     naming gates that live in the frozen tree.
+//     nor include/fixy has a replay engine to drive that advance.
 //
 //   RESIDENCY is not built.  It needs the execution context to carry a
 //     node, a heat and a residency, and foundation::effects::ExecCtx
-//     has two axes, a capability source and a row.  The five residency
-//     axes are declared only in the frozen include/crucible/effects,
-//     so a borrow here has no node to inherit and no node to compare
-//     against.
+//     has two axes, a capability source and a row.  So a borrow here
+//     has no node to inherit and no node to compare against.
 //
 // What a witnessed borrow does not do, stated rather than implied
 // ---------------------------------------------------------------
@@ -289,7 +284,7 @@ using FgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
 
 // The borrows are spelled at a named brand rather than at the erased
-// one.  A borrow left at the old arity is DefaultBrand, which
+// one.  A borrow spelled with no brand argument is DefaultBrand, which
 // scripts/check-brand-drain.py counts and does not let a new file add,
 // and every claim below reads the same at either brand.
 struct probe_brand {};

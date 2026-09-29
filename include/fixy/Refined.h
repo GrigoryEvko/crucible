@@ -24,11 +24,9 @@
 // search for the trusted spelling therefore finds every site that
 // asks the type system to take an invariant on faith.
 //
-// Old spelling: include/crucible/safety/Refined.h,
-// include/crucible/safety/RefinedAlgebra.h and
-// include/crucible/safety/SealedRefined.h, which this header joins.
-// The implication relation those headers stated as an open trait is a
-// closed namespace here, so the three had to become one.
+// This header holds the refinement, the algebra of its predicates and
+// the sealed refinement.  The implication relation is a closed
+// namespace, so the three share one header.
 
 #include <fixy/GradedFacade.h>
 #include <fixy/Qtt.h>
@@ -67,11 +65,11 @@ namespace fixy {
 // predicate's type is a template argument of the refinement's lattice,
 // and the lattice's printed name keys the row hash.  GCC prints a
 // generic closure with a counter that runs across the translation unit,
-// so a closure predicate gave one refinement a different hash in each
-// translation unit.  foundation/reflect/Hash.h now refuses such a type
-// in every id, so a closure predicate fails to hash rather than hashing
-// wrong.  Each predicate therefore ships as a class and a value, and
-// call sites name the value as before.
+// so a closure predicate gives one refinement a different hash in each
+// translation unit.  foundation/reflect/Hash.h refuses such a type in
+// every id, so a closure predicate fails to hash rather than hashing
+// wrong.  Each predicate ships as a class and a value, and call sites
+// name the value.
 
 // Each call operator states the expression its body evaluates as a
 // constraint, so a predicate that cannot evaluate a type fails
@@ -444,8 +442,8 @@ using predicate_t = std::remove_cv_t<decltype(Pred)>;
 // Both refinements grade on BoolLattice over the predicate, so without
 // this identity a sealed value and an open one over the same predicate
 // take one cache slot, although only one of them can be mutated in
-// place.  The open form publishes nothing, which leaves its hash where
-// it was.
+// place.  The open form publishes nothing, so no discipline enters its
+// hash.
 namespace row_discipline {
 struct sealed_refinement;
 }  // namespace row_discipline
@@ -464,14 +462,14 @@ struct sealed_row_discipline<true> {
 
 }  // namespace refined
 
-// One template carries both refinements.  They differed in exactly one
-// place — the sealed one has no extractor — and everything else was the
-// same text written twice.  The Sealed argument is that one difference.
+// One template carries both refinements.  They differ in exactly one
+// place: the sealed one has no extractor.  The Sealed argument is that
+// one difference.
 //
-// The two names stay distinct types, because Refinement<Pred, T, false>
-// and Refinement<Pred, T, true> are distinct types.  Nothing that held
+// The two names are distinct types, because Refinement<Pred, T, false>
+// and Refinement<Pred, T, true> are distinct types.  Nothing that holds
 // a Refined can be handed a SealedRefined, and the hidden-friend
-// comparisons still refuse to compare across the two.
+// comparisons refuse to compare across the two.
 template <auto Pred, typename T, bool Sealed>
 class Refinement;
 
@@ -831,7 +829,7 @@ template <auto Pred, typename T>
 using RefinedLinear = Refined<Pred, Linear<T>>;
 
 // The traits that other layers use to take a refinement apart without
-// naming the wrapper.  Both refinements are one template now, so one
+// naming the wrapper.  Both refinements are one template, so one
 // reflection query in foundation/reflect/Instance.h answers for both,
 // and the cv-ref strip is that query's.  Refined and SealedRefined are
 // alias templates, which a reflection query cannot name: the query
@@ -854,10 +852,9 @@ template <typename T>
     requires IsRefined<T>
 using refined_predicate_type_t = typename std::remove_cvref_t<T>::predicate_type;
 
-// The sealed-ness is a template argument now rather than a separate
-// class template, so this reads the member the class publishes instead
-// of asking reflection which of two templates the type came from.  The
-// other traits beside it already read members this way.
+// The sealed-ness is a template argument, not a separate class
+// template, so this reads the member the class publishes.  The other
+// traits beside it read members the same way.
 template <typename T>
     requires IsRefined<T>
 inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
@@ -922,11 +919,10 @@ namespace refined {
 // a null pointer of each type, which is what keeps a family closed: an
 // overload set cannot be extended from outside its class.
 //
-// Each family used to declare a marker variable beside itself, which
-// the walk below looked for.  A family written without its variable was
-// silently inert: it compiled, it read as admitted, and it decided
-// nothing.  The base class is the opt-in now, so a family cannot be
-// declared and left out.
+// The base class is the opt-in, so a family cannot be declared and left
+// out.  With a separate marker variable beside each family, a family
+// written without its variable would be silently inert: it would
+// compile, read as admitted, and decide nothing.
 template <class Family, class P, class Q>
 concept RuleDecides = requires {
     { Family::template admits<P, Q>() } -> std::same_as<bool>;

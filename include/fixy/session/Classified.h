@@ -26,10 +26,8 @@
 // check, and it cannot be separated from the type.  A trait
 // specialization or a roster entry could do both.
 //
-// Old spellings: include/crucible/sessions/_SessionDeclassify.h and
-// include/crucible/sessions/_SessionCT.h.  The policy must be admitted, as
-// Secret::declassify requires.  A policy that only derives from the policy
-// base is not admitted.
+// The policy must be admitted, as Secret::declassify requires.  A policy
+// that only derives from the policy base is not admitted.
 
 #include <fixy/ConstantTime.h>
 #include <fixy/Secret.h>

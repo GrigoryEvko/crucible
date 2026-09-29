@@ -2,16 +2,11 @@
 
 // Saturating arithmetic that keeps what the plain helpers throw away.
 //
-// Old spelling: include/crucible/Saturate.h, namespace crucible::sat,
-// twelve helpers in one header.  The three that return a plain T went
-// to foundation/Saturate.h with the port of the core lattices, and that
-// header says the rest belong here.  The nine below return a fixy
-// wrapper — Saturated<T>, or the DetSafe band over it — and so could
-// not follow the three across the layer line.  They were handed to the
-// port of the Saturated wrapper and did not arrive, which is why this
-// header is younger than the wrapper it composes.  The three plain
-// helpers are re-exported, so fixy::sat is the whole of the old
-// namespace under one name.
+// The three helpers that return a plain T live in foundation/Saturate.h.
+// The nine below return a fixy wrapper, Saturated<T> or the DetSafe band
+// over it, and the layer line keeps a fixy type out of foundation.  So
+// the nine live here.  This header re-exports the three plain helpers,
+// so fixy::sat holds all twelve under one name.
 //
 //   *_sat_det   the checked result inside DetSafe<Pure, ...>: the value
 //               is a function of its operands alone, and the pin says so
@@ -19,11 +14,11 @@
 //               untouched
 //   *_sat_into  the same, written back into the counter
 //
-// The bodies are the old tree's.  Each *_sat_det wraps the checked
-// operation of Saturated.h in the band; each *_sat_from is that checked
-// operation read through a reference; each *_sat_into is *_sat_from
-// followed by the write-back.  The band is built at its door,
-// mint_band in fixy/Bands.h, which names the Pure tier at each site.
+// Each *_sat_det wraps the checked operation of Saturated.h in the band.
+// Each *_sat_from is that checked operation read through a reference.
+// Each *_sat_into is *_sat_from followed by the write-back.  The band is
+// built at its door, mint_band in fixy/Bands.h, which names the Pure
+// tier at each site.
 
 #include <fixy/Bands.h>
 #include <fixy/Saturated.h>

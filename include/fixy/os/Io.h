@@ -7,56 +7,34 @@
 // is read twice: once for the IORING_SETUP_* word the syscall takes, and
 // once for the effect row the calling context has to admit.
 //
-// Old spelling: include/crucible/fixy/Io.h.
+// Design notes:
 //
-// Deviations from that header, each deliberate:
+//  1. The atoms fixy::atom::io::{engine, zerocopy, ring_flag,
+//     sq_entries, cq_entries} carry the axis and the row.  The context
+//     gate reads the row off the pack and does not name IO and Block by
+//     hand.  A check at the foot of this header pins the derived row to
+//     IO and Block.
 //
-//  1. Grants became atoms.  fixy::atom::io::{engine, zerocopy,
-//     ring_flag, sq_entries, cq_entries} carry the axis and the row, so
-//     the which_dim specializations the old header wrote by hand are
-//     gone with the grant system that needed them.
+//  2. Only engine::IoUring reaches a mint, and only zerocopy::Sendfile
+//     and zerocopy::CopyFileRange reach a transfer.  The predicates that
+//     refuse a tag are concepts over closed lists: EngineIsIoUring and
+//     SimpleTransfer answer false for every tag that they do not name, so
+//     a tag added to either namespace later is refused on the day it
+//     appears rather than on the day somebody remembers to extend a gate.
 //
-//  2. The context gate reads the row off the pack rather than naming IO
-//     and Block by hand.  Same answer today, pinned below.
+//     A pack that names no ring-flag atom sets up a ring with no setup
+//     bits, so no tag stands for the default ring.
 //
-//  3. Six tags did not come across.  Five of them are tags a mint
-//     refused: engine::{Synchronous, Aio} and zerocopy::{None, Splice,
-//     MsgZerocopy}, each of which the old header's own self-test asserts
-//     the gate answered false for.  The predicates that refused them are
-//     concepts over closed lists: EngineIsIoUring and SimpleTransfer
-//     answer false for every tag that they do not name, so a tag added to
-//     either namespace later is refused on the day it appears rather than
-//     on the day somebody remembers to extend a gate.  Three old negative
-//     fixtures named those tags and cannot be written here, and the
-//     concepts stand in their place.
+//  3. IoUringRing's constructor is private and mint_io_uring_ring is its
+//     sole friend.  A handle that owns a descriptor and three mappings
+//     is a claim about what the kernel gave you, and nothing but the
+//     setup call can make that claim truthfully.
 //
-//     The sixth, ring_flag::Default, is a different case, and grouping it
-//     with the five said something false about it.  The old mint DID
-//     accept it: the old bit map mapped it to zero, so it set up a ring
-//     with no setup bits.  A pack that names no ring-flag atom sets up
-//     the identical ring, which is why the tag is not here.  Nothing is
-//     lost and nothing was refused.
+//  4. The ring flags are a closed table, as the mapping tags are.  A
+//     flag with no row is refused, so the mint never sets up a ring
+//     without a flag that the caller asked for.
 //
-//  4. IoUringRing's constructor is private and mint_io_uring_ring is its
-//     sole friend.  The old one was public and took a descriptor and
-//     three mapped addresses, so any caller could hand it numbers and
-//     the destructor would close and unmap them.  A handle that owns a
-//     descriptor and three mappings is a claim about what the kernel
-//     gave you, and nothing but the setup call can make that claim
-//     truthfully.
-//
-//  5. The ring flags are a closed table, as the mapping tags are.  In the
-//     old header a flag tag the map had never heard of folded to zero,
-//     which set up a ring without the flag the caller asked for rather
-//     than refusing it.  A flag with no row is refused here.
-//
-//  6. zerocopy_is_none_v and the gate conjunct that read it are gone
-//     with the zerocopy::None tag they existed to refuse.  Nothing is
-//     weakened: SimpleTransfer answers false for every tag but the two,
-//     so a None reintroduced tomorrow is refused by the surviving
-//     conjunct without anyone remembering to add a sentinel check for it.
-//
-//  7. The zero-copy transfer is zerocopy_transfer, not a mint, because it
+//  5. The zero-copy transfer is zerocopy_transfer, not a mint, because it
 //     synthesizes nothing.  It takes two OwnedFd handles, not two ints, so
 //     it moves bytes only between descriptors that the caller owns.  It
 //     asks again after a short transfer or EINTR, and the sendfile form
@@ -125,8 +103,8 @@ concept SimpleTransfer = ::fixy::atom_pack::names_tag(simple_transfer_tags, ^^Z)
 // The IORING_SETUP_* bit of each ring flag.  These are bits of one setup
 // word, so a pack may engage several flags and they fold together.  A
 // tag reaches io_uring_setup only through a row of this table, and
-// fixy/os/AtomPack.h says why a table is closed.  A map that answered
-// zero for an unknown flag set up a ring without the flag the caller
+// fixy/os/AtomPack.h says why a table is closed.  A map that answers
+// zero for an unknown flag sets up a ring without the flag the caller
 // asked for.
 inline constexpr ::fixy::atom_pack::tag_row<std::uint32_t> ring_flag_table[] = {
     {^^ring_flag::IoPoll, IORING_SETUP_IOPOLL},
@@ -338,10 +316,10 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 // One descriptor and three mappings, released in the reverse of the
 // order the kernel handed them over.
 //
-// The constructor is private.  A public one took nine numbers and
-// returned a handle whose destructor closes a descriptor and unmaps
-// three addresses, so a caller who had never called io_uring_setup could
-// hand it any numbers it liked.  Only the setup call knows what the
+// The constructor is private.  With a public one, a caller who never
+// called io_uring_setup can hand it any nine numbers, and the destructor
+// closes a descriptor and unmaps three addresses that the caller chose.
+// Only the setup call knows what the
 // kernel actually gave out, so only the setup call can build one.
 class [[nodiscard]] IoUringRing {
     int ring_fd_ = -1;
@@ -537,7 +515,6 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 // means that the source ended.  Another error returns its code and not
 // the count, so after an error the destination can hold a part of the
 // bytes.
-//
 namespace detail {
 
 // The loop that the two forms share.  step moves at most the count that
@@ -608,9 +585,8 @@ static_assert(SimpleTransfer<zerocopy::Sendfile>);
 static_assert(SimpleTransfer<zerocopy::CopyFileRange>);
 
 // The three predicates are fail-closed: a tag they were never told about
-// answers false.  fixy::io no longer declares engine::Synchronous,
-// zerocopy::Splice or ring_flag::Default, so these stand-ins are what
-// witness the shape the old negative fixtures named.
+// answers false.  These stand-ins are tags that fixy::io does not
+// declare, and they witness that shape.
 struct FutureEngine final {};
 struct FutureZerocopy final {};
 struct FutureRingFlag final {};
@@ -666,8 +642,8 @@ static_assert(!all_ring_flags_known_v<A_Engine, A_Sq8, A_FutureFlag>);
 static_assert(SimpleTransfer<zerocopy_of_t<A_Sendfile>>);
 static_assert(!SimpleTransfer<zerocopy_of_t<A_Engine>>, "a pack with no zerocopy atom names no transfer.");
 
-// The derived row and the row the old header named by hand are the same
-// answer.  This is the pin on that equality.
+// The row derived from the pack is IO and Block.  This is the pin on
+// that equality.
 using ExpectedIoRow = eff::Row<eff::Effect::IO, eff::Effect::Block>;
 static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_Engine, A_Sq8, A_IoPoll>, ExpectedIoRow>);
 static_assert(std::is_same_v<::fixy::atom_pack::atoms_row_t<A_Sendfile>, ExpectedIoRow>);

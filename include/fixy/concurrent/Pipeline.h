@@ -26,9 +26,6 @@
 //
 // A channel is known by its type.  Two channels of one type are one channel
 // to the check, so each channel of a pipeline names a tag of its own.
-//
-// Old spelling: include/crucible/concurrent/Pipeline.h.  That header also
-// included the SPSC channel and the permission token and used neither.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -559,10 +556,9 @@ template <std::size_t N, class Ctx>
 // call, and presents the context the stage was minted under.  Only a
 // background or startup context is admitted there, so nothing on the hot path
 // can repin a running thread, and a stage minted under the foreground context
-// runs its worker unpinned rather than under a context it does not hold.  The
-// old header built a background context from nothing here, which is a
-// forgery this header does not repeat.  A negative cpu does nothing, and a
-// refused pin is tolerated.
+// runs its worker unpinned rather than under a context it does not hold.  No
+// background context is built from nothing here, because that is a forgery.
+// A negative cpu does nothing, and a refused pin is tolerated.
 template <class Ctx>
 void pin_current_pipeline_thread_(Ctx const& ctx, int cpu) noexcept {
 #if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
@@ -732,10 +728,9 @@ private:
 
     // The constraint must match the definition's exactly.  A friend whose
     // constraints differ declares a DIFFERENT template, so the friendship
-    // attaches to nothing and the private constructor stays unreachable —
-    // measured, when this clause still read `pipeline_chain` after the mint
-    // moved to `CtxFitsPipeline`.  `mint_pipeline_dag` below keeps the same
-    // discipline against its own gate.
+    // attaches to nothing and the private constructor stays unreachable.
+    // `mint_pipeline_dag` below keeps the same discipline against its own
+    // gate.
     template <::foundation::effects::IsExecCtx MintCtx, class... MintStages>
         requires CtxFitsPipeline<MintCtx, std::remove_cvref_t<MintStages>...>
     friend constexpr auto mint_pipeline(MintCtx const&, MintStages&&...) noexcept;
@@ -847,7 +842,7 @@ static_assert(!IsStage<int>);
 static_assert(!IsStage<HotFgCtx>);
 
 // The other two stage shapes read through the same ports.  These are the
-// witnesses the old self-test lacked for them.
+// witnesses for them.
 static_assert(IsStage<M1>);
 static_assert(IsStage<W1>);
 static_assert(stage_input_count_v<M1> == 2);

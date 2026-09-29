@@ -13,21 +13,13 @@
 // protocol loops with no exit branch, and the session ends with a typed
 // detach.
 //
-// Old spelling: include/crucible/sessions/_SwmrSession.h.  Six
-// deviations.  The caller mints the writer root and the reader root and
-// names both brands in the session type, so no spelling here names the
-// erased brand, and a writer permission of another brand does not make a
+// The caller mints the writer root and the reader root and names both
+// brands in the session type, so no spelling here names the erased
+// brand, and a writer permission of another brand does not make a
 // second writer.  The handles bind their session through
 // foundation::ChannelBinding, so a moved-from handle cannot publish or
-// load.  The session mints take the handle by move, because
-// fixy/session/Handle.h refuses a raw pointer to a handle as a session
-// resource.  Only the plain protocol pair is carried: the pair over
-// ContentAddressed<T> and Borrowed<T, Tag>, its two mints and
-// load_borrowed_value had no consumer.  The mint_swmr_reader overload
-// that took a SharedPermission ignored its proof, and is not carried.
-// The read transport is a polling read over try_load, so the handle
-// waits through the watch while a write is in flight, where the old
-// transport spun inside load.
+// load.  The read transport is a polling read over try_load, so the
+// handle waits through the watch while a write is in flight.
 
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/HandleTraits.h>

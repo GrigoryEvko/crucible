@@ -4,9 +4,6 @@
 // extended with infinity.  The grade is a position in time, not an
 // ownership claim, so two instances carrying the same value and grade
 // are the same event and copying one is replay rather than duplication.
-//
-// Old spelling: include/crucible/safety/Stale.h, and the detection
-// surface of include/crucible/safety/IsStale.h.
 
 #include <fixy/GradedFacade.h>
 #include <foundation/Platform.h>
@@ -211,11 +208,12 @@ public:
 template <typename T>
 Stale(T, ::foundation::algebra::lattices::StalenessSemiring::element_type) -> Stale<T>;
 
-// The detection surface of the old IsStale.h.  One reflection query
-// answers it, and the associated types are read off the wrapper's own
-// typedefs, so there is no primary-plus-specialization ladder to keep
-// in step with the class.  The concept is the question; the value
-// spelling is derived from it and read by nothing that gates.
+// The detection surface of Stale: a concept that asks if a type is a
+// Stale, and the associated types of one.  One reflection query answers
+// it, and the associated types are read off the wrapper's own typedefs,
+// so there is no primary-plus-specialization ladder to keep in step
+// with the class.  The concept is the question.  The value spelling is
+// derived from it, and nothing that gates reads it.
 
 template <typename T>
 concept IsStale = ::foundation::reflect::IsInstanceOf<T, ^^Stale>;
