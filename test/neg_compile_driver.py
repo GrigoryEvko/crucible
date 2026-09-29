@@ -148,17 +148,13 @@ def _replace_output(argv: list[str], output: Path) -> list[str]:
 
 
 def main() -> int:
-    # argv[4..] are one OR MORE required-diagnostic regexes.  The
-    # single-regex form (exactly 5 argv) is the original one-file-one-
-    # assertion contract.  Supplying additional regexes (argv >= 6) is
-    # the multi-cell contract: the fixture is a single positive-syntax
-    # TU containing N independent `static_assert`-failure cells, and
-    # EVERY listed regex must appear in the compile output — proving
-    # each cell failed independently for its own named reason.  AND
-    # semantics are mandatory: a merged TU whose first cell's regex
-    # matched but whose later cells silently stopped failing would
-    # otherwise pass spuriously.  See test/CMakeLists.txt
-    # `crucible_neg_compile_multi_test` and the note above that function.
+    # argv[4..] are one or more required-diagnostic regexes.  The
+    # harnesses in the CMake files pass two or more: the first shows that
+    # a rejection occurred, and the next ones show which gate rejected.
+    # EVERY listed regex must appear in the compile output.  AND semantics
+    # are mandatory: a fixture whose generic regex matched but whose
+    # specific regex went silent would otherwise pass.  See the two-regex
+    # floor above `crucible_neg_compile_test` in test/CMakeLists.txt.
     if len(sys.argv) < 5:
         print(
             "usage: neg_compile_driver.py <build-dir> <source> "

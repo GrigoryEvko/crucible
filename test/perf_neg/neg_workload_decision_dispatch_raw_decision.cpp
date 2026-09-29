@@ -5,7 +5,7 @@
 // it with a context the gate admits, so the refusal can only come from
 // the parameter type.  If it compiled, any caller could skip the
 // profiler and its demotion.  The sibling fixture
-// neg_fixy_perf_workload_decision_hot_fg covers the context gate.
+// neg_workload_decision_dispatch_hot_fg covers the context gate.
 
 #include <crucible/perf/WorkloadProfiler.h>
 #include <fixy/Ctx.h>

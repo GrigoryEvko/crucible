@@ -30,8 +30,7 @@ endfunction()
 # Negative-compile fixtures for the fixy layer.  Same contract as
 # foundation_neg_compile_test in test/foundation/CMakeLists.txt: at least
 # two regexes (reason + project token), every regex required, strict
-# single-error mode on.  The label is fixy_neg_new, because the fixtures
-# under test/fixy_neg/ have the label fixy_neg.
+# single-error mode on.  The label is fixy_neg.
 function(fixy_neg_compile_test name)
   set(_diags ${ARGN})
   list(LENGTH _diags _count)
@@ -63,7 +62,7 @@ function(fixy_neg_compile_test name)
             ${name}
             ${_diags})
   set_tests_properties(${name} PROPERTIES
-    LABELS "fixy_neg_new"
+    LABELS "fixy_neg"
     ENVIRONMENT "CRUCIBLE_NEG_STRICT_SINGLE_ERROR=1")
 endfunction()
 

@@ -16,11 +16,11 @@
 
 #include <crucible/warden/Hardening.h>
 
-namespace neg_fixy_v_180_hardening_bg_drain {
+namespace neg_hardening_mint_bg_drain_ctx_namespace_scope {
 
 [[maybe_unused]] constexpr auto bad_dispatch = ::crucible::warden::mint_hardening(
     ::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, ::crucible::warden::Policy{});
 
-}  // namespace neg_fixy_v_180_hardening_bg_drain
+}  // namespace neg_hardening_mint_bg_drain_ctx_namespace_scope
 
 int main() { return 0; }

@@ -4,7 +4,7 @@
 // because its parallel arm starts threads.  The hot foreground context
 // has the empty row, so the gate refuses it.  The decision itself is
 // well formed, so the refusal can only come from the context gate.  The
-// sibling fixture neg_fixy_perf_workload_decision_raw_decision covers
+// sibling fixture neg_workload_decision_dispatch_raw_decision covers
 // the other half: a context the gate admits with a decision the
 // dispatch does not take.
 

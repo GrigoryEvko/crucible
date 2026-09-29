@@ -1094,336 +1094,132 @@ crucible_test(test_observe_sdc_detect)
 crucible_test(test_registration_seal_race
   tsan/test_registration_seal_race.cpp)
 
-function(crucible_neg_compile_test name expected_diag)
-  # Build target that is NOT part of default build — only reachable
-  # via explicit developer build. The ctest harness below replays this
-  # target's compile command from compile_commands.json into an isolated
-  # object path so negative tests can run in parallel without nested
-  # Ninja writers racing on the shared build tree.
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  # The driver passes the test iff the compiler's own diagnostics
-  # contain the expected-diagnostic substring.  A "clean" build
-  # (i.e., the discipline slipped and the .cpp compiled) produces no
-  # such text → test fails.  This is strictly stronger than WILL_FAIL.
-  #
-  # The driver strips GCC's caret display before matching, so a regex
-  # cannot be satisfied by the compiler quoting the fixture's own
-  # source back at it.  It also reports, per fixture, how many
-  # distinct lines of that fixture produced an error; set
-  # CRUCIBLE_NEG_STRICT_SINGLE_ERROR=1 in the environment to turn
-  # "rejects for more than one reason" into a failure and sweep the
-  # corpus for fixtures asserting more than they document.
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp
-            ${name}
-            "${expected_diag}")
-  set_tests_properties(${name} PROPERTIES
-    LABELS "safety_neg")
-endfunction()
-
-# Conjunction form of the harness above.  `crucible_neg_compile_test`
-# takes ONE regex, and a regex is satisfied by its weakest alternative,
-# so a gate written as `A|B|C` proves only that the weakest of A, B, C
-# appeared.  When the weakest alternative is boilerplate that ANY failing
-# concept check emits — `constraints.*not satisfied`, `template constraint
-# failure`, `associated constraints` — the fixture proves that SOMETHING
-# in the TU failed a constraint, not that the invariant under test fired.
+# ── Negative-compile fixtures of the runtime ────────────────────────
 #
-# The driver requires EVERY regex it is given (see the AND-semantics note
-# in neg_compile_driver.py), so passing the boilerplate reason and the
-# project-specific token as separate arguments pins both: the rejection
-# happened AND it happened to the named thing.  The two pieces of
-# evidence sit on different diagnostic lines, so `A.*B` cannot express
-# this — `.` does not cross a newline.
-function(crucible_neg_compile_multi_test name)
-  set(expected_diags ${ARGN})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "safety_neg")
-endfunction()
-
+# A fixture lives in test/<subject>_neg/.  The subject is the part of the
+# runtime that the fixture checks: a directory of include/crucible
+# (canopy_neg, cntp_neg, cog_neg), or a family of its top-level headers
+# (trace_neg, vigil_neg, dag_neg).  A registration names the fixture by its
+# file name only.  The harness finds the one subject directory that holds
+# the file, and the name of that directory is the ctest label.  A fixture
+# that moves to a different subject keeps its registration.
+#
+# The target of a fixture is not part of the default build.  The driver
+# replays the compile command of the target from compile_commands.json into
+# an isolated object path.  The fixtures then run in parallel with no nested
+# Ninja writer on the shared build tree.  The test passes only when the
+# diagnostics of the compiler match each regex.  A fixture that compiles
+# fails.  This gate is stronger than WILL_FAIL.
+#
+# The driver removes the caret display of GCC before it matches.  A regex
+# then cannot match the source text that the compiler quotes back.  The driver
+# also reports how many lines of the fixture give an error.  Set
+# CRUCIBLE_NEG_STRICT_SINGLE_ERROR=1 in the environment to make a fixture
+# that fails for more than one reason a failure.
+#
 # ── The two-regex floor ──────────────────────────────────────────────
 #
-# The driver requires EVERY regex it is handed, so two regexes are an
-# AND: the first says a rejection happened, the second says it happened
-# to the thing under test.  One regex cannot say both, because a regex
-# is satisfied by its weakest alternative, and the weakest alternative
-# of `SomeConcept|constraints.*not satisfied` is boilerplate that ANY
-# failing concept check emits.
+# The driver requires EVERY regex that it gets.  Two regexes are an AND.
+# The first says that a rejection occurred, and the second says that the
+# rejection occurred to the item under test.  One regex cannot say both,
+# because a regex matches through its weakest alternative, and the weakest
+# alternative of `SomeConcept|constraints.*not satisfied` is text that each
+# failed concept check gives.  A fixture gated on `is private within this
+# context` alone passes when any member of any class in the TU is touched
+# from outside.  Each registration passes two or more regexes, and the
+# harness refuses a registration with fewer.
 #
-# Measured across the eleven sister harnesses at the time this landed:
-# 962 registrations, every one of them passing exactly one regex; 748
-# of those carry at least one generic alternative, so they are satisfied
-# by boilerplate; and 33 carry nothing but generic alternatives, so they
-# witness only that the translation unit failed to compile.  A fixture
-# gated on `is private within this context` alone passes when any member
-# of any class in the TU is touched from outside.
+# Write the generic half as `.*`-joined fragments of the wording, never as
+# one exact phrase.  GCC says `associated constraints are not satisfied` in
+# some rejections and `constraints not satisfied` in others, and neither is
+# a substring of the other.  An alternation that lists one of them stops
+# matching when the rejection path of a gate changes, while each fixture
+# still rejects correctly, and the ctest summary for that looks the same as
+# a real regression.  `constraints.*not satisfied` covers the two spellings.
 #
-# The floor is staged per directory rather than switched on at once,
-# because closing a directory means reading each of its fixtures and
-# finding the token its compile output actually carries.  A directory
-# named in CRUCIBLE_NEG_TWO_REGEX_FLOORED has been swept; every
-# registration in it must pass two or more regexes from then on, so a
-# fixture added later cannot quietly re-enter the single-regex form.  A
-# directory not yet named keeps the single-regex form until its sweep
-# lands.  Directories only ever move into this list.
-#
-# Write the generic half as `.*`-joined fragments of the wording, never
-# as one exact phrase.  GCC says `associated constraints are not
-# satisfied` in some rejections and `constraints not satisfied` in
-# others, and neither is a substring of the other, so an alternation
-# listing one of them stops matching the moment a gate's rejection path
-# changes — while every fixture still rejects correctly.  The ctest
-# summary for that looks identical to a real regression, and the sweep
-# of this file found the dead phrasing on 11 sessions registrations, 50
-# effects registrations and 2 topology GAPS codes that the compiler has
-# never emitted.  `constraints.*not satisfied` covers both spellings and
-# whatever sits between them.
-#
-# The specific half is the opposite discipline: it must be the exact
-# token the fixture's own compile output carries.  Take it from the
-# diagnostic, not from the fixture's name or its comment.
+# The specific half is the opposite discipline: it must be the exact token
+# that the compile output of the fixture carries.  Take it from the
+# diagnostic, not from the name of the fixture or its comment.
 #
 # A token from an identifier that the fixture uses is not sufficient.  The
 # fixture can fail because it cannot find that identifier, and the output
 # then contains the token.
-set(CRUCIBLE_NEG_TWO_REGEX_FLOORED
-  ledger_neg
-  dataplane_neg
-  warden_neg
-  perf_neg
-  topology_neg
-  effects_neg
-  fixy_neg)
-
-# Called by each sister harness with the registration's regex list in
-# ARGN.  Silent for a directory that has not been swept yet.
-function(crucible_neg_require_two_regexes dir name)
-  if(NOT "${dir}" IN_LIST CRUCIBLE_NEG_TWO_REGEX_FLOORED)
-    return()
+function(crucible_neg_compile_test name)
+  file(GLOB sources LIST_DIRECTORIES false "${CMAKE_CURRENT_SOURCE_DIR}/*_neg/${name}.cpp")
+  list(LENGTH sources source_count)
+  if(NOT source_count EQUAL 1)
+    message(FATAL_ERROR
+      "crucible_neg_compile_test(${name}): ${source_count} files named ${name}.cpp are under "
+      "test/*_neg/, and a registration must find exactly one.  Put the fixture in the directory of "
+      "its subject, or give two fixtures different names.")
   endif()
-  list(LENGTH ARGN regex_count)
+  list(GET sources 0 source)
+  get_filename_component(subject_dir "${source}" DIRECTORY)
+  get_filename_component(subject "${subject_dir}" NAME)
+  set(expected_diags ${ARGN})
+  list(LENGTH expected_diags regex_count)
   if(regex_count LESS 2)
     message(FATAL_ERROR
-      "${name}: ${dir} is under the two-regex floor, so its registration must "
-      "pass at least two regexes and this one passes ${regex_count}.  Split the "
-      "single regex into the generic half that witnesses the rejection and the "
-      "project-specific half that witnesses WHICH gate rejected — the driver "
-      "requires both.  If the fixture has no honest second token, say so rather "
-      "than inventing one: a fixture that cannot name what it proves is the "
-      "defect the floor exists to surface.")
+      "crucible_neg_compile_test(${name}): the registration passes ${regex_count} regex, and the "
+      "floor is two.  Split the regex into the generic half that shows the rejection and the "
+      "project-specific half that shows WHICH gate rejected.  The driver requires both.  If the "
+      "fixture has no honest second token, say so rather than invent one: a fixture that cannot "
+      "name what it proves is the defect that the floor exists to find.")
   endif()
-endfunction()
-
-# Sister harness for effects_neg/.  Mirrors the safety_neg
-# pattern — only the source directory and label differ.  Effects-side
-# neg-compile tests (FOUND-B13, task #602) probe the Subrow concept's
-# substitution-principle gates on Computation.h: extract on non-empty
-# row, weaken to disjoint row, lift with non-Effect template arg.
-function(crucible_neg_compile_effects_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(effects_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/effects_neg/${name}.cpp)
+  # CMake counts brackets when it splits a list.  A regex with an unbalanced
+  # `[` swallows the separator and the regex after it.  A `;` outside
+  # brackets splits one regex into two.  ARGC counts what the caller wrote,
+  # and the list length counts what survived.  The two disagree exactly when
+  # a merge or a split occurred.
+  math(EXPR written "${ARGC} - 1")
+  if(NOT regex_count EQUAL written)
+    message(FATAL_ERROR
+      "crucible_neg_compile_test(${name}): ${written} regexes were written and ${regex_count} "
+      "survived.  An unbalanced `[` merged a regex with the next one, or a `;` split a regex in "
+      "two.  Balance the bracket or match it with `.`, and match a `;` with `.`")
+  endif()
+  add_executable(${name} EXCLUDE_FROM_ALL ${source})
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
             ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/effects_neg/${name}.cpp
+            ${source}
             ${name}
             ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "effects_neg")
+  set_tests_properties(${name} PROPERTIES LABELS "${subject}")
+  set_property(DIRECTORY APPEND PROPERTY CRUCIBLE_NEG_REGISTERED_SOURCES "${source}")
 endfunction()
 
-# Sister harness for cog_neg/.  Mirrors the safety_neg / effects_neg
-# pattern — only the source directory and label differ.
-# Cog-side neg-compile tests (GAPS-185 onward) live in test/cog_neg/
-# rather than test/effects_neg/ so the per-Cog soundness gates
-# (content_hash precondition, IsComputeKind concept, FOUND-I04 frozen
-# positions on CogLevel/CogKind, future TargetCaps fits) sit
-# adjacent to the cog/ headers they probe.
-function(crucible_neg_compile_cog_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(cog_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/cog_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/cog_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "cog_neg")
-endfunction()
-
-# Sister harness for ledger_neg/.  The hardware-capability ledger (#66)
-# reads a cached measurement verdict from disk, so its mint has to refuse
-# a context that cannot block on a file and a context that must not.
-# These fixtures witness the CtxFitsLedgerStore clause firing on both.
-function(crucible_neg_compile_ledger_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(ledger_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/ledger_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  # ledger/ProbeSupport.h includes <bench_harness.h> for bench::Report,
-  # bench::Compare and bench::compare, so anything reaching RefreshDaemon.h
-  # needs bench/ on its path.  Without it these fixtures failed to compile
-  # on the missing include and the driver reported them as passing
-  # neg-compile tests — failing for a reason that has nothing to do with
-  # the constraint they exist to witness.  The include path is the
-  # short-term answer; the layering itself wants the statistics surface
-  # promoted out of bench/ into include/crucible/, the way SenseHub was.
-  target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/bench)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/ledger_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "ledger_neg")
-endfunction()
-
-# Sister harness for warden_neg/. Warden-policy negative tests live here
-# when they are not primarily probing the generic effects substrate.
-function(crucible_neg_compile_warden_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(warden_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/warden_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/warden_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "warden_neg")
-endfunction()
-
-# Sister harness for perf_neg/.  The negative fixtures of the context
-# gate of each perf hub mint live here.  A BPF program load waits on the
-# kernel verifier, so the gate of each BPF hub mint rejects a context
-# whose row has no Block.
-function(crucible_neg_compile_perf_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(perf_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/perf_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/perf_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "perf_neg")
-endfunction()
-
-# Sister harness for dataplane_neg/. XDP/TC negative tests live beside the
-# CNT-P dataplane ownership boundary instead of Warden.
-function(crucible_neg_compile_dataplane_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(dataplane_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/dataplane_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/dataplane_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "dataplane_neg")
-endfunction()
-
-# Sister harness for topology_neg/.  Mirrors cog_neg / safety_neg /
-# effects_neg.  Topology-side neg-compile tests live in
-# test/topology_neg/ so the per-graph soundness gates
-# (CtxFitsTopologyGraph IsExecCtx conjunct, row-contains-Init conjunct,
-# future link-layer partition assertions) sit adjacent to the topology/
-# headers they probe.
-function(crucible_neg_compile_topology_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(topology_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/topology_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/topology_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "topology_neg")
-endfunction()
-
-# Sister harness for fixy_neg/.  Each fixture there calls a production
-# mint or gate with a context or an argument that the gate refuses.
-function(crucible_neg_compile_fixy_test name)
-  set(expected_diags ${ARGN})
-  crucible_neg_require_two_regexes(fixy_neg ${name} ${expected_diags})
-  add_executable(${name} EXCLUDE_FROM_ALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp)
-  target_link_libraries(${name} PRIVATE crucible)
-  add_test(NAME ${name}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
-            ${CMAKE_BINARY_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/fixy_neg/${name}.cpp
-            ${name}
-            ${expected_diags})
-  set_tests_properties(${name} PROPERTIES
-    LABELS "fixy_neg")
-endfunction()
-
-# ─── FIXY-V-194 DeadlineWatchdog::observe neg-compiles (HS14) ──────────
+# ─── DeadlineWatchdog::observe negative fixtures (HS14) ──────────────
 #   The Bg/Init/Test gate keeps a hot-foreground replay-bound thread
 #   from polling the warden watchdog.  Internally the watchdog now
 #   reads CLOCK_BOOTTIME (NOT CLOCK_MONOTONIC) so a host suspend
 #   doesn't freeze the window.  Two distinct-mismatch-class fixtures:
 #   HotFgCtx (row-content) and a bare `int` (ctx-type).
-crucible_neg_compile_fixy_test(neg_deadline_watchdog_hot_ctx
+crucible_neg_compile_test(neg_deadline_watchdog_hot_ctx
   "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(const fixy::HotFgCtx&\\)."
     "required for the satisfaction of .CtxFitsDeadlineWatchdog<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_fixy_test(neg_deadline_watchdog_non_exec_ctx
+crucible_neg_compile_test(neg_deadline_watchdog_non_exec_ctx
   "no matching function for call to .crucible::warden::DeadlineWatchdog::observe\\(int\\)."
     "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = int.")
 
-# ─── FIXY-V-196 RdtscPinned witness neg-compiles (mint discipline) ─────
+# ─── RdtscPinned witness negative fixtures (mint discipline) ─────────
 #   RdtscPinned is the bench-local move-only proof that the
 #   measurement thread was pinned to a single core via
 #   BenchHarness::pin_().  Two distinct mismatch classes prove the
 #   forge-resistance:
 #     (1) no public default ctor (custom-ctor suppression)
 #     (2) private nested mint_tag (friend-only access)
-#   Both fixtures live in safety_neg/ but need bench/ on the include
-#   path; the per-target include directive below threads it in.
+#   Both fixtures live in bench_neg/ and include <bench_harness.h>.  The
+#   include directive below puts bench/ on the path of each target.
 crucible_neg_compile_test(neg_bench_rdtsc_pinned_default_ctor
-  "no matching|deleted|no default constructor|RdtscPinned|cannot bind|use of deleted")
+  "no matching function for call to .bench::RdtscPinned::RdtscPinned\\(\\)."
+    "candidate 2: .constexpr bench::RdtscPinned::RdtscPinned\\(bench::CpuId, mint_tag\\).")
 target_include_directories(neg_bench_rdtsc_pinned_default_ctor
   SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 crucible_neg_compile_test(neg_bench_rdtsc_pinned_mint_tag_access
-  "private|inaccessible|mint_tag|is private|protected member|within this context")
+  "is private within this context"
+    ".struct bench::RdtscPinned::mint_tag. is private within this context")
 target_include_directories(neg_bench_rdtsc_pinned_mint_tag_access
   SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 
@@ -1432,24 +1228,25 @@ target_include_directories(neg_bench_rdtsc_pinned_mint_tag_access
 # (Tagged<Stale<int>>) is rejected at federation_key, not silently mapped to
 # a divergent cache slot.
 crucible_neg_compile_test(neg_federation_key_noncanonical_args
-  "ArgsCanonicallyOrdered|federation_key|CanonicallyOrdered")
+  "no matching function for call to .federation_key<target, foundation::effects::Row<>, InvertedStack>\\(\\)."
+    "required for the satisfaction of .ArgsCanonicallyOrdered<Args ...>. .with Args = .fixy::Tagged<fixy::Stale<int>, fixy::tags::source::FromUser>..")
 
-# FIXY-V-272 — lower_fence consistency gates.  Four fixtures cover the
-# distinct failure classes the consteval lowering table refuses:
-#   3 × V402 cross-trunk (X86×accel, Arm×accel, Gpu×ARM) + 1 × V401
-#   device-or-wider scope guarded below AcqRel.
-crucible_neg_compile_fixy_test(neg_fixy_v_272_x86_accel_scope
-    "static assertion failed"
-    "cross-trunk|V402")
-crucible_neg_compile_fixy_test(neg_fixy_v_272_arm_accel_scope
-    "static assertion failed"
-    "cross-trunk|V402")
-crucible_neg_compile_fixy_test(neg_fixy_v_272_gpu_arm_scope
-    "static assertion failed"
-    "cross-trunk|V402")
-crucible_neg_compile_fixy_test(neg_fixy_v_272_gpu_weak_strength
-    "static assertion failed"
-    "AcqRel|V401")
+# The consistency gates of lower_fence in mimic/Fence.h.  Four fixtures
+# cover the distinct failure classes that the consteval lowering table
+# refuses: three cross-trunk scopes (X86×accel, Arm×accel, Gpu×ARM) and one
+# device-or-wider scope guarded below AcqRel.
+crucible_neg_compile_test(neg_fence_x86_accel_scope
+    "static assertion failed: cross-trunk fence"
+    ".crucible::mimic::fence_arch_scope_consistent\\(crucible::mimic::FenceArch::X86, foundation::algebra::lattices::MemoryScope::Cta\\). evaluates to false")
+crucible_neg_compile_test(neg_fence_arm_accel_scope
+    "static assertion failed: cross-trunk fence"
+    ".crucible::mimic::fence_arch_scope_consistent\\(crucible::mimic::FenceArch::Arm, foundation::algebra::lattices::MemoryScope::Gpu\\). evaluates to false")
+crucible_neg_compile_test(neg_fence_gpu_arm_scope
+    "static assertion failed: cross-trunk fence"
+    ".crucible::mimic::fence_arch_scope_consistent\\(crucible::mimic::FenceArch::Gpu, foundation::algebra::lattices::MemoryScope::Inner\\). evaluates to false")
+crucible_neg_compile_test(neg_fence_gpu_weak_strength
+    "static assertion failed: device-or-wider GPU scope \\(Gpu / System\\) requires BarrierStrength >= AcqRel"
+    "crucible::mimic::fence_strength_meets_scope\\(foundation::algebra::lattices::BarrierStrength::ReleaseStore, foundation::algebra::lattices::MemoryScope::Gpu\\)\\). evaluates to false")
 
 # The two Box-Muller tiers of Philox, each refused at the gate above it.
 # Two fixtures pin orthogonal corners of the (source tier, gate tier)
@@ -1461,10 +1258,10 @@ crucible_neg_compile_fixy_test(neg_fixy_v_272_gpu_weak_strength
 #      and the gate demands Pure.  The gate is above the source, which
 #      pins the polynomial path exactly at PhiloxRng.
 # Each pins the refused gate, the tier it demands and the source band.
-crucible_neg_compile_fixy_test(neg_philox_box_muller_det_cipher_fence
+crucible_neg_compile_test(neg_philox_box_muller_det_cipher_fence
     "constraints.*not satisfied"
     "admissible_at_cipher_fence<.*At<foundation::algebra::lattices::DetSafeTier::MonotonicClockRead>")
-crucible_neg_compile_fixy_test(neg_philox_box_muller_polynomial_det_wrong_tier_consume
+crucible_neg_compile_test(neg_philox_box_muller_polynomial_det_wrong_tier_consume
     "constraints.*not satisfied"
     "requires_pure_tier<.*At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>")
 
@@ -1473,28 +1270,27 @@ crucible_neg_compile_fixy_test(neg_philox_box_muller_polynomial_det_wrong_tier_c
 # foreground context, whose empty row lacks Bg.  raw_decision passes a
 # context the gate admits with a decision written by hand, which the
 # parameter type refuses.
-crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_hot_fg
+crucible_neg_compile_test(neg_workload_decision_dispatch_hot_fg
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsWorkloadDecisionDispatch<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_fixy_test(neg_fixy_perf_workload_decision_raw_decision
+crucible_neg_compile_test(neg_workload_decision_dispatch_raw_decision
     "no matching function for call to .dispatch_workload_decision\\(const fixy::BgDrainCtx&, const fixy::concurrent::ParallelismDecision&,"
     "cannot convert .raw_decision. \\(type .const fixy::concurrent::ParallelismDecision.\\) to type .const crucible::perf::ProfiledDecision&.")
 
-# ─── fixy-A3-018 (#1625): OsUniverse carrier-width pins ────────────
+# ─── The carrier width of the effect row lattice ────────────────────
 #
-# OsUniverse.h ships TWO pins guarding the uint64_t bitmask carrier:
-# (1) cardinality ≤ 64; (2) atom_t underlying type == uint8_t.  Both
-# fire at the descriptor site, foreclosing FOUND-I04 append-only
-# Universe extension landing a 65th atom or widening atom_t silently.
-# The fixtures witness the REJECTION side: a synthetic Universe with
-# cardinality = 65 trips (1); a synthetic Universe with uint16_t
-# underlying trips (2).  Sister pin to A3-011 (Capabilities.h side).
-crucible_neg_compile_effects_test(neg_os_universe_cardinality_overflow
-    "static assertion failed"
-    "static_assert|OsUniverse_Overflow|fixy-A3-018")
-crucible_neg_compile_effects_test(neg_os_universe_atom_underlying_widened
-    "static assertion failed"
-    "static_assert|OsUniverse_Underlying|fixy-A3-018")
+# The lattice carries a row as a uint64_t bitmask.  foundation/effects/Row.h
+# bounds the Effect enum at 64 atoms, and foundation/effects/Effect.h pins
+# its underlying type to uint8_t.  Neither assertion can fire from a
+# fixture.  Each fixture puts the same form of assertion on a test
+# universe: 65 atoms, and an atom with a uint16_t underlying type.  The
+# fixtures check the form of the two assertions, not the live code.
+crucible_neg_compile_test(neg_effect_row_cardinality_over_carrier
+    "static assertion failed: .EffectRowCarrier_Overflow."
+    "the comparison reduces to .\\(65 <= 64\\).")
+crucible_neg_compile_test(neg_effect_row_atom_underlying_widened
+    "static assertion failed: .EffectRowCarrier_Underlying."
+    ".short unsigned int. is not the same as .unsigned char.")
 
 # ─── GAPS-185 (#1210): cog/CogIdentity.h soundness gates ───────────
 #
@@ -1509,10 +1305,10 @@ crucible_neg_compile_effects_test(neg_os_universe_atom_underlying_widened
 #   substitution time.  Witnesses the concept gate that prevents
 #   future per-Cog Mimic factories from accepting non-compute Cogs
 #   as compute targets.
-crucible_neg_compile_cog_test(neg_cog_identity_content_hash_zero_uuid
+crucible_neg_compile_test(neg_cog_identity_content_hash_zero_uuid
     "static assertion|contract|precondition|non-constant"
     "content_hash|is_zero")
-crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
+crucible_neg_compile_test(neg_cog_identity_compute_kind_rejects_nic
     "constraint|constraints.*not satisfied"
     "IsComputeKind|kernel_count_for|GAPS-185")
 
@@ -1529,10 +1325,10 @@ crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
 #   the precondition contract.  Witnesses the gate that prevents
 #   GpuTargetCaps::warp_size = 33 from corrupting downstream occupancy
 #   / wave-efficiency math.
-crucible_neg_compile_cog_test(neg_target_caps_caps_for_rejects_psu_rail
+crucible_neg_compile_test(neg_target_caps_caps_for_rejects_psu_rail
     "constraint|constraints.*not satisfied"
     "HasCaps|lookup_caps|PsuRail|GAPS-186")
-crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
+crucible_neg_compile_test(neg_target_caps_warp_size_not_power_of_two
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<(fixy::)?refined_algebra::AllOf<(fixy::)?IsPowerOfTwo\\(\\), (fixy::)?BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(33\\)")
 
@@ -1540,10 +1336,10 @@ crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
 #   * neg_offload_target_feature_of_other_schema: a feature names a bit of
 #     the schema of its own enum.
 #   * neg_offload_target_no_kind: an offload names a kind of Cog.
-crucible_neg_compile_cog_test(neg_offload_target_feature_of_other_schema
+crucible_neg_compile_test(neg_offload_target_feature_of_other_schema
     "no matching function for call to .validate_offload_target<crucible::cog::GpuFeature::GpuDirectRdma, crucible::cog::CogKind::NvSwitch>\\("
     "required for the satisfaction of .AdvertisesFeatureOf<Caps, Feature>. \\[with Caps = crucible::cog::NvSwitchTargetCaps")
-crucible_neg_compile_cog_test(neg_offload_target_no_kind
+crucible_neg_compile_test(neg_offload_target_no_kind
     "no matching function for call to .validate_offload_target<crucible::cog::SwitchFeature::P4>\\("
     "the expression .sizeof \\.\\.\\. \\(\\(Kinds \\.\\.\\.\\)\\) > 0 \\[with Kinds = \\{\\}\\]. evaluated to .false.")
 
@@ -1560,20 +1356,20 @@ crucible_neg_compile_cog_test(neg_offload_target_no_kind
 #   Row<Init, Alloc, IO>, so it CAN touch the kernel.  Missing only
 #   Block, because cap_permitted_row<Init> deliberately omits it:
 #   initialization is not permitted to park on a disk.
-crucible_neg_compile_ledger_test(neg_ledger_view_hot_fg_ctx
+crucible_neg_compile_test(neg_ledger_view_hot_fg_ctx
     "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsLedgerStore")
-crucible_neg_compile_ledger_test(neg_ledger_view_init_ctx_cannot_block
+crucible_neg_compile_test(neg_ledger_view_init_ctx_cannot_block
     "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsLedgerStore")
 
 # The host probe reads procfs and sysfs, so CtxFitsHostProbe admits a
 # context only when it owns IO and Block.  The foreground context owns
 # neither, and the startup context owns IO but not Block.
-crucible_neg_compile_ledger_test(neg_host_probe_hot_fg_ctx
+crucible_neg_compile_test(neg_host_probe_hot_fg_ctx
     "no matching function for call to .probe_host_facts\\(const fixy::HotFgCtx&\\)."
     "required for the satisfaction of .CtxFitsHostProbe<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_ledger_test(neg_host_probe_init_ctx_cannot_block
+crucible_neg_compile_test(neg_host_probe_init_ctx_cannot_block
     "no matching function for call to .probe_competence\\(const fixy::ColdInitCtx&\\)."
     "required for the satisfaction of .CtxFitsHostProbe<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
 
@@ -1593,15 +1389,28 @@ crucible_neg_compile_ledger_test(neg_host_probe_init_ctx_cannot_block
 # The regex deliberately omits `static assertion`.  With Bg removed the
 # fixture fails on its own premise assert instead of on the mint, and a
 # looser pattern would read that as a pass.
-crucible_neg_compile_ledger_test(neg_refresh_daemon_test_ctx_lacks_bg
+crucible_neg_compile_test(neg_refresh_daemon_test_ctx_lacks_bg
     "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsRefreshDaemon")
-crucible_neg_compile_ledger_test(neg_refresh_daemon_compile_ctx_cannot_block
+crucible_neg_compile_test(neg_refresh_daemon_compile_ctx_cannot_block
     "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsRefreshDaemon")
-crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
+crucible_neg_compile_test(neg_refresh_daemon_hot_fg_ctx
     "constraint|constraints.*not satisfied|no matching function"
     "CtxFitsRefreshDaemon")
+
+# ledger/ProbeSupport.h includes <bench_harness.h> for bench::Report,
+# bench::Compare and bench::compare.  Each ledger fixture needs bench/ on
+# its include path.  Without it a fixture fails on the missing include,
+# and the driver can report that failure as a pass for a reason that has
+# nothing to do with the constraint under test.
+foreach(ledger_fixture IN ITEMS
+        neg_ledger_view_hot_fg_ctx neg_ledger_view_init_ctx_cannot_block
+        neg_host_probe_hot_fg_ctx neg_host_probe_init_ctx_cannot_block
+        neg_refresh_daemon_test_ctx_lacks_bg neg_refresh_daemon_compile_ctx_cannot_block
+        neg_refresh_daemon_hot_fg_ctx)
+  target_include_directories(${ledger_fixture} PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+endforeach()
 
 # ─── GAPS-187 OpcodeLatencyTable HS14 fixtures ────────────────────
 #
@@ -1613,10 +1422,10 @@ crucible_neg_compile_ledger_test(neg_refresh_daemon_hot_fg_ctx
 #     refuses a p50/p99/p999 triple out of order.  The second pattern
 #     names the predicate type and the refused triple, so only this
 #     refusal matches.
-crucible_neg_compile_cog_test(neg_opcode_latency_rejects_psu_rail
+crucible_neg_compile_test(neg_opcode_latency_rejects_psu_rail
     "constraint|constraints.*not satisfied"
     "HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
-crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
+crucible_neg_compile_test(neg_opcode_latency_quantiles_misordered
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<crucible::cog::AreQuantilesOrdered\\(\\), crucible::cog::LatencyQuantiles>\\(crucible::cog::LatencyQuantiles\\{99, 50, 30\\}\\)")
 
@@ -1637,10 +1446,10 @@ crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
 #   at all").  Without this gate, future mint_cog_mimic factories
 #   would silently bind to PsuRail and produce no-op stubs that
 #   drop scheduled work.
-crucible_neg_compile_cog_test(neg_fits_cog_oversubscribed
+crucible_neg_compile_test(neg_fits_cog_oversubscribed
     "constraint|constraints.*not satisfied"
     "FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
-crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
+crucible_neg_compile_test(neg_fits_cog_non_substrate
     "constraint|constraints.*not satisfied"
     "FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
 
@@ -1649,10 +1458,10 @@ crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
 #     than a NIC port in its constraint.
 #   * neg_nic_offload_audit_raw_required_offloads: a raw integer mask does
 #     not convert to the typed offload set.
-crucible_neg_compile_cog_test(neg_nic_offload_audit_rejects_gpu
+crucible_neg_compile_test(neg_nic_offload_audit_rejects_gpu
     "no matching function for call to .audit_nic_offloads<crucible::cog::CogKind::Gpu>"
     "required for the satisfaction of .NicOffloadAuditableCog<K>. \\[with K = crucible::cog::CogKind::Gpu\\]")
-crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
+crucible_neg_compile_test(neg_nic_offload_audit_raw_required_offloads
     "could not convert .1. from .unsigned int."
     "to .fixy::Bits<crucible::cog::NicFeature>.")
 
@@ -1661,10 +1470,10 @@ crucible_neg_compile_cog_test(neg_nic_offload_audit_raw_required_offloads
 #     port in its constraint.
 #   * neg_numa_nic_raw_node: a raw integer does not convert to a NUMA
 #     node id.
-crucible_neg_compile_cog_test(neg_numa_nic_rejects_gpu
+crucible_neg_compile_test(neg_numa_nic_rejects_gpu
     "no matching function for call to .verify_numa_pinning<crucible::cog::CogKind::Gpu>"
     "required for the satisfaction of .NumaNicAuditableCog<K>. \\[with K = crucible::cog::CogKind::Gpu\\]")
-crucible_neg_compile_cog_test(neg_numa_nic_raw_node
+crucible_neg_compile_test(neg_numa_nic_raw_node
     "could not convert .0. from .unsigned int."
     "to .crucible::cog::NumaNodeId.")
 
@@ -1680,34 +1489,34 @@ crucible_neg_compile_cog_test(neg_numa_nic_raw_node
 #     or Test forces a state.
 #   * override_missing_permission: a forced state needs the operator token.
 #   * zero_slots, zero_events: a policy has Cog slots and event slots.
-crucible_neg_compile_warden_test(neg_quarantine_mint_bg_ctx
+crucible_neg_compile_test(neg_quarantine_mint_bg_ctx
     "no matching function for call to .mint_quarantine_policy<2>\\(fixy::BgDrainCtx\\)."
     "required for the satisfaction of .CtxFitsQuarantineMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
-crucible_neg_compile_warden_test(neg_quarantine_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_quarantine_mint_hot_fg_ctx
     "no matching function for call to .mint_quarantine_policy<2>\\(const fixy::HotFgCtx&\\)."
     "required for the satisfaction of .CtxFitsQuarantineMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_warden_test(neg_quarantine_direct_construct
+crucible_neg_compile_test(neg_quarantine_direct_construct
     ".constexpr crucible::warden::QuarantinePolicy<MaxCogs, MaxEvents>::QuarantinePolicy\\(crucible::warden::QuarantineConfig\\) \\[with long unsigned int MaxCogs = 2. long unsigned int MaxEvents = 8\\]. is private within this context"
     "declared private here")
-crucible_neg_compile_warden_test(neg_quarantine_record_fg_ctx
+crucible_neg_compile_test(neg_quarantine_record_fg_ctx
     "no matching function for call to .crucible::warden::QuarantinePolicy<2>::on_health_event\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::topology::HealthSnapshot&, int\\)."
     "required for the satisfaction of .CtxFitsQuarantineRecord<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_warden_test(neg_quarantine_record_init_ctx
+crucible_neg_compile_test(neg_quarantine_record_init_ctx
     "no matching function for call to .crucible::warden::QuarantinePolicy<2>::record_recovery_probe\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::observe::ProbeOutcome&, int\\)."
     "required for the satisfaction of .CtxFitsQuarantineRecord<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
-crucible_neg_compile_warden_test(neg_quarantine_override_bg_ctx
+crucible_neg_compile_test(neg_quarantine_override_bg_ctx
     "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(fixy::BgDrainCtx, "
     "required for the satisfaction of .CtxFitsQuarantineOverride<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
-crucible_neg_compile_warden_test(neg_quarantine_override_hot_fg_ctx
+crucible_neg_compile_test(neg_quarantine_override_hot_fg_ctx
     "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(const fixy::HotFgCtx&, "
     "required for the satisfaction of .CtxFitsQuarantineOverride<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_warden_test(neg_quarantine_override_missing_permission
+crucible_neg_compile_test(neg_quarantine_override_missing_permission
     "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::warden::QuarantineState, int, int\\)."
     "candidate expects 6 arguments, 5 provided")
-crucible_neg_compile_warden_test(neg_quarantine_zero_slots
+crucible_neg_compile_test(neg_quarantine_zero_slots
     "In instantiation of .class crucible::warden::QuarantinePolicy<0, 4>."
     "static assertion failed: QuarantinePolicy requires Cog slots")
-crucible_neg_compile_warden_test(neg_quarantine_zero_events
+crucible_neg_compile_test(neg_quarantine_zero_events
     "In instantiation of .class crucible::warden::QuarantinePolicy<2, 0>."
     "static assertion failed: QuarantinePolicy requires audit-event slots")
 
@@ -1715,30 +1524,30 @@ crucible_neg_compile_warden_test(neg_quarantine_zero_events
 # Three new mints (mint_hardening / mint_hot_region_registry_handle /
 # mint_deadline_watchdog) each ship two HS14 neg-compile fixtures
 # proving the CtxFits* concept gates fire on missing Init.
-crucible_neg_compile_warden_test(neg_hardening_mint_bg_ctx
+crucible_neg_compile_test(neg_hardening_mint_bg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHardeningMint")
-crucible_neg_compile_warden_test(neg_hardening_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_hardening_mint_hot_fg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHardeningMint")
 # The cold init context owns Init but no Block, and the choice of the hot
 # CPU reads sysfs.
-crucible_neg_compile_warden_test(neg_hardening_mint_cold_init_ctx
+crucible_neg_compile_test(neg_hardening_mint_cold_init_ctx
     "required for the satisfaction of .CtxFitsFileOpen<Ctx>."
     "required for the satisfaction of .CtxFitsHardeningMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_warden_test(neg_hot_region_registry_mint_bg_ctx
+crucible_neg_compile_test(neg_hot_region_registry_mint_bg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
-crucible_neg_compile_warden_test(neg_hot_region_registry_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_hot_region_registry_mint_hot_fg_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
-crucible_neg_compile_warden_test(neg_hot_region_registry_handle_direct_ctor
+crucible_neg_compile_test(neg_hot_region_registry_handle_direct_ctor
     "HotRegionRegistryHandle::HotRegionRegistryHandle\\(\\). is private within this context"
     "declared private here")
-crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_bg_ctx
+crucible_neg_compile_test(neg_deadline_watchdog_mint_bg_ctx
     "no matching function for call to .mint_deadline_watchdog\\(fixy::BgLoadCtx, std::nullptr_t, crucible::warden::Policy&\\)."
     "required for the satisfaction of .CtxFitsDeadlineWatchdogMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_deadline_watchdog_mint_hot_fg_ctx
     "no matching function for call to .mint_deadline_watchdog\\(const fixy::HotFgCtx&, std::nullptr_t, crucible::warden::Policy&\\)."
     "required for the satisfaction of .CtxFitsDeadlineWatchdogMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 
@@ -1752,16 +1561,16 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_hot_fg_ctx
 # context, a hot foreground context, a cold init context and a
 # background compile context.  Each fixture pins the gate, the row that
 # the gate demands and the row of the context that it rejects.
-crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_ctx
+crucible_neg_compile_test(neg_sense_hub_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sense_hub_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_sense_hub_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_ctx
+crucible_neg_compile_test(neg_sense_hub_v2_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_sense_hub_v2_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 
@@ -1769,58 +1578,58 @@ crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_hot_fg_ctx
 # SchedTpBtf, SyscallLatency and SyscallTpBtf) have the same gate as the
 # SenseHub mint.  WorkloadProfiler borrows a hub that is already loaded,
 # and its gate is a different one.
-crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_ctx
+crucible_neg_compile_test(neg_lock_contention_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_lock_contention_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_lock_contention_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_ctx
+crucible_neg_compile_test(neg_pmu_sample_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_pmu_sample_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_pmu_sample_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_ctx
+crucible_neg_compile_test(neg_sched_switch_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sched_switch_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_sched_switch_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_ctx
+crucible_neg_compile_test(neg_sched_tp_btf_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_sched_tp_btf_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_ctx
+crucible_neg_compile_test(neg_syscall_latency_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_syscall_latency_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_syscall_latency_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_ctx
+crucible_neg_compile_test(neg_syscall_tp_btf_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_syscall_tp_btf_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
-crucible_neg_compile_perf_test(neg_workload_profiler_mint_bg_ctx
+crucible_neg_compile_test(neg_workload_profiler_mint_bg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsWorkloadProfilerMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_workload_profiler_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_workload_profiler_mint_hot_fg_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsWorkloadProfilerMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 # The two constructors are private: a profiler comes only from its
 # mint, and a ProfiledDecision only from a profiler.  The decision is
 # not trivially copyable either, so std::bit_cast cannot forge one.
-crucible_neg_compile_perf_test(neg_workload_profiler_constructor_private
+crucible_neg_compile_test(neg_workload_profiler_constructor_private
     "is private within this context"
     ".constexpr crucible::perf::WorkloadProfiler::WorkloadProfiler\\(const crucible::perf::Senses\\*, crucible::perf::WorkloadProfilerConfig\\). is private")
-crucible_neg_compile_perf_test(neg_workload_profiler_decision_constructor_private
+crucible_neg_compile_test(neg_workload_profiler_decision_constructor_private
     "is private within this context"
     ".constexpr crucible::perf::ProfiledDecision::ProfiledDecision\\(fixy::concurrent::ParallelismDecision\\). is private")
-crucible_neg_compile_perf_test(neg_workload_profiler_decision_bit_cast
+crucible_neg_compile_test(neg_workload_profiler_decision_bit_cast
     "the expression .is_trivially_copyable_v<_To> .with _To = crucible::perf::ProfiledDecision.. evaluated to .false."
     ".crucible::perf::ProfiledDecision. is not trivially copyable")
 
@@ -1836,52 +1645,52 @@ crucible_neg_compile_perf_test(neg_workload_profiler_decision_bit_cast
 # Each gate is its own concept over its own <hub>_required_row alias, so
 # a pair for the family as a whole would leave the other gates with no
 # witness.
-crucible_neg_compile_perf_test(neg_lock_contention_mint_cold_init_ctx
+crucible_neg_compile_test(neg_lock_contention_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_lock_contention_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_lock_contention_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_pmu_sample_mint_cold_init_ctx
+crucible_neg_compile_test(neg_pmu_sample_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_pmu_sample_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_pmu_sample_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sched_switch_mint_cold_init_ctx
+crucible_neg_compile_test(neg_sched_switch_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_sched_switch_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_sched_switch_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_cold_init_ctx
+crucible_neg_compile_test(neg_sched_tp_btf_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_sched_tp_btf_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_sched_tp_btf_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sense_hub_mint_cold_init_ctx
+crucible_neg_compile_test(neg_sense_hub_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_sense_hub_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_sense_hub_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_syscall_latency_mint_cold_init_ctx
+crucible_neg_compile_test(neg_syscall_latency_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_syscall_latency_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_syscall_latency_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_cold_init_ctx
+crucible_neg_compile_test(neg_syscall_tp_btf_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_syscall_tp_btf_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_syscall_tp_btf_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_cold_init_ctx
+crucible_neg_compile_test(neg_sense_hub_v2_mint_cold_init_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
-crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_compile_ctx
+crucible_neg_compile_test(neg_sense_hub_v2_mint_bg_compile_ctx
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 
@@ -1889,13 +1698,13 @@ crucible_neg_compile_perf_test(neg_sense_hub_v2_mint_bg_compile_ctx
 # CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures
 # above exercise the row half (different Init-less ExecCtx shapes);
 # fixtures below exercise the IsExecCtx half via raw struct rejection.
-crucible_neg_compile_warden_test(neg_hardening_mint_not_exec_ctx
+crucible_neg_compile_test(neg_hardening_mint_not_exec_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHardeningMint")
-crucible_neg_compile_warden_test(neg_hot_region_registry_mint_not_exec_ctx
+crucible_neg_compile_test(neg_hot_region_registry_mint_not_exec_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
-crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
+crucible_neg_compile_test(neg_deadline_watchdog_mint_not_exec_ctx
     "no matching function for call to .mint_deadline_watchdog\\(NotAnExecCtx, std::nullptr_t, crucible::warden::Policy&\\)."
     "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
 
@@ -1910,22 +1719,22 @@ crucible_neg_compile_warden_test(neg_deadline_watchdog_mint_not_exec_ctx
 #     length field.
 #   * neg_xdp_map_key_without_equality — in-process map images require typed
 #     key equality, not bytewise accidental comparison.
-crucible_neg_compile_dataplane_test(neg_xdp_raw_program_spec
+crucible_neg_compile_test(neg_xdp_raw_program_spec
     "could not convert .raw. from .crucible::cntp::dataplane::XdpProgramSpec. to .crucible::cntp::dataplane::DeclaredXdpProgram."
     "fixy::Tagged<crucible::cntp::dataplane::XdpProgramSpec, fixy::tags::source::Xdp>")
-crucible_neg_compile_dataplane_test(neg_xdp_mint_bg_ctx
+crucible_neg_compile_test(neg_xdp_mint_bg_ctx
     "no matching function for call to .mint_xdp_program\\(fixy::BgDrainCtx&"
     "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>.")
-crucible_neg_compile_dataplane_test(neg_xdp_mint_not_exec_ctx
+crucible_neg_compile_test(neg_xdp_mint_not_exec_ctx
     "no matching function for call to .mint_xdp_program\\(NotAnExecCtx"
     "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
-crucible_neg_compile_dataplane_test(neg_xdp_map_non_pod_value
+crucible_neg_compile_test(neg_xdp_map_non_pod_value
     "no matching function for call to .mint_bpf_map_spec<Key, std::string>"
     "required for the satisfaction of .BpfScalar<T>. .with T = std::__cxx11::basic_string<char")
-crucible_neg_compile_dataplane_test(neg_xdp_map_oversized_value
+crucible_neg_compile_test(neg_xdp_map_oversized_value
     "no matching function for call to .mint_bpf_map_spec<Key, WideValue>"
     "requires \\(BpfMapElement<Key>\\) && \\(BpfMapElement<Value>\\)")
-crucible_neg_compile_dataplane_test(neg_xdp_map_key_without_equality
+crucible_neg_compile_test(neg_xdp_map_key_without_equality
     "template constraint failure for .template<class Key, class Value, unsigned int MaxEntries, crucible::cntp::dataplane::BpfMapKind Kind>"
     "required for the satisfaction of .BpfKey<Key>. .with Key = Key.")
 
@@ -1938,25 +1747,25 @@ crucible_neg_compile_dataplane_test(neg_xdp_map_key_without_equality
 #   * neg_tc_ebpf_flow_class_raw_dscp / neg_tc_ebpf_flow_class_raw_classid
 #     — a flow class takes admitted fields.
 #   * neg_tc_ebpf_zero_flow_map — a map holds at least one flow.
-crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_program_spec
+crucible_neg_compile_test(neg_tc_ebpf_raw_program_spec
     "could not convert .raw. from .crucible::cntp::dataplane::TcProgramSpec."
     "to .crucible::cntp::dataplane::DeclaredTcProgram. \\{aka .fixy::Tagged<crucible::cntp::dataplane::TcProgramSpec, fixy::tags::source::TcEbpf>.\\}")
-crucible_neg_compile_dataplane_test(neg_tc_ebpf_mint_bg_ctx
+crucible_neg_compile_test(neg_tc_ebpf_mint_bg_ctx
     "no matching function for call to .mint_tc_program\\(fixy::BgDrainCtx&, "
     "required for the satisfaction of .CtxFitsTcMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, ")
-crucible_neg_compile_dataplane_test(neg_tc_ebpf_mint_raw_ifindex
+crucible_neg_compile_test(neg_tc_ebpf_mint_raw_ifindex
     "no matching function for call to .mint_tc_program\\(fixy::ColdInitCtx&, crucible::cntp::NicInterfaceName&, uint32_t, "
     "cannot convert .11. \\(type .uint32_t. \\{aka .unsigned int.\\}\\) to type .crucible::cntp::dataplane::TcIfIndex.")
-crucible_neg_compile_dataplane_test(neg_tc_ebpf_raw_flow_class
+crucible_neg_compile_test(neg_tc_ebpf_raw_flow_class
     "cannot convert .crucible::cntp::dataplane::TcFlowClass. to .crucible::cntp::dataplane::DeclaredTcFlowClass."
     "initializing argument 2 of .constexpr std::expected<void, crucible::cntp::dataplane::XdpError> crucible::cntp::dataplane::TcFlowClassMap<MaxFlows>::update\\(")
-crucible_neg_compile_dataplane_test(neg_tc_ebpf_flow_class_raw_dscp
+crucible_neg_compile_test(neg_tc_ebpf_flow_class_raw_dscp
     "could not convert .46. from .uint8_t. \\{aka .unsigned char.\\} to .crucible::cntp::dataplane::TcDscp."
     "fixy::Refinement<fixy::InRange<0, 63>\\(\\), unsigned char, false>")
-crucible_neg_compile_dataplane_test(neg_tc_ebpf_flow_class_raw_classid
+crucible_neg_compile_test(neg_tc_ebpf_flow_class_raw_classid
     "could not convert .65537. from .uint32_t. \\{aka .unsigned int.\\} to .crucible::cntp::dataplane::TcClassId."
     "fixy::Refinement<fixy::IsPositive\\(\\), unsigned int, false>")
-crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
+crucible_neg_compile_test(neg_tc_ebpf_zero_flow_map
     "template constraint failure for .template<unsigned int MaxFlows>  requires  MaxFlows > 0 class crucible::cntp::dataplane::TcFlowClassMap."
     "In substitution of .template<unsigned int MaxFlows>  requires  MaxFlows > 0 class crucible::cntp::dataplane::TcFlowClassMap .with unsigned int MaxFlows = 0..")
 
@@ -1973,28 +1782,28 @@ crucible_neg_compile_dataplane_test(neg_tc_ebpf_zero_flow_map
 #     built from bytes.
 #   * temporary_identity: the mint refuses an identity that is a
 #     temporary, which the CogMimic would outlive.
-crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
+crucible_neg_compile_test(neg_cog_mimic_non_substrate
     "no matching function for call to .allocate_cog_mimic_slot<crucible::cog::CogKind::PsuRail, fixy::ColdInitCtx>\\(\\)."
     "required for the satisfaction of .IsMimicSubstrate<K>. \\[with K = crucible::cog::CogKind::PsuRail\\]")
-crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
+crucible_neg_compile_test(neg_cog_mimic_ctx_row_missing
     "no matching function for call to .mint_cog_mimic<crucible::cog::CogKind::Gpu>\\(const fixy::TestRunnerCtx&,"
     "required for the satisfaction of .CtxFitsCogMimic<Ctx, K>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test,")
-crucible_neg_compile_cog_test(neg_cog_mimic_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_cog_mimic_mint_hot_fg_ctx
     "no matching function for call to .mint_cog_mimic<crucible::cog::CogKind::Gpu>\\(const fixy::HotFgCtx&,"
     "required for the satisfaction of .CtxFitsCogMimic<Ctx, K>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. K = crucible::cog::CogKind::Gpu\\]")
-crucible_neg_compile_cog_test(neg_cog_mimic_aggregate_build
+crucible_neg_compile_test(neg_cog_mimic_aggregate_build
     "no matching function for call to .crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>::CogMimic\\(<brace-enclosed initializer list>\\)."
     "no known conversion for argument 1 from .crucible::cog::CogIdentity\\*. to .const crucible::cog::CogIdentity&.")
-crucible_neg_compile_cog_test(neg_cog_mimic_private_constructor
+crucible_neg_compile_test(neg_cog_mimic_private_constructor
     "is private within this context"
     ".constexpr crucible::mimic::CogMimic<K>::CogMimic\\(const crucible::cog::CogIdentity&, CalibratedCaps, OpcodeTable\\) \\[with crucible::cog::CogKind K = crucible::cog::CogKind::Gpu.")
-crucible_neg_compile_cog_test(neg_cog_mimic_default_construct
+crucible_neg_compile_test(neg_cog_mimic_default_construct
     "use of deleted function .crucible::mimic::CogMimic<K>::CogMimic\\(\\) \\[with crucible::cog::CogKind K = crucible::cog::CogKind::Gpu\\]."
     "a CogMimic binds a calibrated identity. take one from mint_cog_mimic")
-crucible_neg_compile_cog_test(neg_cog_mimic_bit_cast
+crucible_neg_compile_test(neg_cog_mimic_bit_cast
     "the expression .is_trivially_copyable_v<_To> \\[with _To = crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>\\]. evaluated to .false."
     ".crucible::mimic::CogMimic<crucible::cog::CogKind::Gpu>. is not trivially copyable")
-crucible_neg_compile_cog_test(neg_cog_mimic_temporary_identity
+crucible_neg_compile_test(neg_cog_mimic_temporary_identity
     "use of deleted function .constexpr crucible::mimic::CogMimic<K> crucible::mimic::mint_cog_mimic\\(const Ctx&, const crucible::cog::CogIdentity&&,"
     "the CogMimic borrows its identity, so a temporary dangles at the end of the full expression. bind the identity to a name first")
 
@@ -2004,10 +1813,10 @@ crucible_neg_compile_cog_test(neg_cog_mimic_temporary_identity
 #     refused by the IsExecCtx constraint, not deep inside the factory.
 #   * neg_topology_graph_test_ctx_refused — a test context carries no Init
 #     row, so it cannot mint the fleet's topology graph.
-crucible_neg_compile_topology_test(neg_topology_graph_non_ctx_first_arg
+crucible_neg_compile_test(neg_topology_graph_non_ctx_first_arg
     "no matching function for call to .mint_topology_graph.int,"
     "IsExecCtx<Ctx>. \\[with Ctx = int\\]")
-crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
+crucible_neg_compile_test(neg_topology_graph_test_ctx_refused
     "no matching function for call to .mint_topology_graph.fixy::TestRunnerCtx&"
     "CtxFitsTopologyGraph<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test")
 
@@ -2021,16 +1830,16 @@ crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
 #     tagged as External, never a raw string.
 #   * neg_topology_discovery_zero_nodes — a snapshot needs at least one node
 #     slot and one edge slot.
-crucible_neg_compile_topology_test(neg_topology_discovery_mint_test_ctx
+crucible_neg_compile_test(neg_topology_discovery_mint_test_ctx
     "no matching function for call to .mint_discovery_snapshot<1, 1>.fixy::TestRunnerCtx&"
     "CtxFitsDiscoveryInit<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test")
-crucible_neg_compile_topology_test(neg_topology_discovery_direct_construct
+crucible_neg_compile_test(neg_topology_discovery_direct_construct
     "is private within this context"
     "DiscoverySnapshot<MaxNodes, MaxEdges>::DiscoverySnapshot\\(\\)")
-crucible_neg_compile_topology_test(neg_topology_discovery_raw_lspci_text
+crucible_neg_compile_test(neg_topology_discovery_raw_lspci_text
     "could not convert .\\(const char\\*\\)\"Slot:.* from .const char\\*. to .crucible::topology::ExternalDiscoveryText."
     "fixy::Tagged<std::basic_string_view<char>, fixy::tags::source::External>")
-crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
+crucible_neg_compile_test(neg_topology_discovery_zero_nodes
     "no matching function for call to .mint_discovery_snapshot<0, 1>.fixy::ColdInitCtx&"
     "required for the satisfaction of .DiscoveryShape<MaxNodes, MaxEdges>. \\[with MaxNodes = 0; MaxEdges = 1\\]")
 
@@ -2045,16 +1854,16 @@ crucible_neg_compile_topology_test(neg_topology_discovery_zero_nodes
 #     mutate heartbeat/thermal/ECC/drop/wear state.
 #   * neg_topology_health_raw_score — quarantine thresholds consume the
 #     HealthScore strong type, not raw integers.
-crucible_neg_compile_topology_test(neg_topology_health_mint_bg_ctx
+crucible_neg_compile_test(neg_topology_health_mint_bg_ctx
     "no matching function for call to .mint_topology_health<fixy::BgDrainCtx, 2>"
     "CtxFitsHealthMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
-crucible_neg_compile_topology_test(neg_topology_health_direct_construct
+crucible_neg_compile_test(neg_topology_health_direct_construct
     "is private within this context"
     "CompositeHealthScorer<MaxPeers, Window, MaxEvents>::CompositeHealthScorer\\(crucible::topology::HealthPolicy\\)")
-crucible_neg_compile_topology_test(neg_topology_health_update_fg_ctx
+crucible_neg_compile_test(neg_topology_health_update_fg_ctx
     "no matching function for call to .crucible::topology::CompositeHealthScorer<2, 32, 8>::update_thermal"
     "CtxFitsHealthUpdate<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_topology_test(neg_topology_health_raw_score
+crucible_neg_compile_test(neg_topology_health_raw_score
     "could not convert .0. from .int. to .crucible::topology::HealthScore."
     "HealthScore")
 
@@ -2075,40 +1884,40 @@ crucible_neg_compile_topology_test(neg_topology_health_raw_score
 #     the External tag, not a raw string.
 #   * neg_topology_telemetry_snapshot_raw_netdev, _snapshot_raw_tcp: the
 #     snapshot mint takes tagged samples, not raw ones.
-crucible_neg_compile_topology_test(neg_topology_telemetry_mint_bg_ctx
+crucible_neg_compile_test(neg_topology_telemetry_mint_bg_ctx
     "no matching function for call to .mint_nic_telemetry_history<4>\\(fixy::BgDrainCtx\\)."
     "required for the satisfaction of .CtxFitsNicTelemetryMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_topology_test(neg_topology_telemetry_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_topology_telemetry_mint_hot_fg_ctx
     "no matching function for call to .mint_nic_telemetry_history<4>\\(const fixy::HotFgCtx&\\)."
     "required for the satisfaction of .CtxFitsNicTelemetryMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_topology_test(neg_topology_telemetry_record_fg_ctx
+crucible_neg_compile_test(neg_topology_telemetry_record_fg_ctx
     "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::record\\(const fixy::HotFgCtx&, const crucible::topology::NicTelemetrySnapshot&\\)."
     "required for the satisfaction of .CtxFitsNicTelemetryRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_topology_test(neg_topology_telemetry_record_init_ctx
+crucible_neg_compile_test(neg_topology_telemetry_record_init_ctx
     "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::record\\(fixy::ColdInitCtx&, const crucible::topology::NicTelemetrySnapshot&\\)."
     "required for the satisfaction of .CtxFitsNicTelemetryRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
-crucible_neg_compile_topology_test(neg_topology_telemetry_read_fg_ctx
+crucible_neg_compile_test(neg_topology_telemetry_read_fg_ctx
     "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::current_snapshot\\(const fixy::HotFgCtx&\\)."
     "required for the satisfaction of .CtxFitsNicTelemetryRead<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_topology_test(neg_topology_telemetry_read_test_ctx
+crucible_neg_compile_test(neg_topology_telemetry_read_test_ctx
     "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::current_snapshot\\(fixy::TestRunnerCtx&\\)."
     "required for the satisfaction of .CtxFitsNicTelemetryRead<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
-crucible_neg_compile_topology_test(neg_topology_telemetry_window_overflow
+crucible_neg_compile_test(neg_topology_telemetry_window_overflow
     "static assertion failed: NicTelemetryHistory stores bounded history indices in uint16_t"
     "In instantiation of .class crucible::topology::NicTelemetryHistory<65536>.")
-crucible_neg_compile_topology_test(neg_topology_telemetry_history_direct_construct
+crucible_neg_compile_test(neg_topology_telemetry_history_direct_construct
     ".constexpr crucible::topology::NicTelemetryHistory<Window>::NicTelemetryHistory\\(\\) \\[with long unsigned int Window = 4\\]. is private within this context"
     "topology/Telemetry.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_topology_test(neg_topology_telemetry_snapshot_direct_construct
+crucible_neg_compile_test(neg_topology_telemetry_snapshot_direct_construct
     ".constexpr crucible::topology::NicTelemetrySnapshot::NicTelemetrySnapshot\\(\\). is private within this context"
     "topology/Telemetry.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_topology_test(neg_topology_telemetry_raw_netdev_text
+crucible_neg_compile_test(neg_topology_telemetry_raw_netdev_text
     "could not convert .\\(const char\\*\\).rx_bytes: 1.012.. from .const char\\*."
     "to .crucible::topology::ExternalTelemetryText. \\{aka .fixy::Tagged<std::basic_string_view<char>, fixy::tags::source::External>.\\}")
-crucible_neg_compile_topology_test(neg_topology_telemetry_snapshot_raw_netdev
+crucible_neg_compile_test(neg_topology_telemetry_snapshot_raw_netdev
     "could not convert .crucible::topology::NetdevCounters\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\}. from .crucible::topology::NetdevCounters."
     "to .crucible::topology::DeclaredNetdevCounters. \\{aka .fixy::Tagged<crucible::topology::NetdevCounters, fixy::tags::source::KernelTelemetry>.\\}")
-crucible_neg_compile_topology_test(neg_topology_telemetry_snapshot_raw_tcp
+crucible_neg_compile_test(neg_topology_telemetry_snapshot_raw_tcp
     "could not convert .raw. from .const crucible::topology::CongestionSample."
     "to .crucible::topology::TcpInfoSnapshot. \\{aka .fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>.\\}")
 
@@ -2122,16 +1931,16 @@ crucible_neg_compile_topology_test(neg_topology_telemetry_snapshot_raw_tcp
 #     cannot mutate probe/witness state.
 #   * neg_asymmetric_failure_zero_window — a detector must carry a
 #     non-empty bounded probe window.
-crucible_neg_compile_topology_test(neg_asymmetric_failure_mint_bg_ctx
+crucible_neg_compile_test(neg_asymmetric_failure_mint_bg_ctx
     "no matching function for call to .mint_asymmetric_failure_detector<fixy::BgDrainCtx, 2>"
     "CtxFitsAsymmetricFailureMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
-crucible_neg_compile_topology_test(neg_asymmetric_failure_direct_construct
+crucible_neg_compile_test(neg_asymmetric_failure_direct_construct
     "is private within this context"
     "AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>::AsymmetricFailureDetector\\(crucible::topology::AsymmetricFailurePolicy\\)")
-crucible_neg_compile_topology_test(neg_asymmetric_failure_record_fg_ctx
+crucible_neg_compile_test(neg_asymmetric_failure_record_fg_ctx
     "no matching function for call to .crucible::topology::AsymmetricFailureDetector<2, 8, 8>::record_outbound"
     "CtxFitsAsymmetricFailureRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
+crucible_neg_compile_test(neg_asymmetric_failure_zero_window
     "static assertion failed: AsymmetricFailureDetector requires a non-empty probe window"
     "non-empty probe window")
 
@@ -2149,22 +1958,22 @@ crucible_neg_compile_topology_test(neg_asymmetric_failure_zero_window
 #     source tag, so it cannot be recorded.
 #   * neg_pingmesh_zero_peer_capacity — all-pairs storage needs at least
 #     two peers.
-crucible_neg_compile_topology_test(neg_pingmesh_mint_bg_ctx
+crucible_neg_compile_test(neg_pingmesh_mint_bg_ctx
     "no matching function for call to .mint_pingmesh<fixy::BgDrainCtx, 2>\\(fixy::BgDrainCtx\\)"
     "CtxFitsPingmeshMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
-crucible_neg_compile_topology_test(neg_pingmesh_direct_construct
+crucible_neg_compile_test(neg_pingmesh_direct_construct
     "is private within this context"
     "Pingmesh<MaxPeers, Significant, MaxLatencyNs>::Pingmesh\\(crucible::topology::PingmeshConfig\\)")
-crucible_neg_compile_topology_test(neg_pingmesh_enable_pair_bg_ctx
+crucible_neg_compile_test(neg_pingmesh_enable_pair_bg_ctx
     "no matching function for call to .crucible::topology::Pingmesh<2>::enable_pair\\(fixy::BgDrainCtx, crucible::cog::Uuid, crucible::cog::Uuid\\)"
     "CtxFitsPingmeshMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
-crucible_neg_compile_topology_test(neg_pingmesh_record_fg_ctx
+crucible_neg_compile_test(neg_pingmesh_record_fg_ctx
     "no matching function for call to .crucible::topology::Pingmesh<2>::record_measurement\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
     "CtxFitsPingmeshRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_topology_test(neg_pingmesh_raw_measurement
+crucible_neg_compile_test(neg_pingmesh_raw_measurement
     "no matching function for call to .crucible::topology::Pingmesh<2>::record_measurement\\(fixy::BgDrainCtx, crucible::topology::PingmeshMeasurement&\\)"
     "cannot convert .raw. \\(type .crucible::topology::PingmeshMeasurement.\\) to type .const crucible::topology::DeclaredPingmeshMeasurement&.")
-crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
+crucible_neg_compile_test(neg_pingmesh_zero_peer_capacity
     "static assertion failed: Pingmesh<MaxPeers> requires at least two peers"
     "In instantiation of .class crucible::topology::Pingmesh<1, 2, 60000000000>.")
 
@@ -2187,34 +1996,34 @@ crucible_neg_compile_topology_test(neg_pingmesh_zero_peer_capacity
 #     admitted daemon report.
 #   * neg_ptp_daemon_report_fg_ctx — the foreground context cannot admit a
 #     daemon report.
-crucible_neg_compile_topology_test(neg_ptp_mint_bg_ctx
+crucible_neg_compile_test(neg_ptp_mint_bg_ctx
     "no matching function for call to .mint_ptp_handle\\(fixy::BgDrainCtx&,"
     "required for the satisfaction of .CtxFitsPtpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_topology_test(neg_ptp_handle_direct_construct
+crucible_neg_compile_test(neg_ptp_handle_direct_construct
     "is private within this context"
     "crucible::topology::PtpHandle::PtpHandle\\(crucible::cog::CogIdentity, crucible::topology::PtpClockFd, const crucible::topology::PtpStatus&\\)")
-crucible_neg_compile_topology_test(neg_ptp_record_fg_ctx
+crucible_neg_compile_test(neg_ptp_record_fg_ctx
     "no matching function for call to .crucible::topology::PtpHandle::record_timestamp\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
     "required for the satisfaction of .CtxFitsPtpRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_topology_test(neg_ptp_raw_fd
+crucible_neg_compile_test(neg_ptp_raw_fd
     "no matching function for call to .mint_ptp_handle\\(fixy::ColdInitCtx&, crucible::cog::CogIdentity&, int\\)"
     "cannot convert .3. \\(type .int.\\) to type .crucible::topology::PtpClockFd.")
-crucible_neg_compile_topology_test(neg_ptp_raw_timestamp
+crucible_neg_compile_test(neg_ptp_raw_timestamp
     "could not convert .42. from .unsigned int. to .crucible::topology::PtpTimestampNs."
     "fixy::Tagged<long unsigned int, fixy::tags::source::Ptp>")
-crucible_neg_compile_topology_test(neg_ptp_open_raw_device_index
+crucible_neg_compile_test(neg_ptp_open_raw_device_index
     "no matching function for call to .open_ptp_clock\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&, int\\)"
     "cannot convert .0. \\(type .int.\\) to type .crucible::topology::PtpDeviceIndex.")
-crucible_neg_compile_topology_test(neg_ptp_open_ctx_lacks_block
+crucible_neg_compile_test(neg_ptp_open_ctx_lacks_block
     "no matching function for call to .open_ptp_clock\\(fixy::BgDrainCtx&,"
     "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_topology_test(neg_ptp_enable_raw_socket
+crucible_neg_compile_test(neg_ptp_enable_raw_socket
     "could not convert .3. from .int. to .crucible::cntp::SocketFd."
     "fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>")
-crucible_neg_compile_topology_test(neg_ptp_raw_daemon_report_status
+crucible_neg_compile_test(neg_ptp_raw_daemon_report_status
     "invalid initialization of reference of type .const crucible::topology::DeclaredPtpDaemonReport&. .aka .const fixy::Tagged<crucible::topology::PtpDaemonReport, fixy::tags::source::Ptp>&.. from expression of type .crucible::topology::PtpDaemonReport."
     "in passing argument 1 of .constexpr crucible::topology::DeclaredPtpStatus crucible::topology::ptp_status_from_daemon_report")
-crucible_neg_compile_topology_test(neg_ptp_daemon_report_fg_ctx
+crucible_neg_compile_test(neg_ptp_daemon_report_fg_ctx
     "no matching function for call to .admit_ptp_daemon_report\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
     "required for the satisfaction of .CtxFitsPtpRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -2223,67 +2032,67 @@ crucible_neg_compile_topology_test(neg_ptp_daemon_report_fg_ctx
 # background load context also claims Block, but no conversion makes it
 # a startup load context, and the parameter has no default.  The two
 # fixtures of each load pin these two refusals.
-crucible_neg_compile_effects_test(neg_perf_sense_hub_load_wrong_cap
+crucible_neg_compile_test(neg_perf_sense_hub_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static std::optional<crucible::perf::SenseHub> crucible::perf::SenseHub::load\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_sense_hub_load_no_cap
+crucible_neg_compile_test(neg_perf_sense_hub_load_no_cap
     "no matching function for call to .crucible::perf::SenseHub::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
 
-crucible_neg_compile_effects_test(neg_perf_sched_switch_load_wrong_cap
+crucible_neg_compile_test(neg_perf_sched_switch_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static std::optional<crucible::perf::SchedSwitch> crucible::perf::SchedSwitch::load\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_sched_switch_load_no_cap
+crucible_neg_compile_test(neg_perf_sched_switch_load_no_cap
     "no matching function for call to .crucible::perf::SchedSwitch::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
 
-crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_wrong_cap
+crucible_neg_compile_test(neg_perf_pmu_sample_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static std::optional<crucible::perf::PmuSample> crucible::perf::PmuSample::load\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_no_cap
+crucible_neg_compile_test(neg_perf_pmu_sample_load_no_cap
     "no matching function for call to .crucible::perf::PmuSample::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
 
-crucible_neg_compile_effects_test(neg_perf_lock_contention_load_wrong_cap
+crucible_neg_compile_test(neg_perf_lock_contention_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static std::optional<crucible::perf::LockContention> crucible::perf::LockContention::load\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_lock_contention_load_no_cap
+crucible_neg_compile_test(neg_perf_lock_contention_load_no_cap
     "no matching function for call to .crucible::perf::LockContention::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
 
-crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_wrong_cap
+crucible_neg_compile_test(neg_perf_syscall_latency_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static std::optional<crucible::perf::SyscallLatency> crucible::perf::SyscallLatency::load\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_no_cap
+crucible_neg_compile_test(neg_perf_syscall_latency_load_no_cap
     "no matching function for call to .crucible::perf::SyscallLatency::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
 
-crucible_neg_compile_effects_test(neg_perf_senses_load_wrong_cap
+crucible_neg_compile_test(neg_perf_senses_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static crucible::perf::Senses crucible::perf::Senses::load_all\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_senses_load_no_cap
+crucible_neg_compile_test(neg_perf_senses_load_no_cap
     "no matching function for call to .crucible::perf::Senses::load_all\\(\\)."
     "candidate expects 1 argument, 0 provided")
-crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_wrong_cap
+crucible_neg_compile_test(neg_perf_sched_tp_btf_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static std::optional<crucible::perf::SchedTpBtf> crucible::perf::SchedTpBtf::load\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_no_cap
+crucible_neg_compile_test(neg_perf_sched_tp_btf_load_no_cap
     "no matching function for call to .crucible::perf::SchedTpBtf::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
-crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_wrong_cap
+crucible_neg_compile_test(neg_perf_syscall_tp_btf_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
     "initializing argument 1 of .static std::optional<crucible::perf::SyscallTpBtf> crucible::perf::SyscallTpBtf::load\\(const fixy::InitLoadCtx&\\).")
-crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_no_cap
+crucible_neg_compile_test(neg_perf_syscall_tp_btf_load_no_cap
     "no matching function for call to .crucible::perf::SyscallTpBtf::load\\(\\)."
     "candidate expects 1 argument, 0 provided")
 
 # The constructor of warden::DeadlineWatchdog is private, and
 # mint_deadline_watchdog is its one route.  One fixture builds a
 # watchdog with the constructor, and one calls the mint with no context.
-crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_constructor_private
+crucible_neg_compile_test(neg_warden_deadline_watchdog_constructor_private
     "is private within this context"
     ".constexpr crucible::warden::DeadlineWatchdog::DeadlineWatchdog\\(const crucible::perf::Senses\\*, const crucible::warden::Policy&\\). is private")
-crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_mint_no_ctx
+crucible_neg_compile_test(neg_warden_deadline_watchdog_mint_no_ctx
     "no matching function for call to .mint_deadline_watchdog\\(std::nullptr_t, crucible::warden::Policy&\\)."
     "candidate expects 3 arguments, 2 provided")
 
@@ -2319,7 +2128,8 @@ crucible_neg_compile_effects_test(neg_warden_deadline_watchdog_mint_no_ctx
 # pinning the structural bound at the storage type rather than relying on
 # the source dtype enum being well-formed.
 crucible_neg_compile_test(neg_element_bytes_above_max
-  "contract|bounded_above|not a constant|non-constant|constexpr")
+  "contract predicate is false in constant expression"
+  "crucible/Types.h:[0-9]+:[0-9]+: error: contract predicate")
 
 # IterationDetector::match_pos_ is the fixy Refined<bounded_above<
 # MATCH_POS_MAX = K-1 = 4>, uint8_t>, and mint_refined<kMatchPosBound> is
@@ -2330,10 +2140,10 @@ crucible_neg_compile_test(neg_element_bytes_above_max
 #   * _uint8_max — wide miss (255 = uint8_t max), catches a wider
 #     intermediate truncated to uint8_t before the mint.
 # Each pins the door, the predicate and the refused value.
-crucible_neg_compile_multi_test(neg_iter_det_match_pos_above_max
+crucible_neg_compile_test(neg_iter_det_match_pos_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<4>\\(\\), unsigned char>\\(5\\)")
-crucible_neg_compile_multi_test(neg_iter_det_match_pos_uint8_max
+crucible_neg_compile_test(neg_iter_det_match_pos_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<4>\\(\\), unsigned char>\\(255\\)")
 
@@ -2341,10 +2151,10 @@ crucible_neg_compile_multi_test(neg_iter_det_match_pos_uint8_max
 # mint is its only door.  The two fixtures give the mint -1, the largest
 # refused value, and the smallest int32_t.  The second regex names the
 # mint, its predicate and the refused value.
-crucible_neg_compile_multi_test(neg_call_site_lineno_negative
+crucible_neg_compile_test(neg_call_site_lineno_negative
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonNegative\\(\\), int>\\(-1\\)")
-crucible_neg_compile_multi_test(neg_call_site_lineno_int_min
+crucible_neg_compile_test(neg_call_site_lineno_int_min
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonNegative\\(\\), int>\\(std::numeric_limits<int>::min\\(\\)\\)")
 
@@ -2358,13 +2168,13 @@ crucible_neg_compile_multi_test(neg_call_site_lineno_int_min
 #     External name.
 #   * _interned_name_to_sanitized: no retag edge leaves Interned, so a
 #     stored name, which can hold External bytes, never becomes Sanitized.
-crucible_neg_compile_multi_test(neg_call_site_filename_raw_string
+crucible_neg_compile_test(neg_call_site_filename_raw_string
   "could not convert .* to .crucible::CallSiteTable::InternedName. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::Interned>.\\}"
   "fixy/Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
-crucible_neg_compile_multi_test(neg_call_site_filename_external_passback
+crucible_neg_compile_test(neg_call_site_filename_external_passback
   "invalid initialization of reference of type .const ExternalName&. .*from expression of type .const crucible::CallSiteTable::InternedName."
   "in passing argument 1 of .void wants_external_only\\(const ExternalName&\\).")
-crucible_neg_compile_multi_test(neg_call_site_interned_name_to_sanitized
+crucible_neg_compile_test(neg_call_site_interned_name_to_sanitized
   "no matching function for call to .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::Interned>::retag<fixy::tags::source::Sanitized>\\(\\)."
   "required for the satisfaction of .RetagAllowed<Tag, NewTag>. \\[with Tag = fixy::tags::source::Interned. NewTag = fixy::tags::source::Sanitized\\]")
 
@@ -2378,10 +2188,10 @@ crucible_neg_compile_multi_test(neg_call_site_interned_name_to_sanitized
 #     replaces BoundedMonotonic with plain Monotonic and loses the bound.
 # The diagnostic names the constructor's precondition in Mutation.h and
 # not the value, so each fixture pins the predicate site.
-crucible_neg_compile_multi_test(neg_iter_det_signature_len_above_k
+crucible_neg_compile_test(neg_iter_det_signature_len_above_k
   "contract predicate is false in constant expression"
   "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
-crucible_neg_compile_multi_test(neg_iter_det_signature_len_uint32_max
+crucible_neg_compile_test(neg_iter_det_signature_len_uint32_max
   "contract predicate is false in constant expression"
   "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
 
@@ -2394,10 +2204,10 @@ crucible_neg_compile_multi_test(neg_iter_det_signature_len_uint32_max
 #   * _overflow   — wide miss (bump() at UINT32_MAX), catches a bump()
 #     that loses its != max() check and wraps to 0.
 # Each pins the mutation that failed and the value it was given.
-crucible_neg_compile_multi_test(neg_iter_det_ops_since_boundary_regression
+crucible_neg_compile_test(neg_iter_det_ops_since_boundary_regression
   "__builtin_trap.*is not a constant expression"
   "Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)")
-crucible_neg_compile_multi_test(neg_iter_det_ops_since_boundary_overflow
+crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
   "__builtin_trap.*is not a constant expression"
   "Monotonic<unsigned int, std::less<unsigned int> >::bump\\(\\)")
 
@@ -2412,10 +2222,10 @@ crucible_neg_compile_multi_test(neg_iter_det_ops_since_boundary_overflow
 #     on a class that holds a ScopedView<IterationDetector, Steady> as a
 #     member.  Catches a container shape the recursive unwrap misses, or
 #     a refactor that adds a cached view field.
-crucible_neg_compile_multi_test(neg_iter_det_view_steady_on_building
+crucible_neg_compile_test(neg_iter_det_view_steady_on_building
   "contract predicate is false in constant expression"
   "fixy/ScopedView.h:[0-9]+:[0-9]+: error: contract predicate")
-crucible_neg_compile_multi_test(neg_iter_det_view_in_field
+crucible_neg_compile_test(neg_iter_det_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "contains_scoped_view<OffendingContainer>\\(\\)")
 
@@ -2428,10 +2238,10 @@ crucible_neg_compile_multi_test(neg_iter_det_view_in_field
 #     that loses its != max() check and wraps to 0, which would claim
 #     that no variant is selected.
 # Each pins the mutation that failed and the value it was given.
-crucible_neg_compile_multi_test(neg_merkle_dag_variant_id_regression
+crucible_neg_compile_test(neg_merkle_dag_variant_id_regression
   "__builtin_trap.*is not a constant expression"
   "Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)")
-crucible_neg_compile_multi_test(neg_merkle_dag_variant_id_overflow
+crucible_neg_compile_test(neg_merkle_dag_variant_id_overflow
   "__builtin_trap.*is not a constant expression"
   "Monotonic<unsigned int, std::less<unsigned int> >::bump\\(\\)")
 
@@ -2441,10 +2251,10 @@ crucible_neg_compile_multi_test(neg_merkle_dag_variant_id_overflow
 # bound) and UINT8_MAX (the wide miss).  The first regex says that the
 # precondition of the door failed.  The second names the door and the
 # refused value.
-crucible_neg_compile_multi_test(neg_ckernel_id_raw_at_sentinel
+crucible_neg_compile_test(neg_ckernel_id_raw_at_sentinel
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(\\(\\(uint8_t\\)crucible::CKernelId::NUM_KERNELS\\)\\)")
-crucible_neg_compile_multi_test(neg_ckernel_id_raw_uint8_max
+crucible_neg_compile_test(neg_ckernel_id_raw_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(255\\)")
 
@@ -2454,10 +2264,10 @@ crucible_neg_compile_multi_test(neg_ckernel_id_raw_uint8_max
 # neither the door nor the value when a precondition of a constructor
 # fails in a constant expression.  So the second regex pins the header
 # that holds the precondition.
-crucible_neg_compile_multi_test(neg_ckernel_table_size_above_cap
+crucible_neg_compile_test(neg_ckernel_table_size_above_cap
   "contract predicate is false in constant expression"
   "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
-crucible_neg_compile_multi_test(neg_ckernel_table_size_uint32_max
+crucible_neg_compile_test(neg_ckernel_table_size_uint32_max
   "contract predicate is false in constant expression"
   "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
 
@@ -2465,8 +2275,9 @@ crucible_neg_compile_multi_test(neg_ckernel_table_size_uint32_max
 # pointer and a pointer with a different tag must not satisfy a consumer
 # of the singleton.
 crucible_neg_compile_test(neg_ckernel_singleton_raw_pointer
-  "could not convert|cannot convert|no matching function")
-crucible_neg_compile_multi_test(neg_ckernel_singleton_cross_tag
+  "could not convert .& table. from .crucible::CKernelTable\\*. to .crucible::CKernelTableSingleton."
+  ".aka .fixy::Tagged<crucible::CKernelTable\\*, fixy::tags::source::Singleton>..")
+crucible_neg_compile_test(neg_ckernel_singleton_cross_tag
   "could not convert .external. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Singleton>.")
 
@@ -2477,10 +2288,10 @@ crucible_neg_compile_multi_test(neg_ckernel_singleton_cross_tag
 #     widens past SCHEMA_TABLE_CAP.
 #   * _uint32_max: the wide miss (UINT32_MAX).  It fails when the counter
 #     becomes a plain Monotonic<uint32_t>.
-crucible_neg_compile_multi_test(neg_schema_table_size_above_cap
+crucible_neg_compile_test(neg_schema_table_size_above_cap
   "contract predicate is false in constant expression"
   "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
-crucible_neg_compile_multi_test(neg_schema_table_size_uint32_max
+crucible_neg_compile_test(neg_schema_table_size_uint32_max
   "contract predicate is false in constant expression"
   "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
 
@@ -2490,10 +2301,10 @@ crucible_neg_compile_multi_test(neg_schema_table_size_uint32_max
 #     convert to a raw const char* without .value().data().
 #   * neg_schema_table_lookup_cross_tag: interned table output does not pass
 #     as source::External.
-crucible_neg_compile_multi_test(neg_schema_table_lookup_raw_const_char
+crucible_neg_compile_test(neg_schema_table_lookup_raw_const_char
   "cannot convert .crucible::SchemaTable::LookupName. \\{aka .fixy::Tagged<fixy::Borrowed<const char, crucible::SchemaTable>, fixy::tags::source::Interned>.\\} to .const char\\*. in initialization"
   "neg_schema_table_lookup_raw_const_char.cpp:18")
-crucible_neg_compile_multi_test(neg_schema_table_lookup_cross_tag
+crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
   "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
   "neg_schema_table_lookup_cross_tag.cpp:23")
 
@@ -2504,10 +2315,10 @@ crucible_neg_compile_multi_test(neg_schema_table_lookup_cross_tag
 #     did not retag is refused at register_name.
 #   * neg_schema_register_abi_boundary_name: a C ABI name that the entry did
 #     not retag is refused at register_schema_name.
-crucible_neg_compile_multi_test(neg_schema_register_external_name
+crucible_neg_compile_test(neg_schema_register_external_name
   "neg_schema_register_external_name.cpp:24:31: error: no matching function for call to .crucible::SchemaTable::register_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::External\\]")
-crucible_neg_compile_multi_test(neg_schema_register_abi_boundary_name
+crucible_neg_compile_test(neg_schema_register_abi_boundary_name
   "neg_schema_register_abi_boundary_name.cpp:22:42: error: no matching function for call to .register_schema_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::ABIBoundary\\]")
 
@@ -2519,9 +2330,11 @@ crucible_neg_compile_multi_test(neg_schema_register_abi_boundary_name
 #   * neg_symbol_table_add_cross_tag — internal provenance cannot pass
 #     as source::External.
 crucible_neg_compile_test(neg_symbol_table_add_raw_symbol_id
-  "no match for|cannot convert|no viable|could not convert|Tagged|SymbolId|FromInternal")
+  "conversion from .crucible::InternalSymbolId. .aka .fixy::Tagged<crucible::SymbolId, fixy::tags::source::FromInternal>.."
+  "to non-scalar type .crucible::SymbolId. requested")
 crucible_neg_compile_test(neg_symbol_table_add_cross_tag
-  "no match for|cannot convert|no viable|could not convert|Tagged|External|FromInternal")
+  "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::FromInternal>."
+  "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested")
 
 # The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
 # N>, and two gates hold the positive power-of-two capacity:
@@ -2532,10 +2345,10 @@ crucible_neg_compile_test(neg_symbol_table_add_cross_tag
 #     `0 & (0u - 1u)` is 0, and only `requires (N > 0 ...)` of CyclicBuffer
 #     refuses it.
 # The bound of the fill counter lives inside CyclicBuffer.
-crucible_neg_compile_multi_test(neg_transaction_log_non_power_of_two
+crucible_neg_compile_test(neg_transaction_log_non_power_of_two
   "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be a power of 2"
   "the expression .\\(N & N - 1\\) == 0 \\[with N = 7\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_transaction_log_zero_capacity
+crucible_neg_compile_test(neg_transaction_log_zero_capacity
   "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N>  requires  N > 0"
   "the expression .N > 0 \\[with N = 0\\]. evaluated to .false.")
 
@@ -2543,39 +2356,44 @@ crucible_neg_compile_multi_test(neg_transaction_log_zero_capacity
 # fixy::Tagged<RegionNode*, source::Arena>.  A raw RegionNode* and a region
 # under the Loaded tag, which deserialize_region returns, both fail at the
 # commit boundary.
-crucible_neg_compile_multi_test(neg_transaction_region_raw_pointer
+crucible_neg_compile_test(neg_transaction_region_raw_pointer
   "neg_transaction_region_raw_pointer.cpp:31:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
   "\\{aka .fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Arena>.\\}")
-crucible_neg_compile_multi_test(neg_transaction_region_loaded_cross_tag
+crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
   "neg_transaction_region_loaded_cross_tag.cpp:33:33: error: cannot convert"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 
 # WRAP-Lower-4 (#934) — lower_trace_to_graph requires Recorded/Replayed
 # TraceGraph provenance and propagates that source to the returned Graph.
 crucible_neg_compile_test(neg_lower_trace_graph_raw_input
-  "no match|no known conversion|cannot convert|could not convert")
+  "no matching function for call to .lower_trace_to_graph<LowerBgAllocRow>\\(foundation::effects::cap::Alloc&, crucible::TraceGraph\\*,"
+  "mismatched types .fixy::Tagged<const crucible::TraceGraph\\*, Source>. and .crucible::TraceGraph\\*.")
 crucible_neg_compile_test(neg_lower_trace_graph_cross_source
-  "conversion from|no match|no known conversion|cannot convert|could not convert")
+  "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Replayed>."
+  "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Recorded>. requested")
 
 # WRAP-Lower-6 (#936) — lower_trace_to_graph runs in the background
 # compilation path and allocates Graph scratch.  Required row is
 # Row<Bg, Alloc>; pure, Alloc-only, and Bg-only callers are rejected.
 crucible_neg_compile_test(neg_lower_trace_graph_pure_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+  "no matching function for call to .lower_trace_to_graph<foundation::effects::Row<> >"
+  "required for the satisfaction of .Subrow<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>, CallerRow>. .with CallerRow = foundation::effects::Row<>.")
 crucible_neg_compile_test(neg_lower_trace_graph_alloc_only_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+  "no matching function for call to .lower_trace_to_graph<foundation::effects::Row<foundation::effects::Effect::Alloc> >"
+  "required for the satisfaction of .Subrow<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>, CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>.")
 crucible_neg_compile_test(neg_lower_trace_graph_bg_only_row
-  "associated constraints are not satisfied|constraints not satisfied|Subrow|no matching function")
+  "no matching function for call to .lower_trace_to_graph<foundation::effects::Row<foundation::effects::Effect::Bg> >"
+  "required for the satisfaction of .Subrow<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>, CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>.")
 
 # Transaction::step_id is fixy::Monotonic<uint64_t>.
 #   * neg_transaction_step_id_assign_from_raw: Monotonic has no assignment
 #     from uint64_t, so a raw write does not compile.
 #   * neg_transaction_step_id_advance_retrograde: an advance to a smaller
 #     value breaks the precondition of advance in a constant evaluation.
-crucible_neg_compile_multi_test(neg_transaction_step_id_assign_from_raw
+crucible_neg_compile_test(neg_transaction_step_id_assign_from_raw
   "neg_transaction_step_id_assign_from_raw.cpp:19:29: error: no match for .operator=."
   "\\(operand types are .fixy::Monotonic<long unsigned int, std::less<long unsigned int> >. and .uint64_t.")
-crucible_neg_compile_multi_test(neg_transaction_step_id_advance_retrograde
+crucible_neg_compile_test(neg_transaction_step_id_advance_retrograde
   "in .constexpr. expansion of .tx.crucible::Transaction::step_id.fixy::Monotonic<long unsigned int, std::less<long unsigned int> >::advance\\(50\\)."
   "error: .__builtin_trap\\(\\). is not a constant expression")
 
@@ -2584,10 +2402,10 @@ crucible_neg_compile_multi_test(neg_transaction_step_id_advance_retrograde
 #   * neg_transaction_log_foreground_ctx: the foreground context.
 #   * neg_transaction_log_bg_cap_without_bg_row: a background capability
 #     with a row that claims Alloc alone.
-crucible_neg_compile_multi_test(neg_transaction_log_foreground_ctx
+crucible_neg_compile_test(neg_transaction_log_foreground_ctx
   "neg_transaction_log_foreground_ctx.cpp:24:89: error: no matching function for call to .crucible::TransactionLog<16, Owner>::TransactionLog"
   "required for the satisfaction of .CtxFitsTransactionLog<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_multi_test(neg_transaction_log_bg_cap_without_bg_row
+crucible_neg_compile_test(neg_transaction_log_bg_cap_without_bg_row
   "neg_transaction_log_bg_cap_without_bg_row.cpp:29:55: error: no matching function for call to .crucible::TransactionLog<16, Owner>::TransactionLog"
   "required for the satisfaction of .CtxFitsTransactionLog<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >\\]")
 
@@ -2596,18 +2414,21 @@ crucible_neg_compile_multi_test(neg_transaction_log_bg_cap_without_bg_row
 # a second thread is refused as an owner.  The publish-stage proof is
 # built by the background thread alone, and neither bit_cast nor the
 # checked lifetime start can make one from bytes.
-crucible_neg_compile_multi_test(neg_transaction_log_rollback_without_owner
+crucible_neg_compile_test(neg_transaction_log_rollback_without_owner
   "neg_transaction_log_rollback_without_owner.cpp:26:23: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(\\)."
   "candidate expects 1 argument, 0 provided")
-crucible_neg_compile_multi_test(neg_transaction_log_copyable_owner
+crucible_neg_compile_test(neg_transaction_log_copyable_owner
   "neg_transaction_log_copyable_owner.cpp:16:47: error: template constraint failure for .template<unsigned int N, class Owner>  requires  OwnerProof<Owner> class crucible::TransactionLog."
   "the expression .!\\(is_copy_constructible_v<P>\\) \\[with P = CopyableOwner\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_publish_stage_built_outside
-  "PublishStage\\(\\)[^\\n]*private within this context|is private within this context")
+  "is private within this context"
+  ".crucible::BackgroundThread::PublishStage::PublishStage\\(\\). is private within this context")
 crucible_neg_compile_test(neg_publish_stage_forged_by_bit_cast
-  "bit_cast|trivially copyable|no matching function")
+  "no matching function for call to .bit_cast<crucible::BackgroundThread::PublishStage>\\(char\\)."
+  ".crucible::BackgroundThread::PublishStage. is not trivially copyable")
 crucible_neg_compile_test(neg_publish_stage_forged_by_lifetime_start
-  "ImplicitLifetimeThroughout|constraints not satisfied")
+  "no matching function for call to .start_as_array<Stage>\\(unsigned char \\[1\\], int\\)."
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = crucible::BackgroundThread::PublishStage.")
 
 # ValidTraceNodeKindRaw is the fixy Refined<bounded_above<TERMINAL>,
 # uint8_t>, minted through kValidTraceNodeKindBound at every uint8_t to
@@ -2619,10 +2440,10 @@ crucible_neg_compile_test(neg_publish_stage_forged_by_lifetime_start
 #   * neg_trace_node_kind_uint8_max — wide miss (= UINT8_MAX).  Catches a
 #     refinement that degenerates into a plain uint8_t.
 # Each pins the door, the bound and the refused value.
-crucible_neg_compile_multi_test(neg_trace_node_kind_above_terminal
+crucible_neg_compile_test(neg_trace_node_kind_above_terminal
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(\\(\\(uint8_t\\)\\(\\(\\(int\\)\\(\\(uint8_t\\)crucible::TraceNodeKind::TERMINAL\\)\\) \\+ 1\\)\\)\\)")
-crucible_neg_compile_multi_test(neg_trace_node_kind_uint8_max
+crucible_neg_compile_test(neg_trace_node_kind_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(255\\)")
 
@@ -2636,10 +2457,10 @@ crucible_neg_compile_multi_test(neg_trace_node_kind_uint8_max
 #   * neg_cdag_version_external_cross_tag.cpp — cross-tag assignment
 #     rejected; source::FormatVersion cannot masquerade as
 #     source::External.
-crucible_neg_compile_multi_test(neg_cdag_version_raw_uint32
+crucible_neg_compile_test(neg_cdag_version_raw_uint32
   "cannot convert .const crucible::CdagFormatVersion. \\{aka .const fixy::Tagged<unsigned int, fixy::tags::source::FormatVersion>.\\} to .uint32_t."
   "neg_cdag_version_raw_uint32.cpp:20")
-crucible_neg_compile_multi_test(neg_cdag_version_external_cross_tag
+crucible_neg_compile_test(neg_cdag_version_external_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::FormatVersion>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
   "neg_cdag_version_external_cross_tag.cpp:24")
 
@@ -2652,10 +2473,10 @@ crucible_neg_compile_multi_test(neg_cdag_version_external_cross_tag
 #     to no raw RegionNode*.
 #   * neg_deserialize_region_cross_tag.cpp — Loaded provenance cannot
 #     pass as source::External.
-crucible_neg_compile_multi_test(neg_deserialize_region_raw_region_ptr
+crucible_neg_compile_test(neg_deserialize_region_raw_region_ptr
   "cannot convert .std::optional<fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Loaded> >. to .crucible::RegionNode\\*. in initialization"
   "neg_deserialize_region_raw_region_ptr.cpp:22")
-crucible_neg_compile_multi_test(neg_deserialize_region_cross_tag
+crucible_neg_compile_test(neg_deserialize_region_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Loaded>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
   "neg_deserialize_region_cross_tag.cpp:25")
 
@@ -2668,10 +2489,10 @@ crucible_neg_compile_multi_test(neg_deserialize_region_cross_tag
 #     Catches a range that widens to in_range<0, 256>.
 #   * neg_schema_name_len_above_max.cpp — wide miss (= UINT16_MAX).
 #     Catches a gate that no longer runs its predicate.
-crucible_neg_compile_multi_test(neg_schema_name_len_below_min
+crucible_neg_compile_test(neg_schema_name_len_below_min
   "__builtin_trap.*is not a constant expression"
   "mint_refined<InRange<1, 256>\\(\\), short unsigned int>\\(0\\)")
-crucible_neg_compile_multi_test(neg_schema_name_len_above_max
+crucible_neg_compile_test(neg_schema_name_len_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<InRange<1, 256>\\(\\), short unsigned int>\\(65535\\)")
 
@@ -2684,22 +2505,22 @@ crucible_neg_compile_multi_test(neg_schema_name_len_above_max
 # of the schema table.  Each gate has two fixtures: a boundary edge
 # (cap + 1) that catches a bound that widens by one, and a wide miss
 # (UINT32_MAX) that catches a gate that no longer runs its predicate.
-crucible_neg_compile_multi_test(neg_trace_num_ops_above_max
+crucible_neg_compile_test(neg_trace_num_ops_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<4194304>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::MAX_OPS\\) \\+ 1\\)\\)")
-crucible_neg_compile_multi_test(neg_trace_num_ops_uint32_max
+crucible_neg_compile_test(neg_trace_num_ops_uint32_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<4194304>\\(\\), unsigned int>\\(4294967295\\)")
-crucible_neg_compile_multi_test(neg_trace_num_metas_above_max
+crucible_neg_compile_test(neg_trace_num_metas_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<16777216>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::MAX_METAS\\) \\+ 1\\)\\)")
-crucible_neg_compile_multi_test(neg_trace_num_metas_uint32_max
+crucible_neg_compile_test(neg_trace_num_metas_uint32_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<16777216>\\(\\), unsigned int>\\(4294967295\\)")
-crucible_neg_compile_multi_test(neg_trace_num_names_above_max
+crucible_neg_compile_test(neg_trace_num_names_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<512>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::SCHEMA_TABLE_CAP\\) \\+ 1\\)\\)")
-crucible_neg_compile_multi_test(neg_trace_num_names_uint32_max
+crucible_neg_compile_test(neg_trace_num_names_uint32_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<512>\\(\\), unsigned int>\\(4294967295\\)")
 
@@ -2708,9 +2529,11 @@ crucible_neg_compile_multi_test(neg_trace_num_names_uint32_max
 # producers cannot raw-assign a counter, and consumers cannot read one
 # through an implicit uint32_t conversion.
 crucible_neg_compile_test(neg_trace_graph_num_ops_assign_raw
-  "no match for|no known conversion")
+  "no match for .operator=. .operand types are .crucible::TraceGraph::BuiltCount. .aka .fixy::WriteOnce<unsigned int>.. and .unsigned int.."
+  "no known conversion for argument 1 from .unsigned int. to .const fixy::WriteOnce<unsigned int>&.")
 crucible_neg_compile_test(neg_trace_graph_num_edges_implicit_raw
-  "cannot convert|invalid conversion|no viable conversion")
+  "cannot convert .crucible::TraceGraph::BuiltCount."
+  ".aka .fixy::WriteOnce<unsigned int>.. to .uint32_t. .aka .unsigned int.. in initialization")
 
 # ─── ValidMetaAppendCount negative-compile fixtures ──────────────────
 #
@@ -2728,11 +2551,11 @@ crucible_neg_compile_test(neg_trace_graph_num_edges_implicit_raw
 #     (CAPACITY + 1).  It fails if the bound widens by one or more.
 #   * neg_metalog_append_count_uint32_max is the wide miss (UINT32_MAX).
 #     It fails if the bound is removed.
-crucible_neg_compile_multi_test(neg_metalog_append_count_above_max
+crucible_neg_compile_test(neg_metalog_append_count_above_max
     "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<1048576>\\(\\), unsigned int>\\(\\(\\(\\(unsigned int\\)crucible::MetaLog::CAPACITY\\) \\+ 1\\)\\)."
     "__builtin_trap\\(\\). is not a constant expression"
     "in expansion of macro .CRUCIBLE_PRE.")
-crucible_neg_compile_multi_test(neg_metalog_append_count_uint32_max
+crucible_neg_compile_test(neg_metalog_append_count_uint32_max
     "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<1048576>\\(\\), unsigned int>\\(4294967295\\)."
     "__builtin_trap\\(\\). is not a constant expression"
     "in expansion of macro .CRUCIBLE_PRE.")
@@ -2762,9 +2585,11 @@ crucible_neg_compile_multi_test(neg_metalog_append_count_uint32_max
 # plus the typed witness all fire at the boundary, exposing the
 # silent clamp at enforce semantics.
 crucible_neg_compile_test(neg_trace_ring_drain_count_above_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<65536>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::TraceRing::CAPACITY\\) \\+ 1\\)\\)")
 crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<65536>\\(\\), unsigned int>\\(4294967295\\)")
 
 # ─── PROD-WRAP-5 (#534) ndim Refined<bounded_above<8>> typed gate ────
 #
@@ -2798,9 +2623,11 @@ crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
 # catches the byte at deserialize entry; the loader guard catches it
 # at iteration entry.  Both layers must agree.
 crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<8>\\(\\), unsigned char>\\(.*crucible::kMaxTensorNDim.*\\+ 1")
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<BoundedAbove<8>\\(\\), unsigned char>\\(255\\)")
 
 # read_meta dtype gate (sibling of #534 ndim / #892 kernel_id) — ScalarType
 # dtype byte typed gate at the read_meta()
@@ -2816,9 +2643,11 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
 #   * neg_tensor_meta_dtype_above_max — ABOVE-MAX wide miss (99 > 26)
 #     catches "drop the predicate entirely" regression.
 crucible_neg_compile_test(neg_tensor_meta_dtype_gap_value
-  "contract|Refined|valid_scalar_type|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<crucible::IsValidScalarType\\(\\), signed char>\\(14\\)")
 crucible_neg_compile_test(neg_tensor_meta_dtype_above_max
-  "contract|Refined|valid_scalar_type|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<crucible::IsValidScalarType\\(\\), signed char>\\(99\\)")
 
 # read_meta device_type gate (sibling of the dtype gate) — DeviceType is a
 # sparse int8_t enum (0,1,2,6,9,13,14,20); it feeds the node content hash
@@ -2832,9 +2661,11 @@ crucible_neg_compile_test(neg_tensor_meta_dtype_above_max
 #   * neg_tensor_meta_device_type_above_max — ABOVE-MAX wide miss (99 > 20)
 #     catches "drop the predicate entirely" regression.
 crucible_neg_compile_test(neg_tensor_meta_device_type_gap_value
-  "contract|Refined|valid_device_type|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<crucible::IsValidDeviceType\\(\\), signed char>\\(3\\)")
 crucible_neg_compile_test(neg_tensor_meta_device_type_above_max
-  "contract|Refined|valid_device_type|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<crucible::IsValidDeviceType\\(\\), signed char>\\(99\\)")
 
 # read_meta layout gate (last enum reconstruction in read_meta) — Layout is
 # a DENSE signed int8_t enum (Strided=0 .. SparseBsc=5); it feeds the node
@@ -2847,9 +2678,11 @@ crucible_neg_compile_test(neg_tensor_meta_device_type_above_max
 #   * neg_tensor_meta_layout_above_max — ABOVE-MAX wide miss (99 > 5)
 #     catches "drop the predicate entirely" regression.
 crucible_neg_compile_test(neg_tensor_meta_layout_below_min
-  "contract|Refined|valid_layout|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<crucible::IsValidLayout\\(\\), signed char>\\(-1\\)")
 crucible_neg_compile_test(neg_tensor_meta_layout_above_max
-  "contract|Refined|valid_layout|not a constant|non-constant|constexpr")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<crucible::IsValidLayout\\(\\), signed char>\\(99\\)")
 
 # write_meta writes the data pointer and the gradient-function hash as
 # zero.  Each zero is a constexpr fixy::Refined<is_zero, uint64_t>, so
@@ -2861,10 +2694,10 @@ crucible_neg_compile_test(neg_tensor_meta_layout_above_max
 #     catches a refinement that no longer runs its predicate, so that
 #     a uint64_t-encoded process-local address could reach the on-disk
 #     bytes.
-crucible_neg_compile_multi_test(neg_serialize_is_zero_nonzero_construct
+crucible_neg_compile_test(neg_serialize_is_zero_nonzero_construct
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsZero\\(\\), long unsigned int>\\(1\\)")
-crucible_neg_compile_multi_test(neg_serialize_is_zero_uint64_max
+crucible_neg_compile_test(neg_serialize_is_zero_uint64_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsZero\\(\\), long unsigned int>\\(18446744073709551615\\)")
 
@@ -2872,9 +2705,11 @@ crucible_neg_compile_multi_test(neg_serialize_is_zero_uint64_max
 # write through TensorDim = Refined<bounded_above<INT64_MAX / 16>,
 # int64_t> while keeping the raw 64-byte lane blocks for SIMD loads.
 crucible_neg_compile_test(neg_tensor_meta_dim_raw_assignment
-  "no match for|cannot convert|no viable|could not convert|operator=|TensorDim")
+  "no match for .operator=. .operand types are .crucible::TensorDimArray::Slot. and .int.."
+  "no known conversion for argument 1 from .int. to .crucible::TensorDim. .aka .fixy::Refinement<fixy::BoundedAbove<576460752303423487>\\(\\), long int, false>..")
 crucible_neg_compile_test(neg_tensor_meta_dim_above_max
-  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+  "contract predicate is false in constant expression"
+  "crucible/TensorMeta.h:[0-9]+:[0-9]+: error: contract predicate")
 
 # WRAP-TensorMeta-2 (#1035) — TensorMeta::data_ptr now stores
 # ExternalDataPtr = Tagged<void*, source::External>.  Two HS14
@@ -2884,9 +2719,11 @@ crucible_neg_compile_test(neg_tensor_meta_dim_above_max
 #   * neg_tensor_meta_data_ptr_cross_tag — Tagged<void*, Sanitized>
 #     cannot pass as source::External.
 crucible_neg_compile_test(neg_tensor_meta_data_ptr_raw_pointer
-  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|ExternalDataPtr")
+  "no match for .operator=. .operand types are .crucible::ExternalDataPtr."
+  ".aka .fixy::Tagged<void\\*, fixy::tags::source::External>.. and .void\\*..")
 crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
-  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|External|Sanitized")
+  "no match for .operator=. .operand types are .crucible::ExternalDataPtr."
+  ".aka .fixy::Tagged<void\\*, fixy::tags::source::External>.. and .fixy::Tagged<void\\*, fixy::tags::source::Sanitized>..")
 
 # WRAP-TensorMeta-7 (#1040) — TensorMeta::grad_fn_hash now stores
 # GradFnHash = Tagged<uint64_t, hash_family::FamilyB>.  Two HS14
@@ -2896,9 +2733,11 @@ crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
 #   * neg_tensor_meta_grad_fn_hash_cross_family — Family-A persistent
 #     hashes cannot pass as process-local Family-B hashes.
 crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_raw_uint64
-  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|GradFnHash")
+  "no match for .operator=. .operand types are .crucible::GradFnHash."
+  ".aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.. and .long long unsigned int..")
 crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_cross_family
-  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|FamilyA|FamilyB")
+  "no match for .operator=. .operand types are .crucible::GradFnHash."
+  "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>. to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
 
 # dim_hash_*_det returns the fixy DetSafe<Pure, Tagged<uint64_t,
 # hash_family::FamilyB>>.  Two fixtures cover both fences:
@@ -2906,10 +2745,10 @@ crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_cross_family
 #     deterministic Family-B carrier.
 #   * neg_dim_hash_cross_family — Family-A values cannot substitute
 #     for process-local Family-B dim hashes.
-crucible_neg_compile_multi_test(neg_dim_hash_raw_uint64
+crucible_neg_compile_test(neg_dim_hash_raw_uint64
   "could not convert .raw. from .const uint64_t."
   "to .crucible::DimHashDet.")
-crucible_neg_compile_multi_test(neg_dim_hash_cross_family
+crucible_neg_compile_test(neg_dim_hash_cross_family
   "could not convert .persistent. from .Graded<\\[...\\],\\[...\\],Tagged<\\[...\\],crucible::hash_family::FamilyA>>."
   "to .Graded<\\[...\\],\\[...\\],Tagged<\\[...\\],crucible::hash_family::FamilyB>>.")
 
@@ -2920,9 +2759,11 @@ crucible_neg_compile_multi_test(neg_dim_hash_cross_family
 #   * neg_hdr_histogram_merge_cross_config — histograms with different
 #     significant-digit layouts cannot be merged.
 crucible_neg_compile_test(neg_hdr_histogram_record_raw_uint64
-  "cannot convert|no matching function|could not convert|Refined|in_range|value_type")
+  "cannot convert .uint64_t. .aka .long unsigned int.. to .crucible::observe::HdrHistogram<2, 1000000>::value_type."
+  ".aka .fixy::Refinement<fixy::InRange<0, 1000000>\\(\\), long unsigned int, false>.")
 crucible_neg_compile_test(neg_hdr_histogram_merge_cross_config
-  "cannot convert|no matching function|could not convert|HdrHistogram")
+  "cannot convert .crucible::observe::HdrHistogram<3, 1000000>. to .const crucible::observe::HdrHistogram<2, 1000000>&."
+  "initializing argument 1 of .void crucible::observe::HdrHistogram<Significant, MaxValue>::merge_from")
 
 # observe/SyntheticProbe.h keeps synthetic-probe publication on the
 # background row and transport registration typed:
@@ -2931,9 +2772,11 @@ crucible_neg_compile_test(neg_hdr_histogram_merge_cross_config
 #   * neg_synthetic_probe_raw_kind_mask — raw integer masks cannot
 #     substitute for fixy::Bits<TransportProbeKind>.
 crucible_neg_compile_test(neg_synthetic_probe_record_fg_ctx
-  "constraint|constraints not satisfied|CtxFitsSyntheticProbeRecord|record_gate")
+  "no matching function for call to .record_gate<fixy::HotFgCtx>\\(\\)."
+  "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Bg> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
-  "cannot convert|no matching function|could not convert|Bits|TransportProbeKind")
+  "cannot convert .unsigned int. to .fixy::Bits<crucible::observe::TransportProbeKind>."
+  "initializing argument 2 of .bool crucible::observe::SyntheticProbeRunner<MaxPeers>::register_peer")
 
 # observe/SdcDetect.h keeps redundant-compute evidence typed:
 #   * neg_sdc_detect_mint_bg_ctx — only Init-row contexts mint detectors.
@@ -2947,20 +2790,22 @@ crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
 #     cross the SdcConfig boundary.
 #   * neg_sdc_detect_direct_construct — a detector is built only through
 #     mint_sdc_detector, so its constructor is private.
-crucible_neg_compile_effects_test(neg_sdc_detect_mint_bg_ctx
+crucible_neg_compile_test(neg_sdc_detect_mint_bg_ctx
   "constraint|constraints.*not satisfied"
     "CtxFitsSdcMint")
-crucible_neg_compile_effects_test(neg_sdc_detect_run_hot_ctx
+crucible_neg_compile_test(neg_sdc_detect_run_hot_ctx
   "constraint|constraints.*not satisfied"
     "CtxFitsSdcRun")
 crucible_neg_compile_test(neg_sdc_detect_raw_result_as_verified
-  "could not convert .42. from .uint64_t.*SdcVerified")
+  "could not convert .42. from .uint64_t. .aka .long unsigned int.. to .crucible::observe::SdcVerified<long unsigned int>."
+  ".aka .fixy::Tagged<long unsigned int, fixy::tags::source::SdcVerified>.")
 crucible_neg_compile_test(neg_sdc_detect_cross_tag_result
-  "could not convert .raw. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::SdcVerified>")
-crucible_neg_compile_multi_test(neg_sdc_detect_sampling_rate_above_max
+  "could not convert .raw. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
+  "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::SdcVerified>.")
+crucible_neg_compile_test(neg_sdc_detect_sampling_rate_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<InRange<1, 1000000>\\(\\), unsigned int>\\(1000001\\)")
-crucible_neg_compile_multi_test(neg_sdc_detect_direct_construct
+crucible_neg_compile_test(neg_sdc_detect_direct_construct
   "is private within this context"
   "SdcDetector<MaxCogs, MaxEvents>::SdcDetector\\(crucible::observe::SdcConfig\\)")
 
@@ -2977,35 +2822,35 @@ crucible_neg_compile_multi_test(neg_sdc_detect_direct_construct
 #     context.
 #   * neg_hlc_mint_without_capability: the mint has no overload without
 #     a context.
-crucible_neg_compile_multi_test(neg_hlc_raw_timestamp_to_tagged
+crucible_neg_compile_test(neg_hlc_raw_timestamp_to_tagged
   "could not convert|cannot convert|no matching function"
   "HlcClockTimestamp")
-crucible_neg_compile_multi_test(neg_hlc_cross_source_timestamp
+crucible_neg_compile_test(neg_hlc_cross_source_timestamp
   "could not convert|cannot convert|no matching function"
   "source::External")
-crucible_neg_compile_multi_test(neg_hlc_direct_ctor
+crucible_neg_compile_test(neg_hlc_direct_ctor
   "Hlc::Hlc\\(\\). is private within this context"
   "declared private here")
-crucible_neg_compile_effects_test(neg_hlc_mint_test_context
+crucible_neg_compile_test(neg_hlc_mint_test_context
   "could not convert|no matching function|cannot convert"
     "effects::Test|effects::Init")
-crucible_neg_compile_effects_test(neg_hlc_mint_background_context
+crucible_neg_compile_test(neg_hlc_mint_background_context
   "could not convert|no matching function|cannot convert"
     "effects::Bg|effects::Init")
-crucible_neg_compile_effects_test(neg_hlc_mint_without_capability
+crucible_neg_compile_test(neg_hlc_mint_without_capability
   "no matching function|too few arguments"
     "mint_hlc")
 
 # The three mints of the runtime metrics channel, one fixture each:
 # the writer mint refuses the permission of the reader role, and the
 # two reader mints refuse a call without a metrics channel.
-crucible_neg_compile_multi_test(neg_observe_mint_metrics_writer_reader_permission
+crucible_neg_compile_test(neg_observe_mint_metrics_writer_reader_permission
   "no matching function|could not convert|cannot convert|invalid initialization|cannot bind"
   "Permission|WriterTag|ReaderTag")
-crucible_neg_compile_multi_test(neg_observe_mint_keeper_metrics_reader_without_channel
+crucible_neg_compile_test(neg_observe_mint_keeper_metrics_reader_without_channel
   "no matching function|too few arguments"
   "mint_keeper_metrics_reader")
-crucible_neg_compile_multi_test(neg_observe_mint_canopy_metrics_reader_int_channel
+crucible_neg_compile_test(neg_observe_mint_canopy_metrics_reader_int_channel
   "no matching function|could not convert|cannot convert|invalid initialization|cannot bind"
   "RuntimeMetricsChannel|int")
 
@@ -3020,19 +2865,19 @@ crucible_neg_compile_multi_test(neg_observe_mint_canopy_metrics_reader_int_chann
 #   * neg_vector_clock_mint_test_context and
 #     neg_vector_clock_mint_background_context: the mint takes Init, and
 #     neither a Test nor a background context converts to it.
-crucible_neg_compile_multi_test(neg_vector_clock_zero_nodes
+crucible_neg_compile_test(neg_vector_clock_zero_nodes
   "required for the satisfaction of .VectorClockNodeBound<MaxNodes>. \\[with MaxNodes = 0\\]"
   "the expression .MaxNodes > 0 \\[with MaxNodes = 0\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_vector_clock_cross_n_snapshot
+crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
   "could not convert .three. from"
   ".VectorClockSnapshot<3>. to .VectorClockSnapshot<4>.")
-crucible_neg_compile_multi_test(neg_vector_clock_direct_ctor
+crucible_neg_compile_test(neg_vector_clock_direct_ctor
   "VectorClock<MaxNodes, Tag>::VectorClock\\(node_index_type\\) \\[with long unsigned int MaxNodes = 4. Tag = void. node_index_type = fixy::Refinement<fixy::BoundedAbove<3>\\(\\), short unsigned int, false>\\]"
   "is private within this context")
-crucible_neg_compile_effects_test(neg_vector_clock_mint_test_context
+crucible_neg_compile_test(neg_vector_clock_mint_test_context
   "no matching function for call to .mint_vector_clock<4>\\(foundation::effects::Test, int\\)."
   "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_effects_test(neg_vector_clock_mint_background_context
+crucible_neg_compile_test(neg_vector_clock_mint_background_context
   "no matching function for call to .mint_vector_clock<4>\\(foundation::effects::Bg, int\\)."
   "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 
@@ -3051,28 +2896,28 @@ crucible_neg_compile_effects_test(neg_vector_clock_mint_background_context
 #     hash admits only enums and integers.
 #   * neg_crdt_counter_update_raw_fields: raw integers do not build a
 #     counter update, because its replica and its amount are refinements.
-crucible_neg_compile_multi_test(neg_crdt_gset_raw_add
+crucible_neg_compile_test(neg_crdt_gset_raw_add
   "cannot convert .int. to"
   "fixy::Tagged<int, fixy::tags::source::Local>")
-crucible_neg_compile_multi_test(neg_crdt_merge_raw_state
+crucible_neg_compile_test(neg_crdt_merge_raw_state
   "no matching function for call to .crucible::canopy::GSet<int, 8>::merge"
   "merge\\(crucible::canopy::detail::BoundedHashSetState<int, 8>&\\)")
-crucible_neg_compile_multi_test(neg_crdt_merge_local_state
+crucible_neg_compile_test(neg_crdt_merge_local_state
   "no matching function for call to .crucible::canopy::GSet<int, 8>::merge"
   "BoundedHashSetState<int, 8>, fixy::tags::source::Local>&\\)")
-crucible_neg_compile_multi_test(neg_crdt_lww_partial_clock
+crucible_neg_compile_test(neg_crdt_lww_partial_clock
   "template constraint failure for .template<class V, class Clock>"
   "three_way_comparable<Clock, std::strong_ordering>. \\[with Clock = crucible::canopy::VectorClockSnapshot<4, void>\\]")
-crucible_neg_compile_multi_test(neg_crdt_mv_register_unordered_value
+crucible_neg_compile_test(neg_crdt_mv_register_unordered_value
   "template constraint failure for .template<class V, long unsigned int MaxVersions"
   "totally_ordered<V>. \\[with V = EqualityOnlyPayload\\]")
-crucible_neg_compile_multi_test(neg_crdt_gset_floating_value
+crucible_neg_compile_test(neg_crdt_gset_floating_value
   "template constraint failure for .template<class T, long unsigned int Capacity>"
   "HashableValue<T>. \\[with T = double\\]")
-crucible_neg_compile_multi_test(neg_crdt_gset_pointer_value
+crucible_neg_compile_test(neg_crdt_gset_pointer_value
   "template constraint failure for .template<class T, long unsigned int Capacity>"
   "HashableValue<T>. \\[with T = int\\*\\]")
-crucible_neg_compile_multi_test(neg_crdt_counter_update_raw_fields
+crucible_neg_compile_test(neg_crdt_counter_update_raw_fields
   "could not convert .9. from .int. to"
   "fixy::Refinement<fixy::BoundedAbove<3>\\(\\), short unsigned int, false>")
 
@@ -3090,25 +2935,25 @@ crucible_neg_compile_multi_test(neg_crdt_counter_update_raw_fields
 #     converts to it.
 #   * neg_swim_witness_count_assign: the count of a witness set is a slot
 #     count, so it cannot be set past the capacity.
-crucible_neg_compile_multi_test(neg_swim_zero_max_peers
+crucible_neg_compile_test(neg_swim_zero_max_peers
   "required for the satisfaction of .SwimShape<MaxPeers, MaxPiggyback>. \\[with MaxPeers = 0. MaxPiggyback = 32\\]"
   "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_swim_raw_peer_add
+crucible_neg_compile_test(neg_swim_raw_peer_add
   "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::SwimMembership<4, 32>::peer_type."
   "aka .fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::SwimMember>.")
-crucible_neg_compile_multi_test(neg_swim_external_peer_add
+crucible_neg_compile_test(neg_swim_external_peer_add
   "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>."
   "to .Tagged<\\[...\\],fixy::tags::source::SwimMember>.")
-crucible_neg_compile_multi_test(neg_swim_direct_ctor
+crucible_neg_compile_test(neg_swim_direct_ctor
   "SwimMembership<MaxPeers, MaxPiggyback>::SwimMembership\\(std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::SwimMember> >, crucible::canopy::SwimConfig\\)"
   "is private within this context")
-crucible_neg_compile_effects_test(neg_swim_mint_test_context
+crucible_neg_compile_test(neg_swim_mint_test_context
   "no matching function for call to .mint_swim_membership\\(foundation::effects::Test\\)."
   "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_effects_test(neg_swim_mint_background_context
+crucible_neg_compile_test(neg_swim_mint_background_context
   "no matching function for call to .mint_swim_membership<4>\\(foundation::effects::Bg\\)."
   "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_multi_test(neg_swim_witness_count_assign
+crucible_neg_compile_test(neg_swim_witness_count_assign
   "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
   "and .uint16_t.")
 
@@ -3127,31 +2972,31 @@ crucible_neg_compile_multi_test(neg_swim_witness_count_assign
 #   * neg_hyparview_mint_test_context and
 #     neg_hyparview_mint_background_context: the mint takes Init, and
 #     neither a Test nor a background context converts to it.
-crucible_neg_compile_multi_test(neg_hyparview_zero_active
+crucible_neg_compile_test(neg_hyparview_zero_active
   "required for the satisfaction of .HyParViewShape<MaxActive, MaxPassive>. \\[with MaxActive = 0. MaxPassive = 8\\]"
   "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_hyparview_active_exceeds_passive
+crucible_neg_compile_test(neg_hyparview_active_exceeds_passive
   "required for the satisfaction of .HyParViewShape<MaxActive, MaxPassive>. \\[with MaxActive = 8. MaxPassive = 4\\]"
   "the expression .MaxActive <= MaxPassive \\[with MaxActive = 8. MaxPassive = 4\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_hyparview_raw_peer_join
+crucible_neg_compile_test(neg_hyparview_raw_peer_join
   "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::HyParViewPeer."
   "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::join\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_multi_test(neg_hyparview_cross_tag_peer
+crucible_neg_compile_test(neg_hyparview_cross_tag_peer
   "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::HyParView>."
   "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::join\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_multi_test(neg_hyparview_raw_shuffle
+crucible_neg_compile_test(neg_hyparview_raw_shuffle
   "cannot convert .crucible::canopy::HyParViewShuffle<8>. to .crucible::canopy::GossipedHyParViewShuffle<8>."
   "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::apply_shuffle\\(crucible::canopy::GossipedHyParViewShuffle<MaxPassive>\\)")
-crucible_neg_compile_multi_test(neg_hyparview_external_shuffle
+crucible_neg_compile_test(neg_hyparview_external_shuffle
   "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
   "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::apply_shuffle\\(crucible::canopy::GossipedHyParViewShuffle<MaxPassive>\\)")
-crucible_neg_compile_multi_test(neg_hyparview_direct_ctor
+crucible_neg_compile_test(neg_hyparview_direct_ctor
   "HyParViewMembership<MaxActive, MaxPassive>::HyParViewMembership\\(std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::HyParView> >, std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::HyParView> >, crucible::canopy::HyParViewConfig\\)"
   "is private within this context")
-crucible_neg_compile_effects_test(neg_hyparview_mint_test_context
+crucible_neg_compile_test(neg_hyparview_mint_test_context
   "no matching function for call to .mint_hyparview<4>\\(foundation::effects::Test\\)."
   "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_effects_test(neg_hyparview_mint_background_context
+crucible_neg_compile_test(neg_hyparview_mint_background_context
   "no matching function for call to .mint_hyparview<4>\\(foundation::effects::Bg\\)."
   "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 
@@ -3171,37 +3016,37 @@ crucible_neg_compile_effects_test(neg_hyparview_mint_background_context
 #   * neg_plumtree_mint_test_context and
 #     neg_plumtree_mint_background_context: the mint takes Init, and
 #     neither a Test nor a background context converts to it.
-crucible_neg_compile_multi_test(neg_plumtree_zero_peers
+crucible_neg_compile_test(neg_plumtree_zero_peers
   "required for the satisfaction of .PlumtreeShape<MaxPeers, MaxHistory>. \\[with MaxPeers = 0. MaxHistory = 8\\]"
   "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_plumtree_overlay_too_large
+crucible_neg_compile_test(neg_plumtree_overlay_too_large
   "required for the satisfaction of .PlumtreeFitsOverlay<MaxPeers, MaxHistory, HyMaxActive, HyMaxPassive>. \\[with MaxPeers = 4. MaxHistory = 8. HyMaxActive = 8. HyMaxPassive = 64\\]"
   "the expression .HyMaxActive <= MaxPeers \\[with HyMaxActive = 8. MaxPeers = 4\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_plumtree_raw_peer
+crucible_neg_compile_test(neg_plumtree_raw_peer
   "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::HyParViewPeer."
   "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::add_eager_peer\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_multi_test(neg_plumtree_external_peer
+crucible_neg_compile_test(neg_plumtree_external_peer
   "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::HyParView>."
   "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::add_lazy_peer\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_multi_test(neg_plumtree_raw_message
+crucible_neg_compile_test(neg_plumtree_raw_message
   "cannot convert .crucible::canopy::PlumtreeMessage. to .crucible::canopy::GossipedPlumtreeMessage."
   "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeReceivePlan<MaxPeers, MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_message\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeMessage\\)")
-crucible_neg_compile_multi_test(neg_plumtree_external_message
+crucible_neg_compile_test(neg_plumtree_external_message
   "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
   "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeReceivePlan<MaxPeers, MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_message\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeMessage\\)")
-crucible_neg_compile_multi_test(neg_plumtree_raw_ihave
+crucible_neg_compile_test(neg_plumtree_raw_ihave
   "cannot convert .crucible::canopy::PlumtreeIHave<8>. to .crucible::canopy::GossipedPlumtreeIHave<8>."
   "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeRepairPlan<MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_ihave\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeIHave<MaxHistory>\\)")
-crucible_neg_compile_multi_test(neg_plumtree_external_ihave
+crucible_neg_compile_test(neg_plumtree_external_ihave
   "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
   "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeRepairPlan<MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_ihave\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeIHave<MaxHistory>\\)")
-crucible_neg_compile_multi_test(neg_plumtree_direct_ctor
+crucible_neg_compile_test(neg_plumtree_direct_ctor
   "PlumtreeBroadcast<MaxPeers, MaxHistory>::PlumtreeBroadcast\\(const crucible::canopy::HyParViewMembership<[A-Za-z]+, [A-Za-z]+>&, crucible::canopy::PlumtreeConfig\\)"
   "is private within this context")
-crucible_neg_compile_effects_test(neg_plumtree_mint_test_context
+crucible_neg_compile_test(neg_plumtree_mint_test_context
   "no matching function for call to .mint_plumtree<4, 8>\\(foundation::effects::Test, crucible::canopy::HyParViewMembership<4, 8>&\\)."
   "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_effects_test(neg_plumtree_mint_background_context
+crucible_neg_compile_test(neg_plumtree_mint_background_context
   "no matching function for call to .mint_plumtree<4, 8>\\(foundation::effects::Bg, crucible::canopy::HyParViewMembership<4, 8>&\\)."
   "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
 
@@ -3218,22 +3063,22 @@ crucible_neg_compile_effects_test(neg_plumtree_mint_background_context
 #     neither a Test nor a background context converts to it.
 #   * neg_lifeguard_event_count_advance: the count of an event batch is a
 #     slot count, so it cannot be advanced past the capacity.
-crucible_neg_compile_multi_test(neg_lifeguard_zero_peers
+crucible_neg_compile_test(neg_lifeguard_zero_peers
   "required for the satisfaction of .LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>. \\[with MaxPeers = 0. MaxPiggyback = 8. RttWindow = 4. MaxEvents = 8\\]"
   "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_lifeguard_raw_local_peer
+crucible_neg_compile_test(neg_lifeguard_raw_local_peer
   "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Init, crucible::cog::CogIdentity&\\)."
   "cannot convert .local. \\(type .crucible::cog::CogIdentity.\\) to type .crucible::canopy::SwimPeer.")
-crucible_neg_compile_multi_test(neg_lifeguard_direct_ctor
+crucible_neg_compile_test(neg_lifeguard_direct_ctor
   "LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>::LifeguardSwim\\(foundation::effects::Init, crucible::canopy::SwimPeer,"
   "is private within this context")
-crucible_neg_compile_effects_test(neg_lifeguard_mint_test_context
+crucible_neg_compile_test(neg_lifeguard_mint_test_context
   "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Test,"
   "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_effects_test(neg_lifeguard_mint_background_context
+crucible_neg_compile_test(neg_lifeguard_mint_background_context
   "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Bg, crucible::canopy::SwimPeer\\)."
   "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_multi_test(neg_lifeguard_event_count_advance
+crucible_neg_compile_test(neg_lifeguard_event_count_advance
   "no match for .operator\\+\\+."
   "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
 
@@ -3253,34 +3098,34 @@ crucible_neg_compile_multi_test(neg_lifeguard_event_count_advance
 #   * neg_scuttlebutt_digest_count_assign and
 #     neg_scuttlebutt_request_count_advance: a table count has one mutator,
 #     which refuses at the capacity, so it cannot be assigned or advanced.
-crucible_neg_compile_multi_test(neg_scuttlebutt_zero_max_peers
+crucible_neg_compile_test(neg_scuttlebutt_zero_max_peers
   "template constraint failure for .template<long unsigned int MaxPeers, long unsigned int MaxKeys>"
   "ScuttlebuttShape<MaxPeers, MaxKeys>. \\[with MaxPeers = 0. MaxKeys = 4\\]")
-crucible_neg_compile_multi_test(neg_scuttlebutt_raw_key_register
+crucible_neg_compile_test(neg_scuttlebutt_raw_key_register
   "no matching function for call to .crucible::canopy::ScuttlebuttSync<4, 4>::register_state\\(crucible::canopy::ScuttlebuttKey&"
   "cannot convert .key. \\(type .crucible::canopy::ScuttlebuttKey.\\) to type .crucible::canopy::LocalScuttlebuttKey.")
-crucible_neg_compile_multi_test(neg_scuttlebutt_raw_delta_apply
+crucible_neg_compile_test(neg_scuttlebutt_raw_delta_apply
   "cannot convert .crucible::canopy::ScuttlebuttDelta<crucible::canopy::detail::BoundedHashSetState<long unsigned int, 4> >. to"
   "fixy::Tagged<crucible::canopy::ScuttlebuttDelta<crucible::canopy::detail::BoundedHashSetState<long unsigned int, 4> >, fixy::tags::source::Gossiped>")
-crucible_neg_compile_multi_test(neg_scuttlebutt_raw_digest_compare
+crucible_neg_compile_test(neg_scuttlebutt_raw_digest_compare
   "cannot convert .crucible::canopy::ScuttlebuttDigest<4, 4>. to"
   "fixy::Tagged<crucible::canopy::ScuttlebuttDigest<4, 4>, fixy::tags::source::Gossiped>")
-crucible_neg_compile_multi_test(neg_scuttlebutt_non_crdt_publish
+crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
   "no matching function for call to .crucible::canopy::ScuttlebuttSync<4, 4>::publish_local_change"
   "required for the satisfaction of .ScuttlebuttCrdt<C>. \\[with C = NotCrdt\\]")
-crucible_neg_compile_multi_test(neg_scuttlebutt_direct_ctor
+crucible_neg_compile_test(neg_scuttlebutt_direct_ctor
   "ScuttlebuttSync<MaxPeers, MaxKeys>::ScuttlebuttSync\\(peer_type, std::span<"
   "is private within this context")
-crucible_neg_compile_effects_test(neg_scuttlebutt_mint_test_context
+crucible_neg_compile_test(neg_scuttlebutt_mint_test_context
   "could not convert .foundation::effects::testing::test\\(\\)."
   "from .foundation::effects::Test. to .foundation::effects::Init.")
-crucible_neg_compile_effects_test(neg_scuttlebutt_mint_background_context
+crucible_neg_compile_test(neg_scuttlebutt_mint_background_context
   "could not convert .foundation::effects::testing::bg\\(\\)."
   "from .foundation::effects::Bg. to .foundation::effects::Init.")
-crucible_neg_compile_multi_test(neg_scuttlebutt_digest_count_assign
+crucible_neg_compile_test(neg_scuttlebutt_digest_count_assign
   "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
   "and .uint16_t.")
-crucible_neg_compile_multi_test(neg_scuttlebutt_request_count_advance
+crucible_neg_compile_test(neg_scuttlebutt_request_count_advance
   "no match for .operator\\+\\+."
   "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
 
@@ -3292,24 +3137,27 @@ crucible_neg_compile_multi_test(neg_scuttlebutt_request_count_advance
 #     provide a constexpr kernel congestion-control name.
 #   * neg_congestion_control_custom_invalid_name: that name must also be
 #     a valid kernel name, which has no uppercase letter.
-crucible_neg_compile_multi_test(neg_congestion_control_raw_algorithm_apply
+crucible_neg_compile_test(neg_congestion_control_raw_algorithm_apply
   "no matching function for call to .set_cc_for_socket\\(fixy::InitLoadCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, crucible::cntp::CcAlgorithm\\)."
   "cannot convert .crucible::cntp::CcAlgorithm::Cubic. \\(type .crucible::cntp::CcAlgorithm.\\) to type .crucible::cntp::DeclaredCcChoice.")
 crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
-  "constraints not satisfied|CcCompatible|LosslessDatacenterFabric")
+  "no matching function for call to .mint_cc_choice<crucible::cntp::CcAlgorithm::Dctcp, crucible::cntp::LinkClass::CrossDatacenter>\\(\\)."
+  "required for the satisfaction of .CcCompatible<Algorithm, Link>. .with Algorithm = crucible::cntp::CcAlgorithm::Dctcp. Link = crucible::cntp::LinkClass::CrossDatacenter.")
 crucible_neg_compile_test(neg_congestion_control_custom_missing_name
-  "constraints not satisfied|CustomCcModule|congestion_control_name")
+  "no matching function for call to .mint_custom_cc_choice<MissingName, crucible::cntp::LinkClass::PublicInternet>\\(\\)."
+  "the required expression .Module::congestion_control_name\\(\\). is invalid")
 crucible_neg_compile_test(neg_congestion_control_custom_invalid_name
-  "constraints not satisfied|CustomCcModule|has_value")
+  "no matching function for call to .mint_custom_cc_choice<UppercaseName, crucible::cntp::LinkClass::PublicInternet>\\(\\)."
+  "nested requirement .crucible::cntp::KernelCcName::from\\(Module::congestion_control_name\\(\\)\\).has_value\\(\\). is not satisfied")
 
 # The socket option gate of cntp/CongestionControl.h.  A socket option
 # call takes the socket lock, so the gate asks for IO and Block.
 #   * neg_socket_option_cold_init_ctx: a context with IO and no Block.
 #   * neg_socket_option_bg_drain_ctx: a context with neither.
-crucible_neg_compile_effects_test(neg_socket_option_cold_init_ctx
+crucible_neg_compile_test(neg_socket_option_cold_init_ctx
   "no matching function for call to .set_cc_for_socket\\(fixy::ColdInitCtx&, "
   "required for the satisfaction of .CtxFitsSocketOption<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
-crucible_neg_compile_effects_test(neg_socket_option_bg_drain_ctx
+crucible_neg_compile_test(neg_socket_option_bg_drain_ctx
   "no matching function for call to .set_socket_pacing_rate\\(fixy::BgDrainCtx&, "
   "required for the satisfaction of .CtxFitsSocketOption<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
 
@@ -3325,19 +3173,19 @@ crucible_neg_compile_effects_test(neg_socket_option_bg_drain_ctx
 #     hot foreground.
 # A refused checked mint reports the mint call with its predicate and its
 # refused value, so each refinement fixture pins all three.
-crucible_neg_compile_cog_test(neg_calibrate_psu_rail
+crucible_neg_compile_test(neg_calibrate_psu_rail
   "constraints.*not satisfied"
     "CalibratableCogKind")
-crucible_neg_compile_cog_test(neg_calibrate_zero_latency_quantile
+crucible_neg_compile_test(neg_calibrate_zero_latency_quantile
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<(fixy::)?refined_algebra::AllOf<crucible::cog::AreQuantilesOrdered\\(\\), crucible::cog::IsMedianPositive\\(\\)>\\(\\), crucible::cog::LatencyQuantiles>\\(crucible::cog::LatencyQuantiles\\{0, 1, 2\\}\\)")
-crucible_neg_compile_cog_test(neg_calibrate_misordered_latency_quantile
+crucible_neg_compile_test(neg_calibrate_misordered_latency_quantile
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<(fixy::)?refined_algebra::AllOf<crucible::cog::AreQuantilesOrdered\\(\\), crucible::cog::IsMedianPositive\\(\\)>\\(\\), crucible::cog::LatencyQuantiles>\\(crucible::cog::LatencyQuantiles\\{90, 50, 70\\}\\)")
-crucible_neg_compile_cog_test(neg_calibrate_nonpositive_throughput
+crucible_neg_compile_test(neg_calibrate_nonpositive_throughput
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<(fixy::)?refined_algebra::AllOf<(fixy::)?IsPositive\\(\\), (fixy::)?BoundedAbove<1.0e\\+30>\\(\\)>\\(\\), double>\\(0.0\\)")
-crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
+crucible_neg_compile_test(neg_calibrate_hot_fg_ctx
   "constraints.*not satisfied"
     "CtxFitsCalibration")
 
@@ -3348,16 +3196,16 @@ crucible_neg_compile_effects_test(neg_calibrate_hot_fg_ctx
 #     size stops the constant evaluation at 1000.
 #   * neg_nic_config_mint_bg_ctx, neg_nic_config_mint_hot_fg_ctx: the
 #     mint refuses a context whose row holds no Init.
-crucible_neg_compile_cog_test(neg_nic_config_raw_apply
+crucible_neg_compile_test(neg_nic_config_raw_apply
     "could not convert .raw. from .crucible::cog::nic::NicConfigPlan."
     "to .crucible::cog::nic::DeclaredNicConfig. \\{aka .fixy::Tagged<crucible::cog::nic::NicConfigPlan, fixy::tags::source::NicConfig>.\\}")
-crucible_neg_compile_cog_test(neg_nic_config_ring_not_power_of_two
+crucible_neg_compile_test(neg_nic_config_ring_not_power_of_two
     "__builtin_trap\\(\\).* is not a constant expression"
     "fixy::mint_refined<refined_algebra::AllOf<IsPowerOfTwo\\(\\), InRange<256, 8192>\\(\\)>\\(\\), short unsigned int>\\(1000\\)")
-crucible_neg_compile_effects_test(neg_nic_config_mint_bg_ctx
+crucible_neg_compile_test(neg_nic_config_mint_bg_ctx
     "no matching function for call to .mint_nic_config\\(fixy::BgDrainCtx"
     "required for the satisfaction of .CtxFitsNicConfigMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_nic_config_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_nic_config_mint_hot_fg_ctx
     "no matching function for call to .mint_nic_config\\(const fixy::HotFgCtx&"
     "required for the satisfaction of .CtxFitsNicConfigMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3372,22 +3220,22 @@ crucible_neg_compile_effects_test(neg_nic_config_mint_hot_fg_ctx
 #     a context whose row holds no Init.
 #   * neg_sriov_vf_handle_forged: a handle is built only from a declared
 #     plan, so its constructor from a parent and an index is private.
-crucible_neg_compile_cog_test(neg_sriov_raw_plan_enable
+crucible_neg_compile_test(neg_sriov_raw_plan_enable
     "could not convert .plan. from .crucible::cog::sriov::SrIovPlan."
     "to .crucible::cog::sriov::DeclaredSrIovPlan. \\{aka .fixy::Tagged<crucible::cog::sriov::SrIovPlan, fixy::tags::source::SrIov>.\\}")
-crucible_neg_compile_cog_test(neg_sriov_zero_vfs
+crucible_neg_compile_test(neg_sriov_zero_vfs
     "__builtin_trap\\(\\).* is not a constant expression"
     "fixy::mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(0\\)")
-crucible_neg_compile_cog_test(neg_sriov_multicast_mac
+crucible_neg_compile_test(neg_sriov_multicast_mac
     "__builtin_trap\\(\\).* is not a constant expression"
     "fixy::mint_refined<crucible::cog::sriov::IsAssignableVfMac\\(\\), crucible::cog::sriov::MacAddress>\\(crucible::cog::sriov::MacAddress\\{std::array<unsigned char, 6>.*\\{1, 0, 0, 0, 0, 1\\}")
-crucible_neg_compile_effects_test(neg_sriov_mint_bg_ctx
+crucible_neg_compile_test(neg_sriov_mint_bg_ctx
     "no matching function for call to .mint_sriov_plan\\(fixy::BgDrainCtx"
     "required for the satisfaction of .CtxFitsSrIovMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_sriov_mint_hot_fg_ctx
+crucible_neg_compile_test(neg_sriov_mint_hot_fg_ctx
     "no matching function for call to .mint_sriov_plan\\(const fixy::HotFgCtx&"
     "required for the satisfaction of .CtxFitsSrIovMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_cog_test(neg_sriov_vf_handle_forged
+crucible_neg_compile_test(neg_sriov_vf_handle_forged
     ".constexpr crucible::cog::sriov::VfHandle::VfHandle\\(crucible::cog::CogIdentity, crucible::cog::sriov::VfIndex\\). is private within this context"
     "cog/SrIov.h:[0-9]+:[0-9]+: note: declared private here")
 
@@ -3396,12 +3244,14 @@ crucible_neg_compile_cog_test(neg_sriov_vf_handle_forged
 #   * neg_pacing_raw_rate: socket pacing requires admitted positive rate.
 #   * neg_pacing_raw_config_ensure: fq verification requires tagged qdisc config.
 crucible_neg_compile_test(neg_pacing_bbr_pfifo_config
-  "constraints not satisfied|BbrCompatibleQdisc|Qdisc::Pfifo")
-crucible_neg_compile_multi_test(neg_pacing_raw_rate
+  "no matching function for call to .mint_bbr_qdisc_config<crucible::cntp::Qdisc::Pfifo>\\(crucible::cntp::NicInterfaceName&\\)."
+  "required for the satisfaction of .BbrCompatibleQdisc<Required>. .with Required = crucible::cntp::Qdisc::Pfifo.")
+crucible_neg_compile_test(neg_pacing_raw_rate
   "no matching function for call to .set_socket_pacing_rate\\(fixy::TestRunnerCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, long long unsigned int\\)."
   "cannot convert .1000000. \\(type .long long unsigned int.\\) to type .crucible::cntp::PositivePacingRate.")
 crucible_neg_compile_test(neg_pacing_raw_config_ensure
-  "could not convert|no matching function|DeclaredQdiscConfig|Tagged")
+  "no matching function for call to .ensure_fq_active\\(fixy::TestRunnerCtx&, crucible::cntp::QdiscConfig&\\)."
+  "cannot convert .raw. \\(type .crucible::cntp::QdiscConfig.\\) to type .crucible::cntp::DeclaredQdiscConfig.")
 
 # cntp/PathSwap.h: the application-level move of a flow to a new path.
 #   * neg_path_swap_raw_plan_begin: a swap starts only from a tagged plan.
@@ -3414,31 +3264,31 @@ crucible_neg_compile_test(neg_pacing_raw_config_ensure
 #   * neg_path_swap_commit_non_session_resource,
 #     neg_path_swap_commit_pointer_resource: the new resource is a
 #     SessionResource.
-crucible_neg_compile_multi_test(neg_path_swap_raw_plan_begin
+crucible_neg_compile_test(neg_path_swap_raw_plan_begin
   "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::BgDrainCtx&, crucible::cntp::PathSwapPlan&, int.."
   "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
-crucible_neg_compile_multi_test(neg_path_swap_plan_raw_path_id
+crucible_neg_compile_test(neg_path_swap_plan_raw_path_id
   "could not convert .0. from .uint64_t."
   "to .crucible::cntp::PositivePathId. .aka .fixy::Refinement<fixy::IsPositive.., long unsigned int, false>..")
-crucible_neg_compile_multi_test(neg_path_swap_plan_direct
+crucible_neg_compile_test(neg_path_swap_plan_direct
   ".constexpr crucible::cntp::PathSwapPlan::PathSwapPlan.crucible::cntp::PositivePathId, crucible::cntp::PositivePathId, crucible::cntp::PositivePathId, crucible::cntp::PositiveNanoseconds.. is private within this context"
   "PathSwap.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_effects_test(neg_path_swap_mint_bg_ctx
+crucible_neg_compile_test(neg_path_swap_mint_bg_ctx
   "no matching function for call to .mint_path_swapper.fixy::BgDrainCtx&.."
   "required for the satisfaction of .CtxFitsPathSwapMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
-crucible_neg_compile_multi_test(neg_path_swapper_direct
+crucible_neg_compile_test(neg_path_swapper_direct
   ".constexpr crucible::cntp::PathSwapper<MaxEvents>::PathSwapper.. .with long unsigned int MaxEvents = 8.. is private within this context"
   "PathSwap.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_effects_test(neg_path_swap_commit_fg_ctx
+crucible_neg_compile_test(neg_path_swap_commit_fg_ctx
   "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::HotFgCtx&"
   "required for the satisfaction of .CtxFitsPathSwapTransition<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_effects_test(neg_path_swap_begin_init_ctx
+crucible_neg_compile_test(neg_path_swap_begin_init_ctx
   "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::ColdInitCtx&"
   "required for the satisfaction of .CtxFitsPathSwapTransition<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
-crucible_neg_compile_multi_test(neg_path_swap_commit_non_session_resource
+crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
   "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgDrainCtx&"
   "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = Wire&.")
-crucible_neg_compile_multi_test(neg_path_swap_commit_pointer_resource
+crucible_neg_compile_test(neg_path_swap_commit_pointer_resource
   "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgDrainCtx&"
   "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = PointerWire.")
 
@@ -3460,30 +3310,30 @@ crucible_neg_compile_multi_test(neg_path_swap_commit_pointer_resource
 #     slot is refused by the IsExecCtx constraint.
 #   * neg_congestion_telemetry_worker_direct_construct — the worker's
 #     constructor is private, so the mint is the only door.
-crucible_neg_compile_multi_test(neg_congestion_telemetry_raw_fd_harvest
+crucible_neg_compile_test(neg_congestion_telemetry_raw_fd_harvest
   "no matching function for call to .harvest_socket\\(fixy::TestRunnerCtx&, int\\)."
   "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd. \\{aka .fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>.\\}")
-crucible_neg_compile_multi_test(neg_congestion_telemetry_raw_state_aggregate
+crucible_neg_compile_test(neg_congestion_telemetry_raw_state_aggregate
   "could not convert .std::span<crucible::topology::CongestionSample, 1>\\(samples\\)."
   "to .span<const fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>,")
-crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_fg_record
+crucible_neg_compile_test(neg_congestion_telemetry_worker_fg_record
   "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::record_link\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
   "required for the satisfaction of .CtxFitsCongestionTelemetryHarvest<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_poll_bg_drain_ctx
+crucible_neg_compile_test(neg_congestion_telemetry_worker_poll_bg_drain_ctx
   "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::poll_link\\(fixy::BgDrainCtx&, "
   "required for the satisfaction of .CtxFitsSocketOption<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]"
   "required for the satisfaction of .CtxFitsCongestionTelemetryPoll<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, ")
-crucible_neg_compile_effects_test(neg_congestion_telemetry_worker_poll_init_load_ctx
+crucible_neg_compile_test(neg_congestion_telemetry_worker_poll_init_load_ctx
   "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::poll_link\\(fixy::InitLoadCtx&, "
   "required for the satisfaction of .CtxFitsCongestionTelemetryHarvest<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, "
   "required for the satisfaction of .CtxFitsCongestionTelemetryPoll<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
-crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_mint_bg_ctx
+crucible_neg_compile_test(neg_congestion_telemetry_worker_mint_bg_ctx
   "no matching function for call to .mint_congestion_telemetry_worker<1, 1>\\(fixy::BgDrainCtx&\\)"
   "required for the satisfaction of .CtxFitsCongestionTelemetryStart<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_mint_non_ctx
+crucible_neg_compile_test(neg_congestion_telemetry_worker_mint_non_ctx
   "no matching function for call to .mint_congestion_telemetry_worker<1, 1>\\(int\\)"
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = int\\]")
-crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_direct_construct
+crucible_neg_compile_test(neg_congestion_telemetry_worker_direct_construct
   "is private within this context"
   "CongestionTelemetryWorker<MaxLinks, MaxFlows>::CongestionTelemetryWorker\\(\\) \\[with long unsigned int MaxLinks = 1; long unsigned int MaxFlows = 1\\]")
 
@@ -3492,10 +3342,12 @@ crucible_neg_compile_topology_test(neg_congestion_telemetry_worker_direct_constr
 #   * neg_incast_raw_config_configure: socket tuning requires tagged config.
 #   * neg_incast_credit_fg_ctx: credit mutation is Bg-row work.
 crucible_neg_compile_test(neg_incast_raw_fd_configure
-  "could not convert|no matching function|SocketFd|Refined")
+  "no matching function for call to .crucible::cntp::IncastController<1>::configure_socket\\(fixy::InitLoadCtx&, int,"
+  "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd. .aka .fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>.")
 crucible_neg_compile_test(neg_incast_raw_config_configure
-  "could not convert|no matching function|DeclaredIncastConfig|Tagged")
-crucible_neg_compile_effects_test(neg_incast_credit_fg_ctx
+  "no matching function for call to .crucible::cntp::IncastController<1>::configure_socket\\(fixy::InitLoadCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, crucible::cntp::IncastConfig\\)."
+  "\\(type .crucible::cntp::IncastConfig.\\) to type .crucible::cntp::DeclaredIncastConfig.")
+crucible_neg_compile_test(neg_incast_credit_fg_ctx
   "constraints.*not satisfied"
     "CtxFitsIncastCredit|Bg")
 
@@ -3507,22 +3359,22 @@ crucible_neg_compile_effects_test(neg_incast_credit_fg_ctx
 #   * neg_roce_config_wrong_source: a config of another source is refused.
 #   * neg_roce_pause_counters_without_block: the counter read needs Block.
 #   * neg_roce_pause_counters_hot_ctx: the hot context reads no counter.
-crucible_neg_compile_multi_test(neg_roce_zero_pfc_mask
+crucible_neg_compile_test(neg_roce_zero_pfc_mask
   "no matching function for call to .mint_roce_config<0, 26>\\(crucible::cntp::NicInterfaceName&\\)."
   "required for the satisfaction of .ValidPfcPriorityMask<PfcPriorities>. \\[with PfcPriorities = 0\\]")
-crucible_neg_compile_multi_test(neg_roce_dscp_above_max
+crucible_neg_compile_test(neg_roce_dscp_above_max
   "no matching function for call to .mint_roce_config<8, 64>\\(crucible::cntp::NicInterfaceName&\\)."
   "required for the satisfaction of .ValidRoceDscp<Dscp>. \\[with Dscp = 64\\]")
-crucible_neg_compile_multi_test(neg_roce_raw_config_apply
+crucible_neg_compile_test(neg_roce_raw_config_apply
   "invalid initialization of reference of type .const crucible::cntp::DeclaredRoceConfig&. .* from expression of type .crucible::cntp::RoceConfig."
   "in passing argument 1 of .constexpr std::expected<void, crucible::cntp::RoceError> crucible::cntp::apply_roce_config\\(const DeclaredRoceConfig&\\).")
-crucible_neg_compile_multi_test(neg_roce_config_wrong_source
+crucible_neg_compile_test(neg_roce_config_wrong_source
   "invalid initialization of reference of type .const crucible::cntp::DeclaredRoceConfig&. .* from expression of type .fixy::Tagged<crucible::cntp::RoceConfig, fixy::tags::source::External>."
   "in passing argument 1 of .constexpr std::expected<void, crucible::cntp::RoceError> crucible::cntp::validate_roce_config\\(const DeclaredRoceConfig&\\).")
-crucible_neg_compile_multi_test(neg_roce_pause_counters_without_block
+crucible_neg_compile_test(neg_roce_pause_counters_without_block
   "no matching function for call to .query_pfc_pause_counters\\(fixy::ColdInitCtx&, crucible::cntp::NicInterfaceName&\\)."
   "required for the satisfaction of .CtxFitsFileMint<Ctx, fixy::atom::fs::mode<fixy::fs::open_mode::ReadOnly> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
-crucible_neg_compile_multi_test(neg_roce_pause_counters_hot_ctx
+crucible_neg_compile_test(neg_roce_pause_counters_hot_ctx
   "no matching function for call to .query_pfc_pause_counters\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >, crucible::cntp::NicInterfaceName&\\)."
   "required for the satisfaction of .CtxFitsFileMint<Ctx, fixy::atom::fs::mode<fixy::fs::open_mode::ReadOnly> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3536,25 +3388,25 @@ crucible_neg_compile_multi_test(neg_roce_pause_counters_hot_ctx
 #     plan is minted at initialization.
 #   * neg_gpu_direct_storage_bg_ctx, neg_gpu_direct_storage_hot_ctx: a
 #     storage plan is minted at initialization.
-crucible_neg_compile_multi_test(neg_gpu_direct_null_address
+crucible_neg_compile_test(neg_gpu_direct_null_address
   "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_gpu_direct_zero_bytes
+crucible_neg_compile_test(neg_gpu_direct_zero_bytes
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_gpu_direct_raw_plan_register
+crucible_neg_compile_test(neg_gpu_direct_raw_plan_register
   "could not convert .plan. from .const crucible::cntp::_wip::gpu_direct::GpuDirectMrPlan. to .crucible::cntp::_wip::gpu_direct::DeclaredGpuDirectMrPlan."
   "aka .fixy::Tagged<crucible::cntp::_wip::gpu_direct::GpuDirectMrPlan, crucible::cntp::_wip::gpu_direct::wip_source::GpuDirect>.")
-crucible_neg_compile_effects_test(neg_gpu_direct_mint_bg_ctx
+crucible_neg_compile_test(neg_gpu_direct_mint_bg_ctx
   "no matching function for call to .mint_gpu_direct_mr_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
   "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_gpu_direct_mint_hot_ctx
+crucible_neg_compile_test(neg_gpu_direct_mint_hot_ctx
   "no matching function for call to .mint_gpu_direct_mr_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
   "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_effects_test(neg_gpu_direct_storage_bg_ctx
+crucible_neg_compile_test(neg_gpu_direct_storage_bg_ctx
   "no matching function for call to .mint_gpu_direct_storage_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
   "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_gpu_direct_storage_hot_ctx
+crucible_neg_compile_test(neg_gpu_direct_storage_hot_ctx
   "no matching function for call to .mint_gpu_direct_storage_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
   "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3571,34 +3423,34 @@ crucible_neg_compile_effects_test(neg_gpu_direct_storage_hot_ctx
 #     is minted at initialization.
 #   * neg_sharp_dispatch_init_ctx, neg_sharp_dispatch_hot_ctx: an
 #     all-reduce is background work.
-crucible_neg_compile_multi_test(neg_sharp_zero_participants
+crucible_neg_compile_test(neg_sharp_zero_participants
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), short unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_sharp_raw_plan_dispatch
+crucible_neg_compile_test(neg_sharp_raw_plan_dispatch
   "could not convert .plan. from .const crucible::cntp::_wip::sharp::SharpFabricPlan. to .crucible::cntp::_wip::sharp::DeclaredSharpFabricPlan."
   "aka .fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>.")
-crucible_neg_compile_multi_test(neg_sharp_strict_recipe_concept
+crucible_neg_compile_test(neg_sharp_strict_recipe_concept
   "no matching function for call to .sharp_recipe_laws<StrictRecipe>\\(\\)."
   "the expression .\\(Recipe::determinism\\) != crucible::ReductionDeterminism::BITEXACT_STRICT \\[with Recipe = StrictRecipe\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_sharp_non_commutative_recipe
+crucible_neg_compile_test(neg_sharp_non_commutative_recipe
   "no matching function for call to .sharp_recipe_laws<NonCommutativeRecipe>\\(\\)."
   "the expression .Recipe::commutative \\[with Recipe = NonCommutativeRecipe\\]. evaluated to .false.")
-crucible_neg_compile_effects_test(neg_sharp_mint_bg_ctx
+crucible_neg_compile_test(neg_sharp_mint_bg_ctx
   "no matching function for call to .mint_sharp_fabric_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, "
   "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_sharp_mint_hot_ctx
+crucible_neg_compile_test(neg_sharp_mint_hot_ctx
   "no matching function for call to .mint_sharp_fabric_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, "
   "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_effects_test(neg_sharp_context_bg_ctx
+crucible_neg_compile_test(neg_sharp_context_bg_ctx
   "no matching function for call to .mint_sharp_context\\(fixy::BgDrainCtx&, fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>&\\)."
   "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_sharp_context_hot_ctx
+crucible_neg_compile_test(neg_sharp_context_hot_ctx
   "no matching function for call to .mint_sharp_context\\(const fixy::HotFgCtx&, fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>&\\)."
   "required for the satisfaction of .CtxFitsSharpMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_effects_test(neg_sharp_dispatch_init_ctx
+crucible_neg_compile_test(neg_sharp_dispatch_init_ctx
   "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(fixy::ColdInitCtx&, "
   "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
-crucible_neg_compile_effects_test(neg_sharp_dispatch_hot_ctx
+crucible_neg_compile_test(neg_sharp_dispatch_hot_ctx
   "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3612,28 +3464,28 @@ crucible_neg_compile_effects_test(neg_sharp_dispatch_hot_ctx
 #     initialization.
 #   * neg_doca_send_init_ctx, neg_doca_recv_hot_ctx: the channel is used
 #     from background work.
-crucible_neg_compile_multi_test(neg_doca_zero_program_id
+crucible_neg_compile_test(neg_doca_zero_program_id
   "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_doca_zero_image_bytes
+crucible_neg_compile_test(neg_doca_zero_image_bytes
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_doca_zero_queue_depth
+crucible_neg_compile_test(neg_doca_zero_queue_depth
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), short unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_doca_raw_plan_deploy
+crucible_neg_compile_test(neg_doca_raw_plan_deploy
   "could not convert .raw. from .const crucible::cntp::_wip::doca::DocaDeployPlan. to .crucible::cntp::_wip::doca::DeclaredDocaDeployPlan."
   "aka .fixy::Tagged<crucible::cntp::_wip::doca::DocaDeployPlan, crucible::cntp::_wip::doca::wip_source::DocaOffload>.")
-crucible_neg_compile_effects_test(neg_doca_mint_bg_ctx
+crucible_neg_compile_test(neg_doca_mint_bg_ctx
   "no matching function for call to .mint_doca_deploy_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::doca::DocaOffloadSpec&\\)."
   "required for the satisfaction of .CtxFitsDocaMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_doca_mint_hot_ctx
+crucible_neg_compile_test(neg_doca_mint_hot_ctx
   "no matching function for call to .mint_doca_deploy_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::doca::DocaOffloadSpec&\\)."
   "required for the satisfaction of .CtxFitsDocaMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_effects_test(neg_doca_send_init_ctx
+crucible_neg_compile_test(neg_doca_send_init_ctx
   "no matching function for call to .crucible::cntp::_wip::doca::DpuCommChannel::send_to_dpu\\(fixy::ColdInitCtx&, std::array<std::byte, 1>&\\)."
   "required for the satisfaction of .CtxFitsDocaComm<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
-crucible_neg_compile_effects_test(neg_doca_recv_hot_ctx
+crucible_neg_compile_test(neg_doca_recv_hot_ctx
   "no matching function for call to .crucible::cntp::_wip::doca::DpuCommChannel::recv_from_dpu\\(const fixy::HotFgCtx&, std::array<std::byte, 8>&\\)."
   "required for the satisfaction of .CtxFitsDocaComm<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3645,22 +3497,22 @@ crucible_neg_compile_effects_test(neg_doca_recv_hot_ctx
 #   * neg_p4_raw_program_deploy: a deploy takes a declared program.
 #   * neg_p4_mint_bg_ctx, neg_p4_mint_hot_ctx: a program is minted at
 #     initialization.
-crucible_neg_compile_multi_test(neg_p4_zero_program_id
+crucible_neg_compile_test(neg_p4_zero_program_id
   "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_p4_zero_source_bytes
+crucible_neg_compile_test(neg_p4_zero_source_bytes
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_p4_zero_tcam_entries
+crucible_neg_compile_test(neg_p4_zero_tcam_entries
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_p4_raw_program_deploy
+crucible_neg_compile_test(neg_p4_raw_program_deploy
   "could not convert .raw. from .const crucible::cntp::_wip::p4::P4ProgramSpec. to .crucible::cntp::_wip::p4::DeclaredP4Program."
   "aka .fixy::Tagged<crucible::cntp::_wip::p4::P4ProgramSpec, crucible::cntp::_wip::p4::wip_source::P4Compiled>.")
-crucible_neg_compile_effects_test(neg_p4_mint_bg_ctx
+crucible_neg_compile_test(neg_p4_mint_bg_ctx
   "no matching function for call to .mint_p4_program\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::p4::P4ProgramSpec&\\)."
   "required for the satisfaction of .CtxFitsP4Mint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_p4_mint_hot_ctx
+crucible_neg_compile_test(neg_p4_mint_hot_ctx
   "no matching function for call to .mint_p4_program\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::p4::P4ProgramSpec&\\)."
   "required for the satisfaction of .CtxFitsP4Mint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3674,34 +3526,34 @@ crucible_neg_compile_effects_test(neg_p4_mint_hot_ctx
 #     the rule table builds a rule handle.
 #   * neg_tcam_mint_bg_ctx / neg_tcam_mint_gpu_caps: the mint gate asks for
 #     the initialization row and for a target that carries a TCAM.
-crucible_neg_compile_multi_test(neg_tcam_zero_entry_count
+crucible_neg_compile_test(neg_tcam_zero_entry_count
   "in .constexpr. expansion of .fixy::mint_refined<InRange<1, 65536>\\(\\), unsigned int>\\(0\\)."
   ".__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_tcam_static_table_zero
+crucible_neg_compile_test(neg_tcam_static_table_zero
   "template constraint failure for .template<unsigned int MaxRules>  requires  TcamTableShape<MaxRules> class crucible::cntp::tcam::TcamRules."
   "required for the satisfaction of .TcamTableShape<MaxRules>. .with MaxRules = 0.")
-crucible_neg_compile_multi_test(neg_tcam_table_plan_default
+crucible_neg_compile_test(neg_tcam_table_plan_default
   "no matching function for call to .fixy::Tagged<crucible::cntp::tcam::TcamTablePlan, fixy::tags::source::TcamTable>::Tagged\\(<brace-enclosed initializer list>\\)."
   "required for the satisfaction of .default_initializable<T>. .with T = crucible::cntp::tcam::TcamTablePlan."
   "no matching function for call to .crucible::cntp::tcam::TcamTablePlan::TcamTablePlan\\(\\).")
-crucible_neg_compile_multi_test(neg_tcam_raw_rule_add
+crucible_neg_compile_test(neg_tcam_raw_rule_add
   "cannot convert .crucible::cntp::tcam::TcamFlowRule. to .crucible::cntp::tcam::DeclaredTcamFlowRule."
   "initializing argument 1 of .constexpr std::expected<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, crucible::cntp::tcam::TcamRuleHandle>, crucible::cntp::tcam::TcamError> crucible::cntp::tcam::TcamRules<MaxRules>::add_rule\\(")
-crucible_neg_compile_multi_test(neg_tcam_rule_handle_copy
+crucible_neg_compile_test(neg_tcam_rule_handle_copy
   "use of deleted function .fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\) .with auto Grade = foundation::algebra::lattices::QttGrade::One. T = crucible::cntp::tcam::TcamRuleHandle.."
   "Linear<T> and Affine<T> are move-only. use std::move or drop\\(\\)")
-crucible_neg_compile_multi_test(neg_tcam_rule_handle_forge
+crucible_neg_compile_test(neg_tcam_rule_handle_forge
   "error: .constexpr crucible::cntp::tcam::TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint32_t, uint32_t\\). is private within this context"
   "include/crucible/cntp/Tcam.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_multi_test(neg_tcam_rule_handle_mint_linear
+crucible_neg_compile_test(neg_tcam_rule_handle_mint_linear
   "no matching function for call to .mint_linear<crucible::cntp::tcam::TcamRuleHandle>\\(crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, uint32_t, uint32_t\\)."
   ".crucible::cntp::tcam::TcamRuleHandle. is not constructible from .crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, unsigned int, unsigned int., because"
   "TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint32_t, uint32_t\\). is private within this context")
-crucible_neg_compile_effects_test(neg_tcam_mint_bg_ctx
+crucible_neg_compile_test(neg_tcam_mint_bg_ctx
   "no matching function for call to .mint_tcam_table\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NicPortTargetCaps&, "
   "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, "
   "required for the satisfaction of .CtxFitsTcamMint<Ctx, Caps>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, ")
-crucible_neg_compile_effects_test(neg_tcam_mint_gpu_caps
+crucible_neg_compile_test(neg_tcam_mint_gpu_caps
   "no matching function for call to .mint_tcam_table\\(fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps, "
   "required for the satisfaction of .TcamTargetCaps<Caps>. .with Caps = crucible::cog::GpuTargetCaps."
   "required for the satisfaction of .CtxFitsTcamMint<Ctx, Caps>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
@@ -3718,43 +3570,43 @@ crucible_neg_compile_effects_test(neg_tcam_mint_gpu_caps
 #     the mint is the only door to a tunnel and to its handle.
 #   * neg_wireguard_mint_bg_ctx, neg_wireguard_mint_hot_ctx: the tunnel mint
 #     needs a context that owns Init.
-crucible_neg_compile_multi_test(neg_wireguard_zero_allowed_ips
+crucible_neg_compile_test(neg_wireguard_zero_allowed_ips
   "no matching function for call to .declare_wireguard_peer\\("
   "required for the satisfaction of .WireguardAllowedIpShape<N>. \\[with N = 0\\]")
-crucible_neg_compile_multi_test(neg_wireguard_raw_public_key_peer
+crucible_neg_compile_test(neg_wireguard_raw_public_key_peer
   "no matching function for call to .declare_wireguard_peer\\(const crucible::cntp::_wip::WireguardKeyChars&, "
   "cannot convert .raw_key. .* to type .crucible::cntp::_wip::DeclaredWireguardPublicKey.")
-crucible_neg_compile_multi_test(neg_wireguard_key_default_slot
+crucible_neg_compile_test(neg_wireguard_key_default_slot
   "no matching function for call to .fixy::Tagged<fixy::Refinement<crucible::cntp::_wip::IsWireguardKeyText\\(\\), std::array<char, 44>, false>, crucible::cntp::_wip::wip_source::Wireguard>::Tagged\\(<brace-enclosed initializer list>\\)."
   "required for the satisfaction of .default_initializable<T>. \\[with T = fixy::Refinement<crucible::cntp::_wip::IsWireguardKeyText\\{\\}, std::array<char, 44>, false>\\]")
-crucible_neg_compile_multi_test(neg_wireguard_key_bad_text
+crucible_neg_compile_test(neg_wireguard_key_bad_text
   "in .constexpr. expansion of .fixy::mint_refined<crucible::cntp::_wip::IsWireguardKeyText\\(\\), std::array<char, 44> >\\(crucible::cntp::_wip::WireguardKeyChars\\(\\)\\)."
   "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_wireguard_private_key_copy
+crucible_neg_compile_test(neg_wireguard_private_key_copy
   "use of deleted function .fixy::Secret<T>::Secret\\(const fixy::Secret<T>&\\) \\[with T = crucible::cntp::_wip::WireguardSecretKeyBytes\\]."
   "Secret<T> cannot be silently duplicated")
-crucible_neg_compile_multi_test(neg_wireguard_config_zero_peers
+crucible_neg_compile_test(neg_wireguard_config_zero_peers
   "no matching function for call to .mint_wireguard_config\\("
   "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 0\\]")
-crucible_neg_compile_multi_test(neg_wireguard_config_too_many_peers
+crucible_neg_compile_test(neg_wireguard_config_too_many_peers
   "no matching function for call to .mint_wireguard_config\\("
   "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 17\\]")
-crucible_neg_compile_multi_test(neg_wireguard_psk_config_zero_peers
+crucible_neg_compile_test(neg_wireguard_psk_config_zero_peers
   "no matching function for call to .mint_wireguard_config_with_psk\\("
   "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 0\\]")
-crucible_neg_compile_multi_test(neg_wireguard_psk_config_too_many_peers
+crucible_neg_compile_test(neg_wireguard_psk_config_too_many_peers
   "no matching function for call to .mint_wireguard_config_with_psk\\("
   "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 17\\]")
-crucible_neg_compile_multi_test(neg_wireguard_tunnel_direct_ctor
+crucible_neg_compile_test(neg_wireguard_tunnel_direct_ctor
   "converting to .crucible::cntp::_wip::WireguardTunnel<2>::MintKey. from initializer list would use explicit constructor"
   "MintKey::MintKey\\(\\) \\[with unsigned char MaxPeers = 2\\]. is private within this context")
-crucible_neg_compile_multi_test(neg_wireguard_handle_direct_ctor
+crucible_neg_compile_test(neg_wireguard_handle_direct_ctor
   ".constexpr crucible::cntp::_wip::WireguardTunnelHandle::WireguardTunnelHandle\\(crucible::cntp::NicInterfaceName, crucible::cntp::_wip::DeclaredWireguardPublicKey, uint32_t\\). is private within this context"
   "Wireguard.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_effects_test(neg_wireguard_mint_bg_ctx
+crucible_neg_compile_test(neg_wireguard_mint_bg_ctx
   "no matching function for call to .mint_wireguard_tunnel\\(fixy::BgDrainCtx&, "
   "required for the satisfaction of .CtxFitsWireguardMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_wireguard_mint_hot_ctx
+crucible_neg_compile_test(neg_wireguard_mint_hot_ctx
   "no matching function for call to .mint_wireguard_tunnel\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsWireguardMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3763,11 +3615,14 @@ crucible_neg_compile_effects_test(neg_wireguard_mint_hot_ctx
 #   * neg_mtls_legacy_cipher_config: RSA/3DES cannot enter the cipher set.
 #   * neg_mtls_raw_config_connect: runtime connect requires tagged policy.
 crucible_neg_compile_test(neg_mtls_tls12_config
-  "constraints not satisfied|SupportedMtlsVersion|TlsVersion::V12")
+  "no matching function for call to .mint_mtls_config<crucible::cntp::TlsVersion::V12>"
+  "required for the satisfaction of .SupportedMtlsVersion<MinVersion>. .with MinVersion = crucible::cntp::TlsVersion::V12.")
 crucible_neg_compile_test(neg_mtls_legacy_cipher_config
-  "constraints not satisfied|ApprovedMtlsCipherSuite|LegacyRsa3desSha")
+  "no matching function for call to .mint_mtls_config<crucible::cntp::TlsVersion::V13, crucible::cntp::MtlsCipherSuite::LegacyRsa3desSha,"
+  "required for the satisfaction of .ApprovedMtlsCipherSuite<Primary>. .with Primary = crucible::cntp::MtlsCipherSuite::LegacyRsa3desSha.")
 crucible_neg_compile_test(neg_mtls_raw_config_connect
-  "invalid initialization of reference|no matching function|DeclaredMtlsConfig|Tagged")
+  "invalid initialization of reference of type .const crucible::cntp::DeclaredMtlsConfig&."
+  ".aka .const fixy::Tagged<crucible::cntp::MtlsConfig, fixy::tags::source::Mtls>&.. from expression of type .crucible::cntp::MtlsConfig.")
 
 # cntp/_wip/QuicTransport.h: the QUIC and TLS 1.3 substrate with no backend.
 #   * neg_quic_raw_config_connect: a connect takes a tagged QUIC config.
@@ -3781,31 +3636,31 @@ crucible_neg_compile_test(neg_mtls_raw_config_connect
 #   * neg_quic_raw_migration_plan: a migration takes a tagged path-swap plan.
 #   * neg_quic_resumption_token_raw_length: from() is the only writer of a
 #     token length.
-crucible_neg_compile_multi_test(neg_quic_raw_config_connect
+crucible_neg_compile_test(neg_quic_raw_config_connect
   "invalid initialization of reference of type .const crucible::cntp::_wip::DeclaredQuicConfig&. .aka .const fixy::Tagged<crucible::cntp::_wip::QuicConfig, crucible::cntp::_wip::wip_source::Quic>&.. from expression of type .crucible::cntp::_wip::QuicConfig."
   "in passing argument 3 of .std::expected<void, crucible::cntp::_wip::QuicError> crucible::cntp::_wip::connect_quic")
-crucible_neg_compile_multi_test(neg_quic_raw_cc_config
+crucible_neg_compile_test(neg_quic_raw_cc_config
   "could not convert .raw_cc. from .crucible::cntp::CcSelection. to .crucible::cntp::DeclaredCcChoice. .aka .fixy::Tagged<crucible::cntp::CcSelection, fixy::tags::source::CcAlgorithm>.."
   "Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
-crucible_neg_compile_multi_test(neg_quic_config_raw_stream_limit
+crucible_neg_compile_test(neg_quic_config_raw_stream_limit
   "could not convert .0. from .uint16_t."
   "to .crucible::cntp::_wip::PositiveQuicStreamLimit. .aka .fixy::Refinement<fixy::IsPositive.., short unsigned int, false>..")
-crucible_neg_compile_effects_test(neg_quic_connection_mint_bg_ctx
+crucible_neg_compile_test(neg_quic_connection_mint_bg_ctx
   "no matching function for call to .mint_quic_connection.fixy::BgDrainCtx&"
   "required for the satisfaction of .CtxFitsQuicMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
-crucible_neg_compile_multi_test(neg_quic_connection_direct
+crucible_neg_compile_test(neg_quic_connection_direct
   ".constexpr crucible::cntp::_wip::QuicConnection<MaxStreams>::QuicConnection.crucible::cntp::SocketFd, crucible::cntp::AuthenticatedMtlsPeer, const crucible::cntp::_wip::DeclaredQuicConfig&. .with long unsigned int MaxStreams = 4.* is private within this context"
   "QuicTransport.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_effects_test(neg_quic_open_stream_fg_ctx
+crucible_neg_compile_test(neg_quic_open_stream_fg_ctx
   "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::open_stream.fixy::HotFgCtx&.."
   "required for the satisfaction of .CtxFitsQuicRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_effects_test(neg_quic_datagram_init_ctx
+crucible_neg_compile_test(neg_quic_datagram_init_ctx
   "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::send_datagram.fixy::ColdInitCtx&"
   "required for the satisfaction of .CtxFitsQuicRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
-crucible_neg_compile_multi_test(neg_quic_raw_migration_plan
+crucible_neg_compile_test(neg_quic_raw_migration_plan
   "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::plan_migration.fixy::BgDrainCtx&, crucible::cntp::PathSwapPlan&.."
   "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
-crucible_neg_compile_multi_test(neg_quic_resumption_token_raw_length
+crucible_neg_compile_test(neg_quic_resumption_token_raw_length
   ".uint16_t crucible::cntp::_wip::QuicResumptionToken::size_. is private within this context"
   "QuicTransport.h:[0-9]+:[0-9]+: note: declared private here")
 
@@ -3818,22 +3673,22 @@ crucible_neg_compile_multi_test(neg_quic_resumption_token_raw_length
 #     Init.
 #   * neg_ktls_socket_bg_ctx, neg_ktls_socket_hot_ctx: the socket mint needs
 #     a context that owns Init.
-crucible_neg_compile_multi_test(neg_ktls_tls12_crypto
+crucible_neg_compile_test(neg_ktls_tls12_crypto
   "no matching function for call to .mint_ktls_crypto_info<crucible::cntp::TlsVersion::V12>\\("
   "required for the satisfaction of .SupportedKtlsVersion<Version>. \\[with Version = crucible::cntp::TlsVersion::V12\\]")
-crucible_neg_compile_multi_test(neg_ktls_chacha_crypto
+crucible_neg_compile_test(neg_ktls_chacha_crypto
   "no matching function for call to .mint_ktls_crypto_info<crucible::cntp::TlsVersion::V13, crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256>\\("
   "required for the satisfaction of .KtlsAesGcmCipherSuite<Suite>. \\[with Suite = crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256\\]")
-crucible_neg_compile_multi_test(neg_ktls_raw_crypto_offload
+crucible_neg_compile_test(neg_ktls_raw_crypto_offload
   "no matching function for call to .mint_ktls_offload_for_socket\\(fixy::ColdInitCtx&, "
   "cannot convert .std::move<crucible::cntp::_wip::TlsCryptoInfo&>\\(raw\\). .* to type .crucible::cntp::_wip::DeclaredTlsCryptoInfo.")
-crucible_neg_compile_effects_test(neg_ktls_offload_bg_ctx
+crucible_neg_compile_test(neg_ktls_offload_bg_ctx
   "no matching function for call to .mint_ktls_offload_for_socket\\(fixy::BgDrainCtx&, "
   "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_ktls_socket_bg_ctx
+crucible_neg_compile_test(neg_ktls_socket_bg_ctx
   "no matching function for call to .mint_ktls_socket\\(fixy::BgDrainCtx&, "
   "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_effects_test(neg_ktls_socket_hot_ctx
+crucible_neg_compile_test(neg_ktls_socket_hot_ctx
   "no matching function for call to .mint_ktls_socket\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3852,25 +3707,25 @@ crucible_neg_compile_effects_test(neg_ktls_socket_hot_ctx
 #     initialization.
 #   * neg_backpressure_controller_hot_accept: the hot context cannot ask
 #     for an admission.
-crucible_neg_compile_multi_test(neg_backpressure_raw_admission_decision
+crucible_neg_compile_test(neg_backpressure_raw_admission_decision
   "conversion from .const crucible::cntp::AdmissionDecision. to non-scalar type .crucible::cntp::DeclaredAdmissionDecision."
   "fixy::Tagged<crucible::cntp::AdmissionDecision, fixy::tags::source::AdmissionDecision>")
-crucible_neg_compile_multi_test(neg_backpressure_invalid_resource_kind
+crucible_neg_compile_test(neg_backpressure_invalid_resource_kind
   "no matching function for call to .mint_resource_pressure<bogus>\\(int\\)."
   "required for the satisfaction of .IsResourceKind<Kind>. \\[with Kind = \\(foundation::effects::ResourceKind\\)255\\]")
-crucible_neg_compile_multi_test(neg_backpressure_raw_pressure_kind
+crucible_neg_compile_test(neg_backpressure_raw_pressure_kind
   "crucible::cntp::ResourcePressure::ResourcePressure\\(foundation::effects::ResourceKind, crucible::cntp::ResourcePressurePpm\\). is private within this context"
   "declared private here")
-crucible_neg_compile_multi_test(neg_backpressure_hot_ctx_credit
+crucible_neg_compile_test(neg_backpressure_hot_ctx_credit
   "no matching function for call to .crucible::cntp::CreditFlowControl<1>::start_flow\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
   "required for the satisfaction of .CtxFitsBackpressureRuntime<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_multi_test(neg_backpressure_start_without_block
+crucible_neg_compile_test(neg_backpressure_start_without_block
   "no matching function for call to .crucible::cntp::CreditFlowControl<1>::start_flow\\(fixy::BgDrainCtx&"
   "required for the satisfaction of .CtxMayBlock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_multi_test(neg_backpressure_controller_bg_mint
+crucible_neg_compile_test(neg_backpressure_controller_bg_mint
   "no matching function for call to .mint_admission_controller<2, 2>\\(fixy::BgLoadCtx&\\)."
   "required for the satisfaction of .CtxFitsBackpressureMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
-crucible_neg_compile_multi_test(neg_backpressure_controller_hot_accept
+crucible_neg_compile_test(neg_backpressure_controller_hot_accept
   "no matching function for call to .crucible::cntp::AdmissionController<2, 2>::try_accept_connection\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
   "required for the satisfaction of .CtxFitsBackpressureRuntime<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
@@ -3882,22 +3737,22 @@ crucible_neg_compile_multi_test(neg_backpressure_controller_hot_accept
 #   * neg_af_xdp_unsanitized_rx: an External frame is not a Sanitized one.
 #   * neg_af_xdp_config_raw_frame_size: the config door takes refined shapes.
 #   * neg_af_xdp_config_weaker_refinement: a bare power of two is too weak.
-crucible_neg_compile_multi_test(neg_af_xdp_raw_config
+crucible_neg_compile_test(neg_af_xdp_raw_config
   "no matching function for call to .mint_af_xdp_socket<131072, 2048"
   "cannot convert .raw. .type .crucible::cntp::AfXdpConfig.. to type .crucible::cntp::DeclaredAfXdpConfig.")
-crucible_neg_compile_multi_test(neg_af_xdp_non_power_of_two_frame
+crucible_neg_compile_test(neg_af_xdp_non_power_of_two_frame
   "no matching function for call to .mint_af_xdp_socket<131072, 1500"
   "template constraint failure for .template<.*requires  AfXdpStaticShape<UmemBytes, FrameSize")
-crucible_neg_compile_multi_test(neg_af_xdp_cross_source_packet
+crucible_neg_compile_test(neg_af_xdp_cross_source_packet
   "cannot convert .Borrowed<.*,OtherOwner,.*>. to .Borrowed<.*,crucible::cntp::AfXdpSocket<131072, 2048"
   "initializing argument 1 of .*enqueue_tx.packet_view.")
-crucible_neg_compile_multi_test(neg_af_xdp_unsanitized_rx
+crucible_neg_compile_test(neg_af_xdp_unsanitized_rx
   "could not convert .untrusted. from .Tagged<.*,fixy::tags::source::External>."
   "to .Tagged<.*,fixy::tags::source::Sanitized>.")
-crucible_neg_compile_multi_test(neg_af_xdp_config_raw_frame_size
+crucible_neg_compile_test(neg_af_xdp_config_raw_frame_size
   "could not convert .2048. from .uint32_t."
   "to .crucible::cntp::AfXdpFrameSize.")
-crucible_neg_compile_multi_test(neg_af_xdp_config_weaker_refinement
+crucible_neg_compile_test(neg_af_xdp_config_weaker_refinement
   "could not convert .tiny. from .Refinement<fixy::IsPowerOfTwo..,"
   "to .Refinement<fixy::refined_algebra::AllOf<fixy::IsPowerOfTwo.., fixy::InRange<1024, 16384>..>..,")
 
@@ -3913,28 +3768,28 @@ crucible_neg_compile_multi_test(neg_af_xdp_config_weaker_refinement
 #   * neg_connection_pool_hot_ctx_lease, neg_connection_pool_drain_ctx_lease:
 #     a lease needs a context that owns Bg or Test, and Block for the gate.
 #   * neg_connection_pool_lease_rewrite: a lease cannot rewrite its connection.
-crucible_neg_compile_multi_test(neg_connection_pool_raw_event
+crucible_neg_compile_test(neg_connection_pool_raw_event
   "could not convert .raw. from .crucible::cntp::PoolEvent. to .crucible::cntp::DeclaredPoolEvent. .aka .fixy::Tagged<crucible::cntp::PoolEvent, fixy::tags::source::ConnectionPool>.."
   "Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
-crucible_neg_compile_multi_test(neg_connection_pool_invalid_transport
+crucible_neg_compile_test(neg_connection_pool_invalid_transport
   "no matching function for call to .mint_connection<.crucible::cntp::TransportClass.255>"
   "required for the satisfaction of .PoolTransportClass<T>. .with T = .crucible::cntp::TransportClass.255.")
-crucible_neg_compile_multi_test(neg_connection_direct
+crucible_neg_compile_test(neg_connection_direct
   "no matching function for call to .mint_linear<crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp> >"
   ".constexpr crucible::cntp::Connection<T>::Connection.crucible::cntp::SocketFd, crucible::cog::Uuid, crucible::cntp::PositiveConnectionId. .with crucible::cntp::TransportClass T = crucible::cntp::TransportClass::Tcp.* is private within this context")
-crucible_neg_compile_multi_test(neg_connection_pool_mint_bg_ctx
+crucible_neg_compile_test(neg_connection_pool_mint_bg_ctx
   "no matching function for call to .mint_connection_pool<crucible::cntp::TransportClass::Tcp, 1, 1>.fixy::BgLoadCtx&.."
   "required for the satisfaction of .CtxFitsConnectionPoolMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >.")
-crucible_neg_compile_multi_test(neg_connection_pool_direct
+crucible_neg_compile_test(neg_connection_pool_direct
   ".constexpr crucible::cntp::ConnectionPool<T, MaxRemotes, MaxPerRemote, MaxEvents>::ConnectionPool.crucible::cntp::PoolConfig. .with crucible::cntp::TransportClass T = crucible::cntp::TransportClass::Tcp.* is private within this context"
   "ConnectionPoolRuntime.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_multi_test(neg_connection_pool_hot_ctx_lease
+crucible_neg_compile_test(neg_connection_pool_hot_ctx_lease
   "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1>::lease.fixy::HotFgCtx&"
   "required for the satisfaction of .CtxFitsConnectionPoolRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_multi_test(neg_connection_pool_drain_ctx_lease
+crucible_neg_compile_test(neg_connection_pool_drain_ctx_lease
   "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1>::lease.fixy::BgDrainCtx&"
   "required for the satisfaction of .CtxMayBlock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
-crucible_neg_compile_multi_test(neg_connection_pool_lease_rewrite
+crucible_neg_compile_test(neg_connection_pool_lease_rewrite
   "passing .const crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>. as .this. argument discards qualifiers"
   "in call to .constexpr crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>& crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>::operator=.const crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>&..")
 
@@ -3946,13 +3801,17 @@ crucible_neg_compile_multi_test(neg_connection_pool_lease_rewrite
 #     IntegrityHash admission.
 #   * neg_integrity_non_contiguous_wrap: payloads must be byte-contiguous.
 crucible_neg_compile_test(neg_integrity_raw_payload_as_verified
-  "cannot convert|no matching function|IntegrityVerified|Tagged")
+  "could not convert .payload. from .Payload. .aka .std::array<std::byte, 8>.."
+  "to .crucible::cntp::IntegrityVerifiedPayload<std::array<std::byte, 8> >.")
 crucible_neg_compile_test(neg_integrity_cross_tag_verified
-  "cannot convert|no matching function|IntegrityVerified|External|Tagged")
+  "could not convert .std::move<fixy::Tagged<.*fixy::tags::source::External>&>\\(external\\). from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
+  "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::IntegrityVerified>.")
 crucible_neg_compile_test(neg_integrity_raw_hash_field
-  "cannot convert|could not convert|IntegrityHash|Refined")
+  "could not convert .1. from .int. to .crucible::cntp::IntegrityHash."
+  ".aka .fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>.")
 crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
-  "constraints not satisfied|ByteContiguousPayload|HasContiguousPayloadData|no matching function")
+  "no matching function for call to .wrap\\(NotWireBytes\\)."
+  "required for the satisfaction of .HasContiguousPayloadData<Payload>. .with Payload = NotWireBytes.")
 
 # cntp/GossipMulticast.h XDP_TX multicast plan substrate.
 #   * neg_gossip_multicast_mint_bg_ctx: only Init-row contexts mint plans.
@@ -3962,16 +3821,16 @@ crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
 #     neighbors; callers must pass DeclaredGossipTopic.
 #   * neg_gossip_multicast_zero_neighbors: zero-neighbor plans are rejected
 #     at the shape concept.
-crucible_neg_compile_multi_test(neg_gossip_multicast_mint_bg_ctx
+crucible_neg_compile_test(neg_gossip_multicast_mint_bg_ctx
   "no matching function for call to .mint_gossip_multicast_plan<4, 4>\\(fixy::BgDrainCtx&"
   "required for the satisfaction of .CtxFitsGossipMulticastMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_multi_test(neg_gossip_multicast_raw_plan
+crucible_neg_compile_test(neg_gossip_multicast_raw_plan
   "could not convert .raw. from .crucible::cntp::GossipMulticastSpec. to .crucible::cntp::DeclaredGossipMulticastPlan."
   "fixy::Tagged<crucible::cntp::GossipMulticastSpec, fixy::tags::source::GossipMulticast>")
-crucible_neg_compile_multi_test(neg_gossip_multicast_raw_topic
+crucible_neg_compile_test(neg_gossip_multicast_raw_topic
   "cannot convert .crucible::cntp::GossipTopicKey. to .crucible::cntp::DeclaredGossipTopic."
   "fixy::Tagged<crucible::cntp::GossipTopicKey, fixy::tags::source::GossipMulticast>")
-crucible_neg_compile_multi_test(neg_gossip_multicast_zero_neighbors
+crucible_neg_compile_test(neg_gossip_multicast_zero_neighbors
   "no matching function for call to .mint_gossip_multicast_plan<4, 0>"
   "required for the satisfaction of .GossipNeighborShape<MaxNeighbors>. .with MaxNeighbors = 0.")
 
@@ -3982,19 +3841,19 @@ crucible_neg_compile_multi_test(neg_gossip_multicast_zero_neighbors
 #   * neg_overlay_multicast_cross_tag_peer: externally tagged peer refs cannot
 #     seed an overlay route plan.
 #   * neg_overlay_multicast_private_ctor: the mint is the one door to a plan.
-crucible_neg_compile_multi_test(neg_overlay_multicast_mint_bg_ctx
+crucible_neg_compile_test(neg_overlay_multicast_mint_bg_ctx
   "no matching function for call to .mint_overlay_multicast<4, 4, 2>\\(fixy::BgDrainCtx&"
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>.")
-crucible_neg_compile_multi_test(neg_overlay_multicast_raw_peer
+crucible_neg_compile_test(neg_overlay_multicast_raw_peer
   "no matching function for call to .mint_overlay_multicast<4, 4, 2>\\(fixy::ColdInitCtx&, crucible::cntp::OverlayPeerRef&\\)"
   "cannot convert .raw. \\(type .crucible::cntp::OverlayPeerRef.\\) to type .crucible::cntp::DeclaredOverlayPeer.")
-crucible_neg_compile_multi_test(neg_overlay_multicast_zero_stripes
+crucible_neg_compile_test(neg_overlay_multicast_zero_stripes
   "no matching function for call to .mint_overlay_multicast<4, 0, 2>\\(fixy::ColdInitCtx&"
-  "required for the satisfaction of .OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout>. .with MaxPeers = 4; MaxStripes = 0; MaxFanout = 2.")
-crucible_neg_compile_multi_test(neg_overlay_multicast_cross_tag_peer
+  "required for the satisfaction of .OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout>. .with MaxPeers = 4. MaxStripes = 0. MaxFanout = 2.")
+crucible_neg_compile_test(neg_overlay_multicast_cross_tag_peer
   "no matching function for call to .mint_overlay_multicast<4, 4, 2>\\(fixy::ColdInitCtx&, fixy::Tagged<crucible::cntp::OverlayPeerRef, fixy::tags::source::External>&\\)"
   "cannot convert .external. \\(type .fixy::Tagged<crucible::cntp::OverlayPeerRef, fixy::tags::source::External>.\\) to type .crucible::cntp::DeclaredOverlayPeer.")
-crucible_neg_compile_multi_test(neg_overlay_multicast_private_ctor
+crucible_neg_compile_test(neg_overlay_multicast_private_ctor
   "OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>::OverlayMulticastPlan\\(crucible::cntp::DeclaredOverlayPeer"
   "is private within this context")
 
@@ -4005,16 +3864,20 @@ crucible_neg_compile_multi_test(neg_overlay_multicast_private_ctor
 #   * neg_fec_encode_non_contiguous_owned: owned FEC input must be a
 #     Linear byte-contiguous buffer.
 crucible_neg_compile_test(neg_fec_zero_k
-  "constraints not satisfied|ReedSolomonShape|K")
+  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::ReedSolomon."
+  "the expression .K > 0 .with K = 0.. evaluated to .false.")
 crucible_neg_compile_test(neg_fec_zero_m
-  "constraints not satisfied|ReedSolomonShape|M")
+  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::ReedSolomon."
+  "the expression .M > 0 .with M = 0.. evaluated to .false.")
 crucible_neg_compile_test(neg_fec_shape_over_256
-  "constraints not satisfied|ReedSolomonShape|256")
-crucible_neg_compile_effects_test(neg_fec_mint_test_context
+  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::ReedSolomon."
+  "the expression .static_cast<unsigned int>\\(K\\) \\+ static_cast<unsigned int>\\(M\\) <= 256 .with K = 255. M = 2.. evaluated to .false.")
+crucible_neg_compile_test(neg_fec_mint_test_context
   "could not convert|no matching function|cannot convert"
     "effects::Test|effects::Init")
 crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
-  "constraints not satisfied|ByteContiguousBuffer|no matching function")
+  "no matching function for call to .crucible::cntp::ReedSolomon<4, 2>::encode_owned"
+  "required for the satisfaction of .ByteContiguousBuffer<Input>. .with Input = NotWireBytes.")
 
 # cntp/Fountain.h, the deterministic LT fountain codec.
 #   * neg_fountain_zero_symbols / neg_fountain_zero_symbol_bytes: each
@@ -4027,32 +3890,32 @@ crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
 #   * neg_fountain_raw_seed: a repair choice takes a DetSafe Philox key.
 #   * neg_fountain_encode_non_contiguous_owned: an owned payload is a
 #     Linear byte-contiguous buffer.
-crucible_neg_compile_multi_test(neg_fountain_zero_symbols
+crucible_neg_compile_test(neg_fountain_zero_symbols
   "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::FountainEncoder."
   "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>. .with SourceSymbols = 0. SymbolBytes = 16.")
-crucible_neg_compile_multi_test(neg_fountain_zero_symbol_bytes
+crucible_neg_compile_test(neg_fountain_zero_symbol_bytes
   "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::FountainEncoder."
   "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>. .with SourceSymbols = 4. SymbolBytes = 0.")
-crucible_neg_compile_effects_test(neg_fountain_mint_test_context
+crucible_neg_compile_test(neg_fountain_mint_test_context
   "no matching function for call to .mint_fountain_encoder<4, 16>\\(fixy::TestRunnerCtx&\\)."
   "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, "
   "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, SourceSymbols, Algorithm>. ")
-crucible_neg_compile_effects_test(neg_fountain_encoder_mint_zero_symbols
+crucible_neg_compile_test(neg_fountain_encoder_mint_zero_symbols
   "no matching function for call to .mint_fountain_encoder<0, 16>\\(fixy::ColdInitCtx&\\)."
   "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, MaxEquations>. .with SourceSymbols = 0. SymbolBytes = 16. MaxEquations = 0."
   "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, SourceSymbols, Algorithm>. ")
-crucible_neg_compile_effects_test(neg_fountain_decoder_mint_bg_ctx
+crucible_neg_compile_test(neg_fountain_decoder_mint_bg_ctx
   "no matching function for call to .mint_fountain_decoder<8, 16>\\(fixy::BgDrainCtx&\\)."
   "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, "
   "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>. ")
-crucible_neg_compile_effects_test(neg_fountain_decoder_mint_short_equations
+crucible_neg_compile_test(neg_fountain_decoder_mint_short_equations
   "no matching function for call to .mint_fountain_decoder<8, 16, 7>\\(fixy::ColdInitCtx&\\)."
   "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, MaxEquations>. .with SourceSymbols = 8. SymbolBytes = 16. MaxEquations = 7."
   "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>. ")
-crucible_neg_compile_multi_test(neg_fountain_raw_seed
+crucible_neg_compile_test(neg_fountain_raw_seed
   "cannot convert .long long unsigned int. to .crucible::cntp::FountainSeed."
   "initializing argument 2 of .std::expected<void, crucible::cntp::FountainError> crucible::cntp::FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>::start_encoding\\(std::span<const std::byte>, crucible::cntp::FountainSeed\\)")
-crucible_neg_compile_multi_test(neg_fountain_encode_non_contiguous_owned
+crucible_neg_compile_test(neg_fountain_encode_non_contiguous_owned
   "no matching function for call to .crucible::cntp::FountainEncoder<4, 16, crucible::cntp::LtFountain>::encode_owned\\("
   "required for the satisfaction of .ByteContiguousBuffer<Input>. .with Input = NotWireBytes.")
 
@@ -4064,18 +3927,22 @@ crucible_neg_compile_multi_test(neg_fountain_encode_non_contiguous_owned
 #   * neg_storage_nbytes_cross_tag — Tagged<const TensorMeta&,
 #     source::Sanitized> cannot pass as source::External.
 crucible_neg_compile_test(neg_storage_nbytes_raw_tensor_meta
-  "no match for|cannot convert|no viable|could not convert|Tagged|ExternalTensorMeta|explicit")
+  "could not convert .meta. from .crucible::TensorMeta. to .crucible::ExternalTensorMeta."
+  ".aka .fixy::Tagged<const crucible::TensorMeta&, fixy::tags::source::External>.")
 crucible_neg_compile_test(neg_storage_nbytes_cross_tag
-  "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
+  "could not convert .sanitized. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Sanitized>."
+  "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>.")
 
 # WRAP-StorageNbytes-3 (#1020) — deterministic storage-byte
 # projections return DetSafe<Pure, Saturated<uint64_t>>.  Raw
 # Saturated slots and differently pinned DetSafe slots cannot consume
 # the result without an explicit unwrap / retag decision.
 crucible_neg_compile_test(neg_storage_nbytes_det_raw_saturated
-  "conversion from|could not convert|cannot convert|no viable conversion")
+  "conversion from .fixy::DetSafe<foundation::algebra::lattices::DetSafeTier::Pure, fixy::Saturated<long unsigned int> >."
+  "to non-scalar type .fixy::Saturated<long unsigned int>. requested")
 crucible_neg_compile_test(neg_storage_nbytes_det_cross_tier
-  "conversion from|could not convert|cannot convert|no viable conversion")
+  "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
+  "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::MonotonicClockRead>,\\[\\.\\.\\.\\]>. requested")
 
 # ─── #884 WRAP-Cipher-1 — non-zero head invariant on advance_head ───
 #
@@ -4106,10 +3973,10 @@ crucible_neg_compile_test(neg_storage_nbytes_det_cross_tier
 # body is retained.  ValidCipherHead catches the value at the call
 # site at compile-time via the typed alias path; the existing body
 # guard catches it at runtime if a caller bypasses the typed path.
-crucible_neg_compile_multi_test(neg_cipher_head_zero_literal
+crucible_neg_compile_test(neg_cipher_head_zero_literal
   "__builtin_trap... is not a constant expression"
   "in .constexpr. expansion of .fixy::mint_refined<IsNonZero.., crucible::ContentHash>.crucible::ContentHash.0..")
-crucible_neg_compile_multi_test(neg_cipher_head_default_construct
+crucible_neg_compile_test(neg_cipher_head_default_construct
   "__builtin_trap... is not a constant expression"
   "in .constexpr. expansion of .fixy::mint_refined<IsNonZero.., crucible::ContentHash>.empty..")
 
@@ -4138,10 +4005,10 @@ crucible_neg_compile_multi_test(neg_cipher_head_default_construct
 # at the call site at compile-time via the typed alias path; the
 # existing pre clause catches it at runtime if a caller bypasses the
 # typed path.
-crucible_neg_compile_multi_test(neg_merkle_root_zero_literal
+crucible_neg_compile_test(neg_merkle_root_zero_literal
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonZero\\(\\), crucible::MerkleHash>\\(crucible::MerkleHash\\(0\\)\\)")
-crucible_neg_compile_multi_test(neg_merkle_root_default_construct
+crucible_neg_compile_test(neg_merkle_root_default_construct
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonZero\\(\\), crucible::MerkleHash>\\(crucible::MerkleHash\\(\\)\\)")
 
@@ -4174,10 +4041,10 @@ crucible_neg_compile_multi_test(neg_merkle_root_default_construct
 # the construction call; the pre clause catches it at the accessor
 # body's entry.  Both layers must reject for the type-level
 # invariant and the runtime path to disagree.
-crucible_neg_compile_multi_test(neg_content_hash_zero_literal
+crucible_neg_compile_test(neg_content_hash_zero_literal
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonZero\\(\\), crucible::ContentHash>\\(crucible::ContentHash\\(0\\)\\)")
-crucible_neg_compile_multi_test(neg_content_hash_default_construct
+crucible_neg_compile_test(neg_content_hash_default_construct
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonZero\\(\\), crucible::ContentHash>\\(crucible::ContentHash\\(\\)\\)")
 
@@ -4188,10 +4055,10 @@ crucible_neg_compile_multi_test(neg_content_hash_default_construct
 #     because the constructor from the value is private.
 #   * neg_active_tx_ptr_cross_source_assignment: a pointer under the Arena
 #     tag does not convert, because no retag edge joins the two tags.
-crucible_neg_compile_multi_test(neg_active_tx_ptr_raw_assignment
+crucible_neg_compile_test(neg_active_tx_ptr_raw_assignment
   "neg_active_tx_ptr_raw_assignment.cpp:27:25: error: conversion from .crucible::FakeTransaction\\*. to non-scalar type"
   "\\{aka .fixy::Tagged<crucible::FakeTransaction\\*, fixy::tags::source::Ring>.\\} requested")
-crucible_neg_compile_multi_test(neg_active_tx_ptr_cross_source_assignment
+crucible_neg_compile_test(neg_active_tx_ptr_cross_source_assignment
   "neg_active_tx_ptr_cross_source_assignment.cpp:27:20: error: conversion from"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Ring>. requested")
 
@@ -4203,10 +4070,10 @@ crucible_neg_compile_multi_test(neg_active_tx_ptr_cross_source_assignment
 #   * neg_active_region_ptr_cross_source_assignment: a pointer tagged
 #     Arena cannot become one tagged Vigil, because no retag edge joins
 #     the two sources (laundering).
-crucible_neg_compile_multi_test(neg_active_region_ptr_raw_assignment
+crucible_neg_compile_test(neg_active_region_ptr_raw_assignment
   "conversion from .const crucible::FakeRegionNode\\*. to non-scalar type .ActiveRegionPtr."
   "fixy::Tagged<const crucible::FakeRegionNode\\*, fixy::tags::source::Vigil>")
-crucible_neg_compile_multi_test(neg_active_region_ptr_cross_source_assignment
+crucible_neg_compile_test(neg_active_region_ptr_cross_source_assignment
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::Vigil>. requested"
   "neg_active_region_ptr_cross_source_assignment.cpp:35")
 
@@ -4219,10 +4086,10 @@ crucible_neg_compile_multi_test(neg_active_region_ptr_cross_source_assignment
 #   * neg_device_capability_cross_source_assignment: a value under
 #     tags::source::Calibrated does not convert, because no retag edge
 #     joins the two tags (laundering).
-crucible_neg_compile_multi_test(neg_device_capability_raw_assignment
+crucible_neg_compile_test(neg_device_capability_raw_assignment
   "neg_device_capability_raw_assignment.cpp:23:36: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .uint64_t."
   "no known conversion for argument 1 from .uint64_t. \\{aka .long unsigned int.\\} to .const fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>&.")
-crucible_neg_compile_multi_test(neg_device_capability_cross_source_assignment
+crucible_neg_compile_test(neg_device_capability_cross_source_assignment
   "neg_device_capability_cross_source_assignment.cpp:25:36: error: no match for .operator=. \\(operand types are .crucible::BackgroundThread::DeviceCapability. \\{aka .fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>.\\} and .fixy::Tagged<long unsigned int, fixy::tags::source::Calibrated>.\\)"
   "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, fixy::tags::source::Calibrated>. to .const fixy::Tagged<long unsigned int, fixy::tags::source::Meridian>&.")
 
@@ -4231,10 +4098,10 @@ crucible_neg_compile_multi_test(neg_device_capability_cross_source_assignment
 #     because the constructor from the value is private.
 #   * neg_region_ops_ptr_cross_source_assignment: a pointer under the Arena
 #     tag does not convert, because no retag edge joins the two tags.
-crucible_neg_compile_multi_test(neg_region_ops_ptr_raw_assignment
+crucible_neg_compile_test(neg_region_ops_ptr_raw_assignment
   "neg_region_ops_ptr_raw_assignment.cpp:29:20: error: conversion from .const crucible::FakeTraceEntry\\*. to non-scalar type"
   "\\{aka .fixy::Tagged<const crucible::FakeTraceEntry\\*, fixy::tags::source::RegionOps>.\\} requested")
-crucible_neg_compile_multi_test(neg_region_ops_ptr_cross_source_assignment
+crucible_neg_compile_test(neg_region_ops_ptr_cross_source_assignment
   "neg_region_ops_ptr_cross_source_assignment.cpp:28:26: error: conversion from"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::RegionOps>. requested")
 
@@ -4252,22 +4119,22 @@ crucible_neg_compile_multi_test(neg_region_ops_ptr_cross_source_assignment
 #     ceiling of 128.
 #   * utilization: 1.5 and -0.5, one on each side of [0, 1].  The formulas
 #     keep the ratio in range, so the mint never fires on a valid input.
-crucible_neg_compile_multi_test(neg_costmodel_regs_per_thread_overflow
+crucible_neg_compile_test(neg_costmodel_regs_per_thread_overflow
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<255>\\(\\), short unsigned int>\\(256\\)")
-crucible_neg_compile_multi_test(neg_costmodel_regs_per_thread_max_uint16
+crucible_neg_compile_test(neg_costmodel_regs_per_thread_max_uint16
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<255>\\(\\), short unsigned int>\\(std::numeric_limits<short unsigned int>::max\\(\\)\\)")
-crucible_neg_compile_multi_test(neg_costmodel_warp_size_not_power_of_two
+crucible_neg_compile_test(neg_costmodel_warp_size_not_power_of_two
   "__builtin_trap.*is not a constant expression"
   "mint_refined<refined_algebra::AllOf<IsPowerOfTwo\\(\\), BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(33\\)")
-crucible_neg_compile_multi_test(neg_costmodel_warp_size_too_large
+crucible_neg_compile_test(neg_costmodel_warp_size_too_large
   "__builtin_trap.*is not a constant expression"
   "mint_refined<refined_algebra::AllOf<IsPowerOfTwo\\(\\), BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(256\\)")
-crucible_neg_compile_multi_test(neg_costmodel_utilization_above_one
+crucible_neg_compile_test(neg_costmodel_utilization_above_one
   "__builtin_trap.*is not a constant expression"
   "mint_refined<InRange<0.0f, 1.0e\\+0f>\\(\\), float>\\(1.5e\\+0f\\)")
-crucible_neg_compile_multi_test(neg_costmodel_utilization_negative
+crucible_neg_compile_test(neg_costmodel_utilization_negative
   "__builtin_trap.*is not a constant expression"
   "mint_refined<InRange<0.0f, 1.0e\\+0f>\\(\\), float>\\(-5.0e-1f\\)")
 
@@ -4276,19 +4143,19 @@ crucible_neg_compile_multi_test(neg_costmodel_utilization_negative
 # calls one evaluator with a context that claims one effect.  The first
 # regex names the refused call and the context.  The second says that the
 # gate failed, and the third names the refused row.
-crucible_neg_compile_multi_test(neg_costmodel_wave_efficiency_io_row
+crucible_neg_compile_test(neg_costmodel_wave_efficiency_io_row
   "no matching function for call to .wave_efficiency\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
   "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_costmodel_sm_occupancy_alloc_row
+crucible_neg_compile_test(neg_costmodel_sm_occupancy_alloc_row
   "no matching function for call to .sm_occupancy\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
   "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_costmodel_evaluate_cost_bg_row
+crucible_neg_compile_test(neg_costmodel_evaluate_cost_bg_row
   "no matching function for call to .evaluate_cost\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
   "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_costmodel_fusion_benefit_block_row
+crucible_neg_compile_test(neg_costmodel_fusion_benefit_block_row
   "no matching function for call to .compute_fusion_benefit\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Block> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
   "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
@@ -4300,10 +4167,10 @@ crucible_neg_compile_multi_test(neg_costmodel_fusion_benefit_block_row
 # same type as the plain function pointer.
 set(BG_CALLBACK_PARAMS "void\\*, const foundation::effects::Bg&, crucible::BackgroundThread::PublishStage, crucible::RegionNode\\*")
 set(BG_CALLBACK_CLASS_PARAMS "void\\*, const class foundation::effects::Bg&, class crucible::BackgroundThread::PublishStage, struct crucible::RegionNode\\*")
-crucible_neg_compile_multi_test(neg_background_thread_callback_throwing_fnptr_rejected
+crucible_neg_compile_test(neg_background_thread_callback_throwing_fnptr_rejected
   "invalid conversion from .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\). to .crucible::BackgroundThread::RegionReadyCallback::Fn."
   "aka .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\) noexcept.")
-crucible_neg_compile_multi_test(neg_background_thread_callback_type_identity_drift
+crucible_neg_compile_test(neg_background_thread_callback_type_identity_drift
   "static assertion failed: RegionReadyCallback::Fn carries noexcept, so it is not the plain function pointer type"
   ".void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\) noexcept. is not the same as .void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\).")
 
@@ -4312,10 +4179,10 @@ crucible_neg_compile_multi_test(neg_background_thread_callback_type_identity_dri
 #     because the constructor of ClockSource from its value is private.
 #   - neg_transaction_ts_ns_cross_source: a boot clock reading is a distinct
 #     type from a monotonic one.
-crucible_neg_compile_multi_test(neg_transaction_ts_ns_bare_u64_assign
+crucible_neg_compile_test(neg_transaction_ts_ns_bare_u64_assign
   "neg_transaction_ts_ns_bare_u64_assign.cpp:18:32: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .uint64_t."
   "error: .constexpr fixy::ClockSource<Source, T>::ClockSource\\(T\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic; T = long unsigned int\\]. is private within this context")
-crucible_neg_compile_multi_test(neg_transaction_ts_ns_cross_source
+crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
   "neg_transaction_ts_ns_cross_source.cpp:25:34: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>."
   "error: no matching function for call to .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>::ClockSource\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\).")
 
@@ -4325,10 +4192,10 @@ crucible_neg_compile_multi_test(neg_transaction_ts_ns_cross_source
 #     convert, because the constructor from the value is explicit and private.
 #   - neg_cipher_obj_path_cross_source: a path under FromUserPath does not
 #     convert, because no retag edge reaches CipherPath.
-crucible_neg_compile_multi_test(neg_cipher_obj_path_bare_string_assign
+crucible_neg_compile_test(neg_cipher_obj_path_bare_string_assign
   "neg_cipher_obj_path_bare_string_assign.cpp:41:45: error: no match for .operator=. \\(operand types are .CipherObjPath. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>.\\} and .std::string."
   "no known conversion for argument 1 from .std::string. \\{aka .std::__cxx11::basic_string<char>.\\} to .const fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>&.")
-crucible_neg_compile_multi_test(neg_cipher_obj_path_cross_source
+crucible_neg_compile_test(neg_cipher_obj_path_cross_source
   "neg_cipher_obj_path_cross_source.cpp:45:19: error: no match for .operator=. \\(operand types are .CipherObjPath. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>.\\} and .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>.\\)"
   "no known conversion for argument 1 from .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>. to .const fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>&.")
 
@@ -4336,9 +4203,11 @@ crucible_neg_compile_multi_test(neg_cipher_obj_path_cross_source
 #   - neg_types_hash_family_unspecialized  (incomplete primary template)
 #   - neg_types_hash_family_cross_lane     (Family-A hash ≠ IsFamilyB)
 crucible_neg_compile_test(neg_types_hash_family_unspecialized
-  "incomplete type|no type named|no member named|constraints not satisfied")
+  "invalid use of incomplete type .struct crucible::hash_family_of<int>."
+  "using crucible::hash_family_of_t = typename crucible::hash_family_of::family .with HashT = int.")
 crucible_neg_compile_test(neg_types_hash_family_cross_lane
-  "static assertion failed|WRAP-Types-3|Family-B|IsFamilyB")
+  "static assertion failed"
+  "the expression .is_same_v<typename crucible::hash_family_of<HashT>::family, crucible::hash_family::FamilyB> .with HashT = crucible::ContentHash.. evaluated to .false.")
 
 # Expr::hash is fixy::Tagged<uint64_t, hash_family::FamilyB>.  The two
 # fixtures take that type from the field.
@@ -4346,10 +4215,10 @@ crucible_neg_compile_test(neg_types_hash_family_cross_lane
 #     because the constructor from the value is explicit and private.
 #   - neg_expr_hash_cross_family: a Family-A hash does not convert,
 #     because the two families are different types.
-crucible_neg_compile_multi_test(neg_expr_hash_bare_u64_assign
+crucible_neg_compile_test(neg_expr_hash_bare_u64_assign
   "neg_expr_hash_bare_u64_assign.cpp:29:39: error: no match for .operator=. \\(operand types are .ExprHash. \\{aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.\\} and .uint64_t."
   "no known conversion for argument 1 from .uint64_t. \\{aka .long unsigned int.\\} to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
-crucible_neg_compile_multi_test(neg_expr_hash_cross_family
+crucible_neg_compile_test(neg_expr_hash_cross_family
   "neg_expr_hash_cross_family.cpp:31:21: error: no match for .operator=. \\(operand types are .ExprHash. \\{aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.\\} and .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>.\\)"
   "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>. to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
 
@@ -4357,14 +4226,17 @@ crucible_neg_compile_multi_test(neg_expr_hash_cross_family
 #   - neg_reflect_supported_void           (void excluded from allow-list)
 #   - neg_reflect_supported_function_type  (function types excluded)
 crucible_neg_compile_test(neg_reflect_supported_void
-  "static assertion failed|WRAP-Reflect-4|IsReflectFieldSupported")
+  "static assertion failed"
+  "required by the constraints of .template<class T> concept crucible::detail_reflect::IsReflectFieldSupported.")
 crucible_neg_compile_test(neg_reflect_supported_function_type
-  "static assertion failed|WRAP-Reflect-4|IsReflectFieldSupported")
+  "static assertion failed"
+  "required by the constraints of .template<class T> concept crucible::detail_reflect::IsReflectFieldSupported.")
 
 # pack_field packs only the field categories that IsReflectFieldSupported
 # names.  A pointer-to-member field reaches its trailing static_assert.
 crucible_neg_compile_test(neg_reflect_pack_field_unsupported_category
-  "pack_field handles enum, integral")
+  "static assertion failed: T is outside IsReflectFieldSupported: pack_field handles enum, integral"
+  "In instantiation of .constexpr uint64_t crucible::detail_reflect::pack_field\\(const T&\\) .with T = int Target::\\*.")
 
 # ─── Philox op_key DetSafe gate neg-compiles (2 fixtures) ───────────
 #
@@ -4372,10 +4244,10 @@ crucible_neg_compile_test(neg_reflect_pack_field_unsupported_category
 # must route through op_key_det(), carrying DetSafe<Pure> provenance
 # until the boundary that explicitly unwraps the key bytes.  One fixture
 # names the raw function, the other takes the band as a bare uint64_t.
-crucible_neg_compile_multi_test(neg_philox_raw_op_key
+crucible_neg_compile_test(neg_philox_raw_op_key
   "is not a member of"
   ".op_key. is not a member of .crucible::Philox.")
-crucible_neg_compile_multi_test(neg_philox_op_key_det_raw_uint64
+crucible_neg_compile_test(neg_philox_op_key_det_raw_uint64
   "cannot convert"
   "cannot convert .crucible::Philox::DetSafePureKey.*to .uint64_t.")
 
@@ -4387,7 +4259,7 @@ crucible_neg_compile_multi_test(neg_philox_op_key_det_raw_uint64
 # Captures the inferlet cross-request leak bug class (PdaState /
 # user state declared PER_REQUEST silently flowed to fleet-durable
 # cold storage).
-crucible_neg_compile_multi_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
+crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
   "no matching function for call to .crucible::Cipher::commit_per_fleet."
   "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
 
@@ -4396,19 +4268,19 @@ crucible_neg_compile_multi_test(neg_opaque_lifetime_per_request_at_per_fleet_fen
 # program-scoped region does not reach the fleet-wide cold tier.  A bare
 # pointer and a band of another lattice state no scope, so they reach no
 # commit entry point.
-crucible_neg_compile_multi_test(neg_opaque_lifetime_per_request_at_per_program_fence
+crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_program_fence
   "no matching function for call to .crucible::Cipher::commit_per_program."
   "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_PROGRAM.. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
+crucible_neg_compile_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
   "no matching function for call to .crucible::Cipher::commit_per_fleet."
   "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_PROGRAM>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_cipher_commit_per_request_bare_pointer
+crucible_neg_compile_test(neg_cipher_commit_per_request_bare_pointer
   "no matching function for call to .crucible::Cipher::commit_per_request."
   "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
-crucible_neg_compile_multi_test(neg_cipher_commit_per_request_wrong_band
+crucible_neg_compile_test(neg_cipher_commit_per_request_wrong_band
   "no matching function for call to .crucible::Cipher::commit_per_request."
   "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Hot>, const crucible::RegionNode.>.. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_cipher_commit_per_program_bare_pointer
+crucible_neg_compile_test(neg_cipher_commit_per_program_bare_pointer
   "no matching function for call to .crucible::Cipher::commit_per_program."
   "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
 
@@ -4417,30 +4289,30 @@ crucible_neg_compile_multi_test(neg_cipher_commit_per_program_bare_pointer
 # tier (ULP_FP64) and three tiers (ULP_FP16), so the refusal is
 # structural along the whole lattice.  The first regex names the tier of
 # the value, and the second names the gate of the consumer.
-crucible_neg_compile_multi_test(neg_recipe_registry_relaxed_at_bitexact_fence
+crucible_neg_compile_test(neg_recipe_registry_relaxed_at_bitexact_fence
   "no matching function for call to .bitexact_fence_consumer\\(.*ToleranceLattice::At<foundation::algebra::lattices::Tolerance::RELAXED>, int>"
   "requires +satisfies_v<W, foundation::algebra::lattices::Tolerance::BITEXACT>")
-crucible_neg_compile_multi_test(neg_recipe_registry_fp64_at_bitexact_fence
+crucible_neg_compile_test(neg_recipe_registry_fp64_at_bitexact_fence
   "no matching function for call to .bitexact_fence_consumer\\(.*ToleranceLattice::At<foundation::algebra::lattices::Tolerance::ULP_FP64>, int>"
   "requires +satisfies_v<W, foundation::algebra::lattices::Tolerance::BITEXACT>")
-crucible_neg_compile_multi_test(neg_recipe_registry_fp16_at_bitexact_fence
+crucible_neg_compile_test(neg_recipe_registry_fp16_at_bitexact_fence
   "no matching function for call to .bitexact_fence_consumer\\(.*ToleranceLattice::At<foundation::algebra::lattices::Tolerance::ULP_FP16>, int>"
   "requires +satisfies_v<W, foundation::algebra::lattices::Tolerance::BITEXACT>")
 
 # by_name_pinned takes a Tolerance.  A RecipeFamily enumerator in its
 # place must fail at the template parameter.  Admission on the two axes
 # uses by_name_spec and then fixy::admits.
-crucible_neg_compile_multi_test(neg_recipe_registry_pinned_with_family_template_arg
+crucible_neg_compile_test(neg_recipe_registry_pinned_with_family_template_arg
   "no matching function for call to .crucible::RecipeRegistry::by_name_pinned<foundation::algebra::lattices::RecipeFamily::Kahan>"
   "could not convert .foundation::algebra::lattices::RecipeFamily::Kahan. from .foundation::algebra::lattices::RecipeFamily. to .foundation::algebra::lattices::Tolerance.")
 
 # The RecipeSpec of by_name_spec and the NumericalTier of by_name_pinned
 # are different types.  The expected of one does not convert to the
 # expected of the other, in each direction.
-crucible_neg_compile_multi_test(neg_recipe_registry_spec_assigned_to_pinned_expected
+crucible_neg_compile_test(neg_recipe_registry_spec_assigned_to_pinned_expected
   "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >"
   "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>")
-crucible_neg_compile_multi_test(neg_recipe_registry_pinned_assigned_to_spec_expected
+crucible_neg_compile_test(neg_recipe_registry_pinned_assigned_to_spec_expected
   "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>"
   "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >")
 
@@ -4448,50 +4320,43 @@ crucible_neg_compile_multi_test(neg_recipe_registry_pinned_assigned_to_spec_expe
 # entries, the pinned lookups and the spec lookups each refuse a caller
 # row that is not empty.  The first regex names the lookup and the row,
 # and the second names the Subrow gate that refused the row.
-crucible_neg_compile_multi_test(neg_recipe_registry_by_name_io_row
+crucible_neg_compile_test(neg_recipe_registry_by_name_io_row
   "no matching function for call to .crucible::RecipeRegistry::by_name<foundation::effects::Row<foundation::effects::Effect::IO> >"
   "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO>\\]")
-crucible_neg_compile_multi_test(neg_recipe_registry_by_hash_init_row
+crucible_neg_compile_test(neg_recipe_registry_by_hash_init_row
   "no matching function for call to .crucible::RecipeRegistry::by_hash<foundation::effects::Row<foundation::effects::Effect::Init> >"
   "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Init>\\]")
-crucible_neg_compile_multi_test(neg_recipe_registry_entries_bg_row
+crucible_neg_compile_test(neg_recipe_registry_entries_bg_row
   "no matching function for call to .crucible::RecipeRegistry::entries<foundation::effects::Row<foundation::effects::Effect::Bg> >"
   "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>\\]")
-crucible_neg_compile_multi_test(neg_recipe_registry_pinned_alloc_row
+crucible_neg_compile_test(neg_recipe_registry_pinned_alloc_row
   "no matching function for call to .crucible::RecipeRegistry::by_name_pinned<foundation::algebra::lattices::Tolerance::BITEXACT, foundation::effects::Row<foundation::effects::Effect::Alloc> >"
   "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>\\]")
-crucible_neg_compile_multi_test(neg_recipe_registry_spec_block_row
+crucible_neg_compile_test(neg_recipe_registry_spec_block_row
   "no matching function for call to .crucible::RecipeRegistry::by_name_spec<foundation::effects::Row<foundation::effects::Effect::Block> >"
   "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Block>\\]")
 
 # entries() gives a span tagged source::JsonRegistry.  A raw span and a
 # span with a different tag must not reach a consumer of the entries.
-crucible_neg_compile_multi_test(neg_recipe_registry_entries_raw_span
+crucible_neg_compile_test(neg_recipe_registry_entries_raw_span
   "could not convert .raw. from .std::span<const crucible::RecipeRegistry::Entry>. to .crucible::RecipeRegistry::Entries."
   "fixy::Tagged<std::span<const crucible::RecipeRegistry::Entry>, fixy::tags::source::JsonRegistry>")
-crucible_neg_compile_multi_test(neg_recipe_registry_entries_cross_tag
+crucible_neg_compile_test(neg_recipe_registry_entries_cross_tag
   "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::JsonRegistry>. requested")
 
-# Entry::scalar_values of TraceRing is fixy::FixedArray<int64_t, 5>.
-# HS14 mandates ≥2 negative-compile
-# fixtures for the new soundness gate (the typed inline-scalar buffer):
-#   * neg_tracering_scalar_values_at_oob              ACCESS-side gate —
-#                                                     compile-time-known
-#                                                     index ≥ N rejected
-#                                                     by at<I>()'s
-#                                                     `requires (I < N)`.
-#   * neg_tracering_scalar_values_in_place_wrong_arity CONSTRUCTION-side
-#                                                     gate — variadic
-#                                                     ctor's
-#                                                     `sizeof...(Args)
-#                                                     == N` rejection
-#                                                     on a 6-arg
-#                                                     brace-init.
+# Entry::scalar_values of TraceRing is fixy::FixedArray<int64_t, 5>.  Two
+# fixtures hold its two gates:
+#   * neg_tracering_scalar_values_at_oob: at<I>() refuses an index that is
+#     not less than N.
+#   * neg_tracering_scalar_values_in_place_wrong_arity: the in-place
+#     constructor refuses std::in_place with six values for five slots.
 crucible_neg_compile_test(neg_tracering_scalar_values_at_oob
-  "no matching function|constraints not satisfied|associated constraints")
+  "no matching function for call to .fixy::FixedArray<long int, 5>::at<5>\\(\\)."
+  "the expression .I < N .with I = 5. N = 5.. evaluated to .false.")
 crucible_neg_compile_test(neg_tracering_scalar_values_in_place_wrong_arity
-  "no matching function|constraints not satisfied|associated constraints|cannot convert|too many initializers")
+  "no matching function for call to .fixy::FixedArray<long int, 5>::FixedArray\\(<brace-enclosed initializer list>\\)."
+  "the expression .sizeof ... \\(Args ...\\) == N .with Args = .long int, long int, long int, long int, long int, long int.. N = 5.. evaluated to .false.")
 
 # BitMask stores a refined mask.  The numeric ceiling
 # ((1 << kGroupWidth) - 1) bounds the mask, not kGroupWidth itself: a
@@ -4501,11 +4366,11 @@ crucible_neg_compile_test(neg_tracering_scalar_values_in_place_wrong_arity
 # its ceiling predicate.  The third names the BitMask constructor and the
 # refused value.  On AVX512BW the width is 64 and no value is out of
 # range, so each fixture fails there on its own static_assert.
-crucible_neg_compile_multi_test(neg_swiss_bitmask_one_past_group_mask
+crucible_neg_compile_test(neg_swiss_bitmask_one_past_group_mask
   "__builtin_trap.*is not a constant expression|requires a group width below 64"
   "fixy::mint_refined<BoundedAbove<[0-9]+>\\(\\), long unsigned int>\\(raw_mask\\)|requires a group width below 64"
   "BitMask::BitMask\\(.*kGroupMaskCeiling\\) \\+ 1\\)\\)|requires a group width below 64")
-crucible_neg_compile_multi_test(neg_swiss_bitmask_wide_miss
+crucible_neg_compile_test(neg_swiss_bitmask_wide_miss
   "__builtin_trap.*is not a constant expression|requires a group width below 64"
   "fixy::mint_refined<BoundedAbove<[0-9]+>\\(\\), long unsigned int>\\(raw_mask\\)|requires a group width below 64"
   "BitMask::BitMask\\(std::numeric_limits<long unsigned int>::max\\(\\)\\)|requires a group width below 64")
@@ -4514,10 +4379,10 @@ crucible_neg_compile_multi_test(neg_swiss_bitmask_wide_miss
 # only door.  The two fixtures give the mint zero and a value that is not
 # a power of two.  The second regex names the mint, its predicate and the
 # refused value.
-crucible_neg_compile_multi_test(neg_swiss_group_width_zero
+crucible_neg_compile_test(neg_swiss_group_width_zero
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(0\\)")
-crucible_neg_compile_multi_test(neg_swiss_group_width_not_power_of_two
+crucible_neg_compile_test(neg_swiss_group_width_not_power_of_two
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(48\\)")
 
@@ -4527,10 +4392,10 @@ crucible_neg_compile_multi_test(neg_swiss_group_width_not_power_of_two
 # above the high end.  The first regex says that the precondition of
 # the door failed.  The second names the door, its predicate and the
 # value, so the rejection is the one under test.
-crucible_neg_compile_multi_test(neg_expr_pool_int_cache_literal_below_low
+crucible_neg_compile_test(neg_expr_pool_int_cache_literal_below_low
   "__builtin_trap.*is not a constant expression"
   "mint_refined<InRange<-128, 127>\\(\\), long int>\\(-129\\)")
-crucible_neg_compile_multi_test(neg_expr_pool_int_cache_literal_above_high
+crucible_neg_compile_test(neg_expr_pool_int_cache_literal_above_high
   "__builtin_trap.*is not a constant expression"
   "mint_refined<InRange<-128, 127>\\(\\), long int>\\(128\\)")
 
@@ -4538,20 +4403,20 @@ crucible_neg_compile_multi_test(neg_expr_pool_int_cache_literal_above_high
 # Monotonic<size_t>.  The fixtures pin two absences: no capacity that is
 # not a power of two, and no assignment of a raw integer to the intern
 # count.
-crucible_neg_compile_multi_test(neg_expr_pool_capacity_not_power_of_two
+crucible_neg_compile_test(neg_expr_pool_capacity_not_power_of_two
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(12\\)")
-crucible_neg_compile_multi_test(neg_expr_pool_intern_count_assign_raw
+crucible_neg_compile_test(neg_expr_pool_intern_count_assign_raw
   "no match for .operator=."
   "crucible::ExprPool::InternCount.*fixy::Monotonic<long unsigned int")
 
 # ExprPool::make returns DetSafe<Pure, Tagged<const Expr*,
 # source::Interned>>.  A raw Expr* and a value at the same tier with a
 # different source tag must both fail at the consumer.
-crucible_neg_compile_multi_test(neg_expr_pool_make_raw_expr
+crucible_neg_compile_test(neg_expr_pool_make_raw_expr
   "could not convert"
   "from .const crucible::Expr\\*. to .crucible::ExprPool::PureInternedExpr.")
-crucible_neg_compile_multi_test(neg_expr_pool_make_cross_tag
+crucible_neg_compile_test(neg_expr_pool_make_cross_tag
   "could not convert"
   "source::External>>. to .Graded<.*source::Interned>>")
 
@@ -4560,43 +4425,43 @@ crucible_neg_compile_multi_test(neg_expr_pool_make_cross_tag
 # is not a power of two, and no assignment of a raw integer to the size.
 # The first regex says that the gate refused.  The second names the
 # door, the predicate or the type, so the refusal is the one under test.
-crucible_neg_compile_multi_test(neg_recipe_pool_capacity_not_power_of_two
+crucible_neg_compile_test(neg_recipe_pool_capacity_not_power_of_two
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsPowerOfTwo\\(\\), unsigned int>\\(12\\)")
-crucible_neg_compile_multi_test(neg_recipe_pool_size_assign_raw
+crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
   "no match for .operator=."
   "crucible::RecipePool::Size.*fixy::Monotonic<unsigned int")
 
 # The RecipePool constructor takes a minted BorrowedRef<Arena, Brand>.
 # A raw Arena* and a borrow of a different type must fail at the
 # constructor.
-crucible_neg_compile_multi_test(neg_recipe_pool_arena_raw_pointer
+crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
   "no matching function for call to .crucible::RecipePool::RecipePool"
   "mismatched types .fixy::BorrowedRef<crucible::Arena, Brand>. and .crucible::Arena\\*.")
-crucible_neg_compile_multi_test(neg_recipe_pool_arena_wrong_borrow
+crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
   "no matching function for call to .crucible::RecipePool::RecipePool"
   "mismatched types .crucible::Arena. and .OtherArena.")
 
 # A RecipePool is built in the initialization phase.  The constructor
 # defaults to Row<Init>, and a pure row, a row with only Alloc and a row
 # with only Bg each fail the Subrow gate.
-crucible_neg_compile_multi_test(neg_recipe_pool_ctor_pure_row
+crucible_neg_compile_test(neg_recipe_pool_ctor_pure_row
   "constraints.*not satisfied"
   "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<>\\]")
-crucible_neg_compile_multi_test(neg_recipe_pool_ctor_alloc_only_row
+crucible_neg_compile_test(neg_recipe_pool_ctor_alloc_only_row
   "constraints.*not satisfied"
   "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>\\]")
-crucible_neg_compile_multi_test(neg_recipe_pool_ctor_bg_only_row
+crucible_neg_compile_test(neg_recipe_pool_ctor_bg_only_row
   "constraints.*not satisfied"
   "Subrow<foundation::effects::Row<foundation::effects::Effect::Init>, CallerRow>. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>\\]")
 
 # The RecipeRegistry constructor takes a minted BorrowedRef<RecipePool,
 # Brand>.  A raw RecipePool* and a borrow of a different type must fail
 # at the constructor.
-crucible_neg_compile_multi_test(neg_recipe_registry_pool_raw_pointer
+crucible_neg_compile_test(neg_recipe_registry_pool_raw_pointer
   "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
   "mismatched types .fixy::BorrowedRef<crucible::RecipePool, Brand>. and .crucible::RecipePool\\*.")
-crucible_neg_compile_multi_test(neg_recipe_registry_pool_wrong_borrow
+crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
   "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
   "mismatched types .crucible::RecipePool. and .crucible::Arena.")
 
@@ -4608,26 +4473,34 @@ crucible_neg_compile_multi_test(neg_recipe_registry_pool_wrong_borrow
 #                                             requires power-of-two peers.
 #   * neg_network_recipe_raw_constraints: consumers require registry provenance.
 crucible_neg_compile_test(neg_network_recipe_strict_sharp
-  "constraints not satisfied|NetworkRecipeEligible|BITEXACT_STRICT|Sharp")
+  "no matching function for call to .accepts_network_recipe<StrictRecipe, crucible::forge::recipes::SharpAlgorithm>\\(\\)."
+  "required for the satisfaction of .NetworkRecipeEligible<R, A>. .with R = StrictRecipe. A = crucible::forge::recipes::SharpAlgorithm.")
 crucible_neg_compile_test(neg_network_recipe_non_commutative_sharp
-  "constraints not satisfied|NetworkRecipeEligible|commutative|Sharp")
+  "no matching function for call to .accepts_network_recipe<NonCommutativeRecipe, crucible::forge::recipes::SharpAlgorithm>\\(\\)."
+  "required for the satisfaction of .NetworkRecipeEligible<R, A>. .with R = NonCommutativeRecipe. A = crucible::forge::recipes::SharpAlgorithm.")
 crucible_neg_compile_test(neg_network_recipe_bitexact_lossy
-  "constraints not satisfied|NetworkRecipeEligible|BITEXACT_TC|TopK")
+  "no matching function for call to .accepts_network_recipe<TensorCoreRecipe, crucible::forge::recipes::TopKCompressedAlgorithm>\\(\\)."
+  "required for the satisfaction of .NetworkRecipeEligible<R, A>. .with R = TensorCoreRecipe. A = crucible::forge::recipes::TopKCompressedAlgorithm.")
 crucible_neg_compile_test(neg_network_recipe_recursive_non_power2
-  "constraints not satisfied|NetworkRecipeEligible|RecursiveHalvingDoubling|power")
+  "no matching function for call to .accepts_network_recipe<OddParticipantRecipe, crucible::forge::recipes::RecursiveHalvingDoublingAlgorithm>\\(\\)."
+  "required for the satisfaction of .NetworkRecipeEligible<R, A>. .with R = OddParticipantRecipe. A = crucible::forge::recipes::RecursiveHalvingDoublingAlgorithm.")
 crucible_neg_compile_test(neg_network_recipe_raw_constraints
-  "could not convert|no matching function|DeclaredNetworkRecipeConstraints|Tagged")
+  "could not convert .raw. from .crucible::forge::recipes::NetworkRecipeConstraints."
+  "to .crucible::forge::recipes::DeclaredNetworkRecipeConstraints. .aka .fixy::Tagged<crucible::forge::recipes::NetworkRecipeConstraints")
 
 # GAPS-167 — forge/Ir001/Comm.h comm-through-IR substrate.
 #   * neg_ir001_comm_raw_node: Forge visitors require source::Ir001 provenance.
 #   * neg_ir001_comm_send_as_collective: point-to-point ops are not collectives.
 #   * neg_ir001_comm_zero_participants: participant counts are positive.
 crucible_neg_compile_test(neg_ir001_comm_raw_node
-  "could not convert|no matching function|DeclaredIr001Node|Tagged")
+  "could not convert .raw. from .crucible::forge::ir001::AllReduceOp."
+  "to .crucible::forge::ir001::DeclaredIr001Node<")
 crucible_neg_compile_test(neg_ir001_comm_send_as_collective
-  "constraints not satisfied|Ir001CollectiveKind|SendAsync")
+  "no matching function for call to .accepts_collective_kind<crucible::forge::ir001::Ir001OpKind::SendAsync>\\(\\)."
+  "required for the satisfaction of .Ir001CollectiveKind<Kind>. .with Kind = crucible::forge::ir001::Ir001OpKind::SendAsync.")
 crucible_neg_compile_test(neg_ir001_comm_zero_participants
-  "contract|precondition|in_range|positive|bounded")
+  "__builtin_trap.*is not a constant expression"
+  "mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(0\\)")
 
 # forge/_wip/Phases/Comm.h, the vendor-neutral comm phase sketch.
 #   * neg_forge_comm_phase_raw_compute: fusion admission requires source::Ir001.
@@ -4641,17 +4514,23 @@ crucible_neg_compile_test(neg_ir001_comm_zero_participants
 #   * neg_forge_comm_phase_wrong_lane: a decision of the FUSE phase does not
 #     pass where a later phase is demanded.
 crucible_neg_compile_test(neg_forge_comm_phase_raw_compute
-  "could not convert|no matching function|DeclaredIr001Node|Tagged|source::Ir001")
+  "no matching function for call to .admit_comm_fusion<crucible::forge::_wip::phases::comm::CommFusionPattern::SendFromEpilogue, crucible::cog::CogKind::Gpu>\\(ComputeNode&,"
+  ".crucible::forge::ir001::Ir001Node<crucible::forge::ir001::Ir001OpKind::Gemm, .*. is not derived from .fixy::Tagged<ComputeNode, fixy::tags::source::Ir001>.")
 crucible_neg_compile_test(neg_forge_comm_phase_send_as_collective
-  "static assertion failed|constraints not satisfied|CommFusionEligible|ReduceOnRecv|Ir001CollectiveKind")
+  "static assertion failed"
+  "the expression .\\(pattern_accepts_kind_pair<Pattern, ComputeNode::kind, CommNode::kind>\\)\\(\\) .with Pattern = crucible::forge::_wip::phases::comm::CommFusionPattern::ReduceOnRecv. ComputeNode = crucible::forge::ir001::Ir001Node<crucible::forge::ir001::Ir001OpKind::RecvAsync")
 crucible_neg_compile_test(neg_forge_comm_phase_oversubscribed
-  "static assertion failed|constraints not satisfied|CommFusionEligible|FitsCog|999")
+  "static assertion failed"
+  "the expression .row_fits_cog_v<Row, K> .with Row = foundation::effects::ConcurrentRow<foundation::effects::resource::SmBudget<999>, foundation::effects::resource::NvlinkBandwidth<1> >. K = crucible::cog::CogKind::Gpu.. evaluated to .false.")
 crucible_neg_compile_test(neg_forge_comm_phase_strict_compress
-  "constraints not satisfied|CommFusionRecipeAllowed|BITEXACT_STRICT|CompressBeforeSend")
+  "no matching function for call to .accepts_compress_before_send<StrictRecipe>\\(\\)."
+  "required for the satisfaction of .CommFusionRecipeAllowed<Recipe, crucible::forge::_wip::phases::comm::CommFusionPattern::CompressBeforeSend>. .with Recipe = StrictRecipe.")
 crucible_neg_compile_test(neg_forge_comm_phase_unknown_pattern
-  "unreachable|not a constant expression|comm_fusion_shape")
+  "call to non-.constexpr. function .void std::unreachable\\(\\)."
+  "in .constexpr. expansion of .crucible::forge::_wip::phases::comm::comm_fusion_shape\\(\\(\\(crucible::forge::_wip::phases::comm::CommFusionPattern\\)kUnlistedPattern\\)\\).")
 crucible_neg_compile_test(neg_forge_comm_phase_wrong_lane
-  "could not convert|no matching function|ForgePhase")
+  "could not convert .fused. from .Tagged<\\[\\.\\.\\.\\],ForgePhase<'D'>>."
+  "to .Tagged<\\[\\.\\.\\.\\],ForgePhase<'F'>>.")
 
 # GAPS-169 WIP — mimic/_wip/network/Backend.h per-vendor backend sketch.
 #   * neg_mimic_network_backend_raw_node: backend planning requires admitted
@@ -4663,13 +4542,17 @@ crucible_neg_compile_test(neg_forge_comm_phase_wrong_lane
 #   * neg_mimic_network_backend_wrong_cog: vendor/cog compatibility is a
 #     compile-time gate.
 crucible_neg_compile_test(neg_mimic_network_backend_raw_node
+  "no matching function for call to .plan_network_kernel<crucible::mimic::_wip::network::NetworkBackendVendor::Cpu>\\("
   ".crucible::forge::ir001::Ir001Node<crucible::forge::ir001::Ir001OpKind::AllReduce, crucible::forge::ir001::CollectiveAttrs, foundation::effects::Row<> >. is not derived from .fixy::Tagged<Node, fixy::tags::source::Ir001>.")
 crucible_neg_compile_test(neg_mimic_network_backend_compute_node
-  "static assertion failed|NetworkKernelNode|ir001_network_kernel_kind")
+  "static assertion failed"
+  "the expression .ir001_network_kernel_kind_v<Node::kind> .with Node = crucible::forge::ir001::Ir001Node<crucible::forge::ir001::Ir001OpKind::Gemm,")
 crucible_neg_compile_test(neg_mimic_network_backend_cross_vendor
-  "could not convert .am. from .Tagged<\\[\\.\\.\\.\\],crucible::mimic::_wip::network::wip_source::AmNetwork>. to .Tagged<\\[\\.\\.\\.\\],crucible::mimic::_wip::network::wip_source::NvNetwork>.")
+  "could not convert .am. from .Tagged<\\[\\.\\.\\.\\],crucible::mimic::_wip::network::wip_source::AmNetwork>."
+  "to .Tagged<\\[\\.\\.\\.\\],crucible::mimic::_wip::network::wip_source::NvNetwork>.")
 crucible_neg_compile_test(neg_mimic_network_backend_wrong_cog
-  "static assertion failed|BackendAcceptsCog|Mellanox|Gpu")
+  "static assertion failed"
+  "the expression .\\(backend_accepts_cog_kind<Vendor, Kind>\\)\\(\\) .with Vendor = crucible::mimic::_wip::network::NetworkBackendVendor::Mellanox. Kind = crucible::cog::CogKind::Gpu.. evaluated to .false.")
 
 # mimic/Semaphore.h: mint_device_semaphore is the one door to a descriptor.
 #   * neg_mimic_semaphore_backend_none, _backend_portable: SemaphoreBackend
@@ -4679,29 +4562,29 @@ crucible_neg_compile_test(neg_mimic_network_backend_wrong_cog
 #     counter, because the descriptor borrows it.
 #   * neg_mimic_semaphore_forged, _default_construct: no constructor of the
 #     descriptor goes around the mint.
-crucible_neg_compile_multi_test(neg_mimic_semaphore_backend_none
+crucible_neg_compile_test(neg_mimic_semaphore_backend_none
   "no matching function for call to .mint_device_semaphore<foundation::algebra::lattices::VendorBackend::None>\\(std::atomic<long unsigned int>&, int\\)."
   "the expression .Backend != foundation::algebra::lattices::VendorLattice::bottom\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::None\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_mimic_semaphore_backend_portable
+crucible_neg_compile_test(neg_mimic_semaphore_backend_portable
   "template constraint failure for .template<foundation::algebra::lattices::VendorBackend Backend>  requires  SemaphoreBackend<Backend> class crucible::mimic::DeviceSemaphore."
   "the expression .Backend != foundation::algebra::lattices::VendorLattice::top\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::Portable\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_mimic_semaphore_temporary_counter
+crucible_neg_compile_test(neg_mimic_semaphore_temporary_counter
   "use of deleted function .constexpr crucible::mimic::DeviceSemaphore<Backend> crucible::mimic::mint_device_semaphore\\(std::atomic<long unsigned int>&&, uint64_t\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU. uint64_t = long unsigned int\\]."
   ".: The DeviceSemaphore borrows its counter, so a temporary counter dangles at the end of the full expression. Bind the counter to a name first.")
-crucible_neg_compile_multi_test(neg_mimic_semaphore_forged
+crucible_neg_compile_test(neg_mimic_semaphore_forged
   ".constexpr crucible::mimic::DeviceSemaphore<Backend>::DeviceSemaphore\\(std::atomic<long unsigned int>&, uint64_t\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU. uint64_t = long unsigned int\\]. is private within this context"
   "mimic/Semaphore.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_multi_test(neg_mimic_semaphore_default_construct
+crucible_neg_compile_test(neg_mimic_semaphore_default_construct
   "use of deleted function .crucible::mimic::DeviceSemaphore<Backend>::DeviceSemaphore\\(\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU\\]."
   ".: A DeviceSemaphore borrows a counter. Take one from mint_device_semaphore.")
 
 # ReplayEngine::init takes the pool as fixy::BorrowedRef<const
 # PoolAllocator>.  A raw pointer and a borrow of another owner type are
 # both refused at the init boundary.
-crucible_neg_compile_multi_test(neg_replay_engine_pool_raw_pointer
+crucible_neg_compile_test(neg_replay_engine_pool_raw_pointer
   "cannot convert .const crucible::PoolAllocator\\*. to .crucible::ReplayEngine::PoolBorrow."
   "neg_replay_engine_pool_raw_pointer.cpp:15")
-crucible_neg_compile_multi_test(neg_replay_engine_pool_wrong_borrow
+crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
   "cannot convert .BorrowedRef<crucible::RegionNode>. to .BorrowedRef<const crucible::PoolAllocator>."
   "neg_replay_engine_pool_wrong_borrow.cpp:15")
 
@@ -4710,7 +4593,7 @@ crucible_neg_compile_multi_test(neg_replay_engine_pool_wrong_borrow
 # carries the no-malloc-on-hot-path rule at the slot_ptr_pinned to
 # consumer boundary.  Without it, jemalloc allocations (50-200 ns
 # setup) could flow into hot-path sites budgeted at a few ns per call.
-crucible_neg_compile_multi_test(neg_alloc_class_heap_at_pool_fence
+crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
   "no matching function for call to .hot_path_slot_consumer"
   "the expression .satisfies_v<Slot, foundation::algebra::lattices::AllocClassTag::Pool> \\[with Slot = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::AllocClassLattice::At<foundation::algebra::lattices::AllocClassTag::Heap>, int\\*>\\]. evaluated to .false.")
 
@@ -4721,20 +4604,25 @@ crucible_neg_compile_multi_test(neg_alloc_class_heap_at_pool_fence
 # pointers.  Three orthogonal rejection classes mirror the three
 # wrong-shape NTTP categories the production API guards against.
 crucible_neg_compile_test(neg_computation_cache_integral_nttp
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .lookup_computation_cache<42, int>\\(\\)."
+  "the expression .is_pointer_v<decltype\\(FnPtr\\)> .with FnPtr = 42.. evaluated to .false.")
 crucible_neg_compile_test(neg_computation_cache_data_ptr_nttp
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .insert_computation_cache<\\(& data_global\\)>\\(crucible::cipher::CompiledBody\\*\\)."
+  "the expression .is_function_v<typename std::remove_pointer<decltype\\(Value\\)>::type> .with FnPtr = &data_global.. evaluated to .false.")
 crucible_neg_compile_test(neg_computation_cache_member_fn_nttp
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .lookup_computation_cache<&Receiver::member_fn, int>\\(\\)."
+  ".void \\(Receiver::\\*\\)\\(int\\) noexcept. is not a pointer")
 # F09-AUDIT-3 sister rejection — member-DATA pointers (vs member-fn
 # pointers above).  Closes the rejection-space symmetry across all
 # four NTTP categories the cache cannot key on.
 crucible_neg_compile_test(neg_computation_cache_member_data_ptr_nttp
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .lookup_computation_cache<&Receiver::data_field>\\(\\)."
+  ".int Receiver::\\*. is not a pointer")
 # F11 IsEffectRow concept fence — non-effects::Row<...> Row params
 # rejected from the row-aware cache API.
 crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .lookup_computation_cache_in_row<f11_test_fn, int, double>\\(\\)."
+  "required for the satisfaction of .IsEffectRow<Row>. .with Row = int.")
 # F11-AUDIT cross-constraint coverage — IsCacheableFunction conjunct
 # on the row-aware path.  The `_in_row` template carries TWO
 # constraints (`IsCacheableFunction<FnPtr> && IsEffectRow<Row>`); the
@@ -4743,15 +4631,16 @@ crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
 # the IsEffectRow half on the row-aware path — this fixture closes
 # the matrix on the row-aware × IsCacheableFunction cell.
 crucible_neg_compile_test(neg_computation_cache_in_row_non_function_nttp
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .lookup_computation_cache_in_row<42, foundation::effects::Row<>, int>\\(\\)."
+  "required for the satisfaction of .IsCacheableFunction<FnPtr>. .with FnPtr = 42.")
 # The content key folds the printed name of the function and of each
 # argument type, so it refuses a closure's static invoker and a closure
 # argument type: either prints a name that depends on the translation
 # unit.
-crucible_neg_compile_multi_test(neg_computation_cache_closure_invoker
+crucible_neg_compile_test(neg_computation_cache_closure_invoker
   "computation_cache_key: the function, its signature or an argument type has no stable identity"
   "HasStableKeyIdentity")
-crucible_neg_compile_multi_test(neg_computation_cache_closure_argument
+crucible_neg_compile_test(neg_computation_cache_closure_argument
   "computation_cache_key: the function, its signature or an argument type has no stable identity"
   "HasStableKeyIdentity")
 
@@ -4762,37 +4651,37 @@ crucible_neg_compile_multi_test(neg_computation_cache_closure_argument
 # record_event rows hold each atom of the gate on its own: IO alone,
 # Block alone, Alloc alone, and the background drain row, whose Bg atom
 # implies neither IO nor Block.
-crucible_neg_compile_multi_test(neg_cipher_record_event_pure_row
+crucible_neg_compile_test(neg_cipher_record_event_pure_row
   "no matching function for call to .crucible::Cipher::record_event."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
-crucible_neg_compile_multi_test(neg_cipher_record_event_io_only
+crucible_neg_compile_test(neg_cipher_record_event_io_only
   "no matching function for call to .crucible::Cipher::record_event."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >")
-crucible_neg_compile_multi_test(neg_cipher_record_event_block_only
+crucible_neg_compile_test(neg_cipher_record_event_block_only
   "no matching function for call to .crucible::Cipher::record_event."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >")
-crucible_neg_compile_multi_test(neg_cipher_record_event_alloc_only
+crucible_neg_compile_test(neg_cipher_record_event_alloc_only
   "no matching function for call to .crucible::Cipher::record_event."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >")
-crucible_neg_compile_multi_test(neg_cipher_record_event_bg_only
+crucible_neg_compile_test(neg_cipher_record_event_bg_only
   "no matching function for call to .crucible::Cipher::record_event."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >")
-crucible_neg_compile_multi_test(neg_cipher_open_view_hot_fg_ctx
+crucible_neg_compile_test(neg_cipher_open_view_hot_fg_ctx
   "no matching function for call to .crucible::Cipher::mint_open_view.foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. const."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
-crucible_neg_compile_multi_test(neg_cipher_open_view_init_ctx
+crucible_neg_compile_test(neg_cipher_open_view_init_ctx
   "no matching function for call to .crucible::Cipher::mint_open_view.fixy::ColdInitCtx. const."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
-crucible_neg_compile_multi_test(neg_cipher_open_ctx_without_block
+crucible_neg_compile_test(neg_cipher_open_ctx_without_block
   "no matching function for call to .crucible::Cipher::open.const fixy::ColdInitCtx&, "
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
-crucible_neg_compile_multi_test(neg_cipher_open_non_context
+crucible_neg_compile_test(neg_cipher_open_non_context
   "no matching function for call to .crucible::Cipher::open.foundation::effects::Test, "
   "the expression .is_exec_ctx_v<T> .with T = foundation::effects::Test.. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_cipher_persist_session_events_fg_ctx
+crucible_neg_compile_test(neg_cipher_persist_session_events_fg_ctx
   "no matching function for call to .crucible::Cipher::persist_session_events."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")
-crucible_neg_compile_multi_test(neg_cipher_persist_session_events_compile_ctx
+crucible_neg_compile_test(neg_cipher_persist_session_events_compile_ctx
   "no matching function for call to .crucible::Cipher::persist_session_events."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
 
@@ -4806,11 +4695,14 @@ crucible_neg_compile_multi_test(neg_cipher_persist_session_events_compile_ctx
 # the bridge doesn't silently pass non-Row / non-Fn args through to a
 # row-blind federation key.
 crucible_neg_compile_test(neg_computation_cache_federation_non_row
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .federation_key<f12_test_fn, int, double>\\(\\)."
+  "required for the satisfaction of .IsEffectRow<Row>. .with Row = int.")
 crucible_neg_compile_test(neg_computation_cache_federation_non_fn
-  "constraints not satisfied|template constraint failure|associated constraints")
+  "no matching function for call to .federation_key<42, foundation::effects::Row<>, int>\\(\\)."
+  "required for the satisfaction of .IsCacheableFunction<FnPtr>. .with FnPtr = 42.")
 crucible_neg_compile_test(neg_computation_cache_federation_without_local_permission
-  "no matching function|candidate expects")
+  "no matching function for call to .serialize_computation_cache_federation_entry<neg_payload, foundation::effects::Row<>, int>\\("
+  "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, std::span<unsigned char>")
 
 # ─── The row gate of MetaLog::try_append_pure ───────────────────────
 # MetaLog::try_append_pure<CallerRow> requires IsPure<CallerRow>, that
@@ -4819,28 +4711,28 @@ crucible_neg_compile_test(neg_computation_cache_federation_without_local_permiss
 # two atoms, and one for the full row.  If the gate widens to admit one
 # atom or one combination of atoms, the fixture for it compiles.  Each
 # regex names the row that the gate refused.
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_io
+crucible_neg_compile_test(neg_metalog_try_append_pure_io
     "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::IO> >"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO>.")
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_bg
+crucible_neg_compile_test(neg_metalog_try_append_pure_bg
     "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Bg> >"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>.")
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_alloc
+crucible_neg_compile_test(neg_metalog_try_append_pure_alloc
     "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Alloc> >"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>.")
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_block
+crucible_neg_compile_test(neg_metalog_try_append_pure_block
     "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Block> >"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Block>.")
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_init
+crucible_neg_compile_test(neg_metalog_try_append_pure_init
     "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Init> >"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Init>.")
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_test
+crucible_neg_compile_test(neg_metalog_try_append_pure_test
     "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Test> >"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Test>.")
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_io_block
+crucible_neg_compile_test(neg_metalog_try_append_pure_io_block
     "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>.")
-crucible_neg_compile_multi_test(neg_metalog_try_append_pure_full_row
+crucible_neg_compile_test(neg_metalog_try_append_pure_full_row
     "no matching function for call to .crucible::MetaLog::try_append_pure<fixy::AllRow>"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, ")
 
@@ -4850,38 +4742,38 @@ crucible_neg_compile_multi_test(neg_metalog_try_append_pure_full_row
 # matrix above.  16 fixtures = 8 per direction (per-axis × 6 atoms +
 # multi-atom + saturation).  Pins both directions of the SPSC ring.
 # Producer side:
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_alloc
+crucible_neg_compile_test(neg_tracering_try_append_pure_alloc
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_io
+crucible_neg_compile_test(neg_tracering_try_append_pure_io
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_block
+crucible_neg_compile_test(neg_tracering_try_append_pure_block
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_bg
+crucible_neg_compile_test(neg_tracering_try_append_pure_bg
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_init
+crucible_neg_compile_test(neg_tracering_try_append_pure_init
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_test
+crucible_neg_compile_test(neg_tracering_try_append_pure_test
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_io_block
+crucible_neg_compile_test(neg_tracering_try_append_pure_io_block
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_try_append_pure_full_row
+crucible_neg_compile_test(neg_tracering_try_append_pure_full_row
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
 # Consumer side:
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_alloc
+crucible_neg_compile_test(neg_tracering_drain_pure_alloc
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_io
+crucible_neg_compile_test(neg_tracering_drain_pure_io
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_block
+crucible_neg_compile_test(neg_tracering_drain_pure_block
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_bg
+crucible_neg_compile_test(neg_tracering_drain_pure_bg
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_init
+crucible_neg_compile_test(neg_tracering_drain_pure_init
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_test
+crucible_neg_compile_test(neg_tracering_drain_pure_test
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_io_block
+crucible_neg_compile_test(neg_tracering_drain_pure_io_block
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_multi_test(neg_tracering_drain_pure_full_row
+crucible_neg_compile_test(neg_tracering_drain_pure_full_row
   "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
 
 # Vigil::dispatch_op_pure takes crucible::VigilFgCtx, the context of the
@@ -4892,22 +4784,22 @@ set(VIGIL_PURE_TO "to .const crucible::VigilFgCtx&.")
 set(VIGIL_PURE_PARAM
   "initializing argument 1 of .crucible::DispatchResult crucible::Vigil::dispatch_op_pure\\(const crucible::VigilFgCtx&, ")
 set(VIGIL_PURE_ROW_TAIL "foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_unbranded_ctx
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. ${VIGIL_PURE_TO}"
   "${VIGIL_PURE_PARAM}")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_other_brand
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. ${VIGIL_PURE_TO}"
   "${VIGIL_PURE_PARAM}")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_bg_ctx
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_bg_ctx
   "cannot convert .const fixy::BgLoadCtx. \\{aka .const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, ${VIGIL_PURE_ROW_TAIL}.\\} ${VIGIL_PURE_TO}"
   "${VIGIL_PURE_PARAM}")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_init_ctx
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_init_ctx
   "cannot convert .const fixy::InitLoadCtx. \\{aka .const foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, ${VIGIL_PURE_ROW_TAIL}.\\} ${VIGIL_PURE_TO}"
   "${VIGIL_PURE_PARAM}")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_test_ctx
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_test_ctx
   "cannot convert .const fixy::TestRunnerCtx. \\{aka .const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, ${VIGIL_PURE_ROW_TAIL}.\\} ${VIGIL_PURE_TO}"
   "${VIGIL_PURE_PARAM}")
-crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_no_ctx
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_no_ctx
   "no matching function for call to .crucible::Vigil::dispatch_op_pure\\(fixy::Tagged<const crucible::TraceRing::Entry\\*, fixy::tags::vessel_trust::Validated>, crucible::TensorMeta\\*, int\\)."
   "crucible::Vigil::dispatch_op_pure\\(const crucible::VigilFgCtx&, crucible::TraceRing::ValidatedEntryPtr, ")
 
@@ -4917,27 +4809,27 @@ crucible_neg_compile_multi_test(neg_vigil_dispatch_op_pure_no_ctx
 # the second pins the gate and the row it demands.
 set(BG_RUN_GATE "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >.")
 set(BG_RUN_CALL "no matching function for call to .crucible::BackgroundThread::run_in_row\\(const foundation::effects::ExecCtx<")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_empty
+crucible_neg_compile_test(neg_background_thread_run_in_row_empty
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_bg_only
+crucible_neg_compile_test(neg_background_thread_run_in_row_bg_only
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_alloc_only
+crucible_neg_compile_test(neg_background_thread_run_in_row_alloc_only
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_io_only
+crucible_neg_compile_test(neg_background_thread_run_in_row_io_only
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_block_only
+crucible_neg_compile_test(neg_background_thread_run_in_row_block_only
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_bg
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_bg
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_alloc
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_alloc
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_io
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_io
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_missing_block
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_block
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_init_only
+crucible_neg_compile_test(neg_background_thread_run_in_row_init_only
   "${BG_RUN_CALL}foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >&\\)" "${BG_RUN_GATE}")
-crucible_neg_compile_multi_test(neg_background_thread_run_in_row_test_only
+crucible_neg_compile_test(neg_background_thread_run_in_row_test_only
   "${BG_RUN_CALL}foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >&\\)" "${BG_RUN_GATE}")
 
 # The tier mints keep their direction: mint_promote goes up the chain
@@ -4946,25 +4838,25 @@ crucible_neg_compile_multi_test(neg_background_thread_run_in_row_test_only
 # band over another value type and a payload with no content hash
 # projection, because without the projection the hash check would run
 # for ContentHash alone.
-crucible_neg_compile_multi_test(neg_cipher_tier_promote_hot_to_cold
+crucible_neg_compile_test(neg_cipher_tier_promote_hot_to_cold
   "no matching function for call to .mint_promote<foundation::algebra::lattices::CipherTierTag::Hot, foundation::algebra::lattices::CipherTierTag::Cold>"
   "the expression .can_promote_tier_v<From, To> .with From = foundation::algebra::lattices::CipherTierTag::Hot. To = foundation::algebra::lattices::CipherTierTag::Cold.. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_cipher_tier_promote_unmovable_payload
+crucible_neg_compile_test(neg_cipher_tier_promote_unmovable_payload
   "required for the satisfaction of .PromotableTier<From, To, T>. .with From = foundation::algebra::lattices::CipherTierTag::Cold. To = foundation::algebra::lattices::CipherTierTag::Warm. T = ImmovablePayload."
   "required for the satisfaction of .move_constructible<T>. .with T = ImmovablePayload.")
-crucible_neg_compile_multi_test(neg_cipher_tier_demote_cold_to_hot
+crucible_neg_compile_test(neg_cipher_tier_demote_cold_to_hot
   "no matching function for call to .mint_demote<foundation::algebra::lattices::CipherTierTag::Cold, foundation::algebra::lattices::CipherTierTag::Hot>"
   "the expression .can_demote_tier_v<From, To> .with From = foundation::algebra::lattices::CipherTierTag::Cold. To = foundation::algebra::lattices::CipherTierTag::Hot.. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_cipher_tier_demote_unmovable_payload
+crucible_neg_compile_test(neg_cipher_tier_demote_unmovable_payload
   "required for the satisfaction of .DemotableTier<From, To, T>. .with From = foundation::algebra::lattices::CipherTierTag::Hot. To = foundation::algebra::lattices::CipherTierTag::Warm. T = ImmovablePayload."
   "required for the satisfaction of .move_constructible<T>. .with T = ImmovablePayload.")
-crucible_neg_compile_multi_test(neg_cipher_tier_restore_unmovable_payload
+crucible_neg_compile_test(neg_cipher_tier_restore_unmovable_payload
   "required for the satisfaction of .RestorableTier<T>. .with T = ImmovablePayload."
   "required for the satisfaction of .move_constructible<T>. .with T = ImmovablePayload.")
-crucible_neg_compile_multi_test(neg_cipher_tier_restore_wrong_value_type
+crucible_neg_compile_test(neg_cipher_tier_restore_wrong_value_type
   "could not convert .std::declval<foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Cold>, int> >"
   "from .Graded<.....,.....,int>. to .Graded<.....,.....,crucible::ContentHash>.")
-crucible_neg_compile_multi_test(neg_cipher_tier_restore_no_hash_projection
+crucible_neg_compile_test(neg_cipher_tier_restore_no_hash_projection
   "no matching function for call to .mint_restore<ProductionPayload>"
   "required for the satisfaction of .RestorableHashed<T>. .with T = ProductionPayload.")
 
@@ -4975,14 +4867,15 @@ crucible_neg_compile_multi_test(neg_cipher_tier_restore_no_hash_projection
 # [GCC-WRAPPER-TEXT] Production-side typed-view rejection.  The direct
 # signature requires MutableView; SealedView reaches GCC's conversion
 # diagnostic before any runtime path can exist.
-crucible_neg_compile_multi_test(neg_schema_register_with_sealed_view
+crucible_neg_compile_test(neg_schema_register_with_sealed_view
   "cannot convert .sv. \\(type .fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Sealed>.\\) to type .const crucible::SchemaTable::MutableView&."
   "neg_schema_register_with_sealed_view.cpp:14")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
-  "cannot convert.*Sealed.*MutableView")
+  "cannot convert .fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Sealed>. to .const crucible::CKernelTable::MutableView&."
+  "initializing argument 1 of .bool crucible::CKernelTable::register_op\\(const MutableView&, crucible::SchemaHash, crucible::CKernelId\\).")
 # A field keeps the proof of a sealed view after the table is gone, so the
 # field audit refuses it.
-crucible_neg_compile_multi_test(neg_ckernel_mint_sealed_view_in_field
+crucible_neg_compile_test(neg_ckernel_mint_sealed_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<SealedContainer>\\(\\). evaluates to false")
 
@@ -5000,8 +4893,9 @@ crucible_neg_compile_multi_test(neg_ckernel_mint_sealed_view_in_field
 #     for IterDet Steady (#928), exercising the alias-stability path
 #     (MutableView is a typedef of ScopedView<CKernelTable, Mutable>).
 crucible_neg_compile_test(neg_ckernel_mint_mutable_view_to_sealed_overload
-  "invalid initialization of reference.*SealedView.*Mutable|cannot convert.*Mutable.*Sealed")
-crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_in_field
+  "invalid initialization of reference of type .const crucible::CKernelTable::SealedView&. .aka .const fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Sealed>&.. from expression of type .const fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable>"
+  "in passing argument 1 of .void requires_sealed_view\\(const crucible::CKernelTable::SealedView&\\).")
+crucible_neg_compile_test(neg_ckernel_mint_mutable_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingContainer>\\(\\). evaluates to false")
 
@@ -5010,64 +4904,64 @@ crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_in_field
 # not see a defect in the schema table gate.  The HS14 scanner counts a
 # fixture for the carrier whose class it names.  This pair is the schema
 # table's own witness.
-crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_to_sealed_overload
+crucible_neg_compile_test(neg_schema_mint_mutable_view_to_sealed_overload
   "invalid initialization of reference of type .const crucible::SchemaTable::SealedView&."
   "from expression of type .const fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable>.")
-crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_in_field
+crucible_neg_compile_test(neg_schema_mint_mutable_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingSchemaContainer>\\(\\). evaluates to false")
 
 # A sealed table mints no mutable view.  The view comes back optional, so
 # a registration that forgets the seal does not compile.
-crucible_neg_compile_multi_test(neg_schema_mutable_view_unchecked
+crucible_neg_compile_test(neg_schema_mutable_view_unchecked
   "\\(type .std::optional<fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >.\\) to type .const crucible::SchemaTable::MutableView&."
   "neg_schema_mutable_view_unchecked.cpp:12")
-crucible_neg_compile_multi_test(neg_ckernel_mutable_view_unchecked
+crucible_neg_compile_test(neg_ckernel_mutable_view_unchecked
   "cannot convert .std::optional<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
   "neg_ckernel_mutable_view_unchecked.cpp:12")
 
 # Lock-free readers read a sealed table, so every write goes through the
 # view and the seal phase.  The entry arrays are private, and clear(), which
 # opens a sealed table again, takes the test context.
-crucible_neg_compile_multi_test(neg_schema_table_entries_private
+crucible_neg_compile_test(neg_schema_table_entries_private
   "is private within this context"
   "crucible::SchemaTable::entries_")
-crucible_neg_compile_multi_test(neg_ckernel_table_entries_private
+crucible_neg_compile_test(neg_ckernel_table_entries_private
   "is private within this context"
   "crucible::CKernelTable::entries_")
-crucible_neg_compile_multi_test(neg_schema_table_clear_needs_test_context
+crucible_neg_compile_test(neg_schema_table_clear_needs_test_context
   "no matching function for call to"
   "crucible::SchemaTable::clear..")
-crucible_neg_compile_multi_test(neg_ckernel_table_clear_needs_test_context
+crucible_neg_compile_test(neg_ckernel_table_clear_needs_test_context
   "no matching function for call to"
   "crucible::CKernelTable::clear..")
 
 # The names and schemas in the two tables come from the ops that a Vigil
 # records, so a mutable view, and a trace load that registers names, ask
 # for the context of a Vigil's producer claim.
-crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_unbranded_ctx
+crucible_neg_compile_test(neg_schema_mint_mutable_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_schema_mint_mutable_view_unbranded_ctx.cpp:11")
-crucible_neg_compile_multi_test(neg_schema_mint_mutable_view_other_brand
+crucible_neg_compile_test(neg_schema_mint_mutable_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_schema_mint_mutable_view_other_brand.cpp:15")
-crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_unbranded_ctx
+crucible_neg_compile_test(neg_ckernel_mint_mutable_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_ckernel_mint_mutable_view_unbranded_ctx.cpp:11")
-crucible_neg_compile_multi_test(neg_ckernel_mint_mutable_view_other_brand
+crucible_neg_compile_test(neg_ckernel_mint_mutable_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_ckernel_mint_mutable_view_other_brand.cpp:15")
-crucible_neg_compile_multi_test(neg_trace_loader_names_unbranded_ctx
+crucible_neg_compile_test(neg_trace_loader_names_unbranded_ctx
   "no matching function for call to .load_trace.const fixy::TestRunnerCtx&, foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
   "to type .const crucible::VigilFgCtx&."
   "neg_trace_loader_names_unbranded_ctx.cpp:12")
-crucible_neg_compile_multi_test(neg_trace_loader_names_other_brand
+crucible_neg_compile_test(neg_trace_loader_names_other_brand
   "no matching function for call to .load_trace.const fixy::TestRunnerCtx&, foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >"
   "to type .const crucible::VigilFgCtx&."
   "neg_trace_loader_names_other_brand.cpp:16")
 # A trace load reads a file, so it asks for a context that owns IO and
 # Block.  The foreground context of a Vigil owns neither.
-crucible_neg_compile_multi_test(neg_trace_loader_refuses_foreground_io
+crucible_neg_compile_test(neg_trace_loader_refuses_foreground_io
   "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<crucible::Vigil>, foundation::effects::Row<> >"
   "required for the satisfaction of .CtxFitsFileOpen<Ctx>."
   "neg_trace_loader_refuses_foreground_io.cpp:10")
@@ -5080,69 +4974,69 @@ crucible_neg_compile_multi_test(neg_trace_loader_refuses_foreground_io
 #     convert, so the carrier is locked into the type.
 #   * _in_field: a class that stores the view fails the field audit
 #     no_scoped_view_field_check, which sees through the view alias.
-crucible_neg_compile_multi_test(neg_crucible_context_mint_compiled_view_cross_carrier
+crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_cross_carrier
   "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
   "from expression of type .fixy::ScopedView<crucible::CrucibleContext, crucible::ctx_mode::Compiled>.")
-crucible_neg_compile_multi_test(neg_crucible_context_mint_compiled_view_in_field
+crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingCtxContainer>\\(\\). evaluates to false")
 
-crucible_neg_compile_multi_test(neg_pool_allocator_mint_initialized_view_cross_carrier
+crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_cross_carrier
   "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
   "from expression of type .fixy::ScopedView<crucible::PoolAllocator, crucible::pool_state::Initialized>.")
-crucible_neg_compile_multi_test(neg_pool_allocator_mint_initialized_view_in_field
+crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingPoolContainer>\\(\\). evaluates to false")
 
-crucible_neg_compile_multi_test(neg_replay_engine_mint_active_view_cross_carrier
+crucible_neg_compile_test(neg_replay_engine_mint_active_view_cross_carrier
   "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
   "from expression of type .fixy::ScopedView<crucible::ReplayEngine, crucible::engine_state::Active>.")
-crucible_neg_compile_multi_test(neg_replay_engine_mint_active_view_in_field
+crucible_neg_compile_test(neg_replay_engine_mint_active_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingEngineContainer>\\(\\). evaluates to false")
 
 # The foreground views are read only by the thread that holds the claim
 # of the Vigil, so each gate asks for the context of the Vigil's brand.
 # A context with no brand and a context of another state are refused.
-crucible_neg_compile_multi_test(neg_crucible_context_compiled_view_unbranded_ctx
+crucible_neg_compile_test(neg_crucible_context_compiled_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_crucible_context_compiled_view_unbranded_ctx.cpp:11")
-crucible_neg_compile_multi_test(neg_crucible_context_compiled_view_other_brand
+crucible_neg_compile_test(neg_crucible_context_compiled_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_crucible_context_compiled_view_other_brand.cpp:15")
-crucible_neg_compile_multi_test(neg_replay_engine_active_view_unbranded_ctx
+crucible_neg_compile_test(neg_replay_engine_active_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_replay_engine_active_view_unbranded_ctx.cpp:11")
-crucible_neg_compile_multi_test(neg_replay_engine_active_view_other_brand
+crucible_neg_compile_test(neg_replay_engine_active_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_replay_engine_active_view_other_brand.cpp:15")
-crucible_neg_compile_multi_test(neg_pool_allocator_initialized_view_unbranded_ctx
+crucible_neg_compile_test(neg_pool_allocator_initialized_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_pool_allocator_initialized_view_unbranded_ctx.cpp:11")
-crucible_neg_compile_multi_test(neg_pool_allocator_initialized_view_other_brand
+crucible_neg_compile_test(neg_pool_allocator_initialized_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_pool_allocator_initialized_view_other_brand.cpp:15")
-crucible_neg_compile_multi_test(neg_vigil_output_ptr_unbranded_ctx
+crucible_neg_compile_test(neg_vigil_output_ptr_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_output_ptr_unbranded_ctx.cpp:11")
 # ring() and meta_log() hand out the producer surface of the ring and of the
 # metadata log, so each asks for the context of the Vigil's producer claim.
-crucible_neg_compile_multi_test(neg_vigil_ring_unbranded_ctx
+crucible_neg_compile_test(neg_vigil_ring_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_ring_unbranded_ctx.cpp:11")
-crucible_neg_compile_multi_test(neg_vigil_ring_other_brand
+crucible_neg_compile_test(neg_vigil_ring_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_ring_other_brand.cpp:15")
-crucible_neg_compile_multi_test(neg_vigil_meta_log_unbranded_ctx
+crucible_neg_compile_test(neg_vigil_meta_log_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_meta_log_unbranded_ctx.cpp:11")
-crucible_neg_compile_multi_test(neg_vigil_meta_log_other_brand
+crucible_neg_compile_test(neg_vigil_meta_log_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_meta_log_other_brand.cpp:15")
-crucible_neg_compile_multi_test(neg_vigil_mint_producer_context_const
+crucible_neg_compile_test(neg_vigil_mint_producer_context_const
   "passing .const crucible::Vigil. as .this. argument discards qualifiers"
   "neg_vigil_mint_producer_context_const.cpp:10")
-crucible_neg_compile_multi_test(neg_vigil_producer_context_to_unbranded_gate
+crucible_neg_compile_test(neg_vigil_producer_context_to_unbranded_gate
   "invalid initialization of reference of type .const fixy::HotFgCtx&."
   "from expression of type .crucible::VigilFgCtx."
   "neg_vigil_producer_context_to_unbranded_gate.cpp:17")
@@ -5150,7 +5044,7 @@ crucible_neg_compile_multi_test(neg_vigil_producer_context_to_unbranded_gate
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
-crucible_neg_compile_multi_test(neg_cipher_wrong_tag
+crucible_neg_compile_test(neg_cipher_wrong_tag
   "cannot convert .fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Sealed>. to .const crucible::Cipher::OpenView&."
   "aka .const fixy::ScopedView<crucible::Cipher, crucible::cipher_state::Open>&.")
 
@@ -5158,11 +5052,13 @@ crucible_neg_compile_multi_test(neg_cipher_wrong_tag
 # organization.  A call with no token, or with the token of another
 # organization, does not compile.
 crucible_neg_compile_test(neg_federation_deserialize_without_permission
-    "no matching function|candidate expects")
+    "no matching function for call to .deserialize_federation_entry\\(std::array<unsigned char, 32>&, uint16_t\\)."
+    "deserialize_federation_entry\\(const foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, Brand>&,")
 crucible_neg_compile_test(neg_federation_deserialize_wrong_org_permission
-    "no matching function|could not convert|invalid initialization")
+    "no matching function for call to .deserialize_federation_entry<OrgB>\\(foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<OrgA>,"
+    "mismatched types .OrgB. and .OrgA.")
 
-crucible_neg_compile_multi_test(neg_vigil_copy_attempt
+crucible_neg_compile_test(neg_vigil_copy_attempt
     "use of deleted function .crucible::Vigil::Vigil\\(const crucible::Vigil&\\)."
     "Vigil owns the runtime organism. not copyable")
 
@@ -5170,11 +5066,11 @@ crucible_neg_compile_multi_test(neg_vigil_copy_attempt
 # Vigil::alignment_pos_at is its one door.  A constant above the bound
 # stops the constant evaluation of the mint.  The first fixture passes 6,
 # one past the bound.  The second passes 255, the largest byte.
-crucible_neg_compile_multi_test(neg_vigil_alignment_pos_above_max
+crucible_neg_compile_test(neg_vigil_alignment_pos_above_max
     "in .constexpr. expansion of .crucible::Vigil::alignment_pos_at\\(6\\)."
     "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<5>\\(\\), unsigned char>\\(pos\\)."
     "error: .__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_multi_test(neg_vigil_alignment_pos_uint8_max
+crucible_neg_compile_test(neg_vigil_alignment_pos_uint8_max
     "in .constexpr. expansion of .crucible::Vigil::alignment_pos_at\\(255\\)."
     "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<5>\\(\\), unsigned char>\\(pos\\)."
     "error: .__builtin_trap\\(\\). is not a constant expression")
@@ -5185,44 +5081,46 @@ crucible_neg_compile_multi_test(neg_vigil_alignment_pos_uint8_max
 # background side.  The permissioned facade makes that distinction
 # structural rather than convention-based.
 crucible_neg_compile_test(neg_metalog_producer_drain
-    "has no member named.*try_drain_one")
+    "has no member named .try_drain_one."
+    ".class crucible::PermissionedMetaLog<.anonymous.::Tag>::ProducerHandle. has no member")
 
 crucible_neg_compile_test(neg_metalog_consumer_append
-    "has no member named.*try_append")
+    "has no member named .try_append."
+    ".class crucible::PermissionedMetaLog<.anonymous.::Tag>::ConsumerHandle. has no member")
 
 # HS14 for the two MetaLog session mints.  Each gate is one concept, and
 # each fixture fails one clause of it: the context, the handle passed as
 # an lvalue, a type that is not a permissioned log, and the handle of the
 # other role.
-crucible_neg_compile_multi_test(neg_metalog_session_producer_not_a_context
+crucible_neg_compile_test(neg_metalog_session_producer_not_a_context
     "no matching function for call to .mint_metalog_producer_session<"
     "satisfaction of .IsExecCtx<Ctx>. .with Ctx = int."
     "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
-crucible_neg_compile_multi_test(neg_metalog_session_producer_lvalue_handle
+crucible_neg_compile_test(neg_metalog_session_producer_lvalue_handle
     "no matching function for call to .mint_metalog_producer_session<"
     "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_lvalue_fixture::Tag>::ProducerHandle&"
     "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
-crucible_neg_compile_multi_test(neg_metalog_session_consumer_not_a_log
+crucible_neg_compile_test(neg_metalog_session_consumer_not_a_log
     "no matching function for call to .mint_metalog_consumer_session<int>"
     "satisfaction of .MetaLogSessionSurface<Log>. .with Log = int."
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
-crucible_neg_compile_multi_test(neg_metalog_session_consumer_wrong_role
+crucible_neg_compile_test(neg_metalog_session_consumer_wrong_role
     "no matching function for call to .mint_metalog_consumer_session<"
     "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_wrong_role_fixture::Tag>::ProducerHandle"
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
-crucible_neg_compile_multi_test(neg_metalog_session_producer_not_a_log
+crucible_neg_compile_test(neg_metalog_session_producer_not_a_log
     "no matching function for call to .mint_metalog_producer_session<int>"
     "satisfaction of .MetaLogSessionSurface<Log>. .with Log = int."
     "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
-crucible_neg_compile_multi_test(neg_metalog_session_consumer_not_a_context
+crucible_neg_compile_test(neg_metalog_session_consumer_not_a_context
     "no matching function for call to .mint_metalog_consumer_session<"
     "satisfaction of .IsExecCtx<Ctx>. .with Ctx = int."
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
-crucible_neg_compile_multi_test(neg_metalog_session_consumer_lvalue_handle
+crucible_neg_compile_test(neg_metalog_session_consumer_lvalue_handle
     "no matching function for call to .mint_metalog_consumer_session<"
     "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_lvalue_fixture::Tag>::ConsumerHandle&"
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
-crucible_neg_compile_multi_test(neg_metalog_session_producer_wrong_role
+crucible_neg_compile_test(neg_metalog_session_producer_wrong_role
     "no matching function for call to .mint_metalog_producer_session<"
     "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_wrong_role_fixture::Tag>::ConsumerHandle"
     "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
@@ -5230,19 +5128,19 @@ crucible_neg_compile_multi_test(neg_metalog_session_producer_wrong_role
 # The accessor that makes each handle takes the Permission of its own
 # role, and that parameter type is its whole admission.  Each fixture
 # passes the Permission of the other role.
-crucible_neg_compile_multi_test(neg_metalog_producer_wrong_permission
+crucible_neg_compile_test(neg_metalog_producer_wrong_permission
     "cannot convert .*Permission<crucible::metalog_tag::Consumer<producer_wrong_permission_fixture::Tag>, .* to .foundation::permissions::Permission<crucible::metalog_tag::Producer<producer_wrong_permission_fixture::Tag>, foundation::brand::DefaultBrand>&&"
     "initializing argument 1 of .*PermissionedMetaLog<UserTag>::producer.foundation::permissions::Permission<crucible::metalog_tag::Producer<UserTag> >&&. .with UserTag = producer_wrong_permission_fixture::Tag.")
-crucible_neg_compile_multi_test(neg_metalog_consumer_wrong_permission
+crucible_neg_compile_test(neg_metalog_consumer_wrong_permission
     "cannot convert .*Permission<crucible::metalog_tag::Producer<consumer_wrong_permission_fixture::Tag>, .* to .foundation::permissions::Permission<crucible::metalog_tag::Consumer<consumer_wrong_permission_fixture::Tag>, foundation::brand::DefaultBrand>&&"
     "initializing argument 1 of .*PermissionedMetaLog<UserTag>::consumer.foundation::permissions::Permission<crucible::metalog_tag::Consumer<UserTag> >&&. .with UserTag = consumer_wrong_permission_fixture::Tag.")
 
 # SingletonInitGraph.h: the gate refuses a cycle, and it refuses an edge
 # to a singleton that the registry does not hold.
-crucible_neg_compile_multi_test(neg_singleton_init_graph_cycle
+crucible_neg_compile_test(neg_singleton_init_graph_cycle
     "template constraint failure for .template<class Registry, class Edges>  requires  AcyclicInitGraph<Registry, Edges> struct crucible::singleton_init_graph::init_graph."
     "the expression .\\(is_acyclic_<Registry>\\)\\(static_cast<Edges\\*>\\(nullptr\\)\\) \\[with Registry = std::tuple<fixy::atom::global::singleton<neg_singleton_init_graph_cycle_types::first_tag>.*\\]. evaluated to .false.")
-crucible_neg_compile_multi_test(neg_singleton_init_graph_unregistered_edge
+crucible_neg_compile_test(neg_singleton_init_graph_unregistered_edge
     "template constraint failure for .template<class Registry, class Edges>  requires  AcyclicInitGraph<Registry, Edges> struct crucible::singleton_init_graph::init_graph."
     "required for the satisfaction of .EdgesNameRegisteredSingletons<Registry, Edges>. \\[with Registry = std::tuple<fixy::atom::global::singleton<neg_singleton_init_graph_unregistered_edge_types::registered_tag> >.*\\]"
     "the expression .\\(edges_name_registered_<Registry>\\)")
@@ -5255,7 +5153,8 @@ crucible_neg_compile_multi_test(neg_singleton_init_graph_unregistered_edge
 # refactor "promoting" the helper to accept any Tagged<Vigil*, *> would
 # turn red here.  Closes the audit's GAPS-094 HS14 deficit.
 crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
-    "could not convert .wrong_tag. from .*source::External.* to .*source::ABIBoundary")
+    "could not convert .wrong_tag. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
+    "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::ABIBoundary>.")
 
 # ─── GAPS-095 — Vessel ABI typed-meta direction fence ─────────────
 #
@@ -5265,7 +5164,8 @@ crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
 # launder as ABIBoundary-tagged metas — same architectural rationale
 # as the handle fence above, applied to the meta-array entry point.
 crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
-    "could not convert .wrong_tag. from .*source::External.* to .*source::ABIBoundary")
+    "could not convert .wrong_tag. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
+    "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::ABIBoundary>.")
 
 # ─── GAPS-096 — Vessel typed-accessor provenance fences ────────────
 #
@@ -5279,8 +5179,9 @@ crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
 # fixtures, two directions of the wrong-tag axis, so neither retag
 # direction can silently launder.
 crucible_neg_compile_test(neg_data_ptr_typed_wrong_tag
-    "conversion from|cannot convert|could not convert|no match for|no matching function")
-crucible_neg_compile_multi_test(neg_schema_name_typed_wrong_tag
+    "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
+    "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Sanitized>. requested")
+crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
     "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
     "neg_schema_name_typed_wrong_tag.cpp:25")
 
@@ -5304,61 +5205,82 @@ crucible_neg_compile_multi_test(neg_schema_name_typed_wrong_tag
 #     misuse class where production code hardcodes too-small MaxLive
 #     and silently mis-validates plans on larger live sets.
 crucible_neg_compile_test(neg_memory_plan_live_intervals_overlap
-    "static assertion failed|non-constant condition|not a constant expression|__builtin_trap")
+    "neg_memory_plan_live_intervals_overlap.cpp:[0-9]+:[0-9]+: error: static assertion failed"
+    "static assertion failed: MemoryPlan invariant must hold at op 3")
 crucible_neg_compile_test(neg_memory_plan_live_intervals_max_overflow
-    "static assertion failed|non-constant condition|not a constant expression|__builtin_trap")
+    "neg_memory_plan_live_intervals_max_overflow.cpp:[0-9]+:[0-9]+: error: static assertion failed"
+    "static assertion failed: MaxLive=2 must accommodate live count")
 
-# fix-10 — DispatchResult member-predicate pre() migrated to CRUCIBLE_PRE so
-# it fires at consteval toolchain-independently (vanilla pre() was silently
-# bypassed on stock GCC 16.1.1).  Same predicate shape across both bodies;
-# the mode_/is_open/is_sealed migrations can't be consteval-witnessed
-# (non-constexpr atomic/optional state — documented architectural limit).
+# DispatchResult::compiled_status and compiled_op_index check
+# `action == COMPILED` with CRUCIBLE_PRE.  The two accessors are not
+# constexpr.  A constant evaluation stops at the call, before the check
+# runs, and the second regex of each fixture names that stop.  The two
+# fixtures do not witness the check.
 crucible_neg_compile_test(neg_dispatch_result_compiled_status_on_record
-    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+    "called in a constant expression"
+    "call to non-.constexpr. function .crucible::ReplayStatus crucible::DispatchResult::compiled_status\\(\\) const.")
 crucible_neg_compile_test(neg_dispatch_result_compiled_op_index_on_record
-    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+    "called in a constant expression"
+    "call to non-.constexpr. function .crucible::OpIndex crucible::DispatchResult::compiled_op_index\\(\\) const.")
 
 # Cipher::open takes the root as fixy::Path<fixy::tags::source::External>,
 # so every operator-supplied path is tagged at the boundary, and open runs
 # the sanitizer itself.  It refuses a bare string and a path that a caller
 # tagged Sanitized.
-crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_bare_string
+crucible_neg_compile_test(neg_cipher_open_rejects_bare_string
     "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const char .35.."
     "to type .fixy::Path<fixy::tags::source::External>.")
-crucible_neg_compile_fixy_test(neg_fixy_cipher_open_rejects_sanitized_input
+crucible_neg_compile_test(neg_cipher_open_rejects_sanitized_input
     "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, std::remove_reference<fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>&>::type."
     "aka .fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>... to type .fixy::Path<fixy::tags::source::External>.")
 
-# ── FIXY-V-180 — warden/Hardening.h syscall-grant annotation
-#                 HS14 floor (Agent 3 Phase Σ4).
+# ── warden/Hardening.h: the mint in a constant initializer ──────────
 #
-# Two fixtures cover distinct Init-rejection axes:
-#   1. bg_drain_reject — Bg-cap context (admits Bg+Alloc+IO+Block, no
-#      Init).  Hardening's privileged syscalls are startup-only.
-#   2. hot_fg_reject — Fg-cap context (admits Fg only, no Init).
-#      Blocking syscalls don't belong on the hot recording path.
-crucible_neg_compile_fixy_test(neg_fixy_v_180_hardening_bg_drain_reject
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsHardeningMint|CtxOwnsCapability")
-crucible_neg_compile_fixy_test(neg_fixy_v_180_hardening_hot_fg_reject
-    "constraints.*not satisfied|constraints.*not satisfied"
-    "CtxFitsHardeningMint|CtxOwnsCapability")
+# Each fixture calls the mint in the initializer of a namespace-scope
+# constexpr variable, and each context lacks Init:
+#   1. bg_drain_ctx — the Bg-cap context (admits Bg+Alloc+IO+Block, no
+#      Init).  The privileged system calls of Hardening run at startup only.
+#   2. hot_fg_ctx — the Fg-cap context (admits Fg only, no Init).
+#      Blocking system calls do not belong on the hot recording path.
+crucible_neg_compile_test(neg_hardening_mint_bg_drain_ctx_namespace_scope
+    "no matching function for call to .mint_hardening\\(fixy::BgDrainCtx, crucible::warden::Policy\\)."
+    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
+crucible_neg_compile_test(neg_hardening_mint_hot_fg_ctx_namespace_scope
+    "no matching function for call to .mint_hardening\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >, crucible::warden::Policy\\)."
+    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 
-# ── FIXY-V-179 — perf hub syscall-grant annotations HS14 floor ──────
+# ── The perf hub mints in a constant initializer ────────────────────
 #
 # Two fixtures for two perf hub mints, each with a different context:
-#   1. bg_drain_reject: a background drain context at the mint_sense_hub
-#      call site.  It claims Row<Bg, Alloc>, and the gate demands Alloc,
-#      IO and Block, because the load waits on the kernel verifier.
-#   2. hot_fg_reject: a hot foreground context at the mint_pmu_sample
-#      call site.  It claims the empty row, so a blocking load cannot run
-#      on the hot recording path.
-crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_bg_drain_reject
+#   1. sense_hub bg_drain_ctx: a background drain context at the
+#      mint_sense_hub call site.  Its row is Row<Bg, Alloc>.  The gate
+#      admits only a row with Alloc, IO and Block, because the load waits
+#      on the kernel verifier.
+#   2. pmu_sample hot_fg_ctx: a hot foreground context at the
+#      mint_pmu_sample call site.  Its row is empty.  A blocking load must
+#      not run on the hot recording path.
+crucible_neg_compile_test(neg_sense_hub_mint_bg_drain_ctx_namespace_scope
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_fixy_test(neg_fixy_v_179_perf_hubs_hot_fg_reject
+crucible_neg_compile_test(neg_pmu_sample_mint_hot_fg_ctx_namespace_scope
     "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
+
+# Each fixture file under test/*_neg/ has a registration above.  A file with
+# no registration never compiles, so the gate that it names has no witness.
+file(GLOB neg_fixture_sources LIST_DIRECTORIES false "${CMAKE_CURRENT_SOURCE_DIR}/*_neg/*.cpp")
+get_property(neg_registered_sources DIRECTORY PROPERTY CRUCIBLE_NEG_REGISTERED_SOURCES)
+set(neg_unregistered_sources ${neg_fixture_sources})
+if(neg_registered_sources)
+  list(REMOVE_ITEM neg_unregistered_sources ${neg_registered_sources})
+endif()
+if(neg_unregistered_sources)
+  list(JOIN neg_unregistered_sources "\n  " neg_unregistered_text)
+  message(FATAL_ERROR
+    "These negative fixtures have no crucible_neg_compile_test registration, so no test compiles "
+    "them:\n  ${neg_unregistered_text}\nRegister each one with the regexes of its rejection, or "
+    "delete the file.")
+endif()
 
 # ── The substrate and its two guards ──────────────────────────────
 #

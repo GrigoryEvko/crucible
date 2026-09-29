@@ -392,7 +392,7 @@ def self_test() -> int:
         header.parent.mkdir(parents=True)
         header.write_text("\n".join(line for line, _, _ in planted) + "\n", encoding="utf-8")
         for rel, text in (
-            ("test/safety_neg/neg_pin.cpp", "inline constexpr int fixture = 2;\nstatic_assert(fixture == 2);\n"),
+            ("test/sample_neg/neg_pin.cpp", "inline constexpr int fixture = 2;\nstatic_assert(fixture == 2);\n"),
             ("src/planted.cpp", "constexpr int in_source = 3;\nstatic_assert(in_source == 3);\n"),
             (ALLOWLIST, "# planted\ninclude/foundation/Planted.h:allowed — a planted pin\n"),
         ):
@@ -410,7 +410,7 @@ def self_test() -> int:
         expect("nothing else in the planted header is reported",
                reported <= {line for line, (_, caught, _) in enumerate(planted, start=1) if caught}, True)
         expect("caught: a pin in src/", any(rel == "src/planted.cpp" for rel, _, _, _ in found))
-        expect("not caught: a negative fixture", not any("safety_neg" in rel for rel, _, _, _ in found), True)
+        expect("not caught: a negative fixture", not any("sample_neg" in rel for rel, _, _, _ in found), True)
         expect("the planted tree parses", not broken, True)
 
         def captured(cwd: Path) -> tuple[int, str]:

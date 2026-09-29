@@ -11,11 +11,11 @@
 #include <crucible/perf/PmuSample.h>
 #include <fixy/Ctx.h>
 
-namespace neg_fixy_v_179_perf_hubs_hot_fg {
+namespace neg_pmu_sample_mint_hot_fg_ctx_namespace_scope {
 
 [[maybe_unused]] constexpr auto bad_dispatch = ::crucible::perf::mint_pmu_sample(
     ::foundation::effects::testing::foreground(), ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
-}  // namespace neg_fixy_v_179_perf_hubs_hot_fg
+}  // namespace neg_pmu_sample_mint_hot_fg_ctx_namespace_scope
 
 int main() { return 0; }

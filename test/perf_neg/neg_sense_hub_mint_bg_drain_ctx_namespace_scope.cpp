@@ -10,12 +10,12 @@
 #include <crucible/perf/SenseHub.h>
 #include <fixy/Ctx.h>
 
-namespace neg_fixy_v_179_perf_hubs_bg_drain {
+namespace neg_sense_hub_mint_bg_drain_ctx_namespace_scope {
 
 [[maybe_unused]] constexpr auto bad_dispatch =
     ::crucible::perf::mint_sense_hub(::fixy::BgDrainCtx{::foundation::effects::testing::bg()},
                                      ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
-}  // namespace neg_fixy_v_179_perf_hubs_bg_drain
+}  // namespace neg_sense_hub_mint_bg_drain_ctx_namespace_scope
 
 int main() { return 0; }
