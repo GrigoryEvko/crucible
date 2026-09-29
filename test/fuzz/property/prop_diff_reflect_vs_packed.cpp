@@ -1,19 +1,19 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_diff_reflect_vs_packed — differential test: REFL refactors
-// preserve "same input → same hash" invariant against the original
-// packed implementations.
+// prop_diff_reflect_vs_packed — differential test: the reflected hash
+// keeps the "same input → same hash" invariant of the original packed
+// implementation.
 //
 // Catches:
-//   - REFL-2/REFL-3 refactor regressions (the bit pattern shifted
-//     intentionally; this test verifies that the DIFFERENTIAL is
-//     still a stable mapping — same input → still distinct from same
-//     other input under both implementations)
+//   - A regression in the reflected implementation.  Its bit pattern
+//     differs from the packed one on purpose, so the test checks the
+//     DIFFERENTIAL: two inputs are distinct under one implementation
+//     exactly when they are distinct under the other
 //   - Future refactors that accidentally restore commutativity in
 //     feedback_signature (order-sensitive in current impl)
 //   - Future refactors that drop a field from loopterm_hash's Spec
 //     projection
 //
-// Strategy: re-implement the pre-REFL-2/3 versions inline in the
+// Strategy: re-implement the packed version inline in the
 // harness (same code as bench/bench_reflect.cpp).  For each random
 // input, compare:
 //   • reflect-version(a) vs reflect-version(b) — should DIFFER for
@@ -35,7 +35,7 @@
 
 namespace {
 
-// Pre-REFL-2 packed feedback_signature, preserved verbatim.
+// The packed feedback_signature that the reflected version replaced, kept verbatim.
 uint64_t feedback_signature_packed(std::span<const crucible::FeedbackEdge> edges) noexcept {
     if (edges.empty()) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;
@@ -95,9 +95,9 @@ int main(int argc, char** argv) {
             // (or vice versa), the implementations disagree on what
             // counts as structural identity → bug.
             //
-            // (The actual hash VALUES differ between impls — that's
-            // expected post-REFL-2.  What must NOT differ is the
-            // EQUIVALENCE RELATION each impl induces.)
+            // (The hash VALUES of the two implementations differ, and
+            // that is expected.  The EQUIVALENCE RELATION of each
+            // implementation must be the same.)
             const bool refl_says_eq = (a_refl == b_refl);
             const bool packed_says_eq = (a_packed == b_packed);
             if (refl_says_eq != packed_says_eq) return false;

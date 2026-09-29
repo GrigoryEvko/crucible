@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_philox_simd_equivalence — randomized bit-equivalence proof
-// for SIMD-9.
+// prop_philox_simd_equivalence — randomized bit-equivalence check
+// of the SIMD Philox batch against the scalar Philox.
 //
 // Property:
 //   For every (counter, key) octuple drawn at random, the SIMD

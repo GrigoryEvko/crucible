@@ -144,7 +144,7 @@ from preprocessed import Store, files_of  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ALLOWLIST = "scripts/unchecked-access-allowlist.txt"
-SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "examples")
+SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "examples")
 MEMBER_ROOTS = ("include/foundation/", "include/fixy/", "include/crucible/")
 # Bumped when the rules change, so the expanded run does not reuse an old result.
 SCAN_VERSION = 1

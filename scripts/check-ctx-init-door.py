@@ -43,7 +43,7 @@ THE RULE (each owner is checked alone, against its own allowlist)
 The guard parses each file whose bytes hold the name of the owner or a
 backslash-newline, because a use must spell the name or split it.
 
-The guard does not scan test/, bench/ and fuzz/.  The test door serves them,
+The guard does not scan test/ and bench/.  The test door serves them,
 and a test of the door is not production code.
 
 What this guard does not see: a name of the owner that a macro makes by token

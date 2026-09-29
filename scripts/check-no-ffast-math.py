@@ -41,8 +41,8 @@ THE ENGINES
                   a string that only names an option holds no such node.
 
 SCOPE
-    Sources under include/, src/, vessel/, tools/, test/, bench/, examples/
-    and fuzz/, the compile-database entries of those files, and the link
+    Sources under include/, src/, vessel/, tools/, test/, bench/ and
+    examples/, the compile-database entries of those files, and the link
     line of each target.  A test or a bench links crucible, and a fast-math
     option on its link line links crtfastmath.o, which runs the determinism
     tests under flush-to-zero.  A file or a target in a vendored tree
@@ -76,7 +76,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
 REPO_ROOT = tsast.REPO_ROOT
-SOURCE_ROOTS = ("include", "src", "vessel", "tools", "test", "bench", "examples", "fuzz")
+SOURCE_ROOTS = ("include", "src", "vessel", "tools", "test", "bench", "examples")
 EXEMPT_COMPONENTS = frozenset({"third_party", "external", "vendor"})
 ALLOWLIST = "scripts/no-ffast-math-allowlist.txt"
 MARKER = "NO-FFAST-MATH-OK"

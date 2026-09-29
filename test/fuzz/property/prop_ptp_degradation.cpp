@@ -45,7 +45,7 @@ using crucible::fuzz::prop::Rng;
 inline constexpr std::uint64_t kU64Max = std::numeric_limits<std::uint64_t>::max();
 
 // 128-bit accumulators for the independent absolute-offset oracle.
-// __extension__ silences -Wpedantic (matches fuzz/property/prop_checked_arith.cpp).
+// __extension__ silences -Wpedantic (matches test/fuzz/property/prop_checked_arith.cpp).
 __extension__ using w_s = __int128;
 __extension__ using w_u = unsigned __int128;
 

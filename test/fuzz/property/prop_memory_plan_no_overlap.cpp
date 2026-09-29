@@ -20,8 +20,9 @@
 //   (B) No-overlap: at EVERY op boundary t in [0, max_death], the
 //       simultaneously-live internal slots have pairwise-disjoint
 //       byte intervals — checked through the SAME canonical oracle
-//       (live_intervals_disjoint_at) that production CONTRACT-112
-//       uses, so the fuzzer's lens matches the contract's lens.
+//       (live_intervals_disjoint_at in crucible/MerkleDag.h) that the
+//       negative fixtures of test/memory_neg pin, so the fuzzer and
+//       those fixtures read one predicate.
 //   (C) Containment: every internal slot's [offset, offset+nbytes)
 //       lies within [0, pool_bytes); external slots keep offset 0
 //       (the planner does not place them in the pool).

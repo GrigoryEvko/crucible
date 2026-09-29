@@ -1492,21 +1492,6 @@ if(CRUCIBLE_BENCH)
   add_subdirectory(bench)
 endif()
 
-# Fuzz infrastructure (opt-in: property-based stress + adversarial
-# boundary harnesses).  Builds small executables that exercise the
-# library's invariants at scale:
-#   ctest -L fuzz_property  — deterministic property tests
-#   ctest -L fuzz_boundary  — adversarial corpus replay
-# Coverage-guided fuzzing via AFL++ QEMU-mode or libFuzzer drives the
-# same boundary harnesses (see fuzz/README.md).
-option(CRUCIBLE_FUZZ "Build property + boundary fuzz harnesses" OFF)
-if(CRUCIBLE_FUZZ AND CRUCIBLE_TSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-  message(FATAL_ERROR "The fuzz harnesses build under ASan, and CRUCIBLE_TSAN puts ThreadSanitizer on every target.  Set CRUCIBLE_FUZZ to OFF in a ThreadSanitizer build.")
-endif()
-if(CRUCIBLE_FUZZ)
-  add_subdirectory(fuzz)
-endif()
-
 # ═══════════════════════════════════════════════════════════════
 # SECTION 6b: Release contract policy — the opt-out list
 #

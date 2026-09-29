@@ -56,7 +56,7 @@ EXEMPT: dict[str, str] = {
     "include/crucible/Expr.h": "the copy in crucible::detail that the runtime headers still fold through",
 }
 NAME = "combine_ids"
-ROOTS = ("include", "src", "test", "bench", "tools", "vessel", "fuzz")
+ROOTS = ("include", "src", "test", "bench", "tools", "vessel")
 EXCLUDED_COMPONENTS = frozenset({"third_party", "external", "vendor"})
 SALT = 0x9E3779B97F4A7C15
 MIX = "fmix64"

@@ -21,7 +21,7 @@
 //
 // The mutation mode has no coverage feedback.  It only makes the smoke run
 // reach past the seeds.  Coverage-guided runs use afl-fuzz, see
-// fuzz/README.md and fuzz/run-afl.sh.
+// test/fuzz/README.md and test/fuzz/run-afl.sh.
 
 #ifdef CRUCIBLE_FUZZ_STANDALONE_MAIN
 

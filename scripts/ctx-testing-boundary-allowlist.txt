@@ -12,7 +12,7 @@
 # exceeds the count and fails, and a count above the file's uses is stale
 # and fails, so the list drains as the self-tests leave the headers.
 #
-# test/, bench/ and fuzz/ are not scanned.  Taking the test path is what
+# test/ and bench/ are not scanned.  Taking the test path is what
 # they are for.
 
 include/foundation/effects/Effect.h x14  — declares the door, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.

@@ -52,7 +52,9 @@ FAMILY D: THE ORPHAN RULE OF THE NEW TREE
         initializer.  A forward declaration gives a file no ownership,
         because any file can declare a template again.
       * test/, where a fixture forges on purpose to prove that a gate
-        refuses the forgery.
+        refuses the forgery.  A file under test/fuzz/ is not admitted: a
+        fuzz harness drives production code with production types, and
+        it has no reason to forge.
       * the authoring set of an extension point in EXTENSION_POINTS, a
         template that other files specialize by design, each with its
         reason.  An extension point that no site needs is stale.
@@ -103,7 +105,8 @@ AUTHORING SETS ARE PER RELATION
     carries its own globs in RELATIONS below, and `*` spans `/`.  Widening a
     set is a one-line edit that a reviewer sees.  test/ may declare Family B
     and C edges, because the negative-compile fixtures and the sentinels are
-    the witnesses that the relations stay fail-closed.
+    the witnesses that the relations stay fail-closed.  No authoring set
+    admits a file under test/fuzz/.
 
 Usage
     check-trait-injection.py              scan the tree
@@ -134,6 +137,8 @@ import tsast  # noqa: E402
 
 NEW_TREE = ("include/foundation/", "include/fixy/")
 TEST_TREE = "test/"
+# The directory under test/ that takes no exemption of test/: the fuzz harnesses.
+FUZZ_TREE = "test/fuzz/"
 SUBSTRATE_PATHS = ("include/foundation/algebra/*", "include/fixy/*",
                    "test/fixy/test_cheat_probe.cpp",
                    "test/fixy/neg/neg_cheat_graded_modality_injection.cpp")
@@ -218,8 +223,13 @@ def listed_files(root: Path) -> list[str]:
 
 
 def authored(relation: Relation, path: str) -> bool:
-    """Report whether a path lies in the authoring set of a relation."""
-    return any(fnmatch.fnmatchcase(path, glob) for glob in relation.globs)
+    """Report whether a path lies in the authoring set of a relation.  A path under FUZZ_TREE never does."""
+    return not path.startswith(FUZZ_TREE) and any(fnmatch.fnmatchcase(path, glob) for glob in relation.globs)
+
+
+def in_test_tree(path: str) -> bool:
+    """Report whether a path takes the exemptions of test/: a path under TEST_TREE and outside FUZZ_TREE."""
+    return path.startswith(TEST_TREE) and not path.startswith(FUZZ_TREE)
 
 
 def template_name(node: tsast.Node) -> str | None:
@@ -355,7 +365,7 @@ class Orphans:
 
     def is_admitted(self, qualified: QualifiedName, rel: str) -> bool:
         """Report whether a file may specialize a new-tree template, and record the extension point it uses."""
-        if rel in self.owners(qualified) or rel.startswith(TEST_TREE):
+        if rel in self.owners(qualified) or in_test_tree(rel):
             return True
         point = self.extension_points.get(qualified)
         if point is not None and any(fnmatch.fnmatchcase(rel, glob) for glob in point[0]):
@@ -384,12 +394,12 @@ class Orphans:
                 if not self.is_admitted(qualified, rel)]
 
     def through_alias(self, name: tsast.SpecializedName, rel: str, line: int) -> list[Site]:
-        """Return a site for a member specialization whose class an alias names, outside test/.
+        """Return a site for a member specialization whose class an alias names, outside the exemptions of test/.
 
         The guard does not follow a type alias, so it cannot tell which class
         template the qualifier names, and the unknown case is refused.
         """
-        if rel.startswith(TEST_TREE):
+        if in_test_tree(rel):
             return []
         label = "::".join(name.target) + " (a class template specialization named through an alias)"
         return [Site(label, rel, line, tsast.excerpt(name.template))]
@@ -549,7 +559,8 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
             print(f"trait_guard[{site.label}]: authoring set is: {' '.join(relation.globs)}", file=sys.stderr)
         else:
             print(f"trait_guard[{site.label}]: a template of the new tree is specialized only in the file that "
-                  f"defines it, in test/, or at an extension point of EXTENSION_POINTS", file=sys.stderr)
+                  f"defines it, in test/ outside {FUZZ_TREE}, or at an extension point of EXTENSION_POINTS",
+                  file=sys.stderr)
     for line in unread + stale:
         print(line, file=sys.stderr)
     if forged or unread:
@@ -667,6 +678,12 @@ def self_test() -> int:
             "template <> inline constexpr bool is_exec_ctx_v<Fake> = true;\n"
             "}\n"
             "template <> void foundation::permissions::mint_permission_root<IoRegion>() {}\n"),
+        # A fuzz harness takes no exemption of test/.
+        "test/fuzz/planted_forge.cpp": (
+            "namespace fixy { template <> struct retag_policy<X, Y> {}; }\n"
+            "template <> inline constexpr bool foundation::effects::is_exec_ctx_v<Fake> = true;\n"
+            "using FakeGate = foundation::effects::is_subrow<Wide, Narrow>;\n"
+            "template <> const bool FakeGate::value = true;\n"),
     }
     expected = {
         ("substrate", "src/planted/trait.cpp", 2),
@@ -697,6 +714,9 @@ def self_test() -> int:
         ("FakeGate (a class template specialization named through an alias)", "src/planted/orphan_class.cpp", 8),
         ("foundation::effects::is_exec_ctx_v", "src/planted/orphan_macro.cpp", 1),
         ("foundation::effects::is_exec_ctx_v", "src/planted/orphan_macro.cpp", 2),
+        ("retag_policy", "test/fuzz/planted_forge.cpp", 1),
+        ("foundation::effects::is_exec_ctx_v", "test/fuzz/planted_forge.cpp", 2),
+        ("FakeGate (a class template specialization named through an alias)", "test/fuzz/planted_forge.cpp", 4),
     }
     # The new-tree templates of the orphan rule, each with a specialization
     # in the file that owns it, and the extension points of the planted tree.

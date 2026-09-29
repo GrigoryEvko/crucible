@@ -69,7 +69,7 @@ import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 ROSTER = "scripts/host-owner-roster.txt"
-SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "examples")
+SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "examples")
 CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
 CLASS_KEYS = frozenset({"class", "struct", "union"})
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")

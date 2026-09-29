@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402  (the path insert above has to come first)
 
 # The roots an AST gate scans.  A directory absent from a checkout is skipped.
-ROOTS = ("include", "src", "test", "bench", "vessel", "tools", "examples", "fuzz")
+ROOTS = ("include", "src", "test", "bench", "vessel", "tools", "examples")
 
 
 def verdict(

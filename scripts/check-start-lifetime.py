@@ -150,7 +150,7 @@ SOURCE_SUFFIXES = frozenset({".c", ".C", ".h", ".H", ".cc", ".hh", ".cpp", ".hpp
                              ".icc", ".inc", ".ii"})
 # The directories that an include path is resolved against, after the
 # directory of the file that names it.
-INCLUDE_ROOTS = ("include", "", "src", "test", "vessel", "bench", "tools", "fuzz", "examples")
+INCLUDE_ROOTS = ("include", "", "src", "test", "vessel", "bench", "tools", "examples")
 # The one file whose use of the library start is checked at compile time.
 CHECKED_START = "include/foundation/Lifetime.h"
 # A negative-compile fixture: a file under a test directory named neg or *_neg.

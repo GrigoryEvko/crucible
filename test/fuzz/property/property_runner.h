@@ -8,7 +8,7 @@
 // randomness per iteration; a failing iteration prints its index and
 // the seed, which reproduce the failing input exactly.
 //
-// Usage in a property test (`fuzz/property/prop_*.cpp`):
+// Usage in a property test (`test/fuzz/property/prop_*.cpp`):
 //
 //   #include "property_runner.h"
 //   #include "random_input.h"

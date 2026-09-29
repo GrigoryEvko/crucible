@@ -7,8 +7,7 @@ names the detail function directly skips the gate.  So a use of
 ::foundation::...::detail or ::fixy::...::detail outside the two layers is
 refused.  The layers are include/foundation, include/fixy and their sources,
 src/foundation and src/fixy.  Every other C++ file under the scan roots is
-in scope: include/crucible, src, vessel, bench, tools, examples, fuzz and
-test.
+in scope: include/crucible, src, vessel, bench, tools, examples and test.
 
 WHAT COUNTS AS A USE
     The guard reads each file from the parse of scripts/tsast.py, and it
@@ -59,8 +58,10 @@ THE ALLOWLIST
     files.  A row is `PATH NAMESPACE xN — REASON`, where NAMESPACE is the
     detail namespace, for example ::foundation::effects::detail, and N is
     the number of uses.  The key is the content, not a line.  Only a file
-    under test/ may take a row.  More uses than a row admits fail, and a
-    row that admits more uses than the file has is stale, so the list only
+    under test/ may take a row, and a file under test/fuzz/ may not: a fuzz
+    harness drives a production boundary, so it calls the public door as
+    production code does.  More uses than a row admits fail, and a row
+    that admits more uses than the file has is stale, so the list only
     shrinks.
 
 The guard parses every C++ file of the scan roots and of the layers once,
@@ -91,7 +92,9 @@ import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 ALLOWLIST = "scripts/detail-namespace-allowlist.txt"
-SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "examples")
+SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "examples")
+# The directory under test/ whose files take no row: the fuzz harnesses.
+FUZZ_TREE = "test/fuzz/"
 LAYER_ROOTS = ("include/foundation/", "include/fixy/", "src/foundation/", "src/fixy/")
 LAYERS = frozenset({"foundation", "fixy"})
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
@@ -472,7 +475,8 @@ def read_allowlist(root: Path) -> dict[tuple[str, str], tuple[int, int]]:
     """Return (admitted count, line) for each (path, namespace) row.
 
     Raises:
-        Refused: If the allowlist is missing, a row is malformed, or a row names a file outside test/
+        Refused: If the allowlist is missing, a row is malformed, or a row names a file outside test/ or
+            under test/fuzz/
     """
     listing = root / ALLOWLIST
     if not listing.is_file():
@@ -485,8 +489,9 @@ def read_allowlist(root: Path) -> dict[tuple[str, str], tuple[int, int]]:
         match = ROW.match(key.strip())
         if not separator or not reason.strip() or match is None:
             raise Refused(f"{ALLOWLIST}:{number} is not PATH NAMESPACE xN — REASON.")
-        if not match.group("path").startswith("test/"):
-            raise Refused(f"{ALLOWLIST}:{number} names {match.group('path')}, and only a test file may take a row.")
+        if not match.group("path").startswith("test/") or match.group("path").startswith(FUZZ_TREE):
+            raise Refused(f"{ALLOWLIST}:{number} names {match.group('path')}, and only a test file outside "
+                          f"{FUZZ_TREE} may take a row.")
         rows[(match.group("path"), match.group("namespace"))] = (int(match.group("count") or 1), number)
     return rows
 
@@ -627,6 +632,7 @@ def self_test() -> int:
             "src/ParenArgument.cpp": "auto k = ::foundation::effects::detail::Key<(1 > 0)>{};\n",
             "include/crucible/Base.h": "struct Derived : fixy::session::detail::Core {};\n",
             "vessel/Decltype.cpp": "decltype(::foundation::effects::detail::Key{}) key;\n",
+            "test/fuzz/boundary/Reach.cpp": "auto key = ::foundation::effects::detail::Key{};\n",
         }
         for rel, text in forgeries.items():
             write(root, rel, text)
@@ -680,7 +686,10 @@ def self_test() -> int:
         write(root, "test/fixy/test_probe.cpp",
               "auto first = ::foundation::effects::detail::Key{};\nauto second = foundation::effects::detail::Key{};\n")
         write(root, ALLOWLIST, "# planted\nsrc/Clean.cpp ::foundation::effects::detail x1 — not a test\n")
-        expect(root, 2, "only a test file may take a row", "a row outside test/", True)
+        expect(root, 2, "only a test file outside test/fuzz/ may take a row", "a row outside test/", True)
+        write(root, ALLOWLIST, "# planted\ntest/fuzz/boundary/Reach.cpp ::foundation::effects::detail x1 — a fuzz "
+                               "harness\n")
+        expect(root, 2, "only a test file outside test/fuzz/ may take a row", "a row for a fuzz harness", True)
         write(root, ALLOWLIST, "test/fixy/test_probe.cpp ::foundation::effects::detail x2\n")
         expect(root, 2, "is not PATH NAMESPACE xN — REASON", "a row with no reason", True)
         write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n")

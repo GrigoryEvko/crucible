@@ -1,6 +1,6 @@
 # Crucible fuzz infrastructure
 
-The `fuzz/` tree has two types of stress test.
+The `test/fuzz/` tree has two types of stress test.
 
 ## `property/` — property tests
 
@@ -16,8 +16,8 @@ ctest --preset default -L fuzz_property
 To run more iterations, or to run a failure again with its seed:
 
 ```sh
-./build/fuzz/prop_recipe_pool_intern --iters=100000 --seed=0xDEADBEEF
-./build/fuzz/prop_hash_determinism --seed=0xC0FFEE --iters=1
+./build/test/fuzz/prop_recipe_pool_intern --iters=100000 --seed=0xDEADBEEF
+./build/test/fuzz/prop_hash_determinism --seed=0xC0FFEE --iters=1
 ```
 
 ## `boundary/` — boundary harnesses
@@ -51,9 +51,9 @@ binary link it:
 
 ```sh
 ctest --preset default -L fuzz_smoke
-./build/fuzz/fuzz_region --mutate=100000 --crash-file=/tmp/region.crash
-./build/fuzz/fuzz_region /tmp/region.crash
-./build/fuzz/fuzz_region --write-seeds=/tmp/region-seeds
+./build/test/fuzz/fuzz_region --mutate=100000 --crash-file=/tmp/region.crash
+./build/test/fuzz/fuzz_region /tmp/region.crash
+./build/test/fuzz/fuzz_region --write-seeds=/tmp/region-seeds
 ```
 
 `--crash-file` writes the input in flight when a claim, a contract or a
@@ -61,7 +61,7 @@ sanitizer stops the process.
 
 To add a boundary, write `boundary/harnesses/<name>.h` and add one
 `crucible_boundary_fuzzer(<name> <mutations>)` line to
-`fuzz/CMakeLists.txt`.  A harness names no type of the old substrate.
+`test/fuzz/CMakeLists.txt`.  A harness names no type of the old substrate.
 
 ## Coverage-guided campaigns: AFL++ with its GCC plugin
 
@@ -99,13 +99,13 @@ to an empty string or to zero, and with `AFL_PATH` set to
 directory, and link `afl-gcc-fast` and `afl-g++-fast` to `afl-cc`.  The
 cmplog pass gives the comparison feedback.
 
-Then `fuzz/run-afl.sh` builds the instrumented binaries in a directory you
+Then `test/fuzz/run-afl.sh` builds the instrumented binaries in a directory you
 name, writes the seeds, and starts one `afl-fuzz` instance for each core
 that you give it, with a time limit:
 
 ```sh
-fuzz/run-afl.sh BUILD_DIR OUT_DIR HARNESS CORES SECONDS
-fuzz/run-afl.sh /tmp/afl-build /tmp/afl-out region 0-15 3600
+test/fuzz/run-afl.sh BUILD_DIR OUT_DIR HARNESS CORES SECONDS
+test/fuzz/run-afl.sh /tmp/afl-build /tmp/afl-out region 0-15 3600
 ```
 
 The script keeps the campaign off the cores that the host reserves.  After

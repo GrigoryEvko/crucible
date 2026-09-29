@@ -15,7 +15,7 @@
 # has.  A new use in a listed scope is more than the count, and it fails.
 # A count above the uses of its scope is stale, and it fails too.
 #
-# test/, bench/ and fuzz/ are not scanned.  The test door serves them.
+# test/ and bench/ are not scanned.  The test door serves them.
 
 include/crucible/BackgroundThread.h BackgroundThread::BuildTraceFn — the pipeline runs the build stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate trace graphs and to wait on the arena gate.
 include/crucible/BackgroundThread.h BackgroundThread::MakeRegionFn — the pipeline runs the publish stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate regions, to wait on the arena gate and to hand to the region callback.

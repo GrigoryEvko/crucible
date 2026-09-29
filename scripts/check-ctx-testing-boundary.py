@@ -26,7 +26,7 @@ WHAT COUNTS AS A USE
 
 SCOPE
     The C++ files under include/foundation, include/fixy, include/crucible,
-    src, vessel, tools and examples.  test/, bench/ and fuzz/ are not read,
+    src, vessel, tools and examples.  test/ and bench/ are not read,
     because taking the test path is what they are for.  A file in scope that
     the parser cannot read fails the guard, because its uses are unknown.
 

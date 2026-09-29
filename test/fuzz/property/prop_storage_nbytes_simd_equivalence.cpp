@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_storage_nbytes_simd_equivalence — randomized SIMD-2 oracle
+// prop_storage_nbytes_simd_equivalence — randomized oracle for the SIMD path
 //
 // Property:
 //   For every TensorMeta drawn at random, the SIMD path

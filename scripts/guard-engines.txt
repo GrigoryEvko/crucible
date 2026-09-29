@@ -69,6 +69,7 @@ scripts/refresh-derived.sh | git |
 scripts/session-oracle.sh | git,text | the switch list that opam prints
 scripts/throwaway_repo.py | git |
 scripts/tsast.py | kit |
+test/fuzz/run-afl.sh | none |
 test/guard_attacks/test_use_after_move_attacks.py | tsast |
 test/neg_compile_driver.py | compiler,json,text | the compile database and the diagnostics of the compiler
 tools/mutation/gates.py | tsast |

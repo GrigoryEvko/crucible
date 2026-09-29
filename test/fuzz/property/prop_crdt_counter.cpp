@@ -69,7 +69,7 @@ inline constexpr std::size_t kReplicas = 4;
 
 // 128-bit accumulators for the independent saturation oracles.  GCC's
 // __int128 is a GNU extension; `__extension__` silences -Wpedantic the
-// same way fuzz/property/prop_checked_arith.cpp does.
+// same way test/fuzz/property/prop_checked_arith.cpp does.
 __extension__ using w_s = __int128;
 __extension__ using w_u = unsigned __int128;
 

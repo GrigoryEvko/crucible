@@ -1,6 +1,6 @@
 // Every boundary harness, driven by Philox-generated inputs.
 //
-// The coverage-guided runs in fuzz/boundary need afl-fuzz.  This test calls
+// The coverage-guided runs in test/fuzz/boundary need afl-fuzz.  This test calls
 // the same harness functions from ctest, so each harness also runs on every
 // build.  Each iteration picks a harness and one of its seeds, then edits
 // the seed.  An edited seed passes the magic numbers and the length checks,

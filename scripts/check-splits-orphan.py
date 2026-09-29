@@ -58,6 +58,9 @@ WHERE A SPECIALIZATION IS ADMITTED
     In an authoring location of the AUTHORING table, each with its reason.
     A generator over every parent still needs it.  A location that no
     specialization needs is stale, and the check fails until it is removed.
+    The location test/ does not admit a file under test/fuzz/: a fuzz
+    harness drives production code with production tags, so a split
+    there is a forgery, as in production code.
 
 WHAT THE GUARD CANNOT SEE
     A trait name that a macro builds with `##` is not in the text, so
@@ -99,7 +102,9 @@ AUTHORING: dict[str, str] = {
     "test/": "the tests specialize for local tags on purpose, and a negative fixture forges a split to prove "
              "that the mint refuses it",
 }
-ROOTS = ("include", "src", "vessel", "bench", "tools", "fuzz", "examples", "test")
+# The directory that no authoring location admits: the fuzz harnesses.
+FUZZ_TREE = "test/fuzz/"
+ROOTS = ("include", "src", "vessel", "bench", "tools", "examples", "test")
 
 
 def authored_at(rel: str) -> str | None:
@@ -109,8 +114,11 @@ def authored_at(rel: str) -> str | None:
         rel: The path relative to the scan root
 
     Returns:
-        The key of AUTHORING that admits the file, or None
+        The key of AUTHORING that admits the file, or None for a file that no
+        location holds and for each file under FUZZ_TREE
     """
+    if rel.startswith(FUZZ_TREE):
+        return None
     for entry in AUTHORING:
         if rel == entry or (entry.endswith("/") and rel.startswith(entry)):
             return entry
@@ -615,6 +623,7 @@ def self_test() -> int:
             ("include/fixy/OwnedRegion.h", "template <class P, class... S> struct can_split_into_pack<P, S...> {};\n"),
             ("include/fixy/Other.h", "template <class P, class... S> struct can_split_into_pack<P, S...> {};\n"),
             ("test/fixy/Local.cpp", "template <> struct can_split_into<P, L, R> {};\n"),
+            ("test/fuzz/boundary/Forge.h", "template <> struct can_split_into<P, L, R> {};\n"),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
@@ -652,6 +661,7 @@ def self_test() -> int:
         expect("a listed file is an authoring location", "include/fixy/OwnedRegion.h" not in exempt, True)
         expect("a file beside a listed file is not", "include/fixy/Other.h" in exempt)
         expect("test/ is an authoring location", "test/fixy/Local.cpp" not in exempt, True)
+        expect("test/fuzz/ is not an authoring location", "test/fuzz/boundary/Forge.h" in exempt)
         expect("a location that admits a site is not stale", bool(result.needed["include/fixy/OwnedRegion.h"]), True)
         expect("the planted tree parses", not broken)
 

@@ -46,7 +46,7 @@ THE RULES
        comparison with `==` reads a whole leaf and is admitted.
     4. A shell script never runs grep, egrep, fgrep, rg, ugrep, awk, gawk, mawk,
        sed or perl over C++: no argument names a C++ source root (include, src,
-       test, vessel, bench, fuzz, tools, examples), a C++ suffix or a C++ file
+       test, vessel, bench, tools, examples), a C++ suffix or a C++ file
        type, and no xargs or find hands such a tool a C++ root.
     5. A row agrees with its script: a Python `tsast` row imports tsast or
        mintmodel, a `preprocessor` row imports preprocessed, a `python-ast` row
@@ -100,7 +100,7 @@ TEXT_ATTRIBUTES = frozenset({"text", "source", "joined"})
 # comment or a string, the spelling of one token, and a row shown in a report.
 ADMITTED_READS = frozenset({"prose_text", "lexeme", "excerpt"})
 TEXT_TOOLS = r"^(.*/)?(grep|egrep|fgrep|rg|ugrep|awk|gawk|mawk|sed|perl)$"
-SOURCE_ROOTS = ("include", "src", "test", "vessel", "bench", "fuzz", "tools", "examples")
+SOURCE_ROOTS = ("include", "src", "test", "vessel", "bench", "tools", "examples")
 # An argument that names C++ source: a root directory as the whole word or a
 # path segment, a C++ suffix or glob, or a ripgrep or grep file type.
 SOURCE_ARGUMENT = re.compile(

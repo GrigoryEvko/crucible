@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run one coverage-guided AFL++ campaign on one boundary harness.
 #
-#   fuzz/run-afl.sh BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS
+#   test/fuzz/run-afl.sh BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS
 #
 # BUILD_DIR  The instrumented build.  When BUILD_DIR has no CMakeCache.txt,
 #            the script configures it with afl-g++-fast.  It also keeps a
@@ -11,7 +11,7 @@
 #            and the harness scratch files go to OUT_DIR/tmp.  A harness that
 #            afl-fuzz kills leaves its scratch directory there, so the script
 #            removes OUT_DIR/tmp when it exits, however it exits.
-# HARNESS    A name from fuzz/boundary/harnesses, such as region.
+# HARNESS    A name from test/fuzz/boundary/harnesses, such as region.
 # CPU_LIST   The cores, such as 100-131 or 100-115,200-215.  One instance
 #            runs on each core.  The first is the main instance.  A list
 #            that names a reserved core is refused.
@@ -37,13 +37,13 @@ out_dir=$2
 harness=$3
 cpu_list=$4
 seconds=$5
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 afl_bin=${AFL_BIN:-$HOME/.local/bin}
 jobs=${CRUCIBLE_FUZZ_JOBS:-6}
 reserved=${CRUCIBLE_FUZZ_RESERVED_CPUS:-88-95}
 
-[[ -f $root/fuzz/boundary/harnesses/$harness.h ]] || {
-    printf 'run-afl: no harness named %s in fuzz/boundary/harnesses\n' "$harness" >&2
+[[ -f $root/test/fuzz/boundary/harnesses/$harness.h ]] || {
+    printf 'run-afl: no harness named %s in test/fuzz/boundary/harnesses\n' "$harness" >&2
     exit 2
 }
 [[ $seconds =~ ^[0-9]+$ ]] || { printf 'run-afl: SECONDS must be a whole number\n' >&2; exit 2; }
@@ -97,8 +97,8 @@ configure_and_build() {
 }
 configure_and_build "$build_dir"
 AFL_GCC_CMPLOG=1 configure_and_build "$build_dir-cmplog"
-binary=$build_dir/fuzz/fuzz_$harness
-cmplog_binary=$build_dir-cmplog/fuzz/fuzz_$harness
+binary=$build_dir/test/fuzz/fuzz_$harness
+cmplog_binary=$build_dir-cmplog/test/fuzz/fuzz_$harness
 
 mkdir -p "$out_dir/tmp"
 trap 'rm -rf -- "$out_dir/tmp"' EXIT

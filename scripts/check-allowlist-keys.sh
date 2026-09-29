@@ -52,7 +52,7 @@ REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 # does not start with one of these is not a path and is skipped, which is
 # what lets one scanner read every allowlist whatever else its key
 # carries.
-readonly PATH_ROOTS='include|src|test|bench|tools|vessel|examples|fuzz|scripts|cmake|lean'
+readonly PATH_ROOTS='include|src|test|bench|tools|vessel|examples|scripts|cmake|lean'
 
 # Where the allowlists live.  Overridden by the self-test so the planted
 # files never sit beside the real ones.

@@ -3,7 +3,7 @@
 // CMake compiles this file once per harness with CRUCIBLE_FUZZ_HARNESS_NAME
 // set, and links it with the object of that harness, built from
 // harness_entry.cpp.  A new boundary is a new header under harnesses/ and one
-// line in fuzz/CMakeLists.txt.
+// line in test/fuzz/CMakeLists.txt.
 
 #include "entry.h"
 

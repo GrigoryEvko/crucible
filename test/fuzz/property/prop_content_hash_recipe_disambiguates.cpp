@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_content_hash_recipe_disambiguates — Layer 3c integration test
-// at scale.
+// prop_content_hash_recipe_disambiguates — integration test at scale
+// of the recipe fold in compute_content_hash.
 //
 // Property: for any random ops sequence and two semantically distinct
 // recipes A, B:
@@ -8,8 +8,8 @@
 //   compute_content_hash(ops, &A) != compute_content_hash(ops, &B)
 //   compute_content_hash(ops, nullptr) != compute_content_hash(ops, &A)
 //
-// This is THE load-bearing safety property the REFL-3c wire-in
-// established: KernelCache lookups must NOT collide across recipes.
+// This is THE load-bearing safety property of the recipe fold:
+// KernelCache lookups must NOT collide across recipes.
 // A regression here silently breaks replay determinism.
 //
 // Catches:

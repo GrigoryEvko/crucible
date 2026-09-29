@@ -63,8 +63,8 @@ int main(int argc, char** argv) {
                 auto* fake = reinterpret_cast<CompiledKernel*>(b.tags[i]);
                 // RowHash{} is the bare-type / no-row baseline (raw 0):
                 // this fuzzer keys purely on content_hash, so it pins a
-                // single row slot for every insert (FOUND-I05 row-keyed
-                // KernelCache).  insert() returns
+                // single row slot of the row-keyed KernelCache for every
+                // insert.  insert() returns
                 // std::expected<void, InsertError>; table-full is the
                 // only non-value outcome.
                 auto ins = cache.insert(b.hashes[i], RowHash{}, fake);

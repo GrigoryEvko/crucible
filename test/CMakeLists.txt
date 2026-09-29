@@ -5438,3 +5438,16 @@ add_subdirectory(fixy)
 add_subdirectory(session_oracle)
 add_subdirectory(ct)
 add_subdirectory(layer)
+
+# The fuzz harnesses (opt-in).  test/fuzz/README.md tells how to run them.
+#   ctest -L fuzz_property  the property tests on Philox-derived input
+#   ctest -L fuzz_boundary  the boundary harnesses, on their seeds and mutated copies
+# AFL++ with its GCC plugin drives the same boundary harnesses for a
+# coverage-guided campaign (test/fuzz/run-afl.sh).
+option(CRUCIBLE_FUZZ "Build property + boundary fuzz harnesses" OFF)
+if(CRUCIBLE_FUZZ AND CRUCIBLE_TSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  message(FATAL_ERROR "The fuzz harnesses build under ASan, and CRUCIBLE_TSAN puts ThreadSanitizer on every target.  Set CRUCIBLE_FUZZ to OFF in a ThreadSanitizer build.")
+endif()
+if(CRUCIBLE_FUZZ)
+  add_subdirectory(fuzz)
+endif()
