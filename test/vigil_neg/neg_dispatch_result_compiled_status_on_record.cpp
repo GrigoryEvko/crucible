@@ -1,60 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Negative-compile fixture (HS14 mandate) for the consteval-bypass
-// migration of DispatchResult::compiled_status().
+// Negative-compile fixture (HS14 mandate) for the precondition of
+// DispatchResult::compiled_status().
 //
 // BACKGROUND
 // ──────────
-// CrucibleContext.h's DispatchResult::compiled_status() guards its
-// COMPILED-arm payload accessor with a precondition on the `this->action`
-// discriminant:
-//
-//     pre (action == Action::COMPILED)   // OLD — vanilla P2900
+// DispatchResult in CrucibleContext.h is a discriminated pair: `action` is
+// the discriminant, and `status` and `op_index` are the payload of the
+// COMPILED arm.  compiled_status() reads that payload, so its body starts
+// with CRUCIBLE_PRE(action == Action::COMPILED).
 //
 // On the un-patched distro GCC 16.1.1, a P2900 `pre()` clause whose
-// predicate touches a class member through `this->` is silently bypassed
-// at consteval for foldable-bodied functions (the documented consteval-
-// bypass family).  compiled_status() is exactly such a function:
-// foldable body (`return status;`), member-predicate `pre()`.  On the
-// un-patched toolchain the guard becomes a consteval no-op, so a constexpr
-// caller reaching for the COMPILED payload on a RECORD result compiles
-// CLEAN — silently reading a meaningless `status` field.
-//
-// The in-body CRUCIBLE_PRE macro replaces the clause.  The macro
-// lives in the function BODY (not the parser-special pre-clause position)
-// and therefore fires across BOTH the patched and un-patched builds.
+// predicate reads a class member through `this->` is silently skipped at
+// consteval for a function with a foldable body (the documented
+// consteval-bypass family).  compiled_status() has such a body
+// (`return status;`).  CRUCIBLE_PRE lives in the function BODY, not in the
+// clause position, so it fires on the patched and the un-patched builds.
 //
 // WHAT THIS FIXTURE PROVES
 // ────────────────────────
-// Constructing a default DispatchResult (action == RECORD) and calling
-// compiled_status() in a constant-expression context must FAIL to
-// compile.  The migrated CRUCIBLE_PRE evaluates `action == COMPILED`,
-// finds it false, and executes `__builtin_trap()` inside `if consteval`
-// — a non-constexpr call that poisons the surrounding constexpr
-// evaluation into "non-constant condition".  With the OLD vanilla
-// pre() this fixture would have compiled clean on the un-patched build
-// (silent bypass), letting an out-of-arm payload read slip through.
+// The accessor is constexpr, so the constant evaluation below enters its
+// body.  A default DispatchResult has action == RECORD, the check finds
+// `action == COMPILED` false, and CRUCIBLE_PRE executes __builtin_trap()
+// inside `if consteval`.  That call is not a constant expression, so the
+// initializer of `witness` is not one either, and the build fails.  Without
+// the check, the evaluation returns the meaningless status of the RECORD arm
+// and the file compiles.
 //
-// Distinct from the companion fixture (compiled_op_index_on_record):
-// this fixture pins the migrated CRUCIBLE_PRE on compiled_status(); the
-// companion pins the second migrated accessor compiled_op_index().  Same
-// predicate shape (`action == COMPILED`), two distinct migrated function
-// bodies — defense-in-depth per the §XXI mint-pattern HS14 discipline.
+// Distinct from the companion fixture (compiled_op_index_on_record): this
+// fixture pins the check in compiled_status(), and the companion pins the
+// check in compiled_op_index().  The two checks have the same predicate in
+// two function bodies, so each needs its own witness.
 //
-// Expected diagnostic family (matched by CMakeLists regex):
-//   "non-constant condition" / "not a constant expression" /
-//   "__builtin_trap" / "call to non-constexpr function".
+// Expected diagnostic (the CMakeLists regexes): the constant evaluation of
+// result.compiled_status() reaches the CRUCIBLE_PRE of CrucibleContext.h.
+// test/test_vigil_dispatch.cpp makes the same call on a COMPILED result in
+// the same constant context, and that call compiles.
 
 #include <crucible/CrucibleContext.h>
 
 namespace {
 
-// Default-constructed DispatchResult has action == RECORD, so
-// compiled_status()'s migrated precondition (action == COMPILED) is
-// violated.  CRUCIBLE_PRE's __builtin_trap fires at consteval.
-constexpr crucible::ReplayStatus witness = [] {
+// Default-constructed DispatchResult has action == RECORD, so the
+// precondition of compiled_status() (action == COMPILED) is violated.
+// CRUCIBLE_PRE's __builtin_trap fires at consteval.
+[[maybe_unused]] constexpr crucible::ReplayStatus witness = [] {
     crucible::DispatchResult result{};  // action == RECORD
-    return result.compiled_status();  // pre(action == COMPILED) VIOLATED
+    return result.compiled_status();  // CRUCIBLE_PRE(action == COMPILED) VIOLATED
 }();
 
 }  // namespace

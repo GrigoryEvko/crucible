@@ -331,6 +331,23 @@ static_assert(!can_dispatch_pure_with<::fixy::BgDrainCtx>);
 static_assert(!can_dispatch_pure_with<::fixy::InitLoadCtx>);
 static_assert(!can_dispatch_pure_with<::fixy::TestRunnerCtx>);
 
+// The accessors of the COMPILED arm are constexpr.  A valid read runs in the
+// constant context in which neg_dispatch_result_compiled_status_on_record and
+// neg_dispatch_result_compiled_op_index_on_record fail, so each of those
+// fixtures fails on its precondition and not on the context.
+constexpr ReplayStatus compiled_status_witness = [] {
+    DispatchResult result = DispatchResult::compiled(ReplayStatus::COMPLETE, OpIndex{7});
+    return result.compiled_status();
+}();
+static_assert(compiled_status_witness == ReplayStatus::COMPLETE);
+
+constexpr OpIndex compiled_op_index_witness = [] {
+    DispatchResult result = DispatchResult::compiled(ReplayStatus::MATCH, OpIndex{7});
+    return result.compiled_op_index();
+}();
+static_assert(compiled_op_index_witness == OpIndex{7});
+static_assert(DispatchResult::record().is_record() && !DispatchResult::record().is_compiled());
+
 static void test_dispatch_pure_matches_dispatch_op() {
     // A fresh context for each call, and one context for several calls.
     {

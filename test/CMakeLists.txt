@@ -5207,16 +5207,16 @@ crucible_neg_compile_test(neg_memory_plan_live_intervals_max_overflow
     "static assertion failed: MaxLive=2 must accommodate live count")
 
 # DispatchResult::compiled_status and compiled_op_index check
-# `action == COMPILED` with CRUCIBLE_PRE.  The two accessors are not
-# constexpr.  A constant evaluation stops at the call, before the check
-# runs, and the second regex of each fixture names that stop.  The two
-# fixtures do not witness the check.
+# `action == COMPILED` with CRUCIBLE_PRE.  The two accessors are constexpr,
+# so the constant evaluation of each fixture enters the accessor and stops
+# at that check.  The first regex names the accessor that the evaluation
+# entered, and the second names the CRUCIBLE_PRE of CrucibleContext.h.
 crucible_neg_compile_test(neg_dispatch_result_compiled_status_on_record
-    "called in a constant expression"
-    "call to non-.constexpr. function .crucible::ReplayStatus crucible::DispatchResult::compiled_status\\(\\) const.")
+    "in .constexpr. expansion of .result.crucible::DispatchResult::compiled_status\\(\\)."
+    "crucible/CrucibleContext.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 crucible_neg_compile_test(neg_dispatch_result_compiled_op_index_on_record
-    "called in a constant expression"
-    "call to non-.constexpr. function .crucible::OpIndex crucible::DispatchResult::compiled_op_index\\(\\) const.")
+    "in .constexpr. expansion of .result.crucible::DispatchResult::compiled_op_index\\(\\)."
+    "crucible/CrucibleContext.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # Cipher::open takes the root as fixy::Path<fixy::tags::source::External>,
 # so every operator-supplied path is tagged at the boundary, and open runs

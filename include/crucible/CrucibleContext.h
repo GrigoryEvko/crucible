@@ -47,23 +47,25 @@ struct DispatchResult {
     uint8_t pad[2]{};
     OpIndex op_index;
 
-    [[nodiscard, gnu::pure]] bool is_record() const noexcept { return action == Action::RECORD; }
-    [[nodiscard, gnu::pure]] bool is_compiled() const noexcept { return action == Action::COMPILED; }
+    [[nodiscard, gnu::pure]] constexpr bool is_record() const noexcept { return action == Action::RECORD; }
+    [[nodiscard, gnu::pure]] constexpr bool is_compiled() const noexcept { return action == Action::COMPILED; }
 
     // A contract predicate that reads a member through `this` is skipped when
     // the compiler folds the body at compile time, so every such check in this
-    // file runs from the body rather than a clause.
-    [[nodiscard, gnu::pure]] ReplayStatus compiled_status() const noexcept {
+    // file runs from the body rather than a clause.  The two accessors are
+    // constexpr, so a constant evaluation reaches the check, and a read from
+    // the recording arm fails there.
+    [[nodiscard, gnu::pure]] constexpr ReplayStatus compiled_status() const noexcept {
         CRUCIBLE_PRE(action == Action::COMPILED);
         return status;
     }
-    [[nodiscard, gnu::pure]] OpIndex compiled_op_index() const noexcept {
+    [[nodiscard, gnu::pure]] constexpr OpIndex compiled_op_index() const noexcept {
         CRUCIBLE_PRE(action == Action::COMPILED);
         return op_index;
     }
 
-    [[nodiscard]] static DispatchResult record() noexcept { return DispatchResult{}; }
-    [[nodiscard]] static DispatchResult compiled(ReplayStatus s, OpIndex idx) noexcept {
+    [[nodiscard]] static constexpr DispatchResult record() noexcept { return DispatchResult{}; }
+    [[nodiscard]] static constexpr DispatchResult compiled(ReplayStatus s, OpIndex idx) noexcept {
         return DispatchResult{.action = Action::COMPILED, .status = s, .pad = {}, .op_index = idx};
     }
 };
