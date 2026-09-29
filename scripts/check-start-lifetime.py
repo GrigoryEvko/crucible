@@ -4,13 +4,11 @@
 The rule
 --------
 A use of std::start_lifetime_as or std::start_lifetime_as_array is
-admitted in three places only:
+admitted in two places only:
 
   the checked start    include/foundation/Lifetime.h, whose
                        start_as_array refuses at compile time a type with
                        a subobject that is not an implicit-lifetime type
-  a frozen file        a path that scripts/frozen-paths.txt freezes,
-                       so no new use can appear there
   a negative fixture   a file under a test directory named neg or *_neg,
                        which must fail to compile
 
@@ -51,7 +49,7 @@ the name and the template argument list of its node, spelled by
 tsast.spelled: one space between two word tokens and none elsewhere, with
 comments dropped.  For example
 
-  include/crucible/concurrent/_AtomicSnapshot.h:start_lifetime_as<T> x2
+  test/foundation/neg/neg_bg_context_forged_by_start_lifetime_as.cpp:start_lifetime_as<fe::Bg>
 
 The key survives a line shift, a rename of the variable that holds the
 result, and a change of the qualification.  The parse tree bounds the
@@ -104,16 +102,12 @@ What this guard does not see, stated rather than implied
     name std::start_lifetime_as, and scripts/check-proof-routes.py reads
     them.  The forgeability ledger in test/fixy/test_forgeable_proofs.cpp
     pins them.
-  - A frozen site whose template argument a later change can make a proof
-    type.  The only such site is SwissTableBuffer<SlotPtr> in
-    include/crucible/safety, whose SlotPtr no constraint holds.  Its
-    allowlist entry names it, and the frozen tree admits no new site.
 
 Exit codes
   0  each use is admitted, and each entry admits exactly its uses
-  1  a use outside the three places, a use with no entry, or a key with
+  1  a use outside the two places, a use with no entry, or a key with
      more uses than its entry admits
-  2  an entry above its count or outside the three places, a preprocessor
+  2  an entry above its count or outside the two places, a preprocessor
      failure, a bad invocation, or a failed self-test
   3  the pinned tree-sitter kit is not installed
 
@@ -206,23 +200,9 @@ def entry_source(command: dict) -> Path:
     return source if source.is_absolute() else Path(command["directory"]) / source
 
 
-def frozen_prefixes(root: Path) -> list[str]:
-    """The frozen prefixes that scripts/frozen-paths.txt lists.
-
-    An unreadable list freezes nothing, so the rule fails closed.
-    """
-    listing = root / "scripts" / "frozen-paths.txt"
-    if not listing.is_file():
-        return []
-    return [line.split("#", 1)[0].strip() for line in listing.read_text().splitlines()
-            if line.split("#", 1)[0].strip()]
-
-
-def is_admitted_path(path: str, frozen: Sequence[str]) -> bool:
-    """True when the path is the checked start, a frozen file or a negative fixture."""
-    if path == CHECKED_START or FIXTURE.match(path):
-        return True
-    return any(path.startswith(prefix) if prefix.endswith("/") else path == prefix for prefix in frozen)
+def is_admitted_path(path: str) -> bool:
+    """True when the path is the checked start or a negative fixture."""
+    return path == CHECKED_START or FIXTURE.match(path) is not None
 
 
 def resolve_include(root: Path, including: Path, delimiter: str, name: str) -> Path | None:
@@ -452,10 +432,9 @@ def read_allowlist(allowlist: Path) -> dict[str, tuple[int, int]]:
 
 
 def check(root: Path, compile_db: Path | None, mode: str) -> int:
-    """Compare each use in the tree with the three places and the allowlist, and report to stderr."""
+    """Compare each use in the tree with the two places and the allowlist, and report to stderr."""
     root = root.resolve()
     allowlist = root / "scripts" / "start-lifetime-allowlist.txt"
-    frozen = frozen_prefixes(root)
     entries = read_allowlist(allowlist)
     lexical = lexical_scan(root, compile_db)
     preprocessed: Expanded = defaultdict(set)
@@ -472,11 +451,11 @@ def check(root: Path, compile_db: Path | None, mode: str) -> int:
         count = max(len(lexical.get(key, [])), len(preprocessed.get(key, set())))
         total += count
         admitted = entries.get(key, (0, 0))[0]
-        if not is_admitted_path(path, frozen):
+        if not is_admitted_path(path):
             for line in lines:
                 unreviewed += 1
-                print(f"START-LIFETIME violation: {path}:{line} starts a lifetime outside the checked start, a "
-                      f"frozen file and a negative fixture.  Use foundation::lifetime::start_as_array.  key: {key}",
+                print(f"START-LIFETIME violation: {path}:{line} starts a lifetime outside the checked start and "
+                      f"a negative fixture.  Use foundation::lifetime::start_as_array.  key: {key}",
                       file=sys.stderr)
         elif admitted == 0:
             for line in lines:
@@ -494,10 +473,10 @@ def check(root: Path, compile_db: Path | None, mode: str) -> int:
     for key, (admitted, number) in sorted(entries.items(), key=lambda item: item[1][1]):
         path = key.split(":", 1)[0]
         found = max(len(lexical.get(key, [])), len(preprocessed.get(key, set())))
-        if not is_admitted_path(path, frozen):
+        if not is_admitted_path(path):
             stale += 1
             print(f"START-LIFETIME refused entry: {allowlist.name}:{number} names {path}, which is not the "
-                  f"checked start, a frozen file or a negative fixture.  An entry cannot admit it.", file=sys.stderr)
+                  f"checked start or a negative fixture.  An entry cannot admit it.", file=sys.stderr)
         elif not unreviewed and found < admitted:
             stale += 1
             print(f"START-LIFETIME stale: {allowlist.name}:{number} admits {admitted} use(s) of {key}, "
@@ -509,8 +488,8 @@ def check(root: Path, compile_db: Path | None, mode: str) -> int:
           f"{unreviewed} unreviewed, {stale} refused or stale entr(y/ies), {len(failures)} preprocessor "
           f"failure(s).", file=sys.stderr)
     if unreviewed:
-        print("\nEach use of std::start_lifetime_as or std::start_lifetime_as_array outside the checked start,\n"
-              "a frozen file and a negative fixture is refused.\n"
+        print("\nEach use of std::start_lifetime_as or std::start_lifetime_as_array outside the checked start\n"
+              "and a negative fixture is refused.\n"
               "  (1) Prefer a construction, std::bit_cast, or a typed arena to the lifetime start.\n"
               "  (2) Use foundation::lifetime::start_as_array from <foundation/Lifetime.h>.  It refuses at\n"
               "      compile time a type with a subobject that is not an implicit-lifetime type.  A single\n"
@@ -568,7 +547,7 @@ inline void* this_host(unsigned char* buf) { return std::start_lifetime_as<Proof
 """
 
 PLANTED_UNIT = """#include "../include/planted/Pasted.h"
-#include "../include/planted/frozen/Twice.h"
+#include "../test/neg/Twice.h"
 #define PLANTED_HEADER "../misc/MacroIncluded.txt"
 #include PLANTED_HEADER
 #include <Generated.h>
@@ -593,7 +572,7 @@ LEXICAL_KEYS = (
     "misc/Other.txt:start_lifetime_as<Proof[12]>",
     "include/planted/Unit.cppm:start_lifetime_as<Proof[10]>",
     "lib/Stray.h:start_lifetime_as<Proof[8]>",
-    "include/planted/frozen/Twice.h:start_lifetime_as<Proof[19]> x2",
+    "test/neg/Twice.h:start_lifetime_as<Proof[19]> x2",
 )
 
 PREPROCESSED_KEYS = LEXICAL_KEYS + (
@@ -601,7 +580,7 @@ PREPROCESSED_KEYS = LEXICAL_KEYS + (
     "src/planted.cpp:start_lifetime_as<Proof[13]>",
     "misc/MacroIncluded.txt:start_lifetime_as<Proof[14]>",
     "build-planted/gen/Generated.h:start_lifetime_as<Proof[15]>",
-    "include/planted/frozen/Twice.h:start_lifetime_as<Proof[18]> x2",
+    "test/neg/Twice.h:start_lifetime_as<Proof[18]> x2",
 )
 
 
@@ -633,13 +612,11 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as work:
         root = Path(work).resolve()
         files = {
-            # A planted freeze.  The guard reads the frozen prefixes from it.
-            "scripts/frozen-paths.txt": "# planted\ninclude/planted/frozen/\n",
             # Each route of the ledger and each bypass the guard must see.
             # Each use has a distinct template argument, so each key names
             # one planted line.  The <Listed> use has an allowlist entry,
-            # and the path is none of the three places, so the entry
-            # cannot admit it.
+            # and the path is none of the two places, so the entry cannot
+            # admit it.
             "include/planted/Routes.h": ROUTES,
             # Two files that a header includes, each with a suffix that is
             # not a source suffix: one through the digraph of #, and one
@@ -659,18 +636,18 @@ def self_test() -> int:
             # A macro that pastes the name from two halves.  The parse sees
             # two names, and only the preprocessed pass sees the expansion.
             "include/planted/Pasted.h": "#pragma once\n#define PASTED_LIFETIME(T, p) std::start_life ## time_as<T>(p)\n",
-            # The three admitted places: a frozen file, a negative fixture
-            # and the checked start.  Each has a reviewed entry.
-            "include/planted/frozen/Reviewed.h": "#pragma once\nstruct Event { int value; };\n"
-                                                 "inline Event* reviewed(unsigned char* storage) {\n"
-                                                 "    auto* moved = std::start_lifetime_as_array<Event>(storage, 4);\n"
-                                                 "    return moved;\n}\n",
-            # A frozen header whose one macro body expands twice: the
+            # The two admitted places: the checked start and a negative
+            # fixture.  Each use there has a reviewed entry.
+            "include/foundation/Lifetime.h": "#pragma once\nstruct Event { int value; };\n"
+                                             "inline Event* reviewed(unsigned char* storage) {\n"
+                                             "    auto* moved = std::start_lifetime_as_array<Event>(storage, 4);\n"
+                                             "    return moved;\n}\n",
+            # A fixture header whose one macro body expands twice: the
             # lexical pass sees one use, and the preprocessed pass sees two.
             # It also has an arm that this host does not compile: the
             # lexical pass sees two uses, and the preprocessed pass sees
             # one.  Each count is the larger one.
-            "include/planted/frozen/Twice.h": TWICE,
+            "test/neg/Twice.h": TWICE,
             "test/neg/fixture.cpp": "struct Proof;\ninline void* fixture(unsigned char* buf) "
                                     "{ return std::start_lifetime_as<Proof>(buf); }\n",
             # A generated source in a build directory, with no source
@@ -678,13 +655,13 @@ def self_test() -> int:
             "build-planted/generated.gen": "inline void* generated(unsigned char* buf) "
                                            "{ return std::start_lifetime_as<Proof[11]>(buf); }\n",
             "scripts/start-lifetime-allowlist.txt":
-                "# The planted reviewed site in a frozen file.\n"
-                "include/planted/frozen/Reviewed.h:start_lifetime_as_array<Event>\n"
+                "# The planted reviewed site in the checked start.\n"
+                "include/foundation/Lifetime.h:start_lifetime_as_array<Event>\n"
                 "# The planted negative fixture.\ntest/neg/fixture.cpp:start_lifetime_as<Proof>\n"
-                "# The frozen macro header, each key reviewed for one use.\n"
-                "include/planted/frozen/Twice.h:start_lifetime_as<Proof[18]>\n"
-                "include/planted/frozen/Twice.h:start_lifetime_as<Proof[19]>\n"
-                "# An entry for a path that is none of the three places.  It cannot admit.\n"
+                "# The fixture macro header, each key reviewed for one use.\n"
+                "test/neg/Twice.h:start_lifetime_as<Proof[18]>\n"
+                "test/neg/Twice.h:start_lifetime_as<Proof[19]>\n"
+                "# An entry for a path that is none of the two places.  It cannot admit.\n"
                 "include/planted/Routes.h:start_lifetime_as_array<Listed>\n",
         }
         for rel, text in files.items():
@@ -697,7 +674,7 @@ def self_test() -> int:
         expect_reports("the lexical pass", report, r"Quiet\.h|Pasted\.h|<Event>|fixture\.cpp|generated\.gen",
                        LEXICAL_KEYS)
         if "refused entry: start-lifetime-allowlist.txt:9 names include/planted/Routes.h" not in report:
-            failures.append(f"the entry for a path outside the three places was not refused:\n{report}")
+            failures.append(f"the entry for a path outside the two places was not refused:\n{report}")
 
         # The preprocessed pass.  A translation unit expands the pasted name,
         # includes a file through a macro operand and a header that only its
@@ -744,11 +721,11 @@ def self_test() -> int:
         broken = root / "build-planted/broken_commands.json"
         broken.write_text(json.dumps([{"directory": str(root), "file": "src/broken.cpp",
                                        "command": f"{compiler} -c src/broken.cpp -o broken.o"}]))
-        for rel in ("include/planted/frozen/Twice.h", "include/planted/Routes.h", "lib/Stray.h", "misc/Hidden.txt",
+        for rel in ("test/neg/Twice.h", "include/planted/Routes.h", "lib/Stray.h", "misc/Hidden.txt",
                     "misc/Other.txt", "include/planted/Unit.cppm", "src/planted.cpp"):
             (root / rel).unlink()
         (root / "scripts/start-lifetime-allowlist.txt").write_text(
-            "# The planted reviewed site.\ninclude/planted/frozen/Reviewed.h:start_lifetime_as_array<Event>\n"
+            "# The planted reviewed site.\ninclude/foundation/Lifetime.h:start_lifetime_as_array<Event>\n"
             "# The planted fixture.\ntest/neg/fixture.cpp:start_lifetime_as<Proof>\n")
         code, report = run(root, broken)
         if code != 2 or "preprocessor failure: src/broken.cpp" not in report:
@@ -756,7 +733,7 @@ def self_test() -> int:
         (root / "src/broken.cpp").unlink()
 
         # The reviewed key survives a line shift and a new variable name.
-        (root / "include/planted/frozen/Reviewed.h").write_text(
+        (root / "include/foundation/Lifetime.h").write_text(
             "\n\n#pragma once\nstruct Event { int value; };\ninline Event* reviewed(unsigned char* storage) {\n"
             "    auto* shifted = std::start_lifetime_as_array<Event>(storage, 4);\n    return shifted;\n}\n")
         code, report = run(root)
@@ -764,35 +741,28 @@ def self_test() -> int:
             failures.append(f"the reviewed key did not survive a line shift (exit {code}):\n{report}")
 
         # A second use under the reviewed key needs its own review.
-        with (root / "include/planted/frozen/Reviewed.h").open("a") as stream:
+        with (root / "include/foundation/Lifetime.h").open("a") as stream:
             stream.write("inline Event* second(unsigned char* storage) "
                          "{ return std::start_lifetime_as_array<Event>(storage, 1); }\n")
         code, report = run(root)
         if code != 1 or ("and its entry admits 1.  Allowlist key: "
-                         "include/planted/frozen/Reviewed.h:start_lifetime_as_array<Event> x2") not in report:
+                         "include/foundation/Lifetime.h:start_lifetime_as_array<Event> x2") not in report:
             failures.append(f"a second use under a reviewed key gave exit {code} without its report:\n{report}")
 
         # An entry that admits more uses than the tree has is stale, and so
         # is an entry that names no use.
         (root / "scripts/start-lifetime-allowlist.txt").write_text(
             "# The planted reviewed sites, one count too high.\n"
-            "include/planted/frozen/Reviewed.h:start_lifetime_as_array<Event> x3\n"
+            "include/foundation/Lifetime.h:start_lifetime_as_array<Event> x3\n"
             "# The planted fixture.\ntest/neg/fixture.cpp:start_lifetime_as<Proof>\n"
-            "# A planted stale entry.\ninclude/planted/frozen/Reviewed.h:start_lifetime_as<Gone>\n")
+            "# A planted stale entry.\ninclude/foundation/Lifetime.h:start_lifetime_as<Gone>\n")
         code, report = run(root)
         if (code != 2
-                or "admits 3 use(s) of include/planted/frozen/Reviewed.h:start_lifetime_as_array<Event>, and the "
+                or "admits 3 use(s) of include/foundation/Lifetime.h:start_lifetime_as_array<Event>, and the "
                    "tree has 2." not in report
-                or "admits 1 use(s) of include/planted/frozen/Reviewed.h:start_lifetime_as<Gone>, and the tree "
+                or "admits 1 use(s) of include/foundation/Lifetime.h:start_lifetime_as<Gone>, and the tree "
                    "has 0." not in report):
             failures.append(f"stale entries gave exit {code} without their reports:\n{report}")
-
-        # With no frozen list, nothing is frozen, so the frozen site is
-        # refused.  The rule fails closed.
-        (root / "scripts/frozen-paths.txt").unlink()
-        code, report = run(root)
-        if code != 1 or "include/planted/frozen/Reviewed.h:" not in report:
-            failures.append(f"a missing frozen declaration did not refuse the frozen site (exit {code}):\n{report}")
 
     # In a work tree, an untracked file is out of scope, because the export
     # of a guard run can appear under the tree while the guard reads it.  A
@@ -800,8 +770,6 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as work:
         root = Path(work).resolve()
         throwaway_repo.init(root)
-        (root / "scripts").mkdir()
-        (root / "scripts/frozen-paths.txt").write_text("# planted\n")
         (root / "src").mkdir()
         (root / "src/Clean.h").write_text('#pragma once\n#include "../grun/Included.txt"\n')
         subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
@@ -826,16 +794,16 @@ def self_test() -> int:
     print("check-start-lifetime --self-test: PASS.  Each route, the spacing, comment, continuation, alias, macro, "
           "template and parenthesized forms, an included file with any suffix, a module unit and a header outside "
           "the source trees are reported, and so are the pasted name, the macro include, the -I header, a "
-          "generated source and each expansion of a macro body.  Comments, literals, the frozen site and the "
-          "fixture are not.  An entry cannot admit a path outside the three places, the cache gives the same "
-          "verdict, a changed dependency makes its entry stale, a preprocessor failure refuses the run, a "
-          "missing frozen list freezes nothing, and an untracked file is out of scope.")
+          "generated source and each expansion of a macro body.  Comments, literals, the reviewed sites of the "
+          "checked start and the fixtures are not.  An entry cannot admit a path outside the two places, the "
+          "cache gives the same verdict, a changed dependency makes its entry stale, a preprocessor failure "
+          "refuses the run, and an untracked file is out of scope.")
     return 0
 
 
 def main(argv: list[str]) -> int:
     """Parse the arguments and run the check or the self-test."""
-    parser = argparse.ArgumentParser(description="Refuse std::start_lifetime_as outside the three admitted places.")
+    parser = argparse.ArgumentParser(description="Refuse std::start_lifetime_as outside the two admitted places.")
     parser.add_argument("--compile-db", type=Path, help="also read the preprocessed units of this compile database")
     parser.add_argument("--list", action="store_true", help="print each reviewed use")
     parser.add_argument("--self-test", action="store_true", help="plant each route and prove the verdicts")

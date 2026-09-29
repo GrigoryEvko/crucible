@@ -21,7 +21,7 @@ scripts/check-clang-format.sh | text | the diagnostics of clang-format and the f
 scripts/check-ct-disassembly.py | tsast,compiler,text | the objdump disassembly of the compiled wrappers
 scripts/check-ctx-init-door.py | tsast,text | the rows of the two door allowlists
 scripts/check-ctx-testing-boundary.py | tsast,text | the allowlist rows
-scripts/check-derived-pins.py | tsast,text | scripts/frozen-paths.txt and the allowlist rows
+scripts/check-derived-pins.py | tsast,text | the allowlist rows
 scripts/check-detail-namespace.py | tsast,text | the allowlist rows
 scripts/check-detsafe-ledger.py | tsast |
 scripts/check-escape-doors.py | tsast,text | the rows of the escape-door ledger
@@ -37,7 +37,7 @@ scripts/check-host-owners.py | tsast,text | the roster scripts/host-owner-roster
 scripts/check-layer-boundary.py | tsast |
 scripts/check-lifetime-twin.py | tsast |
 scripts/check-lock-free-asserts.py | tsast |
-scripts/check-mint-pattern.py | tsast,text | the allowlist rows and scripts/frozen-paths.txt
+scripts/check-mint-pattern.py | tsast,text | the allowlist rows
 scripts/check-no-combine-ids-duplicate.py | tsast |
 scripts/check-no-coordination-refs.py | tsast,text | the lines of shell, CMake, YAML and data files, and the tokens of Python files
 scripts/check-no-ffast-math.py | tsast,json,cmake-api,text | the compile database, CMakePresets.json and the allowlist rows
@@ -49,9 +49,9 @@ scripts/check-permission-storage.py | tsast |
 scripts/check-process-wide-state.py | tsast,text | the roster scripts/process-wide-roster.txt
 scripts/check-proof-routes.py | tsast,preprocessor,json,text | the witness roster, the allowlist rows and the proof names of test_forgeable_proofs
 scripts/check-refined-pre-subsumption.py | tsast |
-scripts/check-row-contains-discipline.py | tsast,text | scripts/frozen-paths.txt
+scripts/check-row-contains-discipline.py | tsast |
 scripts/check-splits-orphan.py | tsast |
-scripts/check-start-lifetime.py | tsast,preprocessor,json,text | the allowlist rows and scripts/frozen-paths.txt
+scripts/check-start-lifetime.py | tsast,preprocessor,json,text | the allowlist rows
 scripts/check-stub-discipline.py | tsast |
 scripts/check-syscall-capability.py | tsast,text | the allowlist rows and their reasons
 scripts/check-syscall-grant-coverage.py | tsast |

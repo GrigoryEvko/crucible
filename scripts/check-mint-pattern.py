@@ -63,17 +63,6 @@ later regression:
   * a row that does not parse, names an unknown axis, names a line, or
     repeats another row is malformed
 
-A marker in a file under a prefix of `scripts/frozen-paths.txt` is not held to
-the last three rules.  A frozen file cannot change, so its mints cannot lose a
-flag, and its dead marker leaves with the old tree.  A redundant row that names
-a frozen file still fails, because the row is the half that can be removed.
-
-SUPERSEDED HEADERS ARE OUT OF SCOPE.  The bash guard scanned
-`include/crucible/**/_*.h`, the ported old-substrate headers, and 24 allowlist
-entries existed only to exempt them.  Those files are frozen, so a shortfall
-there cannot be repaired, and they go with the old tree.  The inventory
-generator excludes them too.
-
 A FILE THE PARSER CANNOT READ FAILS.  Its mints are unknown, so a clean verdict
 over it would be a guess.  The surface comes from `tsast.cpp_files`, which
 leaves out the files that `tsast.UNPARSEABLE` names, because they are not C++.
@@ -103,7 +92,6 @@ import mintmodel  # noqa: E402  (the path insert above has to come first)
 import tsast  # noqa: E402
 
 ALLOWLIST = tsast.REPO_ROOT / "scripts" / "mint-pattern-allowlist.txt"
-FROZEN_PATHS = tsast.REPO_ROOT / "scripts" / "frozen-paths.txt"
 
 # The axes, each with the allowlist suffix that exempts it.  `requires` asks only
 # whether a constraint is PRESENT; `ctxfit` asks the separate question of whether
@@ -196,34 +184,6 @@ def read_allowlist(path: Path = ALLOWLIST) -> tuple[set[Row], list[Finding]]:
             continue
         rows.add(row)
     return rows, problems
-
-
-def read_frozen(path: Path = FROZEN_PATHS) -> tuple[str, ...]:
-    """Return the frozen path prefixes.
-
-    Args:
-        path: The list of the frozen prefixes, scripts/frozen-paths.txt
-
-    Returns:
-        One prefix for each live line
-    """
-    if not path.is_file():
-        return ()
-    return tuple(line.strip() for line in path.read_text(encoding="utf-8").splitlines()
-                 if line.strip() and not line.strip().startswith("#"))
-
-
-def is_frozen(path: str, prefixes: tuple[str, ...]) -> bool:
-    """Report whether a path lies under a frozen prefix.
-
-    Args:
-        path: The path of a scanned file
-        prefixes: The frozen prefixes
-
-    Returns:
-        True when one prefix starts the path
-    """
-    return any(path.startswith(prefix) for prefix in prefixes)
 
 
 def shortfalls(mint: mintmodel.Mint) -> list[str]:
@@ -351,12 +311,7 @@ def violation_text(mint: mintmodel.Mint, axis: str) -> str:
     return f"MINT-PATTERN violation: {mint.path}:{mint.line} — {mint.name} {lack}: {ways}."
 
 
-def evaluate(
-    mints: list[mintmodel.Mint],
-    rows: set[Row],
-    frozen: tuple[str, ...],
-    dangling: list[Marker],
-) -> list[Finding]:
+def evaluate(mints: list[mintmodel.Mint], rows: set[Row], dangling: list[Marker]) -> list[Finding]:
     """Judge every mint, every row and every marker.
 
     Complexity: O(m + r) in the mint count and the row count.
@@ -364,7 +319,6 @@ def evaluate(
     Args:
         mints: The merged mints of the surface
         rows: The allowlist rows
-        frozen: The frozen path prefixes
         dangling: The markers that attach to no mint signature
 
     Returns:
@@ -381,8 +335,6 @@ def evaluate(
                 covered.setdefault(row, []).append(mint)
             elif not exempted(mint, axis, rows):
                 findings.append(Finding("violation", where, mint.name, violation_text(mint, axis)))
-        if is_frozen(mint.path, frozen):
-            continue
         kinds = marker_kinds(mint)
         for kind in kinds:
             axis = MARKERS[kind][1]
@@ -405,8 +357,7 @@ def evaluate(
             findings.append(Finding(
                 "stale-row", text, name,
                 f"MINT-PATTERN stale row: {text} — no live {axis} shortfall for this mint. It was fixed, "
-                f"renamed, moved, or its file is a superseded `_*.h` header this gate does not scan. "
-                f"Delete the row."))
+                f"renamed or moved. Delete the row."))
         elif all(axis in marker_axes(site) for site in sites):
             findings.append(Finding(
                 "redundant-row", text, name,
@@ -414,15 +365,13 @@ def evaluate(
                 f"{axis}, so the row exempts nothing. Delete the row, or delete the markers."))
         else:
             for site in sites:
-                if axis in marker_axes(site) and not is_frozen(site.path, frozen):
+                if axis in marker_axes(site):
                     findings.append(Finding(
                         "redundant-marker", f"{site.path}:{site.line}", name,
                         f"MINT-PATTERN redundant marker: {site.path}:{site.line} — the row {text} already "
                         f"exempts {name} on {axis}. Delete the marker."))
 
     for marker in dangling:
-        if is_frozen(marker.path, frozen):
-            continue
         needle = MARKERS[marker.kind][0]
         findings.append(Finding(
             "dangling-marker", f"{marker.path}:{marker.line}", marker.kind,
@@ -431,13 +380,12 @@ def evaluate(
     return findings
 
 
-def run(files: list[Path], allowlist: Path, frozen: tuple[str, ...]) -> int:
+def run(files: list[Path], allowlist: Path) -> int:
     """Scan the files, print every finding, and return the exit code.
 
     Args:
         files: The surface to scan
         allowlist: The allowlist file
-        frozen: The frozen path prefixes
 
     Returns:
         0 when clean, 1 on a violation or a parse failure, 2 on any other finding
@@ -459,7 +407,7 @@ def run(files: list[Path], allowlist: Path, frozen: tuple[str, ...]) -> int:
 
     mints = mintmodel.collect(files, on_tree=on_tree)
     rows, malformed = read_allowlist(allowlist)
-    findings += malformed + evaluate(mints, rows, frozen, dangling)
+    findings += malformed + evaluate(mints, rows, dangling)
     for finding in findings:
         print(finding.message, file=sys.stderr)
     failing = sum(finding.kind in FAILING_KINDS for finding in findings)
@@ -625,33 +573,17 @@ def self_test() -> int:
             "}\n",
             encoding="utf-8",
         )
-        frozen_dir = root / "frozen"
-        frozen_dir.mkdir()
-        old = frozen_dir / "old.h"
-        old.write_text(
-            "#pragma once\n"
-            "namespace probe_old {\n"
-            "// §XXI carve-out: cx=alloc — dead, but the file is frozen.\n"
-            "[[nodiscard]] constexpr int mint_frozen_dead() noexcept { return 1; }\n"
-            "// §XXI carve-out: cx=alloc — this one allocates.\n"
-            "[[nodiscard]] inline int* mint_frozen_twice() noexcept { return new int{0}; }\n"
-            "inline int frozen_stray = 0;  // MINT-PATTERN-OK: dangling, but frozen\n"
-            "}\n",
-            encoding="utf-8",
-        )
-        frozen = (str(frozen_dir) + "/",)
         allow.write_text(
             f"{live}:mint_runtime_read:constexpr-ok\n"
             f"{live}:mint_marked_twice:constexpr-ok\n"
             f"{live}:mint_overload:constexpr-ok\n"
-            f"{live}:mint_compliant:constexpr-ok\n"
-            f"{old}:mint_frozen_twice:constexpr-ok\n",
+            f"{live}:mint_compliant:constexpr-ok\n",
             encoding="utf-8",
         )
         dangling: list[Marker] = []
-        mints = mintmodel.collect([live, old], on_tree=lambda tree, sites: dangling.extend(find_markers(tree, sites)))
+        mints = mintmodel.collect([live], on_tree=lambda tree, sites: dangling.extend(find_markers(tree, sites)))
         rows, malformed = read_allowlist(allow)
-        found = evaluate(mints, rows, frozen, dangling)
+        found = evaluate(mints, rows, dangling)
 
         def has(kind: str, name: str) -> bool:
             """Report whether a finding of one kind names one mint."""
@@ -686,9 +618,6 @@ def self_test() -> int:
               mentions("violation", "mint_raw_trap is missing requires"), True)
         check("a raw string line that starts with // is no dangling marker",
               not mentions("dangling-marker", f"{live}:26"))
-        check("a dead marker in a frozen file is not reported", not has("dead-marker", "mint_frozen_dead"))
-        check("a dangling marker in a frozen file is not reported", not mentions("dangling-marker", str(old)))
-        check("a redundant row that names a frozen file still fails", has("redundant-row", "mint_frozen_twice"), True)
 
         def captured(action) -> tuple[int, str]:
             """Run an action and return its code and its stderr."""
@@ -706,26 +635,26 @@ def self_test() -> int:
             encoding="utf-8",
         )
         allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n", encoding="utf-8")
-        check("a clean surface exits 0", captured(lambda: run([clean], allow, ()))[0] == 0)
+        check("a clean surface exits 0", captured(lambda: run([clean], allow))[0] == 0)
         previous = Path.cwd()
         os.chdir("/")
         try:
-            from_slash = captured(lambda: run([clean], allow, ()))
+            from_slash = captured(lambda: run([clean], allow))
         finally:
             os.chdir(previous)
         check("the report from / equals the report from the repository", from_slash == captured(
-            lambda: run([clean], allow, ())))
+            lambda: run([clean], allow)))
         allow.write_text("", encoding="utf-8")
-        check("a runtime-only mint with no row exits 1", captured(lambda: run([clean], allow, ()))[0] == 1, True)
+        check("a runtime-only mint with no row exits 1", captured(lambda: run([clean], allow))[0] == 1, True)
         allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n{clean}:mint_compliant:constexpr-ok\n",
                          encoding="utf-8")
-        check("a stale row exits 2", captured(lambda: run([clean], allow, ()))[0] == 2, True)
+        check("a stale row exits 2", captured(lambda: run([clean], allow))[0] == 2, True)
         allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n{clean}:mint_extra\n", encoding="utf-8")
-        check("a malformed row exits 2", captured(lambda: run([clean], allow, ()))[0] == 2, True)
+        check("a malformed row exits 2", captured(lambda: run([clean], allow))[0] == 2, True)
         broken = root / "broken.h"
         broken.write_text("void f() { g(1) { } }\n", encoding="utf-8")
         allow.write_text(f"{clean}:mint_runtime_read:constexpr-ok\n", encoding="utf-8")
-        code, report = captured(lambda: run([clean, broken], allow, ()))
+        code, report = captured(lambda: run([clean, broken], allow))
         check("a file the parser cannot read exits 1", code == 1 and "parse failure" in report, True)
 
     if failures:
@@ -748,7 +677,7 @@ def main(argv: list[str]) -> int:
         if argv == ["--self-test"]:
             return self_test()
         if argv == []:
-            return run(mintmodel.surface_files(), ALLOWLIST, read_frozen())
+            return run(mintmodel.surface_files(), ALLOWLIST)
     except tsast.KitMissing as exc:
         print(f"check-mint-pattern: {exc}", file=sys.stderr)
         return 3

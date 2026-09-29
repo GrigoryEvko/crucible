@@ -48,14 +48,13 @@ WHAT COUNTS AS AN OPEN TARGET
     splices, and the parse cannot tell an enumerator from a static data
     member.  So the guard refuses the target, not the spelling:
       6. A writable static data member that is private or protected, in a
-         class in include/foundation, include/fixy or include/crucible, less
-         the frozen prefixes in scripts/frozen-paths.txt.  Writable means that
-         the member itself is not const and not constexpr: a pointer to const
-         is writable, a const pointer is not, and a reference is writable when
-         its referent is.  The access of each #if arm is joined, so an access
-         label inside one arm does not open the members after the block.  No
-         allowlist admits a member: make it const or constexpr, or move it
-         into the object.
+         class in include/foundation, include/fixy or include/crucible.
+         Writable means that the member itself is not const and not
+         constexpr: a pointer to const is writable, a const pointer is not,
+         and a reference is writable when its referent is.  The access of
+         each #if arm is joined, so an access label inside one arm does not
+         open the members after the block.  No allowlist admits a member:
+         make it const or constexpr, or move it into the object.
 
 THE EXPANDED RUN
     With --compile-db the guard also reads the macro-expanded text of each
@@ -86,8 +85,7 @@ WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
     - A door that ## builds, and a static data member that a macro
       declares, in a file that no unit of the compile database reads.
       Without --compile-db, the guard sees neither in any file.
-    - A file that scripts/tsast.py lists as not C++, and a member of the
-      frozen tree, which is deleted, not edited.
+    - A file that scripts/tsast.py lists as not C++.
 
 A stale row, one whose file does not exist or does not open the door, fails
 the guard, so the allowlist only shrinks.
@@ -120,7 +118,6 @@ from preprocessed import Store, files_of  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ALLOWLIST = "scripts/unchecked-access-allowlist.txt"
-FROZEN_PATHS = "scripts/frozen-paths.txt"
 SCAN_ROOTS = ("include", "src", "test", "vessel", "tools", "bench", "fuzz", "examples")
 MEMBER_ROOTS = ("include/foundation/", "include/fixy/", "include/crucible/")
 # Bumped when the rules change, so the expanded run does not reuse an old result.
@@ -457,18 +454,9 @@ def class_members(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
     return members
 
 
-def frozen_prefixes(root: Path) -> tuple[str, ...]:
-    """Return the path prefixes of the frozen tree, or none when the list is absent."""
-    listing = root / FROZEN_PATHS
-    if not listing.is_file():
-        return ()
-    return tuple(line.strip() for line in listing.read_text().splitlines()
-                 if line.strip() and not line.lstrip().startswith("#"))
-
-
-def reads_members(rel: str, frozen: tuple[str, ...]) -> bool:
+def reads_members(rel: str) -> bool:
     """Return whether the guard reads the static data members of a file."""
-    return rel.startswith(MEMBER_ROOTS) and not (frozen and rel.startswith(frozen))
+    return rel.startswith(MEMBER_ROOTS)
 
 
 def with_defines(trees: Iterable[tsast.Tree]) -> Iterable[tsast.Tree]:
@@ -481,14 +469,12 @@ def with_defines(trees: Iterable[tsast.Tree]) -> Iterable[tsast.Tree]:
 def lexical(root: Path, files: list[str]) -> tuple[dict[str, list[Door]], list[Target], list[str], int]:
     """Parse each file once, and return its doors, the open targets, the unread files and the member files read.
 
-    Every file gives its doors.  A file of the member roots, less the frozen
-    tree, also gives its open static data members.  A file that the parser
-    cannot read fails.
+    Every file gives its doors.  A file of the member roots also gives its
+    open static data members.  A file that the parser cannot read fails.
 
     Complexity: one parse of each file and of each macro body, linear in
     their nodes, plus the closure of door_macro_names.
     """
-    frozen = frozen_prefixes(root)
     parsed: dict[str, tsast.Tree] = {}
     targets: list[Target] = []
     problems: list[str] = []
@@ -500,7 +486,7 @@ def lexical(root: Path, files: list[str]) -> tuple[dict[str, list[Door]], list[T
                             f"and its static data members: {tree.diagnostic}")
             continue
         parsed[rel] = tree
-        if reads_members(rel, frozen):
+        if reads_members(rel):
             member_files += 1
             targets += [(rel, node.line, access, name) for node, access, name in class_members(tree)]
     bodies = tsast.macro_bodies(with_defines(parsed.values()))
@@ -534,7 +520,6 @@ def expanded(root: Path, compile_db: Path, scope: frozenset[str],
     Complexity: linear in the preprocessed output of the units, plus one
     parse for each expansion that is not in the cache.
     """
-    frozen = frozen_prefixes(root)
     store = Store(compile_db, root)
     cache = compile_db.parent / "unchecked-access-cache"
     cache.mkdir(exist_ok=True)
@@ -588,8 +573,8 @@ def expanded(root: Path, compile_db: Path, scope: frozenset[str],
             return lines[chunk] + row - starts[chunk]
 
         doors.setdefault(path, []).extend((line_of(row), shape) for row, shape in result["doors"])
-        if reads_members(path, frozen):
-            targets += [(path, line_of(row), access, name) for row, access, name in result["members"]]
+        if reads_members(path):
+            targets +=[(path, line_of(row), access, name) for row, access, name in result["members"]]
     return doors, targets
 
 
@@ -706,7 +691,6 @@ def self_test() -> int:
               "auto c = std::meta::access_context::current();\nbool unchecked = true;\nint n = unchecked;\n"
               "constexpr auto mask = flags & [:field:];\nconstexpr auto r = ^^my_access_context;\n"
               "#ifdef WALK_DOOR\n#endif\n")
-        write(root, FROZEN_PATHS, "# planted\ninclude/crucible/safety/\n")
         write(root, "include/foundation/Closed.h",
               "class Closed {\n    static constexpr int a_ = 1;\n    static const int b_ = 2;\n"
               "    static int* const c_;\n    static const int& d_;\n    static int (&e_)(int);\n"
@@ -715,11 +699,10 @@ def self_test() -> int:
               '    static constexpr const char* s_ = R"(static int quoted_;)";\n'
               "public:\n    static int open_;\n};\nstruct Public { static int counter; };\n"
               "#define NAMED static constexpr int named_ = 3;\n")
-        write(root, "include/crucible/safety/Frozen.h", "class Frozen { static int n_; };\n")
         write(root, "src/Local.cpp", "class Local { static int n_; };\n")
         expect(root, 0, "1 file(s) open", "a listed walk, a comment, a string, a plain name, a binary & before a "
                                           "splice, a reflection of another name, a test of a door macro, a closed "
-                                          "member, a frozen file and a file outside the member roots pass")
+                                          "member and a file outside the member roots pass")
 
         forgeries = {
             "src/Qualified.cpp": "auto c = std::meta::access_context::unchecked();\n",

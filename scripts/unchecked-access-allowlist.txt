@@ -38,8 +38,10 @@ include/foundation/reflect/Hash.h — walks every member of a type to fold its s
 include/foundation/reflect/RawEscape.h — walks every base, a private one too, to find the members that a caller can name through a type
 include/foundation/reflect/TypeComponents.h — walks every base and member to list the component types of a type
 
-# The frozen old tree.  It is deleted, not edited, and each row goes with its file.
-include/crucible/Reflect.h — frozen: the old member walk of reflect_hash and reflect_print
+# A structure walk whose detail function gives the reflection of a member:
+# detail_reflect::member_info.  Rule 4 of the guard refuses a splice of that
+# reflection in each file that this list does not name.
+include/crucible/Reflect.h — walks every member of a type for reflect_hash and reflect_print
 
 # Tests: a roster or structure walk that a test compares with the production
 # walk, and the ledger reproducer that proves the splice still writes.

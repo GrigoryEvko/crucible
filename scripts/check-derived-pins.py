@@ -34,9 +34,8 @@ WHAT THE PARSER CANNOT READ
     unparseable.
 
 SCOPE
-    include/, src/, test/, bench/, tools/ and vessel/, without the frozen
-    paths of scripts/frozen-paths.txt and without the negative-compile and
-    attack fixtures (test/*_neg/ and test/safety_attack/).
+    include/, src/, test/, bench/, tools/ and vessel/, without the
+    negative-compile fixtures of test/*_neg/.
 
 THE ALLOWLIST
     scripts/derived-pins-allowlist.txt admits a pin by `path:NAME — reason`.
@@ -64,9 +63,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
 ROOTS = ("include", "src", "test", "bench", "tools", "vessel")
-FROZEN = "scripts/frozen-paths.txt"
 ALLOWLIST = "scripts/derived-pins-allowlist.txt"
-FIXTURE_DIR = re.compile(r"^test/(?:[^/]+_neg|safety_attack)/")
+FIXTURE_DIR = re.compile(r"^test/[^/]+_neg/")
 COMPARISONS = frozenset({"=="})
 SEPARATOR = " — "
 
@@ -240,18 +238,8 @@ def pins(tree: tsast.Tree) -> Iterator[tuple[int, str, int]]:
                     yield node.start[0], spelling[2], value
 
 
-def frozen_prefixes(root: Path) -> tuple[str, ...]:
-    """Return the frozen path prefixes, or none when the list is absent."""
-    listed = root / FROZEN
-    if not listed.is_file():
-        return ()
-    return tuple(line.strip() for line in listed.read_text(encoding="utf-8").splitlines()
-                 if line.strip() and not line.lstrip().startswith("#"))
-
-
 def scope_files(root: Path) -> list[Path]:
-    """Return the C++ files in scope, sorted: tsast.is_in_cpp_scope, less the frozen paths and the fixtures."""
-    frozen = frozen_prefixes(root)
+    """Return the C++ files in scope, sorted: tsast.is_in_cpp_scope, less the fixtures."""
     found: list[Path] = []
     for top in ROOTS:
         base = root / top
@@ -259,8 +247,7 @@ def scope_files(root: Path) -> list[Path]:
             continue
         for path in base.rglob("*"):
             rel = path.relative_to(root).as_posix()
-            if path.is_file() and tsast.is_in_cpp_scope(rel) and not rel.startswith(frozen) \
-                    and not FIXTURE_DIR.match(rel) \
+            if path.is_file() and tsast.is_in_cpp_scope(rel) and not FIXTURE_DIR.match(rel) \
                     and not any(part.startswith("build") for part in path.relative_to(root).parts[:-1]):
                 found.append(path)
     return sorted(found)
@@ -405,10 +392,8 @@ def self_test() -> int:
         header.parent.mkdir(parents=True)
         header.write_text("\n".join(line for line, _, _ in planted) + "\n", encoding="utf-8")
         for rel, text in (
-            ("include/crucible/fixy/Frozen.h", "inline constexpr int frozen = 4;\nstatic_assert(frozen == 4);\n"),
             ("test/safety_neg/neg_pin.cpp", "inline constexpr int fixture = 2;\nstatic_assert(fixture == 2);\n"),
             ("src/planted.cpp", "constexpr int in_source = 3;\nstatic_assert(in_source == 3);\n"),
-            (FROZEN, "include/crucible/fixy/\n"),
             (ALLOWLIST, "# planted\ninclude/foundation/Planted.h:allowed — a planted pin\n"),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -425,7 +410,6 @@ def self_test() -> int:
         expect("nothing else in the planted header is reported",
                reported <= {line for line, (_, caught, _) in enumerate(planted, start=1) if caught}, True)
         expect("caught: a pin in src/", any(rel == "src/planted.cpp" for rel, _, _, _ in found))
-        expect("not caught: a frozen path", not any("Frozen.h" in rel for rel, _, _, _ in found), True)
         expect("not caught: a negative fixture", not any("safety_neg" in rel for rel, _, _, _ in found), True)
         expect("the planted tree parses", not broken, True)
 

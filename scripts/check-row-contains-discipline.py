@@ -32,7 +32,6 @@ SCOPE
     and a name is compared as the lexer spells it, after the splices.  These
     files are out of scope:
       * The definitions of the lifts, in include/foundation/effects/
-      * The frozen paths of scripts/frozen-paths.txt, which cannot change
       * The files of tsast.UNPARSEABLE, which are not C++.
 
 EXEMPTION
@@ -62,7 +61,6 @@ import tsast  # noqa: E402
 ROOTS = ("include", "src")
 EXCLUDED_PREFIXES = ("include/foundation/effects/",)
 EXCLUDED_COMPONENTS = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
-FROZEN = "scripts/frozen-paths.txt"
 NAME = "row_contains_v"
 ROW_OF = "row_type_of_t"
 ROW_MEMBER = "row_type"
@@ -74,22 +72,12 @@ STATEMENTS = ("declaration", "field_declaration", "alias_declaration", "requires
               "concept_definition")
 
 
-def frozen_prefixes(root: Path) -> tuple[str, ...]:
-    """Return the frozen path prefixes, or none when the list is absent."""
-    listed = root / FROZEN
-    if not listed.is_file():
-        return ()
-    return tuple(line.strip() for line in listed.read_text(encoding="utf-8").splitlines()
-                 if line.strip() and not line.lstrip().startswith("#"))
-
-
 def scope_files(root: Path) -> list[Path]:
     """Return the C++ files in scope that spell row_contains_v, sorted.
 
     The test reads the bytes with each line splice removed, so a name that
     a splice cuts in two still counts.
     """
-    frozen = frozen_prefixes(root)
     found: list[Path] = []
     for top in ROOTS:
         base = root / top
@@ -98,7 +86,7 @@ def scope_files(root: Path) -> list[Path]:
         for path in base.rglob("*"):
             rel = path.relative_to(root)
             posix = rel.as_posix()
-            if path.is_file() and tsast.is_in_cpp_scope(rel) and not posix.startswith(EXCLUDED_PREFIXES + frozen) \
+            if path.is_file() and tsast.is_in_cpp_scope(rel) and not posix.startswith(EXCLUDED_PREFIXES) \
                     and not any(part in EXCLUDED_COMPONENTS or part.startswith("build") for part in rel.parts[:-1]) \
                     and NAME.encode() in LINE_SPLICE.sub(b"", path.read_bytes()):
                 found.append(path)
@@ -307,9 +295,6 @@ def self_test() -> int:
             ("include/crucible/planted/Row.h", "\n".join(line for line, _, _ in planted) + "\n"),
             ("include/foundation/effects/Lifts.h",
              "template <class C, class E> concept O = row_contains_v<row_type_of_t<C>, E>;\n"),
-            ("include/crucible/frozen/Old.h", "template <class C> requires row_contains_v<row_type_of_t<C>, X> "
-                                              "void old();\n"),
-            (FROZEN, "include/crucible/frozen/\n"),
             ("src/planted/Row.cpp", "template <class C> requires row_contains_v<row_type_of_t<C>, X> void s();\n"),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -325,7 +310,6 @@ def self_test() -> int:
                reported <= {line for line, (_, caught, _) in enumerate(planted, start=1) if caught}, True)
         expect("caught: a check in src/", any(v.startswith("src/planted/Row.cpp") for v in violations))
         expect("not caught: the definitions of the lifts", not any("effects/Lifts.h" in v for v in violations), True)
-        expect("not caught: a frozen path", not any("frozen/Old.h" in v for v in violations), True)
 
         def captured(cwd: Path) -> tuple[int, str]:
             """Run the check from one working directory and keep its report."""

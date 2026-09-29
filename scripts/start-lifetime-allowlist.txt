@@ -8,9 +8,9 @@
 # with the suffix.  A line that starts with '#' is a comment, and each
 # entry has one above it.
 #
-# An entry can name three places only: the checked start in
-# include/foundation/Lifetime.h, a file that the frozen tree holds, and a
-# negative fixture.  The guard refuses an entry for any other path.  New
+# An entry can name two places only: the checked start in
+# include/foundation/Lifetime.h and a negative fixture.  The guard refuses
+# an entry for any other path.  New
 # code calls foundation::lifetime::start_as_array, which refuses a proof
 # subobject at compile time, and needs no entry.
 
