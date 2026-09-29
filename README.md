@@ -16,7 +16,15 @@ Each frontend — PyTorch, JAX, or a native Python / C++ / Rust API — has a ~2
 
 **Forge** is the vendor-agnostic optimizer that compiles IR001. Twelve phases run within hard wall-clock budgets: canonicalization and analysis of IR001 (A–B), exhaustive rewriting (C), global fusion via DP and ILP (D), and the lowering to **IR002** at phase E. IR002 is a portable kernel-level DAG. Each `KernelNode` matches one of the kernel templates — GEMM, ATTENTION, NORM, REDUCE, COLLECTIVE, MOE_ROUTE, OPTIMIZER, and so on — commits a semantic layout, and pins a `NumericalRecipe`: a 16-byte interned record of accumulator dtype, reduction algorithm, rounding mode, scale policy, and one of four determinism tiers (UNORDERED, ORDERED, BITEXACT_TC, BITEXACT_STRICT). The recipe is the cross-vendor portability contract: the same IR002 kernel produces equivalent results on every supported chip because every backend realizes the same pinned algorithm rather than delegating to a vendor library whose behavior drifts across SDK versions. Phases F and G refine IR002 with concrete tile shapes and a content-addressed static memory plan; a cross-vendor numerics CI matrix enforces the contract on every merged change.
 
-**Mimic** is Crucible's per-vendor backend framework. Forge's phase H dispatches each KernelNode by `TargetCaps::vendor_id` to one of `mimic/nv/`, `mimic/am/`, `mimic/tpu/`, `mimic/trn/`, `mimic/cer/`, or `mimic/cpu/`. Each backend owns its **IR003\***: a machine IR specialized to the vendor's native ISA, with address-space resolution, register allocation, instruction scheduling, and peephole rewriting against a calibrated per-chip latency table. Mimic searches the kernel design space via MAP-Elites guided by a three-tier simulator (fast, medium, accurate; calibrated to 95–98% on Forge-emitted instruction streams), then emits the native binary format — cubin on NVIDIA, HSACO on AMD, TPU executable on Google, NEFF on Trainium, CSL on Cerebras, ELF on CPU. No vendor SDK runtime is linked: each backend ships its own runtime library wrapping kernel-driver ioctls directly, and its own collective library over the native fabric (NVLink, XGMI, ICI, NeuronLink, EFA). Compilation results land in a three-level content-addressed cache: L1 holds vendor-neutral IR002 snapshots and is federation-shareable across installations; L2 holds per-vendor IR003\* snapshots and is reusable across chips within a family; L3 holds compiled bytes per chip. Forge's remaining phases (I–L) assemble the per-kernel results into an `ExecutionPlan`, distribute it across the fleet, and continuously sample hardware counters to compare measured behavior against Mimic's predictions, triggering recalibration or recompilation when drift exceeds tolerance.
+**Mimic** is Crucible's per-vendor backend framework. No kernel backend exists at this time. `include/crucible/mimic/` holds three parts that the backends will share:
+
+- `Fence.h` lowers a fence to x86, Arm or GPU instructions
+- `Semaphore.h` gives device semaphores over a host oracle
+- `CogMimic.h` gives the projection of a Cog that the cache of compiled binaries uses as a key.
+
+`include/crucible/mimic/_wip/` declares one network backend for each of six vendor families (cpu, nv, am, intel, mellanox, broadcom). None of them has an emit path.
+
+This paragraph gives the design in `misc/MIMIC.md`. Forge's phase H will send each KernelNode, by `TargetCaps::vendor_id`, to the backend of its vendor: NVIDIA, AMD, TPU, Trainium, Cerebras or CPU. Each backend owns its **IR003\***: a machine IR specialized to the vendor's native ISA, with address-space resolution, register allocation, instruction scheduling, and peephole rewriting against a calibrated per-chip latency table. Mimic searches the kernel design space via MAP-Elites guided by a three-tier simulator (fast, medium, accurate; calibrated to 95–98% on Forge-emitted instruction streams), then emits the native binary format — cubin on NVIDIA, HSACO on AMD, TPU executable on Google, NEFF on Trainium, CSL on Cerebras, ELF on CPU. No vendor SDK runtime is linked: each backend ships its own runtime library wrapping kernel-driver ioctls directly, and its own collective library over the native fabric (NVLink, XGMI, ICI, NeuronLink, EFA). Compilation results land in a three-level content-addressed cache: L1 holds vendor-neutral IR002 snapshots and is federation-shareable across installations; L2 holds per-vendor IR003\* snapshots and is reusable across chips within a family; L3 holds compiled bytes per chip. Forge's remaining phases (I–L) assemble the per-kernel results into an `ExecutionPlan`, distribute it across the fleet, and continuously sample hardware counters to compare measured behavior against Mimic's predictions, triggering recalibration or recompilation when drift exceeds tolerance.
 
 ## Vessel: PyTorch integration
 
@@ -31,7 +39,7 @@ C++26. **The patched GCC 16.2.1 is the only supported compiler** — Crucible's 
 The patched compiler is GCC 16.2.1 plus the fixes in `utils/toolchain/gcc/patches`. To build it, run `utils/toolchain/gcc/build.sh ~/.local/gcc16-patched`. The presets use that prefix when `CRUCIBLE_GCC16_PREFIX` and `CRUCIBLE_CXX` are not set. The configure step refuses a compiler that does not have each fix, and it tells you how to build one. CI builds the same compiler with the same script and caches it.
 
 ```bash
-cmake --preset default && cmake --build --preset default -j8
+cmake --preset default && cmake --build --preset default
 ctest --preset default          # full suite, parallel
 
 cmake --preset release          # -O3 -march=native -DNDEBUG -g, contracts observe, no LTO
@@ -40,7 +48,7 @@ cmake --preset ubsan-strict     # full UBSan on every target, signed overflow un
 cmake --preset verify           # Release code with every contract clause enforced
 ```
 
-Build with `-j8` maximum — heaviest TUs peak ~1GB cc1plus RSS each (template + reflection + contracts); `-j$(nproc)` on multi-core boxes hits ~35GB and starts swapping.
+The build presets and the test presets run 192 jobs (`CMakePresets.json`). A `-j N` on the command line of `cmake --build --preset` or `ctest --preset` replaces that count. On a host with fewer cores or less memory, give a smaller N. The heaviest translation unit is `vessel/torch/register.cpp`, and `vessel/torch/CMakeLists.txt` gives its measured time and memory.
 
 ## Project layout
 

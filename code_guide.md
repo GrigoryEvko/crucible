@@ -620,7 +620,7 @@ Crucible's vectorizable hot paths: Philox RNG, hash mixing, TensorMeta extractio
 
 ### Link-Time Optimization (LTO)
 
-`-flto=auto` — parallel LTO: whole-program inlining, dead code elimination, cross-TU constant propagation. Enabled unconditionally in release.
+`-flto=auto` — parallel LTO: whole-program inlining, dead code elimination, cross-TU constant propagation. No preset and no CMake file sets it at this time. A Release build compiles every TU at `-O3` and links without LTO.
 
 ### OS / kernel tuning
 
@@ -741,7 +741,7 @@ The budget table is a hard contract. A PR that regresses any hot-path budget by 
 
 ### Hot functions fit in one cache line
 
-Target: every hot-path function compiles to ≤64 bytes of machine code (one I-cache line fetch). Audit via `objdump -d`. Commit a snapshot of hot-function disassembly under `build/asm-snapshot/` and review its diff on every PR like source code.
+Target: every hot-path function compiles to ≤64 bytes of machine code (one I-cache line fetch). Audit via `objdump -d`. The audit is a review step. No build step or CI guard measures the size of a hot function, and the repository holds no disassembly snapshot. Configure with `-DCRUCIBLE_DUMP_ASM=ON` to write the disassembly of each test and bench binary into the build tree, and read the hot functions there.
 
 If a hot function exceeds 64 bytes of machine code, either (a) the design is wrong (split into hot + cold), (b) a dependency is bloated (eliminate), or (c) the budget was optimistic (document the new budget and notify).
 
