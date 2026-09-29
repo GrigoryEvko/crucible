@@ -82,10 +82,9 @@ SCAN_ROOT="${SCAN_ROOT:-$REPO_ROOT}"
 
 # ── Extracting the path half of a key ────────────────────────────────
 #
-# Three shapes are in use, and all three put the path first:
+# Two shapes are in use, and both put the path first:
 #   path:code text  — prose        (syscall, no-reserve, no-reinterpret, fullness)
 #   path  — prose                  (ctx-testing-boundary)
-#   path                           (fixy-discipline)
 # plus one that puts a name in front of it:
 #   mint_name|path                 (mint-hs14-floor)
 #

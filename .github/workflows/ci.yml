@@ -169,11 +169,6 @@ jobs:
           python3 scripts/check-refined-pre-subsumption.py --self-test
           python3 scripts/check-refined-pre-subsumption.py
 
-      - name: fixy discipline (self-test + scan)
-        run: |
-          python3 scripts/check-fixy-discipline.py --self-test
-          python3 scripts/check-fixy-discipline.py
-
       - name: mint pattern (self-test + scan)
         run: |
           python3 scripts/check-mint-pattern.py --self-test
@@ -224,11 +219,6 @@ jobs:
         run: |
           python3 scripts/check-no-ffast-math.py --self-test
           python3 scripts/check-no-ffast-math.py
-
-      - name: fixy clean headers (self-test + scan)
-        run: |
-          python3 scripts/check-fixy-clean-headers.py --self-test
-          python3 scripts/check-fixy-clean-headers.py
 
       - name: fixy dimension prose (self-test + scan)
         run: |

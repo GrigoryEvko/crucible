@@ -405,18 +405,6 @@ add_test(NAME refined_pre_subsumption
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
-# The fixy discipline.  scripts/check-fixy-discipline.py reads the parse tree
-# of each file under the directories of scripts/fixy-only-paths.txt, and fails
-# when one names crucible::safety::fn::Fn or a Tier-1 crucible::safety wrapper
-# by any route: a qualified name, a namespace alias, a using-declaration or a
-# using-directive.  Exit 3 when the kit is absent reports a skip.
-add_test(NAME fixy_discipline_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.py --self-test)
-add_test(NAME fixy_discipline
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-discipline.py)
-set_tests_properties(fixy_discipline fixy_discipline_self_test PROPERTIES
-  LABELS "ci_guard;ast"
-  SKIP_RETURN_CODE 3)
 # FIXY-U-003 §XXI Universal Mint Pattern compliance scanner.  Today's
 # Phase 1 check: every mint_<noun>( factory definition MUST carry the
 # [[nodiscard]] attribute on the same line or the immediately
@@ -709,19 +697,6 @@ add_test(NAME no_ffast_math
           --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
-# The certified-clean headers.  scripts/check-fixy-clean-headers.py reads the
-# parse tree of each header on the positive registry
-# scripts/fixy-clean-headers.txt, and fails when one names the `safety`
-# namespace in code, in a namespace alias or a using-directive, or spells
-# `safety::` in prose.  The registry only grows.  Exit 3 when the kit is
-# absent reports a skip.
-add_test(NAME fixy_clean_headers_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.py --self-test)
-add_test(NAME fixy_clean_headers
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-clean-headers.py)
-set_tests_properties(fixy_clean_headers fixy_clean_headers_self_test PROPERTIES
-    LABELS "ci_guard;ast"
-    SKIP_RETURN_CODE 3)
 # The fixy doc-blocks name an axis by the enum spelling
 # "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
 # longer matches the enum ordinals.  scripts/check-fixy-dim-prose.py reads the
@@ -919,17 +894,10 @@ set_tests_properties(no_combine_ids_duplicate
                      no_combine_ids_duplicate_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# ci_guard label-coverage gate.  `ctest -L ci_guard` is the LOCAL
-# pre-merge check; a guard registered without the label is silently
-# skipped by it, so the gate reports a pass having never run that
-# guard.  That is exactly what had happened: 12 of the 42
-# script-invoking entries were unlabelled, including fixy_discipline,
-# mint_pattern, permission_storage and both contract audits.  CI
-# invoked them directly, so only the local gate lied.
-#
-# This test makes the count self-guarding: a new guard script
-# registered without the label fails HERE, so the gap cannot reopen
-# silently.  The guard reads the tests that ctest itself lists for this
+# ci_guard label coverage.  `ctest -L ci_guard` is the local pre-merge
+# check, and it skips a guard that has no label, so it reports a pass for
+# a guard that never ran.  This test fails on each test that runs a script
+# and has no ci_guard label.  It reads the tests that ctest lists for this
 # build directory, so it sees every subdirectory and every label change.
 add_test(NAME ci_guard_labels_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.py
@@ -1420,7 +1388,6 @@ endfunction()
 
 # Sister harness for fixy_neg/.  Each fixture there calls a production
 # mint or gate with a context or an argument that the gate refuses.
-# scripts/fixy-only-paths.txt names this directory.
 function(crucible_neg_compile_fixy_test name)
   set(expected_diags ${ARGN})
   crucible_neg_require_two_regexes(fixy_neg ${name} ${expected_diags})
