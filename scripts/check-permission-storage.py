@@ -63,7 +63,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402  (the path insert above has to come first)
 
 ROOTS = ("include", "src")
-SUBSTRATE = frozenset({"include/foundation/permissions/Permission.h", "include/crucible/permissions/_Permission.h"})
+SUBSTRATE = frozenset({"include/foundation/permissions/Permission.h"})
 MARKER = "PERMISSION-STORAGE-OK"
 MARKER_WITH_REASON = re.compile(rf"{MARKER}:\s*\S")
 TEMPLATE = "Permission"

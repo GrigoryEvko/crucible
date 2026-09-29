@@ -43,9 +43,3 @@ src/observe/HdrHistogram.cpp:explicit-instantiation:class ConcurrentHdrHistogram
 src/observe/HdrHistogram.cpp:explicit-instantiation:class HdrHistogram<3,3600000000000ull>
 src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<2>
 src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<4>
-
-# The frozen permission layer declares inherit_from_list with no body, and
-# the same header gives its partial specialization.  A declaration with no
-# body does not make its file the owner of the template, so the shape needs
-# its entry.  The old tree ends by deletion.
-include/crucible/permissions/_PermissionInherit.h:friend-template-specialization:template<typename DeadTag,typename...SurvivorTags>struct inherit_from_list<

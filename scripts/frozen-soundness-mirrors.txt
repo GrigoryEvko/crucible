@@ -29,10 +29,7 @@
 # that the same change deletes or marks needs no row.  A comment starts
 # with '#'.  A blank line is skipped.
 
-include/crucible/permissions/_Permission.h — d8903aa2371e73fd,0ee5f945b4dd0045,dd21e205e9e1a664 — include/foundation/permissions/Permission.h ForkRebuildKey friends permission_fork_ (brand commit 50db03a1) — the nullary rebuild_parent_after_fork_ let any translation unit mint a Permission for a tag it never owned
-include/crucible/permissions/_PermissionFork.h — 38db3764dce5cd9b — include/foundation/permissions/PermissionFork.h routes the rebuild through the consuming permission_fork_ — the post-join reissue reached a forgeable free function instead of a consumer of the parent permission
 include/crucible/safety/_OwnedRegion.h — 742df569d593feb5,acadf3aea80d0ee2 — include/fixy/OwnedRegion.h drops the nullary rebuild — the frozen rebuild_parent_ reached the parent reissue through the same forgeable free function
-include/crucible/permissions/_PermissionFork.h — 4c468479bf586bd4,80f86371a3d7a739 — include/foundation/permissions/PermissionFork.h makes the fork body a private member reachable only from the two mints (c2de19c0) — detail::permission_fork_ and detail::permission_fork_spawn_ were callable from any translation unit, so a direct call started threads under a context without the background effect, and the mirror is the two static assertions at the head of those two functions.  The second key also holds the consuming permission_fork_ of the row above, because the assertion joined that hunk
 
 include/crucible/safety/diag/_RowMismatch.h — 2b197c23a2a777de,57a2642d589c1178,23c92cf07408ab2f — include/foundation/diag/RowMismatch.h:499,501,505 spell the three self-test aliases inline constexpr auto& — the frozen file omits inline, and a namespace-scope constexpr reference is not implicitly inline the way a constexpr object is, so the three had external linkage and any target with two translation units including this header failed to link on multiple definition
 

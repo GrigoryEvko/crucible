@@ -58,9 +58,8 @@ WHERE A SPECIALIZATION IS ADMITTED
         unnamed class, and a class that an alias or a typedef names.
 
     In an authoring location of the AUTHORING table, each with its reason.
-    A generator over every parent and a partial specialization over a tag
-    family still need it.  A location that no specialization needs is
-    stale, and the check fails until it is removed.
+    A generator over every parent still needs it.  A location that no
+    specialization needs is stale, and the check fails until it is removed.
 
 WHAT THE GUARD CANNOT SEE
     A trait name that a macro builds with `##` is not in the text, so
@@ -99,8 +98,6 @@ LINE_SPLICE = re.compile(rb"\\\r?\n")
 # one file.  A location that no specialization needs is stale, and the check
 # fails until the key is removed, so the table can only shrink.
 AUTHORING: dict[str, str] = {
-    "include/crucible/permissions/_FederationPermission.h":
-        "the split of a federated peer is partial over its children, which are template parameters",
     "include/crucible/safety/_PermissionTreeGenerator.h": "the generator splits every parent into its slices",
     "include/crucible/safety/_PermissionGridGenerator.h": "the generator splits every parent into its grid cells",
     "include/fixy/OwnedRegion.h": "the region splits every parent into its slices",
