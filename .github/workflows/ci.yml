@@ -245,11 +245,6 @@ jobs:
           python3 scripts/check-row-contains-discipline.py --self-test
           python3 scripts/check-row-contains-discipline.py
 
-      - name: fixy::is alias parity (self-test + scan)
-        run: |
-          python3 scripts/check-isx-parity.py --self-test
-          python3 scripts/check-isx-parity.py
-
       - name: stub-vs-live discipline (self-test + scan)
         run: |
           python3 scripts/check-stub-discipline.py --self-test

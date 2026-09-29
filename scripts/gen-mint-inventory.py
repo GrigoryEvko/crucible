@@ -6,17 +6,18 @@ The inventory reads the one mint model in `scripts/mintmodel.py`, which the
 about which sites are mints.  The model reads the parse tree, so a comment, a
 string, a friend declaration, a deleted overload or a call site is never a row.
 
-SCOPE.  All of `include/`, the old tree and the new one, minus the superseded
-`_*.h` headers.  The scope is derived, not listed: a directory added later is
-audited the moment it declares a mint.
+SCOPE.  All of `include/`, minus the superseded `_*.h` headers.  The scope is
+derived, not listed: a directory added later is audited the moment it declares
+a mint.
 
 ONE ROW FOR EACH FUNCTION.  Overloads are separate rows.  A forward declaration
 and its definition are one row, keyed at the definition.
 
-HS14 COUNTS BY TREE.  The two trees share mint names, so a fixture of the old
-tree says nothing about a gate of the new tree.  A row counts only the fixtures
-of its own tree: `test/fixy/**/neg` and `test/foundation/**/neg` for the new
-tree, every other `test/**/*_neg` for the old one.
+HS14 COUNTS BY LAYER.  Two layers can declare mints of one name, so a fixture of
+one layer says nothing about a gate of the other.  A row counts only the
+fixtures of its own layer: `test/fixy/**/neg` and `test/foundation/**/neg` for a
+mint of `include/fixy/` or `include/foundation/`, every other `test/**/*_neg`
+for a mint of `include/crucible/`.
 
 MODES
     --write        regenerate misc/mint-inventory.md
@@ -54,10 +55,6 @@ FLOOR_ALLOWLIST = tsast.REPO_ROOT / "scripts" / "mint-hs14-floor-allowlist.txt"
 # The HS14 floor (CLAUDE.md §XVIII): two negative-compile fixtures for each mint.
 HS14_FLOOR = 2
 
-# The old-tree umbrella that re-exports substrate mints with `using`.  A mint it
-# declares itself has no re-export to look for.
-OLD_FIXY = "include/crucible/fixy"
-
 # Written in a cell whose axis does not apply to the row, as opposed to `-`,
 # which is a shortfall.
 NOT_APPLICABLE = "·"
@@ -71,16 +68,14 @@ class Row:
         mint: The mint model entry
         path: The site path, relative to the scanned root
         group: The section the row belongs to
-        family: `old` or `new`, the tree the site belongs to
-        fixy: The old-tree re-export site, `[✗ NO-FIXY]`, or the not-applicable mark
-        hs14: The number of fixtures of the row's tree that name the mint
+        family: `crucible` or `new`, the layer the site belongs to
+        hs14: The number of fixtures of the row's layer that name the mint
     """
 
     mint: mintmodel.Mint
     path: str
     group: str
     family: str
-    fixy: str
     hs14: int
     overloaded: bool = False
 
@@ -134,28 +129,22 @@ def group_of(path: str) -> str:
     return "/".join(parts[:depth]) + "/"
 
 
-def build_rows(
-    root: Path,
-    surface: list[Path],
-    umbrella: list[Path],
-    fixtures: dict[str, list[Path]],
-) -> list[Row]:
+def build_rows(root: Path, surface: list[Path], fixtures: dict[str, list[Path]]) -> list[Row]:
     """Collect every mint and the facts each row renders.
 
     Args:
         root: The scanned root
         surface: The headers of the mint surface
-        umbrella: The headers of the old-tree fixy umbrella, for re-exports
-        fixtures: `old` and `new` to the fixture files of that tree
+        fixtures: `crucible` and `new` to the fixture files of that layer
 
     Returns:
         One row for each mint, sorted by section, name, path and line
     """
     mints = mintmodel.collect(surface)
-    reexported = mintmodel.reexports(umbrella)
     names = {family: mintmodel.fixture_names(paths) for family, paths in fixtures.items()}
     aliases = mintmodel.alias_heads(surface)
-    family_of = {id(mint): "new" if mintmodel.is_new_tree(relative(mint.path, root)) else "old" for mint in mints}
+    family_of = {id(mint): "new" if mintmodel.is_new_tree(relative(mint.path, root)) else "crucible"
+                 for mint in mints}
     carriers: dict[tuple[str, str], set[str | None]] = {}
     for mint in mints:
         carriers.setdefault((family_of[id(mint)], mint.name), set()).add(mint.owner)
@@ -163,16 +152,11 @@ def build_rows(
     for mint in mints:
         path = relative(mint.path, root)
         family = family_of[id(mint)]
-        fixy = NOT_APPLICABLE
-        if family == "old" and not path.startswith(OLD_FIXY + "/") and mint.shape != "member":
-            site = reexported.get(mint.linkage_name)
-            fixy = f"`{relative(site[0], root)}:{site[1]}`" if site else "[✗ NO-FIXY]"
         rows.append(Row(
             mint=mint,
             path=path,
             group=group_of(path),
             family=family,
-            fixy=fixy,
             hs14=mintmodel.fixture_count(mint, len(carriers[(family, mint.name)]), names.get(family, []), aliases),
         ))
     per_site: dict[tuple[str, str], int] = {}
@@ -189,7 +173,7 @@ def cells(row: Row) -> list[str]:
         row: The row to render
 
     Returns:
-        The cells: name, site, nd, cx, ne, rq, cb, fit, fixy, HS14
+        The cells: name, site, nd, cx, ne, rq, cb, fit, HS14
     """
     mint = row.mint
     if mint.constexpr:
@@ -219,7 +203,6 @@ def cells(row: Row) -> list[str]:
         rq,
         mint.shape,
         fit,
-        row.fixy,
         hs14,
     ]
 
@@ -262,8 +245,7 @@ and a header that overloads a mint names each overload by its parameter types.
 | `rq` | A type-level constraint: a `requires` clause or a concept on a template parameter.  `- (pre)` is the documented carve-out for a value-dependent gate written as a `pre(...)` clause (marker `// §XXI carve-out: rq=pre`).  `{NOT_APPLICABLE}` marks a mint that is not a template, which cannot carry a constraint. |
 | `cb` | The authorization shape: `ctx` (the first parameter is `Ctx const&`), `token` (authority from the arguments), or `member` (a non-static method, whose authority is its object).  A static member takes its shape from its parameters. |
 | `fit` | For a `ctx` row: a constraint names the context, so the mint refuses a context that does not fit.  `-` means the mint accepts every context. |
-| `fixy` | Old tree only: the `using` in `include/crucible/fixy/` that re-exports the mint, or `[✗ NO-FIXY]`. |
-| `HS14` | The number of negative-compile fixtures of the row's own tree that name the mint.  `⚠` marks a count under the floor of {HS14_FLOOR}. |
+| `HS14` | The number of negative-compile fixtures of the row's own layer that name the mint.  `⚠` marks a count under the floor of {HS14_FLOOR}. |
 
 `-` in a flag column is a shortfall.  `{NOT_APPLICABLE}` means the axis does not
 apply to the row.
@@ -288,29 +270,29 @@ def render(rows: list[Row]) -> str:
         if row.group != group:
             group = row.group
             out.append(f"\n## {group}\n\n")
-            out.append("| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |\n")
-            out.append("|---|---|---|---|---|---|---|---|---|---|\n")
+            out.append("| mint | site | nd | cx | ne | rq | cb | fit | HS14 |\n")
+            out.append("|---|---|---|---|---|---|---|---|---|\n")
         out.append("| " + " | ".join(cells(row)) + " |\n")
 
     def count(family: str, **match: str) -> int:
-        """Return the number of rows of one tree that match the given fields."""
+        """Return the number of rows of one layer that match the given fields."""
         return sum(
             1 for r in rows
             if r.family == family and all(getattr(r.mint, k) == v for k, v in match.items())
         )
 
     out.append("\n## Summary\n\n")
-    out.append("| tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |\n")
-    out.append("|---|---|---|---|---|---|---|---|\n")
-    for family, label in (("old", "old (`include/crucible/`)"), ("new", "new (`include/foundation/`, `include/fixy/`)")):
+    out.append("| layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |\n")
+    out.append("|---|---|---|---|---|---|---|\n")
+    for family, label in (("crucible", "crucible (`include/crucible/`)"),
+                          ("new", "new (`include/foundation/`, `include/fixy/`)")):
         mine = [r for r in rows if r.family == family]
         unfit = sum(1 for r in mine if mintmodel.ctxfit_applies(r.mint) and not r.mint.ctx_gated)
-        no_fixy = sum(1 for r in mine if r.fixy == "[✗ NO-FIXY]")
         under = sum(1 for r in mine if r.hs14 < HS14_FLOOR)
         out.append(
             f"| {label} | {len(mine)} | {count(family, shape='ctx')} | "
             f"{count(family, shape='token')} | {count(family, shape='member')} | "
-            f"{unfit} | {no_fixy if family == 'old' else NOT_APPLICABLE} | {under} |\n"
+            f"{unfit} | {under} |\n"
         )
     return "".join(out)
 
@@ -362,8 +344,7 @@ def real_rows() -> list[Row]:
     Returns:
         Every row of the tree
     """
-    umbrella = [p for p in tsast.cpp_files(OLD_FIXY) if not p.name.startswith("_")]
-    return build_rows(tsast.REPO_ROOT, mintmodel.surface_files(), umbrella, mintmodel.fixture_files())
+    return build_rows(tsast.REPO_ROOT, mintmodel.surface_files(), mintmodel.fixture_files())
 
 
 def check_floor(rows: list[Row], allowlist: Path) -> int:
@@ -384,10 +365,10 @@ def check_floor(rows: list[Row], allowlist: Path) -> int:
     live, stale = floor_verdict(rows, allowed)
     if live:
         print(f"gen-mint-inventory: HS14 FLOOR VIOLATION — these mints have fewer than "
-              f"{HS14_FLOOR} negative-compile fixtures of their own tree:", file=sys.stderr)
+              f"{HS14_FLOOR} negative-compile fixtures of their own layer:", file=sys.stderr)
         for row in live:
             print(f"  {row.floor_key}:{row.mint.line}  HS14: {row.hs14}", file=sys.stderr)
-        print("Write fixtures that name the mint under test/**/neg of its tree.", file=sys.stderr)
+        print("Write fixtures that name the mint in a fixture directory of its layer.", file=sys.stderr)
         return 1
     if stale:
         print(f"gen-mint-inventory: STALE floor allowlist entries — these mints meet the "
@@ -447,13 +428,6 @@ struct Thing {};
 [[nodiscard]] constexpr Thing mint_superseded(Thing) noexcept { return {}; }
 }
 """,
-        "include/crucible/fixy/Sample.h": """
-namespace crucible::fixy {
-using ::crucible::sample::mint_planted_token;
-struct Thing {};
-[[nodiscard]] constexpr Thing mint_planted_origin(Thing) noexcept { return {}; }
-}
-""",
         "include/foundation/algebra/Lattice.h": """
 namespace foundation::algebra {
 template <typename> concept IsExecCtx = true;
@@ -476,7 +450,7 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
         "test/sample_neg/names_it_in_a_comment.cpp": "// mint_planted_token is refused here\nvoid g();\n",
         "test/fixy/neg/uses_image_a.cpp": "void f() { mint_from_image(0, 0); }\n",
         "test/fixy/neg/uses_image_b.cpp": "void f() { mint_from_image(1, 1); }\n",
-        "test/fixy/neg/new_tree_names_the_old_token.cpp": "void f() { mint_planted_token(0); }\n",
+        "test/fixy/neg/new_layer_names_the_crucible_token.cpp": "void f() { mint_planted_token(0); }\n",
         # Two classes carry the member name mint_planted_member.  A fixture
         # counts for the class it names, and one that names neither class
         # counts for neither.
@@ -493,15 +467,14 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
         surface = sorted(p for p in (root / "include").rglob("*.h") if not p.name.startswith("_"))
-        umbrella = sorted((root / OLD_FIXY).rglob("*.h"))
-        rows = build_rows(root, surface, umbrella, mintmodel.fixture_files(root))
+        rows = build_rows(root, surface, mintmodel.fixture_files(root))
         by_name = {r.name: r for r in rows}
 
         check(
-            "finds exactly the six live mints",
+            "finds exactly the five live mints",
             sorted(by_name) == [
                 "Holder::mint_planted_member", "Keeper::mint_planted_member", "Lattice::mint_from_image",
-                "mint_planted_origin", "mint_planted_source", "mint_planted_token",
+                "mint_planted_source", "mint_planted_token",
             ],
         )
         holder, keeper = by_name.get("Holder::mint_planted_member"), by_name.get("Keeper::mint_planted_member")
@@ -518,24 +491,14 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
             True,
         )
         check(
-            "the re-export cell names the using-declaration",
-            token is not None and token.fixy == "`include/crucible/fixy/Sample.h:3`",
-        )
-        check(
-            "HS14 counts one fixture: a comment and a new-tree fixture do not count",
-            token is not None and token.hs14 == 1,
+            "HS14 counts one fixture: a comment and a fixture of the other layer do not count",
+            token is not None and token.family == "crucible" and token.hs14 == 1,
             True,
         )
         member = by_name.get("Holder::mint_planted_member")
         check(
-            "a non-static member has the member shape and no re-export cell",
-            member is not None and member.mint.shape == "member" and member.fixy == NOT_APPLICABLE,
-        )
-        origin = by_name.get("mint_planted_origin")
-        check(
-            "a mint declared in the umbrella has no re-export cell",
-            origin is not None and origin.fixy == NOT_APPLICABLE
-            and origin.group == "include/crucible/fixy/",
+            "a non-static member has the member shape",
+            member is not None and member.mint.shape == "member",
         )
         image = by_name.get("Lattice::mint_from_image")
         check(

@@ -35,327 +35,326 @@ and a header that overloads a mint names each overload by its parameter types.
 | `rq` | A type-level constraint: a `requires` clause or a concept on a template parameter.  `- (pre)` is the documented carve-out for a value-dependent gate written as a `pre(...)` clause (marker `// §XXI carve-out: rq=pre`).  `·` marks a mint that is not a template, which cannot carry a constraint. |
 | `cb` | The authorization shape: `ctx` (the first parameter is `Ctx const&`), `token` (authority from the arguments), or `member` (a non-static method, whose authority is its object).  A static member takes its shape from its parameters. |
 | `fit` | For a `ctx` row: a constraint names the context, so the mint refuses a context that does not fit.  `-` means the mint accepts every context. |
-| `fixy` | Old tree only: the `using` in `include/crucible/fixy/` that re-exports the mint, or `[✗ NO-FIXY]`. |
-| `HS14` | The number of negative-compile fixtures of the row's own tree that name the mint.  `⚠` marks a count under the floor of 2. |
+| `HS14` | The number of negative-compile fixtures of the row's own layer that name the mint.  `⚠` marks a count under the floor of 2. |
 
 `-` in a flag column is a shortfall.  `·` means the axis does not
 apply to the row.
 
 ## include/crucible/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | · | HS14: 5 |
-| `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | · | HS14: 2 |
-| `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | · | HS14: 15 |
-| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
-| `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
-| `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | · | HS14: 4 |
-| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | · | HS14: 7 |
-| `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | · | HS14: 2 |
-| `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | · | HS14: 2 |
-| `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 6 |
-| `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | HS14: 5 |
+| `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | HS14: 2 |
+| `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | HS14: 15 |
+| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | HS14: 4 |
+| `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | HS14: 4 |
+| `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | HS14: 4 |
+| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 7 |
+| `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
+| `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 2 |
+| `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 6 |
+| `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 
 ## include/crucible/canopy/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 3 |
-| `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 19 |
-| `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 4 |
-| `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 10 |
-| `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 6 |
-| `mint_swim_membership` | `include/crucible/canopy/Swim.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 5 |
-| `mint_vector_clock` | `include/crucible/canopy/VectorClock.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | Y | Y | · | token | · | HS14: 3 |
+| `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | Y | Y | Y | token | · | HS14: 19 |
+| `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | Y | Y | Y | token | · | HS14: 10 |
+| `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h` | Y | Y | Y | Y | token | · | HS14: 6 |
+| `mint_swim_membership` | `include/crucible/canopy/Swim.h` | Y | Y | Y | Y | token | · | HS14: 5 |
+| `mint_vector_clock` | `include/crucible/canopy/VectorClock.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 
 ## include/crucible/cipher/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_demote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_promote` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_restore` | `include/crucible/cipher/CipherTierPromotion.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 
 ## include/crucible/cntp/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_admission_controller` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_admission_decision` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_af_xdp_config` | `include/crucible/cntp/AfXdp.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_bbr_qdisc_config` | `include/crucible/cntp/Pacing.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_bpf_map_spec` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 8 |
-| `mint_connection` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
-| `mint_connection_pool` | `include/crucible/cntp/ConnectionPoolRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
-| `mint_credit_flow_control` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_custom_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_dctcp_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_doca_deploy_plan` | `include/crucible/cntp/_wip/Doca.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_fountain_decoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_fountain_encoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_gossip_multicast_plan` | `include/crucible/cntp/GossipMulticast.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_gpu_direct_mr_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_incast_controller` | `include/crucible/cntp/IncastControlRuntime.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_ktls_crypto_info` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
-| `mint_ktls_offload_for_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_ktls_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 3 |
-| `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 5 |
-| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 7 |
-| `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 7 |
-| `mint_quic_connection` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
-| `mint_reed_solomon` | `include/crucible/cntp/Fec.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_resource_limit` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 0 ⚠ |
-| `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_roce_config` | `include/crucible/cntp/RoceConfig.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_sharp_context` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
-| `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_wireguard_config` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_wireguard_config_with_psk` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_wireguard_tunnel` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_xdp_program` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_admission_controller` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_admission_decision` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | · | token | · | HS14: 0 ⚠ |
+| `mint_af_xdp_config` | `include/crucible/cntp/AfXdp.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_bbr_qdisc_config` | `include/crucible/cntp/Pacing.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_bpf_map_spec` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | HS14: 8 |
+| `mint_connection` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_connection_pool` | `include/crucible/cntp/ConnectionPoolRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
+| `mint_credit_flow_control` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_custom_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_dctcp_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
+| `mint_doca_deploy_plan` | `include/crucible/cntp/_wip/Doca.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_fountain_decoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_fountain_encoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_gossip_multicast_plan` | `include/crucible/cntp/GossipMulticast.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_gpu_direct_mr_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | · | token | · | HS14: 1 ⚠ |
+| `mint_incast_controller` | `include/crucible/cntp/IncastControlRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_ktls_crypto_info` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_ktls_offload_for_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_ktls_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
+| `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | HS14: 5 |
+| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
+| `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | · | token | · | HS14: 7 |
+| `mint_quic_connection` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
+| `mint_reed_solomon` | `include/crucible/cntp/Fec.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_resource_limit` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
+| `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_roce_config` | `include/crucible/cntp/RoceConfig.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_sharp_context` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
+| `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_wireguard_config` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_wireguard_config_with_psk` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_wireguard_tunnel` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_xdp_program` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/crucible/cog/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_nic_config` | `include/crucible/cog/NicConfig.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_sriov_plan` | `include/crucible/cog/SrIov.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_nic_config` | `include/crucible/cog/NicConfig.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_sriov_plan` | `include/crucible/cog/SrIov.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/crucible/ledger/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_ledger_view(Ctx const&)` | `include/crucible/ledger/Ledger.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_ledger_view(Ctx const&,HostFingerprint)` | `include/crucible/ledger/Ledger.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_ledger_view(Ctx const&)` | `include/crucible/ledger/Ledger.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_ledger_view(Ctx const&,HostFingerprint)` | `include/crucible/ledger/Ledger.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 
 ## include/crucible/mimic/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_cog_mimic` | `include/crucible/mimic/CogMimic.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_device_semaphore` | `include/crucible/mimic/Semaphore.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_cog_mimic` | `include/crucible/mimic/CogMimic.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_device_semaphore` | `include/crucible/mimic/Semaphore.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 
 ## include/crucible/observe/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | Y | Y | Y | token | · | [✗ NO-FIXY] | HS14: 1 ⚠ |
-| `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 1 ⚠ |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | - | Y | Y | ctx | Y | HS14: 1 ⚠ |
 
 ## include/crucible/perf/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_lock_contention` | `include/crucible/perf/LockContention.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
-| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_sense_hub` | `include/crucible/perf/SenseHub.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
-| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 4 |
-| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_lock_contention` | `include/crucible/perf/LockContention.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
+| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
+| `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
+| `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
+| `mint_sense_hub` | `include/crucible/perf/SenseHub.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
+| `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
+| `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
+| `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
+| `mint_workload_profiler` | `include/crucible/perf/WorkloadProfiler.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 
 ## include/crucible/topology/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_asymmetric_failure_detector` | `include/crucible/topology/AsymmetricFailure.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_congestion_telemetry_worker` | `include/crucible/topology/CongestionTelemetryWorker.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
-| `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 7 |
-| `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | [✗ NO-FIXY] | HS14: 2 |
-| `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 5 |
-| `mint_ptp_handle` | `include/crucible/topology/Ptp.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_topology_graph` | `include/crucible/topology/TopologyGraph.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
-| `mint_topology_health` | `include/crucible/topology/Health.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_asymmetric_failure_detector` | `include/crucible/topology/AsymmetricFailure.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_congestion_telemetry_worker` | `include/crucible/topology/CongestionTelemetryWorker.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
+| `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
+| `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `mint_ptp_handle` | `include/crucible/topology/Ptp.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_topology_graph` | `include/crucible/topology/TopologyGraph.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_topology_health` | `include/crucible/topology/Health.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/crucible/warden/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
-| `mint_hardening` | `include/crucible/warden/Hardening.h` | Y | - | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 6 |
-| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 3 |
-| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h` | Y | Y | Y | Y | ctx | Y | [✗ NO-FIXY] | HS14: 7 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
+| `mint_hardening` | `include/crucible/warden/Hardening.h` | Y | - | Y | Y | ctx | Y | HS14: 6 |
+| `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
 
 ## include/fixy/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `OwnedMmap::mint_region` | `include/fixy/OwnedMmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
-| `foundation::permissions::FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `foundation::permissions::FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | · | HS14: 2 |
-| `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_band` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | · | HS14: 11 |
-| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
-| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
-| `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
-| `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
-| `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
-| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | · | HS14: 1 ⚠ |
-| `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_owned_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 16 |
-| `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
-| `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 16 |
-| `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 9 |
-| `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | · | HS14: 0 ⚠ |
-| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | · | HS14: 14 |
-| `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 7 |
-| `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | · | HS14: 4 |
-| `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | · | HS14: 21 |
-| `mint_temporary_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_witnessed_at` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_witnessed_under` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `OwnedMmap::mint_region` | `include/fixy/OwnedMmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `foundation::permissions::FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `foundation::permissions::FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | HS14: 2 |
+| `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
+| `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_band` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 11 |
+| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_borrowed(R&&)` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
+| `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
+| `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_owned_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_owned_region(::foundation::effects::Alloc,Allocator&,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 16 |
+| `mint_owned_region(T*,std::size_t,::foundation::permissions::Permission<Tag,Brand>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 16 |
+| `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 16 |
+| `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
+| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | HS14: 14 |
+| `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
+| `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 4 |
+| `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
+| `mint_temporary_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_witnessed_at` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_witnessed_under` | `include/fixy/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 
 ## include/fixy/concurrent/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_endpoint` | `include/fixy/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 9 |
-| `mint_mpmc_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 10 |
-| `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
-| `mint_reader_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_recording_endpoint` | `include/fixy/concurrent/EndpointMint.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 21 |
-| `mint_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_substrate_session` | `include/fixy/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_swmr_reader` | `include/fixy/concurrent/SwmrSession.h` | Y | - | Y | Y | token | · | · | HS14: 4 |
-| `mint_swmr_stage` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_writer_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_endpoint` | `include/fixy/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
+| `mint_mpmc_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
+| `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_reader_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_recording_endpoint` | `include/fixy/concurrent/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 21 |
+| `mint_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_substrate_session` | `include/fixy/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_swmr_reader` | `include/fixy/concurrent/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
+| `mint_swmr_stage` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_writer_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/fixy/handle/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `LazyEstablishedChannel::mint_established_session` | `include/fixy/handle/LazyEstablishedChannel.h` | Y | - | Y | Y | member | · | · | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `LazyEstablishedChannel::mint_established_session` | `include/fixy/handle/LazyEstablishedChannel.h` | Y | - | Y | Y | member | · | HS14: 2 |
 
 ## include/fixy/os/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_affinity` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_cold_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_head_advancer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_priority` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_socket` | `include/fixy/os/Socket.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_spawn` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 4 |
-| `mint_warm_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_affinity` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_cold_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_file` | `include/fixy/os/Fs.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
+| `mint_head_advancer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `mint_parallel_for` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `mint_priority` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_socket` | `include/fixy/os/Socket.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_spawn` | `include/fixy/os/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
+| `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
+| `mint_warm_writer` | `include/fixy/os/CipherDurable.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/fixy/session/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
-| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
-| `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 3 |
-| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | ctx | Y | · | HS14: 24 |
-| `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | · | HS14: 27 |
-| `mint_delegated_session(H)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_delegated_session(H,Hold)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | · | HS14: 4 |
-| `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | · | HS14: 3 |
-| `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
-| `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 9 |
-| `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
-| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 13 |
-| `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | · | HS14: 45 |
-| `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 5 |
-| `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
+| `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | HS14: 3 |
+| `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | ctx | Y | HS14: 24 |
+| `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | HS14: 27 |
+| `mint_delegated_session(H)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_delegated_session(H,Hold)` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
+| `mint_forked_channel` | `include/fixy/session/Handle.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
+| `mint_permission_hold` | `include/fixy/session/Payload.h` | Y | Y | Y | Y | token | · | HS14: 7 |
+| `mint_permissioned_session` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
+| `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 7 |
+| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 13 |
+| `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_session_handle` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | token | · | HS14: 45 |
+| `mint_test_channel` | `include/fixy/session/Handle.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
+| `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/foundation/algebra/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
-| `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/foundation/diag/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_diagnostic` | `include/foundation/diag/Catalog.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_diagnostic` | `include/foundation/diag/Catalog.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 
 ## include/foundation/effects/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `BackgroundOwner::mint_background_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | · | HS14: 2 |
-| `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | · | HS14: 9 |
-| `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 3 |
-| `InitOwner::mint_init_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | · | HS14: 3 |
-| `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | · | HS14: 4 |
-| `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | · | HS14: 10 |
-| `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | · | HS14: 5 |
-| `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | · | HS14: 4 |
-| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 4 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `BackgroundOwner::mint_background_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | HS14: 9 |
+| `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `InitOwner::mint_init_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | HS14: 3 |
+| `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | HS14: 4 |
+| `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | HS14: 10 |
+| `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | HS14: 5 |
+| `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | HS14: 4 |
+| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 
 ## include/foundation/permissions/
 
-| mint | site | nd | cx | ne | rq | cb | fit | fixy | HS14 |
-|---|---|---|---|---|---|---|---|---|---|
-| `mint_permission_after_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | · | HS14: 2 |
-| `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 6 |
-| `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
-| `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | · | HS14: 2 |
-| `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | · | HS14: 8 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 160 |
-| `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 3 |
-| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 27 |
-| `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | · | HS14: 12 |
-| `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | · | HS14: 7 |
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_permission_after_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 6 |
+| `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
+| `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 160 |
+| `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 27 |
+| `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
+| `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 
 ## Summary
 
-| tree | mints | ctx | token | member | ctx with no fit | no fixy re-export | under the HS14 floor |
-|---|---|---|---|---|---|---|---|
-| old (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 90 | 10 |
-| new (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | · | 4 |
+| layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
+|---|---|---|---|---|---|---|
+| crucible (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 10 |
+| new (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | 4 |

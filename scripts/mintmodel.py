@@ -138,18 +138,6 @@ class Mint:
         return f"{self.owner}::{self.name}" if self.owner else self.name
 
     @property
-    def linkage_name(self) -> str:
-        """Return the fully qualified name a using-declaration would name.
-
-        A re-export names the mint through its namespace, so this is the key a
-        `using` has to match.  Matching the bare name instead reports a
-        re-export that names a different function as if it named this one.
-        A member names its class between the namespace and the function.
-        """
-        scoped = self.qualified
-        return f"::{self.namespace}::{scoped}" if self.namespace else f"::{scoped}"
-
-    @property
     def identity(self) -> tuple[str, str | None, str, str]:
         """Return the key that one function keeps across its declarations.
 
@@ -288,10 +276,10 @@ def ctxfit_applies(mint: Mint) -> bool:
 def surface_files() -> list[Path]:
     """Return every header of the §XXI mint surface, sorted.
 
-    The guard and the inventory read one scope: all of `include/`, the old tree
-    and the new one.  The scope is derived, never listed.  A list of trees once
-    left a third of the tree's mints unaudited, and a directory added later was
-    unaudited on arrival until someone remembered to extend the list.
+    The guard and the inventory read one scope: all of `include/`.  The scope is
+    derived, never listed.  A list of trees once left a third of the tree's
+    mints unaudited, and a directory added later was unaudited on arrival until
+    someone remembered to extend the list.
 
     Superseded `_*.h` headers are excluded: they are frozen, so a shortfall there
     cannot be repaired, and they go with the old tree.
@@ -733,37 +721,6 @@ def _namespace_of(node: tsast.Node) -> str:
     return "::".join(part for part in tsast.namespace_path(node) if part)
 
 
-def reexports(paths: list[Path] | None = None) -> dict[str, tuple[str, int]]:
-    """Return every fixy re-export, keyed by the qualified name it names.
-
-    A re-export is a using-declaration whose last name starts with `mint_`.
-    The key is the full name it names, from `::`, so a lookup matches the mint
-    the using actually names.  A bare-name key cannot: two namespaces can
-    each declare a mint of one name, and a re-export names only one of them.
-
-    A re-export may name its target through a namespace alias of the file.
-    `fixy/Time.h` writes `namespace sf = ::crucible::safety;` and then
-    `using sf::mint_clock_source;`, so the alias resolves before the lookup.
-    An alias of one segment resolves as well as a nested one.
-
-    Args:
-        paths: The files to scan, or None to scan include/crucible/fixy
-
-    Returns:
-        Qualified name to the site that re-exports it
-    """
-    files = tsast.cpp_files("include/crucible/fixy") if paths is None else paths
-    found: dict[str, tuple[str, int]] = {}
-    for tree in tsast.parse(sorted(files), strict=False):
-        aliases = tsast.namespace_aliases(tree)
-        for using in tsast.using_names(tree):
-            if using.kind != "declaration" or not using.target or not using.target[-1].startswith("mint_"):
-                continue
-            parts = tsast.resolve_namespace(using.target, using.node, aliases, is_global=using.is_global)
-            found.setdefault("::" + "::".join(parts), (str(tree.path), using.node.line))
-    return found
-
-
 NEW_TREE_ROOTS = ("include/foundation", "include/fixy")
 
 
@@ -780,22 +737,22 @@ def is_new_tree(path: str) -> bool:
 
 
 def fixture_files(root: Path = tsast.REPO_ROOT) -> dict[str, list[Path]]:
-    """Return the negative-compile fixture files of each tree, sorted.
+    """Return the negative-compile fixture files of each layer, sorted.
 
     A fixture directory is a directory under `test/` named `neg` or ending in
     `_neg`.  The fixtures of the new tree live under `test/fixy/` and
-    `test/foundation/`.  Every other directory holds fixtures of the old tree.
-    A mint's HS14 count reads only the fixtures of its own tree, because the two
-    trees share mint names and a fixture of one tree says nothing about a gate
-    of the other.
+    `test/foundation/`.  Every other directory holds fixtures of the crucible
+    layer.  A mint's HS14 count reads only the fixtures of its own layer,
+    because two layers can declare mints of one name and a fixture of one layer
+    says nothing about a gate of the other.
 
     Args:
         root: The repository root to search
 
     Returns:
-        `old` and `new` to the fixture files of that tree, relative to root
+        `crucible` and `new` to the fixture files of that layer, relative to root
     """
-    found: dict[str, list[Path]] = {"old": [], "new": []}
+    found: dict[str, list[Path]] = {"crucible": [], "new": []}
     test_dir = root / "test"
     if not test_dir.is_dir():
         return found
@@ -803,7 +760,7 @@ def fixture_files(root: Path = tsast.REPO_ROOT) -> dict[str, list[Path]]:
         if directory.name != "neg" and not directory.name.endswith("_neg"):
             continue
         rel = directory.relative_to(root)
-        family = "new" if rel.parts[1] in ("fixy", "foundation") else "old"
+        family = "new" if rel.parts[1] in ("fixy", "foundation") else "crucible"
         for suffix in (".h", ".hpp", ".cpp", ".cc"):
             found[family].extend(p.relative_to(root) if root == tsast.REPO_ROOT else p
                                  for p in directory.glob(f"*{suffix}"))
@@ -882,8 +839,8 @@ def fixture_count(mint: Mint, carriers: int, names: list[frozenset[str]],
 
     Args:
         mint: The mint
-        carriers: The number of mints of its tree with the same name
-        names: The names of each fixture of its tree, from fixture_names()
+        carriers: The number of mints of its layer with the same name
+        names: The names of each fixture of its layer, from fixture_names()
         aliases: Each class to the aliases that denote it, from alias_heads()
 
     Returns:
@@ -1358,9 +1315,6 @@ Thing mint_split_sig(Thing const& value) noexcept { return value; }
 namespace probe_outer /* a comment */ ::inline probe_v2 {
 [[nodiscard]] constexpr Thing mint_in_nested(Thing) noexcept { return {}; }
 }
-
-namespace pr = probe;
-using pr::mint_token;
 """
     with tempfile.TemporaryDirectory() as work:
         path = Path(work) / "fixture.cpp"
@@ -1414,11 +1368,6 @@ using pr::mint_token;
         check(
             "a comment and an inline segment in a nested namespace name stay out of the namespace",
             nested is not None and nested.namespace == "probe_outer::probe_v2",
-        )
-        check(
-            "a re-export through an alias of one segment resolves to the full name",
-            reexports([path]) == {"::probe::mint_token": (str(path),
-                                                          fixture.splitlines().index("using pr::mint_token;") + 1)},
         )
         trap = by_name.get("mint_raw_string_trap")
         check(

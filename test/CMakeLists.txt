@@ -854,17 +854,6 @@ add_test(NAME row_contains_discipline
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.py)
 set_tests_properties(row_contains_discipline row_contains_discipline_self_test
     PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
-# The fixy::is parity.  scripts/check-isx-parity.py reads the parse tree of
-# each safety/*Is*.h header.  Each public bool `_v` trait, `_t` alias and
-# trait using-declaration directly in safety::extract must have a
-# using-declaration in fixy::is in fixy/Is.h.  The namespace path decides
-# what is public, so a declaration in extract::detail is not demanded.
-add_test(NAME isx_parity_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-isx-parity.py --self-test)
-add_test(NAME isx_parity
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-isx-parity.py)
-set_tests_properties(isx_parity isx_parity_self_test PROPERTIES
-    LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # The stub discipline.  scripts/check-stub-discipline.py reads the parse tree
 # of every header under include/ and pairs each honesty marker (a constexpr
 # bool *_implemented, *_attached or *_ready that is false, at namespace scope

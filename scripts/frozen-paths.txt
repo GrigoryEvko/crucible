@@ -17,5 +17,4 @@ include/crucible/sessions/
 include/crucible/bridges/
 include/crucible/handles/
 include/crucible/concurrent/
-include/crucible/Fixy.h
 include/crucible/_Saturate.h

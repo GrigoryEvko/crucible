@@ -37,7 +37,6 @@ scripts/check-fullness-guard.py | tsast,text | the allowlist rows
 scripts/check-git-isolation.py | python-ast,ast-grep-bash,json |
 scripts/check-guard-engines.py | python-ast,ast-grep-bash,json,text | the rows of this roster
 scripts/check-host-owners.py | tsast,text | the roster scripts/host-owner-roster.txt
-scripts/check-isx-parity.py | tsast |
 scripts/check-layer-boundary.py | tsast |
 scripts/check-lifetime-twin.py | tsast |
 scripts/check-lock-free-asserts.py | tsast |
