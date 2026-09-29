@@ -10,10 +10,12 @@
 // them.  A refactor that loosens the helper to accept
 // `Tagged<const TensorMeta*, AnyTag>` would let provenance from raw
 // FFI bytes (External) silently masquerade as the ABIBoundary
-// provenance the dispatch path expects.  This fixture witnesses that
-// the type system rejects the laundering attempt.  Both tags come from
-// the ::fixy tree, so the refusal is the tag mismatch and not a
-// mismatch between the two trees.
+// provenance the dispatch path expects.  This fixture shows that the
+// type system refuses the laundering attempt.  The two types differ in
+// the tag alone: both tags are in fixy::tags::source, and the payload is
+// const TensorMeta* on each side.  The registration regex names the two
+// tags, so only the refusal of the External-to-ABIBoundary conversion
+// satisfies it.
 //
 // Pairs with neg_vessel_typed_handle_wrong_tag.cpp — the two together
 // pin both directions of the typed Vessel ABI helper API.

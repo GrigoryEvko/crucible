@@ -877,8 +877,10 @@ endif()
 #   ls build/asm-dump/   # one .s + one .cpp per test/bench target
 #
 # Each .s file contains the full Intel-syntax disassembly of the
-# linked binary (post-LTO, all kept symbols).  Default OFF — every
-# objdump invocation adds 100s of ms; opt-in for asm-comparison.
+# linked binary, with all kept symbols.  No build links with LTO, so
+# the code of each function is the code of its object file.
+# Default OFF — every objdump invocation adds 100s of ms; opt-in for
+# asm-comparison.
 option(CRUCIBLE_DUMP_ASM
     "Dump objdump output of every test/bench to build/asm-dump/" OFF)
 

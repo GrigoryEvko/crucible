@@ -9,8 +9,10 @@
 // A refactor that widened the source tag, or that retagged on
 // assignment, would let raw FFI bytes pass as Sanitized memory that the
 // dispatcher trusts.  This fixture shows that the type system refuses
-// that laundering.  Both tags come from the ::fixy tree, so the refusal
-// is the tag mismatch and not a mismatch between the two trees.
+// that laundering.  The two types differ in the tag alone: both tags are
+// in fixy::tags::source, and the payload is void* on each side.  The
+// registration regex names the two tags, so only the refusal of the
+// External-to-Sanitized conversion satisfies it.
 //
 // [GCC-WRAPPER-TEXT] — function-argument type-mismatch rejection.
 

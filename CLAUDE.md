@@ -29,7 +29,7 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 
 **The structural guarantee layer. Every higher layer inherits correctness from these primitives.**
 
-Crucible has no proof-assistant source of truth. Correctness is won by three complementary disciplines: **contracts-enforced invariants** (P2900R14), **linear / refined / session-typed wrappers** over every resource, and **measurement** (Mimic MAP-Elites + calibrated simulators + cross-vendor CI — §L2, §L15). No SMT-proven optimal kernels; no proved-allocators-theorem. What we have instead:
+Crucible has no proof-assistant source of truth. Correctness is won by three complementary disciplines: **contracts-enforced invariants** (P2900R14), **linear / refined / session-typed wrappers** over every resource, and **measurement** (Mimic MAP-Elites + calibrated simulators + cross-vendor CI — §L2, §L15). The first two disciplines operate at this time. The measurement discipline is planned, because no compute backend exists. No SMT-proven optimal kernels; no proved-allocators-theorem. What we have instead:
 
 **Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`pre`/`post`/`contract_assert`), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast`, saturation arithmetic. Detail catalog in §II of the Code Guide below.
 
@@ -74,9 +74,9 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<Ptr>` / `BoundedMonotonic<T, Max, Cmp>` 
 
 **Verification harness.** `test/fixy/test_wrapper_verification.cpp` is a single TU that asserts the cross-wrapper properties of the fixy wrappers: the diagnostic surface, sizeof and triviality per storage regime, cross-composition, and distinct nesting orders. `test/fixy/test_cheat_probe.cpp` runs 56 adversarial cheats against the concept. The build succeeds only when the concept rejects each cheat, or when the file documents the cheat as admitted.
 
-**Soundness via measurement, not proof.** Numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance fails the build. The `BITEXACT_TC` tier has a hardware limit, and §L2 states it: FP16 and BF16 tensor-core fragments are not bit-identical across vendors. No compute backend exists at this time, so the matrix does not run.
+**Soundness via measurement, not proof.** In the design, numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance will fail the build. The `BITEXACT_TC` tier has a hardware limit, and §L2 states it: FP16 and BF16 tensor-core fragments are not bit-identical across vendors. No compute backend exists at this time, so the matrix does not run.
 
-**No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. The `verify` CMake preset is reserved for an internal small-SMT solver (deferred — interim: contract-only enforcement at boundaries) that will discharge residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Default budget 5 ms per query; not on the hot path. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems handled by the cross-vendor CI harness (MIMIC.md §41), not theorem proving.
+**No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. At this time, the `verify` CMake preset builds Release code with every contract family armed. An internal small-SMT solver for that preset is deferred. It will discharge residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Its planned budget is 5 ms per query, not on the hot path. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems for the planned cross-vendor CI harness (MIMIC.md §41), not theorem proving.
 
 **Capability tags.** `include/foundation/effects/Effect.h`, in namespace `foundation::effects`, defines three groups. The first is the `Effect` enum of six atoms (Alloc, IO, Block, Bg, Init, Test). The second is the value-level tags `cap::Alloc`, `cap::IO` and `cap::Block`, which the namespace re-exports as `Alloc`, `IO` and `Block`. The third is the context classes `Bg`, `Init` and `Test`. A context holds its value atoms as empty `[[no_unique_address]]` fields (`bg.alloc`, `bg.io`, `bg.block`), so the tags cost nothing at run time.
 
@@ -89,6 +89,8 @@ Only `mint_context<Ctx>(key)` builds a context, and only the owner of a key can 
 ## L1 — Hardware
 
 **Compute hardware. Heterogeneous, replaceable.**
+
+This section is the design. No code reads NVML, sends health data to a Keeper or runs Mimic at this time. The Keeper is planned (Phase 5), and the Mimic backends are planned (MIMIC.md).
 
 GPUs are ecosystems: tensor cores (1000 TFLOPS FP16 on H100), scalar ALUs (60 TFLOPS), four-level memory hierarchy (registers → shared memory → L2 → HBM), power envelopes. Gap between theoretical peak and achieved: 40-70%.
 
@@ -106,25 +108,25 @@ GPUs are ecosystems: tensor cores (1000 TFLOPS FP16 on H100), scalar ALUs (60 TF
 
 Current frameworks: static lookup (op + dtype → library kernel). Same kernel for 64×64 and 8192×8192, A100 and 3090, contiguous and transposed. No adaptation.
 
-**Forge + Mimic replace the vendor stack.** `Forge` (vendor-agnostic optimizer, FORGE.md) lowers the IR001 tensor DAG to the IR002 portable kernel DAG with a pinned `NumericalRecipe`. The same IR002 kernel gives bit-exact results, or results inside a bound in units in the last place (ULP), on every supported chip. The numerics paragraph of this section states the limit for tensor-core fragments. `Mimic` (per-vendor backend, MIMIC.md) emits native ISA from IR002: `mimic/nv/` (Hopper/Blackwell SASS), `mimic/am/` (CDNA3+/RDNA3+ AMDGPU), `mimic/tpu/` (TPU executable), `mimic/trn/` (NEFF), `mimic/cpu/` (reference oracle). No vendor libraries: zero cuBLAS, zero cuDNN, zero NCCL, zero libtpu — only kernel-driver ioctls.
+**Forge + Mimic replace the vendor stack (planned).** In the design, `Forge` (vendor-agnostic optimizer, FORGE.md) lowers the IR001 tensor DAG to the IR002 portable kernel DAG with a pinned `NumericalRecipe`. The same IR002 kernel then gives bit-exact results, or results inside a bound in units in the last place (ULP), on every supported chip. The numerics paragraph of this section states the limit for tensor-core fragments. `Mimic` (per-vendor backend, MIMIC.md) will emit native ISA from IR002, with one backend for each target: Hopper/Blackwell SASS, CDNA3+/RDNA3+ AMDGPU, a TPU executable, NEFF for Trainium, and a CPU reference oracle. No Forge phase and no compute backend exist at this time. `include/crucible/forge/` holds the IR001 operation kinds and the network recipe table. `include/crucible/mimic/` holds `Fence.h`, `Semaphore.h` and `CogMimic.h`. `include/crucible/mimic/_wip/` declares one network backend for each of six vendor families. None of them has an emit path. No vendor libraries: zero cuBLAS, zero cuDNN, zero NCCL, zero libtpu — only kernel-driver ioctls.
 
-**MAP-Elites kernel search** replaces autotuning. Six behavior axes (occupancy, register usage, smem usage, pipeline depth, MMA shape family, warp-group split) × 8 buckets each = ~260K cells, typically 500-5K populated per kernel family. Per-vendor three-tier simulator (fast ~1-5 ms / medium ~10-30 ms / accurate ~100-500 ms) calibrated to 95-98% against real silicon via hardware-counter probes (CUPTI / rocprof / PJRT profiler / neuron-profile). Insight-driven mutations — structured diagnostics (WGMMA_UNDERUTILIZED, REGISTER_PRESSURE_HIGH, L2_QUEUE_SATURATED, ~40 kinds) map to concrete mutation operators. Hybrid mode validates top-K archive cells on real hardware.
+**MAP-Elites kernel search** (planned, MIMIC.md) replaces autotuning. Six behavior axes (occupancy, register usage, smem usage, pipeline depth, MMA shape family, warp-group split) × 8 buckets each = ~260K cells, typically 500-5K populated per kernel family. Per-vendor three-tier simulator (fast ~1-5 ms / medium ~10-30 ms / accurate ~100-500 ms) calibrated to 95-98% against real silicon via hardware-counter probes (CUPTI / rocprof / PJRT profiler / neuron-profile). Insight-driven mutations — structured diagnostics (WGMMA_UNDERUTILIZED, REGISTER_PRESSURE_HIGH, L2_QUEUE_SATURATED, ~40 kinds) map to concrete mutation operators. Hybrid mode validates top-K archive cells on real hardware.
 
-**Cross-vendor numerics CI (MIMIC.md §41)** enforces the portability contract. Every (KernelKind × NumericalRecipe × target) triple compiled, executed, output-compared pairwise against CPU scalar-FMA oracle. `BITEXACT_STRICT` permits a difference of 0 bytes, and `ORDERED` permits the tolerance of its recipe. A backend that violates tolerance fails the build.
+**Cross-vendor numerics CI (MIMIC.md §41, planned)** will enforce the portability contract. Every (KernelKind × NumericalRecipe × target) triple compiled, executed, output-compared pairwise against CPU scalar-FMA oracle. `BITEXACT_STRICT` permits a difference of 0 bytes, and `ORDERED` permits the tolerance of its recipe. A backend that violates tolerance will fail the build. The CI does not run at this time, because no compute backend exists.
 
 **The limit of `BITEXACT_TC`.** `include/crucible/NumericalRecipe.h` defines `BITEXACT_TC` as short tensor-core fragments with a pinned outer scalar reduction, and at most one ULP of difference. That bound holds only for exact fragments: integer matrix multiply-accumulate (MMA), FP64 or FP32 MMA, or inputs split so that each product is exact. FP16 and BF16 tensor-core fragments are not bit-identical across vendors or across GPU generations. Their fused width, the truncation of the fused sum and the rounding are different for the same inputs.
 
 Bit-accurate models of ten GPU architectures (MMA-Sim, arXiv 2511.10909) and the FTTN tests (arXiv 2403.00232) show this. In MMA-Sim, only FP64 and FP32 MMA agree on every architecture. The starter recipes `f16_f32accum_tc` and `bf16_f32accum_tc` in `include/crucible/RecipeRegistry.h` have `BITEXACT_TC`, so the hardware does not give the tier that they have.
 
-**KernelCache:** maps (content_hash, device_capability) → CompiledKernel. Content-addressing: identical ops on identical shapes produce identical hashes. Reuse across iterations, runs, models sharing sub-computations, even organizations. Multiple variants coexist per hash; best selected per device, alternatives benchmarked during dead time. Cache grows monotonically across restarts. Lock-free open-addressing hash table — zero overhead on hot path.
+**KernelCache:** a lock-free open-addressing hash table in `include/crucible/MerkleDag.h` that maps (content_hash, row_hash) → CompiledKernel. The row hash is the effect row of the region, so two regions with identical ops and different rows take different slots. Content-addressing: identical ops on identical shapes produce identical hashes. No production code reads or writes the table at this time, because no code compiles a kernel: `CompiledKernel` has a declaration and no definition. The reuse across runs, models and organizations, the variants for each device and the growth across restarts are planned.
 
-**Stream parallelism:** DFG reveals independent ops → launch on different CUDA streams → concurrent SM execution. Schedule compiled statically from topological sort + earliest-start-time assignment. Zero scheduling overhead at runtime.
+**Stream parallelism (planned):** DFG reveals independent ops → launch on different CUDA streams → concurrent SM execution. Schedule compiled statically from topological sort + earliest-start-time assignment. Zero scheduling overhead at runtime.
 
-**Deterministic Philox RNG:** cuRAND is hardware-dependent — different sequences on H100 vs 3090. Crucible uses Philox4x32: counter-based, platform-independent, stateless. Each op derives key from `hash(master_counter, op_index, content_hash)`. Each thread: `philox(thread_idx, op_key)` — ~10 integer instructions in registers. For memory-bound kernels like dropout: runs free in otherwise-wasted ALU cycles. Same (counter, key) → same bits on any architecture.
+**Deterministic Philox RNG:** cuRAND is hardware-dependent — different sequences on H100 vs 3090. `include/crucible/Philox.h` gives Philox4x32: counter-based, platform-independent, stateless. `Philox::op_key_det` derives the key of an op from `(master_counter, op_index, content_hash)`. In the planned kernels, each thread computes `philox(thread_idx, op_key)` — ~10 integer instructions in registers. For memory-bound kernels like dropout: runs free in otherwise-wasted ALU cycles. No kernel uses it at this time, because no compute backend exists. Same (counter, key) → same bits on any architecture.
 
-**Kernel fusion:** adjacent ops with single producer-consumer chain fuse into one kernel keeping intermediates in registers/shared memory, eliminating HBM round trips. Decision from DFG topology at compile time.
+**Kernel fusion (planned):** adjacent ops with single producer-consumer chain fuse into one kernel keeping intermediates in registers/shared memory, eliminating HBM round trips. Decision from DFG topology at compile time.
 
-KernelCache is part of the **Cipher** — write-once, persists across reincarnations.
+In the design, KernelCache is part of the **Cipher** — write-once, persists across reincarnations. At this time the Cipher stores regions of the DAG, the head hash and a log of committed steps on a local disk (`include/crucible/Cipher.h`). It holds no kernel.
 
 ---
 
@@ -135,15 +137,15 @@ KernelCache is part of the **Cipher** — write-once, persists across reincarnat
 PyTorch's CUDACachingAllocator: freelist search, splitting, coalescing, mutex contention. 200-2000ns/alloc. For 1000-op models: ~2000 allocs/iter × 500ns = 2ms pure overhead = 13% of a 15ms iteration.
 
 **Crucible: static memory plan** from DFG lifetimes. Background thread computes offline:
-- Birth = producer op index; Death = last consumer op index; Size = shape × dtype, aligned 512B
-- Greedy interval-based offset assignment (first-fit on sorted-by-birth tensors)
-- Output: `MemoryPlan { total_bytes, slots[]: (op_idx, port, offset, size) }`
+- Birth = producer op index; Death = last consumer op index; Size = shape × dtype, aligned 256B
+- A sweep line over the birth and death events, which a counting sort puts in order, with first-fit reuse of freed blocks
+- Output: `MemoryPlan { slots, pool_bytes, num_slots, num_external, ... }`, where each `TensorSlot` holds `offset_bytes`, `nbytes`, `birth_op` and `death_op`
 
-One `cudaMalloc(total_bytes)` at iteration start. Every "allocation" = `base_ptr + offset`. ~2ns, no mutex, no fragmentation, no contention. Plan is read-only at runtime.
+`PoolAllocator` makes one aligned host allocation of `pool_bytes` when a region becomes active. Every "allocation" = `base_ptr + offset`: no mutex, no fragmentation, no contention. Plan is read-only at runtime. The PyTorch Vessel puts no tensor there at this time, because COMPILED mode still does each operation eagerly (refer to L4). The device pool, one `cudaMalloc(pool_bytes)` for each plan, is planned.
 
-**Deterministic:** same DFG → same plan → same addresses → same kernel behavior. Eliminates PyTorch's history-dependent allocator non-determinism. **Arena allocator** for DAG metadata: bump-pointer, ~2ns/alloc, bulk reset. **Aliased tensors** (views, transposes): one offset for base storage, aliases reference with different (offset, sizes, strides). Zero-cost. **Dynamic shapes:** new plan built by background thread, swapped atomically at iteration boundary.
+**Deterministic:** same DFG → same plan → same addresses. When compiled kernels use the plan (planned), this removes the history-dependent allocator non-determinism of PyTorch. **Arena allocator** for DAG metadata: bump-pointer, ~2ns/alloc, bulk reset. **Aliased tensors** (views, transposes): one offset for base storage, aliases reference with different (offset, sizes, strides). Zero-cost. **Dynamic shapes:** new plan built by background thread, swapped atomically at iteration boundary.
 
-**Automatic activation checkpointing** from measured data:
+**Automatic activation checkpointing** (planned) from measured data:
 ```
 For each forward activation needed in backward:
     if store_cost / recompute_cost > threshold: recompute
@@ -151,9 +153,9 @@ For each forward activation needed in backward:
 ```
 Per-tensor, optimal, no manual `torch.utils.checkpoint()`. Threshold adapts to memory pressure.
 
-**Per-Relay planning:** same DFG, different plans per device capacity (H100 80GB vs 3090 24GB vs MI300X 192GB). Memory heterogeneity handled by adapting the plan.
+**Per-Relay planning (planned):** same DFG, different plans per device capacity (H100 80GB vs 3090 24GB vs MI300X 192GB). Memory heterogeneity handled by adapting the plan.
 
-**OOM is structurally impossible.** Keeper has the plan BEFORE execution. One check: `plan.pool_bytes ≤ device_memory - reserved`. If it won't fit: adapt plan first (more checkpointing, smaller batch, offload optimizer state), then proceed. `cudaMalloc` never fails. **Predictive adaptation:** track pool_bytes growth across iterations, extrapolate, preemptively adapt before limits approach.
+**OOM is structurally impossible (planned, Phase 5).** In the design, the Keeper has the plan BEFORE execution. One check: `plan.pool_bytes ≤ device_memory - reserved`. If it won't fit: adapt plan first (more checkpointing, smaller batch, offload optimizer state), then proceed. `cudaMalloc` never fails. **Predictive adaptation:** track pool_bytes growth across iterations, extrapolate, preemptively adapt before limits approach.
 
 ---
 
@@ -163,7 +165,7 @@ Per-tensor, optimal, no manual `torch.utils.checkpoint()`. Threshold adapts to m
 
 Every PyTorch op dispatches through the Dispatcher's priority-ordered function pointer table. `DispatchKey::Crucible` intercepts each operation above the backend keys. The patched PyTorch fork adds that key, and `vessel/torch/register.cpp` registers one recording kernel for each of the 3110 ATen operators of the fork.
 
-**RECORD mode** (6 steps, ~20ns total):
+**RECORD mode** (6 steps). `bench/baselines/record_leaf.json` gives the measured costs of the recording path, without the eager execution of step 3:
 1. Snapshot input TensorMeta (shapes, strides, dtype, device, data_ptr). Handle TensorList unpacking. Encode scalars as int64 (up to 5 inline).
 2. Compute schema_hash (op name) and shape_hash (input sizes).
 3. Execute eagerly via redispatch.
@@ -189,18 +191,18 @@ In the plan, the compiled kernels operate on GPU streams, independently of Pytho
 
 The replay guard compares only the schema hash and the shape hash. The two warnings on the scope hash and the callsite hash are planned, and no code gives them.
 
-Pre-emptive: prepare eager path before confirming compilation is broken.
+Pre-emptive: prepare the eager path before the guard confirms a divergence. At this time the eager path always runs first, because COMPILED mode redispatches each operation.
 
-**Matrix structure discovery per layer:**
+**Matrix structure discovery per layer (planned):**
 - Full-rank → dense matmul
 - Low-rank (r << d) → A(d×r)·B(r×d), 2× cheaper at r=d/4
 - Near-Toeplitz → depthwise conv + correction, 10× cheaper
 - Sparse (>95%) → cuSPARSE
 - Block-diagonal → smaller independent matmuls
 
-Replacements are DAG branches with quality verification.
+In the design, replacements are DAG branches with quality verification.
 
-**Communication ops** (all_reduce, all_gather, etc.) intercepted identically — same recording, timing, optimization pipeline. The recording pipeline is **event sourcing**: the Cipher persists the event log for deterministic replay and reincarnation.
+**Communication ops** (all_reduce, all_gather, etc.) that go through the Dispatcher outside the aten namespace reach the boxed fallback of `vessel/torch/crucible_fallback.cpp`. The fallback records them on the same path as the other ops. In the design, the recording pipeline is **event sourcing**: the Cipher persists the event log for deterministic replay and reincarnation. At this time `Vigil::persist` stores the active region in the Cipher and moves its head, and `Vigil::load` activates the head region again.
 
 No training/inference distinction at L4 — same fallback, same recording, same compiled execution.
 
@@ -214,9 +216,9 @@ No training/inference distinction at L4 — same fallback, same recording, same 
 
 **Sync points** (in the plan, the only moments Python blocks): `.item()`, `.cpu()`, `.numpy()`, `print()`, conditionals on values, unrecognized ops. Everything else is shadow. 1000 ops with 1 `loss.item()`: 999 shadow returns (~2μs) + 1 sync (~10μs). Python wall time: ~12μs vs ~15ms eager.
 
-**TensorMeta:** 168 bytes/tensor (`include/crucible/TensorMeta.h`) — sizes[8], strides[8], data_ptr, ndim, dtype, device_type, device_idx, layout, requires_grad, flags, output_nr, storage_offset, version, storage_nbytes, grad_fn_hash. Lives in MetaLog parallel to TraceRing. Sparse tensor shadows (COO, CSR/CSC/BSR/BSC) extend the same pattern.
+**TensorMeta:** 168 bytes/tensor (`include/crucible/TensorMeta.h`) — sizes[8], strides[8], data_ptr, ndim, dtype, device_type, device_idx, layout, requires_grad, flags, output_nr, storage_offset, version, storage_nbytes, grad_fn_hash. Lives in MetaLog parallel to TraceRing. In the plan, sparse tensor shadows (COO, CSR/CSC/BSR/BSC) extend the same pattern.
 
-**Latent space is observable** (during recording, actual data is available):
+**Latent space is observable** (planned; during recording, actual data is available). No code does these analyses at this time:
 - **Intrinsic dimensionality:** PCA on activations reveals effective rank per layer. A 4096-dim state might use only 600 dims → 3496 wasted.
 - **Dead dimensions:** per-dimension variance < ε → carries zero information → maskable (20% savings if 847/4096 dead).
 - **Representation collapse:** CKA ≈ 1.0 between adjacent layers → redundancy → prune or add auxiliary loss.
@@ -224,7 +226,7 @@ No training/inference distinction at L4 — same fallback, same recording, same 
 - **Manifold Mixup:** interpolate hidden states between samples at intermediate layers → new training signal from latent geometry.
 - **Tensor provenance:** complete causal ancestry through DFG — trace any output back to root cause.
 
-Shadow handles are mode-agnostic: training and inference produce identical objects.
+In the plan, shadow handles are mode-agnostic: training and inference produce identical objects.
 
 ---
 
@@ -233,14 +235,14 @@ Shadow handles are mode-agnostic: training and inference produce identical objec
 **The skeleton. Dataflow, aliases, edges, and cycles.**
 
 **TraceGraph:** bidirectional CSR property graph from one iteration. Nodes = ops, edges = relationships:
-- **DATA_FLOW:** data_ptr tracking via PtrMap (open-addressing, 8192 slots, stack-allocated). Output ptr matches input ptr → producer-consumer edge.
+- **DATA_FLOW:** data_ptr tracking via PtrMap (open-addressing, at least 4096 slots, a reused heap buffer that grows). Output ptr matches input ptr → producer-consumer edge.
 - **ALIAS:** same data_ptr from different ops → view/in-place → shared storage.
 
 Each node carries: schema/shape/scope/callsite hashes, TensorMeta arrays, scalar args, grad/inference flags. Built in single pass, O(V+E) via counting sort. ~50-100μs for 1000 ops.
 
-**IterationDetector:** K=5 schema_hash signature, two-match confirmation for iteration boundaries. Handles warmup.
+**IterationDetector:** a signature of K=5 keys, where each key mixes the schema hash and the shape hash of one op. A signature match proposes a period P. The detector accepts P only when the P ops before the match equal the P ops before those. Handles warmup.
 
-**LoopNodes for cyclic computation:** wraps acyclic body with feedback edges + termination (Repeat(N) | Until(ε)):
+**LoopNodes for cyclic computation:** wraps acyclic body with feedback edges + termination (Repeat(N) | Until(ε)). `LoopNode` and `make_loop` are in `include/crucible/MerkleDag.h`. No production code builds a LoopNode at this time, so the uses that follow are planned:
 - **Compiled recurrence:** RNN as one body × 1000 reps, no Python per timestep
 - **Convergence execution:** DEQ fixed-points, diffusion denoising — stop when converged
 - **Cross-iteration pipelining:** overlap N+1's forward with N's optimizer via double-buffering
@@ -259,21 +261,21 @@ Central data structure. L1-L6 feed in, L8-L16 read/modify. L0 proves correctness
 
 **RegionNodes:** compilable op sequences. **content_hash** = hash(schema_hashes, input shapes/strides/dtypes/devices, scalar values). Identical computation → identical hash, even across models. **merkle_hash** = content_hash + child hashes → O(1) equality for entire subtrees (like git commits).
 
-**BranchNodes:** dynamic behavior. Guard = the op sequence itself. Mismatch at op N → branch arms for different paths. Both arms independently compilable. Shared suffixes share content_hashes and kernels.
+**BranchNodes:** dynamic behavior. Guard = the op sequence itself. Mismatch at op N → branch arms for different paths. Both arms independently compilable. Shared suffixes share content_hashes and kernels. `BranchNode` and `add_branch` are in `include/crucible/MerkleDag.h`. No production code calls `add_branch` at this time. At a divergence, the Vigil looks for another region in the region cache (`include/crucible/RegionCache.h`).
 
-BranchNodes are THE mechanism for everything that changes: architecture mutation (L10), attention replacement (L9), hyperparameter changes (L11), continuous learning (L14). Every adaptation is a branch. Every branch is versioned and rollbackable.
+In the design, BranchNodes are THE mechanism for everything that changes: architecture mutation (L10), attention replacement (L9), hyperparameter changes (L11), continuous learning (L14). Every adaptation is a branch. Every branch is versioned and rollbackable.
 
-**KernelCache:** (content_hash, device_capability) → CompiledKernel. Lock-free reads. Persists across runs, models, organizations. The **computation genome** — every run enriches it.
+**KernelCache:** (content_hash, row_hash) → CompiledKernel, with lock-free reads (refer to L2). The persistence across runs, models and organizations is planned. In the design it is the **computation genome**, and every run enriches it.
 
-**Atomic swaps:** background thread builds new DAG structures → one atomic pointer swap at iteration boundary → zero-downtime activation. Same mechanism for compilation activation, branch swaps, memory plan updates, topology changes, rollbacks. Coordinated across Canopy at same iteration boundary.
+**Atomic swaps:** background thread builds new DAG structures → one atomic pointer swap at iteration boundary → zero-downtime activation. At this time the mechanism activates a new region with its memory plan. `Vigil::rollback` uses the same mechanism. The branch swaps, the topology changes and the coordination across Canopy at one iteration boundary are planned.
 
-**The DAG IS the Vigil.** No torch.export(), ONNX, TorchScript. Same DAG trains and serves. Deploy = copy Cipher to Relay.
+**The DAG IS the Vigil.** No torch.export(), ONNX, TorchScript. Same DAG trains and serves. A deploy that copies the Cipher to a Relay is planned (Phase 5).
 
-**The DAG IS the audit trail.** Root merkle_hash captures entire computation state. Divergence found in O(log N) by walking tree. Cryptographic provenance for regulatory compliance.
+**The DAG IS the audit trail.** Root merkle_hash captures entire computation state. The walk that finds a divergence in O(log N) is planned. The merkle hash mixes with fmix64, which is not a cryptographic hash, so a cryptographic provenance for regulatory compliance is planned too.
 
-**Git operations on models:** diff (which regions changed), merge (non-overlapping clean, overlapping = conflict), bisect (binary search through versions for regression), cherry-pick (select specific region updates), blame (trace value through version history).
+**Git operations on models (planned):** diff (which regions changed), merge (non-overlapping clean, overlapping = conflict), bisect (binary search through versions for regression), cherry-pick (select specific region updates), blame (trace value through version history).
 
-**LoopNodes in the DAG:** cycle semantics within acyclic hash framework. `merkle_hash = hash(body.content_hash ⊕ "loop" ⊕ feedback_signature ⊕ termination)`. Transforms DAG from computation snapshot to computation PROGRAM. Entire training run = one compact cyclic graph.
+**LoopNodes in the DAG:** cycle semantics within acyclic hash framework. `merkle_hash = hash(body.content_hash ⊕ "loop" ⊕ feedback_signature ⊕ termination)`. Transforms DAG from computation snapshot to computation PROGRAM. No production code builds a LoopNode at this time (refer to L6), so a training run as one compact cyclic graph is planned.
 
 ---
 
@@ -515,9 +517,9 @@ Goal: complete the L0 structural-guarantee layer — axioms, safety wrappers, se
 
 Goal: vendor-agnostic optimizer + per-vendor backend framework per FORGE.md / MIMIC.md. No dependency on 2a; the two phases proceed in parallel.
 
-- **IR002 scaffolding** (FORGE.md §18): `KernelGraph`, `KernelNode`, `NumericalRecipe` (interned), `TileSpec`, per-kind attrs pools, `ExecutionPlan`, PatchPoint taxonomy (8 kinds), ChainEdge semaphore pool.
+- **IR002 scaffolding** (FORGE.md §18): `KernelGraph`, `KernelNode`, `NumericalRecipe` (interned), `TileSpec`, per-kind attrs pools, `ExecutionPlan`, PatchPoint taxonomy (8 kinds), ChainEdge semaphore pool. Of these, only `NumericalRecipe` exists at this time.
 - **Recipe registry** (FORGE.md §20) — a compiled table in `include/crucible/RecipeRegistry.h`. It holds eight starter recipes, and the registry interns them into a `RecipePool`. Each recipe has one of four determinism tiers (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A `native_on` bitmap per chip and a `tc_shape_constraint` for BITEXACT_TC recipes are planned, and no field holds them at this time.
-- **Forge 12-phase pipeline** (FORGE.md §5): INGEST → ANALYZE → REWRITE → FUSE → LOWER_TO_KERNELS → TILE → MEMPLAN → COMPILE → SCHEDULE → EMIT → DISTRIBUTE → VALIDATE. Hard wall-clock budgets per phase.
+- **Forge 12-phase pipeline** (FORGE.md §5): INGEST → ANALYZE → REWRITE → FUSE → LOWER_TO_KERNELS → TILE → MEMPLAN → COMPILE → SCHEDULE → EMIT → DISTRIBUTE → VALIDATE. Hard wall-clock budgets per phase. No phase runs at this time.
 - **Mimic CPU reference backend first** (correctness oracle): x86_64 AVX512 / aarch64 NEON, scalar-FMA BITEXACT_STRICT always, every higher-tier recipe validated pairwise against CPU output.
 - **Mimic NVIDIA backend** (M2-M9 of MIMIC.md build plan): IR003NV + SASS emitter + three-tier simulator + MAP-Elites + CUPTI calibration harness + runtime library (direct `/dev/nvidia*` ioctls, no libcuda) + collective library (CNTP, no NCCL).
 - **Mimic AMD / TPU / Trainium backends** follow the same template (one self-contained subsystem per vendor).
@@ -609,7 +611,7 @@ Design intent: **the lowest foreground recording and shadow-dispatch latency the
 | Preset    | Compiler              | Role                                          |
 |-----------|-----------------------|-----------------------------------------------|
 | `default` | GCC 16.2.1 (patched)  | Primary dev. Debug. Contracts + reflection.   |
-| `release` | GCC 16.2.1 (patched)  | Production. `-O1 -march=native -DNDEBUG -g`, contracts `observe` |
+| `release` | GCC 16.2.1 (patched)  | Production. `-O3 -march=native -DNDEBUG -g`, contracts `observe`. §V tells why the level is `-O3` |
 | `bench`   | GCC 16.2.1 (patched)  | Release + `CRUCIBLE_BENCH=ON`                 |
 | `tsan`    | GCC 16.2.1 (patched)  | ThreadSanitizer (mutually exclusive with ASan)|
 | `verify`  | GCC 16.2.1 (patched)  | + internal small-SMT verification suite (deferred — interim: contracts-only, no external solver) |

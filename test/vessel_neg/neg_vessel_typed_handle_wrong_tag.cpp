@@ -7,10 +7,11 @@
 //
 // Tagged<T, Tag> is parameterized by Tag — different tags produce
 // different class instantiations, with no implicit conversion between
-// them.  This fixture witnesses that the type system rejects the
-// wrong-direction flow at the C-ABI boundary helper.  Both tags come
-// from the ::fixy tree, so the refusal is the tag mismatch and not a
-// mismatch between the two trees.
+// them.  This fixture shows that the type system refuses the flow in the
+// wrong direction at the C-ABI boundary helper.  The two types differ in
+// the tag alone: both tags are in fixy::tags::source, and the payload is
+// Vigil* on each side.  The registration regex names the two tags, so
+// only the refusal of the External-to-ABIBoundary conversion satisfies it.
 //
 // Concrete bug-class this catches: a refactor that "promotes" the
 // helper to accept any Tagged<Vigil*, AnyTag> would let provenance

@@ -1,11 +1,11 @@
 // example_mimic_backend_hook: the kernel emitter of one vendor backend.
 //
-// Each backend of Mimic (mimic/nv/, mimic/am/, mimic/tpu/, mimic/trn/,
-// mimic/cpu/, refer to MIMIC.md) lowers a portable IR002 kernel DAG to
-// native ISA.  Each backend has an emit_kernel function.  It takes an
-// IR002 KernelNode, the TargetCaps of the device (occupancy, register
-// budget, shared memory, MMA shape constraints) and an arena for the
-// compiled bytes.
+// No Mimic kernel backend exists at this time.  The design in
+// misc/MIMIC.md plans one backend for each vendor, and each backend
+// lowers a portable IR002 kernel DAG to native ISA through an emit_kernel
+// function.  The function takes an IR002 KernelNode, the TargetCaps of
+// the device (occupancy, register budget, shared memory, MMA shape
+// constraints) and an arena for the compiled bytes.
 //
 // The binding records that the emitter runs on the background thread, and
 // it records three effect atoms: Bg, Alloc and IO.  IO is necessary
@@ -22,8 +22,8 @@
 // The contrast with the other examples: this binding has the largest
 // effect row, three atoms.  A caller needs a context that admits all
 // three, so the background drain context, which admits a Forge phase,
-// cannot call the emitter.  The binding is reentrant, because the compile
-// pool emits kernels in parallel, with one arena for each worker.
+// cannot call the emitter.  The binding is reentrant, because the planned
+// compile pool emits kernels in parallel, with one arena for each worker.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -47,8 +47,8 @@ namespace source = ::fixy::tags::source;
 using ::fixy::Axis;
 using Effect = ::foundation::effects::Effect;
 
-// Stand-ins for the IR002 kernel node and the target caps.  In
-// production the kernel node of Forge and the capabilities that the
+// Stand-ins for the IR002 kernel node and the target caps.  In the
+// design, the kernel node of Forge and the capabilities that the
 // calibration of Meridian measures for the device take their place.
 struct KernelNode {
     int kernel_kind = 0;  // GEMM, CONV, SDPA and the other kinds
@@ -76,8 +76,8 @@ struct CompiledBytes {
 using EmitKernelPtr = CompiledBytes (*)(const KernelNode& kernel, const TargetCaps& caps, Arena& arena) noexcept;
 
 CompiledBytes emit_nv_gemm_ref(const KernelNode& kernel, const TargetCaps& caps, Arena& arena) noexcept {
-    // A real NVIDIA emitter makes SASS through the instruction selector,
-    // the register allocator and the peephole optimizer of the backend.
+    // In the design, an NVIDIA emitter makes SASS through the instruction
+    // selector, the register allocator and the peephole optimizer of the backend.
     // The stand-in reports a plausible byte count and bumps the arena.
     const std::size_t n_bytes = 4096;  // about one page of SASS for a small GEMM
     const std::size_t offset = arena.bump;
@@ -104,10 +104,10 @@ using BackendEmitter = ::fixy::fn<Emitter,
                                   at::with<Effect::Bg, Effect::Alloc, Effect::IO>,  // plus IO for the driver ioctls
                                   at::as_public,  // the pointer holds no secret
                                   at::from_source<source::FromInternal>,  // Crucible wrote the backend
-                                  at::trust_verified,  // the CI against the CPU oracle is its check
+                                  at::trust_verified,  // the planned CI against the CPU oracle checks it
                                   at::cost_linear<0>,  // O(N) in the node count of the IR
                                   at::mut_mutable,  // the emitter writes compiled bytes into the arena
-                                  at::reentrant,  // the compile pool emits kernels in parallel
+                                  at::reentrant,  // the planned compile pool emits kernels in parallel
                                   at::version<3>>;  // the generation of the per-vendor IR003 of the backend
 
 using BoundMimicNvEmit = BackendEmitter<NvEmitKernel>;
