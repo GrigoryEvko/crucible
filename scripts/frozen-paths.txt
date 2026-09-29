@@ -14,7 +14,6 @@ include/crucible/algebra/
 include/crucible/effects/
 include/crucible/permissions/
 include/crucible/sessions/
-include/crucible/bridges/
 include/crucible/handles/
 include/crucible/concurrent/
 include/crucible/_Saturate.h

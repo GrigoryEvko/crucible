@@ -29,9 +29,6 @@
 # that the same change deletes or marks needs no row.  A comment starts
 # with '#'.  A blank line is skipped.
 
-include/crucible/bridges/_RecordingPermissionedSessionHandle.h — c24eaee53c4fb571 — include/crucible/bridges/_RecordingSessionHandle.h close() passes the terminal tier as the sixth stop() argument — the crash-watched close() dropped the crash class, so the Stop event defaulted to Abort and replayed into the wrong recovery family
-include/crucible/bridges/_RecordingPermissionedSessionHandle.h — 1febbdd4cd249c42,1febbdd4cd249c42,983531cb3849f38b,983531cb3849f38b — include/fixy/session/Recording.h event_for_send and event_for_recv take the hand-off kind from the payload type, and include/fixy/session/EventLog.h decodes an epoched hand-off with both thresholds — the epoched delegate and accept arms recorded plain Delegate and Accept events, so replay lost the two thresholds it needs to check the hand-off against the epoch chain
-
 include/crucible/sessions/_SessionEventLog.h — e080baa88bef9c42,06cd3c40590fd67b — include/crucible/safety/_Mutation.h OrderedAppendOnly::append is an unsynchronised vector push, so the log is single-writer — removes a false concurrency claim, no code change
 
 include/crucible/permissions/_Permission.h — d8903aa2371e73fd,0ee5f945b4dd0045,dd21e205e9e1a664 — include/foundation/permissions/Permission.h ForkRebuildKey friends permission_fork_ (brand commit 50db03a1) — the nullary rebuild_parent_after_fork_ let any translation unit mint a Permission for a tag it never owned
@@ -87,7 +84,6 @@ include/crucible/algebra/lattices/_MemOrderLattice.h — f880f42cbe7b7e45,7aacfc
 include/crucible/safety/_MemOrder.h — 4453f1643e41b429,84f56dda2fb03b2f,22db1454fd2cf07e,cd74b6ce6e6038e0 — include/foundation/algebra/lattices/BarrierStrengthLattice.h orders AcquireLoad and ReleaseStore as incomparable — the wrapper's self-test and header text asserted the chain that let an Acquire value satisfy and relax to Release
 include/crucible/sessions/_Session.h — 4ffd0bebd6ea68af — include/fixy/session/Handle.h runs its dropped-protocol check through the constexpr act_on_dropped_protocol_ — constexpr for strict C++26 without -fimplicit-constexpr, reviewed by the parent
 include/crucible/safety/_Mutation.h — 423dce0bb4fc0d38 — include/fixy/Mutation.h declares constexpr AppendOnly() — constexpr for strict C++26 without -fimplicit-constexpr, reviewed by the parent
-include/crucible/bridges/_RecordingSessionHandle.h — 87c4828103387037 — include/fixy/session/Recording.h keeps record_ runtime-only — constexpr for strict C++26 without -fimplicit-constexpr, reviewed by the parent
 include/crucible/safety/_Fusion.h — 0ada61c30b5b37fa — the new tree has no port of fuse — constexpr for strict C++26 without -fimplicit-constexpr, reviewed by the parent
 include/crucible/sessions/_PermissionedSession.h — bcea17dde41c2465,a62f95f854887806,13dfaa6a60cf1b6a — include/fixy/session/NetworkModel.h: a carrier gives its network model, and a projection is accepted only on per-pair FIFO (2d1a3ed4) — session_fork let each role use its projection on a channel of any network model, but a projection is safe only on per-pair FIFO
 include/crucible/sessions/_FederationProtocol.h — 11ef725d67e2f391,553fe67aece4c409,73cf857c9e637b9a,479255c1f3690612,b729ae57199eea5d — include/fixy/session/Network.h: a carrier gives its network model, and a projection is accepted only on per-pair FIFO (2d1a3ed4) — the four federation mints accepted an endpoint of any network model, but a projection is safe only on per-pair FIFO
