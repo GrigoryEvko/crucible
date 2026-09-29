@@ -5,9 +5,10 @@
 # A splice of a nonstatic data member has no access check, so a reflection of
 # a private member writes a proof's private state.  Each row names one file
 # and the reason it needs the unchecked context.  A row is PATH — REASON.  A
-# file here may not return or publish a reflection of a nonstatic data member
-# to its caller: the reviewer of each row checks that rule.  A row whose file
-# no longer opens the door fails the guard, so the list only shrinks.
+# file here may not give its caller a reflection of a member that a walk
+# found.  The guard refuses a function that returns one, and the reviewer of
+# each row checks the other ways to publish one.  A row whose file no longer
+# opens the door fails the guard, so the list only shrinks.
 
 # Closed rosters: a walk of the members of a namespace or a registry class,
 # which a verdict reads to prove that a set is closed.  No walk here reflects

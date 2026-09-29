@@ -67,11 +67,31 @@ THE EXPANDED RUN
     it.  A unit that the preprocessor rejects, and an expansion that the
     parser cannot read, fail the run.
 
+WHAT A FUNCTION THAT OPENS THE DOOR MAY GIVE ITS CALLER
+    A walk under unchecked() can give the reflection of a private member.
+    A caller that receives it can splice the member, or extract a pointer
+    to it, with no door of its own.  So:
+      7. A function or a lambda whose body uses unchecked may not return a
+         member of a class that a walk found.  A walk is a call to
+         members_of, nonstatic_data_members_of, static_data_members_of,
+         bases_of or subobjects_of.  The guard refuses a return statement
+         that gives one of these:
+           - The result of a walk, or of define_static_array over one
+           - An element of one: a subscript, front, back or at
+           - The variable of a range for or an expansion statement over one
+           - A local variable that one of these initializes.
+         Two walks pass: a walk of a namespace that a scanned file declares
+         or of std, and a walk with access_context::current() or
+         unprivileged().  The guard reads the returned expression and not
+         the declared return type, so a function that returns the
+         reflection of a type passes.  A function that does not use
+         unchecked also passes.
+
 REVIEW RULE FOR THE ALLOWED FILES
-    An allowed file may not return or publish a reflection of a nonstatic
-    data member to its caller.  A public constexpr verdict whose field names
-    a private member reopens the door, because `obj.[:verdict.field:]` needs
-    no unchecked().  The guard does not check this rule.  The reviewer of each
+    An allowed file may not publish a reflection of a nonstatic data member
+    in any other way.  A public constexpr verdict whose field names a private
+    member reopens the door, because `obj.[:verdict.field:]` needs no
+    unchecked().  The guard does not check this form.  The reviewer of each
     row does.
 
 WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
@@ -85,6 +105,12 @@ WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
     - A door that ## builds, and a static data member that a macro
       declares, in a file that no unit of the compile database reads.
       Without --compile-db, the guard sees neither in any file.
+    - A member that rule 7 cannot trace: one that a function gives through
+      a call to another function, an output parameter, a member, or a local
+      variable that it sets after the declaration, and a function that a
+      macro builds.
+    - A walk of a class whose qualified name ends as the name of a
+      namespace does.  Rule 7 reads that walk as a walk of the namespace.
     - A file that scripts/tsast.py lists as not C++.
 
 A stale row, one whose file does not exist or does not open the door, fails
@@ -140,9 +166,23 @@ NAMES = frozenset({"field_identifier", "identifier", "qualified_identifier", "op
 TRANSPARENT = frozenset({"init_declarator", "parenthesized_declarator", "array_declarator", "attributed_declarator"})
 # The shape of rule 4, which the advice of a report reads.
 SPLICE_DOOR = "a splice that names a member of an object"
+# The nodes that rule 7 reads as a function.
+FUNCTIONS = ("function_definition", "lambda_expression")
+# The reflection queries that walk the members or the bases of a class.
+MEMBER_WALKS = frozenset({"members_of", "nonstatic_data_members_of", "static_data_members_of", "bases_of",
+                          "subobjects_of"})
+# The access contexts under which a walk gives only what its caller can name.
+CHECKED_CONTEXTS = frozenset({"current", "unprivileged"})
+# The members of a range that give one of its elements.
+ELEMENT_ACCESSORS = frozenset({"front", "back", "at"})
+# The statements that bind a variable to each element of a range.
+RANGE_LOOPS = ("for_range_loop", "expansion_statement")
+# How many local variables rule 7 follows back from a return statement.
+TRACE_DEPTH = 8
 
 Door = tuple[int, str]
 Target = tuple[str, int, str, str]
+Publisher = tuple[str, int, str]
 
 
 class Refused(Exception):
@@ -343,6 +383,203 @@ def door_macro_names(bodies: Sequence[tsast.MacroBody]) -> frozenset[str]:
     return frozenset(names)
 
 
+def uses_unchecked(node: tsast.Node) -> bool:
+    """Return whether a use of the member unchecked occurs below node, in the sense of rule 1."""
+    return any(leaf.text == "unchecked" and names_member(leaf) for leaf in node.descendants(*NAME_LEAVES))
+
+
+def namespace_names(trees: Iterable[tsast.Tree]) -> frozenset[tuple[str, ...]]:
+    """Return each qualified name of a namespace that the parses declare, with each of its suffixes.
+
+    A walk can name a namespace from inside an enclosing namespace, so
+    each suffix of a full name counts.  An alias counts in the namespace
+    that declares it.  std and std::meta count, because a walk can name
+    them and no scanned file declares them.
+
+    Complexity: linear in the nodes of the parses, times the depth of the
+    deepest namespace.
+    """
+    names: set[tuple[str, ...]] = {("std",), ("std", "meta")}
+    for tree in trees:
+        for node in tree.find("namespace_definition", "namespace_alias_definition"):
+            path: list[str] = []
+            scope = node.parent
+            while scope is not None:
+                if scope.type == "namespace_definition":
+                    outer = scope.child_by_field("name")
+                    if outer is not None:
+                        path[:0] = namespace_parts(outer)
+                scope = scope.parent
+            name = node.child_by_field("name")
+            if name is None:
+                continue
+            path += namespace_parts(name)
+            names.update(tuple(path[start:]) for start in range(len(path)))
+    return frozenset(names)
+
+
+def namespace_parts(name: tsast.Node) -> list[str]:
+    """Return the parts of the name of a namespace: one identifier, or each identifier of a nested specifier."""
+    if name.type == "nested_namespace_specifier":
+        return [leaf.text for leaf in name.descendants("namespace_identifier")]
+    return [name.text]
+
+
+def unwrapped(expression: tsast.Node) -> tsast.Node | None:
+    """Return the expression inside any parentheses, or None when the parentheses hold nothing."""
+    while expression.type == "parenthesized_expression":
+        inner = next((c for c in expression.children if c.type != "comment"), None)
+        if inner is None:
+            return None
+        expression = inner
+    return expression
+
+
+def arguments_of(call: tsast.Node) -> list[tsast.Node]:
+    """Return the arguments of a call expression, comments left out."""
+    listing = call.child_by_field("arguments")
+    return [] if listing is None else [c for c in listing.children if c.type != "comment"]
+
+
+def bindings(name: str, function: tsast.Node) -> list[tuple[str, tsast.Node]]:
+    """Return ("value", node) for each local variable of the function that `name` declares, and ("range", node)
+    for each range for or expansion statement that binds `name`.
+
+    A declaration inside a lambda or a local class inside the function
+    belongs to that function, and does not count here.
+    """
+    body = function.child_by_field("body")
+    if body is None:
+        return []
+    found: list[tuple[str, tsast.Node]] = []
+    for declarator in body.descendants("init_declarator"):
+        declared = declarator.child_by_field("declarator")
+        value = declarator.child_by_field("value")
+        if (declared is not None and value is not None and declared.type == "identifier" and declared.text == name
+                and declarator.ancestor_of_type(*FUNCTIONS) == function):
+            found.append(("value", value))
+    for loop in body.descendants(*RANGE_LOOPS):
+        declared = loop.child_by_field("declarator")
+        right = loop.child_by_field("right")
+        leaves = [] if declared is None else [declared, *declared.descendants("identifier")]
+        if (right is not None and any(leaf.type == "identifier" and leaf.text == name for leaf in leaves)
+                and loop.ancestor_of_type(*FUNCTIONS) == function):
+            found.append(("range", right))
+    return found
+
+
+def is_checked_context(argument: tsast.Node, function: tsast.Node, depth: int = 0) -> bool:
+    """Return whether an access context is access_context::current() or unprivileged(), or a local set to one.
+
+    A parameter, and a context that the function does not show, count as
+    unchecked, so the rule fails closed.
+    """
+    argument = unwrapped(argument)
+    if argument is None:
+        return False
+    if argument.type == "call_expression":
+        callee = argument.child_by_field("function")
+        parts = None if callee is None else name_parts(callee)
+        return bool(parts) and parts[-1] in CHECKED_CONTEXTS and "access_context" in parts[:-1]
+    if argument.type == "identifier" and depth < TRACE_DEPTH:
+        values = [node for kind, node in bindings(argument.text, function) if kind == "value"]
+        return bool(values) and all(is_checked_context(value, function, depth + 1) for value in values)
+    return False
+
+
+def is_open_walk(call: tsast.Node, function: tsast.Node, namespaces: frozenset[tuple[str, ...]]) -> bool:
+    """Return whether a call walks the members or the bases of a class under a context that sees private ones.
+
+    A walk of a namespace gives no member of a class.  A walk under a
+    checked context gives only what its caller can name.
+    """
+    callee = call.child_by_field("function")
+    parts = None if callee is None else name_parts(callee)
+    if not parts or parts[-1] not in MEMBER_WALKS:
+        return False
+    arguments = arguments_of(call)
+    walked = unwrapped(arguments[0]) if arguments else None
+    if walked is not None and walked.type == "reflect_expression":
+        operand = next((c for c in walked.children if c.type != "comment"), None)
+        if operand is not None and name_parts(operand) in namespaces:
+            return False
+    return len(arguments) < 2 or not is_checked_context(arguments[1], function)
+
+
+def walk_derived(expression: tsast.Node, function: tsast.Node, namespaces: frozenset[tuple[str, ...]],
+                 depth: int = 0) -> bool:
+    """Return whether an expression gives a member of a class that an open walk found, as rule 7 traces it.
+
+    The result of an open walk, define_static_array over one, an element
+    of one, the variable of a range loop over one, and a local variable
+    that one of these initializes each count.
+
+    Complexity: linear in the nodes of the function for each variable
+    followed, at most TRACE_DEPTH of them.
+    """
+    node = unwrapped(expression)
+    if node is None:
+        return False
+    if node.type == "subscript_expression":
+        argument = node.child_by_field("argument")
+        return argument is not None and walk_derived(argument, function, namespaces, depth)
+    if node.type == "call_expression":
+        callee = node.child_by_field("function")
+        if callee is not None and callee.type == "field_expression":
+            field = callee.child_by_field("field")
+            owner = callee.child_by_field("argument")
+            return (field is not None and field.text in ELEMENT_ACCESSORS and owner is not None
+                    and walk_derived(owner, function, namespaces, depth))
+        parts = None if callee is None else name_parts(callee)
+        if parts and parts[-1] == "define_static_array":
+            return any(walk_derived(argument, function, namespaces, depth) for argument in arguments_of(node))
+        return is_open_walk(node, function, namespaces)
+    if node.type == "identifier" and depth < TRACE_DEPTH:
+        return any(walk_derived(bound, function, namespaces, depth + 1) for _, bound in bindings(node.text, function))
+    return False
+
+
+def own_returns(function: tsast.Node) -> list[tsast.Node]:
+    """Return the returned expression of each return statement of one function.
+
+    A return statement inside a lambda or a local class inside the
+    function belongs to that function, and does not count here.
+    """
+    body = function.child_by_field("body")
+    if body is None:
+        return []
+    statements = [node for node in body.descendants("return_statement")
+                  if node.ancestor_of_type(*FUNCTIONS) == function]
+    expressions = (next((c for c in statement.children if c.type != "comment"), None) for statement in statements)
+    return [expression for expression in expressions if expression is not None]
+
+
+def publishers(tree: tsast.Tree, rel: str, namespaces: frozenset[tuple[str, ...]]) -> list[Publisher]:
+    """Return (file, line, name) for each function of one parse that rule 7 refuses.
+
+    Complexity: linear in the nodes of each function that uses unchecked,
+    times the variables that a return statement follows.
+    """
+    found: list[Publisher] = []
+    for function in tree.find(*FUNCTIONS):
+        body = function.child_by_field("body")
+        if body is None or not uses_unchecked(body):
+            continue
+        if any(walk_derived(expression, function, namespaces) for expression in own_returns(function)):
+            found.append((rel, function.line, function_name(function)))
+    return found
+
+
+def function_name(function: tsast.Node) -> str:
+    """Return the name that a report shows for a function, or "a lambda"."""
+    if function.type == "lambda_expression":
+        return "a lambda"
+    node = function.child_by_field("declarator")
+    while node is not None and node.type not in NAMES:
+        node = node.child_by_field("declarator")
+    return "a function" if node is None else display(node)
+
+
 def display(node: tsast.Node) -> str:
     """Return the name that a report shows for a declarator: its parts joined by ::, comments left out."""
     parts = name_parts(node)
@@ -466,17 +703,22 @@ def with_defines(trees: Iterable[tsast.Tree]) -> Iterable[tsast.Tree]:
             yield tree
 
 
-def lexical(root: Path, files: list[str]) -> tuple[dict[str, list[Door]], list[Target], list[str], int]:
-    """Parse each file once, and return its doors, the open targets, the unread files and the member files read.
+def lexical(root: Path,
+            files: list[str]) -> tuple[dict[str, list[Door]], list[Target], list[Publisher], list[str], int]:
+    """Parse each file once, and return what the guard reads from the parses.
 
-    Every file gives its doors.  A file of the member roots also gives its
-    open static data members.  A file that the parser cannot read fails.
+    The result holds the doors of each file, the open targets, the functions
+    that rule 7 refuses, the problems and the number of member files read.
+    Every file gives its doors and the functions that rule 7 refuses.  A file
+    of the member roots also gives its open static data members.  A file
+    that the parser cannot read fails.
 
     Complexity: one parse of each file and of each macro body, linear in
     their nodes, plus the closure of door_macro_names.
     """
     parsed: dict[str, tsast.Tree] = {}
     targets: list[Target] = []
+    refused: list[Publisher] = []
     problems: list[str] = []
     member_files = 0
     for tree in tsast.parse([root / rel for rel in files], strict=False):
@@ -489,13 +731,16 @@ def lexical(root: Path, files: list[str]) -> tuple[dict[str, list[Door]], list[T
         if reads_members(rel):
             member_files += 1
             targets += [(rel, node.line, access, name) for node, access, name in class_members(tree)]
+    namespaces = namespace_names(parsed.values())
+    for rel, tree in parsed.items():
+        refused += publishers(tree, rel, namespaces)
     bodies = tsast.macro_bodies(with_defines(parsed.values()))
     door_macros = door_macro_names(bodies)
     doors = {rel: node_doors(tree.root, lambda node: node.line, door_macros) for rel, tree in parsed.items()}
     for body in bodies:
         rel = str(Path(body.define.tree.path).relative_to(root))
         doors[rel] += body_doors(body, door_macros)
-    return doors, targets, problems, member_files
+    return doors, targets, refused, problems, member_files
 
 
 def expansion_rows(texts: Sequence[str]) -> tuple[str, list[int]]:
@@ -606,7 +851,12 @@ def check(root: Path, compile_db: Path | None = None) -> int:
         return 2
     admitted = {path for _, path in rows}
     files = scope_files(root)
-    doors, targets, problems, parsed = lexical(root, files)
+    doors, targets, refused, problems, parsed = lexical(root, files)
+    for rel, line, name in refused:
+        problems.append(f"REFUSED   {rel}:{line} — {name} uses unchecked and returns a member of a class that a "
+                        f"walk found.  The caller can splice that member, or extract a pointer to it, with no door "
+                        f"of its own.  Keep the reflection inside the function, and return the value that the "
+                        f"caller needs: a count, a hash or a bool.")
     if compile_db is not None:
         more_doors, more_targets = expanded(root, compile_db, frozenset(files), problems)
         for rel, found in more_doors.items():
@@ -633,8 +883,9 @@ def check(root: Path, compile_db: Path | None = None) -> int:
     if not problems:
         read = "the parse and the macro expansions" if compile_db is not None else "the parse"
         print(f"check-no-unchecked-access: {len(opened)} file(s) open the unchecked access context, "
-              f"each on its reviewed row, and in {read} {parsed} file(s) of the member roots hold no writable "
-              f"private or protected static data member.")
+              f"each on its reviewed row, no function that uses unchecked returns a member that a walk found, and in "
+              f"{read} {parsed} file(s) of the member roots hold no writable private or protected static data "
+              f"member.")
     return 1 if problems else 0
 
 
@@ -755,6 +1006,63 @@ def self_test() -> int:
                         "state.  Walk with access_context::current()",
                "a use of unchecked gets the advice to walk with current()", True)
         (root / "src/UncheckedWalk.cpp").unlink()
+
+        # A function of a listed file that uses unchecked may not return a
+        # member that a walk found.  Each case starts on line 4 of the file.
+        walk = (root / "include/foundation/Walk.h").read_text(encoding="utf-8")
+        unchecked = "std::meta::access_context::unchecked()"
+        returns = {
+            "member_info": "template <typename T, unsigned I> consteval auto member_info() {\n"
+                           f"    return std::meta::nonstatic_data_members_of(^^T, {unchecked})[I];\n}}\n",
+            "all_members": f"consteval auto all_members() {{ return std::meta::members_of(^^S, {unchecked}); }}\n",
+            "member_named": "consteval std::meta::info member_named(std::meta::info type) {\n"
+                            f"    for (auto member : std::meta::members_of(type, {unchecked}))\n"
+                            '        if (std::meta::identifier_of(member) == "n_") return member;\n'
+                            "    return {};\n}\n",
+            "first_base": "consteval std::meta::info first_base() {\n"
+                          f"    auto bases = std::meta::bases_of(^^S, {unchecked});\n    return bases.front();\n}}\n",
+            "first_subobject": "consteval std::meta::info first_subobject() {\n"
+                               f"    return std::define_static_array(std::meta::subobjects_of(^^S, {unchecked}))[0];\n"
+                               "}\n",
+            "last_static": "consteval std::meta::info last_static() {\n"
+                           "    template for (constexpr auto m : std::define_static_array(\n"
+                           f"                      std::meta::static_data_members_of(^^S, {unchecked}))) {{\n"
+                           "        return m;\n    }\n    return {};\n}\n",
+            "a lambda": "auto pick = []() consteval {\n"
+                        f"    return std::meta::nonstatic_data_members_of(^^S, {unchecked})[0];\n}};\n",
+            "first_field": "consteval std::meta::info first_field() {\n"
+                           f"    constexpr auto context = {unchecked};\n"
+                           "    return std::meta::nonstatic_data_members_of(^^S, context)[0];\n}\n",
+            "field_under": "consteval std::meta::info field_under(std::meta::access_context context) {\n"
+                           f"    (void){unchecked};\n"
+                           "    return std::meta::nonstatic_data_members_of(^^S, context)[0];\n}\n",
+        }
+        for name, text in returns.items():
+            write(root, "include/foundation/Walk.h", walk + text)
+            expect(root, 1, f"REFUSED   include/foundation/Walk.h:4 — {name} uses unchecked and returns a member",
+                   f"a function that returns a member that a walk found: {name}", True)
+        write(root, "include/foundation/Walk.h", walk
+              + "template <typename T> consteval unsigned long member_count() {\n"
+              + f"    return std::meta::nonstatic_data_members_of(^^T, {unchecked}).size();\n}}\n"
+              + "template <typename T, unsigned I> constexpr unsigned long hash_member(const T& obj) {\n"
+              + f"    return hash_field(obj.[:std::meta::nonstatic_data_members_of(^^T, {unchecked})[I]:]);\n}}\n"
+              + "template <typename T, unsigned I> void print_member(const T& obj) {\n"
+              + "    constexpr std::string_view name =\n"
+              + f"        std::meta::identifier_of(std::meta::nonstatic_data_members_of(^^T, {unchecked})[I]);\n"
+              + f"    print_field(name, obj.[:std::meta::nonstatic_data_members_of(^^T, {unchecked})[I]:]);\n}}\n"
+              + "consteval std::meta::info first_public() {\n"
+              + "    return std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::current())[0];\n}\n"
+              + "consteval std::meta::info first_public_of_counted() {\n"
+              + f"    static_assert(std::meta::nonstatic_data_members_of(^^S, {unchecked}).size() > 0);\n"
+              + "    return std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::current())[0];\n}\n"
+              + "consteval std::meta::info first_type() {\n"
+              + f"    for (auto m : std::meta::nonstatic_data_members_of(^^S, {unchecked})) "
+              + "return std::meta::type_of(m);\n    return ^^void;\n}\n"
+              + "namespace roster { struct Entry {}; }\nconsteval std::meta::info first_entry() {\n"
+              + f"    for (auto m : std::meta::members_of(^^roster, {unchecked})) return m;\n    return ^^void;\n}}\n")
+        expect(root, 0, "1 file(s) open", "a walk that returns a count, a hash, printed text, a public member, a "
+                                          "type or a member of a namespace passes")
+        write(root, "include/foundation/Walk.h", walk)
 
         # An untracked file is out of scope, because the export of a guard run
         # can appear under the tree while the guard reads it.
