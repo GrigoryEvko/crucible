@@ -94,7 +94,7 @@ namespace {
 // not a limit on how many tokens may exist.  The three groups below
 // pin that reading: what the tag concept accepts, that a second root
 // mint compiles, and that a token cannot be copied.
-namespace fixy_found_008_pin {
+namespace per_token_linearity_pin {
 struct EmptyTag {
     using permission_row = ::foundation::effects::Row<>;
 };
@@ -127,7 +127,7 @@ static_assert(!std::is_copy_constructible_v<::foundation::permissions::Permissio
 static_assert(std::is_move_constructible_v<::foundation::permissions::Permission<EmptyTag>>,
               "A permission must be move-constructible, which is the only way "
               "ownership of a token transfers.");
-}  // namespace fixy_found_008_pin
+}  // namespace per_token_linearity_pin
 
 // The tag extractors give the region tag of a token through every
 // reference and cv qualifier.  Each one refuses a type of the other
