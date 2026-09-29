@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I16 fixture — pins TraceRing::try_append_pure rejects a
+// Pins that TraceRing::try_append_pure rejects a
 // caller declaring Row<Effect::IO>.  Sibling of MetaLog's
-// try_append_pure neg-compile matrix (FOUND-I17-AUDIT).
+// try_append_pure neg-compile matrix.
 //
 // IsPure<R> = Subrow<R, Row<>>.  Row<IO> contains the IO atom,
 // so {IO} ⊄ ∅ — the requires-clause rejects.  An IO-context

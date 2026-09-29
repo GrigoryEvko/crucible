@@ -1,12 +1,12 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I17-AUDIT fixture — per-axis neg-compile parity.  Pins
+// Per-axis neg-compile parity.  Pins that
 // MetaLog::try_append_pure rejects a caller declaring Row<Alloc>.
 //
 // IsPure<R> = Subrow<R, Row<>>.  Row<Alloc> contains the Alloc
 // atom, so {Alloc} ⊄ ∅; the requires-clause rejects.  This is
 // the third per-axis rejection leg (companion to the IO and Bg
-// fixtures shipped with FOUND-I17).
+// fixtures).
 //
 // [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
 // IsPure<Row<Effect::Alloc>>.

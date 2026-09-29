@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I17-AUDIT fixture — per-axis neg-compile parity.  Pins
+// Per-axis neg-compile parity.  Pins that
 // MetaLog::try_append_pure rejects a caller declaring Row<Test>.
 //
 // IsPure<R> = Subrow<R, Row<>>.  Row<Test> contains the Test
@@ -11,8 +11,8 @@
 // run in a Test-tagged context, and a Test caller should not
 // invoke the production-hot-path append.
 //
-// Together with the alloc/block/init fixtures (and the previously-
-// shipped io/bg fixtures), this completes the per-axis rejection
+// Together with the alloc/block/init/io/bg fixtures, this completes
+// the per-axis rejection
 // matrix: every atom in the OsUniverse independently triggers
 // IsPure failure.
 //

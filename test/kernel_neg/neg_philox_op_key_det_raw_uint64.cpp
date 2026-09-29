@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Philox-4 fixture #2: op_key_det() returns DetSafe<Pure,
+// Philox op_key fixture #2: op_key_det() returns DetSafe<Pure,
 // uint64_t>, not a raw integer.  A caller must make the provenance
 // erasure explicit with .peek() / consume() at the boundary that owns it.
 

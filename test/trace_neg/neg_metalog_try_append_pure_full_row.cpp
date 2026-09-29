@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I17-AUDIT fixture — saturation-row rejection.  Pins
+// Saturation-row rejection.  Pins that
 // MetaLog::try_append_pure rejects a caller declaring the full
 // 6-atom OsUniverse row (AllRow = Row<Alloc, IO, Block, Bg, Init,
 // Test>).

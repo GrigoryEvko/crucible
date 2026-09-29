@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Reflect-4 #985, mismatch class #1 of 2:
+// IsReflectFieldSupported, mismatch class #1 of 2:
 // `void` IS NOT IN THE REFLECT FIELD-SUPPORTED ALLOW-LIST.
 //
 // `detail_reflect::IsReflectFieldSupported<T>` enumerates the
@@ -18,14 +18,14 @@
 // here the failure is on `void` itself, which has no first-class
 // representation.
 //
-// Expected diagnostic: static assertion failed / WRAP-Reflect-4 /
-// IsReflectFieldSupported.
+// Expected diagnostic: static assertion failed, required by the
+// constraints of IsReflectFieldSupported.
 
 #include <crucible/Reflect.h>
 
 // Should FAIL at compile time: `void` is not in the allow-list.
 static_assert(::crucible::detail_reflect::IsReflectFieldSupported<void>,
-              "WRAP-Reflect-4 #985 fixture: this static_assert MUST fail "
+              "This static_assert MUST fail "
               "at compile time because `void` is excluded from the "
               "IsReflectFieldSupported allow-list.");
 

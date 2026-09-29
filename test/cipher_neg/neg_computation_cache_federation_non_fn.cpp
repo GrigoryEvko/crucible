@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-F12-AUDIT fixture — pins IsCacheableFunction concept
+// Pins IsCacheableFunction concept
 // rejection on the federation bridge primitives.
 //
 // `federation_content_hash<FnPtr, Row, Args...>` and

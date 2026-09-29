@@ -10,19 +10,19 @@
 //
 //   A writer refreshes. It asks refresh_plan what is missing or stale, runs
 //   the probes for those questions, and commits. crucible-hwprobe is one
-//   such writer and runs once at deploy. The in-process refresh thread is
-//   another and is #67; it is not built here, and everything it needs is.
+//   such writer and runs once at deploy. The in-process refresh thread of
+//   ledger/RefreshDaemon.h is the other.
 //
 // The seam between them is refresh_plan plus the ProbeRegistration table.
-// #67 does not need a new entry point: it calls the same planner the tool
-// calls, supplies the same kind of probe table, and commits through the same
-// store. What #67 adds is a thread, a schedule and a backoff — none of which
-// belong to the mechanism.
+// The refresh thread needs no entry point of its own: it calls the same
+// planner the tool calls, supplies the same kind of probe table, and commits
+// through the same store. What the thread adds is a schedule and a backoff —
+// neither of which belongs to the mechanism.
 //
-// Probes themselves are #68-#70. This header defines the signature they
-// implement and nothing else; there is exactly one probe in the tree today
-// and it lives in the tool, because its only job is to prove the loop
-// closes.
+// The probes live in ledger/probes/ (VectorWidth.h, CacheTier.h and
+// HugePage.h), and the tool adds a timer-floor probe that proves the loop
+// closes. This header defines the signature they implement and nothing
+// else.
 //
 // DetSafe (axiom 8). A verdict is allowed to change how fast the runtime
 // goes. It is never allowed to change what the runtime computes. Concretely:
@@ -176,7 +176,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     return mint_ledger_view(ctx, probe_host_fingerprint(ctx));
 }
 
-// ── The write side, and the seam for #67 ──────────────────────────────
+// ── The write side, and the seam for the refresh thread ───────────────
 
 enum class RefreshReason : std::uint8_t {
     Absent = 0,  // never measured on this fingerprint
@@ -204,11 +204,11 @@ struct RefreshRequest {
 
 using RefreshQueue = std::inplace_vector<RefreshRequest, kMaxLedgerEntries>;
 
-// What needs measuring, and why. This is the seam: #67's refresh thread
+// What needs measuring, and why. This is the seam: the refresh thread
 // calls this on a timer, gets back a queue, and decides how much of it to
 // work through and how long to wait before asking again. The tool calls the
-// same function and works through all of it at once. Neither owns the
-// policy of when to ask — that is exactly what #67 adds.
+// same function and works through all of it at once. This function does not
+// own the policy of when to ask — the refresh thread adds that policy.
 //
 // A low-confidence entry is queued for refresh even though it is present,
 // because the reason it is low is usually transient: the host was loaded, or

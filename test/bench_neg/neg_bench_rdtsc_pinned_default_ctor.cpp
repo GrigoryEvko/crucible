@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-V-196 RdtscPinned witness — mismatch class #1 of 2: NO PUBLIC
+// RdtscPinned witness — mismatch class #1 of 2: NO PUBLIC
 // DEFAULT CTOR.
 //
 // RdtscPinned declares `constexpr RdtscPinned(CpuId, mint_tag) noexcept`

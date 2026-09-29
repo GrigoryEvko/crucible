@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-TensorMeta-1 (#1034): TensorMeta sizes/strides write sites
+// TensorMeta sizes/strides write sites
 // require TensorDim = Refined<bounded_above<kMaxTensorDimExtent>,
 // int64_t>.  A raw integer literal must not assign directly into the
 // dimension lane.

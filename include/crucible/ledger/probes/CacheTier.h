@@ -1,11 +1,11 @@
 #pragma once
 
-// #69 — where the cache-tier rule's thresholds actually sit on this host,
-// and what a cross-socket read really costs.
+// Where the cache-tier rule's thresholds actually sit on this host, and
+// what a cross-socket read really costs.
 //
 // CLAUDE.md §IX decides SEQUENTIAL against PARALLEL from three numbers it
 // names as roughly 32 KiB, 1 MiB and 32 MiB, and
-// concurrent/ParallelismRule.h implements that by reading the host's L1d,
+// fixy/concurrent/ParallelismRule.h implements that by reading the host's L1d,
 // L2 and L3 sizes out of sysfs and classifying a working set against them.
 // Anything below L2 stays sequential; anything inside L3 gets at most four
 // workers on one socket; anything past L3 gets a factor derived from how

@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I17-AUDIT fixture — multi-atom rejection witness.  Pins
+// Multi-atom rejection witness.  Pins that
 // MetaLog::try_append_pure rejects a caller declaring Row<IO,
 // Block>.  This is the EXACT row Cipher::record_event REQUIRES,
 // so it pins a non-trivial composition: a row that's CORRECT for

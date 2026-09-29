@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for cog::content_hash (GAPS-185 #1210).
+// HS14 fixture #1 of 2 for cog::content_hash.
 //
 // Premise: content_hash takes a CogIdentity and produces a uint64_t
 // KernelCache key axis from the (uuid, firmware_revision, bios_revision)
@@ -18,7 +18,7 @@
 // die invalidates ONLY that die's compiled kernels — not the
 // neighbor's.  If zero-uuid identities are accepted, a freshly
 // allocated Cog wrapper that hasn't yet had its uuid populated
-// (e.g., a probe in flight from GAPS-111 topology/Discovery.h)
+// (for example, a probe in flight from topology/Discovery.h)
 // would silently inherit the kernel cache slot of every other
 // pre-init Cog, returning stale or wrong-shape compiled code.
 //
@@ -34,9 +34,9 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 //
-// Expected diagnostic: "static assertion failed" / "contract" /
-// "precondition" / "is_zero" / "non-constant" / "content_hash" /
-// "GAPS-185" pointing at the static_assert call site below.
+// Expected diagnostic: the constant evaluation of content_hash() below
+// reaches the __builtin_trap() of the CRUCIBLE_PRE in CogIdentity.h, which
+// is not a constant expression.
 
 #include <crucible/cog/CogIdentity.h>
 
@@ -53,7 +53,7 @@ constexpr cog::CogIdentity ZERO_UUID_FIXTURE{};
 // call not a constant expression, so the static_assert is ill-formed
 // — the build fails here.
 static_assert(cog::content_hash(ZERO_UUID_FIXTURE) == 0,
-              "GAPS-185: cog::content_hash MUST refuse zero-uuid CogIdentity at "
+              "cog::content_hash MUST refuse zero-uuid CogIdentity at "
               "the precondition contract.  If this static_assert ever evaluates "
               "successfully, the KernelCache key axis is silently aliasing "
               "every uninitialized Cog into the same slot — invalid compiled "

@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture 1 of 2 for mint_ledger_view (#66).
+// HS14 fixture 1 of 2 for mint_ledger_view.
 //
 // Violation: HotFgCtx carries effects::Row<> — it claims NOTHING.  A
 // foreground dispatch context holds no capability at all, by design:

@@ -57,7 +57,7 @@ enum class VerdictId : std::uint16_t {
     // measure, judge, store, read back, serve.
     TimerFloorNanos = 0,
 
-    // ── #68, vector width ──
+    // ── Vector width ──
     //
     // Three ids and not one, because one number cannot answer this
     // honestly. The width that wins depends on the shape of the kernel:
@@ -71,7 +71,7 @@ enum class VerdictId : std::uint16_t {
     VectorWidthComputeGainPercent = 2,
     VectorWidthMemoryGainPercent = 3,
 
-    // ── #69, cache tier and NUMA ──
+    // ── Cache tier and NUMA ──
     //
     // The knee and the ceiling bracket the range over which splitting
     // work across cores pays. Below the knee the fork-join costs more
@@ -85,7 +85,7 @@ enum class VerdictId : std::uint16_t {
     ParallelCeilingBytes = 5,
     NumaRemoteCostPercent = 6,
 
-    // ── #70, transparent hugepages ──
+    // ── Transparent hugepages ──
     ThpFaultCostNanosPerMib = 7,
     ThpFaultGainPercent = 8,
     ThpAccessGainPercent = 9,
@@ -201,7 +201,7 @@ struct VerdictTrait {
                                 .unit = VerdictUnit::Nanoseconds,
                                 .ttl = VerdictTtl::of_seconds(kDefaultTtlSeconds)};
 
-        // ── #68 ──
+        // ── Vector width ──
         //
         // A day, not never. The width that wins is a property of the
         // silicon, which the hardware half of the fingerprint already
@@ -225,9 +225,9 @@ struct VerdictTrait {
                                 .unit = VerdictUnit::Percent,
                                 .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
 
-        // ── #69 ──
+        // ── Cache tier and NUMA ──
         //
-        // Also a day, and for a sharper reason than #68. The cache sizes
+        // Also a day, and for a sharper reason than the vector width. The cache sizes
         // are fixed, but where a fork-join starts to pay depends on what
         // the fork-join costs, and that depends on what else is on the
         // machine. The competence gate refuses to measure on a loaded
@@ -247,7 +247,7 @@ struct VerdictTrait {
                                 .unit = VerdictUnit::Percent,
                                 .ttl = VerdictTtl::of_seconds(kDayTtlSeconds)};
 
-        // ── #70 ──
+        // ── Transparent hugepages ──
         //
         // Fifteen minutes. What a hugepage fault costs is set by how
         // fragmented physical memory is, and fragmentation is a running

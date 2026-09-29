@@ -5,17 +5,17 @@
 // let go stale, and commits. The runtime then reads that file and never
 // measures on its own.
 //
-// Refreshing from inside the runtime — a thread, a schedule, a backoff — is
-// #67 and is not built here. Everything it needs is: it calls the same
-// refresh_plan, supplies the same kind of probe table, and commits through
-// the same store. The only thing missing is the policy of when to ask.
+// The refresh thread in ledger/RefreshDaemon.h refreshes from inside the
+// runtime. It calls the same refresh_plan, supplies the same kind of probe
+// table, and commits through the same store. It adds only the policy of
+// when to ask: a thread, a schedule and a backoff.
 //
-// There is one probe, and it is deliberately useless. It measures the floor
-// of the timing rig itself: the cost of touching a register and reading the
-// cycle counter around it. That number is real, is stable, and decides
-// nothing. Its job is to prove the loop closes — measure, judge, store, read
-// back, serve — so that #68-#70 can add questions worth asking without also
-// having to debug the mechanism. Real probes are theirs.
+// The probe table holds the timer-floor probe of this file and the probes of
+// ledger/probes/: vector width, cache tier with the NUMA hop, and
+// transparent hugepages. The timer-floor probe measures the floor of the
+// timing rig itself: the cost of touching a register and reading the cycle
+// counter around it. That number is real, is stable, and decides nothing.
+// It proves that the loop closes — measure, judge, store, read back, serve.
 //
 // Timing goes through bench/bench_harness.h rather than a rig written here.
 // The harness already reports the quantiles, the within-run coefficient of
@@ -180,8 +180,8 @@ using crucible::ledger::evidence_from_two_runs;
         return std::unexpected(LedgerError::ConfidenceBelowBar);
     }
 
-    // The two-run fold moved to ProbeSupport.h when #68-#70 turned out to
-    // want it too. This probe reads the shared one rather than keeping its
+    // The two-run fold lives in ProbeSupport.h, because the probes of
+    // ledger/probes/ use it too. This probe reads the shared one rather than keeping its
     // own copy, so a change to how evidence is built cannot apply to three
     // probes and miss the fourth.
     const VerdictEvidence evidence = evidence_from_two_runs(first, second);
@@ -202,7 +202,7 @@ constexpr ledger::ProbeRegistration kProbeTable[] = {
     {.id = VerdictId::ThpAccessGainPercent, .run = &ledger::probes::probe_thp_access_gain},
 };
 
-// Order matters here and nowhere else. Each of #68, #69 and #70 answers
+// Order matters here and nowhere else. Each probe of ledger/probes/ answers
 // several verdicts from one measurement, held behind a short-lived memo in
 // ProbeSupport.h, so the sibling ids have to be queued together for the
 // memo to be the thing that shares them. Interleaving two probes' ids

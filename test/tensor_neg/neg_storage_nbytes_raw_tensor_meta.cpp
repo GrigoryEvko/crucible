@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for #1022 WRAP-StorageNbytes-5
-// (compute_storage_nbytes* TensorMeta input -> ExternalTensorMeta).
+// HS14 fixture #1 of 2 for the provenance gate of compute_storage_nbytes*
+// (TensorMeta input -> ExternalTensorMeta).
 //
 // Premise: storage-span computation is an adversarial boundary over
 // TensorMeta values loaded from foreign traces / Vessel / disk.  A raw

@@ -1,12 +1,12 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-F09-AUDIT-3 fixture — sister to the member-function-pointer
+// Sister to the member-function-pointer
 // rejection.  Without this fence, `&Receiver::data_field` (a
 // member-data-pointer with type `int Receiver::*`) would compile
 // against `auto FnPtr` and produce a nonsense cache slot keyed
 // off a non-callable offset.
 //
-// Closes the rejection-space symmetry:
+// With this fixture, the rejections cover all four NTTP categories:
 //   * neg_computation_cache_integral_nttp     — `int` NTTPs.
 //   * neg_computation_cache_data_ptr_nttp     — `int*` NTTPs.
 //   * neg_computation_cache_member_fn_nttp    — `R(C::*)(...)` NTTPs.

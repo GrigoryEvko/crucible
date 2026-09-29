@@ -4,7 +4,7 @@
 // UINT32_MAX in constexpr context — the wide-miss fixture for the
 // TraceRing drain max-count cap.
 //
-// Per WRAP-TraceRing-3 (#1055), ValidDrainCount is
+// ValidDrainCount is
 // fixy::Refined<fixy::bounded_above<TraceRing::CAPACITY>, uint32_t>
 // with TraceRing::CAPACITY == (1u << 16) == 65'536.  UINT32_MAX is
 // 65 537× the cap.  Without the gate, a caller that loaded a uint32_t

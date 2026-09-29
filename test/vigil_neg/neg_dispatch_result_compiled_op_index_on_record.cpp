@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Negative-compile fixture (HS14 mandate) for the fix-10 consteval-bypass
+// Negative-compile fixture (HS14 mandate) for the consteval-bypass
 // migration of DispatchResult::compiled_op_index().
 //
 // Companion to neg_dispatch_result_compiled_status_on_record.cpp.  Same
@@ -12,8 +12,8 @@
 //
 // a `this->action` member-predicate that the un-patched distro GCC
 // 16.1.1 silently bypasses at consteval for the foldable body
-// (`return op_index;`).  fix-10 migrated it to the in-body CRUCIBLE_PRE
-// macro, which fires on both the patched and un-patched toolchains.
+// (`return op_index;`).  The in-body CRUCIBLE_PRE macro replaces it, and
+// that macro fires on both the patched and un-patched toolchains.
 //
 // WHAT THIS FIXTURE PROVES
 // ────────────────────────

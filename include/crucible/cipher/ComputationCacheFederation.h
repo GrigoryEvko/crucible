@@ -173,9 +173,9 @@ using ::crucible::cipher::federation::FEDERATION_HEADER_BYTES;
 
 namespace detail::computation_cache_federation_self_test {
 
-inline void f12_p_unary(int) noexcept {}
-inline void f12_p_binary(int, double) noexcept {}
-inline void f12_p_void() noexcept {}
+inline void probe_unary(int) noexcept {}
+inline void probe_binary(int, double) noexcept {}
+inline void probe_void() noexcept {}
 
 namespace eff_local = ::foundation::effects;
 using EmptyR = eff_local::Row<>;
@@ -183,30 +183,30 @@ using BgR = eff_local::Row<eff_local::Effect::Bg>;
 using IOR = eff_local::Row<eff_local::Effect::IO>;
 using BgIOR = eff_local::Row<eff_local::Effect::Bg, eff_local::Effect::IO>;
 
-static_assert(federation_content_hash<&f12_p_unary, EmptyR, int>().raw() != 0,
+static_assert(federation_content_hash<&probe_unary, EmptyR, int>().raw() != 0,
               "the federation content hash must be non-zero, which the "
               "non-zero name seed guarantees.");
 static_assert(federation_row_hash<EmptyR>().raw() != 0, "the federation row hash for the empty row must be non-zero, "
                                                         "which the cardinality-seeded fold guarantees.");
-static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_zero(),
+static_assert(!federation_key<&probe_unary, EmptyR, int>().is_zero(),
               "the composite federation key must not be the zero-key sentinel.");
-static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_sentinel(),
+static_assert(!federation_key<&probe_unary, EmptyR, int>().is_sentinel(),
               "the composite federation key must not be the all-ones pair "
               "that marks an empty cache slot.");
-static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>>);
-static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationReceiverProto<&f12_p_unary, EmptyR, int>>);
-static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationCoordProto<&f12_p_unary, EmptyR, int>>);
-static_assert(role_protocol_matches_v<SenderRole, ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>,
-                                      ComputationCacheFederationKeyTag<&f12_p_unary, EmptyR, int>>);
+static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationSenderProto<&probe_unary, EmptyR, int>>);
+static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationReceiverProto<&probe_unary, EmptyR, int>>);
+static_assert(::fixy::session::is_well_formed_v<ComputationCacheFederationCoordProto<&probe_unary, EmptyR, int>>);
+static_assert(role_protocol_matches_v<SenderRole, ComputationCacheFederationSenderProto<&probe_unary, EmptyR, int>,
+                                      ComputationCacheFederationKeyTag<&probe_unary, EmptyR, int>>);
 static_assert(::fixy::session::is_content_addressed_v<
-              typename ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>::payload_type>);
-static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>)
+              typename ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>::payload_type>);
+static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>)
               == sizeof(std::span<const std::uint8_t>));
 
-static_assert(federation_key<&f12_p_unary, EmptyR, int>() == federation_key<&f12_p_unary, EmptyR, int>(),
+static_assert(federation_key<&probe_unary, EmptyR, int>() == federation_key<&probe_unary, EmptyR, int>(),
               "the federation key must be deterministic for the same inputs.");
 
-static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_unary, BgR, int>(),
+static_assert(federation_key<&probe_unary, EmptyR, int>() != federation_key<&probe_unary, BgR, int>(),
               "the federation key must differ across rows, which is what "
               "makes the row axis able to tell entries apart.");
 
@@ -217,21 +217,21 @@ static_assert(federation_row_hash<BgR>() != federation_row_hash<IOR>(),
 static_assert(federation_row_hash<BgR>() != federation_row_hash<BgIOR>(),
               "the row hash distinguishes Row<Bg> from Row<Bg, IO>.");
 
-static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_void, EmptyR>(),
+static_assert(federation_key<&probe_unary, EmptyR, int>() != federation_key<&probe_void, EmptyR>(),
               "the federation key distinguishes different functions.");
 
-static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_binary, EmptyR, int, double>(),
+static_assert(federation_key<&probe_unary, EmptyR, int>() != federation_key<&probe_binary, EmptyR, int, double>(),
               "the federation key distinguishes different argument packs.");
 
 using BgIO_perm1 = eff_local::Row<eff_local::Effect::Bg, eff_local::Effect::IO>;
 using BgIO_perm2 = eff_local::Row<eff_local::Effect::IO, eff_local::Effect::Bg>;
 static_assert(federation_row_hash<BgIO_perm1>() == federation_row_hash<BgIO_perm2>(),
               "the row hash does not change when the effect pack is reordered.");
-static_assert(federation_key<&f12_p_unary, BgIO_perm1, int>() == federation_key<&f12_p_unary, BgIO_perm2, int>(),
+static_assert(federation_key<&probe_unary, BgIO_perm1, int>() == federation_key<&probe_unary, BgIO_perm2, int>(),
               "the composite federation key does not change when the effect "
               "pack is reordered.");
 
-static_assert(IsCacheableFunction<&f12_p_unary>);
+static_assert(IsCacheableFunction<&probe_unary>);
 static_assert(IsEffectRow<EmptyR>);
 static_assert(IsEffectRow<BgR>);
 static_assert(IsEffectRow<BgIOR>);
@@ -250,7 +250,7 @@ static_assert(!ArgsCanonicallyOrdered<::fixy::Tagged<::fixy::Stale<int>, FromUse
               "Tagged outside Stale inverts the canonical nesting order and "
               "must be refused at the publish boundary.");
 
-static_assert(!federation_key<&f12_p_unary, EmptyR, ::fixy::Stale<::fixy::Tagged<int, FromUser>>>().is_zero(),
+static_assert(!federation_key<&probe_unary, EmptyR, ::fixy::Stale<::fixy::Tagged<int, FromUser>>>().is_zero(),
               "a canonically nested argument projects to a well-formed federation "
               "key.");
 
@@ -271,7 +271,7 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
         const std::array<std::uint8_t, 4> body = {0x01, 0x02, 0x03, 0x04};
 
         auto written =
-            serialize_computation_cache_federation_entry<&f12_p_unary, EmptyR, int>(local_permission, buf, body);
+            serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission, buf, body);
         ok = ok && written.has_value();
         if (!written.has_value()) return false;
 
@@ -281,7 +281,7 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
         ok = ok && view.has_value();
         if (!view.has_value()) return false;
 
-        const auto expected_key = federation_key<&f12_p_unary, EmptyR, int>();
+        const auto expected_key = federation_key<&probe_unary, EmptyR, int>();
         ok = ok && (view->header.content_hash == expected_key.content_hash);
         ok = ok && (view->header.row_hash == expected_key.row_hash);
         ok = ok && (view->payload.size() == body.size());
@@ -293,9 +293,9 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
     {
         std::array<std::uint8_t, 32> buf_empty{};
         std::array<std::uint8_t, 32> buf_bg{};
-        auto wa = serialize_computation_cache_federation_entry<&f12_p_unary, EmptyR, int>(
+        auto wa = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
             local_permission, buf_empty, std::span<const std::uint8_t>{});
-        auto wb = serialize_computation_cache_federation_entry<&f12_p_unary, BgR, int>(local_permission, buf_bg,
+        auto wb = serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(local_permission, buf_bg,
                                                                                        std::span<const std::uint8_t>{});
         ok = ok && wa.has_value() && wb.has_value();
         if (!wa.has_value() || !wb.has_value()) return false;
@@ -312,8 +312,8 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
 
     {
         std::array<std::uint8_t, 32> buf{};
-        using Payload = ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>;
-        auto written = serialize_computation_cache_federation_entry<&f12_p_unary, EmptyR, int>(local_permission, buf,
+        using Payload = ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>;
+        auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission, buf,
                                                                                                Payload::hash_only());
         ok = ok && written.has_value();
         if (!written.has_value()) return false;

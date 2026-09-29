@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-117 fixture #2: Reed-Solomon needs at least one parity shard.
+// Reed-Solomon fixture #2: Reed-Solomon needs at least one parity shard.
 // M=0 violates the ReedSolomonShape concept.
 
 #include <crucible/cntp/Fec.h>

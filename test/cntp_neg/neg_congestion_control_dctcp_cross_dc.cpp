@@ -1,6 +1,6 @@
 #include <crucible/cntp/CongestionControl.h>
 
-// GAPS-120 fixture #2: DCTCP requires a lossless datacenter fabric.
+// Congestion-control fixture #2: DCTCP requires a lossless datacenter fabric.
 // Cross-DC and public-Internet flows must not select it by policy.
 
 int main() {

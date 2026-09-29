@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for #1035 WRAP-TensorMeta-2
-// (TensorMeta::data_ptr -> Tagged<void*, source::External>).
+// HS14 fixture #1 of 2 for the provenance gate of TensorMeta::data_ptr
+// (Tagged<void*, source::External>).
 //
 // Premise: TensorMeta::data_ptr is a foreign tensor-storage address
 // observed through PyTorch / trace / disk boundaries.  A raw pointer

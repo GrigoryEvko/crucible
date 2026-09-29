@@ -30,7 +30,7 @@ int main() {
     // for UB-bounded access, or at(Refined<bounded_above<N-1>>) for
     // a proof-token).  Production code that legitimately reads slot i
     // routes through Entry::get_scalar_type(i) /
-    // Entry::set_scalar_type(i, t) helpers (CONTRACT-128 cite
+    // Entry::set_scalar_type(i, t) helpers (the cite
     // `decide::in_range<uint32_t>(i, 0u, 4u)` discharges the bound),
     // never a compile-time-known i ≥ 5.
     (void)entry.scalar_values.at<5>();

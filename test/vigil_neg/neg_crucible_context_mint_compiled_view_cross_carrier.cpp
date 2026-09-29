@@ -8,7 +8,7 @@
 //
 // CrucibleContext has only one typed view (CompiledView; no companion
 // "RecordingView") so the intra-carrier per-state mismatch pattern used
-// for CKernelTable/SchemaTable (U-135/U-136) doesn't apply here.  The
+// for CKernelTable/SchemaTable doesn't apply here.  The
 // cross-carrier mismatch is the equivalent type-system gate: the type
 // system distinguishes carriers AND states, both layers of the lock
 // must reject independently.

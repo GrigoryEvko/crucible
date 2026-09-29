@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture 2 of 2 for mint_ledger_view (#66).
+// HS14 fixture 2 of 2 for mint_ledger_view.
 //
 // Violation: ColdInitCtx carries Row<Init, Alloc, IO>.  It CAN touch
 // the kernel — so this is a different mismatch class from the

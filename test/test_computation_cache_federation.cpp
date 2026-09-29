@@ -227,14 +227,14 @@ static void test_t12_key_never_sentinel_or_zero() {
     std::printf("  T12 key_never_sentinel_or_zero:              PASSED\n");
 }
 
-static void test_t13_composes_with_f11_cache_key() {
+static void test_t13_composes_with_cache_key() {
     constexpr auto fed_content = fed::federation_content_hash<&t_unary, RBg, int>().raw();
-    constexpr auto f11_key = crucible::cipher::computation_cache_key_in_row<&t_unary, RBg, int>;
-    static_assert(fed_content == f11_key, "The federation content hash equals the computation cache key for "
-                                          "the same function, row and arguments. The projection between them "
-                                          "is a plain wrap.");
+    constexpr auto cache_key = crucible::cipher::computation_cache_key_in_row<&t_unary, RBg, int>;
+    static_assert(fed_content == cache_key, "The federation content hash equals the computation cache key for "
+                                            "the same function, row and arguments. The projection between them "
+                                            "is a plain wrap.");
 
-    std::printf("  T13 composes_with_f11_cache_key:             PASSED\n");
+    std::printf("  T13 composes_with_cache_key:                 PASSED\n");
 }
 
 static void test_t14_header_smoke_test() {
@@ -299,7 +299,7 @@ static void test_t16_content_addressed_payload_elision() {
 // The tests above compare composite keys. Here only the content axis is read,
 // and it has to separate rows on its own: the key fold mixes the row into the
 // content hash rather than leaving the row axis to do all the work.
-static void test_audit_a_content_axis_row_isolation() {
+static void test_content_axis_row_isolation() {
     static_assert(fed::federation_content_hash<&t_unary, R0, int>()
                       != fed::federation_content_hash<&t_unary, RBg, int>(),
                   "The content hash differs across rows even when read apart from the "
@@ -315,7 +315,7 @@ static void test_audit_a_content_axis_row_isolation() {
                   "The content hash inherits the row projection's permutation "
                   "invariance.");
 
-    std::printf("  AUDIT-A content_axis_row_isolation:          PASSED\n");
+    std::printf("  content_axis_row_isolation:                  PASSED\n");
 }
 
 // The header is 32 bytes, little-endian, laid out as:
@@ -329,7 +329,7 @@ static void test_audit_a_content_axis_row_isolation() {
 //
 // Other implementations read those offsets, so a field that moves breaks
 // compatibility silently. The reads below pin the three that matter.
-static void test_audit_b_wire_byte_offset_stability() {
+static void test_wire_byte_offset_stability() {
     constexpr auto k = fed::federation_key<&t_unary, RBgIO, int>();
     const auto expected_content = k.content_hash.raw();
     const auto expected_row = k.row_hash.raw();
@@ -358,7 +358,7 @@ static void test_audit_b_wire_byte_offset_stability() {
     }
     assert(observed_magic == fed::FEDERATION_MAGIC);
 
-    std::printf("  AUDIT-B wire_byte_offset_stability:          PASSED\n");
+    std::printf("  wire_byte_offset_stability:                  PASSED\n");
 }
 
 // The effect universe only ever grows: atoms are appended, never removed or
@@ -369,7 +369,7 @@ static void test_audit_b_wire_byte_offset_stability() {
 // The bridge does not stamp that field itself; the serialize path it calls
 // does. What is under test is that the refusal still reaches a caller going
 // through the bridge.
-static void test_audit_c_cross_universe_cardinality_rejection() {
+static void test_cross_universe_cardinality_rejection() {
     constexpr auto current_cardinality = static_cast<std::uint16_t>(::foundation::effects::effect_count);
     static_assert(current_cardinality >= 1u, "The fixture subtracts one to build a smaller receiver cardinality, "
                                              "so the universe must hold at least one atom.");
@@ -396,13 +396,13 @@ static void test_audit_c_cross_universe_cardinality_rejection() {
         assert(view.error() == crucible::cipher::federation::FederationError::UniverseCardinalityTooHigh);
     }
 
-    std::printf("  AUDIT-C cross_universe_cardinality_rejection: PASSED\n");
+    std::printf("  cross_universe_cardinality_rejection:        PASSED\n");
 }
 
 // Two permutations of one row produce equal keys. The serialized bytes have
 // to match as well, or the codec would be sensitive to template argument
 // order in some way the key projection does not expose.
-static void test_audit_d_row_permutation_byte_invariance() {
+static void test_row_permutation_byte_invariance() {
     const std::array<std::uint8_t, 8> body = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80};
 
     std::array<std::uint8_t, 64> buf_bgio{};
@@ -420,11 +420,11 @@ static void test_audit_d_row_permutation_byte_invariance() {
         assert(buf_bgio[i] == buf_iobg[i]);
     }
 
-    std::printf("  AUDIT-D row_permutation_byte_invariance:     PASSED\n");
+    std::printf("  row_permutation_byte_invariance:             PASSED\n");
 }
 
 // The saturation case: a row naming every atom of the universe.
-static void test_audit_e_saturation_row_round_trip() {
+static void test_saturation_row_round_trip() {
     constexpr auto k_full = fed::federation_key<&t_unary, RFull, int>();
     static_assert(!k_full.is_zero());
     static_assert(!k_full.is_sentinel());
@@ -452,7 +452,7 @@ static void test_audit_e_saturation_row_round_trip() {
         assert(view->payload[i] == body[i]);
     }
 
-    std::printf("  AUDIT-E saturation_row_round_trip:           PASSED\n");
+    std::printf("  saturation_row_round_trip:                   PASSED\n");
 }
 
 namespace {
@@ -512,15 +512,15 @@ int main() {
     test_t10_codec_round_trip();
     test_t11_cross_row_on_wire_distinct();
     test_t12_key_never_sentinel_or_zero();
-    test_t13_composes_with_f11_cache_key();
+    test_t13_composes_with_cache_key();
     test_t14_header_smoke_test();
     test_t15_payload_aliases_input();
     test_t16_content_addressed_payload_elision();
-    test_audit_a_content_axis_row_isolation();
-    test_audit_b_wire_byte_offset_stability();
-    test_audit_c_cross_universe_cardinality_rejection();
-    test_audit_d_row_permutation_byte_invariance();
-    test_audit_e_saturation_row_round_trip();
+    test_content_axis_row_isolation();
+    test_wire_byte_offset_stability();
+    test_cross_universe_cardinality_rejection();
+    test_row_permutation_byte_invariance();
+    test_saturation_row_round_trip();
     test_gate_a_canonical_args_accepted();
     test_gate_b_inverted_args_rejected();
     test_gate_c_canonical_stack_deterministic_distinct();

@@ -1,6 +1,6 @@
 #include <crucible/cntp/CongestionControl.h>
 
-// GAPS-120 fixture #3: a custom Fixy/user congestion-control module
+// Congestion-control fixture #3: a custom Fixy/user congestion-control module
 // must expose a constexpr kernel congestion-control name.
 
 struct MissingName {};

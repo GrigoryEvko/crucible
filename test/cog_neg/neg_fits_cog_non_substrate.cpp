@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #2 of 2 for cog::FitsCog (GAPS-191 #1216).
+// HS14 fixture #2 of 2 for cog::FitsCog.
 //
 // Premise: cog::FitsCog<Row, K> conjuncts on three concept gates —
 // IsConcurrentRow<Row> AND HasCogCapacity<K> AND
@@ -15,8 +15,8 @@
 //
 // Why this is the load-bearing soundness gate:
 //
-// Without the SUBSTRATE-VALIDITY gate, a future GAPS-188
-// mint_cog_mimic factory (or GAPS-810 partition optimiser) could
+// Without the SUBSTRATE-VALIDITY gate, a future mint_cog_mimic
+// factory (or the partition optimiser) could
 // silently accept PsuRail as a target and produce a Mimic stub
 // bound to a Cog with no compute substrate, no memory substrate,
 // and no capacity ceilings to compare against.  Subsequent
@@ -30,8 +30,8 @@
 //   2. Fall through to a default code path producing a no-op stub
 //      that silently drops scheduled work — exactly the "Cog-
 //      substrate-binding partition defense compromise" failure
-//      mode the GAPS-187 / GAPS-191 layered defenses were
-//      designed to prevent.
+//      mode that the layered gates of OpcodeLatencyTable and
+//      FitsCog prevent.
 //
 // The HasCogCapacity gate refuses non-substrate Cogs at template
 // substitution, so the misuse "ask if Row fits PsuRail" is
@@ -52,9 +52,9 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate,
 // each demonstrating a distinct mismatch class.
 //
-// Expected diagnostic: "constraint not satisfied" / "constraints not
-// satisfied" / "FitsCog" / "HasCogCapacity" / "schedule_kernel" /
-// "PsuRail" / "GAPS-191" pointing at the call site below.
+// Expected diagnostic: no matching function for the call of
+// schedule_kernel<TrivialRow, CogKind::PsuRail>() below, because the
+// satisfaction of HasCogCapacity<K> fails for K = CogKind::PsuRail.
 
 #include <crucible/cog/FitsCog.h>
 #include <foundation/effects/Concurrent.h>
@@ -63,7 +63,8 @@
 namespace cog = crucible::cog;
 namespace effects = ::foundation::effects;
 
-// Mock of the future GAPS-188 / GAPS-810 scheduling shape: a function
+// Mock of the scheduling shape of a future mint_cog_mimic factory or
+// partition optimiser: a function
 // templated on a row-typed budget AND a CogKind atom, constrained on
 // cog::FitsCog.  Calling with a non-substrate K fails the embedded
 // HasCogCapacity<K> conjunct because cog_max_capacity<PsuRail> is
@@ -83,7 +84,7 @@ constexpr int schedule_kernel() noexcept {
 using TrivialRow = effects::ConcurrentRow<>;
 
 static_assert(schedule_kernel<TrivialRow, cog::CogKind::PsuRail>() == 1,
-              "GAPS-191: cog::FitsCog concept MUST refuse non-substrate CogKind "
+              "cog::FitsCog concept MUST refuse non-substrate CogKind "
               "atoms (PsuRail / BmcSensor / OpticalTransceiver / aggregates) at "
               "template substitution.  If this static_assert ever evaluates, a "
               "future mint_cog_mimic factory or partition optimiser would silently "

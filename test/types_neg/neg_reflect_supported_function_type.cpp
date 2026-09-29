@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Reflect-4 #985, mismatch class #2 of 2:
+// IsReflectFieldSupported, mismatch class #2 of 2:
 // FUNCTION TYPES (NOT pointers) ARE EXCLUDED FROM THE ALLOW-LIST.
 //
 // `detail_reflect::IsReflectFieldSupported<T>` admits function
@@ -18,8 +18,8 @@
 // function types exist as first-class entities but only the
 // pointer form is reflectable.
 //
-// Expected diagnostic: static assertion failed / WRAP-Reflect-4 /
-// IsReflectFieldSupported.
+// Expected diagnostic: static assertion failed, required by the
+// constraints of IsReflectFieldSupported.
 
 #include <crucible/Reflect.h>
 
@@ -27,7 +27,7 @@
 // (Function POINTERS would satisfy std::is_pointer_v and pass.)
 using FuncType = int(int, double);
 static_assert(::crucible::detail_reflect::IsReflectFieldSupported<FuncType>,
-              "WRAP-Reflect-4 #985 fixture: this static_assert MUST fail "
+              "This static_assert MUST fail "
               "at compile time because function types are excluded from "
               "the IsReflectFieldSupported allow-list (only function "
               "POINTERS are admitted via std::is_pointer_v).");

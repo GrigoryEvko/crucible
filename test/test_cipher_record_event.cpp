@@ -275,7 +275,7 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
 // compilation depend on them as well, and puts them where someone
 // reading the test can find them.
 
-static void test_audit_a_required_row_header_fence() {
+static void test_required_row_header_fence() {
     static_assert(std::is_same_v<Cipher::record_event_required_row, eff::Row<eff::Effect::IO, eff::Effect::Block>>);
     static_assert(eff::row_size_v<Cipher::record_event_required_row> == 2u);
     static_assert(eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::IO>);
@@ -285,16 +285,16 @@ static void test_audit_a_required_row_header_fence() {
     static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Init>);
     static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Test>);
 
-    std::printf("  [AUDIT-A] required_row_header_fence:    PASSED\n");
+    std::printf("  required_row_header_fence:              PASSED\n");
 }
 
 // The earlier comparison recorded one event.  A drift between the two
 // routes that only shows after several, or only on certain hash
 // values, needs a longer and more varied sequence than that.
 
-static void test_audit_b_multi_event_byte_equivalence(const char* base_dir) {
-    const std::string dir_a = std::string(base_dir) + "/aud_b_a";
-    const std::string dir_b = std::string(base_dir) + "/aud_b_b";
+static void test_multi_event_byte_equivalence(const char* base_dir) {
+    const std::string dir_a = std::string(base_dir) + "/multi_event_a";
+    const std::string dir_b = std::string(base_dir) + "/multi_event_b";
     std::filesystem::create_directories(dir_a);
     std::filesystem::create_directories(dir_b);
 
@@ -352,33 +352,33 @@ static void test_audit_b_multi_event_byte_equivalence(const char* base_dir) {
                == cipher_b.hash_at_step(view_b, static_cast<std::uint64_t>(i)));
     }
 
-    std::printf("  [AUDIT-B] multi_event_byte_equivalence: PASSED\n");
+    std::printf("  multi_event_byte_equivalence:           PASSED\n");
 }
 
 // Every other use of the required row in this file is inside a
 // function.  Naming it at namespace scope is what a caller outside the
 // store does, and only that spelling proves it is publicly reachable.
 
-namespace audit_c_external_visibility {
+namespace external_visibility {
 using ExtRow = ::crucible::Cipher::record_event_required_row;
 static_assert(eff::row_size_v<ExtRow> == 2u);
 static_assert(eff::Subrow<ExtRow, eff::Row<eff::Effect::IO, eff::Effect::Block>>);
 static_assert(eff::Subrow<ExtRow, eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Bg>>);
 static_assert(!eff::Subrow<ExtRow, eff::Row<>>);
 static_assert(eff::CtxAdmits<::fixy::TestRunnerCtx, ExtRow>);
-}  // namespace audit_c_external_visibility
+}  // namespace external_visibility
 
-static void test_audit_c_external_visibility() {
-    using ExtRow = audit_c_external_visibility::ExtRow;
+static void test_external_visibility() {
+    using ExtRow = external_visibility::ExtRow;
     static_assert(eff::row_size_v<ExtRow> == 2u);
-    std::printf("  [AUDIT-C] external_visibility:          PASSED\n");
+    std::printf("  external_visibility:                    PASSED\n");
 }
 
 // Each context that admits the row is interchangeable at a call site,
 // including a context narrowed to exactly the two required atoms.
 
-static void test_audit_d_canonical_row_acceptance(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/aud_d";
+static void test_canonical_row_acceptance(const char* base_dir) {
+    const std::string dir = std::string(base_dir) + "/canonical_row";
     std::filesystem::create_directories(dir);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -396,7 +396,7 @@ static void test_audit_d_canonical_row_acceptance(const char* base_dir) {
     cipher.record_event(reordered, view, ContentHash{0xCCCC}, 3u);
     assert(cipher.head() == ContentHash{0xCCCC});
 
-    std::printf("  [AUDIT-D] canonical_row_acceptance:     PASSED\n");
+    std::printf("  canonical_row_acceptance:               PASSED\n");
 }
 
 // The context gate fires while the template is substituted and the
@@ -405,8 +405,8 @@ static void test_audit_d_canonical_row_acceptance(const char* base_dir) {
 // process, so what is checked here is that a caller who satisfies the
 // gate still gets the ordered behaviour the precondition describes.
 
-static void test_audit_e_pre_clause_orthogonal(const char* base_dir) {
-    const std::string dir = std::string(base_dir) + "/aud_e";
+static void test_pre_clause_orthogonal(const char* base_dir) {
+    const std::string dir = std::string(base_dir) + "/pre_clause";
     std::filesystem::create_directories(dir);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -422,7 +422,7 @@ static void test_audit_e_pre_clause_orthogonal(const char* base_dir) {
     assert(cipher.hash_at_step(view, 1u) == ContentHash{3u});  // the later of the two at step 1
     assert(cipher.hash_at_step(view, 5u) == ContentHash{4u});
 
-    std::printf("  [AUDIT-E] pre_clause_orthogonal:        PASSED\n");
+    std::printf("  pre_clause_orthogonal:                  PASSED\n");
 }
 
 int main() {
@@ -444,17 +444,15 @@ int main() {
     test_t09_multiple_events_monotonic(base.c_str());
     test_t10_api_surface_pinned(base.c_str());
 
-    std::printf("--- audit groups ---\n");
-    test_audit_a_required_row_header_fence();
-    test_audit_b_multi_event_byte_equivalence(base.c_str());
-    test_audit_c_external_visibility();
-    test_audit_d_canonical_row_acceptance(base.c_str());
-    test_audit_e_pre_clause_orthogonal(base.c_str());
+    test_required_row_header_fence();
+    test_multi_event_byte_equivalence(base.c_str());
+    test_external_visibility();
+    test_canonical_row_acceptance(base.c_str());
+    test_pre_clause_orthogonal(base.c_str());
 
     std::error_code ec;
     std::filesystem::remove_all(tmpl, ec);
 
-    std::printf("test_cipher_record_event: 10 + 5 audit groups, "
-                "all passed\n");
+    std::printf("test_cipher_record_event: 15 groups, all passed\n");
     return 0;
 }

@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for #1040 WRAP-TensorMeta-7
-// (TensorMeta::grad_fn_hash -> Tagged<uint64_t, hash_family::FamilyB>).
+// HS14 fixture #1 of 2 for the hash-family gate of TensorMeta::grad_fn_hash
+// (Tagged<uint64_t, hash_family::FamilyB>).
 //
 // Premise: grad_fn_hash is a process-local PyTorch autograd identity
 // hash.  A raw uint64_t must not be assignable without explicitly

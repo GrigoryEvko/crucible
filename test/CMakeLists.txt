@@ -157,10 +157,10 @@ crucible_test(test_gcc_memchr_fold)
 
 crucible_test(test_fp_strict_floor)  # the crucible_fp_strict floor reaches a crucible consumer: compile definition and runtime witness
 crucible_test(test_philox_box_muller_polynomial)  # Philox::box_muller_polynomial_det runtime witness and tier
-crucible_test(test_fixy_v_096_welford_variance)  # FIXY-V-096 bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness
-target_include_directories(test_fixy_v_096_welford_variance SYSTEM PRIVATE
+crucible_test(test_welford_variance)  # bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness
+target_include_directories(test_welford_variance SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
-crucible_test(test_fixy_v_272_fence)                    # FIXY-V-272 mimic/Fence.h — lower_fence<Strength,Scope,Arch>() consteval lowering table (V401/V402 gated) + fence_mnemonic
+crucible_test(test_fence_lowering)  # mimic/Fence.h — lower_fence<Strength,Scope,Arch>() consteval lowering table (V401/V402 gated) + fence_mnemonic
 crucible_test(test_hardening_syscall_atoms) # warden/Hardening.h: the syscall atoms of the apply path, their ordinals and the rows they lift to
 crucible_test(test_perf_syscall_atoms) # perf/*.h: the gate row of each of the seven hub mints covers the rows of the calls its load makes
 crucible_test(test_hardware_axis_pins)  # the hot headers pin their compile-time hardware constructs as fixy atoms
@@ -236,7 +236,7 @@ set_tests_properties(test_bit_exact_replay_invariant PROPERTIES
 # cross-backend leg waits behind the same wall as cross_vendor_step_invariant:
 # a second backend.
 crucible_test(test_serialize)
-# fix-11 — release-mode (NDEBUG) witness: malformed wire bytes are rejected
+# Release-mode (NDEBUG) witness: malformed wire bytes are rejected
 # by Serialize.h's hard read_gated branch even when the Refined ctor pre()
 # collapses to [[assume]].  Uses exit codes, not assert() (a no-op under NDEBUG).
 crucible_test(test_serialize_release_gate)
@@ -1015,16 +1015,14 @@ crucible_test(test_mimic_network_backend)
 crucible_test(test_mimic_semaphore)
 
 # bench harness unit tests — include bench/ for bench_harness.h.
-# Snapshot now lives at <crucible/perf/SenseHub.h> (post-promotion via
-# GAPS-004a, 2026-05-03) and is reached through the standard `crucible`
-# include path; the bench-local include below carries only
-# bench_harness.h itself.  CRUCIBLE_HAVE_BPF is intentionally unset for
-# this TU — the test exercises only the non-BPF statistical primitives
-# plus Snapshot::operator- (a header-only inline using
-# crucible::sat::sub_sat from Saturate.h, doesn't need libbpf at link
-# time).  Use SYSTEM include to silence -Werror diagnostics from the
-# headers we don't own (other agents' territory); our .cpp still
-# honours -Werror.
+# Snapshot lives in <crucible/perf/SenseHub.h>, and the standard
+# `crucible` include path reaches it.  The bench-local include below
+# carries only bench_harness.h itself.  CRUCIBLE_HAVE_BPF is
+# intentionally unset for this TU — the test exercises only the non-BPF
+# statistical primitives plus Snapshot::operator- (a header-only inline
+# that saturates with __builtin_sub_overflow and does not need libbpf at
+# link time).  The SYSTEM include silences -Werror diagnostics from the
+# bench headers.  The .cpp of the test still honours -Werror.
 crucible_test(test_bench_harness)
 # Exercises the crucible::warden module — bounds-enforcement policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
@@ -1034,8 +1032,8 @@ crucible_test(test_warden_policy)
 crucible_test(test_cntp_dataplane_tc_ebpf)
 crucible_test(test_cntp_dataplane_xdp)
 
-# crucible::perf::SenseHub sentinel TU (GAPS-004a, 2026-05-03).
-# Verifies the promoted observability substrate compiles + links
+# crucible::perf::SenseHub sentinel TU.
+# Verifies the observability substrate compiles + links
 # through the standard `crucible` PUBLIC include path and that the
 # Idx fence-post ordinals haven't drifted.  When CRUCIBLE_HAVE_BPF=1
 # the test also calls SenseHub::load() once to confirm the loader
@@ -1054,7 +1052,7 @@ crucible_test(test_perf_syscall_latency_smoke)
 crucible_test(test_perf_senses_smoke)
 crucible_test(test_perf_sched_tp_btf_smoke)
 crucible_test(test_perf_syscall_tp_btf_smoke)
-# GAPS-004g (#1283): warden::DeadlineWatchdog wires SchedSwitch context-
+# warden::DeadlineWatchdog wires SchedSwitch context-
 # switch telemetry into Policy's miss-budget enforcement.  Smoke
 # verifies type-shape (move-only, ≤64 B), nullptr-Senses graceful
 # degradation, demote_one_step ladder, and reset() semantics.
@@ -1066,7 +1064,7 @@ crucible_test(test_warden_deadline_watchdog_smoke)
 # for an L1-resident budget, clears its diagnostics on reset, never
 # promotes, and dispatches a ProfiledDecision to the right arm.
 crucible_test(test_perf_workload_profiler_smoke)
-# Vigil ↔ DeadlineWatchdog wiring (GAPS-004h follow-up): verifies the
+# Vigil ↔ DeadlineWatchdog wiring: verifies the
 # bg-thread-write / fg-thread-read atomic counter publication path
 # does not block the main thread, and that disabled/enabled Config
 # behave correctly across a region transition.
@@ -1223,8 +1221,8 @@ crucible_neg_compile_test(neg_bench_rdtsc_pinned_mint_tag_access
 target_include_directories(neg_bench_rdtsc_pinned_mint_tag_access
   SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 
-# fix-08 — the federation publish boundary now gates on ArgsCanonicallyOrdered,
-# making CanonicallyOrdered load-bearing: a non-canonical Args stack
+# The federation publish boundary gates on ArgsCanonicallyOrdered, which
+# makes CanonicallyOrdered load-bearing: a non-canonical Args stack
 # (Tagged<Stale<int>>) is rejected at federation_key, not silently mapped to
 # a divergent cache slot.
 crucible_neg_compile_test(neg_federation_key_noncanonical_args
@@ -1292,7 +1290,7 @@ crucible_neg_compile_test(neg_effect_row_atom_underlying_widened
     "static assertion failed: .EffectRowCarrier_Underlying."
     ".short unsigned int. is not the same as .unsigned char.")
 
-# ─── GAPS-185 (#1210): cog/CogIdentity.h soundness gates ───────────
+# ─── cog/CogIdentity.h soundness gates ─────────────────────────────
 #
 # Two HS14 fixtures locking the dual gates on CogIdentity:
 # * zero-uuid rejection — content_hash's pre clause refuses
@@ -1306,13 +1304,13 @@ crucible_neg_compile_test(neg_effect_row_atom_underlying_widened
 #   future per-Cog Mimic factories from accepting non-compute Cogs
 #   as compute targets.
 crucible_neg_compile_test(neg_cog_identity_content_hash_zero_uuid
-    "static assertion|contract|precondition|non-constant"
-    "content_hash|is_zero")
+    "in .constexpr. expansion of .crucible::cog::content_hash\\(ZERO_UUID_FIXTURE\\)."
+    "cog/CogIdentity.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 crucible_neg_compile_test(neg_cog_identity_compute_kind_rejects_nic
-    "constraint|constraints.*not satisfied"
-    "IsComputeKind|kernel_count_for|GAPS-185")
+    "no matching function for call to .kernel_count_for<crucible::cog::CogKind::NicPort>\\(\\)."
+    "required for the satisfaction of .IsComputeKind<K>. \\[with K = crucible::cog::CogKind::NicPort\\]")
 
-# ─── GAPS-186 cog/TargetCaps.h soundness gates (HS14) ──────────────
+# ─── cog/TargetCaps.h soundness gates (HS14) ───────────────────────
 #
 # Two fixtures, two distinct mismatch classes:
 # * neg_target_caps_caps_for_rejects_psu_rail — CONCEPT gate.  HasCaps
@@ -1326,8 +1324,8 @@ crucible_neg_compile_test(neg_cog_identity_compute_kind_rejects_nic
 #   GpuTargetCaps::warp_size = 33 from corrupting downstream occupancy
 #   / wave-efficiency math.
 crucible_neg_compile_test(neg_target_caps_caps_for_rejects_psu_rail
-    "constraint|constraints.*not satisfied"
-    "HasCaps|lookup_caps|PsuRail|GAPS-186")
+    "no matching function for call to .lookup_caps<crucible::cog::CogKind::PsuRail>\\(\\)."
+    "required for the satisfaction of .HasCaps<K>. \\[with K = crucible::cog::CogKind::PsuRail\\]")
 crucible_neg_compile_test(neg_target_caps_warp_size_not_power_of_two
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<(fixy::)?refined_algebra::AllOf<(fixy::)?IsPowerOfTwo\\(\\), (fixy::)?BoundedAbove<128>\\(\\)>\\(\\), short unsigned int>\\(33\\)")
@@ -1343,7 +1341,7 @@ crucible_neg_compile_test(neg_offload_target_no_kind
     "no matching function for call to .validate_offload_target<crucible::cog::SwitchFeature::P4>\\("
     "the expression .sizeof \\.\\.\\. \\(\\(Kinds \\.\\.\\.\\)\\) > 0 \\[with Kinds = \\{\\}\\]. evaluated to .false.")
 
-# ─── #66 ledger/Ledger.h HS14 fixtures ────────────────────────────
+# ─── ledger/Ledger.h HS14 fixtures ────────────────────────────────
 #
 # Two fixtures pinning the two halves of CtxFitsLedgerStore, so a
 # regression that dropped either conjunct is still caught by the other:
@@ -1373,7 +1371,7 @@ crucible_neg_compile_test(neg_host_probe_init_ctx_cannot_block
     "no matching function for call to .probe_competence\\(const fixy::ColdInitCtx&\\)."
     "required for the satisfaction of .CtxFitsHostProbe<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
 
-# ─── #67 ledger/RefreshDaemon.h HS14 fixtures ─────────────────────
+# ─── ledger/RefreshDaemon.h HS14 fixtures ─────────────────────────
 #
 # Three fixtures pinning the three conjuncts of CtxFitsRefreshDaemon
 # separately, so a regression that dropped any one is caught:
@@ -1412,24 +1410,24 @@ foreach(ledger_fixture IN ITEMS
   target_include_directories(${ledger_fixture} PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 endforeach()
 
-# ─── GAPS-187 OpcodeLatencyTable HS14 fixtures ────────────────────
+# ─── OpcodeLatencyTable HS14 fixtures ─────────────────────────────
 #
 # Two fixtures, distinct mismatch classes:
 #   * Concept gate (HasOpcodeTable<K>) — refuses non-substrate Cogs
-#     (PsuRail) at template substitution.  Mirrors the GAPS-186 Caps
+#     (PsuRail) at template substitution.  It mirrors the HasCaps
 #     concept gate; double-rejection on HasCaps + opcodes_for-defined.
 #   * Data-invariant gate (OrderedLatencyQuantiles) — the checked mint
 #     refuses a p50/p99/p999 triple out of order.  The second pattern
 #     names the predicate type and the refused triple, so only this
 #     refusal matches.
 crucible_neg_compile_test(neg_opcode_latency_rejects_psu_rail
-    "constraint|constraints.*not satisfied"
-    "HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
+    "no matching function for call to .lookup_opcodes<crucible::cog::CogKind::PsuRail>\\(\\)."
+    "required for the satisfaction of .HasOpcodeTable<K>. \\[with K = crucible::cog::CogKind::PsuRail\\]")
 crucible_neg_compile_test(neg_opcode_latency_quantiles_misordered
     "__builtin_trap\\(\\).* is not a constant expression"
     "mint_refined<crucible::cog::AreQuantilesOrdered\\(\\), crucible::cog::LatencyQuantiles>\\(crucible::cog::LatencyQuantiles\\{99, 50, 30\\}\\)")
 
-# ─── GAPS-191 cog/FitsCog.h soundness gates (HS14) ────────────────
+# ─── cog/FitsCog.h soundness gates (HS14) ─────────────────────────
 #
 # Two fixtures, two distinct mismatch classes:
 # * neg_fits_cog_oversubscribed — QUANTITY gate.  FitsCog refuses a
@@ -1447,11 +1445,11 @@ crucible_neg_compile_test(neg_opcode_latency_quantiles_misordered
 #   would silently bind to PsuRail and produce no-op stubs that
 #   drop scheduled work.
 crucible_neg_compile_test(neg_fits_cog_oversubscribed
-    "constraint|constraints.*not satisfied"
-    "FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
+    "no matching function for call to .schedule_kernel<OversubscribedSmRow, crucible::cog::CogKind::Gpu>\\(\\)."
+    "the expression .row_fits_cog_v<Row, K> \\[with Row = foundation::effects::ConcurrentRow<foundation::effects::resource::SmBudget<999> >. K = crucible::cog::CogKind::Gpu\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_fits_cog_non_substrate
-    "constraint|constraints.*not satisfied"
-    "FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
+    "no matching function for call to .schedule_kernel<TrivialRow, crucible::cog::CogKind::PsuRail>\\(\\)."
+    "required for the satisfaction of .HasCogCapacity<K>. \\[with K = crucible::cog::CogKind::PsuRail\\]")
 
 # cog/NicOffloadAudit.h, the read-only NIC offload audit.
 #   * neg_nic_offload_audit_rejects_gpu: the audit refuses a kind other
@@ -1520,8 +1518,8 @@ crucible_neg_compile_test(neg_quarantine_zero_events
     "In instantiation of .class crucible::warden::QuarantinePolicy<2, 0>."
     "static assertion failed: QuarantinePolicy requires audit-event slots")
 
-# ─── FIXY-U-084 §XXI Universal Mint Pattern for warden/ hubs ──────
-# Three new mints (mint_hardening / mint_hot_region_registry_handle /
+# ─── §XXI Universal Mint Pattern for warden/ hubs ─────────────────
+# Three mints (mint_hardening / mint_hot_region_registry_handle /
 # mint_deadline_watchdog) each ship two HS14 neg-compile fixtures
 # proving the CtxFits* concept gates fire on missing Init.
 crucible_neg_compile_test(neg_hardening_mint_bg_ctx
@@ -2096,7 +2094,7 @@ crucible_neg_compile_test(neg_warden_deadline_watchdog_mint_no_ctx
     "no matching function for call to .mint_deadline_watchdog\\(std::nullptr_t, crucible::warden::Policy&\\)."
     "candidate expects 3 arguments, 2 provided")
 
-# ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
+# ─── Pattern stability classification ───────────────────────────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken
 # .cpp with a regex matched against the build's diagnostic output.
@@ -2121,7 +2119,7 @@ crucible_neg_compile_test(neg_warden_deadline_watchdog_mint_no_ctx
 # is an overload-set rejection in production code, and each has an
 # annotated comment below.
 
-# WRAP-Types-1 (#1067) — ElementBytes::value_ wraps Refined<bounded_above<16>,
+# ElementBytes::value_ wraps Refined<bounded_above<16>,
 # uint8_t>; constructing ElementBytes{17} in constexpr context drives the
 # bounded_above<16>(17) contract assertion through constant evaluation.  The
 # violation is rejected as a non-constant expression (P1494R5 + P2900R14),
@@ -2322,7 +2320,7 @@ crucible_neg_compile_test(neg_schema_register_abi_boundary_name
   "neg_schema_register_abi_boundary_name.cpp:22:42: error: no matching function for call to .register_schema_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::ABIBoundary\\]")
 
-# WRAP-SymTab-4 (#1032) — SymbolTable::add() returns
+# SymbolTable::add() returns
 # InternalSymbolId = Tagged<SymbolId, source::FromInternal>.  Two HS14
 # fixtures cover the mint boundary's two soundness directions:
 #   * neg_symbol_table_add_raw_symbol_id — internal Tagged value cannot
@@ -2363,7 +2361,7 @@ crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
   "neg_transaction_region_loaded_cross_tag.cpp:33:33: error: cannot convert"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 
-# WRAP-Lower-4 (#934) — lower_trace_to_graph requires Recorded/Replayed
+# lower_trace_to_graph requires Recorded/Replayed
 # TraceGraph provenance and propagates that source to the returned Graph.
 crucible_neg_compile_test(neg_lower_trace_graph_raw_input
   "no matching function for call to .lower_trace_to_graph<LowerBgAllocRow>\\(foundation::effects::cap::Alloc&, crucible::TraceGraph\\*,"
@@ -2372,7 +2370,7 @@ crucible_neg_compile_test(neg_lower_trace_graph_cross_source
   "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Replayed>."
   "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Recorded>. requested")
 
-# WRAP-Lower-6 (#936) — lower_trace_to_graph runs in the background
+# lower_trace_to_graph runs in the background
 # compilation path and allocates Graph scratch.  Required row is
 # Row<Bg, Alloc>; pure, Alloc-only, and Bg-only callers are rejected.
 crucible_neg_compile_test(neg_lower_trace_graph_pure_row
@@ -2524,7 +2522,7 @@ crucible_neg_compile_test(neg_trace_num_names_uint32_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<512>\\(\\), unsigned int>\\(4294967295\\)")
 
-# WRAP-TraceGraph-3 (#1044) — TraceGraph build counters are
+# TraceGraph build counters are
 # WriteOnce<uint32_t>.  The fixtures pin both soundness directions:
 # producers cannot raw-assign a counter, and consumers cannot read one
 # through an implicit uint32_t conversion.
@@ -2560,10 +2558,10 @@ crucible_neg_compile_test(neg_metalog_append_count_uint32_max
     "__builtin_trap\\(\\). is not a constant expression"
     "in expansion of macro .CRUCIBLE_PRE.")
 
-# ─── WRAP-TraceRing-3 (#1055) ValidDrainCount neg-compile fixtures ──
+# ─── ValidDrainCount neg-compile fixtures ─────────────────────────
 #
 # TraceRing::drain's `max_count` parameter (also drain_pinned,
-# drain_pure, try_pop_batch) gains a typed Refined gate capped at
+# drain_pure, try_pop_batch) has a typed Refined gate capped at
 # TraceRing::CAPACITY (1<<16 = 65 536 entries, ~5.25 MB ring).
 # `max_count > CAPACITY` is meaningless because the inner
 # std::min(available, max_count) clamps to available <= CAPACITY,
@@ -2580,8 +2578,8 @@ crucible_neg_compile_test(neg_metalog_append_count_uint32_max
 #     catches "drop the bound entirely" regression that would
 #     degenerate the alias into a plain uint32_t typedef.
 #
-# Defense-in-depth: existing `count = std::min(available, max_count)`
-# runtime clamp plus the new `pre (max_count <= CAPACITY)` clause
+# Defense-in-depth: the `count = std::min(available, max_count)`
+# runtime clamp plus the `pre (max_count <= CAPACITY)` clause
 # plus the typed witness all fire at the boundary, exposing the
 # silent clamp at enforce semantics.
 crucible_neg_compile_test(neg_trace_ring_drain_count_above_max
@@ -2591,18 +2589,16 @@ crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<65536>\\(\\), unsigned int>\\(4294967295\\)")
 
-# ─── PROD-WRAP-5 (#534) ndim Refined<bounded_above<8>> typed gate ────
+# ─── ndim Refined<bounded_above<8>> typed gate ────────────────────
 #
 # TensorMeta::ndim is structurally bounded by the inline sizes[8] /
 # strides[8] arrays — values past 8 cannot be expressed without
-# overrunning the inline storage.  The deserialize boundary in
-# Serialize.h::read_meta() previously read a raw uint8_t and assigned
-# it directly to m.ndim, with no bounds check; a corrupt or
-# adversarial Cipher payload could deliver a byte in [9, 255] that
-# slipped through to compute_storage_nbytes (where the
-# `pre(meta.ndim <= 8)` contract would terminate the program under
-# enforce semantics, OR invoke `[[assume]]`-driven UB under ignore on
-# hot-path TUs).
+# overrunning the inline storage.  A corrupt or adversarial Cipher
+# payload can deliver a byte in [9, 255] to the deserialize boundary in
+# Serialize.h::read_meta().  Without a gate there, the byte reaches
+# compute_storage_nbytes, where the `pre(meta.ndim <= 8)` contract
+# terminates the program under enforce semantics, or where
+# `[[assume]]` causes UB under ignore on hot-path TUs.
 #
 # ValidNDim is ::fixy::Refined<::fixy::bounded_above<kMaxTensorNDim>,
 # uint8_t>.  Its checked mint refuses any byte past 8: CRUCIBLE_PRE traps
@@ -2629,7 +2625,7 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<8>\\(\\), unsigned char>\\(255\\)")
 
-# read_meta dtype gate (sibling of #534 ndim / #892 kernel_id) — ScalarType
+# read_meta dtype gate (sibling of the ndim and kernel_id gates) — ScalarType
 # dtype byte typed gate at the read_meta()
 # deserialize boundary.  ScalarType is a SPARSE int8_t enum; a corrupt or
 # version-skewed Cipher byte outside the enumerator set reached
@@ -2701,7 +2697,7 @@ crucible_neg_compile_test(neg_serialize_is_zero_uint64_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsZero\\(\\), long unsigned int>\\(18446744073709551615\\)")
 
-# WRAP-TensorMeta-1 (#1034) — TensorMeta sizes/strides lanes now
+# TensorMeta sizes/strides lanes
 # write through TensorDim = Refined<bounded_above<INT64_MAX / 16>,
 # int64_t> while keeping the raw 64-byte lane blocks for SIMD loads.
 crucible_neg_compile_test(neg_tensor_meta_dim_raw_assignment
@@ -2711,7 +2707,7 @@ crucible_neg_compile_test(neg_tensor_meta_dim_above_max
   "contract predicate is false in constant expression"
   "crucible/TensorMeta.h:[0-9]+:[0-9]+: error: contract predicate")
 
-# WRAP-TensorMeta-2 (#1035) — TensorMeta::data_ptr now stores
+# TensorMeta::data_ptr stores
 # ExternalDataPtr = Tagged<void*, source::External>.  Two HS14
 # fixtures cover the provenance gate's two field-write directions:
 #   * neg_tensor_meta_data_ptr_raw_pointer — raw void* cannot assign
@@ -2725,7 +2721,7 @@ crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
   "no match for .operator=. .operand types are .crucible::ExternalDataPtr."
   ".aka .fixy::Tagged<void\\*, fixy::tags::source::External>.. and .fixy::Tagged<void\\*, fixy::tags::source::Sanitized>..")
 
-# WRAP-TensorMeta-7 (#1040) — TensorMeta::grad_fn_hash now stores
+# TensorMeta::grad_fn_hash stores
 # GradFnHash = Tagged<uint64_t, hash_family::FamilyB>.  Two HS14
 # fixtures cover the Family-B gate's two field-write directions:
 #   * neg_tensor_meta_grad_fn_hash_raw_uint64 — raw uint64_t cannot
@@ -3129,7 +3125,7 @@ crucible_neg_compile_test(neg_scuttlebutt_request_count_advance
   "no match for .operator\\+\\+."
   "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
 
-# GAPS-120 — cntp/CongestionControl.h per-socket TCP CC selection.
+# cntp/CongestionControl.h per-socket TCP CC selection.
 #   * neg_congestion_control_raw_algorithm_apply: raw enum values cannot
 #     drive TCP_CONGESTION; callers must use a tagged DeclaredCcChoice.
 #   * neg_congestion_control_dctcp_cross_dc: DCTCP is lossless-fabric only.
@@ -3239,7 +3235,7 @@ crucible_neg_compile_test(neg_sriov_vf_handle_forged
     ".constexpr crucible::cog::sriov::VfHandle::VfHandle\\(crucible::cog::CogIdentity, crucible::cog::sriov::VfIndex\\). is private within this context"
     "cog/SrIov.h:[0-9]+:[0-9]+: note: declared private here")
 
-# GAPS-121 — cntp/Pacing.h fq/qdisc verification + SO_MAX_PACING_RATE.
+# cntp/Pacing.h fq/qdisc verification + SO_MAX_PACING_RATE.
 #   * neg_pacing_bbr_pfifo_config: BBR pacing config admits only fq/fq_codel.
 #   * neg_pacing_raw_rate: socket pacing requires admitted positive rate.
 #   * neg_pacing_raw_config_ensure: fq verification requires tagged qdisc config.
@@ -3337,7 +3333,7 @@ crucible_neg_compile_test(neg_congestion_telemetry_worker_direct_construct
   "is private within this context"
   "CongestionTelemetryWorker<MaxLinks, MaxFlows>::CongestionTelemetryWorker\\(\\) \\[with long unsigned int MaxLinks = 1; long unsigned int MaxFlows = 1\\]")
 
-# GAPS-124 — cntp/IncastControl.h incast mitigation substrate.
+# cntp/IncastControl.h incast mitigation substrate.
 #   * neg_incast_raw_fd_configure: socket tuning requires admitted SocketFd.
 #   * neg_incast_raw_config_configure: socket tuning requires tagged config.
 #   * neg_incast_credit_fg_ctx: credit mutation is Bg-row work.
@@ -3610,7 +3606,7 @@ crucible_neg_compile_test(neg_wireguard_mint_hot_ctx
   "no matching function for call to .mint_wireguard_tunnel\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsWireguardMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# GAPS-126 — cntp/MtlsTransport.h mutual-TLS federation policy substrate.
+# cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
 #   * neg_mtls_legacy_cipher_config: RSA/3DES cannot enter the cipher set.
 #   * neg_mtls_raw_config_connect: runtime connect requires tagged policy.
@@ -3793,7 +3789,7 @@ crucible_neg_compile_test(neg_connection_pool_lease_rewrite
   "passing .const crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>. as .this. argument discards qualifiers"
   "in call to .constexpr crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>& crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>::operator=.const crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>&..")
 
-# GAPS-116 — cntp/Integrity.h end-to-end xxHash64 verification.
+# cntp/Integrity.h end-to-end xxHash64 verification.
 #   * neg_integrity_raw_payload_as_verified: raw bytes cannot satisfy the
 #     IntegrityVerified provenance lane.
 #   * neg_integrity_cross_tag_verified: External is not IntegrityVerified.
@@ -3857,7 +3853,7 @@ crucible_neg_compile_test(neg_overlay_multicast_private_ctor
   "OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>::OverlayMulticastPlan\\(crucible::cntp::DeclaredOverlayPeer"
   "is private within this context")
 
-# GAPS-117 — cntp/Fec.h GF(256) systematic Reed-Solomon primitive.
+# cntp/Fec.h GF(256) systematic Reed-Solomon primitive.
 #   * neg_fec_zero_k / neg_fec_zero_m: shard counts must be positive.
 #   * neg_fec_shape_over_256: GF(2^8) limits K+M to 256 coordinates.
 #   * neg_fec_mint_test_context: the mint is Init-only.
@@ -3919,7 +3915,7 @@ crucible_neg_compile_test(neg_fountain_encode_non_contiguous_owned
   "no matching function for call to .crucible::cntp::FountainEncoder<4, 16, crucible::cntp::LtFountain>::encode_owned\\("
   "required for the satisfaction of .ByteContiguousBuffer<Input>. .with Input = NotWireBytes.")
 
-# WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
+# compute_storage_nbytes* accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
 # Two HS14 fixtures cover the provenance gate's two directions:
 #   * neg_storage_nbytes_raw_tensor_meta — raw TensorMeta cannot bind
@@ -3933,7 +3929,7 @@ crucible_neg_compile_test(neg_storage_nbytes_cross_tag
   "could not convert .sanitized. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Sanitized>."
   "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>.")
 
-# WRAP-StorageNbytes-3 (#1020) — deterministic storage-byte
+# The deterministic storage-byte
 # projections return DetSafe<Pure, Saturated<uint64_t>>.  Raw
 # Saturated slots and differently pinned DetSafe slots cannot consume
 # the result without an explicit unwrap / retag decision.
@@ -3944,7 +3940,7 @@ crucible_neg_compile_test(neg_storage_nbytes_det_cross_tier
   "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
   "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::MonotonicClockRead>,\\[\\.\\.\\.\\]>. requested")
 
-# ─── #884 WRAP-Cipher-1 — non-zero head invariant on advance_head ───
+# ─── Non-zero head invariant on advance_head ──────────────────────
 #
 # ValidCipherHead is fixy::Refined<fixy::non_zero, ContentHash> and
 # gates the parameter to Cipher::advance_head.
@@ -4199,7 +4195,7 @@ crucible_neg_compile_test(neg_cipher_obj_path_cross_source
   "neg_cipher_obj_path_cross_source.cpp:45:19: error: no match for .operator=. \\(operand types are .CipherObjPath. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>.\\} and .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>.\\)"
   "no known conversion for argument 1 from .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>. to .const fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>&.")
 
-# ─── WRAP-Types-3 #1069 HS14 negative-compile fixtures ─────────────
+# ─── hash_family_of HS14 negative-compile fixtures ────────────────
 #   - neg_types_hash_family_unspecialized  (incomplete primary template)
 #   - neg_types_hash_family_cross_lane     (Family-A hash ≠ IsFamilyB)
 crucible_neg_compile_test(neg_types_hash_family_unspecialized
@@ -4222,7 +4218,7 @@ crucible_neg_compile_test(neg_expr_hash_cross_family
   "neg_expr_hash_cross_family.cpp:31:21: error: no match for .operator=. \\(operand types are .ExprHash. \\{aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.\\} and .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>.\\)"
   "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>. to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
 
-# ─── WRAP-Reflect-4 #985 HS14 negative-compile fixtures ────────────
+# ─── IsReflectFieldSupported HS14 negative-compile fixtures ───────
 #   - neg_reflect_supported_void           (void excluded from allow-list)
 #   - neg_reflect_supported_function_type  (function types excluded)
 crucible_neg_compile_test(neg_reflect_supported_void
@@ -4251,7 +4247,7 @@ crucible_neg_compile_test(neg_philox_op_key_det_raw_uint64
   "cannot convert"
   "cannot convert .crucible::Philox::DetSafePureKey.*to .uint64_t.")
 
-# ─── FOUND-G12 OpaqueLifetime production-call-site neg-compile ─────
+# ─── OpaqueLifetime production-call-site neg-compile ──────────────
 #
 # Load-bearing rejection at the persistence boundary: an
 # OpaqueLifetime<PER_REQUEST, T> value rejected by Cipher::
@@ -4465,7 +4461,7 @@ crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
   "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
   "mismatched types .crucible::RecipePool. and .crucible::Arena.")
 
-# GAPS-174 — forge/recipes/Network.h network-kernel recipe constraints.
+# forge/recipes/Network.h network-kernel recipe constraints.
 #   * neg_network_recipe_strict_sharp: BITEXACT_STRICT cannot enter SHARP.
 #   * neg_network_recipe_non_commutative_sharp: SHARP requires commutativity.
 #   * neg_network_recipe_bitexact_lossy: BITEXACT tiers reject lossy Top-K.
@@ -4488,7 +4484,7 @@ crucible_neg_compile_test(neg_network_recipe_raw_constraints
   "could not convert .raw. from .crucible::forge::recipes::NetworkRecipeConstraints."
   "to .crucible::forge::recipes::DeclaredNetworkRecipeConstraints. .aka .fixy::Tagged<crucible::forge::recipes::NetworkRecipeConstraints")
 
-# GAPS-167 — forge/Ir001/Comm.h comm-through-IR substrate.
+# forge/Ir001/Comm.h comm-through-IR substrate.
 #   * neg_ir001_comm_raw_node: Forge visitors require source::Ir001 provenance.
 #   * neg_ir001_comm_send_as_collective: point-to-point ops are not collectives.
 #   * neg_ir001_comm_zero_participants: participant counts are positive.
@@ -4532,7 +4528,7 @@ crucible_neg_compile_test(neg_forge_comm_phase_wrong_lane
   "could not convert .fused. from .Tagged<\\[\\.\\.\\.\\],ForgePhase<'D'>>."
   "to .Tagged<\\[\\.\\.\\.\\],ForgePhase<'F'>>.")
 
-# GAPS-169 WIP — mimic/_wip/network/Backend.h per-vendor backend sketch.
+# mimic/_wip/network/Backend.h per-vendor backend sketch.
 #   * neg_mimic_network_backend_raw_node: backend planning requires admitted
 #     source::Ir001 nodes, not raw comm descriptors.
 #   * neg_mimic_network_backend_compute_node: backend planning accepts only
@@ -4597,7 +4593,7 @@ crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
   "no matching function for call to .hot_path_slot_consumer"
   "the expression .satisfies_v<Slot, foundation::algebra::lattices::AllocClassTag::Pool> \\[with Slot = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::AllocClassLattice::At<foundation::algebra::lattices::AllocClassTag::Heap>, int\\*>\\]. evaluated to .false.")
 
-# ─── FOUND-F09-AUDIT-2 IsCacheableFunction concept rejection ────────
+# ─── IsCacheableFunction concept rejection ────────────────────────
 # `auto FnPtr` accepts ANY structural NTTP — without the concept
 # fence the dispatcher cache would silently produce nonsense slots
 # for integral constants, data-pointers, or member-function
@@ -4612,19 +4608,19 @@ crucible_neg_compile_test(neg_computation_cache_data_ptr_nttp
 crucible_neg_compile_test(neg_computation_cache_member_fn_nttp
   "no matching function for call to .lookup_computation_cache<&Receiver::member_fn, int>\\(\\)."
   ".void \\(Receiver::\\*\\)\\(int\\) noexcept. is not a pointer")
-# F09-AUDIT-3 sister rejection — member-DATA pointers (vs member-fn
-# pointers above).  Closes the rejection-space symmetry across all
-# four NTTP categories the cache cannot key on.
+# Sister rejection — member-DATA pointers (vs member-fn pointers
+# above).  With it, the fixtures cover all four NTTP categories that
+# the cache cannot key on.
 crucible_neg_compile_test(neg_computation_cache_member_data_ptr_nttp
   "no matching function for call to .lookup_computation_cache<&Receiver::data_field>\\(\\)."
   ".int Receiver::\\*. is not a pointer")
-# F11 IsEffectRow concept fence — non-effects::Row<...> Row params
-# rejected from the row-aware cache API.
+# IsEffectRow concept fence — the row-aware cache API rejects a Row
+# parameter that is not an effects::Row<...>.
 crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
-  "no matching function for call to .lookup_computation_cache_in_row<f11_test_fn, int, double>\\(\\)."
+  "no matching function for call to .lookup_computation_cache_in_row<cacheable_fn, int, double>\\(\\)."
   "required for the satisfaction of .IsEffectRow<Row>. .with Row = int.")
-# F11-AUDIT cross-constraint coverage — IsCacheableFunction conjunct
-# on the row-aware path.  The `_in_row` template carries TWO
+# Cross-constraint coverage — the IsCacheableFunction conjunct on the
+# row-aware path.  The `_in_row` template carries TWO
 # constraints (`IsCacheableFunction<FnPtr> && IsEffectRow<Row>`); the
 # row-blind neg fixtures cover the IsCacheableFunction half on the
 # row-blind path and `neg_computation_cache_in_row_non_row_param` covers
@@ -4685,17 +4681,17 @@ crucible_neg_compile_test(neg_cipher_persist_session_events_compile_ctx
   "no matching function for call to .crucible::Cipher::persist_session_events."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
 
-# ─── FOUND-F12-AUDIT federation-bridge concept-fence parity ─────────
-# F12's federation primitives carry the SAME `IsCacheableFunction<FnPtr>
-# && IsEffectRow<Row>` constraint pair as F11's `*_in_row` family.  The
-# F11 path has its own fence-rejection witnesses
+# ─── Federation-bridge concept-fence parity ───────────────────────
+# The federation primitives carry the SAME `IsCacheableFunction<FnPtr>
+# && IsEffectRow<Row>` constraint pair as the `*_in_row` family.  The
+# `*_in_row` path has its own fence-rejection witnesses
 # (neg_computation_cache_in_row_non_row_param +
-# neg_computation_cache_in_row_non_function_nttp); these two fixtures
-# extend the matrix to the F12 federation surface so a regression in
-# the bridge doesn't silently pass non-Row / non-Fn args through to a
+# neg_computation_cache_in_row_non_function_nttp).  These two fixtures
+# extend the matrix to the federation surface, so a regression in the
+# bridge does not silently pass non-Row / non-Fn args through to a
 # row-blind federation key.
 crucible_neg_compile_test(neg_computation_cache_federation_non_row
-  "no matching function for call to .federation_key<f12_test_fn, int, double>\\(\\)."
+  "no matching function for call to .federation_key<cacheable_fn, int, double>\\(\\)."
   "required for the satisfaction of .IsEffectRow<Row>. .with Row = int.")
 crucible_neg_compile_test(neg_computation_cache_federation_non_fn
   "no matching function for call to .federation_key<42, foundation::effects::Row<>, int>\\(\\)."
@@ -4736,7 +4732,7 @@ crucible_neg_compile_test(neg_metalog_try_append_pure_full_row
     "no matching function for call to .crucible::MetaLog::try_append_pure<fixy::AllRow>"
     "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, ")
 
-# ─── FOUND-I16 TraceRing row-fence — full per-axis matrix on both legs ─
+# ─── TraceRing row-fence — full per-axis matrix on both legs ──────
 # TraceRing::try_append_pure<CallerRow> AND TraceRing::drain_pure<CallerRow>
 # both require IsPure<CallerRow>.  Sibling of the MetaLog::try_append_pure
 # matrix above.  16 fixtures = 8 per direction (per-axis × 6 atoms +
@@ -4879,10 +4875,9 @@ crucible_neg_compile_test(neg_ckernel_mint_sealed_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<SealedContainer>\\(\\). evaluates to false")
 
-# FIXY-U-135 — HS14 floor for CKernelTable::mint_mutable_view.
-# Paired fixtures pinning the per-state lock at BOTH gates of the
-# member mint that survived the prior MutableView=>SealedView sweep
-# (which only pinned the inverse direction via register_op above):
+# HS14 floor for CKernelTable::mint_mutable_view.
+# Paired fixtures pin the per-state lock at BOTH gates of the member
+# mint.  The register_op fixture above pins only the inverse direction:
 #   * _to_sealed_overload — value-level typed-overload rejection when
 #     a freshly-minted MutableView is offered where SealedView is
 #     required.  Dual of neg_ckernel_register_with_sealed_view: same
@@ -4890,7 +4885,7 @@ crucible_neg_compile_test(neg_ckernel_mint_sealed_view_in_field
 #   * _in_field — structural Tier-2 field-storage audit reject when a
 #     class declares CKernelTable::MutableView as a member.  Routes
 #     through the same no_scoped_view_field_check audit that fires
-#     for IterDet Steady (#928), exercising the alias-stability path
+#     for the Steady state of IterationDetector, and exercises the alias-stability path
 #     (MutableView is a typedef of ScopedView<CKernelTable, Mutable>).
 crucible_neg_compile_test(neg_ckernel_mint_mutable_view_to_sealed_overload
   "invalid initialization of reference of type .const crucible::CKernelTable::SealedView&. .aka .const fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Sealed>&.. from expression of type .const fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable>"
@@ -5075,7 +5070,7 @@ crucible_neg_compile_test(neg_vigil_alignment_pos_uint8_max
     "in .constexpr. expansion of .fixy::mint_refined<BoundedAbove<5>\\(\\), unsigned char>\\(pos\\)."
     "error: .__builtin_trap\\(\\). is not a constant expression")
 
-# ── GAPS-061 — PermissionedMetaLog role-discrimination tests ───────
+# ── PermissionedMetaLog role-discrimination tests ─────────────────
 #
 # MetaLog is append-only on the foreground side and drain-only on the
 # background side.  The permissioned facade makes that distinction
@@ -5145,29 +5140,29 @@ crucible_neg_compile_test(neg_singleton_init_graph_unregistered_edge
     "required for the satisfaction of .EdgesNameRegisteredSingletons<Registry, Edges>. \\[with Registry = std::tuple<fixy::atom::global::singleton<neg_singleton_init_graph_unregistered_edge_types::registered_tag> >.*\\]"
     "the expression .\\(edges_name_registered_<Registry>\\)")
 
-# ─── GAPS-094 audit follow-up — Vessel ABI Tagged direction fence ──
+# ─── Vessel ABI Tagged direction fence ────────────────────────────
 #
 # from_typed() takes TypedHandle = Tagged<Vigil*, source::ABIBoundary>
 # only.  This fixture witnesses that calling it with any other source
 # tag (here: source::External) is rejected by the type system, so a
 # refactor "promoting" the helper to accept any Tagged<Vigil*, *> would
-# turn red here.  Closes the audit's GAPS-094 HS14 deficit.
+# turn red here.
 crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
     "could not convert .wrong_tag. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
     "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::ABIBoundary>.")
 
-# ─── GAPS-095 — Vessel ABI typed-meta direction fence ─────────────
+# ─── Vessel ABI typed-meta direction fence ────────────────────────
 #
 # The matching neg-compile witness for as_meta_typed / metas_from_typed
-# (the second helper added by GAPS-095 to migrate the TensorMeta cast
-# alongside the Vigil handle).  Pins that wrong-tag values cannot
+# (the helper that carries the TensorMeta cast beside the Vigil
+# handle).  Pins that wrong-tag values cannot
 # launder as ABIBoundary-tagged metas — same architectural rationale
 # as the handle fence above, applied to the meta-array entry point.
 crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
     "could not convert .wrong_tag. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
     "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::ABIBoundary>.")
 
-# ─── GAPS-096 — Vessel typed-accessor provenance fences ────────────
+# ─── Vessel typed-accessor provenance fences ──────────────────────
 #
 # data_ptr_typed returns Tagged<void*, source::External>; refusing
 # implicit conversion into Tagged<void*, source::Sanitized> stops a
@@ -5185,7 +5180,7 @@ crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
     "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
     "neg_schema_name_typed_wrong_tag.cpp:25")
 
-# CONTRACT-112 fixtures — pin crucible::live_intervals_disjoint_at<MaxLive>,
+# These fixtures pin crucible::live_intervals_disjoint_at<MaxLive>,
 # the production cite that lifts decide::intervals_pairwise_disjoint to
 # the MemoryPlan invariant: at every op boundary `t`, the simultaneously-
 # live TensorSlots must have non-overlapping byte ranges.  Two distinct

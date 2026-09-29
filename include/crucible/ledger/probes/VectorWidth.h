@@ -1,6 +1,6 @@
 #pragma once
 
-// #68 — is the wide vector unit actually faster on THIS host?
+// Is the wide vector unit actually faster on THIS host?
 //
 // The question is not "does the part have AVX-512". __builtin_cpu_supports
 // answers that, the fingerprint already folds it, and it decides nothing.

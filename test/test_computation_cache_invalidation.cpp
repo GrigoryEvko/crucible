@@ -30,9 +30,9 @@ namespace eff = ::foundation::effects;
 
 // The function stands outside the unnamed namespace, because a key
 // refuses a function with internal linkage.
-namespace found_f13_pins {
+namespace cache_key_pins {
 inline void canonical_pin_fn(int) noexcept {}
-}  // namespace found_f13_pins
+}  // namespace cache_key_pins
 
 namespace {
 
@@ -69,7 +69,7 @@ static_assert(std::is_same_v<subset_row<0b111111>, eff::Row<eff::Effect::Alloc, 
 
 template <unsigned Mask>
 inline constexpr std::uint64_t cache_key_for_subset =
-    cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pin_fn, subset_row<Mask>, int>;
+    cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn, subset_row<Mask>, int>;
 
 template <std::size_t... Is>
 consteval std::array<std::uint64_t, 64> build_all_keys(std::index_sequence<Is...>) noexcept {
@@ -109,8 +109,8 @@ static_assert(all_nonzero(all_subset_keys), "Every cache key for an existing row
                                             "uninitialized-slot sentinel, so a benign cache miss reads as a "
                                             "cache hit with a corrupt body.");
 
-static_assert(cipher::computation_cache_key<&found_f13_pins::canonical_pin_fn, int>
-                  != cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pin_fn, eff::Row<>, int>,
+static_assert(cipher::computation_cache_key<&cache_key_pins::canonical_pin_fn, int>
+                  != cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn, eff::Row<>, int>,
               "The row-blind cache key and the row-aware empty-row cache key "
               "must differ even when the row is empty: the row-aware path "
               "applies row_hash to the empty row, and the row-blind path skips "
@@ -130,9 +130,9 @@ static_assert(all_subset_keys[63] == cache_key_for_subset<63u>);
 // never compares two rows that are permutations of each other.  These
 // witnesses cover that, at a two-atom row and at the full universe.
 
-static_assert(cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pin_fn,
+static_assert(cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn,
                                                    eff::Row<eff::Effect::Alloc, eff::Effect::IO>, int>
-                  == cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pin_fn,
+                  == cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn,
                                                           eff::Row<eff::Effect::IO, eff::Effect::Alloc>, int>,
               "The cache key for Row<Alloc, IO> must equal the cache key for "
               "Row<IO, Alloc>: row_hash is a sort-fold over Effect underlying "
@@ -141,18 +141,18 @@ static_assert(cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pi
               "Investigate row_hash_contribution<Row<Es...>>.");
 
 static_assert(
-    cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pin_fn,
+    cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn,
                                          eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block,
                                                   eff::Effect::Bg, eff::Effect::Init, eff::Effect::Test>,
                                          int>
-        == cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pin_fn,
+        == cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn,
                                                 eff::Row<eff::Effect::Test, eff::Effect::Init, eff::Effect::Bg,
                                                          eff::Effect::Block, eff::Effect::IO, eff::Effect::Alloc>,
                                                 int>,
     "A full-universe Row in ascending atom order must hash to the "
     "same cache key as the same Row in descending order.");
 
-static_assert(cipher::computation_cache_key_in_row<&found_f13_pins::canonical_pin_fn,
+static_assert(cipher::computation_cache_key_in_row<&cache_key_pins::canonical_pin_fn,
                                                    eff::Row<eff::Effect::Test, eff::Effect::Init, eff::Effect::Bg,
                                                             eff::Effect::Block, eff::Effect::IO, eff::Effect::Alloc>,
                                                    int>
@@ -182,7 +182,7 @@ int main() {
     // evaluation diverges.  The volatile reads keep the optimizer from
     // folding this sample back into constants.
 
-    std::fprintf(stderr, "  R1 (runtime_equivalence_sentinel): ");
+    std::fprintf(stderr, "  runtime_equivalence_sentinel: ");
 
     // Sample 6 subset masks covering edge + interior cases.
     constexpr unsigned sample_masks[] = {0u, 1u, 2u, 4u, 0b101010u, 63u};
@@ -218,7 +218,7 @@ int main() {
     std::fprintf(stderr, "PASSED\n");
 
     std::fprintf(stderr,
-                 "  R2 (subset_coverage_report): %zu subsets, "
+                 "  subset_coverage_report: %zu subsets, "
                  "all keys non-zero, all pairwise-distinct: ",
                  all_subset_keys.size());
 

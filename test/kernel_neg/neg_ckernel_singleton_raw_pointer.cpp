@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-CKernel-5 (#893): the global CKernelTable accessor returns
+// The global CKernelTable accessor returns
 // CKernelTableSingleton, not a raw CKernelTable*.  A raw pointer cannot
 // enter a singleton-only consumer without explicit provenance tagging.
 

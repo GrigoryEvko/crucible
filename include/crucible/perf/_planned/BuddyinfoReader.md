@@ -14,7 +14,7 @@ or splits a larger one.
 
 Buddyinfo answers: "how close is each zone to higher-order exhaustion?"
 Critical for hugepage-using workloads (Crucible's MetaLog uses
-hugepages — see WRAP-MetaLog-5).
+hugepages).
 
 Format on 6.17:
 ```

@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture 3 of 3 for mint_refresh_daemon (#67).
+// HS14 fixture 3 of 3 for mint_refresh_daemon.
 //
 // Violation: HotFgCtx carries effects::Row<> — it claims NOTHING.  It
 // misses all three of the daemon's conjuncts at once: no IO to touch the

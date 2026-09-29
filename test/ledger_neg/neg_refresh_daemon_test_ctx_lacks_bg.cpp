@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture 1 of 3 for mint_refresh_daemon (#67).
+// HS14 fixture 1 of 3 for mint_refresh_daemon.
 //
 // Violation: TestRunnerCtx carries Row<Test, Alloc, IO, Block>.  It has
 // both conjuncts CtxFitsLedgerStore asks for, so it can read and write a

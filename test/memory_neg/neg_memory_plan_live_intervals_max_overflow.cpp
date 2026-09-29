@@ -4,7 +4,7 @@
 // live_intervals_disjoint_at<MaxLive>, mismatch class #2: LIVE-SET
 // COUNT EXCEEDS MaxLive.
 //
-// CONTRACT-112 ships `live_intervals_disjoint_at<MaxLive>` as the
+// `live_intervals_disjoint_at<MaxLive>` is the
 // production cite for the MemoryPlan invariant.  The MaxLive
 // template parameter caps stack scratch — when k live slots
 // exceed MaxLive at a given op, the function returns false (it

@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for cog::caps_for / cog::HasCaps (GAPS-186 #1211).
+// HS14 fixture #1 of 2 for cog::caps_for / cog::HasCaps.
 //
 // Premise: caps_for<K>::type is the kind-to-schema binding metafunction
 // for substrate Cogs that publish capability schemas (Gpu, CpuCore,
@@ -12,14 +12,14 @@
 // instances are meaningless concepts for them.
 //
 // HasCaps<K> is the load-bearing soundness gate that downstream
-// templates (GAPS-188 mint_cog_mimic factory, GAPS-191 FitsCog<Row,K>
-// gate, GAPS-187 OpcodeLatencyTable<K> per-Cog table) constrain on so
+// templates (a mint_cog_mimic factory, the FitsCog<Row,K> gate, the
+// OpcodeLatencyTable<K> table of each Cog) constrain on so
 // the type system rejects the misuse "publish a CogMimic for a power
 // rail" at template-substitution time.
 //
 // Why this is the load-bearing soundness gate:
 //
-// Without this gate, a future GAPS-188 factory accepting any CogKind
+// Without this gate, a future mint_cog_mimic factory that takes any CogKind
 // would silently produce a PsuRailMimic — a Mimic stub bound to a Cog
 // that has no compute substrate, no opcode latency table, no resource
 // budgets.  Subsequent calls into that stub would either hit a bare
@@ -41,16 +41,16 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 //
-// Expected diagnostic: "constraint not satisfied" / "constraints not
-// satisfied" / "HasCaps" / "lookup_caps" / "CogKind::PsuRail" /
-// "GAPS-186" pointing at the static_assert call site below.
+// Expected diagnostic: no matching function for the call of
+// lookup_caps<CogKind::PsuRail>() below, because the satisfaction of
+// HasCaps<K> fails for K = CogKind::PsuRail.
 
 #include <crucible/cog/TargetCaps.h>
 
 namespace cog = crucible::cog;
 
-// Mock of the future GAPS-188 mint_cog_mimic / GAPS-187
-// OpcodeLatencyTable / GAPS-191 FitsCog factory shape: a function
+// Mock of the shape of a future mint_cog_mimic factory, an
+// OpcodeLatencyTable or a FitsCog consumer: a function
 // templated on a CogKind value, constrained on HasCaps.  Calling it
 // with a CogKind that has no schema fails the concept gate at
 // substitution time.
@@ -65,7 +65,7 @@ constexpr int lookup_caps() noexcept {
 // so the requires-clause refuses the substitution and the build fails
 // here at the call site.
 static_assert(lookup_caps<cog::CogKind::PsuRail>() == 1,
-              "GAPS-186: cog::HasCaps concept MUST refuse non-substrate CogKind "
+              "cog::HasCaps concept MUST refuse non-substrate CogKind "
               "values.  If this static_assert ever evaluates, a future "
               "mint_cog_mimic factory would accept PsuRail as a target and "
               "produce a Mimic stub bound to a Cog with no compute substrate — "

@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture 2 of 3 for mint_refresh_daemon (#67).
+// HS14 fixture 2 of 3 for mint_refresh_daemon.
 //
 // Violation: BgCompileCtx carries Row<Bg, Alloc, IO>.  It is a genuine
 // background context — it claims effects::Bg — and it claims effects::IO

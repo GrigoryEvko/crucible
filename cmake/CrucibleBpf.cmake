@@ -25,11 +25,8 @@
 # degradation: every consumer that wraps SenseHub::load() in
 # `if constexpr (CRUCIBLE_HAVE_BPF)` simply gets stub behaviour).
 #
-# Promoted from bench/CMakeLists.txt by GAPS-004a (2026-05-03).  The
-# original bench-only stanza compiled exactly one program
-# (sense_hub.bpf.c) and bundled it into a bench-only static lib;
-# the promoted module compiles N programs into the production
-# crucible library so Vigil/Cipher/runtime observation can consume them.
+# The module compiles N programs into the production crucible library,
+# so Vigil, Cipher and runtime observation can consume them.
 
 option(CRUCIBLE_HAVE_BPF
   "Compile + embed eBPF programs into the crucible static library" ON)
@@ -135,9 +132,6 @@ endif()
 # the root CMakeLists.txt BEFORE the `add_library(crucible_perf ...)`
 # block.  Adding a new program is a two-line edit at the existing
 # call-site cluster, not a separate per-subdirectory wiring.
-#
-# (This is mitigated for a single-program file today; gates against
-# accidents when GAPS-004b/c/d/e/f land more programs.)
 set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
 
 # crucible_bpf_program(<name> <source> [EXTRA_FLAGS <flag>...])

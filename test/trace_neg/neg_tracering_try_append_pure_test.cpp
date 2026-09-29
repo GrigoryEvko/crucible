@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I16 fixture — pins TraceRing::try_append_pure rejects a
+// Pins that TraceRing::try_append_pure rejects a
 // caller declaring Row<Effect::Test>.
 //
 // IsPure<R> = Subrow<R, Row<>>.  Test is the test-only context

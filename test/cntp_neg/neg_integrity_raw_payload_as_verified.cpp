@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-116 fixture #1: raw CNT-P payload bytes cannot enter an API that
+// Integrity fixture #1: raw CNT-P payload bytes cannot enter an API that
 // requires successful end-to-end integrity verification.
 
 #include <crucible/cntp/Integrity.h>

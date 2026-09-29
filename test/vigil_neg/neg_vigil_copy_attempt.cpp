@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-031 fixture #2: Vigil owns the publication slot, ModeCell, foreground
+// Vigil owns the publication slot, ModeCell, foreground
 // context, and background thread. Copying it would duplicate those process-local
 // identities and split the bg->fg publication discipline.
 

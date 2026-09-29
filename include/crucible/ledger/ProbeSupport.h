@@ -2,10 +2,11 @@
 
 // What three probes turned out to need in common.
 //
-// This header was not designed ahead of the probes. #68 (vector width),
-// #69 (cache-tier knee and NUMA hop) and #70 (transparent-hugepage
-// fault cost) were each written against the bench harness first, and
-// what all three of them did the same way was lifted here afterwards.
+// This header was not designed ahead of the probes. The vector-width
+// probe, the cache-tier probe (knee and NUMA hop) and the
+// transparent-hugepage probe (fault cost) were each written against the
+// bench harness first, and what all three of them did the same way was
+// lifted here afterwards.
 // Anything only one of them needed stayed with that one. The list came
 // out at five items:
 //
@@ -23,11 +24,12 @@
 //      256, remote against local, huge pages against base pages — and all
 //      three have to be able to say "the same" when the two are the same.
 //
-//   4. A scratch region whose page policy the probe chooses. #69 needs
-//      base pages so the cache curve is not confounded by TLB coverage;
-//      #70 needs both policies because the difference IS the measurement.
+//   4. A scratch region whose page policy the probe chooses. The
+//      cache-tier probe needs base pages so the cache curve is not
+//      confounded by TLB coverage.  The hugepage probe needs both
+//      policies because the difference IS the measurement.
 //
-//   5. Thread pinning for a helper. #69 is the only probe that spawns
+//   5. Thread pinning for a helper. The cache-tier probe is the only probe that spawns
 //      one, but it spawns three, and the affinity call belongs next to
 //      the rest of the measurement plumbing rather than inside a probe.
 //

@@ -78,4 +78,4 @@ struct PmuCxlSnapshot {
 - `PmuUncoreImc.md` — local DRAM BW; CXL adds a "remote DRAM" tier
 - `iter_mmap.bpf.c` — per-VMA backing; CXL mappings show as memory
   on a different NUMA node
-- Future GAPS task: cog/Cxl.h for per-Cog CXL discovery (#1263)
+- Future work: cog/Cxl.h for per-Cog CXL discovery

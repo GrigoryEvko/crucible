@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I17 fixture — pins MetaLog::try_append_pure rejects a
+// Pins that MetaLog::try_append_pure rejects a
 // caller that declares Row<Effect::Bg>.
 //
 // MetaLog::try_append is the FOREGROUND producer-side write

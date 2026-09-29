@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I16 fixture — multi-atom rejection on the consumer side.
-// Pins TraceRing::drain_pure rejects Row<IO, Block> — same exact
+// Multi-atom rejection on the consumer side.
+// Pins that TraceRing::drain_pure rejects Row<IO, Block> — same exact
 // row Cipher::record_event REQUIRES.  Per the producer-side multi-
 // atom fixture, this proves a row CORRECT for one row-typed entry
 // point is REJECTED on a different one, and the constraint is not

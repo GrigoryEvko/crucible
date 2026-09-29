@@ -182,6 +182,3 @@ runtime observation consumes via `Senses::pmu_counters()->read()` for ratio metr
   `perf_event_open` group_fd machinery)
 - `PerfEventRing.md` — same `perf_event_mmap_page`, but for sampling
   ring-buffer mode rather than counting + RDPMC
-
-Existing GAPS task: none yet.  Filing as `GAPS-004j` would cover this
-when implementation begins.

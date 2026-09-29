@@ -68,12 +68,12 @@ static_assert(std::is_same_v<decltype(bench::Percentiles{}.cv), double>, "Percen
 
 int g_failures = 0;
 
-#define V096_CHECK(cond)                                                                       \
-    do {                                                                                       \
-        if (!(cond)) {                                                                         \
-            std::fprintf(stderr, "[FAIL] %s:%d  V096_CHECK(%s)\n", __FILE__, __LINE__, #cond); \
-            ++g_failures;                                                                      \
-        }                                                                                      \
+#define WELFORD_CHECK(cond)                                                                       \
+    do {                                                                                          \
+        if (!(cond)) {                                                                            \
+            std::fprintf(stderr, "[FAIL] %s:%d  WELFORD_CHECK(%s)\n", __FILE__, __LINE__, #cond); \
+            ++g_failures;                                                                         \
+        }                                                                                         \
     } while (0)
 
 void test_welford_well_conditioned() {
@@ -82,17 +82,17 @@ void test_welford_well_conditioned() {
     std::vector<double> xs{1.0, 2.0, 3.0, 4.0, 5.0};
     const bench::Percentiles p = bench::Percentiles::compute(xs);
 
-    V096_CHECK(p.n == 5);
-    V096_CHECK(approx(p.mean, 3.0, 1e-12));
-    V096_CHECK(approx(p.stddev, std::sqrt(2.5), 1e-12));
-    V096_CHECK(approx(p.cv, std::sqrt(2.5) / 3.0, 1e-12));
+    WELFORD_CHECK(p.n == 5);
+    WELFORD_CHECK(approx(p.mean, 3.0, 1e-12));
+    WELFORD_CHECK(approx(p.stddev, std::sqrt(2.5), 1e-12));
+    WELFORD_CHECK(approx(p.cv, std::sqrt(2.5) / 3.0, 1e-12));
 
     // At this magnitude cancellation has not bitten yet, so the closed form
     // reaches the same answer. That is what makes the divergence in the next
     // test attributable to conditioning and not to a coding error here.
     std::vector<double> xs_copy{1.0, 2.0, 3.0, 4.0, 5.0};
     const double naive_var = naive_variance_2pass(xs_copy);
-    V096_CHECK(approx(naive_var, 2.5, 1e-12));
+    WELFORD_CHECK(approx(naive_var, 2.5, 1e-12));
 }
 
 void test_welford_ill_conditioned() {
@@ -107,16 +107,16 @@ void test_welford_ill_conditioned() {
 
     const bench::Percentiles p = bench::Percentiles::compute(xs);
 
-    V096_CHECK(p.n == 5);
-    V096_CHECK(approx(p.mean, kBase + 3.0, 1e-3));
+    WELFORD_CHECK(p.n == 5);
+    WELFORD_CHECK(approx(p.mean, kBase + 3.0, 1e-3));
     // The tolerance is 1e-3 because that is roughly one unit in the last place
     // at this magnitude, not because the answer is imprecise.
-    V096_CHECK(approx(p.stddev, std::sqrt(2.5), 1e-3));
+    WELFORD_CHECK(approx(p.stddev, std::sqrt(2.5), 1e-3));
     // Under the closed form the failure lands as sqrt of a clamped negative,
     // which is zero rather than NaN, so a finiteness check alone would pass.
     // The lower bound is what distinguishes the two.
-    V096_CHECK(std::isfinite(p.stddev));
-    V096_CHECK(p.stddev > 1.0);
+    WELFORD_CHECK(std::isfinite(p.stddev));
+    WELFORD_CHECK(p.stddev > 1.0);
 
     std::vector<double> xs_copy = xs;
     const double naive_var = naive_variance_2pass(xs_copy);
@@ -126,14 +126,14 @@ void test_welford_ill_conditioned() {
     // or the magnitude is wrong by order one. Either outcome shows the
     // accumulator choice is load-bearing.
     const bool naive_failed = (naive_var <= 0.0) || (std::abs(naive_var - 2.5) > 1.0);
-    V096_CHECK(naive_failed);
+    WELFORD_CHECK(naive_failed);
 
     // A thousandfold margin, rather than equality against a fixed tolerance,
     // keeps the claim about the gap between the two algorithms and not about
     // either one's absolute accuracy.
     const double welford_err = std::abs(p.stddev - std::sqrt(2.5));
     const double naive_err = std::abs(std::sqrt(std::max(0.0, naive_var)) - std::sqrt(2.5));
-    V096_CHECK(welford_err * 1000.0 < naive_err + 1e-12);
+    WELFORD_CHECK(welford_err * 1000.0 < naive_err + 1e-12);
 }
 
 // The online update is order-dependent, and the order is fixed by the sort
@@ -154,9 +154,9 @@ void test_welford_deterministic() {
         __builtin_memcpy(&out, &x, sizeof(x));
         return out;
     };
-    V096_CHECK(bits(a.mean) == bits(b.mean));
-    V096_CHECK(bits(a.stddev) == bits(b.stddev));
-    V096_CHECK(bits(a.cv) == bits(b.cv));
+    WELFORD_CHECK(bits(a.mean) == bits(b.mean));
+    WELFORD_CHECK(bits(a.stddev) == bits(b.stddev));
+    WELFORD_CHECK(bits(a.cv) == bits(b.cv));
 }
 
 }  // namespace
@@ -172,7 +172,7 @@ int main() {
     }
     std::fprintf(stderr,
                  "Welford variance sentinel: FAIL "
-                 "(%d V096_CHECK failure(s))\n",
+                 "(%d WELFORD_CHECK failure(s))\n",
                  g_failures);
     return 1;
 }

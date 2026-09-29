@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-F12-AUDIT fixture — pins IsEffectRow concept rejection on
+// Pins IsEffectRow concept rejection on
 // the federation bridge primitives.
 //
 // `federation_content_hash<FnPtr, Row, Args...>`,
@@ -18,12 +18,12 @@
 
 #include <crucible/cipher/ComputationCacheFederation.h>
 
-inline void f12_test_fn(int) noexcept {}
+inline void cacheable_fn(int) noexcept {}
 
 int main() {
     // Second template arg is `int` — bound to Row.  IsEffectRow<int>
     // is false (int is not effects::Row<Es...>).  The federation
     // primitive's requires clause rejects.
-    (void)::crucible::cipher::federation::federation_key<&f12_test_fn, int, double>();
+    (void)::crucible::cipher::federation::federation_key<&cacheable_fn, int, double>();
     return 0;
 }

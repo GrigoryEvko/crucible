@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I16 fixture — saturation row on the consumer side.  Pins
+// Saturation row on the consumer side.  Pins that
 // TraceRing::drain_pure rejects AllRow (the F* effect lattice top:
 // every observable atom).  Pairs with the producer-side saturation
 // fixture to witness the maximum-cardinality rejection input on

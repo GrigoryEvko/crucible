@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-117 fixture #3: GF(2^8) has only 256 shard coordinates.
+// Reed-Solomon fixture #3: GF(2^8) has only 256 shard coordinates.
 // K+M above 256 is rejected by ReedSolomonShape.
 
 #include <crucible/cntp/Fec.h>

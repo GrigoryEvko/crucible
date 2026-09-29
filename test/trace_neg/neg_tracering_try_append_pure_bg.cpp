@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I16 fixture — pins TraceRing::try_append_pure rejects a
+// Pins that TraceRing::try_append_pure rejects a
 // caller declaring Row<Effect::Bg>.
 //
 // IsPure<R> = Subrow<R, Row<>>.  Row<Bg> contains the Bg atom

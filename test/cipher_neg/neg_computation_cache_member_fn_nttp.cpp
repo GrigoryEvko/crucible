@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-F09-AUDIT-2 fixture — pins IsCacheableFunction concept
+// Pins IsCacheableFunction concept
 // rejection on member-function-pointer NTTPs.  Member functions
 // require an implicit `this` argument the cache cannot represent
 // in its key — admitting them would silently produce slots that

@@ -1,6 +1,6 @@
 #include <crucible/cntp/Pacing.h>
 
-// GAPS-121 fixture #1: BBR-compatible pacing configuration admits only
+// Pacing fixture #1: BBR-compatible pacing configuration admits only
 // fq/fq_codel. pfifo_fast can carry packets, but it cannot enforce the
 // per-flow pacing BBR depends on.
 

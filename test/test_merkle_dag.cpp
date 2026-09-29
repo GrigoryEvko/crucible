@@ -887,12 +887,12 @@ namespace {
     // the child died.  The child's stderr goes to /dev/null because the
     // handler prints a diagnostic and a stack trace on the way out.
     {
-        // FIXY-V-210 bans raw process spawn because a forked child carries no
-        // Permission<Tag> linearity proof and no Met(X) effect row. Neither
-        // is at stake here: the child evaluates one contract clause and dies,
-        // it owns no permission and outlives nothing. The alternative is to
-        // leave three preconditions with no test that they fire, which is
-        // the same dead-guard shape this change removes from RegionCache.
+        // scripts/check-banned-calls.py bans raw process spawn because a
+        // forked child carries no Permission<Tag> linearity proof and no
+        // Met(X) effect row. Neither is at stake here: the child evaluates
+        // one contract clause and dies, it owns no permission and outlives
+        // nothing. The alternative is to leave three preconditions with no
+        // test that they fire, which is a dead guard.
         auto dies = [&](auto&& body) {
             std::fflush(nullptr);
             const pid_t child = ::fork();  // SPAWN-PROCESS-OK: observing a [[noreturn]] contract handler needs a child

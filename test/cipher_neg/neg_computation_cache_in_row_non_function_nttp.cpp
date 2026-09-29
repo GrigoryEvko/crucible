@@ -1,16 +1,15 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-F11-AUDIT fixture — cross-constraint coverage for the
+// Cross-constraint coverage for the
 // row-aware cache API.  The `_in_row` template carries TWO
 // constraints joined by `&&`:
 //
 //     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 //
-// FOUND-F11 ships ONE neg fixture
-// (neg_computation_cache_in_row_non_row_param.cpp) exercising
-// the IsEffectRow<Row> half — non-Row template parameter rejected.
-// The IsCacheableFunction<FnPtr> half on the `_in_row` path is
-// untested by F11.  Without this fixture, a future refactor that
+// neg_computation_cache_in_row_non_row_param.cpp exercises the
+// IsEffectRow<Row> half — non-Row template parameter rejected.
+// This fixture exercises the IsCacheableFunction<FnPtr> half on the
+// `_in_row` path.  Without this fixture, a future refactor that
 // accidentally weakens the IsCacheableFunction conjunct (e.g.
 // drops the `&& IsCacheableFunction<FnPtr>` half during a merge,
 // keeps only the IsEffectRow half) would not be caught — bare

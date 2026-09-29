@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-F09-AUDIT-2 fixture — pins IsCacheableFunction concept
+// Pins IsCacheableFunction concept
 // rejection on data-pointer NTTPs.  This is the SUBTLE silent-
 // failure case: `auto FnPtr = &some_global` looks superficially
 // like a pointer NTTP and would be accepted by a naive

@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I17 fixture — pins MetaLog::try_append_pure rejects a
+// Pins that MetaLog::try_append_pure rejects a
 // caller that declares Row<Effect::IO>.
 //
 // try_append_pure carries `requires IsPure<CallerRow>`.  IsPure<R>

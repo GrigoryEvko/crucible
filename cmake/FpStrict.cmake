@@ -1,6 +1,6 @@
 # cmake/FpStrict.cmake — `crucible_fp_strict` INTERFACE library.
 #
-# FIXY-V-094.  THE FLOOR for FP discipline across every consumer of
+# THE FLOOR for FP discipline across every consumer of
 # `crucible`.  Once linked, the target propagates a strict-IEEE-754
 # compile-options pack that makes the Crucible numerical invariants
 # (DetSafe / BITEXACT recipe tier / merkle-hash-safe canonicalize)
@@ -11,27 +11,26 @@
 # modes at once:
 #
 #   1. FP REASSOCIATION (a + b + c reorders to a + (b + c) under
-#      -fassociative-math) — drives V-091 F101 (DetSafe × FpMode)
-#      cross-replay drift.  Same recipe, same seed, different bits.
+#      -fassociative-math) — cross-replay drift.  Same recipe, same
+#      seed, different bits.  Collision rule F101 refuses FP
+#      reassociation for a replay-deterministic payload.
 #
-#   2. FTZ / DENORMAL FLUSH (under -funsafe-math-optimizations) —
-#      drives V-091 F102 (Vendor × Denormal): NV silicon treats
-#      denormals as zero by default at MMA throughput, AMD/CPU oracle
-#      keeps them; without strict-FP the C++ side ALSO flushes,
-#      mismatching the recipe's declared denormal policy.
+#   2. FTZ / DENORMAL FLUSH (under -funsafe-math-optimizations) — NV
+#      silicon treats denormals as zero by default at MMA throughput,
+#      AMD/CPU oracle keeps them; without strict-FP the C++ side ALSO
+#      flushes, mismatching the recipe's declared denormal policy.
 #
 #   3. NAN / INF ELIMINATION (-ffinite-math-only) — turns
-#      `std::isnan(x)` into `constexpr false`, dead-codes V-093's
-#      canonicalize NaN branch, breaks merkle-hash convergence for
+#      `std::isnan(x)` into `constexpr false`, dead-codes the NaN branch
+#      of fixy/fp/Canonicalize.h, breaks merkle-hash convergence for
 #      every double that ever transits a NaN bit pattern.
 #
 # THE FLOOR is `PUBLIC` on the `crucible` target — every test / bench
 # / vessel / tool / example consuming `crucible` automatically links
 # `crucible_fp_strict` transitively.  Opt-out is deliberate and
 # review-discoverable: a target documents the engagement and links
-# `crucible_fp_permissive` instead (NOT shipped here; deferred to a
-# follow-on with explicit `grant::fp_mode<Permissive>` infrastructure
-# per FIXY-V-093 and the Insights doc-block).
+# `crucible_fp_permissive` instead.  That target is NOT shipped.  It
+# waits on an explicit `grant::fp_mode<Permissive>` mechanism.
 #
 # Flag rationale (every flag closes a documented hardening hole):
 #
@@ -55,16 +54,17 @@
 #                                   only ship when the C++ side
 #                                   doesn't pre-contract.
 #   -fno-associative-math         — disable `(a+b)+c → a+(b+c)`.
-#                                   Drives F101.
+#                                   The code-side match of F101.
 #   -fno-reciprocal-math          — disable `x/y → x*(1/y)`.  The
 #                                   `1/y` reciprocal-step introduces
 #                                   a vendor-divergent ULP.
 #   -fno-finite-math-only         — keep NaN/Inf in the optimizer's
-#                                   model.  Drives F102 / F104 +
-#                                   makes V-093 canonicalize work.
+#                                   model.  The NaN canonicalization
+#                                   of fixy/fp/Canonicalize.h needs it.
 #   -fsignaling-nans              — pin sNaN preservation; necessary
-#                                   for V-093's "all NaN payloads
-#                                   collapse to canonical qNaN" to
+#                                   for the "all NaN payloads
+#                                   collapse to canonical qNaN" rule
+#                                   of fixy/fp/Canonicalize.h to
 #                                   work — otherwise the optimizer
 #                                   may already have collapsed sNaN
 #                                   bit patterns at construction.
@@ -73,7 +73,6 @@
 #                                   assumes RN; under `-frounding-
 #                                   math` the optimizer DOESN'T fold
 #                                   FP expressions speculatively).
-#                                   Drives V-091 F103 (Vendor × FP).
 #   -ftrapping-math               — keep FP exception status flags
 #                                   alive (the GCC default IS this,
 #                                   but explicit pinning prevents a
@@ -88,8 +87,8 @@
 #   -funsafe-math-optimizations   — global blanket disable; one flag
 #                                   undoes our entire pack.
 #   -fno-signed-zeros             — silently elides sign-of-zero
-#                                   handling that V-093 relies on
-#                                   for ±0.0 canonicalization.
+#                                   handling that fixy/fp/Canonicalize.h
+#                                   relies on for ±0.0 canonicalization.
 #
 # Implementation: INTERFACE library carries no compiled artifacts.
 # `target_link_libraries(<consumer> PRIVATE crucible_fp_strict)`

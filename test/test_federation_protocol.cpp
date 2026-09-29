@@ -652,7 +652,7 @@ static void test_codec_is_noexcept() {
 // The cardinality field is 16 bits, so the largest value it can hold is
 // the interesting case for the comparison it feeds.
 
-static void test_audit_a_cardinality_boundary_uint16_max() {
+static void test_cardinality_boundary_uint16_max() {
     constexpr std::uint16_t MAX_CARD = 0xFFFFu;
 
     static_assert(fed::federation_accepts_cardinality(MAX_CARD, MAX_CARD));
@@ -678,14 +678,14 @@ static void test_audit_a_cardinality_boundary_uint16_max() {
     ASSERT_TRUE(!reject_one_below.has_value());
     assert(reject_one_below.error() == fed::FederationError::UniverseCardinalityTooHigh);
 
-    std::printf("  [AUDIT-A] cardinality_boundary_uint16_max:      PASSED\n");
+    std::printf("  test_cardinality_boundary_uint16_max:           PASSED\n");
 }
 
 // An exactly-sized buffer must be accepted.  An off-by-one in the size
 // check would refuse it, and the refusal reads as a legitimate
 // too-small error rather than as a bug.
 
-static void test_audit_b_buffer_exactly_fits() {
+static void test_buffer_exactly_fits() {
     const KernelCacheKey key{
         ContentHash{0x1111222233334444ULL},
         RowHash{0x5555666677778888ULL},
@@ -708,7 +708,7 @@ static void test_audit_b_buffer_exactly_fits() {
     ASSERT_TRUE(tight.has_value());
     assert(*tight == 32u);
 
-    std::printf("  [AUDIT-B] buffer_exactly_fits:                   PASSED\n");
+    std::printf("  test_buffer_exactly_fits:                       PASSED\n");
 }
 
 // A transport that batches several entries into one buffer hands the
@@ -716,7 +716,7 @@ static void test_audit_b_buffer_exactly_fits() {
 // has to stop at the declared size, or the first entry would swallow
 // the second.
 
-static void test_audit_c_extra_bytes_at_end() {
+static void test_extra_bytes_at_end() {
     const KernelCacheKey key{ContentHash{0x42}, RowHash{0x43}};
     const std::array<std::uint8_t, 4> payload = {0xAA, 0xBB, 0xCC, 0xDD};
 
@@ -742,7 +742,7 @@ static void test_audit_c_extra_bytes_at_end() {
     assert(view->payload[2] == 0xCC);
     assert(view->payload[3] == 0xDD);
 
-    std::printf("  [AUDIT-C] extra_bytes_at_end:                    PASSED\n");
+    std::printf("  test_extra_bytes_at_end:                        PASSED\n");
 }
 
 // Only the full sentinel is refused.  A key with one axis all ones and
@@ -750,7 +750,7 @@ static void test_audit_c_extra_bytes_at_end() {
 // hash, but nothing forbids it, and refusing it would drop real
 // entries.  The same holds for a single zero axis.
 
-static void test_audit_d_partial_sentinel_accepted() {
+static void test_partial_sentinel_accepted() {
     constexpr std::uint64_t MAX = std::numeric_limits<std::uint64_t>::max();
 
     {
@@ -802,13 +802,13 @@ static void test_audit_d_partial_sentinel_accepted() {
         ASSERT_TRUE(written.has_value());
     }
 
-    std::printf("  [AUDIT-D] partial_sentinel_accepted:             PASSED\n");
+    std::printf("  test_partial_sentinel_accepted:                 PASSED\n");
 }
 
 // Nothing forbids the two axes from holding the same 64 bits, and the
 // codec must not treat that as an error or collapse the two fields.
 
-static void test_audit_e_same_bit_pattern_axes() {
+static void test_same_bit_pattern_axes() {
     constexpr std::uint64_t SHARED_BITS = 0xDEADBEEFCAFEBABEULL;
     const KernelCacheKey key{
         ContentHash{SHARED_BITS},
@@ -835,14 +835,14 @@ static void test_audit_e_same_bit_pattern_axes() {
         assert(buf[8 + i] == buf[16 + i]);
     }
 
-    std::printf("  [AUDIT-E] same_bit_pattern_axes:                 PASSED\n");
+    std::printf("  test_same_bit_pattern_axes:                     PASSED\n");
 }
 
 // The query side folds at compile time.  The codec itself does not, and
 // is not meant to: it copies bytes through a buffer, which is a runtime
 // operation.
 
-namespace audit_f_constexpr_witnesses {
+namespace constexpr_witnesses {
 static_assert(fed::federation_accepts_cardinality(0, 0));
 static_assert(fed::federation_accepts_cardinality(6, 6));
 static_assert(!fed::federation_accepts_cardinality(7, 6));
@@ -855,18 +855,18 @@ static_assert(fed::federation_error_name(fed::FederationError::UniverseCardinali
 static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
 static_assert(fed::FEDERATION_PROTOCOL_V1 == 1u);
 static_assert(fed::FEDERATION_HEADER_BYTES == 32u);
-}  // namespace audit_f_constexpr_witnesses
+}  // namespace constexpr_witnesses
 
 // The same two calls again at runtime, so that making either function
 // non-constexpr breaks the assertions above without silently removing
 // the check itself.
-static void test_audit_f_constexpr_witnesses() {
+static void test_constexpr_witnesses() {
     [[maybe_unused]] auto card_check = fed::federation_accepts_cardinality(6, 6);
     [[maybe_unused]] auto name_check = fed::federation_error_name(fed::FederationError::None);
     assert(card_check);
     assert(name_check == "None");
 
-    std::printf("  [AUDIT-F] constexpr_witnesses:                   PASSED\n");
+    std::printf("  test_constexpr_witnesses:                       PASSED\n");
 }
 
 // A federation stream and a graph snapshot are told apart by their
@@ -874,7 +874,7 @@ static void test_audit_f_constexpr_witnesses() {
 // would dispatch to the other's decoder, so this file pulls in both
 // headers to pin the inequality in one place.
 
-static void test_audit_g_magic_collision_with_cdag() {
+static void test_magic_collision_with_cdag() {
     static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
     static_assert(crucible::CDAG_MAGIC == 0x43444147u);
     static_assert(fed::FEDERATION_MAGIC != crucible::CDAG_MAGIC, "FEDERATION_MAGIC must not collide with CDAG_MAGIC.");
@@ -887,10 +887,10 @@ static void test_audit_g_magic_collision_with_cdag() {
     static_assert(cdag_first_byte == 'G');
     static_assert(fed_first_byte != cdag_first_byte);
 
-    std::printf("  [AUDIT-G] magic_collision_with_cdag:             PASSED\n");
+    std::printf("  test_magic_collision_with_cdag:                 PASSED\n");
 }
 
-static void test_audit_h_field_width_pins() {
+static void test_field_width_pins() {
     static_assert(sizeof(fed::FederationEntryHeader::magic) == 4);
     static_assert(sizeof(fed::FederationEntryHeader::protocol_version) == 2);
     static_assert(sizeof(fed::FederationEntryHeader::universe_cardinality) == 2);
@@ -903,13 +903,13 @@ static void test_audit_h_field_width_pins() {
     // padding and no compiler can insert any.
     static_assert(4 + 2 + 2 + 8 + 8 + 4 + 4 == 32);
 
-    std::printf("  [AUDIT-H] field_width_pins:                      PASSED\n");
+    std::printf("  test_field_width_pins:                          PASSED\n");
 }
 
 // The payload alternates two values, so a copy shifted by one byte
 // comes back inverted rather than equal.
 
-static void test_audit_i_vector_buffer_roundtrip() {
+static void test_vector_buffer_roundtrip() {
     const KernelCacheKey key{
         ContentHash{0x0F0F0F0F0F0F0F0FULL},
         RowHash{0xF0F0F0F0F0F0F0F0ULL},
@@ -934,7 +934,7 @@ static void test_audit_i_vector_buffer_roundtrip() {
         assert(view->payload[i] == payload[i]);
     }
 
-    std::printf("  [AUDIT-I] vector_buffer_roundtrip:               PASSED\n");
+    std::printf("  test_vector_buffer_roundtrip:                   PASSED\n");
 }
 
 // The permissioned decode takes a peer token from the federation door of
@@ -1020,16 +1020,15 @@ int main() {
     test_receiver_cardinality_is_explicit();
     test_codec_is_noexcept();
     test_permissioned_decode_tags_the_view();
-    std::printf("--- audit groups ---\n");
-    test_audit_a_cardinality_boundary_uint16_max();
-    test_audit_b_buffer_exactly_fits();
-    test_audit_c_extra_bytes_at_end();
-    test_audit_d_partial_sentinel_accepted();
-    test_audit_e_same_bit_pattern_axes();
-    test_audit_f_constexpr_witnesses();
-    test_audit_g_magic_collision_with_cdag();
-    test_audit_h_field_width_pins();
-    test_audit_i_vector_buffer_roundtrip();
-    std::printf("test_federation_protocol: 25 + 9 audit groups, all passed\n");
+    test_cardinality_boundary_uint16_max();
+    test_buffer_exactly_fits();
+    test_extra_bytes_at_end();
+    test_partial_sentinel_accepted();
+    test_same_bit_pattern_axes();
+    test_constexpr_witnesses();
+    test_magic_collision_with_cdag();
+    test_field_width_pins();
+    test_vector_buffer_roundtrip();
+    std::printf("test_federation_protocol: 34 groups, all passed\n");
     return 0;
 }

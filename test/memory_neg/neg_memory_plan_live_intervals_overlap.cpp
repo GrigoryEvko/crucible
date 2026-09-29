@@ -4,7 +4,7 @@
 // live_intervals_disjoint_at<MaxLive>, mismatch class #1: LIVE-SET
 // BYTE OVERLAP.
 //
-// CONTRACT-112 ships `live_intervals_disjoint_at<MaxLive>` as the
+// `live_intervals_disjoint_at<MaxLive>` is the
 // production cite for the MemoryPlan invariant: at every op
 // boundary `t`, the simultaneously-live TensorSlots must have
 // pairwise-disjoint byte ranges `[offset_bytes, offset_bytes +

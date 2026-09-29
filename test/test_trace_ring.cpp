@@ -184,25 +184,25 @@ int main() {
         assert(r->size().peek() == 4);
 
         {
-            crucible::TraceRing::Entry batch_i16[4];
-            MetaIndex meta_i16[4];
-            ScopeHash scope_i16[4];
-            CallsiteHash csite_i16[4];
-            uint32_t got = r->drain_pure(batch_i16, 4, meta_i16, scope_i16, csite_i16);
+            crucible::TraceRing::Entry batch_out[4];
+            MetaIndex batch_meta[4];
+            ScopeHash batch_scope[4];
+            CallsiteHash batch_csite[4];
+            uint32_t got = r->drain_pure(batch_out, 4, batch_meta, batch_scope, batch_csite);
             assert(got == 4);
-            assert(batch_i16[0].schema_hash == SchemaHash{0xCAFE0001});
-            assert(batch_i16[1].schema_hash == SchemaHash{0xCAFE0002});
-            assert(batch_i16[2].schema_hash == SchemaHash{0xCAFE0003});
-            assert(batch_i16[3].schema_hash == SchemaHash{0xCAFE0004});
-            assert(meta_i16[0] == MetaIndex{1} && meta_i16[3] == MetaIndex{4});
-            assert(scope_i16[0] == ScopeHash{0xC1} && scope_i16[3] == ScopeHash{0xC4});
-            assert(csite_i16[0] == CallsiteHash{0xD1} && csite_i16[3] == CallsiteHash{0xD4});
+            assert(batch_out[0].schema_hash == SchemaHash{0xCAFE0001});
+            assert(batch_out[1].schema_hash == SchemaHash{0xCAFE0002});
+            assert(batch_out[2].schema_hash == SchemaHash{0xCAFE0003});
+            assert(batch_out[3].schema_hash == SchemaHash{0xCAFE0004});
+            assert(batch_meta[0] == MetaIndex{1} && batch_meta[3] == MetaIndex{4});
+            assert(batch_scope[0] == ScopeHash{0xC1} && batch_scope[3] == ScopeHash{0xC4});
+            assert(batch_csite[0] == CallsiteHash{0xD1} && batch_csite[3] == CallsiteHash{0xD4});
             assert(r->size().peek() == 0);
         }
 
         {
-            uint32_t zero_i16 = r->drain_pure<eff::Row<>>(nullptr, 0);
-            assert(zero_i16 == 0);
+            uint32_t zero_drained = r->drain_pure<eff::Row<>>(nullptr, 0);
+            assert(zero_drained == 0);
         }
 
         {
@@ -235,7 +235,7 @@ int main() {
                                             eff::Effect::Block>>);  // multi-atom
 
         delete r;
-        std::printf("test_trace_ring: try_append_pure / drain_pure FOUND_I16 OK\n");
+        std::printf("test_trace_ring: try_append_pure / drain_pure OK\n");
     }
 
     // The same exchange driven through the row-typed facades, to show the
@@ -413,9 +413,9 @@ int main() {
         }
 
         delete r;
-        std::printf("test_trace_ring: try_append_pure/drain_pure FOUND_I16_AUDIT "
-                    "(audit-A bare-default + audit-B capacity-full + "
-                    "audit-C wrap-around + audit-D mixed-nullable) OK\n");
+        std::printf("test_trace_ring: try_append_pure/drain_pure edge cases "
+                    "(bare default + full ring + wrap-around + "
+                    "nullable outputs) OK\n");
     }
 
     std::printf("test_trace_ring: all tests passed\n");

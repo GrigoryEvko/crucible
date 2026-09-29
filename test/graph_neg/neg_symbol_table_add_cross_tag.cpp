@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #2 of 2 for #1032 WRAP-SymTab-4
-// (SymbolTable::add() raw SymbolId return -> InternalSymbolId).
+// HS14 fixture #2 of 2 for the return type of SymbolTable::add()
+// (InternalSymbolId, not a raw SymbolId).
 //
 // Premise: a freshly minted SymbolId is source::FromInternal, not
 // source::External.  From-disk / FFI IDs must enter through their own

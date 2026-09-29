@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FIXY-V-196 RdtscPinned witness — mismatch class #2 of 2: PRIVATE
+// RdtscPinned witness — mismatch class #2 of 2: PRIVATE
 // mint_tag ACCESS.
 //
 // The only ctor on RdtscPinned takes a private nested `mint_tag` type

@@ -8,9 +8,9 @@ implemented siblings.
 
 Single entry point for "the organism's complete sensory nervous
 system" — the original aspirational phrasing in `sense_hub.bpf.c`
-line 3.  After GAPS-004{a,b,c} shipped 3 facades and this `_planned/`
-tree planned 35 more, callers should NOT have to hand-load each
-sub-program.  `Senses` does that.
+line 3.  Three facades ship (SenseHub, SchedSwitch, PmuSample) and this
+`_planned/` tree plans 35 more, so callers should NOT have to hand-load
+each sub-program.  `Senses` does that.
 
 ## Design
 
@@ -101,7 +101,5 @@ in <1 ms total.
 ## Sibling refs
 
 Composes: ALL 35 planned BPF programs + 11 userspace-only PMU
-facades + the 3 existing GAPS-004{a,b,c} programs (SenseHub,
-SchedSwitch, PmuSample) + the 3 extension PRs.
-
-Existing reference: GAPS-004y task #1287.
+facades + the 3 shipped programs (SenseHub, SchedSwitch, PmuSample)
++ the 3 extension PRs.

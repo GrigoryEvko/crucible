@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-StorageNbytes-3 fixture #2: the DetSafe tier is part of the
+// Storage-byte fixture #2: the DetSafe tier is part of the
 // type.  A Pure storage-byte projection cannot be silently assigned
 // to a differently pinned DetSafe slot.
 

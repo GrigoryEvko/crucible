@@ -9,10 +9,10 @@
 //
 // ReplayEngine has only one typed view (ActiveView; no companion
 // "InactiveView" or "DivergedView") so the intra-carrier per-state
-// mismatch pattern used for CKernelTable/SchemaTable (U-135/U-136)
-// doesn't apply.  The cross-carrier mismatch is the equivalent type-
-// system gate, mirroring the U-137 (CrucibleContext) and U-138
-// (PoolAllocator) fixtures.
+// mismatch pattern used for CKernelTable/SchemaTable doesn't apply.
+// The cross-carrier mismatch is the equivalent type-system gate,
+// mirroring the CrucibleContext and PoolAllocator cross-carrier
+// fixtures.
 //
 // HS14 — paired with neg_replay_engine_mint_active_view_in_field for
 // distinct mismatch classes (value-level call-time vs structural

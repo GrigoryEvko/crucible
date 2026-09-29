@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #2 of 2 for cog::IsComputeKind (GAPS-185 #1210).
+// HS14 fixture #2 of 2 for cog::IsComputeKind.
 //
 // Premise: IsComputeKind<K> partitions the 21-atom CogKind universe
 // into the strict subset where `cog_family_v<K> == CogFamily::Compute`
@@ -8,7 +8,7 @@
 // IsComputeKind is the NARROW gate for code that genuinely only runs
 // on compute substrates — kernel-search workers (Mimic MAP-Elites),
 // partition-optimiser compute-tile placement, etc.  It is NOT the
-// gate for CogMimic<K> (GAPS-188) — CogMimic admits the broader
+// gate for CogMimic<K> — CogMimic admits the broader
 // IsMimicSubstrate (Compute ∪ Network ∪ Memory ∪ Bus families) per
 // §3.7 of the networking design where every substrate Cog (NIC ports,
 // switches, DRAM channels) gets its own Mimic instance with its own
@@ -36,9 +36,9 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 //
-// Expected diagnostic: "constraint not satisfied" / "constraints not
-// satisfied" / "IsComputeKind" / "kernel_count_for" / "CogKind::NicPort"
-// / "GAPS-185" pointing at the static_assert call site below.
+// Expected diagnostic: no matching function for the call of
+// kernel_count_for<CogKind::NicPort>() below, because the satisfaction
+// of IsComputeKind<K> fails for K = CogKind::NicPort.
 
 #include <crucible/cog/CogIdentity.h>
 
@@ -62,7 +62,7 @@ constexpr int kernel_count_for() noexcept {
 // CogMimic<NicPort> via the broader IsMimicSubstrate gate — but is
 // excluded from compute-only kernel-search dispatch.)
 static_assert(kernel_count_for<cog::CogKind::NicPort>() == 1,
-              "GAPS-185: cog::IsComputeKind concept MUST refuse non-Compute-"
+              "cog::IsComputeKind concept MUST refuse non-Compute-"
               "family CogKind values.  If this static_assert ever evaluates, a "
               "compute-only consumer (MAP-Elites kernel search, partition-"
               "optimiser compute-tile placement) would accept NicPort and "

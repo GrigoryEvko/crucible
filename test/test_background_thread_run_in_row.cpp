@@ -123,7 +123,7 @@ static void test_t04_runtime_smoke() {
 // transitivity its row has to contain record_event's row.  Narrowing the
 // drain row would otherwise leave that downstream call unsatisfiable, and
 // this inclusion fires before any caller reaches the violation itself.
-static void test_audit_d_cross_fence_consistency() {
+static void test_cross_fence_consistency() {
     using BgRow = BackgroundThread::run_required_row;
     using RecordRow = ::crucible::Cipher::record_event_required_row;
 
@@ -139,7 +139,7 @@ static void test_audit_d_cross_fence_consistency() {
     static_assert(eff::row_size_v<BgRow> == 4u);
     static_assert(eff::row_size_v<RecordRow> == 2u);
 
-    std::printf("  audit-D cross_fence_consistency:           PASSED\n");
+    std::printf("  cross_fence_consistency:                   PASSED\n");
 }
 
 // A real drain, with one thread pushing while the entry point consumes.
@@ -150,7 +150,7 @@ static void test_audit_d_cross_fence_consistency() {
 // Nothing here builds a region.  The entries carry no tensor metadata, so the
 // iteration detector advances but never closes anything, which leaves plain
 // drain motion to observe.
-static void test_audit_f_concurrent_spsc_drain() {
+static void test_concurrent_spsc_drain() {
     BackgroundThread bt;
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>();
@@ -188,7 +188,7 @@ static void test_audit_f_concurrent_spsc_drain() {
     bt.stop_requested.signal();
     bg_thread.join();
 
-    std::printf("  audit-F concurrent_spsc_drain:             PASSED\n");
+    std::printf("  concurrent_spsc_drain:                     PASSED\n");
 }
 
 // A batch large enough to span several drain batches, to catch a loop that
@@ -198,7 +198,7 @@ static void test_audit_f_concurrent_spsc_drain() {
 // the boundary path would need the global schema and kernel tables sealed,
 // which the normal start sequence does and this test deliberately bypasses in
 // order to reach the entry point directly.
-static void test_audit_i_large_batch_drain() {
+static void test_large_batch_drain() {
     BackgroundThread bt;
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>();
@@ -234,7 +234,7 @@ static void test_audit_i_large_batch_drain() {
     // completed count stays at zero.
     assert(bt.iterations_completed.get() == 0u);
 
-    std::printf("  audit-I large_batch_drain:                 "
+    std::printf("  large_batch_drain:                         "
                 "PASSED (processed=%llu of %u)\n",
                 static_cast<unsigned long long>(processed_after_push), TOTAL);
 }
@@ -242,7 +242,7 @@ static void test_audit_i_large_batch_drain() {
 // Spawn, stop, spawn again.  A once-flag, a static guard inside the template
 // instantiation, or a destructor that failed to run would leave the second
 // invocation dead, and the second cycle would then drain nothing.
-static void test_audit_j_rearm_cycle() {
+static void test_rearm_cycle() {
     BackgroundThread bt;
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>();
@@ -287,12 +287,12 @@ static void test_audit_j_rearm_cycle() {
     // Both invocations consumed entries, so the total covers both cycles.
     assert(bt.total_processed.load_acquire() >= 2 * PER_CYCLE);
 
-    std::printf("  audit-J rearm_cycle:                       "
+    std::printf("  rearm_cycle:                               "
                 "PASSED (total=%llu over 2 cycles)\n",
                 static_cast<unsigned long long>(bt.total_processed.load_acquire()));
 }
 
-// ── audit-K / audit-L: divergence reset and the publish stage ───────────
+// ── Divergence reset and the publish stage ──────────────────────────────
 //
 // These two share a rig, so it is described once here.
 //
@@ -418,7 +418,7 @@ static constexpr uint32_t A_ITERS = 6;
 // Step 3 cannot wait for the flag instead.  The flag goes down when the
 // detect stage takes the signal, before the reset runs, so a publish that
 // the test releases then can still read the old epoch.
-static void test_audit_k_reset_drops_inflight_regions() {
+static void test_reset_drops_inflight_regions() {
     using namespace publish_rig;
 
     BackgroundThread bt;
@@ -488,12 +488,12 @@ static void test_audit_k_reset_drops_inflight_regions() {
     // into a pipe, so a printf here would be lost exactly when it matters.
     if (stale != 0)
         std::fprintf(stderr,
-                     "  audit-K FAILED: %u of %u post-reset publishes carried "
+                     "  reset_drops_inflight_regions FAILED: %u of %u post-reset publishes carried "
                      "pre-divergence ops (cut=%u)\n",
                      stale, gate.published_after_reset.load(), bt.iterations_completed.get());
     assert(stale == 0 && "a region built from pre-divergence entries published after the reset");
 
-    std::printf("  audit-K reset_drops_inflight_regions:      "
+    std::printf("  reset_drops_inflight_regions:              "
                 "PASSED (published=%u, after reset=%u, stale=%u, cut=%u)\n",
                 gate.published.load(), gate.published_after_reset.load(), stale, bt.iterations_completed.get());
 }
@@ -506,7 +506,7 @@ static void test_audit_k_reset_drops_inflight_regions() {
 // is what makes the verdict unambiguous: the gate is not recursive, so a
 // publish stage still holding it could not take it again however long it
 // waited.
-static void test_audit_l_callback_runs_outside_arena_gate() {
+static void test_callback_runs_outside_arena_gate() {
     using namespace publish_rig;
 
     BackgroundThread bt;
@@ -539,13 +539,13 @@ static void test_audit_l_callback_runs_outside_arena_gate() {
     assert(gate.hash_mismatches.load() == 0);
 
     // The queue is bounded.  This run is shorter than the bound, so the
-    // assertion is on the relationship rather than on a constant; audit-M
-    // drives the wrap itself.
+    // assertion is on the relationship rather than on a constant.
+    // test_uncompiled_queue_is_bounded drives the wrap itself.
     assert(bt.uncompiled_regions.size() <= BackgroundThread::UncompiledRegionQueue::CAP);
     assert(bt.uncompiled_regions.size()
            == std::min<uint64_t>(bt.uncompiled_regions.total(), BackgroundThread::UncompiledRegionQueue::CAP));
 
-    std::printf("  audit-L callback_outside_arena_gate:       "
+    std::printf("  callback_outside_arena_gate:               "
                 "PASSED (gate free in callback, retained=%u of %llu)\n",
                 bt.uncompiled_regions.size(), static_cast<unsigned long long>(bt.uncompiled_regions.total()));
 }
@@ -553,7 +553,7 @@ static void test_audit_l_callback_runs_outside_arena_gate() {
 // The retained-region queue is bounded, so a process that publishes forever
 // holds a constant number of pointers rather than one per region.  Driving
 // past the bound directly is the only way to see the wrap.
-static void test_audit_m_uncompiled_queue_is_bounded() {
+static void test_uncompiled_queue_is_bounded() {
     BackgroundThread::UncompiledRegionQueue queue;
     constexpr uint32_t CAP = BackgroundThread::UncompiledRegionQueue::CAP;
 
@@ -581,7 +581,7 @@ static void test_audit_m_uncompiled_queue_is_bounded() {
     for (uint32_t age = 0; age < CAP; ++age)
         assert(queue.at(age) == fake(OVERRUN - 1 - age) && "the bound keeps the newest CAP, in order");
 
-    std::printf("  audit-M uncompiled_queue_bounded:          "
+    std::printf("  uncompiled_queue_bounded:                  "
                 "PASSED (pushed=%llu, retained=%u)\n",
                 static_cast<unsigned long long>(queue.total()), queue.size());
 }
@@ -593,17 +593,16 @@ int main() {
     test_t03_api_surface_pinned();
     test_t04_runtime_smoke();
 
-    std::printf("--- audit groups ---\n");
-    test_audit_d_cross_fence_consistency();
-    test_audit_f_concurrent_spsc_drain();
-    test_audit_i_large_batch_drain();
-    test_audit_j_rearm_cycle();
+    test_cross_fence_consistency();
+    test_concurrent_spsc_drain();
+    test_large_batch_drain();
+    test_rearm_cycle();
     // These three run last because start() seals the global schema and
     // kernel tables, which every group above deliberately avoids.
-    test_audit_m_uncompiled_queue_is_bounded();
-    test_audit_k_reset_drops_inflight_regions();
-    test_audit_l_callback_runs_outside_arena_gate();
+    test_uncompiled_queue_is_bounded();
+    test_reset_drops_inflight_regions();
+    test_callback_runs_outside_arena_gate();
 
-    std::printf("test_background_thread_run_in_row: 4 + 7 audit groups, all passed\n");
+    std::printf("test_background_thread_run_in_row: 11 groups, all passed\n");
     return 0;
 }

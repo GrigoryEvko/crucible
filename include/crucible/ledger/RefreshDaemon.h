@@ -1,15 +1,14 @@
 #pragma once
 
-// #67 — the thread that keeps the ledger current, and the policy of when
-// to ask.
+// The thread that keeps the ledger current, and the policy of when to ask.
 //
-// Ledger.h already had everything a refresh needs: refresh_plan says what
-// is missing or stale, run_refresh measures it through a probe table and
-// folds the results in, commit_ledger writes it down. What it did not have
-// was a schedule. The one-shot tool supplies that by being run at deploy.
-// A long-lived process needs something that decides for itself, and the
-// brief for it is one sentence: measured once, or every hour if unsure,
-// and served from cache without remeasurements in between.
+// Ledger.h has everything a refresh needs: refresh_plan says what is
+// missing or stale, run_refresh measures it through a probe table and
+// folds the results in, commit_ledger writes it down. What it does not
+// have is a schedule. The one-shot tool supplies that by being run at
+// deploy. A long-lived process needs something that decides for itself,
+// and the requirement is one sentence: measured once, or every hour if
+// unsure, and served from cache without remeasurements in between.
 //
 // Three rules follow from that sentence and they are the whole design.
 //

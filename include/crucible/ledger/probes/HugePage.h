@@ -1,7 +1,7 @@
 #pragma once
 
-// #70 — what madvise(MADV_HUGEPAGE) costs on this host, and whether it
-// pays that back.
+// What madvise(MADV_HUGEPAGE) costs on this host, and whether it pays
+// that back.
 //
 // The arena and the MetaLog both ask for huge pages, so the cost of
 // asking is on the startup path of every Crucible process. The premise

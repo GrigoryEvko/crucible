@@ -1,7 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for cog::opcodes_for / cog::HasOpcodeTable
-// (GAPS-187 #1212).
+// HS14 fixture #1 of 2 for cog::opcodes_for / cog::HasOpcodeTable.
 //
 // Premise: opcodes_for<K>::type is the kind-to-opcode-enum binding
 // metafunction for substrate Cogs that publish opcode catalogs (Gpu,
@@ -13,9 +12,9 @@
 // latency / throughput data is a meaningless concept for them.
 //
 // HasOpcodeTable<K> is the load-bearing soundness gate that downstream
-// templates (GAPS-188 mint_cog_mimic factory consuming the table,
-// GAPS-191 FitsCog<Row,K> reading the throughput envelope, GAPS-810
-// partition optimiser reading per-opcode placement cost) constrain on
+// templates (a mint_cog_mimic factory that reads the table,
+// FitsCog<Row,K> that reads the throughput envelope, the partition
+// optimiser that reads the per-opcode placement cost) constrain on
 // so the type system rejects the misuse "publish an OpcodeLatencyTable
 // for a power rail" at template-substitution time.
 //
@@ -29,7 +28,7 @@
 //
 // Why this is the load-bearing soundness gate:
 //
-// Without this gate, a future GAPS-188 factory accepting any CogKind
+// Without this gate, a future mint_cog_mimic factory that takes any CogKind
 // would silently produce a PsuRailMimic — a Mimic stub bound to a Cog
 // that has no compute substrate AND no opcode catalog.  Subsequent
 // calls into that stub would either hit a bare `opcodes_for<CogKind::
@@ -51,16 +50,16 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 //
-// Expected diagnostic: "constraint not satisfied" / "constraints not
-// satisfied" / "HasOpcodeTable" / "lookup_opcodes" / "CogKind::PsuRail"
-// / "GAPS-187" pointing at the static_assert call site below.
+// Expected diagnostic: no matching function for the call of
+// lookup_opcodes<CogKind::PsuRail>() below, because the satisfaction of
+// HasOpcodeTable<K> fails for K = CogKind::PsuRail.
 
 #include <crucible/cog/OpcodeLatencyTable.h>
 
 namespace cog = crucible::cog;
 
-// Mock of the future GAPS-188 mint_cog_mimic / GAPS-191 FitsCog factory
-// shape: a function templated on a CogKind value, constrained on
+// Mock of the shape of a future mint_cog_mimic factory or FitsCog
+// consumer: a function templated on a CogKind value, constrained on
 // HasOpcodeTable.  Calling it with a CogKind that has no opcode
 // catalog fails the concept gate at substitution time.
 template <cog::CogKind K>
@@ -76,7 +75,7 @@ constexpr int lookup_opcodes() noexcept {
 // clause refuses the substitution and the build fails here at the
 // call site.
 static_assert(lookup_opcodes<cog::CogKind::PsuRail>() == 1,
-              "GAPS-187: cog::HasOpcodeTable concept MUST refuse non-substrate "
+              "cog::HasOpcodeTable concept MUST refuse non-substrate "
               "CogKind values.  If this static_assert ever evaluates, a future "
               "mint_cog_mimic factory would accept PsuRail as a target and "
               "produce a Mimic stub bound to a Cog with no compute substrate AND "

@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I16 fixture — pins TraceRing::drain_pure rejects a
+// Pins that TraceRing::drain_pure rejects a
 // caller declaring Row<Effect::Block>.
 //
 // IsPure<Row<Block>> = false; rejection at the requires-clause.

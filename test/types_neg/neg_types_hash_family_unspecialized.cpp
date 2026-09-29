@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// WRAP-Types-3 #1069, mismatch class #1 of 2:
+// hash_family_of, mismatch class #1 of 2:
 // UNSPECIALIZED TYPE HAS NO HASH-FAMILY MAPPING.
 //
 // The hash_family_of<T> primary template is INCOMPLETE on purpose —

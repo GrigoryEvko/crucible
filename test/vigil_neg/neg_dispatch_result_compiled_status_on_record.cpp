@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Negative-compile fixture (HS14 mandate) for the fix-10 consteval-bypass
+// Negative-compile fixture (HS14 mandate) for the consteval-bypass
 // migration of DispatchResult::compiled_status().
 //
 // BACKGROUND
@@ -20,7 +20,7 @@
 // caller reaching for the COMPILED payload on a RECORD result compiles
 // CLEAN — silently reading a meaningless `status` field.
 //
-// fix-10 migrated the clause to the in-body CRUCIBLE_PRE macro, which
+// The in-body CRUCIBLE_PRE macro replaces the clause.  The macro
 // lives in the function BODY (not the parser-special pre-clause position)
 // and therefore fires across BOTH the patched and un-patched builds.
 //

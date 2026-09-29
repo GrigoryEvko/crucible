@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-F09-AUDIT-2 fixture — pins IsCacheableFunction concept
+// Pins IsCacheableFunction concept
 // rejection on integral-constant NTTPs.  Without the concept fence,
 // `auto FnPtr` accepts ANY structural NTTP — including raw integers
 // — silently producing nonsense cache slots that hash off integral

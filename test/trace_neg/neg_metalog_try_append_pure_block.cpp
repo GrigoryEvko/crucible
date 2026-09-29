@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// FOUND-I17-AUDIT fixture — per-axis neg-compile parity.  Pins
+// Per-axis neg-compile parity.  Pins that
 // MetaLog::try_append_pure rejects a caller declaring Row<Block>.
 //
 // IsPure<R> = Subrow<R, Row<>>.  Row<Block> contains the Block

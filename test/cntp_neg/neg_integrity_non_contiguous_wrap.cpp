@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-116 fixture #4: wrap() is constrained to byte-contiguous payloads.
+// Integrity fixture #4: wrap() is constrained to byte-contiguous payloads.
 // Arbitrary structs must define an explicit wire encoding first.
 
 #include <crucible/cntp/Integrity.h>

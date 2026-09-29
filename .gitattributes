@@ -1,5 +1,5 @@
 # Generated artifacts — excluded from authored-source metrics, diffs, and
-# GitHub-linguist language stats (fix-22).
+# GitHub-linguist language stats.
 #
 # vmlinux.h is a 168K-line BTF dump emitted by `bpftool btf dump file
 # /sys/kernel/btf/vmlinux format c` — by far the largest file in the tree and

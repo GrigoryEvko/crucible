@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for cog::FitsCog (GAPS-191 #1216).
+// HS14 fixture #1 of 2 for cog::FitsCog.
 //
 // Premise: cog::FitsCog<Row, K> is a constrained concept admitting
 // IFF every per-axis demand declared in Row fits within K's compile-
@@ -38,9 +38,9 @@
 // Per HS14, ≥2 negative-compile fixtures per new soundness gate, each
 // demonstrating a distinct mismatch class.
 //
-// Expected diagnostic: "constraint not satisfied" / "constraints not
-// satisfied" / "FitsCog" / "schedule_kernel" / "row_fits_cog" / "999"
-// / "GAPS-191" pointing at the call site below.
+// Expected diagnostic: no matching function for the call of
+// schedule_kernel<OversubscribedSmRow, CogKind::Gpu>() below, because
+// row_fits_cog_v<Row, K> evaluates to false for the SmBudget<999> row.
 
 #include <crucible/cog/FitsCog.h>
 #include <foundation/effects/Concurrent.h>
@@ -49,8 +49,8 @@
 namespace cog = crucible::cog;
 namespace effects = ::foundation::effects;
 
-// Mock of the future GAPS-188 mint_cog_mimic / GAPS-810 partition
-// optimiser scheduling shape: a function templated on a row-typed
+// Mock of the scheduling shape of a future mint_cog_mimic factory or
+// partition optimiser: a function templated on a row-typed
 // budget AND a CogKind atom, constrained on cog::FitsCog<Row, K>.
 // Calling it with a Row whose declared demand exceeds the Cog's
 // per-axis ceiling fails the concept gate at substitution time.
@@ -64,12 +64,13 @@ constexpr int schedule_kernel() noexcept {
 // largest shipped GPU + headroom).  999 > 320 → FitsCog gate refuses
 // substitution.  Any future GPU SKU that legitimately ships with 1000+
 // SMs requires bumping the cog_max_capacity<CogKind::Gpu> Sm-axis
-// ceiling FIRST (see GAPS-191 doc-block "Append-only Universe
-// extension" — bumping the ceiling is non-breaking, lowering it is).
+// ceiling FIRST.  The doc-block of cog_max_capacity in cog/FitsCog.h
+// says why: a higher ceiling breaks nothing, and a lower one rejects
+// rows that used to fit.
 using OversubscribedSmRow = effects::ConcurrentRow<effects::SmBudget<999>>;
 
 static_assert(schedule_kernel<OversubscribedSmRow, cog::CogKind::Gpu>() == 1,
-              "GAPS-191: cog::FitsCog concept MUST refuse Rows whose declared "
+              "cog::FitsCog concept MUST refuse Rows whose declared "
               "per-axis demand exceeds the Cog's compile-time ceiling.  If this "
               "static_assert ever evaluates, an oversubscribed schedule (999 SMs "
               "demanded vs 320 max on any shipped GPU) would slip past the "

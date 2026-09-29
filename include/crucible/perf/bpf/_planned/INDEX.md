@@ -1,6 +1,6 @@
 # `include/crucible/perf/bpf/_planned/`
 
-**Doc-only stubs for the post-GAPS-004{a,b,c} observability menu.**
+**Doc-only stubs for the observability menu that follows the three shipped BPF facades.**
 
 These files are NOT in the build.  CMake's `crucible_bpf_program(...)`
 calls in the top-level `CMakeLists.txt` use explicit paths
@@ -35,7 +35,7 @@ When implementing one of these:
 ## Provenance
 
 These stubs were authored 2026-05-04 in one sitting as the
-"benchmarkmaxxing" planning artifact for the post-GAPS-004 series.
+"benchmarkmaxxing" planning artifact for the observability series.
 The full BPF observability menu was assembled by inventory across:
 
 - BPF program types (~25 attachment kinds in modern kernel)
@@ -226,8 +226,7 @@ for the master listing.  Categories:
 
 ## Out-of-scope (explicitly NOT planned)
 
-Per the design discussion (commit history of GAPS-004c-AUDIT-2),
-these are deliberately excluded.  Listed here so a future maintainer
+Per the design discussion, these are deliberately excluded.  Listed here so a future maintainer
 doesn't ask "why didn't we do X" without finding the rationale:
 
 - **Orchestrator policy**: `cgroup_skb`, `cgroup_sock_addr`,
