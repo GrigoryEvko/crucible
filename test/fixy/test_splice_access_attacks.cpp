@@ -26,11 +26,6 @@ namespace fe = ::foundation::effects;
 using InitCtx = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>>;
 using fixy::EpochLattice;
 
-// The first data member of a type, private or not.
-consteval std::meta::info first_field(std::meta::info type) {
-    return std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())[0];
-}
-
 // ── The door that is closed ──────────────────────────────────────────
 
 // access_context::current() lists no private member of a proof.
@@ -56,11 +51,15 @@ inline constexpr KnownLimit kLedger[] = {
 };
 static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
 
+// Each reproducer finds the first data member of a type, private or not,
+// with a walk in its own body.  No function returns the member.
+
 // The first ledger entry reproduces: a count reads a number that no
 // successor step reached.
 [[nodiscard]] inline bool a_splice_forges_a_count() {
     EpochLattice::element_type count = EpochLattice::bottom();
-    count.[:first_field(^^EpochLattice::element_type):] = 12345;
+    count.[:std::meta::nonstatic_data_members_of(^^EpochLattice::element_type,
+                                                 std::meta::access_context::unchecked())[0]:] = 12345;
     return count.raw() == 12345;
 }
 
@@ -71,7 +70,8 @@ static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
     fixy::VersionSource source = fixy::mint_version_source(init);
     fixy::VersionStamp stamp = source.stamp();
     EpochLattice::element_type later = EpochLattice::successor(EpochLattice::bottom());
-    stamp.[:first_field(^^fixy::VersionStamp):] = later;
+    stamp.[:std::meta::nonstatic_data_members_of(^^fixy::VersionStamp,
+                                                 std::meta::access_context::unchecked())[0]:] = later;
     return !EpochLattice::leq(stamp.epoch(), source.stamp().epoch());
 }
 

@@ -754,13 +754,20 @@ struct node_members {
 
 using node_reader = node_members (*)(std::meta::info);
 
-// The member of `type` with this identifier, or the null reflection.  An
-// inherited member is not a member here.
-[[nodiscard]] consteval std::meta::info member_named(std::meta::info type, std::string_view name) {
+// True when the first member of `type` with the identifier of `claim` has
+// the claimed value: an alias of the claimed type, or a static data member
+// with the claimed constant.  An inherited member is not a member here.
+// The walk sees private members, so the reflection of a member stays in
+// this function.
+[[nodiscard]] consteval bool claim_holds(std::meta::info type, const member_claim& claim) {
     for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::unchecked())) {
-        if (std::meta::has_identifier(member) && std::meta::identifier_of(member) == name) return member;
+        if (!std::meta::has_identifier(member) || std::meta::identifier_of(member) != claim.name) continue;
+        if (std::meta::is_type(claim.value)) {
+            return std::meta::is_type_alias(member) && std::meta::dealias(member) == std::meta::dealias(claim.value);
+        }
+        return std::meta::is_variable(member) && std::meta::constant_of(member) == claim.value;
     }
-    return {};
+    return false;
 }
 
 // True when each claimed member of `type` exists with the claimed value,
@@ -772,15 +779,7 @@ using node_reader = node_members (*)(std::meta::info);
                                            const std::vector<std::meta::info>& bases) {
     if (!std::meta::is_complete_type(type)) return true;
     for (const member_claim& claim : claims) {
-        const std::meta::info member = member_named(type, claim.name);
-        if (member == std::meta::info{}) return false;
-        if (std::meta::is_type(claim.value)) {
-            if (!std::meta::is_type_alias(member) || std::meta::dealias(member) != std::meta::dealias(claim.value)) {
-                return false;
-            }
-        } else if (!std::meta::is_variable(member) || std::meta::constant_of(member) != claim.value) {
-            return false;
-        }
+        if (!claim_holds(type, claim)) return false;
     }
     const std::vector<std::meta::info> actual = std::meta::bases_of(type, std::meta::access_context::unchecked());
     if (actual.size() != bases.size()) return false;

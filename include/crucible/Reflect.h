@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <meta>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -43,14 +44,13 @@ template <typename T>
 
 namespace detail_reflect {
 
+// The walks below read every nonstatic data member of T, a private one too,
+// because a strong ID keeps its value in a private field.  Each walk keeps
+// the reflections of the members inside its own function and gives its
+// caller a count, a hash or printed text, never a reflection.
 template <typename T>
 consteval size_t member_count() {
     return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
-}
-
-template <typename T, size_t I>
-consteval auto member_info() {
-    return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[I];
 }
 
 template <typename T>
@@ -79,10 +79,15 @@ template <typename T>
     }
 }
 
+template <typename T, size_t I>
+[[nodiscard, gnu::pure]] constexpr uint64_t hash_member(const T& obj) noexcept {
+    return hash_field(obj.[:std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[I]:]);
+}
+
 template <typename T, size_t... Is>
 [[nodiscard, gnu::pure]] uint64_t hash_impl(const T& obj, std::index_sequence<Is...>) noexcept {
     uint64_t h = 0x9E3779B97F4A7C15ULL;
-    ((h = h * 0x9E3779B97F4A7C15ULL ^ hash_field(obj.[:member_info<T, Is>():])), ...);
+    ((h = h * 0x9E3779B97F4A7C15ULL ^ hash_member<T, Is>(obj)), ...);
     return detail::fmix64(h);
 }
 
@@ -147,10 +152,15 @@ template <typename T>
     }
 }
 
+template <typename T, size_t I>
+[[nodiscard, gnu::pure]] constexpr uint64_t pack_member(const T& obj) noexcept {
+    return pack_field(obj.[:std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[I]:]);
+}
+
 template <typename T, uint64_t Seed, size_t... Is>
 [[nodiscard, gnu::pure]] constexpr uint64_t fmix_fold_impl(const T& obj, std::index_sequence<Is...>) noexcept {
     uint64_t h = Seed;
-    ((h = detail::fmix64(h ^ pack_field(obj.[:member_info<T, Is>():]))), ...);
+    ((h = detail::fmix64(h ^ pack_member<T, Is>(obj))), ...);
     return h;
 }
 
@@ -205,23 +215,19 @@ void print_field(const T& val, FILE* out) noexcept {
 }
 
 template <typename T, size_t I>
-consteval auto member_name() {
-    return std::meta::identifier_of(member_info<T, I>());
-}
-
-template <typename T, size_t I>
-void print_member(const T& obj, FILE* out, bool first) noexcept {
-    if (!first) std::fprintf(out, ", ");
-    constexpr auto name = member_name<T, I>();
+void print_member(const T& obj, FILE* out) noexcept {
+    constexpr std::string_view name =
+        std::meta::identifier_of(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[I]);
+    if constexpr (I != 0) std::fprintf(out, ", ");
     std::fprintf(out, "%.*s = ", static_cast<int>(name.size()), name.data());
-    print_field(obj.[:member_info<T, I>():], out);
+    print_field(obj.[:std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[I]:], out);
 }
 
 template <typename T, size_t... Is>
 void print_impl(const T& obj, FILE* out, std::index_sequence<Is...>) noexcept {
     constexpr auto type_name = std::meta::identifier_of(^^T);
     std::fprintf(out, "%.*s { ", static_cast<int>(type_name.size()), type_name.data());
-    (print_member<T, Is>(obj, out, Is == 0), ...);
+    (print_member<T, Is>(obj, out), ...);
     std::fprintf(out, " }");
 }
 

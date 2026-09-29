@@ -28,6 +28,7 @@ include/foundation/permissions/Permission.h — walks the permission tag namespa
 # Structure walks: a verdict over every base and data member of a type, which
 # must see the private ones to be sound.  Each returns a bool, a hash or a row,
 # never the reflection of a member.
+include/crucible/Reflect.h — walks every member of a type for reflect_hash and reflect_print
 include/fixy/Refined.h — reads the bases of a predicate and walks the admitted implications to seal the relation
 include/fixy/ScopedView.h — finds a view stored in a private member, so a class cannot hide an escape
 include/fixy/SelfContained.h — walks every base and member to prove that a type holds no pointer out of itself
@@ -37,11 +38,6 @@ include/foundation/effects/Ctx.h — reads the type and access of each member of
 include/foundation/reflect/Hash.h — walks every member of a type to fold its stable hash
 include/foundation/reflect/RawEscape.h — walks every base, a private one too, to find the members that a caller can name through a type
 include/foundation/reflect/TypeComponents.h — walks every base and member to list the component types of a type
-
-# A structure walk whose detail function gives the reflection of a member:
-# detail_reflect::member_info.  Rule 4 of the guard refuses a splice of that
-# reflection in each file that this list does not name.
-include/crucible/Reflect.h — walks every member of a type for reflect_hash and reflect_print
 
 # Tests: a roster or structure walk that a test compares with the production
 # walk, and the ledger reproducer that proves the splice still writes.
