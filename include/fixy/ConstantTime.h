@@ -62,19 +62,31 @@ template <std::unsigned_integral T>
     return acc == std::byte{0};
 }
 
-// Equality of two byte arrays whose length is part of the type.  A
-// length mismatch does not compile, and the fold below has no loop, so the
-// body carries no branch at all.  The disassembly guard checks that claim
-// on the compiled code.
-template <std::size_t N>
+namespace detail {
+// The element of a span that eq reads: a byte, const or not.
+template <class E>
+concept ByteElement = std::same_as<std::remove_const_t<E>, std::byte>;
+}  // namespace detail
+
+// Equality of two byte arrays whose length is part of the type.  The
+// fold below has no loop, so the body carries no branch at all.  The
+// disassembly guard checks that claim on the compiled code.
+template <detail::ByteElement A, detail::ByteElement B, std::size_t N>
     requires(N != std::dynamic_extent)
-[[nodiscard]] constexpr bool eq(std::span<const std::byte, N> a, std::span<const std::byte, N> b) noexcept {
+[[nodiscard]] constexpr bool eq(std::span<A, N> a, std::span<B, N> b) noexcept {
     std::byte acc{0};
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-        ((acc |= a[I] ^ b[I]), ...);
-    }(std::make_index_sequence<N>{});
+    [&]<std::size_t... I>(std::index_sequence<I...>) { ((acc |= a[I] ^ b[I]), ...); }(std::make_index_sequence<N>{});
     return acc == std::byte{0};
 }
+
+// Two static extents that differ cannot name one tag, so the pair does
+// not compile.  Without this overload, both spans convert to the dynamic
+// form above, and its precondition stops the mismatch only at run time.
+template <detail::ByteElement A, detail::ByteElement B, std::size_t N, std::size_t M>
+    requires(N != std::dynamic_extent && M != std::dynamic_extent && N != M)
+bool eq(std::span<A, N>, std::span<B, M>) =
+    delete("fixy::ct::eq: the two spans have static extents that differ, so they cannot hold one tag.  Compare "
+           "spans of one length.");
 
 // Returns 1 when a < b and 0 otherwise.
 //

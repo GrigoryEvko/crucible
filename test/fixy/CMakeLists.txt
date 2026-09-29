@@ -1586,6 +1586,12 @@ fixy_test(test_constant_time)
 fixy_neg_compile_test(neg_ct_eq_length_mismatch_at_consteval
   "non-constant condition for static assertion"
   "fixy/ConstantTime\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+# Two static extents that differ reach a deleted overload, so the
+# mismatch stops the compile rather than the run.  The second regex is
+# the reason that the deleted overload states.
+fixy_neg_compile_test(neg_ct_eq_static_extent_mismatch
+  "use of deleted function .bool fixy::ct::eq\\(std::span<A, N>, std::span<B, M>\\) .with A = const std::byte. B = const std::byte. long unsigned int N = 3. long unsigned int M = 5."
+  "fixy::ct::eq: the two spans have static extents that differ, so they cannot hold one tag")
 fixy_test(test_cyclic)
 fixy_test(test_cyclic_buffer)
 

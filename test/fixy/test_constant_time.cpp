@@ -38,6 +38,28 @@ inline constexpr bool less_takes_unsigned_only = ((less_accepts<Widths> == std::
 static_assert(less_takes_unsigned_only<std::int8_t, std::uint8_t, std::int16_t, std::uint16_t, std::int32_t,
                                        std::uint32_t, std::int64_t, std::uint64_t>);
 
+// eq takes two spans of one static extent through the fold, whether the
+// bytes are const or not.  Two static extents that differ do not compile.
+// A span of dynamic extent on either side goes to the loop, whose
+// precondition checks the lengths.
+template <class A, class B>
+concept eq_accepts = requires(A lhs, B rhs) { ct::eq(lhs, rhs); };
+
+using Const3 = std::span<const std::byte, 3>;
+using Const5 = std::span<const std::byte, 5>;
+using Mutable3 = std::span<std::byte, 3>;
+using Mutable5 = std::span<std::byte, 5>;
+using ConstAny = std::span<const std::byte>;
+
+static_assert(eq_accepts<Const3, Const3> && eq_accepts<Mutable3, Const3> && eq_accepts<Mutable5, Mutable5>);
+static_assert(!eq_accepts<Const3, Const5> && !eq_accepts<Mutable3, Const5> && !eq_accepts<Mutable5, Mutable3>);
+static_assert(eq_accepts<ConstAny, Const5> && eq_accepts<Const3, ConstAny>);
+
+constexpr std::byte tag_a[3]{std::byte{1}, std::byte{2}, std::byte{3}};
+constexpr std::byte tag_b[3]{std::byte{1}, std::byte{2}, std::byte{4}};
+static_assert(ct::eq(Const3{tag_a}, Const3{tag_a}));
+static_assert(!ct::eq(Const3{tag_a}, Const3{tag_b}));
+
 // less agrees with the plain comparison at every 8-bit pair.  A same
 // width subtraction discards the borrow, so this is the check that
 // catches the idiom the header's comment warns against.
