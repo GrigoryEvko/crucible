@@ -140,7 +140,7 @@ import tsast  # noqa: E402
 NEW_TREE = ("include/foundation/", "include/fixy/")
 TEST_TREE = "test/"
 SUBSTRATE_PATHS = ("include/crucible/algebra/*", "include/foundation/algebra/*", "include/fixy/*",
-                   "include/crucible/safety/*", "include/crucible/permissions/*", "include/crucible/handles/*",
+                   "include/crucible/safety/*", "include/crucible/permissions/*",
                    "test/fixy/test_cheat_probe.cpp",
                    "test/fixy/neg/neg_cheat_graded_modality_injection.cpp")
 MACHINE_MACRO = "CRUCIBLE_ALLOW_MACHINE_TRANSITION"
