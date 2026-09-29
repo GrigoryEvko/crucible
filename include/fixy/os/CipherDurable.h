@@ -270,8 +270,7 @@ static_assert(DurableStance<cold_writer_stance>);
 static_assert(DurableStance<head_advance_stance>);
 
 static_assert(std::is_same_v<cold_writer_stance::atomicity_type, atomicity::Rename>,
-              "cold_writer_stance pins Rename.  It pinned LinkAtomic, which was a hard ENOSYS, so every cold commit "
-              "failed before a filesystem was consulted.");
+              "cold_writer_stance must commit with Rename, so that a cold commit replaces an existing target.");
 static_assert(std::is_same_v<warm_writer_stance::atomicity_type, atomicity::RenameAt2NoReplace>);
 static_assert(std::is_same_v<head_advance_stance::sync_op_type, sync_op::FsyncParentDir>);
 static_assert(std::is_same_v<cold_writer_stance::flag_type, flag::FullSync>);

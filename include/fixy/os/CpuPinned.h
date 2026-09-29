@@ -306,12 +306,11 @@ using TwoBitC = CpuPinned<kTwoBit, PinningPosture::PinnedExplicit, int>;
 // negative-compile fixtures, so an open door is caught whether or not
 // this header is the thing that was edited.
 static_assert(!std::is_default_constructible_v<PinnedC0>,
-              "The default constructor of CpuPinned must not be public.  It claimed a pin that nobody performed.");
+              "The default constructor of CpuPinned must not be public.  It would claim a pin that nobody performed.");
 static_assert(!std::is_constructible_v<PinnedC0, int>,
-              "The value constructor of CpuPinned must not be public.  It claimed a pin that nobody performed.");
+              "The value constructor of CpuPinned must not be public.  It would claim a pin that nobody performed.");
 static_assert(!std::is_constructible_v<PinnedC0, std::in_place_t, int>,
-              "The in_place constructor of CpuPinned is removed, not hidden.  It was a third route to the same "
-              "forgery.");
+              "CpuPinned must have no in_place constructor.  It would be a third route to the same forgery.");
 
 // Posture and mask are read off the type, so these hold without ever
 // building one.

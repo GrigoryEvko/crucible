@@ -179,7 +179,7 @@ static_assert(refuses_every_byte_route<BootClockBytes<unsigned long long>>
 static_assert(!std::is_constructible_v<BootClockBytes<unsigned long long>, unsigned long long>,
               "the value constructor must be private: a public one stamps any integer as a boot-clock reading");
 static_assert(!std::is_constructible_v<BootClockBytes<unsigned long long>, std::in_place_t, unsigned long long>,
-              "the in_place constructor is removed: it was a second route to the same forgery");
+              "no in_place constructor may exist: it would be a second route to the same forgery");
 static_assert(std::is_copy_constructible_v<BootClockBytes<unsigned long long>>,
               "a copy of a reading is a reading of the same clock, so copies stay");
 

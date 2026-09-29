@@ -1,5 +1,6 @@
 // A mutable reference to a reading would let a holder of a real reading
-// write any value under its source.  peek_mut is removed, not hidden.
+// write any value under its source.  ClockSource has no peek_mut, not
+// even a private one.
 //
 // The overwriting function is never called.  The error is at the member
 // lookup, so it is reported whether or not a clock was ever read.

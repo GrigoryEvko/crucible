@@ -497,8 +497,7 @@ inline constexpr corpus_entry rule_corpus[] = {
     //
     // Three read a premise that no binding in the tree can state.
     {"F002", Disposition::Absent,
-     "reads a federation peer against cost_unbounded. No atom, band or role names a federation peer, and the "
-     "Canopy layer that would define one is not ported"},
+     "reads a federation peer against cost_unbounded. No atom, band or role names a federation peer"},
     {"N002", Disposition::Absent,
      "reads an exact-decimal payload against overflow_wrap. The tree has no decimal type, so the premise has no "
      "type to read and no witness to arm"},
@@ -520,16 +519,15 @@ inline constexpr corpus_entry rule_corpus[] = {
      "set of bindings that would read the graph"},
 
     // Retired: the code needs no rule, and the note says why.  Each of
-    // these is discharged by the shape of the tree — the combination it
-    // names cannot be written — or has no theorem.  A retired rule is not
-    // a rule deferred, so it is outside the Absent set rather than waiting
-    // in it.
+    // these is discharged by the shape of the tree: the combination it
+    // names cannot be written.  A retired rule is not a rule deferred, so
+    // it is outside the Absent set rather than waiting in it.
     {"C001", Disposition::Retired,
      "discharged: ctrl::abort<Reason> IS the binding's ControlFlow grade, so the abort declaration and the "
-     "tier the old rule compared it with are one claim and cannot disagree"},
+     "ControlFlow tier are one claim and cannot disagree"},
     {"P003", Disposition::Retired,
      "discharged: a fork worker is a callable handed to mint_spawn, which refuses one whose type carries "
-     "ctrl::throws (fixy/os/Spawn.h, deviation 1), after foundation's fork gate has required it be noexcept"},
+     "ctrl::throws (fixy/os/Spawn.h, design note 1), after foundation's fork gate has required it be noexcept"},
     {"V001", Disposition::Retired,
      "discharged: Axis::SimdIsa takes one grade per binding and tier 4 refuses a second, so a pack cannot name "
      "two vendors' instruction sets"},
@@ -543,8 +541,8 @@ inline constexpr corpus_entry rule_corpus[] = {
      "discharged: atom::global::thread_local_<StaticTag> requires the tag, so the untagged form this rule refused "
      "cannot be named"},
     {"M001", Disposition::Retired,
-     "the old catalog declares M001_DontNeedRequiresReleaseAware and ships no CRUCIBLE_COLLISION_DIAGNOSTIC for it, "
-     "so the code has a name and no theorem to port"},
+     "discharged: DontNeed discards pages, so fixy/os/Mmap.h refuses it at advise and admits it only at "
+     "advise_release_aware, which takes the Permission of the mapping"},
     {"M011", Disposition::Retired,
      "discharged: a failure here is a std::expected return or a throw, and each runs every destructor in scope, so "
      "a linear value is released on the failure path; the one exit that skips destructors is longjmp, and L006 "
@@ -835,9 +833,9 @@ static_assert(every_pending_axis_is_still_empty(),
 // captures a live session handle in a frame that is not linear, and W003
 // refuses a hot binding that holds one and states no wait.
 static_assert(rule_corpus_size == 57,
-              "fixy/Collision.h: the rule corpus must account for the 54 codes inherited from the RuleCode "
-              "enum of include/crucible/safety/_CollisionCatalog.h, plus B002, R004 and W003, which are written "
-              "here.  A code dropped from this list stops being reported as absent.");
+              "fixy/Collision.h: the rule corpus must account for the 54 codes of the specification, plus "
+              "B002, R004 and W003, which this file adds.  A code dropped from this list stops being reported "
+              "as absent.");
 
 // Every code the corpus says ships has an enumerator, and every code it
 // says is absent or retired has none.  A rule written without a corpus entry, or

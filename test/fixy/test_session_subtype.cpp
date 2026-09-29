@@ -59,7 +59,7 @@ static_assert(s::is_subtype_sync_v<Loop<Send<int, Continue>>, Loop<Send<int, Con
 static_assert(s::is_subtype_sync_v<Select<Send<int, End>, Recv<bool, End>>, Select<Send<int, End>, Recv<bool, End>>>);
 static_assert(s::is_subtype_sync_v<Offer<Recv<int, End>, Send<bool, End>>, Offer<Recv<int, End>, Send<bool, End>>>);
 static_assert(s::is_subtype_sync_v<Offer<Sender<Alice>, Recv<int, End>>, Offer<Sender<Alice>, Recv<int, End>>>,
-              "the old relation was not reflexive on an Offer with a note");
+              "the relation must be reflexive on an Offer with a note");
 static_assert(!s::is_subtype_sync_v<Offer<Sender<Alice>>, Offer<Sender<Alice>>>,
               "an Offer with a note and no branch is an empty choice, which is not well-formed");
 static_assert(s::is_subtype_sync_v<Loop<Loop<Send<int, Continue>>>, Loop<Loop<Send<int, Continue>>>>);

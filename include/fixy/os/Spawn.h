@@ -397,8 +397,8 @@ static_assert(detail::no_callable_throws_v<PlainCallable>);
 static_assert(detail::no_callable_throws_v<PlainCallable, PlainCallable>);
 static_assert(!detail::no_callable_throws_v<MarkedCallable<::fixy::atom::ctrl::throws<>>>);
 static_assert(!detail::no_callable_throws_v<MarkedCallable<::fixy::atom::ctrl::throws<SampleException>>>,
-              "a callable marked with a named exception family must be refused too. The old needle matched "
-              "only the default family, so this case passed.");
+              "a callable marked with a named exception family must be refused too. A search for the default "
+              "family alone lets this case pass.");
 static_assert(!detail::no_callable_throws_v<PlainCallable, MarkedCallable<::fixy::atom::ctrl::throws<>>>,
               "one marked callable anywhere in the pack refuses the whole spawn.");
 static_assert(detail::no_callable_throws_v<>, "an empty pack spawns nothing and carries no throw.");

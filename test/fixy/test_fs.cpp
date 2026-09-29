@@ -156,7 +156,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 // leg is what says the whole sequence — open with O_SYNC, write, fsync,
 // commit — reaches the target.  A commit body that returned ENOSYS
 // before it consulted a filesystem fails this leg.
-[[nodiscard]] int cold_writer_commit_succeeds_where_it_was_enosys(const ScratchDir& scratch) {
+[[nodiscard]] int cold_writer_commit_succeeds(const ScratchDir& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
     std::uint8_t pattern[kPayloadBytes];
     fill_pattern(pattern, 2);
@@ -180,7 +180,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     const auto committed = writer->peek().commit_atomic(ctx, sanitized(tmp), sanitized(target));
     if (!committed) {
         if (committed.error().value() == ENOSYS) {
-            std::fprintf(stderr, "the cold writer's commit is still ENOSYS: the path this port exists to close\n");
+            std::fprintf(stderr, "the cold writer's commit returned ENOSYS, so it did not reach a filesystem\n");
         } else {
             std::fprintf(stderr, "the cold writer's commit failed (%s)\n", committed.error().message().c_str());
         }
@@ -352,7 +352,7 @@ int main() {
         return 0;
     }
     if (const int rc = mint_file_writes_syncs_and_commits(scratch); rc != 0) return rc;
-    if (const int rc = cold_writer_commit_succeeds_where_it_was_enosys(scratch); rc != 0) return rc;
+    if (const int rc = cold_writer_commit_succeeds(scratch); rc != 0) return rc;
     if (const int rc = no_replace_commit_refuses_an_existing_target(scratch); rc != 0) return rc;
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;

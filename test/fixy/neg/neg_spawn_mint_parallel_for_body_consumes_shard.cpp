@@ -32,6 +32,6 @@ using RegionBrand = ::foundation::brand::DefaultBrand;
 
 static_assert(fixy::spawn::CtxFitsParallelFor<2, BgCtx, int, RegionWhole, RegionBrand, ConsumingBody>,
               "a body that consumes its shard must be refused: recombine needs every shard back to reissue "
-              "the parent Permission, and the helper that rebuilt the parent from nothing is gone");
+              "the parent Permission, and no helper rebuilds the parent from nothing");
 
 int main() { return 0; }
