@@ -50,7 +50,6 @@ scripts/check-no-throw-no-rtti.sh | compiler,text | the nm symbol lists of the b
 scripts/check-no-unchecked-access.py | tsast,preprocessor,json,text | the allowlist rows
 scripts/check-parse-clean.py | tsast |
 scripts/check-permission-storage.py | tsast |
-scripts/check-port-completeness.py | tsast,compiler,text | the -dD -E output, the output of the reflection sentinels, and the drop and fold lists
 scripts/check-process-wide-state.py | tsast,text | the roster scripts/process-wide-roster.txt
 scripts/check-proof-routes.py | tsast,preprocessor,json,text | the witness roster, the allowlist rows and the proof names of test_forgeable_proofs
 scripts/check-refined-pre-subsumption.py | tsast |

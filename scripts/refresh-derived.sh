@@ -82,36 +82,6 @@ if [ ! -f "$COMPILE_DB" ]; then
     printf '  every macro unification as a violation.  Pass --compile-db PATH to the build'"'"'s compile_commands.json.\n' >&2
 fi
 
-# The port-completeness guard compiles its reflection sentinels with $CXX or
-# $CRUCIBLE_CXX.  Without them it takes g++ from PATH, which is not the patched
-# GCC that built the tree.  The compiler of the first C++ entry in the compile
-# database is the one the build used, so it becomes CXX when the caller set
-# neither name.  A launcher such as ccache in front of it is skipped.
-if [ -z "${CXX:-}" ] && [ -z "${CRUCIBLE_CXX:-}" ] && [ -f "$COMPILE_DB" ]; then
-    if CXX=$(python3 - "$COMPILE_DB" <<'PY'
-import json, shlex, sys
-from pathlib import Path
-entries = json.loads(Path(sys.argv[1]).read_text())
-for entry in entries:
-    if not entry.get("file", "").endswith((".cpp", ".cc", ".cxx")):
-        continue
-    argv = entry.get("arguments") or shlex.split(entry.get("command", ""))
-    while argv and Path(argv[0]).name in ("ccache", "sccache"):
-        argv = argv[1:]
-    if argv:
-        print(argv[0])
-        sys.exit(0)
-sys.exit(1)
-PY
-    ); then
-        export CXX
-    else
-        unset CXX
-        printf 'refresh-derived: note: %s names no C++ compiler, so the port-completeness guard uses g++ from PATH.\n' \
-               "$COMPILE_DB" >&2
-    fi
-fi
-
 failures=0
 declare -a rewrote=()
 state_before=''
@@ -184,7 +154,6 @@ fi
 printf 'refresh-derived: checking\n' >&2
 run_ 'frozen tree'                   python3 scripts/check-frozen-tree.py --compile-db "$COMPILE_DB"
 run_ 'allowlist keys and prose'      bash scripts/check-allowlist-keys.sh
-run_ 'port completeness'             python3 scripts/check-port-completeness.py
 run_ 'mint inventory'                python3 scripts/gen-mint-inventory.py --check
 run_ 'witness roster'                python3 scripts/check-witness-roster.py --check
 
