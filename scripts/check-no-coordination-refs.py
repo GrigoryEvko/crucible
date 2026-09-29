@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuse task, stage and tracker references in the prose of the new tree.
+"""Refuse task, stage and tracker references in the prose of the tree.
 
 THE RULE
     A comment, a docstring, a diagnostic, a script or an allowlist states what
@@ -12,16 +12,24 @@ THE RULE
          #1519).  One digit is a list item (#1), and five or more digits is a
          colour (#374151), so neither matches.
       2. A tracker tag: the FIXY-U-, FIXY-V-, FIXY-FOUND-, FOUND-, GAPS-,
-         SEPLOG-, CONTRACT-, METX-, WRAP-, BC- and PERF- families, the lowercase
-         fixy-A5-016 and fix-18 forms, the short U-002 and V-073 forms, and the
-         CR-05 audit form.
+         SEPLOG-, CONTRACT-, METX-, WRAP-, BC- and PERF- families, the
+         FOUND_I16 and GAPS_096 underscore forms, the short WRAP-5 form, the
+         lowercase fixy-A5-016 and fix-18 forms, the short U-002 and V-073
+         forms, the CR-05 audit form, the AUDIT-B and audit-D group forms and
+         the F09-AUDIT form.
       3. A stage label: a dotted stage such as A13.2 or A10.x, "Stage D",
          "Stage B4", "at A9", "Phase F6" and "Agent 11".
-    Three kinds of text look similar and pass by construction: a preprocessor
+    Four kinds of text look similar and pass by construction: a preprocessor
     directive (a letter follows `#`), a collision rule code (S004, I002: no
-    hyphen) and a suppression marker (ROW-CONTAINS-OK: no digit after the
-    prefix).  The guard has no allowlist.  A legitimate construct that it
-    reports is a reason to narrow a pattern, not to exempt a line.
+    hyphen), a suppression marker (ROW-CONTAINS-OK: no digit after the
+    prefix) and the pull request of an upstream project (PR #1367: `PR ` in
+    front of the `#`).  The guard has no allowlist.  A legitimate construct
+    that it reports is a reason to narrow a pattern, not to exempt a line.
+
+THE SCOPE
+    The scan reads every file that git tracks, except this guard, AGENTS.md
+    and the notes under misc/.  A file that git does not track is not read,
+    because the guard reads what a commit holds.
 
 THE ENGINE
     The rule is about prose, so the scan reads prose only, from a parser where
@@ -30,7 +38,8 @@ THE ENGINE
         the argument of each directive such as #error or #pragma.  The string
         literals inside a macro body come from the preprocessing tokens of the
         body.  Code is never read, so a member access such as `A1.x` is not a
-        stage label.
+        stage label.  A C++ file that the kit cannot parse (tsast.UNPARSEABLE,
+        for example generated BPF C) is read line by line.
       * Python: the tokenize module gives the comments and the strings,
         docstrings and f-string text included.
       * Every other file (shell, CMake, YAML, allowlists, JSON, Markdown) has
@@ -55,37 +64,31 @@ from collections.abc import Iterator
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
-# The trees that obey the rule.  The runtime under include/crucible and its
-# sources still hold references, so the scan does not read them.
-SCAN_DIRS = (
-    "include/foundation", "include/fixy", "src/foundation", "src/fixy",
-    "test/foundation", "test/fixy", "scripts", "vessel", "bench",
-)
+# The scan reads every tracked file, except the paths below.  This file plants
+# references in its self-test.  AGENTS.md and the notes under misc/ are out of
+# scope, and the scan does not read them.
+SKIPPED_FILES = frozenset({"scripts/check-no-coordination-refs.py", "AGENTS.md"})
+SKIPPED_DIRS = ("misc/",)
 
-# The build files outside those trees that obey the rule.  test/CMakeLists.txt
-# still holds references, so it is not here.
-SCAN_FILES = ("CMakeLists.txt", ".github/workflows/ci.yml")
-
-# This file plants references in its self-test, so the scan skips it.
-SELF_PATH = "scripts/check-no-coordination-refs.py"
-
-CPP_SUFFIXES = (".h", ".hpp", ".cpp", ".cc")
-
-# One branch for each family.  The lookbehind on the task branch refuses an
-# HTML entity (&#123;), the shell argument count ($#), a printf flag (%#08x), a
-# regex bracket ([#0-9]), an escape (\#) and token pasting (##).
+# One branch for each family.  The first lookbehind on the task branch refuses
+# an HTML entity (&#123;), the shell argument count ($#), a printf flag (%#08x),
+# a regex bracket ([#0-9]), an escape (\#) and token pasting (##).  The second
+# refuses the pull request of an upstream project (PR #1367).
 BRANCHES = (
-    r"(?<![&\w$%{\[\\#])#[0-9]{2,4}\b",
+    r"(?<![&\w$%{\[\\#])(?<!\bPR )#[0-9]{2,4}\b",
     r"\bFIXY-(?:U|V|FOUND)-[0-9]",
     r"\bFIXY-[0-9]",
-    r"\bFOUND-(?:[A-Z][0-9]*|[0-9]+)\b",
-    r"\bGAPS-[0-9]",
+    r"\bFOUND[-_](?:[A-Z][0-9]*|[0-9]+)\b",
+    r"\bGAPS[-_][0-9]",
     r"\bSEPLOG-[A-Z]?[0-9]",
     r"\bCONTRACT-[0-9]",
     r"\bMETX-[A-Z0-9]",
-    r"\bWRAP-(?:\*|[A-Z][A-Za-z]*(?:-[A-Za-z]+)*-[0-9]+)",
+    r"\bWRAP-(?:\*|[0-9]+\b|[A-Z][A-Za-z]*(?:-[A-Za-z]+)*-[0-9]+)",
+    r"\b(?:AUDIT|audit)-[A-Z]\b",
+    r"\b[A-Z][0-9]{2}-AUDIT\b",
     r"\bBC-[0-9]+\b",
     r"\bPERF-[0-9]",
     r"\bCR-[0-9]{2}\b",
@@ -117,37 +120,22 @@ class Unreadable(RuntimeError):
 def scoped_files(root: Path) -> list[Path]:
     """Return every file in scope under root, repo-relative, sorted.
 
-    In a git work tree the list comes from git, so an ignored build product is
-    never read.  In a scratch tree (the self-test) it comes from the file
-    system, with hidden directories skipped.
+    The list comes from the index of git, through tsast.tracked_files, so a
+    build product or an untracked scratch file is never read.  The self-test
+    makes its scratch tree a repository for the same reason.
+
+    Complexity: linear in the number of files under root.
 
     Args:
         root: The repository root
 
     Returns:
-        The files in scope, relative to root, without this guard itself
+        The files in scope, relative to root
     """
-    wanted = [d for d in SCAN_DIRS if (root / d).is_dir()] + [f for f in SCAN_FILES if (root / f).is_file()]
-    if not wanted:
-        return []
-    listed = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", *wanted],
-        cwd=root, capture_output=True, check=False,
+    return sorted(
+        Path(name) for name in tsast.tracked_files(root)
+        if name not in SKIPPED_FILES and not name.startswith(SKIPPED_DIRS) and (root / name).is_file()
     )
-    if listed.returncode == 0 and (root / ".git").exists():
-        names = {name for name in listed.stdout.decode().split("\0") if name}
-    else:
-        names = set()
-        for entry in wanted:
-            path = root / entry
-            if path.is_file():
-                names.add(entry)
-                continue
-            for found in path.rglob("*"):
-                relative = found.relative_to(root)
-                if found.is_file() and not any(part.startswith(".") for part in relative.parts):
-                    names.add(relative.as_posix())
-    return sorted(Path(n) for n in names if n != SELF_PATH and (root / n).is_file())
 
 
 def cpp_prose(root: Path, files: list[Path]) -> Iterator[tuple[Path, int, str]]:
@@ -246,8 +234,10 @@ def scan(root: Path) -> tuple[int, list[str]]:
         (exit status, report lines), with the status as the module docstring states
     """
     files = scoped_files(root)
-    cpp = [f for f in files if f.suffix in CPP_SUFFIXES]
-    others = [f for f in files if f.suffix not in CPP_SUFFIXES]
+    # A file that the kit cannot parse, such as generated BPF C, is read line
+    # by line, so no file in scope goes unread.
+    cpp = [f for f in files if tsast.is_in_cpp_scope(f)]
+    others = [f for f in files if not tsast.is_in_cpp_scope(f)]
     hits: list[tuple[Path, int, str]] = []
     try:
         for relative, line, text in cpp_prose(root, cpp):
@@ -293,6 +283,42 @@ PLANTED_REFERENCES = (
     "Filed as #1519.",
     "The gate of GAPS-096.",
     "The fast path of PERF-2.",
+    "Pinned by PROD-WRAP-5.",
+    "The row matrix of FOUND_I16.",
+    "The underscore gate of GAPS_096.",
+    "Checked in group AUDIT-B.",
+    "Checked in group audit-D.",
+    "Per F09-AUDIT.",
+)
+
+# One planted reference in each area that the scan once skipped: the runtime
+# headers and sources, the tests and their build file, the fuzz and tool
+# trees, the build and toolchain files, the papers, the root documents and a
+# generated C++ file that the kit cannot parse.
+NEWLY_COVERED = (
+    ("include/crucible/PlantedRuntime.h", "// Folded at #147.\n"),
+    ("src/cntp/Planted.cpp", "// Tracked as GAPS-096.\n"),
+    ("test/CMakeLists.txt", "# Filed as #1519.\n"),
+    ("test/test_planted.cpp", "// Lifted at FOUND-I05.\n"),
+    ("test/planted_neg/neg_planted.cpp", 'static_assert(false, "WRAP-Types-3 fixture");\n'),
+    ("test/fuzz/property/prop_planted.cpp", "// The production cite of CONTRACT-112.\n"),
+    ("tools/planted_tool.cpp", "// The refresh thread is #67.\n"),
+    ("cmake/Planted.cmake", "# FIXY-V-094.  The floor.\n"),
+    ("CMakePresets.json", '{"description": "Stage D preset"}\n'),
+    ("examples/fn/planted.cpp", "// Ported at A13.2.\n"),
+    ("toolchain/gcc/planted.sh", "# Part of Phase F6.\n"),
+    ("papers/whitepaper/planted.tex", "% Per fixy-A5-016.\n"),
+    ("CLAUDE.md", "Migrated at V-073.\n"),
+    ("README.md", "Wired by Agent 11.\n"),
+    (".gitattributes", "# Language stats (fix-22).\n"),
+    ("include/crucible/perf/bpf/vmlinux.h", "struct planted { int operator; };  /* CR-05 */\n"),
+)
+
+# The three paths that stay out of scope, each with a planted reference.
+OUT_OF_SCOPE = (
+    ("AGENTS.md", "Tracked as FIXY-V-264.\n"),
+    ("misc/notes.md", "Stage D deletes the shim.\n"),
+    ("scripts/check-no-coordination-refs.py", "# Filed as #1519.\n"),
 )
 
 
@@ -303,6 +329,14 @@ def self_test() -> int:
         0 when every case holds, 2 otherwise
     """
     failures: list[str] = []
+
+    def track(root: Path) -> None:
+        """Add every file of the scratch tree to its index, as a commit would hold it.
+
+        Args:
+            root: The scratch repository root
+        """
+        subprocess.run(["git", "-C", str(root), "add", "-A", "--", "."], check=True, capture_output=True)
 
     def expect(name: str, root: Path, want_status: int, named: list[str], unnamed: list[str]) -> None:
         """Run the scan and compare its status and the sites it names.
@@ -336,6 +370,7 @@ def self_test() -> int:
 
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
+        throwaway_repo.init(root)
         write(root, "include/fixy/PlantedBreadcrumbs.h", "".join(f"// {line}\n" for line in PLANTED_REFERENCES))
         write(root, "include/foundation/PlantedClean.h",
               "#pragma once\n#include <cstdint>\n#define PLANTED_FLAG 1\n#if PLANTED_FLAG\n#endif\n"
@@ -345,22 +380,23 @@ def self_test() -> int:
               "// template <class B1, class B2> and A1 are template parameters.\n"
               "// ROW-CONTAINS-OK: a marker.  REFINED-PRE-OK: a marker too.\n"
               "// Headline #1 and item #2 number the items of a list.\n"
-              "// &#123; is an entity, and #374151 is a color.\n")
+              "// &#123; is an entity, and #374151 is a color.\n"
+              "// TVM Analyzer (PR #1367) has the same narrow scope.\n"
+              "// An audit-trail entry, FOUND_ENTRY_COUNT and GAPS_TOTAL are not tags.\n")
         write(root, "scripts/planted_clean.sh", 'echo "$#" "${#arr[@]}"\nprintf \'%#08x\\n\' 255\n[[ "x" =~ [#0-9] ]]\n')
-        write(root, "include/crucible/PlantedRuntime.h", "// Folded at #147.\n")
         write(root, "bench/planted_bench.cpp", "// Lifted to harness scope at GAPS-004y.\n// AVX-512 and x86-64 are not tags.\n")
         write(root, "CMakeLists.txt", "# Tracked as FIXY-V-264.\n")
         write(root, ".github/workflows/ci.yml", "  # The sibling guards (Stage A1).\n")
-        write(root, "test/CMakeLists.txt", "# Filed as #1519.\n")
+        track(root)
         planted = [f"include/fixy/PlantedBreadcrumbs.h:{n}:" for n in range(1, len(PLANTED_REFERENCES) + 1)]
         expect("each reference family is reported on its own line", root, 1,
                planted + ["CMakeLists.txt:1:", ".github/workflows/ci.yml:1:", "bench/planted_bench.cpp:1:"],
-               ["PlantedClean.h", "planted_clean.sh", "PlantedRuntime.h", "test/CMakeLists.txt",
-                "bench/planted_bench.cpp:2:"])
+               ["PlantedClean.h", "planted_clean.sh", "bench/planted_bench.cpp:2:"])
 
         for relative in ("include/fixy/PlantedBreadcrumbs.h", "CMakeLists.txt", ".github/workflows/ci.yml",
                          "bench/planted_bench.cpp"):
             (root / relative).unlink()
+        track(root)
         expect("rule codes, directives and look-alikes scan clean", root, 0, [], [])
 
         # Positive controls: the line grep of the old shell guard got each of
@@ -369,13 +405,26 @@ def self_test() -> int:
               "#pragma once\nstruct P { int x; };\ninline P A1{};\n"
               "inline int member_read = A1.x;\ninline int token = 12;\n")
         write(root, "scripts/code.py", "A1 = type('A', (), {'x': 1})\nvalue = A1.x  # plain access\n")
+        track(root)
         expect("a member access such as A1.x in C++ or Python code is not a stage label", root, 0, [], [])
         write(root, "include/fixy/Macro.h", '#pragma once\n#define NOTE "Folded at A10.x"\n#error Stage D is not here\n')
         write(root, "scripts/doc.py", '"""Ported at A13.2."""\nMESSAGE = f"see {1} and #147"\n')
         write(root, "src/fixy/Moved.cpp", "// Tracked as GAPS-096.\n")
+        track(root)
         expect("macro strings, directives, docstrings, f-strings and src/fixy are prose in scope", root, 1,
                ["include/fixy/Macro.h:2:", "include/fixy/Macro.h:3:", "scripts/doc.py:1:",
                 "scripts/doc.py:2:", "src/fixy/Moved.cpp:1:"], ["include/fixy/Code.h", "scripts/code.py"])
+
+        # The scope is every tracked file: each area that the scan once
+        # skipped reports its plant, and the three paths out of scope do not.
+        # A file that git does not track is not read.
+        for relative, text in NEWLY_COVERED + OUT_OF_SCOPE:
+            write(root, relative, text)
+        track(root)
+        write(root, "include/crucible/Untracked.h", "// Folded at #147.\n")
+        expect("every tracked file except AGENTS.md, misc/ and this guard is in scope", root, 1,
+               [f"{relative}:1:" for relative, _ in NEWLY_COVERED],
+               [relative for relative, _ in OUT_OF_SCOPE] + ["include/crucible/Untracked.h"])
 
     if failures:
         print(f"check-no-coordination-refs --self-test: FAILED, {len(failures)} case(s) did not hold")
