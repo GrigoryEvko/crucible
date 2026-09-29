@@ -2501,6 +2501,12 @@ fixy_neg_compile_test(neg_sess_vigil_illegal_transition
 # paper's Example 3.2 under three schedules.
 fixy_test(test_session_crash_stop)
 
+# A crash report on one thread races the session on another: during a
+# send, inside the transport of a send, inside the poll of a branch, and
+# as the one edge that publishes the messages before the crash.  The
+# tsan preset runs it under ThreadSanitizer.
+fixy_test(test_session_crash_race)
+
 # HS14 for mint_crash_session.  Rule 3 refuses a bare reception from an
 # unreliable peer, also when the reception hides in a loop body.  Rule 5
 # refuses a crash branch for a reliable peer.  The cell must outlive the
