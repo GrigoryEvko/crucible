@@ -49,23 +49,22 @@ struct FixyCt {
     static void cswap(T cond01, T& a, T& b) noexcept {
         ::fixy::ct::cswap(cond01, a, b);
     }
-    static bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept {
-        return ::fixy::ct::eq(a, b);
-    }
+    static bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept { return ::fixy::ct::eq(a, b); }
     template <std::size_t N>
     static bool eq_static(std::array<std::byte, N> const& a, std::array<std::byte, N> const& b) noexcept {
         return ::fixy::ct::eq(std::span<const std::byte, N>{a}, std::span<const std::byte, N>{b});
     }
 };
 
-struct [[= ::fixy::session::constant_time_value{}]] AuthTag {
+struct[[= ::fixy::session::constant_time_value{}]] AuthTag {
     std::array<std::uint8_t, 16> bytes{};
 };
 
 void check_session_payload(Tally& tally) noexcept {
     for (int flip = -1; flip < 16; ++flip) {
         AuthTag left{};
-        for (std::size_t i = 0; i < left.bytes.size(); ++i) left.bytes[i] = opaque(static_cast<std::uint8_t>(i * 7));
+        for (std::size_t i = 0; i < left.bytes.size(); ++i)
+            left.bytes[i] = opaque(static_cast<std::uint8_t>(i * 7));
         AuthTag right = left;
         if (flip >= 0) right.bytes[static_cast<std::size_t>(flip)] ^= 0x01;
         make_secret(left);
@@ -81,8 +80,9 @@ void check_secret_derivation(Tally& tally) noexcept {
         std::uint64_t bit = opaque(bit_value);
         make_secret(bit);
         auto classified = ::fixy::mint_secret<std::uint64_t>(bit);
-        auto chosen = std::move(classified).transform(
-            [](std::uint64_t b) noexcept { return ::fixy::ct::select(b, std::uint64_t{0xAA}, std::uint64_t{0x55}); });
+        auto chosen = std::move(classified).transform([](std::uint64_t b) noexcept {
+            return ::fixy::ct::select(b, std::uint64_t{0xAA}, std::uint64_t{0x55});
+        });
         std::uint64_t const out = std::move(chosen).declassify<::fixy::tags::secret_policy::HashForCompare>();
         tally.expect(make_public(out) == (bit_value == 1 ? 0xAAu : 0x55u), "Secret transform through select");
     }
@@ -111,7 +111,7 @@ void check_mtls_private_key(Tally& tally) noexcept {
 }  // namespace
 
 int main(int argc, char** argv) {
-    return ct_taint::run(argc, argv, "fixy", [](Tally& tally) noexcept {
+    return ct_taint::run(argc, argv, [](Tally& tally) noexcept {
         ct_taint::check_scalars<FixyCt>(tally);
         ct_taint::check_eq<FixyCt>(tally);
         check_session_payload(tally);

@@ -26,7 +26,11 @@ template <typename T>
 
 template <typename T>
 constexpr std::array<T, 6> probe_values() noexcept {
-    return {T{0}, T{1}, T{2}, static_cast<T>(~T{0}), static_cast<T>(static_cast<T>(~T{0}) >> 1),
+    return {T{0},
+            T{1},
+            T{2},
+            static_cast<T>(~T{0}),
+            static_cast<T>(static_cast<T>(~T{0}) >> 1),
             static_cast<T>(static_cast<T>(static_cast<T>(~T{0}) >> 1) + T{1})};
 }
 
@@ -182,7 +186,7 @@ int run_control(Leak&& leak) noexcept {
 // The shared entry: a control mode when one is named, the checks
 // otherwise.  `run_checks` is the list of checks of the test.
 template <typename Checks>
-int run(int argc, char** argv, char const* tree, Checks&& run_checks) noexcept {
+int run(int argc, char** argv, Checks&& run_checks) noexcept {
     require_valgrind();
     if (argc == 2) {
         std::string_view const mode{argv[1]};
@@ -193,7 +197,7 @@ int run(int argc, char** argv, char const* tree, Checks&& run_checks) noexcept {
     }
     Tally tally;
     run_checks(tally);
-    std::printf("ct_taint %s: %d wrong results, %lu memcheck errors\n", tree, tally.failures, reported_errors());
+    std::printf("ct_taint: %d wrong results, %lu memcheck errors\n", tally.failures, reported_errors());
     return tally.failures == 0 ? 0 : 1;
 }
 
