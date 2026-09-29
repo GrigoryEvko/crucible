@@ -15,8 +15,7 @@ constexpr int accept_canonical_stack() {
     return 0;
 }
 
-using DuplicateStack =
-    ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::HotPath<::fixy::HotPathTier_v::Cold, int>>;
+using DuplicateStack = ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::HotPath<::fixy::HotPathTier_v::Cold, int>>;
 
 }  // namespace
 

@@ -30,6 +30,8 @@ function(foundation_test name)
 endfunction()
 
 foundation_test(test_platform)
+# test/fixy/test_saturate.cpp has the same file name, and a CMake target
+# name is global.  Each of the two targets carries the name of its layer.
 foundation_test(test_saturate_foundation test_saturate.cpp)
 foundation_test(test_signature)
 foundation_test(test_algebra_core)
@@ -541,13 +543,9 @@ foundation_neg_compile_test(neg_computation_then_hands_out_a_capability
   "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test> >::then\\(main\\(\\)::<lambda\\(IoCap\\)>\\)."
   "the expression .extract_admits_payload_v<T> \\[with T = foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test>\\]. evaluated to .false.")
 
-# The contracts tests keep the file names of the tests they are ported
-# from.  The target names carry the contracts prefix because the old
-# tests still register the plain names in test/CMakeLists.txt, and a
-# CMake target name is global.
-foundation_test(test_contracts_decide test_decide.cpp)
-foundation_test(test_contracts_decide_fuzz test_decide_fuzz.cpp)
-foundation_test(test_contracts_pre_post test_pre_post.cpp)
+foundation_test(test_decide)
+foundation_test(test_decide_fuzz)
+foundation_test(test_pre_post)
 
 # The contract handler of src/foundation/ContractHandler.cpp, in child
 # processes.  A report names the condition, its position and the note of a
@@ -561,12 +559,12 @@ foundation_test(test_contract_handler)
 # and the sanitizer flags are left off because they change code
 # generation.  Each function goes in its own section so the __start_ and
 # __stop_ symbols bound one probe each.  See test_pre_post_cost.cpp.
-add_executable(test_contracts_pre_post_cost test_pre_post_cost.cpp)
-target_link_libraries(test_contracts_pre_post_cost PRIVATE foundation)
-target_compile_options(test_contracts_pre_post_cost PRIVATE -O3 -ffunction-sections
+add_executable(test_pre_post_cost test_pre_post_cost.cpp)
+target_link_libraries(test_pre_post_cost PRIVATE foundation)
+target_compile_options(test_pre_post_cost PRIVATE -O3 -ffunction-sections
   ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
-add_test(NAME test_contracts_pre_post_cost COMMAND test_contracts_pre_post_cost)
-set_tests_properties(test_contracts_pre_post_cost PROPERTIES LABELS "foundation")
+add_test(NAME test_pre_post_cost COMMAND test_pre_post_cost)
+set_tests_properties(test_pre_post_cost PROPERTIES LABELS "foundation")
 
 # CRUCIBLE_PRE on a struct by const reference, violated in a constant
 # expression: the shape a native pre() clause skips.  The location regex
@@ -586,10 +584,9 @@ foundation_neg_compile_test(neg_post_violated_at_consteval
   "foundation/contracts/Post\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "in expansion of macro .CRUCIBLE_POST.")
 
-# The reflect test keeps the file name of the crucible test it stands
-# beside.  The target carries a suffix because test/CMakeLists.txt still
-# registers test_reflect for test/test_reflect.cpp, and a CMake target
-# name is global.
+# test/CMakeLists.txt registers test_reflect for test/test_reflect.cpp,
+# and a CMake target name is global.  This target carries the name of
+# its layer.
 foundation_test(test_reflect_foundation test_reflect.cpp)
 
 # The enumerator walk calls its callback with a value and a name, so a
@@ -730,13 +727,10 @@ foundation_neg_compile_test(neg_fail_closed_unique_target_of_two_edges
   "static assertion failed: fail_closed::unique_target<Ns, T>: the relation declares more than one edge from T"
   "unique_target\\(\\) \\[with std::meta::info Ns = \\^\\^\\{anonymous\\}::ingest; T = \\{anonymous\\}::Raw")
 
-# The permission tests keep the file names of the tests they are ported
-# from and carry a suffix, because test/CMakeLists.txt still registers
-# the plain names and a CMake target name is global.
-foundation_test(test_permissions_compile_foundation test_permissions_compile.cpp)
-foundation_test(test_permission_shared_foundation test_permission_shared.cpp)
-foundation_test(test_permission_shared_xor_exclusive_foundation test_permission_shared_xor_exclusive.cpp)
-foundation_test(test_read_view_foundation test_read_view.cpp)
+foundation_test(test_permissions_compile)
+foundation_test(test_permission_shared)
+foundation_test(test_permission_shared_xor_exclusive)
+foundation_test(test_read_view)
 # Legal C++ that tries to carry a view out of the door.  An attack that
 # still succeeds is a row of the shrink-only ledger in the file.
 foundation_test(test_read_view_escape_attacks)

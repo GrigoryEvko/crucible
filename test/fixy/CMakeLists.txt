@@ -1216,10 +1216,6 @@ fixy_neg_compile_test(neg_secret_three_way_value
   "Secret_Order. a classified value cannot be ordered with <, <=, >, >= or <=>")
 
 # ── Stale, OwnedRegion, Borrowed, ScopedView, Machine ─────────────────
-#
-# The region test keeps the file name of the test it is ported from and
-# carries a suffix, because test/CMakeLists.txt still registers
-# test_owned_region and a CMake target name is global.
 fixy_test(test_stale)
 fixy_test(test_versioned_budgeted)
 fixy_test(test_versioned_budgeted_attacks)
@@ -1229,7 +1225,7 @@ fixy_test(test_version_attacks)
 # Legal C++ that writes the private state of a proof through a splice.
 # An attack that still succeeds is a row of the shrink-only ledger.
 fixy_test(test_splice_access_attacks)
-fixy_test(test_owned_region_fixy test_owned_region.cpp)
+fixy_test(test_owned_region)
 fixy_test(test_borrowed)
 fixy_test(test_scoped_view)
 fixy_test(test_machine)
@@ -1452,15 +1448,15 @@ fixy_test(test_bands)
 fixy_test(test_aliases)
 
 # ── The canonical nesting order ───────────────────────────────────────
-fixy_test(test_canonical_order_fixy test_canonical_order.cpp)
+fixy_test(test_canonical_order)
 
 # A stack must nest its canonical wrappers at strictly increasing
 # positions.  Linear outside HotPath runs the positions downward, and a
 # HotPath inside a HotPath repeats one position.
-fixy_neg_compile_test(neg_fixy_canonical_order_inverted_two_layer
+fixy_neg_compile_test(neg_canonical_order_inverted_two_layer
   "no matching function for call to .accept_canonical_stack<"
   "satisfaction of .CanonicallyOrdered<Stack>. .with Stack = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, foundation::algebra::Graded<")
-fixy_neg_compile_test(neg_fixy_canonical_order_duplicate_layer
+fixy_neg_compile_test(neg_canonical_order_duplicate_layer
   "no matching function for call to .accept_canonical_stack<"
   "satisfaction of .CanonicallyOrdered<Stack>. .with Stack = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::HotPathLattice::At<foundation::algebra::lattices::HotPathTier::Hot>, foundation::algebra::Graded<")
 
@@ -1583,10 +1579,6 @@ fixy_neg_compile_test(neg_recipe_spec_weaken_to_a_tighter_tier
   "expansion of .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, .*::weaken<")
 
 # ── The eight value wrappers ──────────────────────────────────────────
-#
-# The checked test keeps the file name of the test it is ported from and
-# carries a suffix, because test/CMakeLists.txt still registers
-# test_checked and a CMake target name is global.
 fixy_test(test_owned_file)
 fixy_test(test_owned_mmap)
 fixy_test(test_constant_time)
@@ -1610,16 +1602,19 @@ fixy_neg_compile_test(neg_cyclic_buffer_push_of_a_const_element
   "no matching function for call to .fixy::CyclicBuffer<const "
   "is_move_assignable_v<T> .with T = const ")
 fixy_test(test_saturated)
+
+# test/foundation/test_saturate.cpp has the same file name, and a CMake
+# target name is global.  Each of the two targets carries the name of its
+# layer.
 fixy_test(test_saturate_fixy test_saturate.cpp)
 
-# The four refusals of fixy/Saturate.h, from the old safety_neg corpus,
-# under the namespace's name because the old corpus still owns the
-# neg_saturate_ targets.  An into helper takes a mutable reference; a
-# from helper returns Saturated<T>, not T; a det helper returns the pure
-# band, not the Saturated<T> inside it; and a det result reaches another
-# tier only through relax.  Each fixture is matched on the qualified
-# type or signature the compiler prints, which the fixture's source
-# never spells in that form.
+# The four refusals of fixy/Saturate.h.  Each fixture name starts with
+# neg_sat_, the name of the namespace fixy::sat.  An into helper takes a
+# mutable reference.  A from helper returns Saturated<T>, not T.  A det
+# helper returns the pure band, not the Saturated<T> inside it.  A det
+# result goes to another tier only through relax.  Each fixture is matched
+# on the qualified type or signature that the compiler prints, and the
+# source of the fixture never spells that form.
 fixy_neg_compile_test(neg_sat_into_const_dest
   "no matching function for call to .add_sat_into\\(const unsigned int&, unsigned int\\)."
   "add_sat_into\\(const unsigned int&, unsigned int\\)")
@@ -1632,7 +1627,7 @@ fixy_neg_compile_test(neg_sat_det_raw_result_escape
 fixy_neg_compile_test(neg_sat_det_cross_tier_assignment
   "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
   "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>,\\[\\.\\.\\.\\]>. requested")
-fixy_test(test_checked_fixy test_checked.cpp)
+fixy_test(test_checked)
 
 # Each compile-time gate of fixy/Checked.h stops the build at a value the
 # destination type cannot hold.  The first regex is the bracketed tag of
@@ -2012,14 +2007,12 @@ fixy_neg_compile_test(neg_sess_mint_vendor_none
   "VendorPinned<foundation::algebra::lattices::VendorBackend::None, fixy::session::Send<.*Ping, fixy::session::End> >\\]. evaluated to .false.")
 
 # Subtyping: one walk gives the verdict and its reason, and each refusal
-# names the class of the failure and the failed pair.  The target has a
-# suffix because test/CMakeLists.txt still registers test_session_subtype
-# for the old tree, and a CMake target name is global.
-fixy_test(test_session_subtype_fixy test_session_subtype.cpp)
+# names the class of the failure and the failed pair.
+fixy_test(test_session_subtype)
 
 # The content-addressed marker and its payload are subsorts of each
-# other, at any depth.  The suffix avoids the old tree's target name.
-fixy_test(test_session_content_addressed_fixy test_session_content_addressed.cpp)
+# other, at any depth.
+fixy_test(test_session_content_addressed)
 fixy_neg_compile_test(neg_sess_subtype_branch_count
   "\\[Subtype_BranchCount\\]: assert_subtype_sync"
   "because the branch counts are in the wrong direction")
@@ -3580,10 +3573,7 @@ fixy_neg_compile_test(neg_payload_row_member_hides_unclassified
 # The sysfs probe Pipeline::run reads for its cache sizes and its
 # affinity.  The machine under test is unknown, so every assertion is
 # structural: it bounds a value or relates two, and never pins a number.
-# The test keeps the file name of the one it is ported from and carries
-# a suffix, because test/CMakeLists.txt still registers test_topology
-# and a CMake target name is global.
-fixy_test(test_topology_fixy test_topology.cpp)
+fixy_test(test_topology)
 
 # Topology::probe_tree reads a sysfs tree under another root, and only a
 # context that owns the Test capability reaches it.
@@ -3596,12 +3586,9 @@ fixy_neg_compile_test(neg_topology_probe_tree_needs_test_ctx
 # Stage.h and Pipeline.h carry their type-level claims as static
 # assertions, so the two tests below are the parts only a constructed
 # run can show: which thread each stage body ran on, and that a
-# branching graph runs every stage exactly once.  Both keep the file
-# names of the tests they are ported from and carry a suffix, because
-# test/CMakeLists.txt still registers the plain names and a CMake
-# target name is global.
-fixy_test(test_pipeline_dispatch_fixy test_pipeline_dispatch.cpp)
-fixy_test(test_pipeline_dag_fixy test_pipeline_dag.cpp)
+# branching graph runs every stage exactly once.
+fixy_test(test_pipeline_dispatch)
+fixy_test(test_pipeline_dag)
 
 # The nine refusals of mint_stage and of the stage it returns.  Every
 # second regex is a string the compiler emits and the fixture source
@@ -4564,11 +4551,10 @@ fixy_test(test_os_spinlock)
 # that a recombined region still describes the storage it started with.
 fixy_test(test_os_spawn)
 
-# test_parallelism_rule_fixy asks the cost model the questions whose
-# answers hold on any host: the tier boundaries, the sequential answer
-# inside L2, the factor ladder and the container cap.  The old test of the
-# same name is a separate target, and a CMake target name is global.
-fixy_test(test_parallelism_rule_fixy test_parallelism_rule.cpp)
+# test_parallelism_rule asks the cost model the questions whose answers
+# hold on any host: the tier boundaries, the sequential answer inside L2,
+# the factor ladder and the container cap.
+fixy_test(test_parallelism_rule)
 
 # Every second regex is text the compiler emits and the fixture source
 # does not: the signature of a private member with its template
