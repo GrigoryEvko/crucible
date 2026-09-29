@@ -230,9 +230,8 @@ template <typename Tag>
         const ::foundation::fail_closed::edge_ends ends = ::foundation::fail_closed::ends_of(member);
         if (ends.to != tag || ends.from == tag) continue;
         const bool reparameterizes_one_template = std::meta::has_template_arguments(ends.from)
-                                                  && std::meta::has_template_arguments(ends.to)
-                                                  && std::meta::template_of(ends.from)
-                                                         == std::meta::template_of(ends.to);
+                                               && std::meta::has_template_arguments(ends.to)
+                                               && std::meta::template_of(ends.from) == std::meta::template_of(ends.to);
         if (!reparameterizes_one_template) return true;
     }
     return false;
@@ -276,7 +275,7 @@ template <typename To, typename T, typename From>
 // keeps a trivially copyable wrapper: a byte image that crosses a trust
 // boundary arrives under such a tag and is checked again.
 template <typename T, typename Tag>
-class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] Tagged
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] Tagged
     : public graded_facade<::foundation::algebra::ModalityKind::RelativeMonad,
                            ::foundation::algebra::lattices::TrustLattice<Tag>, T> {
 public:
@@ -378,25 +377,17 @@ static_assert(sizeof(Tagged<int, tags::source::FromUser>) == sizeof(int));
 static_assert(sizeof(Tagged<void*, tags::trust::Verified>) == sizeof(void*));
 static_assert(sizeof(Tagged<long, tags::access::AppendOnly>) == sizeof(long));
 
-// The detection surface of the old IsTagged.h.  One reflection query
-// answers it, and the associated types are read off the wrapper's own
-// typedefs, so there is no primary-plus-specialization ladder to keep
-// in step with the class.  The concept is the question; the value
-// spelling is derived from it and read by nothing that gates.
+// True when T, with its references and qualifiers removed, is a Tagged.
+// One reflection query answers it, so there is no primary-plus-
+// specialization ladder to keep in step with the class.  The concept is
+// the question.  The value spelling is derived from it and read by
+// nothing that gates.
 
 template <typename T>
 concept IsTagged = ::foundation::reflect::IsInstanceOf<T, ^^Tagged>;
 
 template <typename T>
 inline constexpr bool is_tagged_v = IsTagged<T>;
-
-template <typename T>
-    requires IsTagged<T>
-using tagged_value_t = typename std::remove_cvref_t<T>::value_type;
-
-template <typename T>
-    requires is_tagged_v<T>
-using tagged_tag_t = typename std::remove_cvref_t<T>::tag_type;
 
 namespace detail::tagged_self_test {
 
@@ -425,11 +416,6 @@ static_assert(!is_tagged_v<LookalikeTagged>);
 static_assert(IsTagged<T_int_user>);
 static_assert(IsTagged<T_int_db const&>);
 static_assert(!IsTagged<int>);
-static_assert(std::is_same_v<tagged_value_t<T_int_user>, int>);
-static_assert(std::is_same_v<tagged_value_t<T_double_user>, double>);
-static_assert(std::is_same_v<tagged_tag_t<T_int_user>, tags::source::FromUser>);
-static_assert(std::is_same_v<tagged_tag_t<T_int_db const&>, tags::source::FromDb>);
-static_assert(!std::is_same_v<tagged_tag_t<T_int_user>, tagged_tag_t<T_int_db>>);
 
 }  // namespace detail::tagged_self_test
 

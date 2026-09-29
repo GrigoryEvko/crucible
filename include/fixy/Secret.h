@@ -101,8 +101,7 @@ template <typename F, typename T>
 concept TransformReturnsNonVoid = !std::is_void_v<std::invoke_result_t<F, T&&>>;
 
 template <typename F, typename T>
-concept SecretTransformer =
-    std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>;
+concept SecretTransformer = std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>;
 
 template <typename T>
 class Secret;
@@ -331,23 +330,18 @@ static_assert(!std::totally_ordered_with<Secret<int>, int>);
 
 }  // namespace detail::secret_flow_lock
 
-// The detection surface of the old IsSecret.h.  One reflection query
-// answers it, and the value type is read off the wrapper's own typedef,
-// so there is no primary-plus-specialization ladder to keep in step
-// with the class.  The concept is the question; the value spelling is
-// derived from it and read by nothing that gates, because a variable
-// template can be explicitly specialized from any translation unit and
-// a concept cannot.
+// True when T, with its references and qualifiers removed, is a Secret.
+// One reflection query answers it, so there is no primary-plus-
+// specialization ladder to keep in step with the class.  The concept is
+// the question.  The value spelling is derived from it and read by
+// nothing that gates, because a variable template can be explicitly
+// specialized from any translation unit and a concept cannot.
 
 template <typename T>
 concept IsSecret = ::foundation::reflect::IsInstanceOf<T, ^^Secret>;
 
 template <typename T>
 inline constexpr bool is_secret_v = IsSecret<T>;
-
-template <typename T>
-    requires IsSecret<T>
-using secret_value_t = typename std::remove_cvref_t<T>::value_type;
 
 namespace detail::secret_self_test {
 
@@ -375,8 +369,6 @@ static_assert(!is_secret_v<LookalikeSecret>);
 static_assert(IsSecret<S_int>);
 static_assert(IsSecret<S_payload const&>);
 static_assert(!IsSecret<int>);
-static_assert(std::is_same_v<secret_value_t<S_int>, int>);
-static_assert(std::is_same_v<secret_value_t<S_payload const&>, payload>);
 
 }  // namespace detail::secret_self_test
 

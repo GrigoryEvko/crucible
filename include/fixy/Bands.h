@@ -180,10 +180,11 @@ concept ExactBand = IsBand<B> && std::same_as<B, std::remove_cvref_t<B>>;
 // authority is a class local to this function, which no other code can
 // name.
 template <ExactBand B>
-[[nodiscard]] constexpr B mint_band(band_value_t<B> value) noexcept(std::is_nothrow_move_constructible_v<band_value_t<B>>) {
+[[nodiscard]] constexpr B
+mint_band(band_value_t<B> value) noexcept(std::is_nothrow_move_constructible_v<band_value_t<B>>) {
     struct door {
-        [[nodiscard]] static constexpr B open(band_value_t<B>&& held) noexcept(
-            std::is_nothrow_move_constructible_v<band_value_t<B>>) {
+        [[nodiscard]] static constexpr B
+        open(band_value_t<B>&& held) noexcept(std::is_nothrow_move_constructible_v<band_value_t<B>>) {
             return B{::foundation::algebra::grade_key<door>{}, std::move(held), {}};
         }
     };
@@ -515,19 +516,20 @@ concept RecipeSpecPayload = std::is_object_v<T> && std::move_constructible<T>;
 // axes are a claim about how the value was produced, and nothing checks
 // it, so it is made here by name, as a band's tier is made in mint_band.
 template <RecipeSpecPayload T>
-[[nodiscard]] constexpr RecipeSpec<T> mint_recipe_spec(T value, Tolerance tier,
-                                                       RecipeFamily family) noexcept(std::is_nothrow_move_constructible_v<T>) {
+[[nodiscard]] constexpr RecipeSpec<T>
+mint_recipe_spec(T value, Tolerance tier, RecipeFamily family) noexcept(std::is_nothrow_move_constructible_v<T>) {
     struct door {
-        [[nodiscard]] static constexpr RecipeSpec<T> open(T&& held, Tolerance held_tier,
-                                                          RecipeFamily held_family) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        [[nodiscard]] static constexpr RecipeSpec<T>
+        open(T&& held, Tolerance held_tier,
+             RecipeFamily held_family) noexcept(std::is_nothrow_move_constructible_v<T>) {
             return RecipeSpec<T>{::foundation::algebra::grade_key<door>{}, std::move(held), {held_tier, held_family}};
         }
     };
     return door::open(std::move(value), tier, family);
 }
 
-// The detection surface of the old IsRecipeSpec.h: the Absolute carrier
-// over the product lattice, whatever the payload.
+// True when S is a RecipeSpec: the Absolute carrier over the product
+// lattice, whatever the payload.
 template <typename S>
 concept IsRecipeSpec = ::foundation::algebra::IsGraded<S>
                     && (std::remove_cvref_t<S>::modality == ::foundation::algebra::ModalityKind::Absolute)
@@ -535,9 +537,6 @@ concept IsRecipeSpec = ::foundation::algebra::IsGraded<S>
 
 template <typename S>
 inline constexpr bool is_recipe_spec_v = IsRecipeSpec<S>;
-
-template <IsRecipeSpec S>
-using recipe_spec_value_t = typename std::remove_cvref_t<S>::value_type;
 
 template <class T>
 [[nodiscard]] constexpr Tolerance tolerance_of(RecipeSpec<T> const& spec) noexcept {
@@ -579,10 +578,9 @@ static_assert(!IsBand<int>);
 // band.  relax cannot move a Public value to Secret, although Secret is
 // the weaker end.  The same carrier over an order that puts the stronger
 // claim higher is a band.
-using PinnedConf = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute,
-                                                 ::foundation::algebra::lattices::ConfLattice::At<
-                                                     ::foundation::algebra::lattices::Conf::Public>,
-                                                 int>;
+using PinnedConf = ::foundation::algebra::Graded<
+    ::foundation::algebra::ModalityKind::Absolute,
+    ::foundation::algebra::lattices::ConfLattice::At<::foundation::algebra::lattices::Conf::Public>, int>;
 static_assert(!IsBand<PinnedConf>, "relax and satisfies_v need an outer order that puts the stronger claim higher");
 static_assert(!IsBand<RecipeSpec<int>>, "the grade of a RecipeSpec is stored, not pinned");
 
@@ -657,14 +655,12 @@ static_assert(band_tier_v<CtaInt> == MemoryScope_v::Cta);
 static_assert(std::is_same_v<band_lattice_t<CtaInt>, MemoryScopeLattice>);
 
 // Within a trunk the order holds in the admission direction.
-static_assert(satisfies_v<GpuInt, MemoryScope_v::Cta>,
-              "A device-wide fence publishes at block scope too, because Cta "
-              "sits below Gpu on the accelerator trunk.");
+static_assert(satisfies_v<GpuInt, MemoryScope_v::Cta>, "A device-wide fence publishes at block scope too, because Cta "
+                                                       "sits below Gpu on the accelerator trunk.");
 static_assert(!satisfies_v<CtaInt, MemoryScope_v::Gpu>,
               "A block-scope fence is too narrow for a device-wide requirement.");
-static_assert(satisfies_v<OuterInt, MemoryScope_v::Inner>,
-              "An outer-shareable fence subsumes an inner-shareable "
-              "requirement within the same trunk.");
+static_assert(satisfies_v<OuterInt, MemoryScope_v::Inner>, "An outer-shareable fence subsumes an inner-shareable "
+                                                           "requirement within the same trunk.");
 
 // Across trunks nothing satisfies anything, which is the property a chain
 // cannot express.
@@ -684,13 +680,11 @@ static_assert(!satisfies_v<ThreadInt, MemoryScope_v::Cta>,
 static_assert(can_relax<GpuInt, MemoryScope_v::Cta>);
 static_assert(can_relax<SystemInt, MemoryScope_v::Inner>);
 static_assert(can_relax<CtaInt, MemoryScope_v::Cta>);
-static_assert(!can_relax<CtaInt, MemoryScope_v::Gpu>,
-              "relax<Gpu> on a ScopedFence<Cta> must be rejected.  Claiming a "
-              "value is device-visible when it was only published at block "
-              "scope would offer it to observers the fence never reached.");
-static_assert(!can_relax<CtaInt, MemoryScope_v::Inner>,
-              "relax<Inner> on a ScopedFence<Cta> must be rejected.  The two "
-              "trunks are incomparable.");
+static_assert(!can_relax<CtaInt, MemoryScope_v::Gpu>, "relax<Gpu> on a ScopedFence<Cta> must be rejected.  Claiming a "
+                                                      "value is device-visible when it was only published at block "
+                                                      "scope would offer it to observers the fence never reached.");
+static_assert(!can_relax<CtaInt, MemoryScope_v::Inner>, "relax<Inner> on a ScopedFence<Cta> must be rejected.  The two "
+                                                        "trunks are incomparable.");
 static_assert(!can_relax<InnerInt, MemoryScope_v::Cta>);
 
 constexpr GpuInt pinned_gpu = mint_band<GpuInt>(42);

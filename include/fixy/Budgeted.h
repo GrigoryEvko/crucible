@@ -149,7 +149,8 @@ public:
     // An allowance of at most `bits` bits transferred and `peak` bytes held.
     // Only the owner, which holds the authority mutably, grants.
     [[nodiscard]] constexpr BudgetStamp grant(BitsBudgetBound bits, PeakBytesBound peak) noexcept {
-        return BudgetStamp{count_of_<BitsBudgetLattice>(ctx_, bits.raw()), count_of_<PeakBytesLattice>(ctx_, peak.raw())};
+        return BudgetStamp{count_of_<BitsBudgetLattice>(ctx_, bits.raw()),
+                           count_of_<PeakBytesLattice>(ctx_, peak.raw())};
     }
 
 private:
@@ -183,8 +184,8 @@ template <typename Ctx>
 [[nodiscard]] constexpr BudgetAuthority mint_budget_authority(Ctx const& ctx) noexcept {
     static_assert(std::is_same_v<::foundation::effects::cap_type_of_t<Ctx>, ::foundation::effects::Init>,
                   "only the Init capability permits the Init atom, so a context that owns Init holds it");
-    return BudgetAuthority{
-        ctx.template in_row<::foundation::effects::Row<::foundation::effects::Effect::Init, ::foundation::effects::Effect::IO>>()};
+    return BudgetAuthority{ctx.template in_row<
+        ::foundation::effects::Row<::foundation::effects::Effect::Init, ::foundation::effects::Effect::IO>>()};
 }
 
 template <SelfContained T>
@@ -320,8 +321,8 @@ public:
         return Budgeted{this->peek(), summed_(other)};
     }
 
-    [[nodiscard]] constexpr Budgeted accumulate(Budgeted const& other) && noexcept(
-        std::is_nothrow_move_constructible_v<T>) {
+    [[nodiscard]] constexpr Budgeted
+    accumulate(Budgeted const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         budget_t const sum = summed_(other);
         return Budgeted{std::move(impl_).consume(), sum};
     }
@@ -338,17 +339,10 @@ private:
     }
 };
 
-// The detection surface of the old IsBudgeted.h, answered by one
-// reflection query.
+// True when T, with its references and qualifiers removed, is a
+// Budgeted.  One reflection query answers it.
 template <typename T>
 concept IsBudgeted = ::foundation::reflect::IsInstanceOf<T, ^^Budgeted>;
-
-template <typename T>
-inline constexpr bool is_budgeted_v = IsBudgeted<T>;
-
-template <typename T>
-    requires IsBudgeted<T>
-using budgeted_value_t = typename std::remove_cvref_t<T>::value_type;
 
 namespace detail::budgeted_self_test {
 
@@ -409,11 +403,10 @@ struct Lookalike {
     using budget_t = int;
 };
 
-static_assert(is_budgeted_v<B>);
-static_assert(is_budgeted_v<B const&>);
-static_assert(!is_budgeted_v<int>);
-static_assert(!is_budgeted_v<Lookalike>);
-static_assert(std::is_same_v<budgeted_value_t<B const&>, int>);
+static_assert(IsBudgeted<B>);
+static_assert(IsBudgeted<B const&>);
+static_assert(!IsBudgeted<int>);
+static_assert(!IsBudgeted<Lookalike>);
 
 static_assert(B::value_type_name().ends_with("int"));
 

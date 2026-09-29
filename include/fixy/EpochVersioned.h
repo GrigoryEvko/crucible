@@ -123,8 +123,7 @@ public:
 
     // User-provided, so that the stamp is neither trivially copyable nor
     // implicit-lifetime, and no route builds one from bytes.
-    constexpr VersionStamp(VersionStamp const& other) noexcept
-        : epoch_{other.epoch_}, generation_{other.generation_} {}
+    constexpr VersionStamp(VersionStamp const& other) noexcept : epoch_{other.epoch_}, generation_{other.generation_} {}
     constexpr VersionStamp& operator=(VersionStamp const& other) noexcept {
         epoch_ = other.epoch_;
         generation_ = other.generation_;
@@ -163,8 +162,8 @@ public:
 
     // The version of a value that came from a peer.  A version above the
     // source's own is refused: a node vouches only for what it has reached.
-    [[nodiscard]] constexpr std::expected<VersionStamp, VersionConflict> stamp_received(
-        Epoch epoch, Generation generation) const noexcept {
+    [[nodiscard]] constexpr std::expected<VersionStamp, VersionConflict>
+    stamp_received(Epoch epoch, Generation generation) const noexcept {
         if (!EpochLattice::leq(epoch, epoch_) || !GenerationLattice::leq(generation, generation_)) {
             return std::unexpected(VersionConflict::AheadOfSource);
         }
@@ -336,8 +335,8 @@ public:
 template <typename T>
     requires std::copy_constructible<T> && EqualityByMembers<T>
 [[nodiscard]] constexpr std::expected<EpochVersioned<T>, VersionConflict>
-select_fresher(EpochVersioned<T> const& a, EpochVersioned<T> const& b) noexcept(
-    std::is_nothrow_copy_constructible_v<T>) {
+select_fresher(EpochVersioned<T> const& a,
+               EpochVersioned<T> const& b) noexcept(std::is_nothrow_copy_constructible_v<T>) {
     using L = EpochVersionLattice;
     bool const a_at_or_above_b = L::leq(a.version(), b.version());
     bool const b_at_or_above_a = L::leq(b.version(), a.version());
@@ -365,18 +364,11 @@ select_fresher(EpochVersioned<T>&& a, EpochVersioned<T>&& b) noexcept(std::is_no
     return std::unexpected(VersionConflict::Incomparable);
 }
 
-// The detection surface of the old IsEpochVersioned.h.  One reflection
-// query answers it, so no primary and specialization pair has to be kept
-// in step with the class.
+// True when T, with its references and qualifiers removed, is an
+// EpochVersioned.  One reflection query answers it, so no primary and
+// specialization pair has to be kept in step with the class.
 template <typename T>
 concept IsEpochVersioned = ::foundation::reflect::IsInstanceOf<T, ^^EpochVersioned>;
-
-template <typename T>
-inline constexpr bool is_epoch_versioned_v = IsEpochVersioned<T>;
-
-template <typename T>
-    requires IsEpochVersioned<T>
-using epoch_versioned_value_t = typename std::remove_cvref_t<T>::value_type;
 
 namespace detail::epoch_versioned_self_test {
 
@@ -422,8 +414,7 @@ template <typename T>
 concept can_version = requires { typename EpochVersioned<T>; };
 static_assert(can_version<int>);
 static_assert(!can_version<int&> && !can_version<int const&>, "a reference payload is refused");
-static_assert(!can_version<int*> && !can_version<int const*>,
-              "the referent of a pointer can change under the version");
+static_assert(!can_version<int*> && !can_version<int const*>, "the referent of a pointer can change under the version");
 static_assert(!can_version<PointsAtValue>, "a pointer member reaches out of the value, even to const");
 static_assert(!can_version<HoldsMutable>, "a mutable member is writable through peek()");
 
@@ -444,13 +435,10 @@ struct HandWrittenEquality {
     [[nodiscard]] constexpr bool operator==(HandWrittenEquality const&) const noexcept { return true; }
 };
 template <typename T>
-concept can_select_rvalues = requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) {
-    select_fresher(std::move(a), std::move(b));
-};
+concept can_select_rvalues =
+    requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) { select_fresher(std::move(a), std::move(b)); };
 template <typename T>
-concept can_select_lvalues = requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) {
-    select_fresher(a, b);
-};
+concept can_select_lvalues = requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) { select_fresher(a, b); };
 static_assert(can_select_rvalues<NoEquality> && can_select_lvalues<NoEquality> && can_select_rvalues<int>);
 static_assert(!can_select_rvalues<HandWrittenEquality> && !can_select_lvalues<HandWrittenEquality>);
 
@@ -476,11 +464,10 @@ struct Lookalike {
     using version_t = int;
 };
 
-static_assert(is_epoch_versioned_v<EV>);
-static_assert(is_epoch_versioned_v<EV const&>);
-static_assert(!is_epoch_versioned_v<int>);
-static_assert(!is_epoch_versioned_v<Lookalike>);
-static_assert(std::is_same_v<epoch_versioned_value_t<EV const&>, int>);
+static_assert(IsEpochVersioned<EV>);
+static_assert(IsEpochVersioned<EV const&>);
+static_assert(!IsEpochVersioned<int>);
+static_assert(!IsEpochVersioned<Lookalike>);
 
 static_assert(EV::value_type_name().ends_with("int"));
 static_assert(EV::lattice_name() == "Product<L1xL2>");
