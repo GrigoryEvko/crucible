@@ -405,17 +405,9 @@ add_test(NAME refined_pre_subsumption
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
-# FIXY-U-003 §XXI Universal Mint Pattern compliance scanner.  Today's
-# Phase 1 check: every mint_<noun>( factory definition MUST carry the
-# [[nodiscard]] attribute on the same line or the immediately
-# preceding line.  Phase 2 (deferred) will extend to constexpr /
-# noexcept / requires-clause checks.  Self-test mode plants both a
-# canonical mint and a drift case to guard against regex regression.
-# The gate reads each axis off the parse tree rather than off a line window.
-# The window it replaced failed open: it decided whether the requires axis
-# applied by walking fifteen lines up for the word `template`, and in
-# FederationPermission.h the parameter list sits seventeen lines above the
-# signature, so a templated mint with no clause passed unreported.
+# The §XXI mint pattern.  scripts/check-mint-pattern.py holds each mint to
+# the five axes nodiscard, constexpr, noexcept, requires and ctxfit, read
+# from the parse tree, and it refuses a dead or malformed exemption.
 add_test(NAME mint_pattern_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.py
           --self-test)
@@ -986,7 +978,7 @@ add_test(NAME splits_orphan_self_test
 add_test(NAME splits_orphan
          COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-splits-orphan.py)
 set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
-    LABELS "safety_attack;ci_guard"
+    LABELS "forgery;ci_guard"
     SKIP_RETURN_CODE 3)
 
 # FederationAdmission is the one friend of the key that builds a federation
@@ -1001,7 +993,7 @@ add_test(NAME federation_admission
          COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-federation-admission.py
                  --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(federation_admission federation_admission_self_test PROPERTIES
-    LABELS "safety_attack;ci_guard;ast"
+    LABELS "forgery;ci_guard;ast"
     SKIP_RETURN_CODE 3)
 
 crucible_test(test_vessel_api_typed)
@@ -5382,14 +5374,14 @@ add_test(NAME layer_boundary_self_test
 add_test(NAME layer_boundary
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.py)
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
-    LABELS "ci_guard;stage-A1"
+    LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
 add_test(NAME derived_pins_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.py --self-test)
 add_test(NAME derived_pins
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.py)
 set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
-    LABELS "ci_guard;stage-A1"
+    LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
 
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
@@ -5451,17 +5443,15 @@ endif()
 
 # allowlist_keys runs over every scripts/*allowlist*.txt and holds the one
 # property none of the owning guards can hold once it breaks: the path half
-# of each key names a file that exists.  When a port underscores a header
-# and adds a copy beside it, a key on the old path exempts nothing AND the
-# owning guard can no longer locate the site it was written for, so the
-# guard goes quiet rather than loud.  That happened twice in Stage A before
-# this ran.
+# of each key names a file that exists.  When a file moves, a key on the
+# missing path exempts nothing AND the owning guard can no longer locate
+# the site it was written for, so the guard goes quiet rather than loud.
 add_test(NAME allowlist_keys_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-allowlist-keys.sh --self-test)
 add_test(NAME allowlist_keys
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-allowlist-keys.sh)
 set_tests_properties(allowlist_keys allowlist_keys_self_test PROPERTIES
-    LABELS "ci_guard;stage-A1")
+    LABELS "ci_guard;allowlist")
 
 # atom_roster_joined supplies the one thing fixy/Collision.h cannot supply
 # for itself: a vantage point that has seen every header.  The relation is
@@ -5471,15 +5461,14 @@ set_tests_properties(allowlist_keys allowlist_keys_self_test PROPERTIES
 # never see a roster declared by a header included after it.  The script
 # generates a sentinel over every header under include/fixy/, from the
 # directory rather than from a list, and instantiates the same two
-# templates from its own tag.  Stage A's acceptance gate check 6 consumes
-# the same two templates rather than building a second set of atoms.
+# templates from its own tag.
 add_test(NAME atom_roster_joined_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-atom-roster-joined.sh --self-test)
 add_test(NAME atom_roster_joined
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-atom-roster-joined.sh --quiet)
 set_tests_properties(atom_roster_joined atom_roster_joined_self_test PROPERTIES
   ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
-  LABELS "ci_guard;stage-A1")
+  LABELS "ci_guard;substrate")
 
 # parse_clean owns the one question every AST gate depends on: does the file
 # parse at all.  The AST gates read a tree-sitter parse from the pinned kit
