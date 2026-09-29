@@ -24,6 +24,15 @@
 # matters for a different reason than parallelism does — it amortizes
 # container start-up, which is most of the cost.
 #
+# ── Every formatter call reads stdin from /dev/null ──────────────────
+#
+# Inside the read loop, stdin is the file list.  The container wrapper runs
+# `podman run -i`, which sends stdin into the container.  The first batch
+# then got the remaining paths, and the loop checked only that batch.  On
+# this tree that scan reported 100 of the 749 drifting files, and it
+# printed no error.  --self-test runs a formatter that reads its stdin and
+# requires the full count.
+#
 # ── Which binary ─────────────────────────────────────────────────────
 #
 # $CLANG_FORMAT wins if set.  Otherwise clang-format-23, then clang-format.
@@ -138,7 +147,7 @@ readonly VIOLATION='^[^ ][^:]*\.(h|hpp|cpp|cc|cxx):[0-9]+:[0-9]+: error: code sh
 
 run_batch_() {
     local output status=0 drift
-    output="$("$formatter" --dry-run -Werror "$@" 2>&1)" || status=$?
+    output="$("$formatter" --dry-run -Werror "$@" </dev/null 2>&1)" || status=$?
     drift="$(printf '%s\n' "$output" | grep -oE "$VIOLATION" | cut -d: -f1 | sort -u || true)"
     if { [[ "$status" -eq 0 && -z "$drift" ]]; } || { [[ "$status" -eq 1 && -n "$drift" ]]; }; then
         [[ -n "$drift" ]] && printf '%s\n' "$drift"
@@ -232,7 +241,31 @@ DRIFT
         exit 2
     fi
 
-    printf 'check-clang-format: self-test passed — a formatted tree passes, planted drift exits 1, and a failing formatter or an unreadable config exits 2.\n' >&2
+    # A formatter that reads its stdin, as `podman run -i` does, must see
+    # every file.  The planted tree has one more drifting file than a batch
+    # holds.  A full batch then runs inside the read loop with one path left
+    # on the list.  A formatter call with the list as its stdin reads that
+    # path, and the count is one less than the file count.  The inner run
+    # gets stdin from /dev/null, so the stub never waits on a terminal.
+    stdin_root="$tmp_root/stdin"
+    mkdir -p "$stdin_root/include/crucible"
+    cp "$root/.clang-format" "$stdin_root/.clang-format"
+    for (( index = 0; index <= BATCH; ++index )); do
+        cp "$tmp_root/include/crucible/planted_drift.h" "$stdin_root/include/crucible/drift_$index.h"
+    done
+    stub="$tmp_root/reads_stdin_formatter"
+    printf '#!/usr/bin/env bash\ncat >/dev/null\nexec %q "$@"\n' "$(command -v "$formatter")" >"$stub"
+    chmod +x "$stub"
+    rc=0
+    report="$(CLANG_FORMAT="$stub" CRUCIBLE_CLANG_FORMAT_TEST_ROOT="$stdin_root" \
+        bash "${BASH_SOURCE[0]}" </dev/null 2>&1 >/dev/null)" || rc=$?
+    if (( rc != 1 )) || [[ "$report" != *"$((BATCH + 1)) file(s) drift"* ]]; then
+        printf 'check-clang-format: SELF-TEST FAILED — a formatter that reads stdin must see all %d drifting files (got exit %d):\n%s\n' \
+            "$((BATCH + 1))" "$rc" "$(printf '%s\n' "$report" | head -1)" >&2
+        exit 2
+    fi
+
+    printf 'check-clang-format: self-test passed — a formatted tree passes, planted drift exits 1, a failing formatter or an unreadable config exits 2, and a formatter that reads stdin sees every file.\n' >&2
     exit 0
 fi
 
@@ -259,7 +292,7 @@ if [[ "$mode" == "fix" ]]; then
         printf 'check-clang-format: already clean — nothing to reformat.\n' >&2
         exit 0
     fi
-    xargs -a "$drift_tmp" -n "$BATCH" "$formatter" -i
+    xargs -a "$drift_tmp" -n "$BATCH" "$formatter" -i </dev/null
     printf 'check-clang-format: reformatted %d file(s).\n' "$drift_count" >&2
     exit 0
 fi
