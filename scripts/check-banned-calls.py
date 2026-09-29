@@ -22,12 +22,11 @@ THE FOUR BANS
                        (ofstream, ifstream, fstream, filebuf, their wide and
                        basic_ spellings), with or without `std::`, and every
                        `#include <fstream>`.  A file there goes through
-                       fixy::mint_file, safety::OwnedFile or
-                       safety::FileHandle.  Roots: each include/crucible
-                       directory that scripts/fixy-only-paths.txt lists, and
-                       its src/ twin.  A list that names no such directory
-                       fails the guard, because the ban would then read
-                       nothing.
+                       fixy::fs::mint_file or fixy::mint_owned_file.
+                       Roots: each include/crucible directory that
+                       scripts/fixy-only-paths.txt lists, and its src/
+                       twin.  A list that names no such directory fails
+                       the guard, because the ban would then read nothing.
     process spawn      every reference to a C library function that creates
                        a process, replaces its image or reaps a child (fork,
                        vfork, clone, the exec family, posix_spawn, system,
@@ -373,8 +372,8 @@ BANS = (
         extra_excluded=frozenset(),
         marker="NO-FILE-STREAM-OK",
         allowlist="scripts/no-file-stream-allowlist.txt",
-        rule="a C++ file stream is banned in a fixy-only band-3 directory. Use fixy::mint_file, "
-             "safety::OwnedFile or safety::FileHandle",
+        rule="a C++ file stream is banned in a fixy-only band-3 directory. Use fixy::fs::mint_file or "
+             "fixy::mint_owned_file",
         node_hits=_file_stream_nodes,
         token_hit=_file_stream_token,
     ),

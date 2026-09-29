@@ -142,15 +142,15 @@ include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
 include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
 
 # ── fixy/ syscall / resource mints ───────────────────────────────────
-# The scheduling, mmap, io, file and durable-writer mints of the old tree
-# and of fixy/os each carry a `§XXI carve-out: cx=alloc` marker above the
-# declaration, so no row names them.
+# The scheduling, mmap, io, file and durable-writer mints of fixy/os each
+# carry a `§XXI carve-out: cx=alloc` marker above the declaration, so no
+# row names them.
 #
-# fixy/os/Spawn.h: neither mint of the ported pair can be constexpr and
-# mean it: mint_spawn reads the probed cache sizes and starts one jthread
-# per child for a set past L2, and mint_parallel_for starts one for every
-# shard but the single-shard case.  A constexpr on
-# either would claim a compile-time cost for a call that schedules threads.
+# fixy/os/Spawn.h: neither mint of the pair can be constexpr and mean it:
+# mint_spawn reads the probed cache sizes and starts one jthread per child
+# for a set past L2, and mint_parallel_for starts one for every shard but
+# the single-shard case.  A constexpr on either would claim a compile-time
+# cost for a call that schedules threads.
 include/fixy/os/Spawn.h:mint_parallel_for:constexpr-ok
 include/fixy/os/Spawn.h:mint_spawn:constexpr-ok
 # fixy/session/CrashTransport.h: the reporter mint claims its cell with an
@@ -173,19 +173,10 @@ include/crucible/observe/Metrics.h:mint_canopy_metrics_reader:constexpr-ok
 include/crucible/observe/Metrics.h:mint_keeper_metrics_reader:constexpr-ok
 include/crucible/observe/SyntheticProbe.h:mint_synthetic_probes:constexpr-ok
 
-# ── permissions/ token + structured-concurrency mints ────────────────
-
-# ── foundation/permissions/ — the ported copies of the entries above ──
-# Each permission mint is one template whose argument shape (leading
-# contexts, trailing tokens) is its concept gate, so the six requires-ok
-# entries the old overload pairs needed are gone.  The spawning fork arm
-# starts threads, so it is not constexpr; the inline arm is.
+# ── foundation/permissions/ ──────────────────────────────────────────
+# The spawning fork arm starts threads, so it is not constexpr.  The
+# inline arm is constexpr.
 include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
-
-# ── sessions/ allocating endpoint mints ──────────────────────────────
-# The forty-two `requires-ok` entries that stood here are gone.  Each one
-# named a mint whose gate is `template <SomeSessionSurface S, ...>`, and
-# the scanner now reads a constrained parameter as the constraint it is.
 
 # ── topology/ + warden/ allocating mints ─────────────────────────────
 include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok

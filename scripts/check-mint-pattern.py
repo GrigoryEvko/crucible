@@ -3,34 +3,21 @@
 
 CLAUDE.md §XXI: every mint factory is `[[nodiscard]] constexpr ... noexcept`
 with a `requires` clause carrying the fit check.  This gate reads each axis off
-the AST rather than off a line window, which is what `check-mint-pattern.sh`
-does in 1,173 lines of bash.
+the AST.  The enclosing `template_declaration` tells whether a mint is a
+template, at any distance from the signature.
 
 ONE CLAUSE, TWO QUESTIONS.  §XXI's sentence carries two claims about the
-constraint, and reading it as one axis got both wrong in opposite directions.
+constraint, so the gate reads two axes:
 
   * PRESENCE — is there a type-level constraint at all?  C++ spells one
     constraint two ways: `template <typename T> requires C<T>` and
-    `template <C T>`.  Reading only the keyword called 49 of the tree's 332
-    mints unconstrained when every one carried a concept on a parameter, and
-    50 allowlist entries existed to excuse that misreading.
+    `template <C T>`, and the gate reads both.
   * CONTEXT FIT — for a ctx-bound mint, does the constraint gate the CONTEXT?
-    A clause naming some other parameter does not.  Twenty-six session mints
-    constrain their channel surface and accept `HotFgCtx`, `ColdInitCtx` and
-    every other context equally, which is the opposite of what §XXI claims a
-    ctx-bound mint verifies.
+    A clause naming some other parameter does not.  A mint that constrains
+    only its channel surface accepts every context equally, which is the
+    opposite of what §XXI claims a ctx-bound mint verifies.
 
-So the two are separate axes.  Folding them let a surface constraint stand in
-for a context gate, and fixing the presence blind spot alone would have retired
-all 50 entries and left those 26 sites recorded nowhere.
-
-WHAT THE WINDOW COST.  The bash guard decides whether the `requires` axis
-applies by walking fifteen lines up from the signature looking for the word
-`template`.  In `permissions/FederationPermission.h` the template parameter list
-sits at line 288 and the signature at line 305 — seventeen lines.  The guard
-finds no template, skips the axis, and `mint_federation_admittance` passes with
-no `requires` clause at all.  The window fails open.  The enclosing
-`template_declaration` answers the same question exactly, at any distance.
+A single axis would let a surface constraint stand in for a context gate.
 
 THE CONSTEXPR AXIS HAS TWO EXCEPTIONS.  §XXI drops `constexpr` from a factory
 that genuinely allocates, and from a factory whose body can never be constant

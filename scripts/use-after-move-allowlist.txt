@@ -8,10 +8,9 @@
 # entries make.  The guard refuses an entry that admits more findings
 # than it finds, so the list shrinks when the code changes.
 #
-# Only a test that probes a moved-from object on purpose is on this list,
-# and a macro of the frozen old tree that forwards.  Each probe entry reads
-# the object after the move to prove the state that the move leaves, or uses
-# it to prove that the use aborts.
+# Only a test that probes a moved-from object on purpose is on this list.
+# Each probe entry reads the object after the move to prove the state that
+# the move leaves, or uses it to prove that the use aborts.
 
 # Probe: a moved-from channel binding is unbound.
 test/fixy/test_channel_moved_from.cpp:binding_moves_its_pointer:first

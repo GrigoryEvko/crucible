@@ -53,7 +53,7 @@ import tsast  # noqa: E402
 CANONICAL = ("include/foundation/reflect/Hash.h", ("foundation", "reflect"))
 # Each path that may hold a second body, with its reason.
 EXEMPT: dict[str, str] = {
-    "include/crucible/Expr.h": "a frozen copy of the old tree, which the consumer migration moves onto Hash.h",
+    "include/crucible/Expr.h": "the copy in crucible::detail that the runtime headers still fold through",
 }
 NAME = "combine_ids"
 ROOTS = ("include", "src", "test", "bench", "tools", "vessel", "fuzz")

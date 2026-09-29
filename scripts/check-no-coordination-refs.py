@@ -19,7 +19,7 @@ THE RULE
          "Stage B4", "at A9", "Phase F6" and "Agent 11".
     Three kinds of text look similar and pass by construction: a preprocessor
     directive (a letter follows `#`), a collision rule code (S004, I002: no
-    hyphen) and a suppression marker (FIXY-DISCIPLINE-OK: no digit after the
+    hyphen) and a suppression marker (ROW-CONTAINS-OK: no digit after the
     prefix).  The guard has no allowlist.  A legitimate construct that it
     reports is a reason to narrow a pattern, not to exempt a line.
 
@@ -57,17 +57,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
-# The trees that obey the rule.  The old tree under include/crucible is frozen,
-# so the scan does not read it.
+# The trees that obey the rule.  The runtime under include/crucible and its
+# sources still hold references, so the scan does not read them.
 SCAN_DIRS = (
     "include/foundation", "include/fixy", "src/foundation", "src/fixy",
     "test/foundation", "test/fixy", "scripts", "vessel", "bench",
 )
 
 # The build files outside those trees that obey the rule.  test/CMakeLists.txt
-# is not here: most of its breadcrumbs sit on the registrations of the old
-# tests, which leave with the old tree, and the file joins this list after
-# they go.
+# still holds references, so it is not here.
 SCAN_FILES = ("CMakeLists.txt", ".github/workflows/ci.yml")
 
 # This file plants references in its self-test, so the scan skips it.
@@ -283,7 +281,7 @@ PLANTED_REFERENCES = (
     "Ported at A13.2.",
     "The wrappers arrive in tasks A10.x.",
     "The grant tier retired at A9.",
-    "Stage D deletes the old tree.",
+    "Stage D deletes the shim.",
     "Tracked as FIXY-V-264.",
     "The cache row fence of FOUND-I02.",
     "The cluster WRAP-Cipher-2.",
@@ -345,11 +343,11 @@ def self_test() -> int:
               "// I002, F101, W001, P010 and V101 are collision rule codes.\n"
               "// UTF-8, SHA-256, AVX-512, FNV-1a, x86-64 and C++26 are not tags.\n"
               "// template <class B1, class B2> and A1 are template parameters.\n"
-              "// FIXY-DISCIPLINE-OK: a marker.  REFINED-PRE-OK: a marker too.\n"
+              "// ROW-CONTAINS-OK: a marker.  REFINED-PRE-OK: a marker too.\n"
               "// Headline #1 and item #2 number the items of a list.\n"
               "// &#123; is an entity, and #374151 is a color.\n")
         write(root, "scripts/planted_clean.sh", 'echo "$#" "${#arr[@]}"\nprintf \'%#08x\\n\' 255\n[[ "x" =~ [#0-9] ]]\n')
-        write(root, "include/crucible/PlantedOld.h", "// Folded at #147.\n")
+        write(root, "include/crucible/PlantedRuntime.h", "// Folded at #147.\n")
         write(root, "bench/planted_bench.cpp", "// Lifted to harness scope at GAPS-004y.\n// AVX-512 and x86-64 are not tags.\n")
         write(root, "CMakeLists.txt", "# Tracked as FIXY-V-264.\n")
         write(root, ".github/workflows/ci.yml", "  # The sibling guards (Stage A1).\n")
@@ -357,7 +355,7 @@ def self_test() -> int:
         planted = [f"include/fixy/PlantedBreadcrumbs.h:{n}:" for n in range(1, len(PLANTED_REFERENCES) + 1)]
         expect("each reference family is reported on its own line", root, 1,
                planted + ["CMakeLists.txt:1:", ".github/workflows/ci.yml:1:", "bench/planted_bench.cpp:1:"],
-               ["PlantedClean.h", "planted_clean.sh", "PlantedOld.h", "test/CMakeLists.txt",
+               ["PlantedClean.h", "planted_clean.sh", "PlantedRuntime.h", "test/CMakeLists.txt",
                 "bench/planted_bench.cpp:2:"])
 
         for relative in ("include/fixy/PlantedBreadcrumbs.h", "CMakeLists.txt", ".github/workflows/ci.yml",

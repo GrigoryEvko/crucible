@@ -574,7 +574,7 @@ def expanded(root: Path, compile_db: Path, scope: frozenset[str],
 
         doors.setdefault(path, []).extend((line_of(row), shape) for row, shape in result["doors"])
         if reads_members(path):
-            targets +=[(path, line_of(row), access, name) for row, access, name in result["members"]]
+            targets += [(path, line_of(row), access, name) for row, access, name in result["members"]]
     return doors, targets
 
 
