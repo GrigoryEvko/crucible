@@ -484,8 +484,9 @@ struct CrashClassMismatch : tag_base {
     static constexpr std::string_view remediation = "Two routes.  (a) If the callee can fail, return "
                                                     "std::expected<T, E> from it.  The caller then handles the "
                                                     "failure explicitly.  (b) If the failure cannot occur at this "
-                                                    "call site, call the callee through an adapter that calls "
-                                                    "crucible_abort on the impossible case.  The adapter carries a "
+                                                    "call site, call the callee through an adapter that calls a "
+                                                    "cold [[noreturn]] helper, which calls std::abort(), on the "
+                                                    "impossible case.  The adapter carries a "
                                                     "ctrl::abort atom that states the reason, and the caller admits "
                                                     "that exit by name.";
 
@@ -506,7 +507,7 @@ struct CrashClassMismatch : tag_base {
                                                         "admit the abort by name and update the rollback logic.";
     static constexpr std::string_view correct_example = "std::expected<T, E> safe_op() noexcept;  // recoverable";
     static constexpr std::string_view violating_example =
-        "T dangerous_op() noexcept;  // calls crucible_abort, so it carries ctrl::abort";
+        "T dangerous_op() noexcept;  // calls std::abort(), so it carries ctrl::abort";
 };
 
 struct ConsistencyMismatch : tag_base {
@@ -1185,7 +1186,7 @@ struct SharedPermissionPoolSaturated : tag_base {
     static constexpr std::string_view correct_example =
         "{ auto guard = pool.lend(); use(guard); }  // RAII drop releases";
     static constexpr std::string_view violating_example =
-        "auto* leak = new SharedPermissionGuard(pool.lend());  // never freed";
+        "auto* leak = new std::optional<SharedPermissionGuard<Tag>>(pool.lend());  // never deleted";
 };
 
 struct HugePageAllocationFailed : tag_base {
@@ -1270,8 +1271,11 @@ struct PublishOnceDoublePublish : tag_base {
 
 struct BitsInvariantViolation : tag_base {
     static constexpr std::string_view name = "BitsInvariantViolation";
-    static constexpr std::string_view description = "safety::Bits<EnumType> observed a runtime value outside the "
-                                                    "declared invariant for the wrapped flag enum.  Three concrete "
+    static constexpr std::string_view description = "A fixy::Bits<EnumType> word holds a value outside the "
+                                                    "invariant of its flag enum.  fixy::Bits does not check that "
+                                                    "invariant: from_raw admits every value of the underlying type, "
+                                                    "and set() admits two flags that exclude each other.  The code "
+                                                    "that validates the word names this tag.  Three concrete "
                                                     "failure modes route through this tag: (a) Bits<E>::from_raw(b) "
                                                     "loaded a deserialized bit-pattern containing flags outside "
                                                     "E's declared mask (e.g., the on-disk word survived an enum-"
@@ -1295,15 +1299,16 @@ struct BitsInvariantViolation : tag_base {
                                                     "violations: trace the set() / unset() / toggle() call site "
                                                     "that established the invalid combination; the bug is usually "
                                                     "an early-return that skipped the unset() of the conflicting "
-                                                    "flag.  Permanent fix: make the invariant a declared "
-                                                    "constraint on the Bits<E, Invariants...> instantiation "
-                                                    "and route mutation through guarded "
-                                                    "transitions that fail-loud at the source.";
+                                                    "flag.  Bits<E> has no parameter for such an invariant, so the "
+                                                    "permanent fix is a validated owner of the word that routes "
+                                                    "each mutation through a guarded transition, which fails loud "
+                                                    "at the source.";
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters =
-        "safety::Bits<EnumType> wraps a uint flag-bitset over a scoped "
-        "enum.  Three runtime invariants route through this tag: (a) "
+        "fixy::Bits<EnumType> wraps a flag word over a scoped enum, and "
+        "it checks none of the invariants that follow.  Three runtime "
+        "invariants route through this tag: (a) "
         "from_raw(b) admitting a deserialized word with bits outside "
         "E's declared mask (post-schema-tightening drift, e.g., an "
         "on-disk word survives an enum-tightening upgrade and now "
@@ -1320,20 +1325,20 @@ struct BitsInvariantViolation : tag_base {
                                                         "enumerator OR-fold.  Mutation paths that established a flag "
                                                         "without unset()'ing the conflicting MX-peer — usually an "
                                                         "early-return that skipped the conflicting-flag clear.";
-    static constexpr std::string_view correct_example = "Bits<E>::from_raw(raw & valid_mask_v<E>)  // masked";
+    static constexpr std::string_view correct_example =
+        "Bits<E>::from_raw(raw & kValidMask)  // kValidMask is the OR of every enumerator of E";
     static constexpr std::string_view violating_example = "Bits<E>::from_raw(raw)  // unmasked deserialize";
 };
 
 struct BorrowedBoundsViolation : tag_base {
     static constexpr std::string_view name = "BorrowedBoundsViolation";
-    static constexpr std::string_view description = "safety::Borrowed<T, Source> observed a bounds-violating "
-                                                    "accessor call.  Concrete failure modes: (a) operator[](i) "
-                                                    "where i >= size() (per the wrapper's doc-block at "
-                                                    "Borrowed.h:250 — `std::span::operator[]` is UB on OOB, the "
-                                                    "wrapper forwards without bounds enforcement to preserve hot-"
-                                                    "path costs); (b) subspan(offset, count) where "
-                                                    "offset + count > size() (per Borrowed.h:276 — same UB "
-                                                    "forwarding); (c) front() / back() on an empty Borrowed.  In "
+    static constexpr std::string_view description = "fixy::Borrowed<T, Source> (include/fixy/Borrowed.h) received "
+                                                    "an accessor call outside its bounds.  Its accessors carry no "
+                                                    "contract clause and forward to std::span, whose behavior is "
+                                                    "undefined outside the bounds.  Concrete failure modes: (a) "
+                                                    "operator[](i) where i >= size(); (b) subview(offset, count) "
+                                                    "where offset + count > size(); (c) front() or back() on an "
+                                                    "empty Borrowed.  In "
                                                     "every case the consumer reads memory belonging to whatever "
                                                     "follows the source object — common consequences are torn "
                                                     "reads against a sibling field or a SIGBUS at the end of the "
@@ -1343,22 +1348,20 @@ struct BorrowedBoundsViolation : tag_base {
     static constexpr std::string_view remediation = "Audit the indexing site for missing size()-comparisons.  The "
                                                     "canonical Borrowed iteration idiom uses the range-based for "
                                                     "or std::ranges algorithms which derive bounds from "
-                                                    "begin() / end() — operator[] and subspan() are escape hatches "
+                                                    "begin() / end() — operator[] and subview() are escape hatches "
                                                     "for index-arithmetic call sites that already proved the "
                                                     "in-range invariant by other means.  Permanent fix: rewrite "
                                                     "the indexing site through size()-aware iteration, or add a "
                                                     "CRUCIBLE_PRE(i < size()) ahead of the operator[] call (the "
                                                     "pre catches at consteval AND under enforce semantic at "
-                                                    "runtime — see foundation/contracts/Pre.h).  For subspan: prefer "
-                                                    "subspan(offset).first(count) which reports the misuse at "
-                                                    "first() rather than after the offset slice has already "
-                                                    "advanced past size().";
+                                                    "runtime — see foundation/contracts/Pre.h).  For subview: "
+                                                    "compare offset + count with size() before the call.";
 
     static constexpr Severity severity = Severity::Fatal;
     static constexpr std::string_view why_this_matters =
-        "safety::Borrowed<T, Source> forwards std::span's UB-forwarding "
-        "operator[] / subspan() / front() / back() to preserve hot-path "
-        "costs (Borrowed.h:250 doc-block).  The lifetime tag prevents "
+        "fixy::Borrowed<T, Source> forwards operator[], subview(), front() "
+        "and back() to std::span with no contract clause "
+        "(include/fixy/Borrowed.h).  The lifetime tag prevents "
         "use-after-destruction of the source; this diagnostic covers "
         "the bounds axis the lifetime gate is silent on.  An out-of-"
         "bounds operator[] reads memory belonging to whatever follows "
@@ -1366,11 +1369,11 @@ struct BorrowedBoundsViolation : tag_base {
         "field, SIGBUS at the end of the Source's mapped region, or "
         "(under ASAN) a heap-buffer-overflow report rooted at the "
         "indexing site rather than the missing size() guard.";
-    static constexpr std::string_view symptom_pattern = "Index-arithmetic call sites using operator[] / subspan that "
+    static constexpr std::string_view symptom_pattern = "Index-arithmetic call sites using operator[] / subview that "
                                                         "rely on caller-side size() comparison — refactoring breaks "
-                                                        "the comparison without breaking the indexing.  Subspan with "
-                                                        "offset + count > size() that doesn't trigger first() / last() "
-                                                        "filtering at the boundary.";
+                                                        "the comparison without breaking the indexing.  A subview with "
+                                                        "offset + count > size() that no caller check stops at the "
+                                                        "boundary.";
     static constexpr std::string_view correct_example = "if (i < b.size()) use(b[i]);  // explicit guard";
     static constexpr std::string_view violating_example =
         "for (size_t i = 0; i <= b.size(); ++i) use(b[i]);  // off-by-one";

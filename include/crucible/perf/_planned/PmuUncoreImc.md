@@ -46,7 +46,7 @@ struct PmuUncoreImcSnapshot {
 
 class PmuUncoreImc {
 public:
-    [[nodiscard]] static std::optional<PmuUncoreImc> load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<PmuUncoreImc> load(::foundation::effects::Init) noexcept;
     [[nodiscard]] PmuUncoreImcSnapshot read() const noexcept;
     [[nodiscard]] uint32_t num_channels() const noexcept;  // sockets × channels
 };

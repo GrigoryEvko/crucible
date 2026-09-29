@@ -64,7 +64,7 @@ struct PmuTopDownSnapshot {
 class PmuTopDown {
 public:
     [[nodiscard]] static std::optional<PmuTopDown>
-        load(::crucible::effects::Init) noexcept;
+        load(::foundation::effects::Init) noexcept;
     [[nodiscard]] PmuTopDownSnapshot read() const noexcept;
     // ...
 };

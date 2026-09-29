@@ -4079,8 +4079,8 @@ crucible_neg_compile_test(neg_storage_nbytes_det_cross_tier
 
 # ─── #884 WRAP-Cipher-1 — non-zero head invariant on advance_head ───
 #
-# Per #884, ValidCipherHead is safety::Refined<safety::non_zero,
-# ContentHash> and gates the parameter to Cipher::advance_head.
+# ValidCipherHead is fixy::Refined<fixy::non_zero, ContentHash> and
+# gates the parameter to Cipher::advance_head.
 # ContentHash{0} is the structural sentinel for "no commit yet" —
 # advancing HEAD to it would corrupt the log invariant (a step with
 # hash=0 is indistinguishable from "before first commit"), break
@@ -4473,8 +4473,8 @@ crucible_neg_compile_multi_test(neg_recipe_registry_entries_cross_tag
   "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::JsonRegistry>. requested")
 
-# #1057 WRAP-TraceRing-5: Entry::scalar_values raw int64_t[5] →
-# safety::FixedArray<int64_t, 5>.  HS14 mandates ≥2 negative-compile
+# Entry::scalar_values of TraceRing is fixy::FixedArray<int64_t, 5>.
+# HS14 mandates ≥2 negative-compile
 # fixtures for the new soundness gate (the typed inline-scalar buffer):
 #   * neg_tracering_scalar_values_at_oob              ACCESS-side gate —
 #                                                     compile-time-known

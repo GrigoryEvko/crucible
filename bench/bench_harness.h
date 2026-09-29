@@ -162,7 +162,7 @@ static_assert(sizeof(CpuId) == sizeof(int));
 // startup-time Timer calibration / overhead measurement (pre-pin) and
 // for ad-hoc external benches that don't run the harness affinity path.
 //
-// safety::CpuPinned<Mask, Posture, Unit> requires Mask as an
+// fixy::CpuPinned<Mask, Posture, Unit> requires Mask as an
 // NTTP — fits production code where the target core is compile-time
 // chosen, but bench's `warden::select_hot_cpu` picks the target at
 // runtime.  RdtscPinned is the dynamic-mask analogue specifically for

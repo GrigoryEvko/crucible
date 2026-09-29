@@ -41,7 +41,7 @@ offline with `perf-tools`'s `intel_pt` decoder + objdump.
 class IntelPtOutlierReplay {
 public:
     [[nodiscard]] static std::optional<IntelPtOutlierReplay>
-        load(::crucible::effects::Init,
+        load(::foundation::effects::Init,
              size_t aux_ring_bytes_per_cpu = 16 * 1024 * 1024) noexcept;
 
     // Snapshot the current AUX content for ALL CPUs to a file.

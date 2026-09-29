@@ -271,7 +271,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — `scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `concurrent/Topology.h`, whose sixteen catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or `crucible_abort`. The guard checks `__cxa_throw` is absent from the artifact, which also catches a throw arriving through a library header |
+| Exceptions | **not a flag** — `scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `include/fixy/concurrent/Topology.h`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard checks `__cxa_throw` is absent from the artifact, which also catches a throw arriving through a library header |
 | RTTI | **not a flag** — `scripts/check-no-throw-no-rtti.sh` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks the artifact defines no typeinfo or vtable and references no `__dynamic_cast` |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
@@ -613,7 +613,7 @@ Rule: prefetch 8-16 iterations ahead; `locality = 0` for streaming reads (don't 
 Three tiers:
 
 1. **Auto-vectorization** — clean loops + `__restrict__` + `[[assume]]`. Audit with `-fopt-info-vec -fopt-info-vec-missed`.
-2. **`std::simd` (C++26 `<simd>`)** — default for new portable SIMD. The `crucible::simd::*` facade adds only what std lacks (`iota_v`, `prefix_mask`, `DetSafeSimd` concept).
+2. **The `foundation::simd` facade** (`include/foundation/Simd.h`) — the default for new portable SIMD. It builds its own `vec<T, N>` and `mask` types over the GCC vector extensions, and it gives `iota_v`, `prefix_mask` and the `DetSafeSimd` concept.
 3. **Intrinsics** (`<immintrin.h>`) — only when `std::simd` cannot express the operation. Canonical example is `SwissTable.h`'s `vpcmpeqb + vpmovmskb` probe. Compile-time `#ifdef __AVX2__ / __SSE2__` selection — single ISA per build.
 
 Crucible's vectorizable hot paths: Philox RNG, hash mixing, TensorMeta extraction, reduction kernels.
@@ -1159,7 +1159,7 @@ Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in th
 |---|---|---|---|
 | **Impossible** (contract violation) | `pre` / `post` / `contract_assert` | 0 ns on hot path (semantic=ignore), check in debug | Null pointer, OOB index, invariant violation |
 | **Expected-but-rare** | `std::expected<T, E>` return | ~1 ns (branch on `.has_value()`) | Parse error, shape out of bucket, peer timeout |
-| **Catastrophic** | `crucible_abort(msg)` | — | OOM, hardware fault, corrupt state, FLR failure |
+| **Catastrophic** | a cold `[[noreturn]]` helper that prints the diagnostic and calls `std::abort()` | — | OOM, hardware fault, corrupt state, FLR failure |
 
 ### Contract semantics per TU
 
@@ -1187,7 +1187,7 @@ enum class CompileError : uint8_t {
 };
 
 [[nodiscard]] std::expected<CompiledKernel, CompileError>
-compile_kernel(fx::Bg bg, Arena& arena,
+compile_kernel(::foundation::effects::Bg const& bg, Arena& arena,
                const KernelNode& k, const TargetCaps& caps)
     pre (k.recipe != nullptr)
     pre (k.tile != nullptr)
@@ -1249,15 +1249,15 @@ const auto& ck = *r;  // happy path
 ### Abort path
 
 ```cpp
-[[noreturn]] CRUCIBLE_COLD
-void crucible_abort(const char* msg) noexcept {
-    fprintf(stderr, "crucible: fatal: %s\n", msg);
-    cipher::emergency_flush();       // try to salvage hot-tier state
+// include/foundation/permissions/Permission.h
+[[noreturn]] CRUCIBLE_COLD inline void shared_permission_pool_outlived_abort_() noexcept {
+    std::fputs("crucible: fatal contract violation: a SharedPermissionPool ended while shares were out.  ...\n",
+               stderr);
     std::abort();                    // SIGABRT → core dump if enabled
 }
 ```
 
-Every abort path is `[[gnu::cold]]` + `noinline` so it lives in a cold section and doesn't pollute hot icache.
+Each abort site has its own helper of this shape. The tree has no shared abort function. Every abort path is `[[gnu::cold]]` + `noinline` so it lives in a cold section and doesn't pollute hot icache.
 
 ### Logging and tracing on hot path — banned
 
@@ -1499,20 +1499,20 @@ GCC 16 has ABI-stable modules but we defer: CMake/ninja integration still maturi
 
 ## XVI. Safety Wrappers
 
-Library types in `include/crucible/safety/` that mechanize the axioms from §II at compile time. Every wrapper is a phantom-type newtype with **zero runtime cost** — `sizeof(Wrapper<T>) == sizeof(T)`, same machine code as the bare primitive under `-O3`. Generated assembly is indistinguishable from the unwrapped equivalent.
+Library types in `include/fixy/` and in `include/foundation/permissions/` that mechanize the axioms from §II at compile time. Every wrapper is a phantom-type newtype with **zero runtime cost** — `sizeof(Wrapper<T>) == sizeof(T)`, same machine code as the bare primitive under `-O3`. Generated assembly is indistinguishable from the unwrapped equivalent.
 
 ### Header catalog
 
 | Header | Axioms it enforces | Role |
 |---|---|---|
-| `Linear.h` | MemSafe, LeakSafe, BorrowSafe | Move-only `Linear<T>`. `.consume() &&` takes ownership; `.peek() const&` borrows. Construction is `[[nodiscard]]`. |
-| `Refined.h` | InitSafe, NullSafe, TypeSafe | `Refined<Pred, T>` — predicate checked by contract at construction; function bodies treat the invariant as `[[assume]]` downstream. |
-| `Secret.h` | DetSafe + information-flow discipline | Classified-by-default `Secret<T>`. Escapes only via `declassify<Policy>()` with a grep-able `secret_policy::*` tag. |
-| `Tagged.h` | TypeSafe | Phantom tags for provenance (`source::FromUser`, `source::FromDb`, `source::Internal`) and trust (`trust::Verified`, `trust::Unverified`). Mismatch at call sites = compile error. |
-| `Session.h` | BorrowSafe | Type-state protocol channels. Each `.send()` / `.recv()` returns a new type carrying the remaining protocol. Wrong order or missing step = compile error. State lives in the type; zero runtime cost. |
-| `Checked.h` | TypeSafe, DetSafe | `checked_add` / `wrapping_add` / `trapping_add` over `__builtin_*_overflow`. `std::add_sat` / `std::mul_sat` / `std::sub_sat` pass-through for saturation. |
-| `Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
-| `ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
+| `fixy/Qtt.h` | MemSafe, LeakSafe, BorrowSafe | Move-only `Linear<T>`. `.consume() &&` takes ownership; `.peek() const&` borrows. Construction is `[[nodiscard]]`. |
+| `fixy/Refined.h` | InitSafe, NullSafe, TypeSafe | `Refined<Pred, T>`. The mint `mint_refined` checks the predicate with a precondition that obeys the contract semantic. Downstream bodies trust the invariant. |
+| `fixy/Secret.h` | DetSafe + information-flow discipline | Classified-by-default `Secret<T>`. Escapes only via `declassify<Policy>()` with a grep-able `secret_policy::*` tag. |
+| `fixy/Tagged.h` | TypeSafe | Phantom tags in `fixy::tags` for provenance (`source::FromUser`, `source::FromDb`, `source::FromInternal`) and trust (`trust::Verified`, `trust::Unverified`). Mismatch at call sites = compile error. |
+| `fixy/session/Handle.h` | BorrowSafe | `SessionHandle<Proto, Resource>`: type-state protocol channels. Each `.send()` / `.recv()` returns a new type carrying the remaining protocol. Wrong order or missing step = compile error. State lives in the type; zero runtime cost. |
+| `fixy/Checked.h` | TypeSafe, DetSafe | `checked_add` / `wrapping_add` / `trapping_add` over `__builtin_*_overflow`. `saturating_add` / `saturating_sub` / `saturating_mul` call `foundation::sat::add_sat` / `sub_sat` / `mul_sat`, which call `std::saturating_*` only on overflow. |
+| `fixy/Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
+| `fixy/ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
 
 Every header is header-only and self-contained. The dependency rule is the layer
 rule, and `scripts/check-layer-boundary.py` enforces it: `foundation` names only
@@ -1535,8 +1535,8 @@ concerns, not a gate.
 2. **Every resource type wraps in `Linear<T>`** — file handles, mmap regions, TraceRing, channel endpoints, arena-owned objects with drop semantics.
 3. **Every load-bearing predicate gets a named alias** — `PositiveInt`, `NonNullTraceEntry`, `ValidSlotId`, `NonEmptySpan<T>`. Not anonymous refinements at call sites.
 4. **Every classified value wraps in `Secret<T>`** — Philox keys, Cipher encryption keys, private weights, credentials. Declassification requires a `secret_policy::*` tag.
-5. **Every trust-boundary crossing uses `Tagged<T, source::*>`** — deserialized input, network payload, FFI return. Sanitized-only APIs demand `source::Internal`.
-6. **Every fixed-order protocol uses `Session<...>`** — handshakes, init sequences, channel lifecycles, plan-chain acquisition.
+5. **Every trust-boundary crossing uses `Tagged<T, source::*>`** — deserialized input, network payload, FFI return. An API that takes only sanitized input asks for `source::FromInternal`.
+6. **Every fixed-order protocol uses `SessionHandle<...>`** — handshakes, init sequences, channel lifecycles, plan-chain acquisition.
 7. **Every append-only or monotonic structure wraps** in `AppendOnly<>` / `Monotonic<T, Cmp>` — event logs, generation counters, version numbers, Cipher warm writes.
 8. **Every crypto path uses `ct::*` primitives** for comparisons and selections. Non-CT code in a `with Crypto` context is a review reject.
 
@@ -1546,7 +1546,7 @@ concerns, not a gate.
 - `-Werror=use-after-move` + `Linear<>`'s deleted copy constructor catches double-consume at compile time.
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (debug, CI, boundary TUs) and under `semantic=ignore` on hot-path TUs they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
-- Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` means the compiler rejects accidental duplication.
+- Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `SessionHandle<>` means the compiler rejects accidental duplication.
 - Contract violations abort via `std::terminate` (P1494R5), never invoke undefined behavior.
 
 ### Review enforcement
@@ -1583,7 +1583,7 @@ constexpr R(int x)
 
 **`-fcontracts` and `-freflection` require `-std=c++26`.**  CMake's compiler-probe step runs before the project's `CMAKE_CXX_STANDARD` takes effect, so putting these flags in `CMAKE_CXX_FLAGS` via the preset breaks configuration.  Instead, set them at target level via `target_compile_options(crucible INTERFACE -freflection -fcontracts)` after `project()` has declared the standard.
 
-**`handle_contract_violation` must be defined by the program.**  GCC 16 / libstdc++ 16 does not ship a default handler.  Every program that enables contracts must provide one; otherwise the link fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`.  The project default belongs in a shared `CrucibleContractHandler.cpp` wired to `crucible_abort()`.
+**`handle_contract_violation` must be defined by the program.**  GCC 16 / libstdc++ 16 does not ship a default handler.  Every program that enables contracts must provide one; otherwise the link fails with `undefined reference to handle_contract_violation(std::contracts::contract_violation const&)`.  The project default is `src/foundation/ContractHandler.cpp`, a weak definition that ends in `std::abort()`.
 
 ```cpp
 #include <contracts>
@@ -1668,7 +1668,7 @@ Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop
 ### Hard rules
 
 - **Banned**: any non-ASCII character in a C++ identifier (variable, parameter, function, template parameter, member, namespace). No Γ, no α, no ω, no μ, no ≤. Doc-comments MAY cite papers or specs with Unicode (`fmix64` from xxHash, the `Θ(log n)` complexity of Chase-Lev). Code MAY NOT.
-- **Banned**: single-character identifiers (`g`, `t`, `e`, `s`, `x`, `a`, `b`, `n`, `r`) in any scope except numeric `for` loop induction over a range.
+- **Banned**: single-character identifiers (`g`, `t`, `e`, `s`, `x`, `b`, `n`, `r`) in any scope except numeric `for` loop induction over a range, and the capability parameter `a` (next section).
 - **Banned**: two-character identifiers (`ty`, `ex`, `fn`, `st`, `pt`, `tc`, `ok`, `nf`). Abbreviations are not names.
 - **Discouraged**: identifiers ≤ 3 characters. Prefer `scope` over `sc`, `param` over `p`, `binder` over `b`, `result` over `r`, `grade` over `g`, `index` over `i`.
 
@@ -1676,8 +1676,8 @@ Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop
 
 Five categories of short names are exempt because they ARE the standard vocabulary in their domain — renaming them would make the code less recognizable, not more:
 
-- **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `RT`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
-- **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `arena` (fx::Alloc), `ctx` (CrucibleContext), `bg` (fx::Bg token), `fg` (fx::Fg token), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
+- **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `Observe`, `Warden`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
+- **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `a` (the `::foundation::effects::Alloc` capability parameter), `arena` (the `Arena&` beside it), `ctx` (an execution context: `foundation::effects::ExecCtx` or `CrucibleContext`), `bg` (the `::foundation::effects::Bg` context), `fg` (the foreground context, `foundation::effects::ctx_cap::Fg`), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
 - **Binary-operation sides** (the FX/parser convention, preserved): `lhs` / `rhs` inside `add(lhs, rhs)`, `mul(lhs, rhs)`, `compare(lhs, rhs)`. Fine in accessors (`binop_lhs()`, `binop_rhs()`) because they project fields whose semantics are exactly "left side" / "right side".
 - **Loop induction variables** over a compile-time small range: `i`, `j`, `d` (dimension), `k` inside `for (uint8_t d = 0; d < ndim; ++d)`. `d` for dimension is idiomatic because `ndim` is the canonical spelling of the upper bound.
 - **Template type parameters** in generic code: `T`, `U`, `V`, `T1`, `T2` are canonical STL-style naming. A template parameter named `Predicate` is fine; one named `Fn` or `F` depends on role — a type-erased callable is `Callable` or `Predicate`, not `F`. Single-letter OK only for type-level `T`-style.
@@ -1692,7 +1692,7 @@ Five categories of short names are exempt because they ARE the standard vocabula
 
 ### Lemma / theorem / invariant names
 
-Lean code in `lean/Crucible/` and C++ test names obey the same rule: compose a question: `isConsumed_impliesGradeZero`, `bitExact_ofReplay`, `wellFormed_ofChecked`. Never `lemma1`, `wf_thm`, `tc_test`. Test-suite names that describe the invariant should lead with the invariant name, not the test index.
+C++ test names and invariant names obey the same rule: compose a question: `isConsumed_impliesGradeZero`, `bitExact_ofReplay`, `wellFormed_ofChecked`. Never `lemma1`, `wf_thm`, `tc_test`. Test-suite names that describe the invariant should lead with the invariant name, not the test index.
 
 ### Apply unconditionally to new code. Apply opportunistically to existing code when refactoring — don't open rename-only PRs.
 

@@ -90,7 +90,7 @@ public:
     };
 
     [[nodiscard]] static std::optional<PerfEventRing>
-        load(::crucible::effects::Init,
+        load(::foundation::effects::Init,
              What event,
              uint64_t sample_period = 100'000) noexcept;
 
@@ -101,7 +101,7 @@ public:
 
     // Borrowed view over the mmap'd ring (advanced — for SIMD-batched
     // userspace decoders).
-    [[nodiscard]] safety::Borrowed<const std::byte, PerfEventRing>
+    [[nodiscard]] ::fixy::Borrowed<const std::byte, PerfEventRing>
         raw_ring_view() const noexcept;
 };
 ```

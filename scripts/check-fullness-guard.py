@@ -9,7 +9,7 @@ full, and the next push writes outside the array:
     entries[count] = incoming;                 // writes entries[300]
 
 `>=` costs the same instruction and is correct for every count the type can
-hold.  The release build has no _GLIBCXX_ASSERTIONS, safety::FixedArray's
+hold.  The release build has no _GLIBCXX_ASSERTIONS, fixy::FixedArray's
 operator[] has no precondition, and some TUs compile their contracts out, so
 the comparison is the only check that reaches production.
 

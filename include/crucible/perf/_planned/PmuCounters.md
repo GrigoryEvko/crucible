@@ -98,7 +98,7 @@ struct PmuCountersSnapshot {
 class PmuCounters {
 public:
     [[nodiscard]] static std::optional<PmuCounters>
-        load(::crucible::effects::Init) noexcept;
+        load(::foundation::effects::Init) noexcept;
 
     // ~80 ns total: 9 RDPMCs across all CPUs × 16 cores ≈ 144
     // RDPMCs at ~5 ns each ≈ 720 ns ÷ batched + sum ≈ ~80 ns

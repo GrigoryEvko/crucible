@@ -44,7 +44,7 @@ struct PmuCmtMbmSnapshot {
 
 class PmuCmtMbm {
 public:
-    [[nodiscard]] static std::optional<PmuCmtMbm> load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<PmuCmtMbm> load(::foundation::effects::Init) noexcept;
     [[nodiscard]] PmuCmtMbmSnapshot read() const noexcept;
     // Lifecycle: load() creates resctrl group + adds our PIDs;
     // dtor removes group.  Tag inherits across thread spawn via

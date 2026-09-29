@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// HS14 fixture #1 of 2 for #1057 WRAP-TraceRing-5
-// (Entry::scalar_values raw int64_t[5] → safety::FixedArray<int64_t, 5>).
+// HS14 fixture 1 of 2 for the inline scalar slots of a trace entry
+// (Entry::scalar_values is fixy::FixedArray<int64_t, 5>).
 //
 // Premise: with the field migrated to FixedArray<int64_t, 5>, a call to
 // `entry.scalar_values.at<5>()` must be rejected by FixedArray's

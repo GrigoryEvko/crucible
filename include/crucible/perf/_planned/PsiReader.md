@@ -52,7 +52,7 @@ struct PsiSnapshot {
 class PsiReader {
 public:
     [[nodiscard]] static std::optional<PsiReader>
-        load(::crucible::effects::Init) noexcept;
+        load(::foundation::effects::Init) noexcept;
 
     // ~3 syscall reads × ~5 µs each = ~15 µs per snapshot.
     // Acceptable for bench-end; not for per-iteration.

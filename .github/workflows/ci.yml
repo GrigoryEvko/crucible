@@ -347,9 +347,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container: fedora:44
     # aarch64 is non-blocking while the arm legs prove out. Both prior
-    # blockers are now fixed: (1) safety/Simd.h on libstdc++'s
-    # __SSE2__-gated <simd> — the crucible::simd facade now lowers through
-    # [[gnu::vector_size]] builtins, portable to arm; (2) canopy/Hlc.h's
+    # blockers are now fixed: (1) the foundation::simd facade
+    # (include/foundation/Simd.h) lowers through [[gnu::vector_size]]
+    # builtins, not the __SSE2__-gated <simd> of libstdc++, so it is
+    # portable to arm; (2) canopy/Hlc.h's
     # lock-free 128-bit atomic requirement — GCC 16 only provides
     # one with FEAT_LSE128 (armv9.4-a) hardware the free runners lack, so
     # Hlc.h now carries a spinlock-guarded fallback for that case (build

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// bench_simd — micro-bench for crucible::simd primitives + the
+// bench_simd — micro-bench for foundation::simd primitives + the
 // dim-hash and storage-nbytes SIMD helpers built on them.
 //
 // Coverage:

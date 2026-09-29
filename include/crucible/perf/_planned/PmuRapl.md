@@ -52,7 +52,7 @@ struct PmuRaplSnapshot {
 
 class PmuRapl {
 public:
-    [[nodiscard]] static std::optional<PmuRapl> load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<PmuRapl> load(::foundation::effects::Init) noexcept;
     [[nodiscard]] PmuRaplSnapshot read() const noexcept;
 };
 ```

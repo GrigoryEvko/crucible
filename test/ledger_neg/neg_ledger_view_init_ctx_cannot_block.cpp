@@ -5,7 +5,7 @@
 // Violation: ColdInitCtx carries Row<Init, Alloc, IO>.  It CAN touch
 // the kernel — so this is a different mismatch class from the
 // foreground fixture, which claims nothing at all — but it cannot
-// block.  cap_permitted_row<Init> in effects/ExecCtx.h deliberately
+// block.  cap_permitted_row<Init> in foundation/effects/Ctx.h deliberately
 // omits Effect::Block: initialization is not permitted to park.
 //
 // Reading the ledger parks on a disk.  So the read genuinely does not

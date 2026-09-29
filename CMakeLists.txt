@@ -1191,7 +1191,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # returns string&, adding no signal.  Real ABI breaks show up as link
     # errors anyway.  -Wabi=0 is retained for all compat warnings.
     -Wabi=0                             # 193  all ABI compat warnings
-    # crucible::simd uses over-wide [[gnu::vector_size]] vectors (e.g. the
+    # foundation::simd uses over-wide [[gnu::vector_size]] vectors (e.g. the
     # logical 64-byte i64x8) that GCC lowers to the target's native width.
     # Returning/passing such a vector by value when the TU's -march is
     # narrower than the vector triggers -Wpsabi ("vector ABI changed").

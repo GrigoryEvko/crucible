@@ -52,7 +52,7 @@ struct PmuUncoreFabricSnapshot {
 class PmuUncoreFabric {
 public:
     [[nodiscard]] static std::optional<PmuUncoreFabric>
-        load(::crucible::effects::Init) noexcept;
+        load(::foundation::effects::Init) noexcept;
     [[nodiscard]] PmuUncoreFabricSnapshot read() const noexcept;
 };
 ```

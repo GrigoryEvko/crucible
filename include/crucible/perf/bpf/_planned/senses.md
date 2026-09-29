@@ -23,12 +23,12 @@ public:
     // independently — failures (kernel too old, missing CAP, etc.)
     // are recorded in coverage().  load() never fails as a whole;
     // it returns Senses with whatever subset succeeded.
-    [[nodiscard]] static Senses load_all(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static Senses load_all(::foundation::effects::Init) noexcept;
 
     // Load only the named subset.  Useful for diagnostics where
     // PmuSample is wanted but not the whole 50-program battery.
     [[nodiscard]] static Senses load_subset(
-        ::crucible::effects::Init,
+        ::foundation::effects::Init,
         SensesMask which) noexcept;
 
     // Per-sub-program accessors return raw pointers (or nullopt) into
