@@ -15,8 +15,9 @@
 //      THREADING.md §10.1 published targets after the seqlock
 //      AtomicMonotonic migration.
 //
-// The new tree carries the SPSC and the MPSC ring only, so this bench
-// has no MPMC arm.  bench_mpsc_contention.cpp measures the MPSC ring.
+// fixy/concurrent has an SPSC and an MPSC ring and no MPMC ring, so this
+// bench has no MPMC arm.  bench_mpsc_contention.cpp measures the MPSC
+// ring.
 //
 // Pinning + measurement: bench_harness.h handles isolcpu pinning,
 // rdtsc-derived ns timing (calibrated against steady_clock at process

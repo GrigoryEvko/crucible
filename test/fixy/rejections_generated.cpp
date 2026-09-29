@@ -1,11 +1,10 @@
 // The combinatorial half of the gate's coverage, generated rather than
 // written out.
 //
-// The old corpus spent 566 files on this, one per combination, and the
-// count was the problem: a file per case cannot be read, cannot be kept
-// in step with the atom catalog, and says nothing about the cases nobody
-// wrote a file for.  What actually needs asserting is universal over the
-// catalog, so it is one walk here and the catalog is its input.
+// A file for each combination cannot be read, cannot be kept in step
+// with the atom catalog, and says nothing about the cases that no file
+// covers.  What actually needs asserting is universal over the catalog,
+// so it is one walk here and the catalog is its input.
 //
 // Three claims, each over every atom the tree ships — the join of the
 // seven family rosters, which each family separately proves covers its
@@ -36,9 +35,9 @@
 //      fixy/atoms/Os.h and fixy/atoms/Syscall.h, the wait strategies of
 //      fixy/atoms/Sync.h, the writes of fixy/atoms/Stdio.h, and
 //      atom::with<Es...>, the Effect axis's own atom.  The last of those
-//      is what lets a context be gated on a binding's declared effects;
-//      until it lifted, the row nobody computed was the empty row and
-//      the empty row is admitted everywhere.
+//      is what lets a context be gated on a binding's declared effects.
+//      Without that lift, the row of a binding would be the empty row,
+//      and the empty row is admitted everywhere.
 //
 // A gate bug that admitted a duplicate, or an atom that stopped being
 // one, fails the build here rather than going unnoticed for want of the

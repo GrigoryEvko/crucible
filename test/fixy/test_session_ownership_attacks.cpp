@@ -157,9 +157,9 @@ static_assert(refusal_of<std::reference_wrapper<TX>> == Refusal::TokenBehindPoin
 static_assert(refusal_of<std::atomic<TX*>> == Refusal::TokenBehindPointer);
 static_assert(refusal_of<std::pair<std::unique_ptr<TX>, int>> == Refusal::TokenBehindPointer);
 // A specialization behind a pointer is read for its members, so a token
-// that no template argument names is refused too.  Before that read,
-// std::unique_ptr<BoxesToken<int>> was a plain payload, and the sender
-// kept the region while the recipient owned the token.
+// that no template argument names is refused too.  Without that read,
+// std::unique_ptr<BoxesToken<int>> would be a plain payload, and the
+// sender would keep the region while the recipient owned the token.
 static_assert(refusal_of<BoxesToken<int>*> == Refusal::TokenBehindPointer);
 static_assert(refusal_of<std::unique_ptr<BoxesToken<int>>> == Refusal::TokenBehindPointer);
 static_assert(refusal_of<std::vector<BoxesToken<int>>> == Refusal::TokenBehindPointer);
@@ -727,7 +727,7 @@ void borrowed_prefix_on_another_thread() {
 // keeps its source in its own frame, and the view neither copies nor
 // moves (Thiemann, ICFP 2023).  A loan travels as a ReadLoan, which the
 // borrower reads only through the door of its hold, and which the
-// release carries back to the lender.  The attack no longer compiles in
+// release carries back to the lender.  The attack does not compile in
 // any of its forms.
 
 template <class Tag>

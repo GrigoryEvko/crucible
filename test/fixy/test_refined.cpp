@@ -3,10 +3,6 @@
 // the predicate at consteval and at runtime, the implication relation is
 // the admitted namespace and nothing else, and every combinator is driven
 // with arguments the compiler cannot fold.
-//
-// Ported from test/test_smoke_safety_wrappers.cpp, test/test_safety_compile.cpp
-// and test/test_is_refined.cpp, whose Refined cells were calls into the old
-// headers' self-tests.
 
 #include <fixy/Refined.h>
 
@@ -269,9 +265,8 @@ static_assert(!fixy::implies_v<even, fixy::non_negative>, "an edge outside admit
 static_assert(fixy::detail::refined_self_test::every_edge_holds());
 
 // A family says it is one by deriving rule_family<itself>, so the
-// count reads classes rather than the marker variables that used to sit
-// beside them.  A family written without its variable was inert under
-// the old shape; under this one it cannot be.
+// count reads classes and not marker variables.  No family can be inert
+// because a separate marker variable is missing.
 [[nodiscard]] consteval std::size_t rule_count() noexcept {
     std::size_t count = 0;
     for (auto const m : std::meta::members_of(^^rel::admitted_implications, std::meta::access_context::unchecked())) {

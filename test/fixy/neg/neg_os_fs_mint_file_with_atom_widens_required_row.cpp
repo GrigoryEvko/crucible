@@ -2,21 +2,17 @@
 // has to admit, and a context that does not admit the widened row is
 // refused.
 //
-// This is the second half of the change that gave with<Es...> its lift.
-// The first half is the context-admission direction, covered by
-// neg_role_io_row_under_foreground_ctx: a binding that declared its
-// effects is now refused by a context that admits nothing.  This is the
-// direction that follows from the same mechanism and points the other
-// way — the os mints fold a pack into a required row through
-// foundation/effects/Lift.h, and with<Es...> now reaches that fold.
+// with<Es...> lifts to a row, and two fixtures cover the two directions
+// of that lift.  neg_role_io_row_under_foreground_ctx covers context
+// admission: a binding that declared its effects is refused by a context
+// that admits nothing.  This fixture covers the other direction.  The os
+// mints fold a pack into a required row through
+// foundation/effects/Lift.h, and with<Es...> reaches that fold.
 //
-// Before the lift the pack below did not fail here.  It failed one
-// conjunct earlier, at CtxAdmitsAtomRow's `(LiftsToRow<Atoms> && ...)`,
-// because with<Es...> declared no `lifts_to` and so could not enter an
-// os pack at all.  The refusal moving from "this atom cannot be folded"
-// to "the folded row exceeds what the context holds" is the whole of
-// what this fixture witnesses, and it is a tightening: the pack is
-// admitted further and then judged on what it actually asks for.
+// The pack below passes the LiftsToRow conjunct of CtxAdmitsAtomRow,
+// because with<Es...> declares `lifts_to`.  It is refused at the next
+// conjunct: the folded row exceeds what the context holds.  The pack is
+// admitted into the fold and then judged on what it actually asks for.
 //
 // The context admits IO and Block, which is everything mint_file's own
 // atoms lift to, so the mode atom alone would pass.  Only the Bg the

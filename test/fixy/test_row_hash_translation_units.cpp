@@ -4,11 +4,10 @@
 // The second unit, test_row_hash_translation_units_shifted.cpp, declares
 // generic closures before its includes.  GCC numbers each generic
 // parameter across the translation unit, so every closure the headers
-// declare prints a different auto:N there.  When the refinement
-// predicates were closures, the hash of Refined<positive, int> moved
-// with that number.  The predicates are named classes now, and
-// foundation/reflect/Hash.h refuses a closure in every id, so the two
-// units must agree on every entry.
+// declare prints a different auto:N there.  A closure predicate would
+// move the hash of Refined<positive, int> with that number.  The
+// predicates are named classes, and foundation/reflect/Hash.h refuses a
+// closure in every id, so the two units must agree on every entry.
 //
 // The positive control shows that the shift is real: one closure,
 // declared at the same place in both units, prints two counters.

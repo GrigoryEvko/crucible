@@ -8,7 +8,7 @@
 //
 // The empty state is the only one reachable without a syscall, so it is
 // checked first.  Then this TU maps anonymous pages, so the unmap path,
-// the move path and the grant-gated release all run.
+// the move path and the release gated on a leak atom all run.
 
 #include <fixy/OwnedMmap.h>
 #include <foundation/permissions/Permission.h>

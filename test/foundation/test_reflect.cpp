@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Sentinel TU for foundation/reflect.  Enumerate.h and Hash.h carry their
-// own static_asserts and inline smoke tests.  This file includes both and
-// calls the smoke tests.  It drives the enumerate helpers and pin_enum
+// own static_asserts.  This file includes both and runs a run-time body
+// for each.  It drives the enumerate helpers and pin_enum
 // over a local enum and pins the two id properties that a cache key rests
 // on.  It also makes sure that the Murmur3 finalizer maps a non-zero seed
 // to a non-zero hash, which the zero-means-empty slot conventions need.
@@ -168,18 +168,12 @@ static_assert(make_non_zero_hash(0xDEADBEEFCAFEBABEULL) != 0);
 static_assert(make_non_zero_hash(0x9E3779B97F4A7C15ULL) != 0);
 static_assert(make_non_zero_hash(0xFFFFFFFFFFFFFFFFULL) != 0);
 
-// Each body below was an inline smoke test in its header, compiled into
-// every translation unit that included it.  They are moved verbatim,
-// and the function-scope using-directives reproduce the name lookup
-// each had inside its header.  The static_assert walls stayed behind.
+// The function-scope using-directives give each body below the name
+// lookup of its header.  The static_assert walls stay in the headers.
 //
-// The enum-name body had no caller anywhere in the tree before this
-// one.  EnumName.h was split out of Enumerate.h to break an include
-// cycle, and the split carried the self test across without giving the
-// new header a caller, so the body was compiled everywhere and run
-// nowhere.  The next person splitting a header should check the same
-// thing: a self test follows the code it tests, not the file it
-// started in.
+// A self test follows the code it tests, not the file it started in.
+// A header split out of another header needs a caller for its self
+// test, or the body compiles everywhere and runs nowhere.
 
 void enumerate_runs_at_run_time() {
     using namespace ::foundation::reflect;

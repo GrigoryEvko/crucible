@@ -9,11 +9,11 @@
 // Neither of those contexts is built from nothing, so the stages are
 // typed through declval.
 //
-// The refusal is CtxFitsPipeline, in the requires clause.  It was the
-// row-mismatch block inside the body until the clause gained the gate:
-// a body assertion is a hard error rather than a constraint, so
-// `requires { mint_pipeline(bad_ctx, ...) }` answered true and no caller
-// could probe the mint before calling it.  The clause answers honestly.
+// The refusal is CtxFitsPipeline, in the requires clause.  A body
+// assertion is a hard error rather than a constraint.  With the check in
+// the body, `requires { mint_pipeline(bad_ctx, ...) }` would answer true,
+// and no caller could probe the mint before calling it.  The clause
+// answers honestly.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>

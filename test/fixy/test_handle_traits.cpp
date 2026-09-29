@@ -6,10 +6,7 @@
 // names.  Two things the wall cannot do live here.
 //
 // The first is the run-time read: every predicate consulted through a
-// volatile bound, so the trait reads are not folded away.  Those three
-// bodies were inline smoke tests in the old headers, compiled into every
-// translation unit that included them and called by nothing, which is
-// a shape the port removed.
+// volatile bound, so the trait reads are not folded away.
 //
 // The second is the cross-check that matters more.  A synthetic proves
 // the predicate matches the shape the predicate was written for, which
@@ -18,12 +15,10 @@
 // the consumer predicate, and its ProducerHandle to exactly the producer
 // one, with no synthetic in the way.
 //
-// The old tree's test/test_is_swmr_handle.cpp cross-checked its two
-// predicates against PermissionedSnapshot and SwmrSession.  Neither is
-// in the new tree yet, so the single-writer poles are witnessed here by
-// synthetics alone.  That is a gap in this file, named rather than
-// hidden: when the snapshot channel is ported, its writer and reader go
-// into the cross-check below beside the two SPSC handles.
+// The single-writer poles are witnessed here by synthetics alone.  The
+// SwmrSession concept of fixy/concurrent/SwmrSession.h requires
+// IsSwmrWriter of each writer handle and IsSwmrReader of each reader
+// handle.
 
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>

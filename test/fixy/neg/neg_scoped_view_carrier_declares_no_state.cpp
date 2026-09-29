@@ -7,13 +7,12 @@
 // declares none therefore fits no tag, and CarrierDeclaresViewState is
 // the clause that says so.
 //
-// The refusal already existed, and it arrived from the wrong place.  The
-// contract predicate inside mint_view named view_ok, so the carrier was
-// rejected on that call, inside the header, after the call site had
-// already chosen this factory.  Measured before the gate:
-// `requires { mint_view<Tag>(c) }` answered TRUE for this carrier.  A
-// caller dispatching on that answer picked a factory that cannot serve
-// it.
+// The contract predicate inside mint_view also names view_ok.  Without
+// the clause, the carrier would be rejected on that call, inside the
+// header, after the call site had already chosen this factory.  Then
+// `requires { mint_view<Tag>(c) }` would answer TRUE for this carrier,
+// and a caller dispatching on that answer would pick a factory that
+// cannot serve it.
 //
 // Distinct mismatch class from neg_scoped_view_tag_has_no_predicate.cpp
 // (fixture 2): there the carrier declares a predicate, for another tag;

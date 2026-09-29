@@ -8,10 +8,10 @@
 // factory rather than only inherited from the mint_view call inside it,
 // so the refusal names the factory the call site wrote.
 //
-// Measured before CarrierDeclaresViewState:
-// `requires { mint_linear_view<Tag>(c) }` answered TRUE for a carrier
-// that declares no predicate, and the refusal then came from the inner
-// call.
+// Without CarrierDeclaresViewState on this factory,
+// `requires { mint_linear_view<Tag>(c) }` would answer TRUE for a
+// carrier that declares no predicate, and the refusal would come from
+// the inner call.
 //
 // Distinct mismatch class from
 // neg_scoped_view_linear_tag_has_no_predicate.cpp (fixture 2): there the

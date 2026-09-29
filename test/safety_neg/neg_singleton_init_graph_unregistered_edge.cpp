@@ -1,5 +1,5 @@
-// An edge to a singleton that the registry does not hold.  The old
-// detector dropped such an edge and reported the graph acyclic.  The gate
+// An edge to a singleton that the registry does not hold.  A detector
+// that dropped such an edge would report the graph acyclic.  The gate
 // refuses it at its constraint.
 
 #include <crucible/SingletonInitGraph.h>

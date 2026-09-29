@@ -15,10 +15,6 @@
 // each other and with constant evaluation.  Each build also checks that
 // its contraction setting is the one it claims, so a flag that drops out
 // of the build fails the test instead of making it vacuous.
-//
-// Old spelling: test/test_fixy_v_095_box_muller_polynomial.cpp, which
-// called fixy::fp::runtime_smoke_test() and asserted nothing about what
-// came back.
 
 #include <fixy/fp/Polynomial.h>
 

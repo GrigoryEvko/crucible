@@ -1,8 +1,7 @@
 // A loop whose body is its own Continue has no action before the loop
-// back, so its unfold never stops.  The old well-formedness check
-// admitted it: the gate of mint_session_handle let it through, and the
-// build then failed inside the handle unroll with an error that names
-// no rule.  The guard rule refuses it at the gate.
+// back, so its unfold never stops.  The guard rule refuses it at the
+// gate of mint_session_handle.  Past the gate, the build would fail
+// inside the handle unroll with an error that names no rule.
 
 #include <fixy/session/Handle.h>
 

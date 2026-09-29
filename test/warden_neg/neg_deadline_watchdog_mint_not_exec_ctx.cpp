@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// mint_deadline_watchdog rejects a type that is not an execution context
-// of the new tree.  The first conjunct of the gate, IsExecCtx, fails
-// before the gate asks for the Init atom.
+// mint_deadline_watchdog rejects a type that is not an execution context.
+// The first conjunct of the gate, IsExecCtx, fails before the gate asks
+// for the Init atom.
 
 #include <crucible/warden/DeadlineWatchdog.h>
 

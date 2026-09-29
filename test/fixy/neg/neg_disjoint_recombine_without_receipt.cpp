@@ -1,7 +1,7 @@
-// Shards alone are not authority to rebuild a whole.  recombine took a
-// tuple and nothing else before the receipt existed, so a caller who
-// held the shards could assemble a tuple and get a region back.  The
-// one-argument call is now no call at all.
+// Shards alone are not authority to rebuild a whole.  A recombine that
+// took a tuple and nothing else would let a caller who held the shards
+// assemble a tuple and get a region back.  recombine also takes the
+// receipt, so the one-argument call is no call at all.
 
 #include <fixy/OwnedRegion.h>
 #include <foundation/permissions/Permission.h>

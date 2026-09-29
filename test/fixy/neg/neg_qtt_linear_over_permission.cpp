@@ -1,7 +1,6 @@
 // Linear<Permission<Tag>> wraps a token that is already a move-only
-// exactly-once linearity token.  The old tree refused this through two
-// table entries; the port dropped them, and this fixture is what keeps
-// the refusal from depending on anyone remembering to write an entry.
+// exactly-once linearity token.  This fixture keeps the refusal from
+// depending on anyone remembering to write a table entry.
 //
 // The permission templates are named in one concept body in
 // fixy/Qtt.h, declared there and instantiated nowhere, so this fixture

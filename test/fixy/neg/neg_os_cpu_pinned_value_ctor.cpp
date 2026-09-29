@@ -1,6 +1,6 @@
 // CpuPinned<Mask, Posture, T> asserts that the thread holding it was
-// pinned to Mask.  The value constructor asserted nothing: it took an
-// int and handed back a proof, on a thread that never called
+// pinned to Mask.  A public value constructor would assert nothing: it
+// would take an int and hand back a proof, on a thread that never called
 // sched_setaffinity.
 //
 // The forgery is not academic.  A forged
@@ -11,10 +11,10 @@
 // diagnosed — the replay simply stops reproducing, which is a silent
 // DetSafe break.
 //
-// The constructor is private now and fixy::sched::mint_affinity is its
-// sole friend.  It takes the value and the pin event, and this fixture
-// gives it both, so the refusal is the access check and not the arity.
-// This fixture is the standing witness that it stayed private.  Its four
+// The constructor is private and fixy::sched::mint_affinity is its sole
+// friend.  It takes the value and the pin event, and this fixture gives
+// it both, so the refusal is the access check and not the arity.  This
+// fixture is the standing witness that it stays private.  Its four
 // siblings cover the other routes: the default constructor, the in_place
 // constructor, the free mint, and the copy.
 

@@ -1,12 +1,7 @@
 // The row hash is a header of constants, so almost everything worth
 // checking is a static assertion. This translation unit exists to make
 // those assertions run: a header-only assertion block is checked only
-// where some translation unit includes the header, and nothing else in
-// the new tree includes this one yet.
-//
-// Ported from the self-test block inside
-// include/crucible/safety/diag/RowHashFold.h, with the per-wrapper cells
-// replaced by cells over the one Graded fold.
+// where some translation unit includes the header.
 //
 // The literals in the wire-format section are the on-the-wire contract.
 // Every published cache entry whose key includes one of these rows
@@ -194,8 +189,7 @@ static_assert(row_hash_contribution_v<fe::Computation<EmptyRow, fe::Computation<
 
 // ── The one fold, over Graded ────────────────────────────────────────
 //
-// These cells are what replaces fifty-two per-wrapper cells in the old
-// header. Each one is a property of the fold rather than of a named
+// Each cell below is a property of the fold rather than of a named
 // wrapper, so a wrapper added later is covered without a cell of its
 // own.
 
@@ -207,17 +201,17 @@ using DetEntropyRead = fl::DetSafeLattice::At<fl::DetSafeTier::EntropyRead>;
 using HotHot = fl::HotPathLattice::At<fl::HotPathTier::Hot>;
 
 // A graded carrier contributes something, which is the whole difference
-// between a wrapper the cache can see and one it cannot. Under the old
-// header a wrapper with no specialization fell through to the primary
-// and contributed zero; nothing can fall through here.
+// between a wrapper the cache can see and one it cannot. The fold reads
+// the shape, so no graded wrapper falls through to a primary template
+// that contributes zero.
 static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int>> != 0);
 
 // Two tiers of one axis are different slots.
 static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int>>
               != row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetEntropyRead, int>>);
 
-// Two axes are different slots. This is what the per-wrapper salt byte
-// used to buy, and it now comes from the lattice type itself.
+// Two axes are different slots. The lattice type itself gives that
+// separation.
 static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int>>
               != row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, int>>);
 
@@ -254,8 +248,8 @@ static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int
 // Half the wrappers in fixy are aliases for Graded and half are classes
 // that inherit a facade over it. A fold that matched the template rather
 // than the shape would hand every class-shaped wrapper the primary
-// template's zero, which is the fail-open the old header needed
-// fifty-two specialisations to avoid.
+// template's zero. That is a fail-open: the cache could not see the
+// wrapper.
 //
 // This probe publishes the three names the facade publishes and nothing
 // else, so it stands for that whole half without this test depending on

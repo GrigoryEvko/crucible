@@ -1,7 +1,7 @@
 // The region is spilled to disk, so its tag carries Row<IO> and
 // touching it costs IO.  The read is taken from a foreground context,
-// whose row is empty.  This is the same Subrow test a lend from the
-// permission pool runs, moved onto the borrow where it was missing.
+// whose row is empty.  The borrow runs the same Subrow test that a lend
+// from the permission pool runs.
 
 #include <fixy/Witnessed.h>
 

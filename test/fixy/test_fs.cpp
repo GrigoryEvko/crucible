@@ -1,12 +1,11 @@
 // The file surface and the three durable writers, run against a real
 // directory.
 //
-// Neither fixy/os/Fs.h nor fixy/os/CipherDurable.h, nor the two headers
-// they were ported from, ever had a positive test.  Sixteen
-// negative-compile fixtures stood over the old ones, saying what the
-// gates refuse and nothing about what the mints do — which is how the
-// cold writer shipped pinned to a commit that returned ENOSYS on every
-// call.  The second case here is that path, and it now has to succeed.
+// The negative-compile fixtures of fixy/os/Fs.h and
+// fixy/os/CipherDurable.h say what the gates refuse and nothing about
+// what the mints do.  This file runs the mints.  A cold writer whose
+// commit returned ENOSYS on every call would pass each fixture, and the
+// second case here refuses it.
 //
 // Everything runs in a directory mkdtemp made under /tmp and removes on
 // the way out.  What the kernel can refuse — an unwritable /tmp — is
@@ -153,11 +152,10 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
-// The path that returned ENOSYS on every call.  cold_writer_stance
-// pinned LinkAtomic, and the old commit body returned ENOSYS for it
-// before consulting a filesystem.  The stance pins Rename now, and this
+// The cold writer, end to end.  cold_writer_stance pins Rename, and this
 // leg is what says the whole sequence — open with O_SYNC, write, fsync,
-// commit — reaches the target.
+// commit — reaches the target.  A commit body that returned ENOSYS
+// before it consulted a filesystem fails this leg.
 [[nodiscard]] int cold_writer_commit_succeeds_where_it_was_enosys(const ScratchDir& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
     std::uint8_t pattern[kPayloadBytes];

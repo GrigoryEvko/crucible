@@ -2,9 +2,9 @@
 
 // The two functions that each harness exports from its own translation unit.
 //
-// Two harness headers can include headers that do not compile together, for
-// example the old and the new diagnostic trees.  So CMake compiles each
-// harness alone, once, into an object library from harness_entry.cpp.  The
+// Two harness headers can include headers that do not compile together.  So
+// CMake compiles each harness alone, once, into an object library from
+// harness_entry.cpp.  The
 // fuzz binary of the harness and the property test that runs every harness
 // link that object and call the functions declared here.
 

@@ -5,12 +5,12 @@
 //
 // Fixture 1 covers a capability.  This one covers the second authority
 // kind, a permission token, which reaches the relation through its own
-// specialization.  The two fixtures are separate because a repair that
+// specialization.  The two fixtures are separate because a relation that
 // enumerated only capabilities would satisfy fixture 1 and leave this
 // shape open: a pure-typed carrier would still hand out the authority to
 // touch a region.
 //
-// The row here is empty, as it was in fixture 1.  A permission carries
+// The row here is empty, as it is in fixture 1.  A permission carries
 // no effect atom, so nothing about the carrier's type says the payload
 // is an authority.  The relation has to say it.
 //

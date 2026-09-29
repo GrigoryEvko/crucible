@@ -1,7 +1,7 @@
 // Sentinel TU for the resource axes and the concurrent rows.  The two
 // headers carry their own static_asserts.  This file includes them and
 // drives every accessor with values the optimizer cannot fold, which is
-// the run-time half that the old inline smoke tests held.
+// the run-time half that a static_assert cannot check.
 
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Resources.h>

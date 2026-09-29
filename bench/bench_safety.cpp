@@ -9,8 +9,7 @@
 // the threshold is flagged as distinguishable but is no regression).
 //
 // Each wrapped arm builds its value through the wrapper's mint door, so
-// the arm measures the door's cost too.  mint_refined runs the predicate,
-// as the checked constructor of the old wrapper did.
+// the arm measures the door's cost too.  mint_refined runs the predicate.
 
 #include <cstdint>
 #include <cstdio>

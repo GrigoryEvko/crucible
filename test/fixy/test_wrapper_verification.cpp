@@ -16,14 +16,6 @@
 // repeat it beyond one smoke call per wrapper, which is there so that a
 // header-only regression cannot hide behind static_asserts alone.
 //
-// Old spelling: test/test_migration_verification.cpp, over the old
-// safety wrappers.  Three things it carried are not here.  The row-hash
-// cells wait on the row-hash port, which is what gives the new tree a
-// row hash at all; until then the nesting cells pin type distinctness
-// only.  The
-// wrappers the new tree did not carry (Consistency, Crash, Progress,
-// MemOrder, Budgeted, EpochVersioned, NumaPlacement, TimeOrdered) have
-// no cell, because they have no type.
 // SharedPermission is a foundation type and is verified in
 // test/foundation/test_permission_shared.cpp.
 
@@ -191,9 +183,9 @@ static_assert(sizeof(RecipeSpec<int>) >= sizeof(int) + 2);
 
 // ── Nesting order is a type, not a spelling ─────────────────────────
 //
-// The row hash that turns nesting order into a federation cache slot
-// arrives with the row-hash port.  Until then, what can be pinned is
-// that both orders instantiate and are distinct types.
+// Both orders instantiate and are distinct types.  The row hash that
+// turns nesting order into a federation cache slot is checked in
+// test/fixy/test_row_hash_wrappers.cpp.
 
 static_assert(!std::is_same_v<Stale<Tagged<int, FromUser>>, Tagged<Stale<int>, FromUser>>);
 static_assert(!std::is_same_v<Refined<positive_local, Linear<int>>, Linear<Refined<positive_local, int>>>);

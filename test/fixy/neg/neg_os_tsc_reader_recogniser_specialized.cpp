@@ -1,9 +1,9 @@
 // The recogniser of a pin cannot be specialized.  A variable template
-// in its place let a translation unit declare a fake class a pin, and
-// the fake then passed IsSingletonCpuPin with no pin behind it.  The
-// recogniser is the reflection query of foundation/reflect/Instance.h,
-// a concept, and the variable template it replaced is gone, so this
-// specialization names nothing.
+// in its place would let a translation unit declare a fake class a pin,
+// and the fake would then pass IsSingletonCpuPin with no pin behind it.
+// The recogniser is the reflection query of
+// foundation/reflect/Instance.h, a concept.  No such variable template
+// exists, so this specialization names nothing.
 
 #include <fixy/os/Time.h>
 

@@ -64,9 +64,8 @@ static_assert(std::is_same_v<typename Spsc::value_type, Plain>);
 
 // The head and tail counters are on separate cache lines, so a push
 // does not invalidate the consumer's line and a pop does not invalidate
-// the producer's.  AtomicMonotonic is what carries that, and the ring
-// no longer restates it, so this line is where the ring's dependence on
-// it is recorded.
+// the producer's.  AtomicMonotonic carries that, and the ring does not
+// restate it, so this line records the ring's dependence on it.
 static_assert(alignof(Spsc) >= 64);
 static_assert(alignof(Mpsc) >= 64);
 static_assert(alignof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
@@ -356,8 +355,9 @@ using MpscWide = c::MpscRing<int, 128>;
 // refusal counts one stale head that the capacity gate read as a full
 // ring.  Half the producers push single items and half push batches.
 // The stale head needs many producers on the head line.  On the
-// development host the old gate refused pushes in three rounds of four
-// with 64 producers, and almost never with 8.
+// development host, a gate that read a stale head as a full ring refused
+// pushes in three rounds of four with 64 producers, and almost never
+// with 8.
 namespace never_full {
 
 constexpr std::uint32_t kProducers = 64;

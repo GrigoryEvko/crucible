@@ -1,7 +1,7 @@
 // A wrapper is not an action, so a Continue under a VendorPinned that is
-// the whole loop body is still unguarded.  The old check admitted it,
-// and the build failed later inside the handle.  The guard rule refuses
-// it at the gate.
+// the whole loop body is still unguarded.  The guard rule refuses it at
+// the gate.  A check that admitted it would let the build fail later,
+// inside the handle.
 
 #include <fixy/session/Handle.h>
 

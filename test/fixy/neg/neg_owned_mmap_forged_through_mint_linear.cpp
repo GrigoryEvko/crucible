@@ -6,15 +6,13 @@
 // happens inside Qtt, from arguments mint_linear forwarded.
 //
 // A private constructor plus a friend list naming the two mints would
-// have closed nothing, because neither mint is where the object is
-// built.  Making mint_linear a friend would have opened the door to
-// every type in the tree.  What closes it is that there is no reachable
-// constructor to forward TO: is_constructible_v<Region, void*, size_t>
-// is false, so mint_linear's own requires-clause rejects the call.
+// close nothing, because neither mint is where the object is built.
+// Making mint_linear a friend would open the door to every type in the
+// tree.  What closes it is that there is no reachable constructor to
+// forward TO: is_constructible_v<Region, void*, size_t> is false, so
+// mint_linear's own requires-clause rejects the call.
 //
 // This fixture is the standing witness that it stays false.
-//
-// Verified before the fix: this TU compiled.  It was never run.
 
 #include <fixy/OwnedMmap.h>
 #include <fixy/Qtt.h>

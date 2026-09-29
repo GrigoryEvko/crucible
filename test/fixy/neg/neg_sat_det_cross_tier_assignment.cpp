@@ -1,8 +1,6 @@
 // *_sat_det is pinned to DetSafe<Pure, ...>.  Cross-tier use must go
 // through relax<WeakerTier>(); implicit assignment to another DetSafe
 // tier would erase the production-site proof obligation.
-//
-// Old spelling: test/safety_neg/neg_saturate_det_cross_tier_assignment.cpp.
 
 #include <fixy/Bands.h>
 #include <fixy/Saturate.h>

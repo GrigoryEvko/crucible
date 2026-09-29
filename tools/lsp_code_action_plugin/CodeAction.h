@@ -3,7 +3,7 @@
 // Tiny JSON-diagnostic -> LSP CodeAction bridge.
 //
 // The input format is the single-line record emitted by
-// safety/diag/JsonEmitter.h.  This header intentionally parses only the
+// foundation/diag/JsonEmitter.h.  This header intentionally parses only the
 // stable Crucible fields it consumes; it is not a general JSON library.
 
 #include <algorithm>

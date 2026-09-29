@@ -110,12 +110,6 @@ static_assert(
     }(),
     "The rvalue graded accessor must move the substrate out at the matching specialization.");
 
-// Both bodies below were inline smoke tests in Computation.h, compiled
-// into every translation unit that included it.  Both sit directly in
-// foundation::effects rather than in a detail self-test namespace, so
-// each takes one using-directive and its caller is renamed along with
-// it.  The bodies move verbatim.
-
 // Drives every accessor with non-constant arguments, where inline-body
 // and constant-evaluation regressions surface that the assertions in
 // the header cannot see.
@@ -220,13 +214,13 @@ static_assert(!fe::detail::extract_admits_payload_v<fp::SharedPermission<PureReg
 static_assert(!fe::detail::extract_admits_payload_v<fe::detail::ctx_witnesses::BgWitness>);
 
 // And inside a carrier whose own row is empty, which is the shape the
-// old primary admitted and the shape the two negative fixtures take.
+// two negative fixtures take.
 static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fe::Capability<Effect::IO, fe::Bg>>>);
 static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fp::Permission<PureRegionTag>>>);
 static_assert(
     !fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fe::detail::ctx_witnesses::BgWitness>>);
 
-// The admitting direction, so the repair cannot be a blanket refusal.
+// The admitting direction, so the relation cannot be a blanket refusal.
 // A blanket refusal would satisfy both negative fixtures and every
 // assertion above.
 struct PlainPayload {

@@ -2,15 +2,13 @@
 // scheduling-class band, the thread name, and the four mints that reach
 // the kernel.
 //
-// These cases used to be `runtime_smoke_test` functions inside
-// fixy/os/CpuPinned.h, SchedClass.h, ThreadName.h and Sched.h,
-// compiled into every translation unit that included any of them.  Each
-// builds a scenario — construct a value, mutate it, mint over it, call
-// a syscall — rather than stating a property of a type as shipped, so
-// each belongs here.  What stayed in the headers is the other kind: the
-// posture and singleton answers on a pin, the policy subsumption
-// lattice, that two clock sources or two scheduling classes are
-// distinct types.  Those fire wherever the type is used.
+// Each case builds a scenario — construct a value, mutate it, mint over
+// it, call a syscall — rather than stating a property of a type as
+// shipped, so each lives here and not in fixy/os/CpuPinned.h,
+// SchedClass.h, ThreadName.h or Sched.h.  The headers hold the other
+// kind: the posture and singleton answers on a pin, the policy
+// subsumption lattice, that two clock sources or two scheduling classes
+// are distinct types.  Those fire wherever the type is used.
 //
 // The pin leg below performs a real sched_setaffinity, and it has to.
 // CpuPinned has one constructor, it is private, and mint_affinity is its

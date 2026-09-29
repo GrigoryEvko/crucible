@@ -519,8 +519,8 @@ void reproduce_the_ledger() {
            "ledger: an image written by hand under IO still loads as a count of any axis");
 }
 
-// The routes the old ledger held, each turned into a check that it is
-// closed.  A count of one axis is not a count of another through raw(),
+// The closed routes, each with a check that it stays closed.  A count
+// of one axis is not a count of another through raw(),
 // through std::bit_cast or through an image, and no integer states a
 // count or a clock.  The attacks that the compiler refuses are the
 // negative fixtures neg_strong_counter_from_integer,

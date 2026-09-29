@@ -5,8 +5,8 @@
 // note; neither can be met by this file's echoed source, because
 // test/neg_compile_driver.py strips the caret display before matching.
 //
-// A contract_assert violated during constant evaluation was the first
-// candidate for this probe.  GCC 16.2 reports it as one line with no
+// A contract_assert violated during constant evaluation does not fit
+// this probe.  GCC 16.2 reports it as one line with no
 // context ("contract predicate is false in constant expression"), so
 // that shape cannot carry a second, project-specific regex.
 

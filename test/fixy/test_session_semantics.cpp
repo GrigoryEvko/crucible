@@ -326,8 +326,8 @@ static_assert(is_clean(kIndependent));
 // a gap in its Theorem 4.20: p → q : {m1.p → r : a.end, m2.p → r : b.end}
 // sends m1, and then the configuration can send a while the global type
 // cannot (misc/session_types_literature.md, section 5, item 12).  With
-// the chosen branch as the only live one, the three types that showed
-// the gap now correspond, and the minimal one sends a after m1.
+// the chosen branch as the only live one, the three types that show the
+// gap correspond, and the minimal one sends a after m1.
 
 using SenderGoesOn = g::Comm<P, Q, g::Branch<M1, int, g::Msg<P, R, L1, int, g::End>>,
                              g::Branch<M2, int, g::Msg<P, R, L2, int, g::End>>>;

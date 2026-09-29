@@ -1,8 +1,8 @@
 // Weakening moves up the lattice and never down.  The in-body
 // CRUCIBLE_PRE in Graded::weaken rejects a downward grade during
-// constant evaluation, under every contract evaluation semantic.  The
-// pre() clause it replaces was skipped at consteval under observe,
-// which is the Release default, and under ignore.
+// constant evaluation, under every contract evaluation semantic.  A
+// pre() clause is skipped at consteval under observe, which is the
+// Release default, and under ignore.
 
 #include <foundation/algebra/Graded.h>
 

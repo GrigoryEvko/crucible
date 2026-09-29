@@ -3,11 +3,6 @@
 // header.  This file exists to be that translation unit for the
 // permission headers, so a new one gets an include here.  Reaching
 // main is itself the claim: the whole include set compiled clean.
-//
-// Ported from test/test_permissions_compile.cpp without the cells for
-// the inheritance, fair-pool and umbrella headers, which are not
-// ported.  The four contexts of the old effects layer are spelled here
-// on foundation's ExecCtx.
 
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
@@ -196,8 +191,7 @@ void test_permission_row_compile() {
 
     static_assert(perm::permission_row_empty_v<PlainTag>);
     // The relation is closed: a tag with no declared row has none, is
-    // not empty-rowed, and is admitted by no context.  The previous
-    // primary template answered Row<> here.
+    // not empty-rowed, and is admitted by no context.
     static_assert(!perm::has_permission_row_v<UndeclaredTag>);
     static_assert(!perm::permission_row_empty_v<UndeclaredTag>);
     static_assert(!perm::CtxAdmitsPermission<UndeclaredTag, TestRunnerCtx>);
@@ -252,10 +246,8 @@ void test_permission_row_compile() {
                                                               std::move(std::get<1>(split_n)));
     perm::permission_drop(std::move(joined_n));
 }
-// The body was an inline runtime_smoke_test in PermSet.h that nothing
-// called.  It sits in detail::permset_smoke, whose fixture tags it
-// names, so the two using-directives reproduce the lookup it had
-// there.  The body moves verbatim.
+// The body names the fixture tags of detail::permset_smoke in
+// PermSet.h, so the two using-directives bring those names into scope.
 void test_perm_set_compile() {
     using namespace ::foundation::permissions;
     using namespace ::foundation::permissions::detail::permset_smoke;

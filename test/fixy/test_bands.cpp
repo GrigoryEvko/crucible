@@ -105,7 +105,7 @@ static_assert(every_tier_is_a_band<fixy::LifetimeLattice, fixy::OpaqueLifetime>(
 static_assert(every_tier_is_a_band<fixy::VendorLattice, fixy::Vendor>());
 static_assert(every_tier_is_a_band<fixy::ResidencyHeatLattice, fixy::ResidencyHeat>());
 
-// The old spellings resolve to the same carriers.  The header checks that
+// The tier aliases resolve to the band carriers.  The header checks that
 // each tier has an alias.  The DetSafe and Vendor aliases are pinned here
 // one by one, so two aliases that change places are refused as well.
 static_assert(std::is_same_v<fixy::det_safe::Pure<int>, fixy::DetSafe<fixy::DetSafeTier_v::Pure, int>>);
@@ -141,8 +141,7 @@ static_assert(!std::is_same_v<fixy::hot_path::Hot<int>, fixy::cipher_tier::Hot<i
 static_assert(!std::is_same_v<fixy::residency_heat::Hot<int>, fixy::cipher_tier::Hot<int>>);
 static_assert(!std::is_same_v<fixy::vendor::Nv<int>, fixy::vendor::Amd<int>>);
 
-// The old detector answered the same question per band; one query
-// answers it for all of them.
+// One query answers the band question for every band.
 static_assert(fixy::is_band_of_v<fixy::DetSafeLattice, fixy::det_safe::Pure<int>>);
 static_assert(!fixy::is_band_of_v<fixy::DetSafeLattice, fixy::hot_path::Hot<int>>);
 static_assert(!fixy::is_band_v<int>);

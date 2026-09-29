@@ -1,11 +1,11 @@
-// Deviation 4 of fixy/os/Spawn.h: the body takes its shard by mutable
+// A design note of fixy/os/Spawn.h: the body takes its shard by mutable
 // reference and gives it back, because recombine consumes every shard to
-// reissue the parent's Permission.  The old body took the shard by rvalue
-// and consumed it, and the parent was then rebuilt by a helper that
-// minted a Permission from nothing.
+// reissue the parent's Permission.  A body that took the shard by rvalue
+// and consumed it would leave the parent to a helper that mints a
+// Permission from nothing.
 //
 // The assertion below is inverted on purpose: the concept must NOT admit a
-// body with the old signature.  Asserting through the concept keeps this
+// body that consumes its shard.  Asserting through the concept keeps this
 // to one diagnostic, where calling the mint with such a body cascades into
 // four.
 
@@ -19,7 +19,7 @@ struct RegionWhole {
 };
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 
-// A body in the old shape: it takes the shard by rvalue and consumes it.
+// A body that takes the shard by rvalue and consumes it.
 // The shard's brand is the region's, so the body is written generic
 // over it, which is the shape a body that took the shard by reference
 // would also have.

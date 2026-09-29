@@ -4,7 +4,7 @@
 // consteval, the answers are type aliases, and the refusal is a
 // static_assert.  So this file is first a sentinel — a header whose only
 // claims are static_asserts is checked when some translation unit
-// includes it, and until Stage.h lands nothing else does.
+// includes it.
 //
 // Beyond that it drives the two things the wall cannot: the roster
 // cardinalities, which make a new family a two-place edit a reviewer
@@ -37,9 +37,9 @@ int g_failures = 0;
     } while (0)
 
 // The rosters, pinned.  A new family is one roster line plus one pin
-// here, which is what puts it in front of a reviewer.  The old tree's
-// thirty-six arms are fifteen entries after the band collapse: one
-// Graded entry stands for every band spelling.
+// here, which is what puts it in front of a reviewer.  The three rosters
+// hold fifteen entries, because one Graded entry stands for every band
+// spelling.
 static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "
               "and a Capability conveys the effect it authorizes.  A third means a new kind of payload "
@@ -75,8 +75,7 @@ void every_row_is_a_runtime_object() {
     EXPECT(decltype(rostered_leaf)::size == 0);
 }
 
-// A wrapper stack reports the row at the bottom however deep, and the
-// depth is what the old ladder had to re-derive per arm.  Driving three
+// A wrapper stack reports the row at the bottom however deep.  Driving three
 // depths at run time pins that the recursion terminates rather than
 // answering by accident at one depth.
 void a_wrapper_stack_reports_the_bottom() {

@@ -1,7 +1,7 @@
-// A clock reading was trivially copyable, so std::bit_cast stamped any
-// integer with a clock source and no constructor ran.  The copy and move
-// constructors are user-provided now, so the reading is not trivially
-// copyable, and bit_cast refuses it at its constraint.
+// If a clock reading were trivially copyable, std::bit_cast would stamp
+// any integer with a clock source and no constructor would run.  The
+// copy and move constructors are user-provided, so the reading is not
+// trivially copyable, and bit_cast refuses it at its constraint.
 
 #include <fixy/os/ClockSource.h>
 

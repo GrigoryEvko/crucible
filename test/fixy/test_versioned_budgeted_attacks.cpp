@@ -470,7 +470,7 @@ void attack_the_substrate() {
     expect(looser.grade().first.raw() == s + 1, "the budget substrate weakens toward more use");
 }
 
-// ── The doors the old ledger held, each shown closed ────────────────
+// ── The closed doors ─────────────────────────────────────────────────
 
 // No producer states a claim.  A version comes only from a stamp of the
 // one source, a budget only from a grant of the one authority, and each is

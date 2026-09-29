@@ -128,11 +128,9 @@ struct smoke_local_tag : diag::tag_base {
 
 // The header's own checks are all constant-evaluated.  This one runs
 // the same accessors with non-constant arguments, which is where an
-// inline-body defect in an accessor would surface.  The body was an
-// inline runtime_smoke_test in Catalog.h, compiled into every
-// translation unit that included the header; it sits directly in
-// foundation::diag, so the using-directive reproduces the lookup it had
-// there, and the fixture tag above came with it.
+// inline-body defect in an accessor would surface.  The body names
+// foundation::diag without a qualifier, so it opens that namespace with
+// a using-directive.
 void test_runtime_smoke() {
     using namespace ::foundation::diag;
     // The volatile bound stops the optimizer from folding the loop back into a

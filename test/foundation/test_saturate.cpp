@@ -2,13 +2,12 @@
 // overflow, and return the plain result otherwise.  Every signed corner
 // case and both unsigned wrap directions appear below.
 //
-// The first six groups are the groups of test/test_saturate.cpp that
-// exercise the three plain helpers, which are the three that live in
-// foundation.  The groups over the wrapped forms are in
-// test/fixy/test_saturate.cpp, beside the header those forms live in.
-// The bodies are the old test's with its assert spelled EXPECT, so one
-// run reports every failure it has rather than the first.  The seventh
-// group compares every 8-bit pair against the library.
+// The first six groups exercise the three plain helpers, which are the
+// three that live in foundation.  The groups over the wrapped forms are
+// in test/fixy/test_saturate.cpp, beside the header those forms live
+// in.  Each check is an EXPECT, so one run reports every failure it has
+// rather than the first.  The seventh group compares every 8-bit pair
+// against the library.
 
 #include <foundation/Saturate.h>
 

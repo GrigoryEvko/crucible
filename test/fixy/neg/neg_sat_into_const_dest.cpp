@@ -1,7 +1,5 @@
 // *_sat_into mutates its destination counter.  A const counter must use
 // *_sat_from instead, preserving the read-only/mutating split.
-//
-// Old spelling: test/safety_neg/neg_saturate_into_const_dest.cpp.
 
 #include <fixy/Saturate.h>
 

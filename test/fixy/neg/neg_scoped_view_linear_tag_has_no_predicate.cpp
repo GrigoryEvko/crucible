@@ -6,9 +6,10 @@
 // transition, so a tag the carrier witnesses nothing about must not
 // reach one.  This carrier witnesses Open and no other state.
 //
-// Measured before CarrierDeclaresViewState:
-// `requires { mint_linear_view<Closed>(c) }` answered TRUE, because the
-// tag reached only the contract predicate and never the signature.
+// Without CarrierDeclaresViewState,
+// `requires { mint_linear_view<Closed>(c) }` would answer TRUE, because
+// the tag would reach only the contract predicate and never the
+// signature.
 //
 // Distinct mismatch class from
 // neg_scoped_view_linear_carrier_declares_no_state.cpp (fixture 1):

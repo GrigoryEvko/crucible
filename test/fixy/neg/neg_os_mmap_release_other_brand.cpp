@@ -5,7 +5,7 @@
 // compares the brand of the permission with the brand of the mapping,
 // and it refuses the call although the two tags agree.
 //
-// Before the mapping carried a brand, this call compiled.
+// A mapping that carried no brand would let this call compile.
 //
 // The mapping is the empty region at the brand of its own permission,
 // so nothing here maps memory.

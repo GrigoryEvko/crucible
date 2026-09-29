@@ -1,9 +1,10 @@
-// is_empty_choice answered false for every type the old primary did not
-// know.  An empty Select hidden under such a type passed the handle
-// gate, and the handle then got stuck at the choice.  The walk now
+// An is_empty_choice that answered false for every type it does not know
+// would let an empty Select hidden under such a type pass the handle
+// gate, and the handle would then get stuck at the choice.  The walk
 // refuses the unknown node and names it.
 //
-// The assertion below held before the repair.  It is the attack.
+// The assertion below is the attack.  A walk that answered false for an
+// unknown node would satisfy it.
 
 #include <fixy/session/Protocol.h>
 

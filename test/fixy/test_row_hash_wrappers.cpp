@@ -2,10 +2,9 @@
 // cell that proves the fold reaches the wrappers it claims to cover.
 //
 // Half the wrappers in fixy are aliases for Graded and half are classes
-// that inherit graded_facade over it. The old row hash needed a partial
-// specialisation per wrapper and got both halves by naming each type.
-// The fold names none of them, so the property it owes this tree is that
-// every wrapper still lands in a slot of its own. A wrapper that fell
+// that inherit graded_facade over it. The fold names none of them, so
+// the property it owes this tree is that every wrapper lands in a slot
+// of its own. A wrapper that fell
 // through would contribute zero and share one slot with every bare type,
 // which is how a secret value and a plain one would come to share a
 // cache entry.
@@ -228,8 +227,7 @@ using StaleInt = ::fixy::Stale<int>;
 using PureInt = ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>;
 using HotInt = ::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>;
 
-// Nothing falls through. This is the assertion the old header needed
-// fifty-two specialisations to be able to make.
+// Nothing falls through.
 static_assert(row_hash_contribution_v<TaggedVerified> != 0, "Tagged falls through the fold and shares a slot with "
                                                             "every bare type");
 static_assert(row_hash_contribution_v<SecretInt> != 0, "Secret falls through the fold and shares a slot with every "
@@ -352,8 +350,8 @@ static_assert(!::fixy::IsAccepted<int, ::fixy::atom::as_classified, ::fixy::atom
 
 // So the atom whose stated purpose is to write the default out reaches
 // the default's slot.  fixy/Atom.h says it "names the strict pole
-// explicitly", and before the canonicalisation it was the one spelling
-// of the default that moved the key.
+// explicitly".  Without the canonicalisation it would be the one
+// spelling of the default that moves the key.
 static_assert(row_hash_contribution_v<ClassifiedInt> == row_hash_contribution_v<StrictPoleInt>,
               "as_classified names the strict Security pole explicitly, so the two spellings must reach one "
               "cache slot");
@@ -445,10 +443,10 @@ static_assert(row_hash_contribution_v<VerifiedInt> != row_hash_contribution_v<St
 // The census sees what this translation unit includes.  The include list
 // above names the headers whose types the cells below name.  The build
 // also writes census_public_headers.h from the tree, and that header
-// includes each public header of both layers.  A hand-kept list did not
-// reach 16 headers of the session layer, so the census never saw a
-// decorator, a door or a query that they declare.  With the list from the
-// tree, a header that a later commit adds joins the census at once, and a
+// includes each public header of both layers.  A hand-kept list can miss
+// a header, and the census then never sees a decorator, a door or a query
+// that it declares.  With the list from the tree, a header that a later
+// commit adds joins the census at once, and a
 // carrier in it with no disposition fails the census
 // (neg_row_hash_census_undisposed_carrier).
 //

@@ -1,7 +1,7 @@
 // Sentinel TU for the band, hardware-scope and clock lattices and the
-// enum value pins.  Each header carries its own static_asserts and an
-// inline runtime_smoke_test; this file includes each and calls each
-// once.  EnumValuePins.h is included so its pins are compiled at all.
+// enum value pins.  Each header carries its own static_asserts.  This
+// file includes each header and runs one run-time body for each.
+// EnumValuePins.h is included so its pins are compiled at all.
 //
 // The tiers are walked by reflection rather than listed by hand, so a
 // new enumerator is covered the moment it is declared.
@@ -287,16 +287,14 @@ template <typename L, std::size_t... Slots>
 static_assert(
     slots_take_their_own_axis<fl::ClockSourceLattice>(std::make_index_sequence<fl::ClockSourceLattice::arity>{}));
 
-// Each body below was an inline runtime_smoke_test in its header,
-// compiled into every translation unit that included it.  They are
-// moved verbatim.  The three function-scope using-directives reproduce
-// the name lookup each body had inside its header, where the self-test
-// namespace nests in lattices, which nests in algebra, so the
-// scaffolding types the bodies name still resolve.
+// The three function-scope using-directives give each body below the
+// name lookup of its header.  There the self-test namespace nests in
+// lattices, which nests in algebra, so the scaffolding types the bodies
+// name resolve.
 //
-// The static_assert walls stayed in the headers.  Those read a shipped
+// The static_assert walls stay in the headers.  Those read a shipped
 // lattice against its own grades, so they fire wherever the header is
-// used, and each header's self-test namespace still holds one.
+// used, and each header's self-test namespace holds one.
 
 void chain_lattice_runs_at_run_time() {
     using namespace fa;
@@ -790,15 +788,6 @@ void clock_source_lattice_runs_at_run_time() {
     [[maybe_unused]] auto value = composed.peek().v;
     [[maybe_unused]] auto moved = std::move(composed).consume().v;
 }
-
-// These two had no caller at all before this file gained one.  Both
-// headers were ported to foundation to unblock the OS wrappers, and the
-// port copied each self test across without registering it with a test.
-// The old tree's copies ARE called, so the same body passed for
-// crucible:: and had never once run for foundation::, which left a
-// divergence between the two copies invisible.  Copying a self test
-// along with a header is not the same as porting it, and the difference
-// is silent.
 
 void affinity_lattice_runs_at_run_time() {
     using namespace fa;

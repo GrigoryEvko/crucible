@@ -3,24 +3,22 @@
 // HS14 fixture 1 of 2 for the authority relation in
 // foundation/effects/Computation.h.
 //
-// The hole this fixture stands over.  extract_admits_payload had a
-// primary of std::true_type, with one specialization for a nested
-// Computation hiding an engaged row.  A capability is a plain payload by
-// that test.  So Computation<Row<>, Capability<Effect::IO, Bg>>, a value
-// typed PURE and naming no effect at all, admitted extract and handed
-// the caller an IO capability.  Every gate downstream that reads a row
-// to decide what a value may do inherited that.
+// The hole this fixture stands over.  Computation<Row<>, Capability<
+// Effect::IO, Bg>> is a value typed PURE that names no effect at all.
+// If extract admitted it, the caller would get an IO capability.  Every
+// gate downstream that reads a row to decide what a value may do would
+// inherit that.
 //
-// The relation is now stated positively and enumerates what conveys
+// The relation is stated positively and enumerates what conveys
 // authority, so a capability payload refuses.  extract carries
 // `requires(row_size_v<R> == 0) && detail::extract_admits_payload_v<T>`,
 // and the second conjunct is the one that fails here.  The row IS empty,
-// which is exactly what made the old form dangerous.
+// so a check of the row alone would admit this payload.
 //
 // Fixture 2 covers a permission token, which is a different authority
 // kind reaching the relation through a different specialization.  The
 // admitting direction, that a plain payload still extracts, is pinned in
-// Computation.h itself, because a repair that refused every payload
+// Computation.h itself, because a relation that refused every payload
 // would satisfy this fixture and be useless.
 
 #include <foundation/effects/Capability.h>

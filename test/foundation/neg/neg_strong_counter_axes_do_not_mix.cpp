@@ -1,8 +1,8 @@
 // Two counter axes are the same lattice under two tags, and the tag is
-// what keeps them apart.  The old types converted to std::uint64_t
-// implicitly, so comparing an epoch with a generation compiled through
-// the built-in comparison.  The element types here have no conversion,
-// so the comparison has no candidate.
+// what keeps them apart.  A type that converted to std::uint64_t
+// implicitly would let an epoch compare with a generation through the
+// built-in comparison.  The element types here have no conversion, so
+// the comparison has no candidate.
 
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 

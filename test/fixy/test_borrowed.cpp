@@ -4,9 +4,6 @@
 // answers through the one reflection query, and every accessor of the
 // three views answers on a value.  The WeakRef null-dereference contract
 // is shown to abort.
-//
-// Ported from test/test_is_borrowed.cpp, test/test_is_borrowed_ref.cpp
-// and the Borrowed and WeakRef calls of test/test_smoke_safety_wrappers.cpp.
 
 #include <fixy/Borrowed.h>
 

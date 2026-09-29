@@ -1,7 +1,7 @@
-// The OS tag check walks the nine namespaces the tags live in, rather
-// than the hand-written roster of thirty-five types that stood there.
-// The point of walking is to see a member nobody listed, so the witness
-// that it works is a class the check was never told about.
+// The OS tag check walks the ten namespaces the tags live in, rather
+// than a hand-written roster of types.  The point of walking is to see a
+// member nobody listed, so the witness that it works is a class the
+// check was never told about.
 //
 // The class is planted before the header, not after.  The walk is a
 // template instantiated once, and its member list is fixed at that

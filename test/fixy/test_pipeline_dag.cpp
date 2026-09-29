@@ -3,8 +3,8 @@
 // counted exactly once.  Static assertions check the ports of a fan-out
 // stage and the row of a pipeline.
 //
-// Old spelling: test/test_pipeline_dag.cpp.  test/fixy/test_endpoint.cpp
-// runs a fan-in stage that it builds from channel endpoints.
+// test/fixy/test_endpoint.cpp runs a fan-in stage that it builds from
+// channel endpoints.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>

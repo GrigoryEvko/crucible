@@ -1,13 +1,10 @@
 // A payload template on none of the three rosters is refused, and the
 // diagnostic names it.
 //
-// This is the fixture for the defect the roster replaced.  The old
-// extractor (payload_row in include/crucible/sessions/
-// SessionRowExtraction.h) had a primary template answering Row<>, so a
-// wrapper nobody wrote an arm for reported "carries no effect" and
-// satisfied every execution context.  Its own header said so.  Nothing
-// stood on that, because a fail-open default has nothing to fail
-// against.
+// An extractor whose primary template answered Row<> would report
+// "carries no effect" for a wrapper that no arm names.  That wrapper
+// would then satisfy every execution context.  A fail-open default has
+// nothing to fail against.
 //
 // Here the primary is a static_assert.  The message is fixed text, so
 // the type arrives in the instantiation note the compiler prints beside

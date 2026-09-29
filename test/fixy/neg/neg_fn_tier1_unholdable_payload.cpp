@@ -2,13 +2,13 @@
 // value.  void has no storage.
 //
 // This fixture is here for the tier chain rather than for the payload
-// rule: it holds tier 1 to ONE diagnostic.  fn declares accessors
-// returning `const Type&` and a constructor taking `Type`, and a
-// member's type is instantiated with the class whatever the assertion
-// concluded, so `void` produced the tier-1 message and then six more
-// errors about forming a reference to void and an invalid parameter
-// type.  fn now declares those members over a stand-in that is Type for
-// every payload tier 1 admits, which leaves the tier-1 message alone.
+// rule: it holds tier 1 to ONE diagnostic.  fn declares accessors that
+// return a reference to the payload and a constructor that takes it, and
+// a member's type is instantiated with the class whatever the assertion
+// concluded.  Over `void`, those members would add errors about forming
+// a reference to void and an invalid parameter type.  fn declares them
+// over a stand-in that is Type for every payload tier 1 admits, which
+// leaves the tier-1 message alone.
 
 #include <fixy/Fn.h>
 

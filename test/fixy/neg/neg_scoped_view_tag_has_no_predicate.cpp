@@ -7,11 +7,11 @@
 // a view of that state is a different mistake from asking a carrier that
 // witnesses nothing: this carrier is viewable, just not as Closed.
 //
-// Measured before CarrierDeclaresViewState:
-// `requires { mint_view<Closed>(c) }` answered TRUE for this carrier,
-// because the tag reaches the contract predicate and not the signature.
-// The pair is refused by the clause now, so a caller can ask which
-// states a carrier serves and get an answer per tag.
+// Without CarrierDeclaresViewState, `requires { mint_view<Closed>(c) }`
+// would answer TRUE for this carrier, because the tag would reach only
+// the contract predicate and not the signature.  The clause refuses the
+// pair, so a caller can ask which states a carrier serves and get an
+// answer per tag.
 //
 // Distinct mismatch class from
 // neg_scoped_view_carrier_declares_no_state.cpp (fixture 1): there no

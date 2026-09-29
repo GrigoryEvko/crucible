@@ -3,8 +3,8 @@
 // built anywhere else is one built without that evidence, so the
 // constructor is private and the mint is its only friend.
 //
-// The ported name is used on purpose: MonotonicClock names the clamped,
-// gated reader, and the door it lacks is the same one.
+// MonotonicClock is an alias for the reader over the monotonic source,
+// so the private constructor it names is the same door.
 
 #include <fixy/os/Time.h>
 

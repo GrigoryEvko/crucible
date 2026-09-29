@@ -7,7 +7,7 @@
 // std::abort, so a test that wants to watch one fire has to survive it.  A
 // forked child is the usual answer, and the tree bans raw process spawn: fork
 // carries no permission token and no effect row into the child, and
-// scripts/check-fixy-spawn-discipline.sh rejects it.  The abort is therefore
+// scripts/check-banned-calls.py rejects it.  The abort is therefore
 // caught where it happens: a SIGABRT handler jumps back to the arming point on
 // the same thread.
 //

@@ -35,7 +35,7 @@ static_assert(std::is_same_v<decltype(std::declval<h::OneShotFlag&>().peek_acqui
 }
 
 // The body raises the flag again, as a producer that signals while the
-// body runs would.  The old check stored false after the body and lost
+// body runs would.  A check that stored false after the body would lose
 // that raise.
 [[nodiscard]] bool a_raise_during_the_body_is_kept() noexcept {
     h::OneShotFlag flag;

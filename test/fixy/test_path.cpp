@@ -3,10 +3,9 @@
 // regression in one rule reddens here rather than hiding behind a
 // neighbouring rule that happens to reject the same input.
 //
-// The header's self-test walks the anchors. This TU is the port of the
-// old test/test_path_traversal_predicates.cpp, and it adds the tag
-// arithmetic the old test could not state: the value constructor of
-// Tagged is private, so every tainted path here is minted.
+// The header's self-test walks the anchors. This TU adds the tag
+// arithmetic: the value constructor of Tagged is private, so every
+// tainted path here is minted.
 
 #include <fixy/Path.h>
 

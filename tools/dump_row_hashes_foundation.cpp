@@ -18,32 +18,13 @@
 // a second binary whose output is captured under version control catches
 // that.
 //
-// ── Why this is a peer of tools/dump_row_hashes.cpp, not an extension ──
+// ── The folds that depend on the toolchain ─────────────────────────
 //
-// That tool witnesses the old per-wrapper fold at
-// crucible/safety/diag/_RowHashFold.h. One tool covering both folds would
-// be better than two tools of different shapes, so this one keeps that
-// tool's shape exactly: the same rationale block, the same anchor
-// cross-link, the same golden format, the same architecture gate.
-//
-// What it cannot share is the translation unit. Each tree ships its own
-// Platform.h and its own CRUCIBLE_PRE family, and one TU that names both
-// redefines five macros: CRUCIBLE_INVARIANT, CRUCIBLE_FATAL_INVARIANT,
-// CRUCIBLE_PRE, CRUCIBLE_PRE_MSG and CRUCIBLE_DIAG_ASSERT. Which
-// definition wins is an include-order race that no production TU runs. A
-// witness against TU-context fragility must not introduce a TU context of
-// its own, so the two folds take two binaries. This one links fixy and
-// names no crucible header at all.
-//
-// ── The exposure this covers is wider than the old tool's ──────────
-//
-// foundation/diag/RowHash.h replaced fifty-two per-wrapper salts with one
-// fold over the graded shape. Under the old salts a handful of wrapper
-// kinds folded a reflected name. Under one fold every graded wrapper
-// does, because the lattice identity is one of the fold's three inputs.
-// The multi-axis binding in fixy/Fn.h folds such an identity for every
-// axis but two. So there are more toolchain-dependent folds here than the
-// old tool witnesses, which is the reason this file exists.
+// foundation/diag/RowHash.h has one fold over the graded shape. Every
+// graded wrapper folds a reflected name, because the lattice identity is
+// one of the fold's three inputs. The multi-axis binding in fixy/Fn.h
+// folds such an identity for every axis but two. A reflected name can
+// move with the toolchain, which is the reason this file exists.
 //
 // The row entries are the exception and they are in the matrix for that
 // reason. Row<Es...> folds the underlying values of an append-only enum
@@ -159,8 +140,7 @@ using G07_Monotonic = ::fixy::Monotonic<std::uint64_t>;
 
 // A refinement carries its predicate as a template argument of its
 // lattice, so these two lines witness that a predicate rename moves a
-// hash. That is the case the old tree needed a separate pred_canonical_id
-// trait to express.
+// hash.
 using G08_RefinedPositive = ::fixy::Refined<::fixy::positive, int>;
 using G09_RefinedNonNegative = ::fixy::Refined<::fixy::non_negative, int>;
 

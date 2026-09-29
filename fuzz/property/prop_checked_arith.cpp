@@ -5,14 +5,10 @@
 // Checked.h is an L0 foundation: every size/offset/capacity computation
 // that must not silently wrap routes through checked_* / wrapping_* /
 // trapping_* / saturating_*.  The family is `template <std::integral T>`
-// — it claims correctness for ALL integral widths and signedness.  But
-// test_checked.cpp instantiates the RUNTIME ops at only int32_t and
-// uint32_t (the compile-time safe_* helpers are separately self-tested
-// via static_assert in the header).  The int8/int16/int64 + unsigned
-// widths — where integer promotion, two's-complement truncation, and
-// 64-bit overflow boundaries behave differently — are unexercised.
-// That is the firing-12 pattern (a generic numeric template tested at
-// one width); on a MemSafe/TypeSafe primitive it is worth closing.
+// — it claims correctness for ALL integral widths and signedness.  This
+// fuzzer runs the RUNTIME ops at eight widths, signed and unsigned, where
+// integer promotion, two's-complement truncation and 64-bit overflow
+// boundaries behave differently.
 //
 // The oracle is an INDEPENDENT 128-bit-wide computation: every op is
 // recomputed in __int128 / unsigned __int128 (no overflow possible for

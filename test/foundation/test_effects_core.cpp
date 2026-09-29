@@ -1,7 +1,6 @@
 // Sentinel TU for the effect atoms and rows.  The two headers carry
-// their own static_asserts and inline smoke tests; this file includes
-// them, calls each smoke test once, and keeps the runtime cells of the
-// old test_effects.cpp that concern atoms, contexts and rows.
+// their own static_asserts.  This file includes them and holds the
+// runtime cells that concern atoms, contexts and rows.
 
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -161,9 +160,7 @@ static_assert(projections_taking<int> == 0 && projections_taking<fe::Effect> == 
 [[nodiscard]] int with_alloc(fe::cap::Alloc) noexcept { return 42; }
 
 // Every accessor called with a non-constant argument.  The
-// static_assert walls only prove the constant-evaluated path.  This was
-// an inline runtime_smoke_test in Effect.h, compiled into every
-// translation unit that included the header.
+// static_assert walls only prove the constant-evaluated path.
 void every_accessor_runs_at_run_time() {
     fe::Effect e = fe::Effect::Alloc;
     [[maybe_unused]] std::string_view n1 = fe::effect_name(e);

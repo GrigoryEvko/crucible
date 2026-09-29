@@ -106,13 +106,10 @@ static_assert(std::is_same_v<Affine<int>::lattice_type, fa::lattices::qtt::Erase
 static_assert(Linear<int>::modality == fa::ModalityKind::Absolute);
 static_assert(Affine<int>::modality == fa::ModalityKind::Absolute);
 
-// The rejection traits, read in both directions.  Two of these cells
-// used to assert that Linear<int> is not already linear and that
-// Affine<int> is not consume-disciplined, under a comment calling an
-// empty table fail-closed.  The polarity runs the other way.  Each gate
-// reads its trait negated, so a trait answering "no" to every type
-// waives the duty rather than refusing it, and both gates were
-// tautologies for a release.  The cells below are what an armed
+// The rejection traits, read in both directions.  An empty table is not
+// fail-closed here.  Each gate reads its trait negated, so a trait
+// answering "no" to every type waives the duty rather than refusing it,
+// and the gate becomes a tautology.  The cells below are what an armed
 // recogniser answers.
 static_assert(!::fixy::is_already_linear_v<int>);
 static_assert(::fixy::is_already_linear_v<Linear<int>>);

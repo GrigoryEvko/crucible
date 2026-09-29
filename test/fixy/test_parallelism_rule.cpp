@@ -3,9 +3,9 @@
 // tests state invariants that hold on any supported machine instead of
 // pinning the values one machine happens to produce.
 //
-// Old spelling: test/test_parallelism_rule.cpp.  The boundary cells follow
-// deviation 3 of fixy/concurrent/ParallelismRule.h: a set of exactly one
-// cache's size is inside that cache.  A failed check records the failure
+// The boundary cells follow the boundary rule of
+// fixy/concurrent/ParallelismRule.h: a set of exactly one cache's size
+// is inside that cache.  A failed check records the failure
 // and returns from its case, because nothing in this tree throws.
 
 #include <fixy/concurrent/ParallelismRule.h>

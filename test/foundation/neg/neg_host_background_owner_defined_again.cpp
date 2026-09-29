@@ -1,7 +1,7 @@
 // A second definition of the background owner, which the background key
-// names as a friend.  The first definition in a translation unit once
-// built the key and minted a background context.  The owner is defined
-// beside the key now, so this is a redefinition.
+// names as a friend.  A declaration alone beside the key would let the
+// first definition in a translation unit build the key and mint a
+// background context.  The owner is defined there, so this redefines it.
 
 #include <foundation/effects/Effect.h>
 

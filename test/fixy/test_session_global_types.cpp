@@ -50,8 +50,9 @@ static_assert(std::is_same_v<g::roles_t<SentOnly>, g::Roles<P, Q>>);
 static_assert(std::is_same_v<g::active_roles_t<SentOnly>, g::Roles<Q>>);
 static_assert(std::is_same_v<g::sending_roles_t<SentOnly>, g::Roles<P>>);
 
-// Two distinct role types never merge.  The old walk deduplicated by a
-// hash of the type, and a collision would have merged two roles.
+// Two distinct role types never merge.  The walk deduplicates with
+// std::is_same_v and not with a hash of the type, so no collision can
+// merge two roles.
 struct TwinA {};
 struct TwinB {};
 static_assert(g::roles_t<g::Msg<TwinA, TwinB, M, int, g::End>>::size == 2);

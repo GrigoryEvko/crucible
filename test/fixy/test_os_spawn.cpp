@@ -1,12 +1,10 @@
 // The two spawn mints, run for real: children that join, and shards that
 // are recombined into the region they came from.
 //
-// Old spelling: test/test_fixy_v_203_spawn_join_policy.cpp and
-// test/test_fixy_v_204_spawn_grant.cpp, both of which were entirely
-// static_asserts. Those properties live in fixy/os/Spawn.h now, where
-// they fire wherever the types are used. What is here is the behaviour:
-// that every child body ran, that the parent Permission comes back, and
-// that a recombined region still describes the same storage.
+// The static properties of the mints live in fixy/os/Spawn.h, where they
+// fire wherever the types are used. What is here is the behaviour: that
+// every child body ran, that the parent Permission comes back, and that
+// a recombined region still describes the same storage.
 
 #include <fixy/os/Spawn.h>
 #include <foundation/permissions/Permission.h>
@@ -248,8 +246,8 @@ struct ShardThreads {
 };
 
 // A working set in the private cache of one core is already hot there, so
-// the parallelism rule keeps it on the calling thread.  The old mint
-// started one thread per shard whatever the budget.
+// the parallelism rule keeps it on the calling thread.  A mint that
+// started one thread per shard whatever the budget would fail here.
 [[nodiscard]] int parallel_for_core_resident_runs_inline() {
     ShardThreads<8> record{};
     record.run(fixy::concurrent::ParallelismRule::budget_for_span<std::uint32_t>(8));

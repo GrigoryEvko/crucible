@@ -1,7 +1,8 @@
 // The session mint of a lazily established channel reads the gate of
 // fixy::session::mint_session.  The protocol sends a computation that
 // does IO, and the background context holds no IO, so the mint is
-// refused.  The old observe() took no context and gave the handle.
+// refused.  A mint that took no context would give the handle to any
+// caller.
 
 #include <fixy/handle/LazyEstablishedChannel.h>
 

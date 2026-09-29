@@ -40,10 +40,10 @@ struct Payload {
 
 // ── The pointee-not-pointer guard ────────────────────────────────────
 //
-// The guard this concept replaced read `is_pointer_v<T*> || is_same_v<T,
-// T>`, whose second disjunct is true for every T, so it admitted
-// PublishOnce<int*> and enforced nothing.  These cells are the witness
-// from outside the header that the replacement still discriminates.
+// A guard that read `is_pointer_v<T*> || is_same_v<T, T>` would admit
+// PublishOnce<int*> and enforce nothing, because its second disjunct is
+// true for every T.  These cells are the witness from outside the header
+// that the concept discriminates.
 static_assert(h::PublishOncePointee<Payload>);
 static_assert(h::PublishOncePointee<void>);
 static_assert(h::PublishOncePointee<const Payload>);
@@ -227,10 +227,9 @@ static_assert(!std::is_move_assignable_v<h::SetOnce<Payload>>);
     return 0;
 }
 
-// The single-threaded path, which used to run as an inline smoke test
-// compiled into every translation unit that included the header.  What
-// it checks is behaviour under a contrived sequence of calls, not a
-// property of Lazy as shipped, so it belongs here.
+// The single-threaded path.  What it checks is behaviour under a
+// contrived sequence of calls, not a property of Lazy as shipped, so it
+// lives in a test and not in the header.
 //
 // These checks run rather than fold: a refactor that made the stored
 // initializer re-runnable would fail here instead of compiling.

@@ -1,8 +1,8 @@
 // release() hands a mapping to something that will unmap it elsewhere,
 // so the witness parameter is constrained to a leak atom.  An unrelated
-// empty struct is not one, and the port made that witness a reflection
-// query over the atom catalog rather than a trait a translation unit
-// could specialize, so this door cannot be opened from outside.
+// empty struct is not one.  The witness is a reflection query over the
+// atom catalog rather than a trait a translation unit could specialize,
+// so this door cannot be opened from outside.
 
 #include <fixy/OwnedMmap.h>
 

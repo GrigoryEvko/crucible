@@ -27,7 +27,7 @@ using ct_taint::make_secret;
 using ct_taint::opaque;
 using ct_taint::Tally;
 
-// The new tree's primitives, spelled for the shared checks.
+// The fixy::ct primitives, spelled for the shared checks.
 struct FixyCt {
     template <typename T>
     static T mask_from_bit(T bit01) noexcept {

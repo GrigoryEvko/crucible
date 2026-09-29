@@ -2,11 +2,10 @@
 // about the shipped type.
 //
 // Ctx.h keeps its static_assert wall, because each of those assertions
-// reads a shipped concept or trait against the witness shapes.  What
-// moved here are the four things that constructed a scenario: the
-// promotion chain, the with_cap probe, the CanTakeInitCap concept, and
-// the inline runtime_smoke_test that compiled into every translation
-// unit including the header.
+// reads a shipped concept or trait against the witness shapes.  This
+// file holds the four things that construct a scenario: the promotion
+// chain, the with_cap probe, the CanTakeInitCap concept, and the
+// run-time body that drives every operation.
 
 #include <foundation/effects/Ctx.h>
 

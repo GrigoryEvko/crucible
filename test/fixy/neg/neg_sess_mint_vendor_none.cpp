@@ -1,6 +1,6 @@
 // VendorBackend::None names no kernel, so a session pinned to it runs
-// against nothing.  The old check admitted it at the gate.  The value
-// filter of the VendorPinned registration refuses it there.
+// against nothing.  The value filter of the VendorPinned registration
+// refuses it at the gate.
 
 #include <fixy/session/Handle.h>
 

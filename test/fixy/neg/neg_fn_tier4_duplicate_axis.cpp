@@ -4,9 +4,8 @@
 //
 // There is no tier 3.  An axis the pack says nothing about resolves to
 // its strict pole silently, so a missing atom is not a rejection and
-// needs no check — which is the whole difference between this gate and
-// the old tree's, where the shortest honest binding named thirty-two
-// axes it had nothing to say about.
+// needs no check.  A binding names only the axes it has something to say
+// about.
 //
 // Like its two siblings, this fixture holds its tier to one diagnostic:
 // the duplicate walk answers with an AXIS rather than with an atom, so

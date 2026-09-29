@@ -2,10 +2,6 @@
 // sizeof(T), the wrapper is move-only with one door, declassification is
 // the only exit and takes an rvalue, and every policy tag leaves through
 // its own edge and nothing else does.
-//
-// Cells ported from test/test_safety.cpp and the Secret rows of
-// test/test_migration_verification.cpp and test/test_graded_extract.cpp;
-// the roster count of the old header is the derived edge count here.
 
 #include <fixy/Secret.h>
 
@@ -99,9 +95,8 @@ static_assert(std::is_same_v<secret_policy::admitted_policies::classified, Secre
 static_assert(ffc::has_edge_from<^^secret_policy::admitted_policies, Secret<int>::lattice_type>());
 static_assert(!ffc::has_edge_from<^^secret_policy::admitted_policies, fa::lattices::conf::PublicTier>());
 
-// The count of policy tags declared in the namespace, walked the way
-// the old roster completeness check walked it: a class derived from
-// the marker base, other than the base itself.
+// The count of policy tags declared in the namespace.  A policy tag is a
+// class derived from the marker base, other than the base itself.
 [[nodiscard]] consteval std::size_t count_policy_tags_in_namespace() noexcept {
     std::size_t found = 0;
     for (const auto m : std::meta::members_of(^^secret_policy, std::meta::access_context::unchecked())) {
@@ -139,8 +134,8 @@ static_assert(every_policy_declassifies());
 
 // A tag that derives from the marker base but has no edge is declared
 // and not admitted: the base-class check passes and the edge check
-// refuses.  This is the gap the fail-closed namespace closes over the
-// old derived-from-base gate.
+// refuses.  A gate that checked only the base class would admit it, and
+// the fail-closed namespace closes that gap.
 struct UnadmittedPolicy final : secret_policy::secret_policy_base {};
 static_assert(DeclassificationPolicy<UnadmittedPolicy>);
 static_assert(!AdmittedDeclassification<UnadmittedPolicy>);

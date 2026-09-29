@@ -9,13 +9,9 @@
 // about the chunk arithmetic that produces it: every element written
 // exactly once, nothing skipped, nothing touched twice.
 //
-// Ported from test/test_owned_region.cpp without the parallel_for_views,
-// parallel_reduce_views and parallel_apply_pair cells, whose helpers live
-// in safety/Workload.h and are not ported; the join they performed is
-// spelled out once below through the public door.  The detection cells
-// of test/test_is_owned_region.cpp are folded in.  The crucible Arena
-// is replaced by a bump allocator over a fixed block, which is all
-// adopt reads of an arena.
+// The join is spelled out once below through the public door.  The
+// arena is a bump allocator over a fixed block, which is all adopt reads
+// of an arena.
 
 #include <fixy/OwnedRegion.h>
 #include <foundation/Lifetime.h>
@@ -343,8 +339,7 @@ void test_split_and_recombine_every_total_and_count() {
     }(std::make_index_sequence<16>{});
 }
 
-// The join the old parallel helpers performed, spelled out once: every
-// shard writes its own slice index over its range, and the shards are
+// The join, spelled out once: every shard writes its own slice index over its range, and the shards are
 // then surrendered to recombine, which folds their Slice permissions
 // back into the parent's.  The post-join scan shows both that no shard
 // wrote outside its range and that no element went unwritten.

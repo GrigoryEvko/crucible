@@ -1,10 +1,9 @@
 // The mapping surface, run against the kernel.
 //
-// Neither fixy/os/Mmap.h nor the header it was ported from has ever had
-// a positive test.  Thirteen negative-compile fixtures stand over the
-// old one, which say what the gates refuse and nothing about what the
-// mints do, so every case here is a mapping that is really made, really
-// written through, and really unmapped.
+// The negative-compile fixtures of fixy/os/Mmap.h say what the gates
+// refuse and nothing about what the mints do, so every case here is a
+// mapping that is really made, really written through, and really
+// unmapped.
 //
 // The bit folds and the gate answers stay in the header, where they fire
 // wherever the surface is used.  What is here is the behaviour under a
@@ -33,11 +32,9 @@ namespace perm = foundation::permissions;
 
 namespace {
 
-// The named context this surface is meant to take belongs to a
-// fixy/Ctx.h the tree does not have yet.  This one stands in, in the
-// shape foundation's own context self-test uses.  It is handed the
-// capabilities it claims: a context is not evidence of a capability, it
-// carries one.
+// A test context that owns IO and Block, in the shape foundation's own
+// context self-test uses.  It is handed the capabilities it claims: a
+// context is not evidence of a capability, it carries one.
 using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 

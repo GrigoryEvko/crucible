@@ -4,8 +4,8 @@
 // release gate compares the tag of the permission with the tag of the
 // mapping, and it refuses the call.
 //
-// Before the gate read the tag, this call compiled and discarded the
-// pages of a mapping that its caller had no proof over.
+// A gate that did not read the tag would let this call compile and
+// discard the pages of a mapping that its caller has no proof over.
 //
 // The mapping is the empty region at the brand of its own permission,
 // so nothing here maps memory.

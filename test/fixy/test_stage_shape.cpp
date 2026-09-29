@@ -6,13 +6,12 @@
 // things live here instead.
 //
 // The run-time read: the predicates consulted through a volatile bound,
-// so the reads are not folded away.  That body was an inline smoke test
-// in the old header, called by nothing.
+// so the reads are not folded away.
 //
 // And the cell the wall cannot state: a stage body whose parameters are
 // a real channel's ConsumerHandle and ProducerHandle is recognized as a
 // stage, and the values the shape recovers are the channel's element
-// types.  The old header's fakes prove the predicate matches the shape
+// types.  The header's fakes prove the predicate matches the shape
 // it was written for; this proves it matches the shape the channels
 // actually have.
 

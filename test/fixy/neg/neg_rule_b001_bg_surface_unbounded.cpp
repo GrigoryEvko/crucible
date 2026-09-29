@@ -7,12 +7,11 @@
 // is the pair space_bounded plus cost_linear: a bound on what the surface
 // can hold and a bound on what it can spend.
 //
-// This is the theorem the catalog recorded for Axis::Observability before
-// the axis had any atom, and it is NOT the containment rule.  B002 is the
-// containment, and it is a new code rather than a rereading of this one,
-// because a rule code here is stable API and this theorem has its own
-// remedy.  The pack below satisfies B002 — Bg is in the effect row — and
-// trips only B001, which is what shows the two are independent.
+// This rule is NOT the containment rule.  B002 is the containment, and
+// it has a code of its own, because a rule code here is stable API and
+// this theorem has its own remedy.  The pack below satisfies B002 — Bg
+// is in the effect row — and trips only B001, which is what shows the
+// two are independent.
 //
 // "May run unbounded" reads four ways, and the rule refuses all four: an
 // unstated cost, an explicit unbounded cost, an unstated space, or an

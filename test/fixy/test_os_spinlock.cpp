@@ -3,10 +3,6 @@
 // case gives the guard a context its wait strategy admits and a
 // Permission.
 //
-// Old spelling: the runtime_smoke_test inside
-// include/crucible/fixy/concurrent/_SpinLock.h, which acquired and
-// released without a context because both doors were public.
-//
 // The cells that prove a door is CLOSED cannot live here: a private
 // member access is a compile error, not a runtime result. They are the
 // neg fixtures named in the header.

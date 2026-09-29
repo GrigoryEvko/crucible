@@ -4,22 +4,18 @@
 // binding that declared IO cannot be called with it, and the refusal is
 // at the call site rather than inside the body.
 //
-// The gate is lifted from the binding's own Effect grade.  It used to be
-// hand-spelled Row<IO>, because atom::with<Es...> carried no `lifts_to`
-// and nothing mapped the Effect axis's grade to a row for context
-// admission: the row nobody computed was the empty row, the empty row is
-// a Subrow of every context's, and a caller who wanted the gate wrote
-// the row a second time.  Writing it twice is what made it a gap rather
-// than a rule — the second spelling can disagree with the first, and
-// nothing compares them.
+// The gate is lifted from the binding's own Effect grade, so no caller
+// spells the row a second time.  A second spelling can disagree with the
+// first, and nothing compares them.  Without the lift, the row of the
+// binding would be the empty row, and the empty row is a Subrow of every
+// context's row.
 //
-// Now fixy/Atom.h's closed relation answers for both shapes the grade
-// takes, the stated with<Es...> and the bare Row the strict pole leaves
-// behind, and fixy/Fn.h's CtxAdmitsBinding reads it.  The role names IO
-// once, in the binding.  The eight neg_os_*_ctx_lacks_* fixtures cover
-// the same lift on the syscall atoms, and
-// neg_os_fs_mint_file_with_atom_widens_required_row covers the direction
-// this change points the other way.
+// fixy/Atom.h's closed relation answers for both shapes the grade takes,
+// the stated with<Es...> and the bare Row the strict pole leaves behind,
+// and fixy/Fn.h's CtxAdmitsBinding reads it.  The role names IO once, in
+// the binding.  The neg_os_*_ctx_lacks_* fixtures cover the same lift on
+// the syscall atoms, and neg_os_fs_mint_file_with_atom_widens_required_row
+// covers the other direction.
 
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>

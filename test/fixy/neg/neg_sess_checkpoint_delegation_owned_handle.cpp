@@ -1,7 +1,7 @@
 // A rollback reverts the protocol and not the program.  An owning pointer
 // to a session handle, sent after the checkpoint, stays with the peer
-// after a rollback.  The rollback cannot recall the endpoint.  The old
-// rule looked for the hand-off marker alone and admitted the pointer.
+// after a rollback.  The rollback cannot recall the endpoint.  A rule
+// that looked for the hand-off marker alone would admit the pointer.
 // The mint refuses it.
 
 #include <fixy/session/Checkpoint.h>

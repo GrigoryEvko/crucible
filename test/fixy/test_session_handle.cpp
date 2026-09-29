@@ -10,12 +10,11 @@
 // The fork is not decoration, and what it checks is not a compile-time
 // property.  Whether a policy claims to check is compile-time —
 // Policy::checks_abandonment, asserted above.  Whether the DESTRUCTOR
-// acts on that claim is runtime, and the two can disagree silently:
-// the ported source had two independent kill switches for one
-// decision, a tracker that returned a hardcoded "consumed" and a
-// destructor body inside `#ifndef NDEBUG`.  Either one alone flipped
-// leaves a build whose constant says "checking" and whose destructor
-// does nothing, and no static_assert can see that.  The only way to
+// acts on that claim is runtime, and the two can disagree silently.  A
+// tracker that returns a hardcoded "consumed", or a destructor body
+// inside `#ifndef NDEBUG`, leaves a build whose constant says
+// "checking" and whose destructor does nothing, and no static_assert
+// can see that.  The only way to
 // observe a std::abort is to run it somewhere the failure is
 // recoverable, which is a child process.  Reading WIFSIGNALED from the
 // wait status is also stricter than ctest's WILL_FAIL, which would
@@ -383,13 +382,11 @@ static_assert(!s::DetachReason<int>);
 }
 
 // The Pinned-reference branch of SessionResource, walked rather than
-// asserted.  The frozen tree admitted this Resource shape and then
-// could not mint one: the factory took `Resource r` and passed
-// `std::move(r)`, which for Resource = Wire& is an rvalue that cannot
-// bind back to Wire&, so the branch the concept's longest comment
-// exists to explain failed at the first call.  Forwarding instead of
-// moving is what makes this function compile, so this function is the
-// regression test for that repair.
+// asserted.  A factory that took `Resource r` and passed `std::move(r)`
+// would admit this Resource shape and then fail to mint one: for
+// Resource = Wire& the moved value is an rvalue that cannot bind back to
+// Wire&.  The factory forwards instead of moving, and that is what makes
+// this function compile.
 [[nodiscard]] int walk_pinned_reference() {
     PinnedWire wire{};
     const PinnedWire* const address_before = &wire;

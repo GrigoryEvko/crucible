@@ -1,8 +1,8 @@
 // A derived tag that declares a permission_row member of its own.
 //
-// The member was read before the parent, so a shard could state the
-// empty row beside a parent that does IO.  A derived tag has the row of
-// its parent and no other.
+// A lookup that read the member before the parent would let a shard
+// state the empty row beside a parent that does IO.  A derived tag has
+// the row of its parent and no other.
 
 #include <foundation/permissions/Permission.h>
 

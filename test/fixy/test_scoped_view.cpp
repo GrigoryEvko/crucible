@@ -1,7 +1,6 @@
-// Ported from test/test_safety_view.cpp.  The escape audit's container
-// coverage, which the old test spelled as one static_assert per shape,
-// is one roster walked by reflection: every shape in it must be seen
-// through, and every shape in the clean roster must audit clean.
+// The escape audit's container coverage is one roster walked by
+// reflection: every shape in it must be seen through, and every shape in
+// the clean roster must audit clean.
 
 #include <fixy/ScopedView.h>
 

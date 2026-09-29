@@ -1,14 +1,12 @@
 // The wrapped saturating helpers, exercised under a sequence of calls.
 //
-// These are the groups of test/test_saturate.cpp that exercise the nine
-// helpers returning a fixy wrapper — the det, from and into families —
-// which live in fixy/Saturate.h.  The six groups over the three plain
-// helpers are in test/foundation/test_saturate.cpp, beside the header
-// those live in.  The bodies are the old test's with its assert spelled
-// EXPECT, so one run reports every failure it has.  Two spellings
-// changed with the band: the old member `relax<Tier>()` is the free
-// `relax<Tier>(band)` of fixy/Bands.h, and the old member
-// `satisfies<Tier>` is the free `satisfies_v<Band, Tier>`.
+// These groups exercise the nine helpers that return a fixy wrapper —
+// the det, from and into families — which live in fixy/Saturate.h.  The
+// groups over the three plain helpers are in
+// test/foundation/test_saturate.cpp, beside the header those live in.
+// Each check is an EXPECT, so one run reports every failure it has.  The
+// band checks use the free `relax<Tier>(band)` of fixy/Bands.h and the
+// free `satisfies_v<Band, Tier>`.
 
 #include <fixy/Bands.h>
 #include <fixy/Saturate.h>

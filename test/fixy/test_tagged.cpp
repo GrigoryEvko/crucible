@@ -3,11 +3,6 @@
 // door, retag moves along an admitted edge and nowhere else, and every
 // property of the catalog is read out of the admitted_retags namespace
 // rather than restated per edge.
-//
-// Cells ported from test/test_fixy_source.cpp, test/test_safety.cpp,
-// test/test_fixy_v_261_arch_pinned.cpp, the self-tests of
-// include/crucible/safety/source/Path.h, and the Tagged rows of
-// test/test_migration_verification.cpp and test/test_graded_extract.cpp.
 
 #include <fixy/Tagged.h>
 

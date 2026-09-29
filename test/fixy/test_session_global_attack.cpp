@@ -1289,8 +1289,8 @@ using InnerBranchCoinductive = s::TypingContext<
     At<Q, s::Loop<s::Offer<s::Sender<P>, In<P, L1, Out<R, X, s::Continue>>, In<P, L2, s::Continue>>>>,
     At<R, s::Loop<In<Q, X, s::Continue>>>>;
 
-// The old tree projected a role absent from a loop to Loop<Continue>.
-// That type spins without an action, and the explorer refuses it.
+// A role absent from a loop projects to End, not to Loop<Continue>.
+// Loop<Continue> spins without an action, and the explorer refuses it.
 static_assert(std::is_same_v<typename s::project_t<g::Msg<P, R, M, int, g::Rec<g::Msg<P, Q, M, int, g::Var>>>, R>::local,
                              In<P, M, s::End>>);
 
@@ -1368,17 +1368,15 @@ void run_interleaving() {
 
 // ── 5. Two gaps that this campaign found, and their repairs ──────────
 
-// Association used to require only well-formedness.  The projected
-// context of equation (49) matches each projection exactly, so it was
-// associated, and the explorer shows it unsafe.  Association now asks
-// for balanced+.
+// Association asks for balanced+, not only for well-formedness.  The
+// projected context of equation (49) matches each projection exactly,
+// and the explorer shows it unsafe, so association refuses it.
 static_assert(g::is_global_well_formed_v<Ex49>);
 static_assert(std::is_same_v<s::projected_context_t<Ex49>, Ex49Naive>);
 static_assert(!s::association_holds_v<Ex49Naive, Ex49>);
 
-// The binary view used to accept a local type with two peers.  The
-// ring's P sends to Q and receives from R, and one binary channel would
-// carry both.  The view now requires one peer.
+// The binary view requires one peer.  The ring's P sends to Q and
+// receives from R, and one binary channel would carry both.
 template <typename Local>
 concept admits_binary_view = requires { typename s::strip_peers_t<Local>; };
 using RingProjectionP = typename s::project_t<Ring, P>::local;

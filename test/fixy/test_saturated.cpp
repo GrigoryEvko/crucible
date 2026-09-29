@@ -1,8 +1,8 @@
 // Sentinel TU for fixy/Saturated.h: the clamped value comes from the
 // library and the flag records that clamping happened.
 //
-// The port made the three checked operations delegate their clamped
-// value to std::saturating_*, keeping only the flag.  This TU pins the
+// The three checked operations take their clamped value from
+// std::saturating_* and compute only the flag.  This TU pins the
 // property that delegation has to preserve: the flag is set exactly when
 // the exact result does not fit, and the value is then the end of the
 // range the exact result ran past.

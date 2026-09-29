@@ -39,8 +39,7 @@ struct ThreadedTag {};
 using Spsc = c::PermissionedSpscChannel<int, 8, SpscTag>;
 using Mpsc = c::PermissionedMpscChannel<int, 8, MpscTag>;
 
-// The binding costs what the reference it replaced cost, and it keeps the
-// handle move-only.
+// The binding costs one pointer, and it keeps the handle move-only.
 static_assert(sizeof(Spsc::ProducerHandle) == sizeof(void*));
 static_assert(sizeof(Spsc::ConsumerHandle) == sizeof(void*));
 static_assert(sizeof(Mpsc::ConsumerHandle) == sizeof(void*));

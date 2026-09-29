@@ -17,11 +17,8 @@
 // Whitney U) OR shows ≤ 5 % Δp99.  FAIL = any pair shows [REGRESS]
 // flag at > 5 % Δp99 with distinguishable z.
 //
-// The new tree carries one permissioned channel with a bare ring beside
-// it, the MPSC channel.  The permissioned SPSC channel has its own
-// session bench.  The MPMC channel, the sharded grid and the
-// permissioned Chase-Lev deque were dropped with no production
-// consumer, so their pairs are gone.
+// The pairs are the permissioned MPSC channel and its bare ring.  The
+// permissioned SPSC channel has its own bench, bench_spsc_session.cpp.
 //
 // Methodology:
 //   1. For each (bare, wrapped) pair, allocate fresh ring + handle.

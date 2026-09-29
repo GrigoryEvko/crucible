@@ -1,13 +1,11 @@
 // A context is not evidence of a capability.  It carries one.
 //
 // ExecCtx is friended by every capability type so the capability member
-// can be initialized, and its own default constructor used to be public
-// for every specialization.  Naming a specialization and default-
-// constructing it therefore built the capability member and produced a
-// context that satisfied CtxCanMint for every effect that source
-// permits — reaching the capability by constructing the thing that
-// holds it, without ever passing the passkey guarding Init's own
-// constructor.  That was the hole.
+// can be initialized.  A public default constructor on a specialization
+// would build that member.  The result would be a context that satisfies
+// CtxOwnsCapability for every effect in its row.  It would reach the
+// capability by constructing the thing that holds it, without the
+// passkey that guards Init's own constructor.
 //
 // No specialization has a default constructor.  Each one takes its
 // capability source as a constructor argument, and the foreground source

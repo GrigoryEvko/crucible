@@ -10,15 +10,12 @@
 // The harness grows monotonically.  A new cheat is added, never
 // removed, and a rejection once locked in stays locked in.
 //
-// Old spelling: test/test_concept_cheat_probe.cpp, over the old safety
-// wrappers.  That file carried twenty-seven cheats it asserted as
-// ADMITTED: each specialized a detection trait from a foreign
-// namespace, and a trait is a class template any translation unit can
-// specialize, so no concept built on one could tell the two apart.
-// The new tree's detection is a concept over a reflection query, and
-// its opt-ins are members of the wrapper's own class body, so a
-// specialization written here reaches no gate.  Every one of those
-// cheats that has a target in the new tree is asserted REJECTED below,
+// A detection trait is a class template that any translation unit can
+// specialize from a foreign namespace, so no concept built on one can
+// tell a wrapper from a cheat.  Detection here is a concept over a
+// reflection query, and its opt-ins are members of the wrapper's own
+// class body, so a specialization written here reaches no gate.  Each
+// cheat that specializes a detection trait is asserted REJECTED below,
 // and each is paired with an assertion that the specialization did take
 // on the variable it named, so the rejection is shown to be the
 // concept's and not a typo's.  The one cheat that cannot be written at
@@ -39,11 +36,7 @@
 //     forwards honestly; the admission is recorded rather than treated
 //     as a hole.
 //
-// Ten of the old pairs have no target here, because the new tree did
-// not carry the wrapper: MemOrder, Progress, ResidencyHeat, Vendor,
-// Crash, Consistency, Budgeted, EpochVersioned, NumaPlacement, and the
-// witness lookalike.  Bits was carried without a detection surface, so
-// it has no pair either.
+// Bits has no detection surface, so no cheat targets it.
 
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
@@ -77,10 +70,9 @@ constexpr bool positive_p(int x) noexcept { return x > 0; }
 // ── The generic wrapper concept ─────────────────────────────────────
 //
 // Each fixture states the six members GradedWrapper reads and breaks
-// exactly one of them.  The old file left `modality` off the first ten,
-// so each of those was refused for a missing member on top of its own
-// defect; here every fixture declares it, and is refused by its defect
-// alone.
+// exactly one of them.  Every fixture declares `modality`, so a missing
+// member never adds to its defect, and the concept refuses it for that
+// defect alone.
 
 struct Cheat1_ValueTypeMismatch {
     using value_type = int;
@@ -199,7 +191,7 @@ static_assert(!fa::GradedWrapper<CyclicRef<int>>, "[CHEAT 10 ADMITTED] cyclic se
 
 // Cheat 11: trait-spec injection on is_graded_specialization.  The
 // specialization takes on the struct and the concept does not read it.
-// Its twin, a specialization of graded_modality, no longer compiles at
+// Its twin, a specialization of graded_modality, does not compile at
 // all: the primary is constrained to Graded, and the negative-compile
 // fixture beside this file stands on that.
 struct Cheat11_FakeSubstrate {
@@ -401,7 +393,7 @@ static_assert(!fixy::IsBand<::Cheat23_FakeBand>, "[CHEAT 23 ADMITTED] is_band_v 
 //     state and invariants the subclass carries.
 //   - an unrelated class with the wrapper's is_*_v specialized for it,
 //     which must be REJECTED: the value is derived from the concept and
-//     read by no gate.  The old tree admitted this.
+//     read by no gate.
 //   - the same class with is_instance_of_v specialized for it against
 //     the wrapper's template, which must be REJECTED for the same
 //     reason.

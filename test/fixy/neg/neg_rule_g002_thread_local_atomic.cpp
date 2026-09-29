@@ -7,9 +7,8 @@
 // but as the premise that RESCUES a monotonic concurrent binding rather
 // than one that refuses, and this pack names no Mutation atom.
 //
-// The tag parameter is what discharged the old catalog's G001: the
-// thread-local atom requires a tag naming the storage, so the untagged
-// form that rule refused cannot be spelled at all.
+// The thread-local atom requires a tag naming the storage, so an
+// untagged thread-local form cannot be spelled at all.
 
 #include <fixy/Fn.h>
 

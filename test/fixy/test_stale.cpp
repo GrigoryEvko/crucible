@@ -5,9 +5,6 @@
 // including the saturating arm no constant-expression cell reaches.  The
 // weaken contract is shown to abort at runtime; its constant-expression
 // form is test/fixy/neg/neg_stale_weakened_downwards.cpp.
-//
-// Ported from test/test_is_stale.cpp and the Stale cells of
-// test/test_migration_verification.cpp.
 
 #include <fixy/Stale.h>
 

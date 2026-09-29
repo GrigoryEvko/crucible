@@ -5,16 +5,14 @@
 // any mint at all — it happens inside Qtt, from arguments mint_linear
 // forwarded.
 //
-// A private constructor plus a friend list naming a mint would have
-// closed nothing, because the mint is not where the object is built.
-// Making mint_linear a friend would have opened the door to every type
-// in the tree.  What closes it is that there is no reachable constructor
-// to forward TO: is_constructible_v<OwnedFile, FILE*> is false, so
-// mint_linear's own requires-clause rejects the call.
+// A private constructor plus a friend list naming a mint would close
+// nothing, because the mint is not where the object is built.  Making
+// mint_linear a friend would open the door to every type in the tree.
+// What closes it is that there is no reachable constructor to forward
+// TO: is_constructible_v<OwnedFile, FILE*> is false, so mint_linear's
+// own requires-clause rejects the call.
 //
 // This fixture is the standing witness that it stays false.
-//
-// Verified before the fix: this TU compiled clean.
 
 #include <fixy/OwnedFile.h>
 #include <fixy/Qtt.h>

@@ -1,11 +1,6 @@
 // Including the header from a translation unit is what drives it
 // through the target's full warning matrix.  The body then exercises
 // the consteval message builder with non-constant arguments.
-//
-// Old spelling: test/test_row_mismatch_compile.cpp.  The runtime smoke
-// test that the old header carried inline, compiled into every
-// including translation unit and called only from here, is the first
-// case below.
 
 #include <foundation/diag/RowMismatch.h>
 

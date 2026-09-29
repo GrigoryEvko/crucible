@@ -4,8 +4,7 @@
 //
 // The rejection rests on the same structural recogniser as its Affine
 // sibling: every grade of Qtt is recognised by one reflection query, so
-// a wrapper nested in its own family cannot slip through the way it did
-// while the table behind this gate stood empty.
+// a wrapper nested in its own family cannot slip through an empty table.
 //
 // The second required diagnostic is the compiler's rendering of the
 // instantiation, which the source never spells: it writes

@@ -5,8 +5,8 @@
 // words for each direction, which a lock guards.  A PeerMsg is keyed, so
 // its step sends the label word, and the handle then stands at the value
 // step, which sends the value.  The receiving side checks the value that
-// it reads.  Before the value step existed, a handle built from a
-// projection put the label word on the wire and dropped the value.
+// it reads.  Without the value step, a handle built from a projection
+// would put the label word on the wire and drop the value.
 
 #include <fixy/session/Global.h>
 #include <fixy/session/Handle.h>

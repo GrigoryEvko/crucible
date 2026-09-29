@@ -1,14 +1,12 @@
 // Sentinel TU for fixy/Machine.h: the machine costs its state, the
 // constructor is behind its two doors, a transition is admitted only by
-// an edge in the relation the machine names, the three Mach.h helpers
-// project and gate on that relation, and the walk runs a second time
-// through a volatile seed so the state is not folded away.
+// an edge in the relation the machine names, the three helpers of
+// fixy::mach project and gate on that relation, and the walk runs a
+// second time through a volatile seed so the state is not folded away.
 //
-// Ported from test/test_fixy_mach_transitions.cpp and the Machine cells
-// of test/test_fixy_mach_safety.cpp.  The two edges the old test opted
-// in through CRUCIBLE_ADMIT_MACHINE_TRANSITION are declared once each
-// way: in a per-machine namespace, and in the shared relation through
-// the macro, so both spellings are exercised.
+// The two edges are declared once each way: in a per-machine namespace,
+// and in the shared relation through CRUCIBLE_ADMIT_MACHINE_TRANSITION,
+// so both spellings are exercised.
 
 #include <fixy/Machine.h>
 
@@ -60,7 +58,7 @@ static_assert(MachineTransition<Disconnected, Connecting>, "the macro appended t
 static_assert(MachineTransition<Connecting, Connected>);
 static_assert(!MachineTransition<Connected, Disconnected>);
 
-// The three helpers of the old fixy/Mach.h.
+// The three helpers of fixy::mach.
 static_assert(std::is_same_v<fmach::state_of_t<ConnMachine>, Disconnected>,
               "state_of_t must project Machine<Disconnected>'s state_type.");
 

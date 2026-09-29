@@ -3,8 +3,8 @@
 // callable can still break, and a throw out of a child tears through the
 // join instead of unwinding it.
 //
-// The family here is a named one, not the default, which is the case the
-// old needle in include/crucible/fixy/ctrl/Throws.h did not match.
+// The family here is a named one, not the default.  A check that matched
+// only the default family would admit this callable.
 
 #include <fixy/os/Spawn.h>
 #include <foundation/permissions/Permission.h>

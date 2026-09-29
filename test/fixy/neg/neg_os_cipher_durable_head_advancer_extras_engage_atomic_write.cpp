@@ -1,7 +1,6 @@
 // head_advance_stance pins the commit to RenameAt2NoReplace.  An extra
 // that engages the atomicity axis is refused at the stance rule.  The
-// old fixture named LinkAtomic here; that tag is gone with the ENOSYS
-// it stood for, and Rename is the same test.
+// extra here names Rename, and any other atomicity tag is the same test.
 
 #include <fixy/Path.h>
 #include <fixy/atoms/Os.h>

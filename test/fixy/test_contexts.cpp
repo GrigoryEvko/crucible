@@ -1,6 +1,6 @@
-// Sentinel TU for fixy/Ctx.h: the production contexts are the rows the
-// old tree declared, or one of those rows widened by Block, and the
-// shapes foundation recorded.  A body gated on a row resolves for the
+// Sentinel TU for fixy/Ctx.h: each production context has a pinned row,
+// the two load contexts widen a row by Block, and the shapes are the ones
+// foundation records.  A body gated on a row resolves for the
 // contexts that own it and for no other, and every context is built at
 // run time from the capability it claims.
 //
@@ -34,8 +34,8 @@ using ::fixy::InitLoadCtx;
 using ::fixy::TestRunnerCtx;
 
 // ---------------------------------------------------------------------
-// The rows are the old tree's, restated so a rewrite of Ctx.h reddens
-// here and not only in the header.
+// Each row is restated here, so a rewrite of Ctx.h reddens here and not
+// only in the header.
 
 static_assert(std::is_same_v<HotFgCtx, fe::ExecCtx<fe::ctx_cap::Fg, Row<>>>);
 static_assert(std::is_same_v<BgDrainCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc>>>);

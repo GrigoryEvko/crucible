@@ -2,7 +2,7 @@
 //
 // Reassociation reorders the sum, and floating-point addition is not
 // associative, so a replayed run produces different bits and the
-// payload's DetSafe claim fails.  The old predicate refuses both the
+// payload's DetSafe claim fails.  The predicate refuses both the
 // unrestricted rewrite and the bounded tree depth: a log-N tree pins the
 // topology but not the order in which the compiler chooses to fill it.
 //

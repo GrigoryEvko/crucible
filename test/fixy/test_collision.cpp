@@ -454,7 +454,7 @@ static_assert(!fe::LiftsToRow<at::observe::surface<Eff::IO>>);
 // reads it; live_rules<Atoms...> is the pack-only view with void for the
 // payload.  These cells are the witness that the read exists and reads
 // the right thing, ahead of any rule consuming it: a structural change
-// with nothing observable is the shape this migration keeps refusing.
+// with nothing observable is not accepted as tested.
 using DetTier = ::fixy::DetSafeTier_v;
 template <DetTier Tier>
 using det = ::fixy::DetSafe<Tier, int>;
@@ -473,10 +473,9 @@ static_assert(!rules_of<void>::replay_deterministic);
 static_assert(!live_rules<>::replay_deterministic, "live_rules is rules_of<void, ...>");
 static_assert(std::is_same_v<live_rules<at::copy>, rules_of<void, at::copy>>);
 
-// The read alone refuses nothing: no live rule consumes it yet, so a
-// replay-deterministic payload with an empty pack is accepted.  The
-// rules that consume it arrive with their axes, and each names this
-// member.
+// The read alone refuses nothing, so a replay-deterministic payload with
+// an empty pack is accepted.  Each rule that consumes the read pairs it
+// with an atom of its own axis, and names this member.
 static_assert(rules_of<det<DetTier::Pure>>::valid);
 
 // ---------------------------------------------------------------------
@@ -489,8 +488,8 @@ static_assert(rules_of<det<DetTier::Pure>>::valid);
 static_assert(col::axis_has_an_atom<Axis::HwInstruction>);
 
 // V201 hot x a tier at or above NonDeterministicTsc.  PrivilegedMsr is
-// above the timestamp tier, which is why the old name's "or privileged"
-// is one clause, not two.  The cost and refinement atoms silence H001
+// above the timestamp tier, so the one clause of V201 also covers the
+// privileged tier.  The cost and refinement atoms silence H001
 // and H002; an Init row silences V202 for the privileged cell.
 static_assert(!live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::cost_constant,
                           at::refined_with<hot_invariant>>::V201_ok);
@@ -727,7 +726,7 @@ static_assert(rules_of<det<DetTier::Pure>, fp_mode<at::fp::FpDenormalInput::Deno
 static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::valid);
 
 // ---------------------------------------------------------------------
-// The three rules the old tree carried as marker traits.
+// The capability rule, the indirect-call rule and the spawn rule.
 
 // S011 a capability x a replay-deterministic payload.  Both replay tiers
 // trip it, and a payload below the replay floor, or with no band, does
@@ -818,22 +817,19 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 static_assert(!col::axis_has_an_atom<Axis::Type>, "an atom names Axis::Type, and fixy::fn ignores such an atom");
 
 // ---------------------------------------------------------------------
-// The corpus accounts for all 54 codes.
+// The corpus accounts for all 57 codes.
 //
 // The count below is the one number worth stating here, and it is stated
-// against the external catalog rather than against the roster: the first
-// shape of this file pinned live == roster - pending, which holds for any
-// roster and held while 22 rules were missing.  The three dispositions
-// are counted separately and must sum to the catalog's size.
+// against the catalog rather than against the roster.  A pin of
+// live == roster - pending holds for any roster, so it cannot catch a
+// missing rule.  The dispositions are counted separately and must sum to
+// the catalog's size.
 //
-// That size is 57, not 54: the 54 are inherited from the old catalog's
-// RuleCode enum, and B002 is written in fixy/Collision.h, because
-// Axis::Observability carries two theorems where the old catalog recorded
-// one.  B001 keeps its back-pressure theorem rather than being reread as
-// the containment rule, because the codes are stable API.  R004 and W003
-// are also written in fixy/Collision.h: the old catalog has no rule for a
-// continuation that holds a live session handle, and none for a hot
-// binding that holds one and states no wait.
+// Axis::Observability carries two theorems.  B001 is the back-pressure
+// trap, and B002 is the containment of the observability row in the
+// effect row.  B001 keeps its theorem, because the codes are stable API.
+// R004 covers a continuation that holds a live session handle, and W003
+// covers a hot binding that holds one and states no wait.
 
 static_assert(col::rule_corpus_size == 57);
 static_assert(col::live_rule_count == 43);
@@ -859,8 +855,8 @@ static_assert(corpus_entries_with(col::Disposition::Live) + corpus_entries_with(
 static_assert(sizeof(col::absent_rule_codes) / sizeof(col::absent_rule_codes[0])
               == corpus_entries_with(col::Disposition::Absent));
 
-// No code appears twice, so the 54 are 54 distinct codes rather than a
-// list that happens to be 54 long.
+// No code appears twice, so the 57 are 57 distinct codes rather than a
+// list that happens to be 57 long.
 [[nodiscard]] consteval bool every_corpus_code_is_unique() noexcept {
     for (std::size_t i = 0; i < col::rule_corpus_size; ++i) {
         for (std::size_t j = i + 1; j < col::rule_corpus_size; ++j) {
@@ -872,7 +868,7 @@ static_assert(sizeof(col::absent_rule_codes) / sizeof(col::absent_rule_codes[0])
 static_assert(every_corpus_code_is_unique());
 
 // Every absent entry says what is missing, and every retired entry says
-// why it is not carried, so neither is a silence.
+// why it is retired, so neither is a silence.
 [[nodiscard]] consteval bool every_absent_entry_gives_a_reason() noexcept {
     for (const col::corpus_entry& entry : col::rule_corpus) {
         const bool needs_reason =
@@ -896,9 +892,8 @@ static_assert(col::axis_has_an_atom<Axis::HwInstruction>);
 static_assert(col::axis_has_an_atom<Axis::MemoryScope>);
 static_assert(col::axis_has_an_atom<Axis::Usage>);
 static_assert(col::axis_has_an_atom<Axis::Effect>);
-// Regime moved sides when fixy/atoms/Regime.h shipped.  The cell stays
-// rather than being deleted: it is the witness that the axis crossed, and
-// the H, R and S cells below are what it bought.
+// fixy/atoms/Regime.h gives the Regime axis its atoms, and the H, R and
+// S rule cells read them.
 static_assert(col::axis_has_an_atom<Axis::Regime>);
 static_assert(col::axis_has_an_atom<Axis::ControlFlow>);
 static_assert(col::axis_has_an_atom<Axis::GlobalState>);

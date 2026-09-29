@@ -1,8 +1,6 @@
 // The dispatch decision, run for real: a pipeline whose working set fits
 // one core's private cache runs every stage on the calling thread, and
 // one whose working set does not runs one thread per stage.
-//
-// Old spelling: test/test_pipeline_dispatch.cpp.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>

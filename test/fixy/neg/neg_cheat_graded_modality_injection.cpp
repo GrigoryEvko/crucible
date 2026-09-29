@@ -1,7 +1,6 @@
-// The old cheat probe's Cheat 11 specialized graded_modality for a fake
-// substrate, and the specialization was admitted: the primary was an
-// unconstrained class template.  The primary is constrained to Graded
-// now, so the specialization for a type that is not Graded is not
+// A specialization of graded_modality for a fake substrate.  An
+// unconstrained primary would admit it.  The primary is constrained to
+// Graded, so the specialization for a type that is not Graded is not
 // merely inert, it does not compile.  This fixture stands on that.
 //
 // The second required diagnostic is the compiler's note naming the

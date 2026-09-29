@@ -8,12 +8,10 @@
 // confirms the signatures the trait reports match the functions as
 // declared.
 //
-// The old test (test/test_signature_traits.cpp) wrapped its
-// static_asserts in a run_test harness, which ran nothing: a
-// static_assert inside a function body is checked when the body is
-// compiled, not when it is called.  Those cells are the header's wall
-// and stay there.  This file is what was left once they were removed:
-// the smoke body that used to sit inline in the header.
+// This file holds no static_assert.  A static_assert inside a function
+// body is checked when the body is compiled, not when it is called, so
+// a run-time harness around one runs nothing.  Those cells belong in
+// the header's wall.
 
 #include <foundation/reflect/Signature.h>
 
@@ -90,9 +88,7 @@ void every_witness_runs_at_run_time() {
 
 // The trait is a type-level computation, so the volatile bound is what
 // keeps the reads below from being folded into the loop's exit
-// condition.  This body was an inline smoke test in the old header,
-// compiled into every translation unit that included it and called by
-// nothing.
+// condition.
 void every_query_reads_at_run_time() {
     volatile std::size_t const cap = 4;
 

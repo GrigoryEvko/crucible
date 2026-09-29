@@ -55,7 +55,7 @@ static_assert(sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Thir
 static_assert(sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Second>, sig::init_edge<First, Second>>>);
 
 // An edge to a singleton outside the registry is refused, at either end.
-// The old detector dropped such an edge and reported the graph acyclic.
+// A detector that dropped such an edge would report the graph acyclic.
 static_assert(!sig::EdgesNameRegisteredSingletons<Three, std::tuple<sig::init_edge<First, Outside>>>);
 static_assert(!sig::EdgesNameRegisteredSingletons<Three, std::tuple<sig::init_edge<Outside, First>>>);
 static_assert(!sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Outside>>>);

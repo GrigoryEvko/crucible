@@ -1,13 +1,11 @@
 // The clock-source band and the readers minted over it, exercised at
 // run time.
 //
-// These cases used to be `runtime_smoke_test` functions inside
-// fixy/os/ClockSource.h and fixy/os/Time.h, compiled into every
-// translation unit that included either header.  What they check is
-// behaviour under a constructed sequence of calls, not a property of
-// the types as shipped, so they belong here.  The properties of the
+// These cases check behaviour under a constructed sequence of calls, not
+// a property of the types as shipped, so they live in a test and not in
+// fixy/os/ClockSource.h or fixy/os/Time.h.  The properties of the
 // types — which tier a source declares, which source subsumes which,
-// that two sources are distinct types — stay in the headers, where they
+// that two sources are distinct types — live in the headers, where they
 // fire wherever the type is used.
 //
 // The arguments below are non-constant on purpose.  A suite made only
@@ -79,8 +77,8 @@ using InitWitness = fixy::ColdInitCtx;
 using BlockWitness = fixy::TestRunnerCtx;
 using BgWitness = fixy::BgDrainCtx;
 
-// Every reading here comes from a clock.  The constructor that stamped a
-// literal with a source is private now, and the reader is the one door,
+// Every reading here comes from a clock.  The constructor that stamps a
+// literal with a source is private, and the reader is the one door,
 // so the round trip starts from two reads rather than from two numbers.
 [[nodiscard]] int clock_source_values_round_trip() {
     InitWitness init{eff::testing::init()};
@@ -223,11 +221,10 @@ void ignore_the_signal(int) noexcept {}
 //
 // fixy/os/Time.h says a TSC read needs a pin from fixy::mint_affinity,
 // which lives in fixy/os/Sched.h, so the case belongs in a translation
-// unit that includes both — this one.  The pin the old tree's smoke
-// test used was minted for itself with no sched_setaffinity on the
-// path, which is the forgery the proof exists to prevent, written by
-// the tree the proof protects.  Here the pin is earned: mint_affinity
-// calls sched_setaffinity and only hands one back if it succeeded.
+// unit that includes both — this one.  A pin minted with no
+// sched_setaffinity on the path is the forgery the proof exists to
+// prevent.  Here the pin is earned: mint_affinity calls
+// sched_setaffinity and only hands one back if it succeeded.
 [[nodiscard]] int tsc_read_through_an_earned_pin() {
     BgWitness bg{eff::testing::bg()};
     InitWitness init{eff::testing::init()};

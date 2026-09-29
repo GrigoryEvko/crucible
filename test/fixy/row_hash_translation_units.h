@@ -6,8 +6,8 @@
 // itself.
 //
 // Every entry folds a reflected name.  The refinements fold the name of
-// their predicate's class, which is the case that depended on the unit
-// when the predicates were closures.
+// their predicate's class.  A closure predicate would fold a name that
+// depends on the unit.
 
 #pragma once
 

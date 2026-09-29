@@ -87,7 +87,7 @@ static_assert(!s::is_subtype_sync_v<Offer<Sender<Alice>, End>, Offer<End>>, "the
 static_assert(!s::is_subtype_sync_v<Offer<Sender<Alice>, End>, Offer<Sender<Bob>, End>>);
 
 // An operand that is not well-formed relates to nothing, itself
-// included.  The old relation held Continue against Continue.
+// included.
 static_assert(!s::is_subtype_sync_v<Continue, Continue>);
 static_assert(s::subtype_mismatch_v<Continue, End> == tr::mismatch::ill_formed);
 static_assert(!s::is_subtype_sync_v<Loop<End>, Loop<End>>);
@@ -177,8 +177,8 @@ static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, En
 static_assert(!s::is_well_formed_v<Offer<Sender<Bob>, Recv<s::PeerMsg<Bob, PingReq, int>, End>,
                                          Recv<s::PeerMsg<Bob, PingReq, int>, End>>>);
 
-// The relation is on the unfoldings, which the old lockstep walk could
-// not see.
+// The relation is on the unfoldings, so a loop and its unfolding relate
+// in both directions.  A lockstep walk of the syntax cannot see that.
 static_assert(s::is_subtype_sync_v<Loop<Send<int, Continue>>, Send<int, Loop<Send<int, Continue>>>>);
 static_assert(s::is_subtype_sync_v<Send<int, Loop<Send<int, Continue>>>, Loop<Send<int, Continue>>>);
 static_assert(s::equivalent_sync_v<Loop<Send<int, Send<int, Continue>>>, Loop<Send<int, Continue>>>);

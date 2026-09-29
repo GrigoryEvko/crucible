@@ -9,9 +9,9 @@
 // to observe the state actually change.
 //
 // The walk matters more than it looks.  A session bridge that mints and
-// is never stepped proves only that the types line up; the frozen tree
-// had exactly that for the mode bridge, and the protocol it named was
-// two thirds unreachable through its own factory.
+// is never stepped proves only that the types line up.  Its protocol can
+// then be mostly unreachable through its own factory, and no check
+// notices.
 
 #include <fixy/session/VigilMode.h>
 
@@ -83,10 +83,10 @@ static_assert(s::SessionResource<Bridge&>);
 static_assert(!s::SessionResource<::fixy::Machine<Payload>*>, "a pointer to the machine is a second holder");
 
 // The bridge adds nothing to the state it owns: the Pinned base is
-// empty and the machine is the only member.  The ported header asserted
-// this under `#ifdef NDEBUG`, which hid it from every build that runs
-// the test suite; nothing here varies with the build mode, because the
-// bridge stores no handle and therefore no abandonment policy.
+// empty and the machine is the only member.  An assertion of this under
+// `#ifdef NDEBUG` would hide it from every build that runs the test
+// suite.  Nothing here varies with the build mode, because the bridge
+// stores no handle and therefore no abandonment policy.
 static_assert(sizeof(Bridge) == sizeof(Payload));
 static_assert(sizeof(s::SessionFromMachine<char, s::End>) == sizeof(char));
 static_assert(sizeof(s::SessionFromMachine<double, s::End>) == sizeof(double));

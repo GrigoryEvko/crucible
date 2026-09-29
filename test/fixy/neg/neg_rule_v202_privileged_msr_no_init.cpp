@@ -7,9 +7,9 @@
 //
 // This is a rule reading the Effect row, not a lift.  fixy/atoms/Hw.h
 // says why the family declares no lift: an instruction class admits a
-// set of operations rather than naming one.  The requirement that the
-// privileged set be reached only from Init is therefore stated as a
-// collision, which is where the old catalog stated it.
+// set of operations rather than naming one.  For that reason, the
+// requirement that the privileged set be reached only from Init is
+// stated as a collision.
 //
 // The twin is accepted: add atom::with<Effect::Init> and the same tier
 // passes.  test/fixy/test_collision.cpp holds that cell.

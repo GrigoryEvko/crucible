@@ -87,9 +87,8 @@ static_assert(!s::payload_conveys_delegation_v<int>);
 // A crash session and a checkpoint session ask one question of each
 // payload: payload_conveys_delegation_v of fixy/session/Payload.h.  Each
 // carrier below hides an endpoint in a legal payload.  The query must see
-// each one, and it must say how it saw it.  Before the query, the two
-// sessions looked for the hand-off marker alone.  Each handle below then
-// travelled.
+// each one, and it must say how it saw it.  A check that looked for the
+// hand-off marker alone would let each handle below travel.
 
 using DelegationCarrier = s::DelegationCarrier;
 using Endpoint = s::SessionHandle<s::Recv<int, s::End>, int*>;
@@ -445,8 +444,8 @@ void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& 
 
 // Each endpoint names its own reliable set.  q counts p reliable, so its
 // Offer has no crash branch, and p, whose own set is empty, crashes.
-// Before the fix q waited for ever.  The crash transport now aborts with
-// Crash_Of_Reliable_Peer.
+// Without a check q would wait for ever.  The crash transport aborts
+// with Crash_Of_Reliable_Peer.
 [[noreturn]] void reliable_peer_crashes_while_waited_on() {
     using ProtoP = s::Select<s::Send<int, s::End>>;
     using ProtoQ = s::Offer<s::Recv<int, s::End>>;

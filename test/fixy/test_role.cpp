@@ -5,9 +5,9 @@
 // two roles that pin as_public are refused without it.
 //
 // The header self-test proves the gate for each role.  What this file
-// adds is the minting, at compile time and at run time, and the
-// comparison against the old stances' pins that survive: the effect
-// rows, the security grades and the size collapse.
+// adds is the minting, at compile time and at run time, and a check of
+// three pins of each role: the effect rows, the security grades and the
+// size collapse.
 
 #include <fixy/Role.h>
 

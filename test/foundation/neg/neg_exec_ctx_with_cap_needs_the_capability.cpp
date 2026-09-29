@@ -1,14 +1,11 @@
 // Promoting the capability axis takes the capability, not its name.
 //
-// with_cap used to be `with_cap<NewCap>()` — a template argument naming
-// the type, returning a context that owned one.  So
-// `ExecCtx<>{}.with_cap<Init>()` climbed from a foreground context to an
-// init context in a single call, supplying no evidence whatever.  That
-// was the hole, reached by its second route.
-//
-// Ctx.h asserted the opposite in prose: "no chain of calls turns a
-// foreground context into one that claims a background effect."  This
-// call was that chain.  The comment now describes what the code does.
+// A `with_cap<NewCap>()` that took only a template argument naming the
+// type would return a context that owns one.  Then
+// `ExecCtx<>{}.with_cap<Init>()` would climb from a foreground context to
+// an init context in a single call, with no evidence.  No chain of calls
+// can turn a foreground context into one that claims a background
+// effect.
 //
 // with_cap takes a NewCap VALUE.  Cap's own default constructor is
 // private and passkey-gated, so a caller holding one obtained it from
