@@ -12,11 +12,9 @@
 // factory, is the actual guarantee; the factory exists so a named site
 // can be searched for.
 //
-// Old spelling: include/crucible/safety/Secret.h and the detection
-// surface of include/crucible/safety/IsSecret.h.  The policy tags live
-// in fixy/Tags.h; the roster and its completeness check of the old
-// header are the fail-closed namespace below and the assertions
-// derived from it.
+// The policy tags live in fixy/Tags.h.  The fail-closed namespace below
+// is the roster of the admitted policies, and the assertions derived
+// from it check that the roster is complete.
 
 #include <fixy/GradedFacade.h>
 #include <fixy/Tags.h>

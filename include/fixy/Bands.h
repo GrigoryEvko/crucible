@@ -6,18 +6,15 @@
 // pinned singleton, so the carrier costs sizeof(T) and the tier is read
 // from the type alone.
 //
-// Old spellings: include/crucible/safety/{DetSafe,AllocClass,HotPath,
-// CipherTier,Wait,NumericalTier,OpaqueLifetime,ScopedFence,Vendor,
-// ResidencyHeat,RecipeSpec}.h, each a class of its own around the same Graded.  Only what a consumer calls
-// survives here: the carrier's own peek and consume, the construction
-// door, the admission query satisfies_v, the tier query, and relax.
+// A band gives only what a consumer calls: the carrier's own peek and
+// consume, the construction door, the admission query satisfies_v, the
+// tier query, and relax.
 //
-// The old wrappers hid the substrate's weaken because on the outer chain
-// it moves up, which would let a value claim a tier its source did not
-// earn.  A band keeps that discipline for free: its grade is a
-// one-element lattice, so weaken cannot change the tier at all.  The
-// one operation that changes the tier is relax, which rebinds the type
-// and moves down the chain only.
+// On the outer chain the substrate's weaken moves up, which would let a
+// value claim a tier that its source did not earn.  The grade of a band
+// is a one-element lattice, so weaken cannot change the tier at all.
+// The one operation that changes the tier is relax, which rebinds the
+// type and moves down the chain only.
 //
 // A band's tier is a claim about the bytes, and nothing checks it: a
 // DetSafe<Pure, T> says a deterministic source produced the value.  So a
@@ -70,7 +67,7 @@
 
 namespace fixy {
 
-// The enum spellings the old wrappers exported beside themselves.
+// The enum of the tiers of each band, under the name that the band uses.
 using DetSafeTier_v = ::foundation::algebra::lattices::DetSafeTier;
 using AllocClassTag_v = ::foundation::algebra::lattices::AllocClassTag;
 using HotPathTier_v = ::foundation::algebra::lattices::HotPathTier;
@@ -129,9 +126,8 @@ concept IsBand = ::foundation::algebra::IsGraded<B>
 template <typename B>
 inline constexpr bool is_band_v = IsBand<B>;
 
-// The band over one outer lattice.  This is the query that replaces the
-// old per-band detectors is_det_safe_v, is_hot_path_v and their kin:
-// is_band_of_v<DetSafeLattice, B> asks what is_det_safe_v<B> asked.
+// The band over one outer lattice.  One query serves each band:
+// is_band_of_v<DetSafeLattice, B> asks whether B is a DetSafe band.
 template <typename L, typename B>
 concept IsBandOf = IsBand<B> && std::same_as<typename std::remove_cvref_t<B>::lattice_type::outer_lattice, L>;
 
@@ -635,9 +631,8 @@ static_assert(relax<DetSafeTier_v::PhiloxRng>(pinned_pure).peek() == 42);
 static_assert(tier_of(relax<DetSafeTier_v::NonDeterministicSyscall>(pinned_pure))
               == DetSafeTier_v::NonDeterministicSyscall);
 
-// The poset band.  These cells are the old ScopedFence.h's own, because
-// the trunk structure is what a chain-shaped reading of this band would
-// silently lose.
+// The poset band.  These cells pin the trunk structure, which a
+// chain-shaped reading of this band would silently lose.
 using CtaInt = ScopedFence<MemoryScope_v::Cta, int>;
 using GpuInt = ScopedFence<MemoryScope_v::Gpu, int>;
 using InnerInt = ScopedFence<MemoryScope_v::Inner, int>;

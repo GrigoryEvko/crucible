@@ -12,8 +12,6 @@
 // identity, a content hash or a deterministic generator stream is a
 // public input, and routing it through these primitives buys nothing
 // and costs cycles.
-//
-// Old spelling: include/crucible/safety/ConstantTime.h.
 
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>

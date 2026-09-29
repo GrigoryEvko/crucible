@@ -514,17 +514,17 @@ struct ConsistencyMismatch : tag_base {
     static constexpr std::string_view description = "Reserved for a replicated value that reaches a consumer at a "
                                                     "weaker consistency level than the consumer needs.  No binding "
                                                     "or wrapper in this tree carries a consistency level, so nothing "
-                                                    "emits this category.  The old Consistency wrapper is deferred, "
-                                                    "because its chain order is wrong.";
+                                                    "emits this category.";
     static constexpr std::string_view remediation = "No action is necessary, because nothing emits this category.  "
                                                     "A consistency level needs a written meaning and a partial order "
-                                                    "before a wrapper can carry it again.";
+                                                    "before a wrapper can carry it.";
 
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = "The old chain put BOUNDED_STALENESS above READ_YOUR_WRITES.  "
-                                                         "A read that is K steps stale can miss a write that the "
-                                                         "reader made, so bounded staleness does not imply "
-                                                         "read-your-writes, and the levels need a partial order.  "
+    static constexpr std::string_view why_this_matters = "The levels do not form a chain.  A chain puts "
+                                                         "BOUNDED_STALENESS above READ_YOUR_WRITES.  But a read "
+                                                         "that is K steps stale can miss a write that the reader "
+                                                         "made.  So bounded staleness does not imply read-your-writes, "
+                                                         "and the levels need a partial order.  "
                                                          "Bounded staleness also has a carrier already: the staleness "
                                                          "semiring of fixy/Stale.h.  The category keeps its index, "
                                                          "because each index is an ordinal pin of the federation "

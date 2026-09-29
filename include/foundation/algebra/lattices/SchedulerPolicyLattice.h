@@ -13,8 +13,6 @@
 // SCHED_FIFO and its siblings are preprocessor macros, so the
 // enumerators are spelled in PascalCase.  The kernel spellings appear
 // only inside string literals, which the preprocessor leaves alone.
-//
-// Old spelling: include/crucible/algebra/lattices/SchedulerPolicyLattice.h.
 
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>

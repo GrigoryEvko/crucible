@@ -13,19 +13,15 @@
 // (Sanitized, Verified, Validated and the others that a discharge edge of
 // the catalog below enters) is EARNED, and only retag along that edge
 // reaches it.  The catalog decides which tags are earned, by reflection,
-// so no second list states it.  The old spelling kept the
-// constructor public and let any caller write `Tagged<T, Src>{raw}`
-// around a hand-built aggregate and get a value indistinguishable from
-// one a validating factory produced.  That mattered most for the
-// `Declared*` alias family, whose name reads like a guarantee: of 51
-// such aliases, 27 had a factory that genuinely validates, 21 had only
-// a pass-through factory that wraps without checking, and 3
-// (DeclaredPeerSet, DeclaredPingmeshMeasurement,
-// DeclaredGossipMulticastPlan) had no factory at all.  Closing the
-// constructor does not turn a provenance mark into a check, but it
-// makes every construction a named, searchable call, and it removes
-// the mutable accessor the old wrapper exposed, through which a
-// Sanitized tag could wrap a value nobody sanitized.
+// so no second list states it.  The constructor is not public, so no
+// caller can write `Tagged<T, Src>{raw}` around a hand-built aggregate
+// and get a value that looks the same as one that a validating factory
+// produced.  This matters most for the `Declared*` alias family, whose
+// names read like a guarantee although some of their factories only
+// wrap and do no check.  A closed constructor does not turn a provenance
+// mark into a check, but it makes each construction a named call that a
+// search finds.  The wrapper also has no mutable accessor, through which
+// a Sanitized tag could wrap a value that nobody sanitized.
 //
 // The default constructor is the second door, and it exists only to
 // let an array of slots start empty before any of them is filled.  A
@@ -48,11 +44,8 @@
 // of them.  To enumerate the authorization surface, search the alias
 // names (`Declared`), not the factory prefix.
 //
-// Old spelling: include/crucible/safety/Tagged.h, with the path and
-// architecture edges of include/crucible/safety/source/Path.h and
-// Arch.h folded into the one catalog below, and the detection surface
-// of include/crucible/safety/IsTagged.h.  The tag namespaces live in
-// fixy/Tags.h.
+// The one catalog below also holds the path and architecture edges.
+// The tag namespaces live in fixy/Tags.h.
 
 #include <fixy/GradedFacade.h>
 #include <fixy/Tags.h>
@@ -165,11 +158,9 @@ inline constexpr ::foundation::fail_closed::edge<source::PortablePinned, source:
 
 // Discharge: the adapter's well-formedness checks ran on the input.
 // This is the edge that carries TraceRing's FromPytorchEntryPtr into
-// its ValidatedEntryPtr.  The helper that used to build the second tag
-// straight from an Entry is gone: it read as a certification and ran no
-// check, so an adapter calling it skipped the checks while looking like
-// it had run them.  This edge is the replacement, and running the
-// checks is what crossing it means.
+// its ValidatedEntryPtr.  No helper builds the second tag straight from
+// an Entry, because such a helper reads as a certification and runs no
+// check.  Running the checks is what crossing this edge means.
 inline constexpr ::foundation::fail_closed::edge<vessel_trust::FromPytorch, vessel_trust::Validated>
     from_pytorch_to_validated{};
 

@@ -45,9 +45,6 @@
 // that draw on the grant.  Work outside such resources is not seen by any
 // type here: the shrink-only ledger of
 // test/fixy/test_versioned_budgeted_attacks.cpp holds that limit.
-//
-// Old spelling: include/crucible/safety/_Budgeted.h, and the detection
-// surface of include/crucible/safety/_IsBudgeted.h.
 
 #include <fixy/GradedFacade.h>
 #include <fixy/SelfContained.h>
