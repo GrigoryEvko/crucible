@@ -17,7 +17,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <cstdlib>
@@ -37,16 +37,9 @@ enum class RecipeFamily : std::uint8_t {
     Any = 255,  // top: wildcard
 };
 
-inline constexpr std::size_t recipe_family_count = ::foundation::reflect::enum_count<RecipeFamily>;
-
-static_assert(recipe_family_count == 6, "RecipeFamily must hold exactly six enumerators. A new family needs "
-                                        "a place in leq, join and meet, and an update to this count.");
-
-// The identifier of f, or "<unknown RecipeFamily>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view recipe_family_name(RecipeFamily f) noexcept {
-    return ::foundation::reflect::enum_name(f);
-}
+static_assert(::foundation::reflect::enum_count<RecipeFamily> == 6,
+              "RecipeFamily must hold exactly six enumerators. A new family needs a place in leq, join and meet, "
+              "and an update to this count.");
 
 struct RecipeFamilyLattice {
     using element_type = RecipeFamily;
@@ -141,8 +134,6 @@ static_assert(non_distributive_witness(), "RecipeFamilyLattice must keep its M3 
                                           "between one bottom and one top.");
 
 static_assert(RecipeFamilyLattice::name() == "RecipeFamilyLattice");
-static_assert(recipe_family_name(RecipeFamily::BlockStable) == "BlockStable");
-static_assert(recipe_family_name(static_cast<RecipeFamily>(7)) == "<unknown RecipeFamily>");
 
 }  // namespace detail::recipe_family_lattice_self_test
 

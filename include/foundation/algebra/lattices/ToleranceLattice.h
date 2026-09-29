@@ -15,7 +15,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -34,14 +34,6 @@ enum class Tolerance : std::uint8_t {
     ULP_FP64 = 5,  // ~10⁻¹⁵      (double-precision ULP)
     BITEXACT = 6,  // 0           (bit-identical across replicas and replays)
 };
-
-inline constexpr std::size_t tolerance_count = ::foundation::reflect::enum_count<Tolerance>;
-
-// The identifier of t, or "<unknown Tolerance>" for a value outside the
-// enum.
-[[nodiscard]] consteval std::string_view tolerance_name(Tolerance t) noexcept {
-    return ::foundation::reflect::enum_name(t);
-}
 
 // A tighter error bound is the stronger claim.
 struct ToleranceLattice : EnumChainLattice<ToleranceLattice, Tolerance, ClaimOrientation::stronger_is_higher> {
@@ -63,9 +55,9 @@ using BitexactTier = ToleranceLattice::At<Tolerance::BITEXACT>;
 
 namespace detail::tolerance_lattice_self_test {
 
-static_assert(tolerance_count == 7, "Tolerance catalog diverged from {RELAXED, ULP_INT8, ULP_FP8, "
-                                    "ULP_FP16, ULP_FP32, ULP_FP64, BITEXACT}.  Confirm intent and "
-                                    "update the precision-budget callers.");
+static_assert(::foundation::reflect::enum_count<Tolerance> == 7,
+              "Tolerance catalog diverged from {RELAXED, ULP_INT8, ULP_FP8, ULP_FP16, ULP_FP32, ULP_FP64, "
+              "BITEXACT}.  Confirm intent and update the precision-budget callers.");
 
 static_assert(verify_chain_lattice<ToleranceLattice>(), "ToleranceLattice: the chain order, the pinned grades or the "
                                                         "reflected names diverged from the Tolerance enumerator list.");
@@ -88,9 +80,6 @@ static_assert(ToleranceLattice::name() == "ToleranceLattice");
 static_assert(tolerance::RelaxedTier::name() == "ToleranceLattice::At<RELAXED>");
 static_assert(tolerance::BitexactTier::name() == "ToleranceLattice::At<BITEXACT>");
 static_assert(ToleranceLattice::At<static_cast<Tolerance>(255)>::name() == "ToleranceLattice::At<?>");
-
-static_assert(tolerance_name(Tolerance::ULP_FP16) == "ULP_FP16");
-static_assert(tolerance_name(static_cast<Tolerance>(255)) == "<unknown Tolerance>");
 
 static_assert(tolerance::RelaxedTier::tier == Tolerance::RELAXED);
 static_assert(tolerance::BitexactTier::tier == Tolerance::BITEXACT);

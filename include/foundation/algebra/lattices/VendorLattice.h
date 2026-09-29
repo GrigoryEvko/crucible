@@ -14,7 +14,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -36,14 +36,6 @@ enum class VendorBackend : std::uint8_t {
     CER = 6,  // Cerebras
     Portable = 255,  // one kernel that runs on every backend
 };
-
-inline constexpr std::size_t vendor_backend_count = ::foundation::reflect::enum_count<VendorBackend>;
-
-// The identifier of b, or "<unknown VendorBackend>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view vendor_backend_name(VendorBackend b) noexcept {
-    return ::foundation::reflect::enum_name(b);
-}
 
 struct VendorLattice {
     using element_type = VendorBackend;
@@ -99,9 +91,9 @@ using PortableVendor = VendorLattice::At<VendorBackend::Portable>;
 
 namespace detail::vendor_lattice_self_test {
 
-static_assert(vendor_backend_count == 8, "The VendorBackend catalog changed size.  Confirm the intent, then "
-                                         "update leq, join and meet, which special-case None and Portable, "
-                                         "and the admission gates of every backend dispatcher.");
+static_assert(::foundation::reflect::enum_count<VendorBackend> == 8,
+              "The VendorBackend catalog changed size.  Confirm the intent, then update leq, join and meet, which "
+              "special-case None and Portable, and the admission gates of every backend dispatcher.");
 
 static_assert(Lattice<VendorLattice>);
 static_assert(BoundedLattice<VendorLattice>);
@@ -173,9 +165,6 @@ static_assert(VendorLattice::name() == "VendorLattice");
 static_assert(vendor_backend::NoneVendor::name() == "VendorLattice::At<None>");
 static_assert(vendor_backend::PortableVendor::name() == "VendorLattice::At<Portable>");
 static_assert(VendorLattice::At<static_cast<VendorBackend>(7)>::name() == "VendorLattice::At<?>");
-
-static_assert(vendor_backend_name(VendorBackend::TRN) == "TRN");
-static_assert(vendor_backend_name(static_cast<VendorBackend>(7)) == "<unknown VendorBackend>");
 
 static_assert(vendor_backend::NoneVendor::backend == VendorBackend::None);
 static_assert(vendor_backend::PortableVendor::backend == VendorBackend::Portable);

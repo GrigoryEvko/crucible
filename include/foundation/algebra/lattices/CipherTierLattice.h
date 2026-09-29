@@ -15,7 +15,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -30,14 +30,6 @@ enum class CipherTierTag : std::uint8_t {
     Warm = 1,  // node-local disk, survives the process but not the disk
     Hot = 2,  // top: a peer node's RAM, fastest recovery
 };
-
-inline constexpr std::size_t cipher_tier_tag_count = ::foundation::reflect::enum_count<CipherTierTag>;
-
-// The identifier of t, or "<unknown CipherTierTag>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view cipher_tier_tag_name(CipherTierTag t) noexcept {
-    return ::foundation::reflect::enum_name(t);
-}
 
 // A faster recovery is the stronger claim.
 struct CipherTierLattice : EnumChainLattice<CipherTierLattice, CipherTierTag, ClaimOrientation::stronger_is_higher> {
@@ -55,7 +47,8 @@ using HotTier = CipherTierLattice::At<CipherTierTag::Hot>;
 
 namespace detail::cipher_tier_lattice_self_test {
 
-static_assert(cipher_tier_tag_count == 3, "CipherTierTag must hold exactly the three tiers Cold, Warm and Hot.");
+static_assert(::foundation::reflect::enum_count<CipherTierTag> == 3,
+              "CipherTierTag must hold exactly the three tiers Cold, Warm and Hot.");
 
 static_assert(verify_chain_lattice<CipherTierLattice>(),
               "CipherTierLattice: the chain order, the pinned grades or the "
@@ -71,9 +64,6 @@ static_assert(CipherTierLattice::name() == "CipherTierLattice");
 static_assert(cipher_tier_tag::ColdTier::name() == "CipherTierLattice::At<Cold>");
 static_assert(cipher_tier_tag::HotTier::name() == "CipherTierLattice::At<Hot>");
 static_assert(CipherTierLattice::At<static_cast<CipherTierTag>(255)>::name() == "CipherTierLattice::At<?>");
-
-static_assert(cipher_tier_tag_name(CipherTierTag::Warm) == "Warm");
-static_assert(cipher_tier_tag_name(static_cast<CipherTierTag>(255)) == "<unknown CipherTierTag>");
 
 static_assert(cipher_tier_tag::ColdTier::tier == CipherTierTag::Cold);
 static_assert(cipher_tier_tag::HotTier::tier == CipherTierTag::Hot);

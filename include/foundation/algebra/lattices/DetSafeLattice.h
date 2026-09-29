@@ -16,7 +16,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -35,14 +35,6 @@ enum class DetSafeTier : std::uint8_t {
     PhiloxRng = 5,  // counter-based PRNG, replay-deterministic
     Pure = 6,  // a pure function of the declared inputs
 };
-
-inline constexpr std::size_t det_safe_tier_count = ::foundation::reflect::enum_count<DetSafeTier>;
-
-// The identifier of t, or "<unknown DetSafeTier>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view det_safe_tier_name(DetSafeTier t) noexcept {
-    return ::foundation::reflect::enum_name(t);
-}
 
 // A purer source is the stronger claim.
 struct DetSafeLattice : EnumChainLattice<DetSafeLattice, DetSafeTier, ClaimOrientation::stronger_is_higher> {
@@ -64,9 +56,9 @@ using PureTier = DetSafeLattice::At<DetSafeTier::Pure>;
 
 namespace detail::det_safe_lattice_self_test {
 
-static_assert(det_safe_tier_count == 7, "DetSafeTier catalog diverged from {NDS, FsMtime, Entropy, WallClock, "
-                                        "MonoClock, Philox, Pure}.  Confirm intent and update the callers "
-                                        "that pin a tier.");
+static_assert(::foundation::reflect::enum_count<DetSafeTier> == 7,
+              "DetSafeTier catalog diverged from {NDS, FsMtime, Entropy, WallClock, MonoClock, Philox, Pure}.  "
+              "Confirm intent and update the callers that pin a tier.");
 
 // The generic walk covers the declaration order, the exhaustive axioms,
 // the reflected names and the shape of every At<tier>.
@@ -90,9 +82,6 @@ static_assert(DetSafeLattice::name() == "DetSafeLattice");
 static_assert(det_safe_tier::NdsTier::name() == "DetSafeLattice::At<NonDeterministicSyscall>");
 static_assert(det_safe_tier::PureTier::name() == "DetSafeLattice::At<Pure>");
 static_assert(DetSafeLattice::At<static_cast<DetSafeTier>(255)>::name() == "DetSafeLattice::At<?>");
-
-static_assert(det_safe_tier_name(DetSafeTier::MonotonicClockRead) == "MonotonicClockRead");
-static_assert(det_safe_tier_name(static_cast<DetSafeTier>(255)) == "<unknown DetSafeTier>");
 
 static_assert(det_safe_tier::NdsTier::tier == DetSafeTier::NonDeterministicSyscall);
 static_assert(det_safe_tier::PureTier::tier == DetSafeTier::Pure);

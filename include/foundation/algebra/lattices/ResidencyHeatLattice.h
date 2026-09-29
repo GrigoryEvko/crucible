@@ -16,7 +16,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -31,14 +31,6 @@ enum class ResidencyHeatTag : std::uint8_t {
     Warm = 1,  // L2 working-set body
     Hot = 2,  // top: L1 hottest working-set
 };
-
-inline constexpr std::size_t residency_heat_tag_count = ::foundation::reflect::enum_count<ResidencyHeatTag>;
-
-// The identifier of t, or "<unknown ResidencyHeatTag>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view residency_heat_tag_name(ResidencyHeatTag t) noexcept {
-    return ::foundation::reflect::enum_name(t);
-}
 
 // A residency nearer the core is the stronger claim.
 struct ResidencyHeatLattice
@@ -57,8 +49,8 @@ using HotHeat = ResidencyHeatLattice::At<ResidencyHeatTag::Hot>;
 
 namespace detail::residency_heat_lattice_self_test {
 
-static_assert(residency_heat_tag_count == 3, "ResidencyHeatTag must hold exactly the three tiers Cold, Warm "
-                                             "and Hot.");
+static_assert(::foundation::reflect::enum_count<ResidencyHeatTag> == 3,
+              "ResidencyHeatTag must hold exactly the three tiers Cold, Warm and Hot.");
 
 static_assert(verify_chain_lattice<ResidencyHeatLattice>(),
               "ResidencyHeatLattice: the chain order, the pinned grades or the "
@@ -76,9 +68,6 @@ static_assert(ResidencyHeatLattice::name() == "ResidencyHeatLattice");
 static_assert(residency_heat_tag::ColdHeat::name() == "ResidencyHeatLattice::At<Cold>");
 static_assert(residency_heat_tag::HotHeat::name() == "ResidencyHeatLattice::At<Hot>");
 static_assert(ResidencyHeatLattice::At<static_cast<ResidencyHeatTag>(255)>::name() == "ResidencyHeatLattice::At<?>");
-
-static_assert(residency_heat_tag_name(ResidencyHeatTag::Warm) == "Warm");
-static_assert(residency_heat_tag_name(static_cast<ResidencyHeatTag>(255)) == "<unknown ResidencyHeatTag>");
 
 static_assert(residency_heat_tag::ColdHeat::tier == ResidencyHeatTag::Cold);
 static_assert(residency_heat_tag::HotHeat::tier == ResidencyHeatTag::Hot);

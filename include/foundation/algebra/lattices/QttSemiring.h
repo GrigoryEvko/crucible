@@ -23,7 +23,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -39,8 +39,6 @@ enum class QttGrade : std::int8_t {
     One = 1,
     Omega = 2,
 };
-
-inline constexpr std::size_t qtt_grade_count = ::foundation::reflect::enum_count<QttGrade>;
 
 // The name that qtt_grade_name gives for a value outside the enum.
 inline constexpr std::string_view unknown_qtt_grade_name = "<unknown QttGrade>";
@@ -117,7 +115,8 @@ using Unrestricted = QttSemiring::At<QttGrade::Omega>;
 
 namespace detail::qtt_self_test {
 
-static_assert(qtt_grade_count == 3, "QttGrade must hold exactly the three grades 0, 1 and ω.");
+static_assert(::foundation::reflect::enum_count<QttGrade> == 3,
+              "QttGrade must hold exactly the three grades 0, 1 and ω.");
 
 // The hand-written switch is the one place where a new grade can be
 // missed, and this walk covers each grade.  The name of each At<Grade>

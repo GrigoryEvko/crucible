@@ -16,7 +16,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -30,11 +30,6 @@ enum class Conf : std::int8_t {
     Public = 0,
     Secret = 1,
 };
-
-inline constexpr std::size_t conf_count = ::foundation::reflect::enum_count<Conf>;
-
-// The identifier of c, or "<unknown Conf>" for a value outside the enum.
-[[nodiscard]] consteval std::string_view conf_name(Conf c) noexcept { return ::foundation::reflect::enum_name(c); }
 
 // A higher classification promises less about where the value can go,
 // and it is the weaker claim.  weaken() moves a stored grade up, which
@@ -54,7 +49,7 @@ using SecretTier = ConfLattice::At<Conf::Secret>;
 
 namespace detail::conf_lattice_self_test {
 
-static_assert(conf_count == 2, "Conf must hold exactly the two levels Public and Secret.");
+static_assert(::foundation::reflect::enum_count<Conf> == 2, "Conf must hold exactly the two levels Public and Secret.");
 
 static_assert(verify_chain_lattice<ConfLattice>(), "ConfLattice: the chain order, the pinned grades or the reflected "
                                                    "names diverged from the Conf enumerator list.");
@@ -72,9 +67,6 @@ static_assert(ConfLattice::name() == "ConfLattice");
 static_assert(ConfLattice::At<Conf::Public>::name() == "ConfLattice::At<Public>");
 static_assert(ConfLattice::At<Conf::Secret>::name() == "ConfLattice::At<Secret>");
 static_assert(ConfLattice::At<static_cast<Conf>(9)>::name() == "ConfLattice::At<?>");
-static_assert(conf_name(Conf::Public) == "Public");
-static_assert(conf_name(Conf::Secret) == "Secret");
-static_assert(conf_name(static_cast<Conf>(9)) == "<unknown Conf>");
 
 static_assert(conf::PublicTier::classification == Conf::Public);
 static_assert(conf::SecretTier::classification == Conf::Secret);

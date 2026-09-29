@@ -14,7 +14,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -32,14 +32,6 @@ enum class WaitStrategy : std::uint8_t {
     BoundedSpin = 4,  // SpinPause plus exponential backoff
     SpinPause = 5,  // _mm_pause or yield on an acquire load
 };
-
-inline constexpr std::size_t wait_strategy_count = ::foundation::reflect::enum_count<WaitStrategy>;
-
-// The identifier of s, or "<unknown WaitStrategy>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view wait_strategy_name(WaitStrategy s) noexcept {
-    return ::foundation::reflect::enum_name(s);
-}
 
 // A cheaper wait is the stronger claim.
 struct WaitLattice : EnumChainLattice<WaitLattice, WaitStrategy, ClaimOrientation::stronger_is_higher> {
@@ -60,9 +52,9 @@ using SpinPauseStrategy = WaitLattice::At<WaitStrategy::SpinPause>;
 
 namespace detail::wait_lattice_self_test {
 
-static_assert(wait_strategy_count == 6, "WaitStrategy catalog diverged from {Block, Park, AcquireWait, "
-                                        "UmwaitC01, BoundedSpin, SpinPause}.  Confirm intent and update "
-                                        "the wait-admission gates.");
+static_assert(::foundation::reflect::enum_count<WaitStrategy> == 6,
+              "WaitStrategy catalog diverged from {Block, Park, AcquireWait, UmwaitC01, BoundedSpin, SpinPause}.  "
+              "Confirm intent and update the wait-admission gates.");
 
 static_assert(verify_chain_lattice<WaitLattice>(), "WaitLattice: the chain order, the pinned grades or the reflected "
                                                    "names diverged from the WaitStrategy enumerator list.");
@@ -77,9 +69,6 @@ static_assert(WaitLattice::name() == "WaitLattice");
 static_assert(wait_strategy::BlockStrategy::name() == "WaitLattice::At<Block>");
 static_assert(wait_strategy::SpinPauseStrategy::name() == "WaitLattice::At<SpinPause>");
 static_assert(WaitLattice::At<static_cast<WaitStrategy>(255)>::name() == "WaitLattice::At<?>");
-
-static_assert(wait_strategy_name(WaitStrategy::UmwaitC01) == "UmwaitC01");
-static_assert(wait_strategy_name(static_cast<WaitStrategy>(255)) == "<unknown WaitStrategy>");
 
 static_assert(wait_strategy::BlockStrategy::strategy == WaitStrategy::Block);
 static_assert(wait_strategy::SpinPauseStrategy::strategy == WaitStrategy::SpinPause);
