@@ -1000,6 +1000,20 @@ foundation_neg_compile_test(neg_lent_permission_forged_by_start_lifetime_as
   "static assertion failed"
   "foundation::permissions::LentPermission<.*Region.*. is not an implicit-lifetime type")
 
+# A token and a share guard live in a scope or a handle.  Each deletes its
+# class-scope operator new, so a new-expression and std::make_unique reach
+# a deleted function.  The second regex is the reason that the header
+# gives for the refusal.
+foundation_neg_compile_test(neg_permission_heap_new
+  "use of deleted function .static void\\* foundation::permissions::Permission<Tag, Brand>::operator new\\(std::size_t\\)"
+  "a Permission lives in a scope or a handle, not on the heap")
+foundation_neg_compile_test(neg_permission_make_unique
+  "use of deleted function .static void\\* foundation::permissions::Permission<Tag, Brand>::operator new\\(std::size_t\\)"
+  "a Permission lives in a scope or a handle, not on the heap")
+foundation_neg_compile_test(neg_shared_permission_guard_heap_new
+  "use of deleted function .static void\\* foundation::permissions::SharedPermissionGuard<Tag, Brand>::operator new\\(std::size_t\\)"
+  "a SharedPermissionGuard lives in the scope that holds its share, not on the heap")
+
 # No route builds a context, a context key, the capability key, a
 # capability or an execution context over Bg without a constructor.
 # Each has user-provided constructors and no trivial one, for the same

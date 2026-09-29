@@ -1680,7 +1680,7 @@ Need a queue from one or many producers to one consumer?
 - **Passing `SharedPermission` by value across functions** without lifetime context. Lifetime gets confusing fast. Prefer `ReadView<Tag>` for scoped borrows; use `SharedPermissionGuard` (RAII) when crossing thread boundaries.
 - **Manually spawning `std::jthread` with a Permission inside** instead of using `mint_permission_fork`. Bypasses the CSL parallel-rule encoding and skips static verification of `can_split_into_pack`. Use `mint_permission_fork` and let the type system check.
 - **Parallelizing a workload smaller than L2** without explicit override. `ParallelismRule` keeps it sequential. A bypass almost always regresses (icache cold, MESI ping-pong, TLB shootdowns).
-- **`new`-allocating a Permission or ReadView**. Heap allocation defeats the lifetime contract. `ReadView` deletes its `operator new`. `Permission` does not, so review is the only gate for it. Stack only.
+- **`new`-allocating a Permission or ReadView**. Heap allocation defeats the lifetime contract. `ReadView`, `Permission` and `SharedPermissionGuard` delete their class `operator new` and `operator delete`, so `new`, `std::make_unique` and `std::unique_ptr` refuse them. A global `::new` and a standard allocator, as in `std::make_shared` or `std::vector`, do not use those functions, and review is the only gate for them. Stack only.
 
 #### Composition rules
 

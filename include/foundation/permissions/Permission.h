@@ -64,6 +64,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <meta>
+#include <new>
 #include <optional>
 #include <string_view>
 #include <tuple>
@@ -710,6 +711,25 @@ public:
     constexpr Permission(Permission&&) noexcept {}
     constexpr Permission& operator=(Permission&&) noexcept = default;
     ~Permission() = default;
+
+    // A token lives in a scope, a handle or a parameter.  A new-expression
+    // gives it storage that no scope ends, and each copy of the pointer
+    // reaches the one token, so two holders can move it out.  The class
+    // refuses the new-expression, std::make_unique and the delete of a
+    // std::unique_ptr.  std::optional, std::tuple and a handle member
+    // construct the token in place, so they stay admitted.  A global ::new
+    // and a standard allocator, as in std::make_shared or std::vector, do
+    // not use these functions.
+    static void* operator new(std::size_t) = delete("a Permission lives in a scope or a handle, not on the heap");
+    static void* operator new[](std::size_t) = delete("a Permission lives in a scope or a handle, not on the heap");
+    static void* operator new(std::size_t,
+                              std::align_val_t) = delete("a Permission lives in a scope or a handle, not on the heap");
+    static void* operator new[](std::size_t, std::align_val_t) =
+        delete("a Permission lives in a scope or a handle, not on the heap");
+    static void operator delete(void*) = delete;
+    static void operator delete[](void*) = delete;
+    static void operator delete(void*, std::align_val_t) = delete;
+    static void operator delete[](void*, std::align_val_t) = delete;
 };
 
 // Discards the token where letting it fall out of scope would read as
@@ -998,6 +1018,24 @@ public:
         delete("RAII guard's lifetime is fixed at construction; reassignment would double-decrement");
 
     ~SharedPermissionGuard();
+
+    // The guard is the lifetime of one share, and the pool refuses to end
+    // while a share is out.  A guard on the heap has no scope that ends
+    // it, so a leaked guard keeps its share out: try_upgrade never
+    // succeeds, and the pool aborts when it ends.  The std::optional that
+    // lend returns constructs the guard in place, so it stays admitted.
+    static void* operator new(std::size_t) =
+        delete("a SharedPermissionGuard lives in the scope that holds its share, not on the heap");
+    static void* operator new[](std::size_t) =
+        delete("a SharedPermissionGuard lives in the scope that holds its share, not on the heap");
+    static void* operator new(std::size_t, std::align_val_t) =
+        delete("a SharedPermissionGuard lives in the scope that holds its share, not on the heap");
+    static void* operator new[](std::size_t, std::align_val_t) =
+        delete("a SharedPermissionGuard lives in the scope that holds its share, not on the heap");
+    static void operator delete(void*) = delete;
+    static void operator delete[](void*) = delete;
+    static void operator delete(void*, std::align_val_t) = delete;
+    static void operator delete[](void*, std::align_val_t) = delete;
 
     // The ref-qualifier pair is the enforcement, not a lifetime
     // annotation.  The token this returns is a proof that the guard's
@@ -1380,6 +1418,10 @@ static_assert(CtxAdmitsPermission<::foundation::permissions::tag::NetworkBufferT
 // by this walk without a new assertion.
 namespace detail::seplog_roster {
 
+// True when a new-expression can put a T on the heap by a move.
+template <typename T>
+inline constexpr bool heap_new_reaches_v = requires { new T(std::declval<T&&>()); };
+
 template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 [[nodiscard]] consteval bool token_is_sound() noexcept {
     using Token = Permission<Tag, Brand>;
@@ -1398,7 +1440,10 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
         && std::is_constructible_v<Token, perm_mint_key>
         // Explicit, so that a copy of the key cannot convert itself
         // into a token without the construction being written out.
-        && !std::is_convertible_v<perm_mint_key, Token>;
+        && !std::is_convertible_v<perm_mint_key, Token>
+        // No new-expression puts a token on the heap, and std::optional
+        // still holds one in place.
+        && !heap_new_reaches_v<Token> && std::is_nothrow_constructible_v<std::optional<Token>, Token&&>;
 }
 
 // The erasure runs one way.  A branded token converts to the erased
@@ -1513,6 +1558,11 @@ static_assert(std::is_move_constructible_v<SharedPermissionGuard<detail::seplog_
               "SharedPermissionGuard<Tag> must be move-constructible");
 static_assert(sizeof(SharedPermissionGuard<detail::seplog_test_tag>) == sizeof(void*),
               "SharedPermissionGuard<Tag> must be exactly one pointer (the Pool*)");
+static_assert(!detail::seplog_roster::heap_new_reaches_v<
+                  SharedPermissionGuard<detail::seplog_test_tag, detail::seplog_roster::brand_a>>,
+              "a new-expression must not put a SharedPermissionGuard on the heap");
+static_assert(detail::seplog_roster::heap_new_reaches_v<detail::seplog_roster::brand_a>,
+              "the heap check must admit a plain movable class, or its refusals prove nothing");
 
 static_assert(!std::is_copy_constructible_v<SharedPermissionPool<detail::seplog_test_tag>>,
               "SharedPermissionPool<Tag> must be Pinned (non-copyable)");
