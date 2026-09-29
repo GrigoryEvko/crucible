@@ -46,22 +46,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402  (the path insert above has to come first)
 
-# A leading underscore on a FILE name marks an old-substrate header that a port
-# has superseded.  Its mints live on in the ported file, so counting both would
-# double every ported mint.  A leading underscore on a DIRECTORY carries no such
-# meaning — `cntp/_wip` holds live mints and stays in scope.
-SUPERSEDED_PREFIX = "_"
-
 # §XXI carve-out markers, placed in a comment above the signature.  Each states
 # that an absent flag is a documented decision rather than a shortfall.
 CARVE_OUT_CX = "§XXI carve-out: cx=alloc"
 CARVE_OUT_RQ = "§XXI carve-out: rq=pre"
 
 # A third exemption mechanism, read by the guard rather than the inventory: an
-# inline marker on the signature line itself.  The tree carries all three at
-# once — 138 allowlist entries, 39 carve-out comments and 9 inline markers, for
-# 97 real axis failures.  The model reads every one, so the guard can reproduce
-# the old verdict, and so a later consolidation can count what it removes.
+# inline marker on the signature line itself.
 INLINE_OK = "MINT-PATTERN-OK"
 
 # `IsExecCtx` states that a template parameter IS a context.  That is the
@@ -281,14 +272,10 @@ def surface_files() -> list[Path]:
     mints unaudited, and a directory added later was unaudited on arrival until
     someone remembered to extend the list.
 
-    Superseded `_*.h` headers are excluded: they are frozen, so a shortfall there
-    cannot be repaired, and they go with the old tree.
-
     Returns:
         Repo-relative paths, in sorted order
     """
-    found = tsast.cpp_files("include")
-    return sorted({p for p in found if not p.name.startswith(SUPERSEDED_PREFIX)})
+    return sorted(set(tsast.cpp_files("include")))
 
 
 def _has_attribute(site: tsast.Node, word: str) -> bool:
@@ -518,7 +505,7 @@ def _ctx_parameter_names(site: tsast.Node) -> frozenset[str]:
 
     A constrained template parameter parses as a `parameter_declaration` whose
     `type` is the concept and whose `declarator` is the parameter name, so
-    `::crucible::effects::IsExecCtx Ctx` yields `Ctx`.  Reading the constraint
+    `::foundation::effects::IsExecCtx Ctx` yields `Ctx`.  Reading the constraint
     rather than the spelling matters: the tree names the parameter `Ctx` in most
     places and `C` in others, and `mint_endpoint` is one of the others.
 

@@ -38,14 +38,10 @@ mint_keeper_metrics_reader|include/crucible/observe/Metrics.h
 mint_metrics_writer|include/crucible/observe/Metrics.h
 mint_synthetic_probes|include/crucible/observe/SyntheticProbe.h
 
-# ── the new tree and the top-level headers ───────────────────────────
+# ── foundation, fixy and the top-level headers ───────────────────────
 #
-# The inventory reached include/foundation, include/fixy and the headers
-# directly under include/crucible when it moved onto the AST mint model.
-# It also started to count each mint's fixtures in its own tree only.  The
-# old count matched fixtures by name across both trees, so the ported
-# mints below read as covered by the old tree's fixtures of their
-# namesakes.  Their own tree has fewer than two.
+# The gate counts only the fixtures of the layer of a mint, and each mint
+# below has fewer than two in its layer.
 
 # include/fixy
 mint_fn_for|include/fixy/Fn.h

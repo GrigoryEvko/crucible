@@ -17,9 +17,9 @@ mints that are under the floor today.  A mint added without fixtures fails the
 gate.  A listed mint that reaches the floor leaves a stale entry, which fails
 the gate at exit 2, so the file only drains.
 
-The scope is all of `include/` except the superseded `_*.h` headers.  One row
-is one function: overloads are separate rows, and a forward declaration folds
-into its definition.  A section is a layer root and its first directory.
+The scope is all of `include/`.  One row is one function: overloads are
+separate rows, and a forward declaration folds into its definition.  A section
+is a layer root and its first directory.
 
 The inventory holds no line numbers.  An edit above a mint moves its line, and
 a line key would make every such edit drift this file.  A row names its header,

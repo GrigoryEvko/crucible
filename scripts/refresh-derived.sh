@@ -1,45 +1,26 @@
 #!/usr/bin/env bash
 #
-# refresh-derived — the step a superseded-marking commit runs before it
-# commits.
+# refresh-derived — regenerate every derived artifact, then re-check every
+# gate that reads one.
 #
-# A marking is `git mv X.h _X.h` plus an include migration, and it moves
-# a path that several artifacts point at.  Each of those artifacts rots
-# in its own way and each has its own gate, so the marking commit lands
-# green in the working tree and reds a gate on main.  That has now
-# happened three times in four commits:
-#
-#   517a43a6  moved Topology.h      -> broke two syscall allowlists
-#   5b0ad895  moved RowMismatch.h   -> broke the fullness allowlist
-#   62c32f16  moved Stage.h and Pipeline.h
-#                                   -> dropped three mints from the
-#                                      mint inventory, count 169 -> 166
-#
-# The rule was already written down.  What was missing is a single step
-# that runs it, so this script is that step: regenerate every derived
-# artifact, then re-check every gate that reads one, and say which of
-# them the marking moved.
-#
-# Two kinds of rot, and both need covering, which is why one gate is not
-# enough:
+# A commit that moves, renames or deletes a path can leave an artifact that
+# points at it.  Each artifact has its own gate, and two kinds of rot need
+# a check:
 #
 #   * A path goes dead.  An allowlist key or a sentence names a file
 #     that is no longer there.  check-allowlist-keys.sh answers this for
 #     both input sets.
-#   * Content goes stale while every path still resolves.  This is the
-#     one that bit 62c32f16: no path dangled, because the underscored
-#     header exists.  The inventory simply stopped counting three mints,
-#     and only regenerating it shows that.
+#   * Content goes stale while every path still resolves.  The mint
+#     inventory can stop counting a mint, and only a regenerate shows that.
 #
 # Usage:
 #   refresh-derived.sh            # regenerate, then re-check; exit 1 if
 #                                 # anything is still red
 #   refresh-derived.sh --check    # re-check only, write nothing
 #
-# Run it before `git commit` on a marking.  The run names each file that
-# the regenerate half changed, and those files belong in the same commit
-# as the marking.  An edit that was in the tree before the run is not
-# named.
+# Run it before `git commit`.  The run names each file that the regenerate
+# half changed, and those files belong in the same commit.  An edit that
+# was in the tree before the run is not named.
 #
 # Exit 0 clean, 1 if a check is still red after the refresh, 2 on a
 # usage error.
@@ -129,13 +110,13 @@ fi
 
 # ── The re-check half ────────────────────────────────────────────────
 #
-# In the order a marking breaks them.
+# In the order that a moved path breaks them.
 printf 'refresh-derived: checking\n' >&2
 run_ 'allowlist keys and prose'      bash scripts/check-allowlist-keys.sh
 run_ 'mint inventory'                python3 scripts/gen-mint-inventory.py --check
 run_ 'witness roster'                python3 scripts/check-witness-roster.py --check
 
-# ── What the marking moved ───────────────────────────────────────────
+# ── What the refresh rewrote ─────────────────────────────────────────
 if [ "$MODE" = refresh ]; then
     mapfile -t rewrote < <(comm -3 <(printf '%s\n' "$state_before" | sort) <(printf '%s\n' "$state_after" | sort) \
                                | while IFS= read -r line; do
@@ -143,7 +124,7 @@ if [ "$MODE" = refresh ]; then
                                      [ -n "$line" ] && printf '%s\n' "${line#* }"
                                  done | sort -u)
     if [ ${#rewrote[@]} -gt 0 ]; then
-        printf '\nrefresh-derived: the refresh rewrote these, and they belong in the marking commit:\n' >&2
+        printf '\nrefresh-derived: the refresh rewrote these, and they belong in the same commit:\n' >&2
         printf '  %s\n' "${rewrote[@]}" >&2
     fi
 fi

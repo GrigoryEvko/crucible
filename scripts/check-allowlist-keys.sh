@@ -9,20 +9,9 @@
 # guard that cannot fire.  That is a defect class this tree keeps
 # closing, and it is the one a rename reintroduces silently.
 #
-# It has happened twice, both times in the same shape.  517a43a6 renamed
-# include/crucible/concurrent/Topology.h to _Topology.h and added
-# include/fixy/concurrent/Topology.h beside it; the syscall allowlist
-# kept the old key, so its sched_getaffinity entry matched neither copy
-# and check-syscall-capability reported two fresh violations for a site
-# that had been audited for months.  5b0ad895 did the same to
-# RowMismatch.h and broke the fullness allowlist the same way.  Neither
-# commit touched an allowlist.
-#
-# Every remaining port runs the same `git mv X.h _X.h` flow, so
-# the drift is not a pair of accidents.  This guard makes it loud: a key
-# whose path does not exist fails here, with the path the file most
-# likely moved to named in the message, before the guard that owns the
-# key has a chance to go quietly wrong.
+# This guard makes the drift loud: a key whose path does not exist fails
+# here, with the path the file most likely moved to named in the message,
+# before the guard that owns the key has a chance to go quietly wrong.
 #
 # Scope: the PATH half of the key, and nothing else.  Whether the line
 # or the code text beside it still matches is each owning guard's
@@ -34,18 +23,10 @@
 # ── The second input set: guidance prose ─────────────────────────────
 #
 # One rule, two places it applies.  An allowlist key and a sentence in
-# CLAUDE.md both name a file by path, and a port breaks both the same
+# CLAUDE.md both name a file by path, and a move breaks both the same
 # way.  The difference is only that a dead key makes a guard stop
 # firing, while a dead path in guidance sends a reader to a file that is
 # not there.
-#
-# The prose half was ungated at first, and it had rotted: CLAUDE.md
-# named three headers that no longer existed, two of them in section XII
-# as the place the contract-enforcement story lives, and AGENTS.md named
-# one.  No allowlist dangled at the same moment, because the key half of
-# this guard was already holding that line.  So the prose half is not a
-# second rule, it is the same rule over the input set nobody had pointed
-# it at.
 #
 # What is in: markdown at the repository root, and docs/ if it exists.
 # Those are the documents loaded as guidance, where a dead path misleads.
@@ -105,27 +86,19 @@ extract_path_() {
 
 # ── Naming where the file went ───────────────────────────────────────
 #
-# Two candidates, in the order the tree actually moves files.  First the
-# superseded-marking convention, which prefixes the basename with an
-# underscore in place; that is what both real failures were.  Then any
-# file anywhere in the tree with the same basename, which catches a port
-# that moved the file to a new directory.  Both are reported, because a
-# port usually produces both at once and the reader has to re-key onto
-# each.
+# The candidates are the files anywhere in the tree with the same
+# basename, which catches a file that moved to a new directory.  Each one
+# is reported, so the reader can re-key onto the right one.
 moved_candidates_() {
     local dead=$1
-    local dir base
-    dir=$(dirname -- "$dead")
+    local base
     base=$(basename -- "$dead")
 
     local -a found=()
-    [ -f "$SCAN_ROOT/$dir/_$base" ] && found+=("$dir/_$base")
-
     local hit
     while IFS= read -r hit; do
         hit=${hit#"$SCAN_ROOT/"}
         [ "$hit" = "$dead" ] && continue
-        [ "$hit" = "$dir/_$base" ] && continue
         found+=("$hit")
     # A hidden directory at the root holds no tracked source: .git, the
     # agent work trees in .worktrees and the pinned tools in .tools.  A file
@@ -133,7 +106,7 @@ moved_candidates_() {
     done < <(find "$SCAN_ROOT" \
                   -path "$SCAN_ROOT/.*" -prune -o \
                   -path "$SCAN_ROOT/build*" -prune -o \
-                  -type f \( -name "$base" -o -name "_$base" \) -print 2>/dev/null)
+                  -type f -name "$base" -print 2>/dev/null)
 
     [ ${#found[@]} -eq 0 ] && return 1
     printf '%s\n' "${found[@]}"
@@ -236,7 +209,7 @@ scan_() {
             mapfile -t cands < <(moved_candidates_ "$key")
             if [ ${#cands[@]} -gt 0 ]; then
                 printf '    the file appears to have moved to: %s\n' "${cands[@]}" >&2
-                printf '    re-key the entry onto it.  A port that leaves a copy behind needs one entry per copy.\n' >&2
+                printf '    re-key the entry onto it.\n' >&2
             else
                 printf '    no file of that name survives anywhere in the tree.  Either the site is gone,\n' >&2
                 printf '    in which case prune the entry, or it moved under a new name, in which case re-key it.\n' >&2
@@ -252,8 +225,8 @@ scan_() {
 # whose self-test only plants violations cannot tell you it is capable
 # of passing.
 #
-#   1. a key on a path that was underscored in place  -> caught, and the
-#      underscored path named
+#   1. a key on a path that moved to another directory -> caught, and the
+#      new path named
 #   2. a key on a path that is gone entirely          -> caught, with the
 #      "no file survives" branch
 #   3. a key on a path that exists                    -> clean
@@ -267,8 +240,9 @@ self_test_() {
     trap 'rm -rf "$SELF_TEST_TMP"' EXIT
     local tmp=$SELF_TEST_TMP
 
-    mkdir -p "$tmp/tree/include/planted" "$tmp/lists" "$tmp/tree/.worktrees/copy/include/planted"
-    : > "$tmp/tree/include/planted/_Moved.h"
+    mkdir -p "$tmp/tree/include/planted" "$tmp/tree/include/other" "$tmp/lists" \
+             "$tmp/tree/.worktrees/copy/include/planted"
+    : > "$tmp/tree/include/other/Moved.h"
     : > "$tmp/tree/include/planted/Live.h"
     # A copy in an agent work tree is not a place the file moved to.
     : > "$tmp/tree/.worktrees/copy/include/planted/Vanished.h"
@@ -277,7 +251,7 @@ self_test_() {
     # the first bar is a prefix, so the key is still the path.
     cat > "$tmp/lists/planted-allowlist.txt" <<'PLANTED'
 # Synthetic fixture for check-allowlist-keys.sh --self-test.
-include/planted/Moved.h:82 — underscored in place by a port
+include/planted/Moved.h:82 — moved to another directory
 include/planted/Vanished.h:if (::read(fd, buf, n) < 0) {  — gone entirely
 include/planted/Barred.h:if (::read(fd, buf, n) < 0 || n == 0) {  — gone, with a bar in the code
 include/planted/Live.h:12 — still there, must stay clean
@@ -299,10 +273,10 @@ PLANTED
         failures=1
     }
     printf '%s' "$out" | grep -q 'include/planted/Moved.h' || {
-        printf 'check-allowlist-keys self-test: the underscored-in-place key was not caught.\n' >&2
+        printf 'check-allowlist-keys self-test: the moved key was not caught.\n' >&2
         failures=1
     }
-    printf '%s' "$out" | grep -q 'include/planted/_Moved.h' || {
+    printf '%s' "$out" | grep -q 'include/other/Moved.h' || {
         printf 'check-allowlist-keys self-test: the catch did not name the path it moved to.\n' >&2
         failures=1
     }
@@ -344,7 +318,7 @@ CLEAN
     # terminator `bench/serve.h` matches inside `bench/serve.html` and
     # the guard reports a file nobody named.
     #
-    #   1. a document naming a path that was underscored  -> caught
+    #   1. a document naming a path that moved            -> caught
     #   2. a document naming a live path                  -> clean
     #   3. a longer filename with a shorter one as prefix -> clean
     #   4. a placeholder written with angle brackets      -> clean
@@ -369,7 +343,7 @@ PROSE
         printf 'check-allowlist-keys self-test: the dead prose path was not caught.\n' >&2
         failures=1
     }
-    printf '%s' "$out" | grep -q 'include/planted/_Moved.h' || {
+    printf '%s' "$out" | grep -q 'include/other/Moved.h' || {
         printf 'check-allowlist-keys self-test: the prose catch did not name the path it moved to.\n' >&2
         failures=1
     }
@@ -402,7 +376,7 @@ PROSECLEAN
     if [ "$failures" -ne 0 ]; then
         return 1
     fi
-    printf 'check-allowlist-keys: self-test passed — an underscored-in-place key, a vanished key and a key with a bar in its code text are caught, the move is named and a hidden work tree is not, a live key and a non-path key stay clean, a dead prose path is caught, and a live path, a path that ends a sentence, a prefix filename and a placeholder all stay clean.\n' >&2
+    printf 'check-allowlist-keys: self-test passed — a moved key, a vanished key and a key with a bar in its code text are caught, the move is named and a hidden work tree is not, a live key and a non-path key stay clean, a dead prose path is caught, and a live path, a path that ends a sentence, a prefix filename and a placeholder all stay clean.\n' >&2
     return 0
 }
 
@@ -435,11 +409,9 @@ unable to fire on the code the entry was written for.  A guidance
 document that names a missing file sends its reader nowhere, which is
 worse in CLAUDE.md than anywhere else, because every session loads it.
 
-The rule this breaks is the one in the superseded-marking procedure:
-refresh every artifact that names a path in the SAME commit as the edit
-that moved it.  A port that underscores the original and adds a copy
-produces two live paths from one, so it needs two entries where there
-was one.  scripts/refresh-derived.sh runs that refresh and re-checks it.
+Refresh every artifact that names a path in the same commit as the edit
+that moves it.  scripts/refresh-derived.sh runs that refresh and
+re-checks it.
 TAIL
     exit 1
 fi

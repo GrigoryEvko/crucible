@@ -6,9 +6,8 @@ The inventory reads the one mint model in `scripts/mintmodel.py`, which the
 about which sites are mints.  The model reads the parse tree, so a comment, a
 string, a friend declaration, a deleted overload or a call site is never a row.
 
-SCOPE.  All of `include/`, minus the superseded `_*.h` headers.  The scope is
-derived, not listed: a directory added later is audited the moment it declares
-a mint.
+SCOPE.  All of `include/`.  The scope is derived, not listed: a directory added
+later is audited the moment it declares a mint.
 
 ONE ROW FOR EACH FUNCTION.  Overloads are separate rows.  A forward declaration
 and its definition are one row, keyed at the definition.
@@ -227,9 +226,9 @@ mints that are under the floor today.  A mint added without fixtures fails the
 gate.  A listed mint that reaches the floor leaves a stale entry, which fails
 the gate at exit 2, so the file only drains.
 
-The scope is all of `include/` except the superseded `_*.h` headers.  One row
-is one function: overloads are separate rows, and a forward declaration folds
-into its definition.  A section is a layer root and its first directory.
+The scope is all of `include/`.  One row is one function: overloads are
+separate rows, and a forward declaration folds into its definition.  A section
+is a layer root and its first directory.
 
 The inventory holds no line numbers.  An edit above a mint moves its line, and
 a line key would make every such edit drift this file.  A row names its header,
@@ -422,12 +421,6 @@ struct Keeper {
 using Kept = Keeper;
 }  // namespace crucible::sample
 """,
-        "include/crucible/sample/_Superseded.h": """
-namespace crucible::sample {
-struct Thing {};
-[[nodiscard]] constexpr Thing mint_superseded(Thing) noexcept { return {}; }
-}
-""",
         "include/foundation/algebra/Lattice.h": """
 namespace foundation::algebra {
 template <typename> concept IsExecCtx = true;
@@ -466,7 +459,7 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
-        surface = sorted(p for p in (root / "include").rglob("*.h") if not p.name.startswith("_"))
+        surface = sorted((root / "include").rglob("*.h"))
         rows = build_rows(root, surface, mintmodel.fixture_files(root))
         by_name = {r.name: r for r in rows}
 
@@ -483,7 +476,6 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
             holder is not None and keeper is not None and holder.hs14 == 2 and keeper.hs14 == 2,
             True,
         )
-        check("the superseded header is out of scope", "mint_superseded" not in by_name, True)
         token = by_name.get("mint_planted_token")
         check(
             "the deleted overload and the friend add no row",

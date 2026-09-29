@@ -14,12 +14,12 @@ WHICH TEMPLATES ARE BRANDED
     default that names DefaultBrand.  The position of that parameter is the
     count of arguments that a spelling with no brand holds.  A template is
     known by its qualified name, so fixy::Borrowed is branded and
-    fixy::session::Borrowed is a template of its own.  A superseded
-    `_Name.h` header is out of scope.  Two primary declarations of one
-    qualified name with the brand at two positions fail, because a spelling
-    of that name then has no one reading.  A list that did not derive its
-    templates missed OwnedMmap and NumaPlacement when each gained a brand, so
-    a spelling of either on the erased identity was never counted.
+    fixy::session::Borrowed is a template of its own.  Two primary
+    declarations of one qualified name with the brand at two positions fail,
+    because a spelling of that name then has no one reading.  A list that did
+    not derive its templates missed OwnedMmap and NumaPlacement when each
+    gained a brand, so a spelling of either on the erased identity was never
+    counted.
 
 WHICH TEMPLATE A SPELLING NAMES
     Name lookup of scripts/tsast.py (NameIndex) decides: the innermost
@@ -83,7 +83,6 @@ LEDGER = "scripts/brand-drain.txt"
 SUFFIXES = (".h", ".cpp")
 BRAND_PARAMETER = "Brand"
 ERASED_BRAND = "DefaultBrand"
-SUPERSEDED_PREFIX = "_"
 LEDGER_HEADER = (
     "# scripts/brand-drain.txt — the sites on the erased brand, one count per\n"
     "# file.  scripts/check-brand-drain.py reads this ledger.  A count can only\n"
@@ -191,8 +190,7 @@ def branded_templates(root: Path) -> tuple[Branded, list[str]]:
     """
     base = root / TEMPLATE_ROOT
     files = sorted(path for path in base.rglob("*") if path.is_file() and path.suffix in SUFFIXES
-                   and not path.name.startswith(SUPERSEDED_PREFIX) and tsast.is_in_cpp_scope(path.relative_to(root))) \
-        if base.is_dir() else []
+                   and tsast.is_in_cpp_scope(path.relative_to(root))) if base.is_dir() else []
     positions: dict[QualifiedName, set[int]] = {}
     failures: list[str] = []
     index = tsast.NameIndex()
@@ -501,8 +499,6 @@ def self_test() -> int:
         (root / "include/crucible").mkdir(parents=True)
         (root / "include/crucible/Outside.h").write_text("Permission<Tag> outside;\n", encoding="utf-8")
         (root / "include/crucible/Definitions.h").write_text(definitions, encoding="utf-8")
-        (root / "include/crucible/_Superseded.h").write_text(
-            "template <class A, class B, class Brand = DefaultBrand> class Novel;\n", encoding="utf-8")
         ledger = root / LEDGER
         ledger.parent.mkdir(parents=True)
 

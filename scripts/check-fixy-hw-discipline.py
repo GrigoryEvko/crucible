@@ -22,9 +22,7 @@ THE TWO HALVES OF THE GATE
         selects, and a block in a conditional is dead in the other builds
       * every row names its block from `::`, because this script compares the
         name as written, and the compiler would resolve a relative name
-    A superseded `_Name.h` header is out of scope, because it is frozen and
-    leaves with the old tree.  A file on the tsast UNPARSEABLE roster is not
-    C++ and is out of scope.
+    A file on the tsast UNPARSEABLE roster is not C++ and is out of scope.
 
 WHAT READS THE TREE
     Only parse nodes.  A comment and a string hold no node, so a block name or
@@ -56,7 +54,6 @@ import tsast  # noqa: E402  (the path insert above has to come first)
 ROOTS = ("include", "src")
 ROWS_FILE = "test/test_hardware_axis_pins.cpp"
 ROW_TEMPLATE = ("hw_axis_pins", "pinned")
-SUPERSEDED_PREFIX = "_"
 PREPROC_ARMS = ("preproc_if", "preproc_ifdef", "preproc_else", "preproc_elif", "preproc_elifdef")
 OPERAND_NAMES = ("qualified_identifier", "namespace_identifier", "type_identifier", "identifier")
 
@@ -169,7 +166,7 @@ def scanned_files(root: Path) -> list[Path]:
             continue
         for path in base.rglob("*"):
             rel = path.relative_to(root)
-            if tsast.is_in_cpp_scope(rel) and path.is_file() and not path.name.startswith(SUPERSEDED_PREFIX):
+            if tsast.is_in_cpp_scope(rel) and path.is_file():
                 found.append(rel)
     return sorted(found)
 
@@ -333,8 +330,6 @@ def self_test() -> int:
         code, report = captured(lambda: run(root))
         expect("an unlisted block under src/ exits 2", code == 2 and "src/Other.cpp:1" in report)
         other.unlink()
-        (root / "include/hw/_Old.h").write_text("namespace old_hw {\n}\n", encoding="utf-8")
-        expect("a superseded header is out of scope", captured(lambda: run(root))[0] == 0)
 
         broken = root / "include/hw/Broken.h"
         broken.write_text("namespace broken_hw { void f() { g(1) { } } }\n", encoding="utf-8")
