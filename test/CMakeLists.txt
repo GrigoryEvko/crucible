@@ -782,13 +782,14 @@ set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
 # A comment, a script or an allowlist states what the code does, not which
 # task, stage or tracker entry produced it.
 # utils/scripts/check-no-coordination-refs.py reads every file that git tracks,
-# except AGENTS.md, the notes under misc/ and the guard itself: the comments,
-# strings and directive arguments of C++ from the parse tree, the comments and
-# strings of Python from its tokens, and every line of any other file.  It has
-# no allowlist.  The self-test plants one reference of each family, a file of
-# clean look-alikes and one reference in each area that the scan once
-# skipped.  It proves that each plant is reported, that no look-alike is, and
-# that the three paths out of scope and an untracked file are not read.
+# except the notes under misc/ and the guard itself: the comments, strings and
+# directive arguments of C++ from the parse tree, the comments and strings of
+# Python from its tokens, the target path of a symbolic link, and every line of
+# any other file.  It has no allowlist.  The self-test plants one reference of
+# each family, a file of clean look-alikes and one reference in each area that
+# the scan once skipped.  It proves that each plant is reported, that no
+# look-alike is, that the two paths out of scope and an untracked file are not
+# read, and that a linked document is reported under its own name only.
 # Exit 3 when the kit is absent reports a skip.
 add_test(NAME no_coordination_refs_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-coordination-refs.py --self-test)

@@ -106,8 +106,8 @@
 # An earlier revision of this file attributed the `mint_pipeline` entry,
 # and a further
 # eleven entries under canopy/ and cntp/, to those trees being
-# "edit-banned".  No such ban is declared in CLAUDE.md, in AGENTS.md, in
-# any guard script, or in any commit message — this file was the only
+# "edit-banned".  No such ban is declared in CLAUDE.md, in any guard
+# script, or in any commit message — this file was the only
 # document asserting it, and the only document relying on it.  A
 # justification that cites nothing but itself is not a justification, so
 # the claim is withdrawn.  The cntp/ entries stand or fall on their own

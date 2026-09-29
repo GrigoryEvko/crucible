@@ -27,9 +27,12 @@ THE RULE
     that it reports is a reason to narrow a pattern, not to exempt a line.
 
 THE SCOPE
-    The scan reads every file that git tracks, except this guard, AGENTS.md
-    and the notes under misc/.  A file that git does not track is not read,
-    because the guard reads what a commit holds.
+    The scan reads every file that git tracks, except this guard and the notes
+    under misc/.  A file that git does not track is not read, because the guard
+    reads what a commit holds.  For a symbolic link, a commit holds the path of
+    the target, so the scan reads that path and not the content behind the
+    link.  The target, when git tracks it, is read under its own name, and each
+    reference in it is reported one time.
 
 THE ENGINE
     The rule is about prose, so the scan reads prose only, from a parser where
@@ -68,9 +71,9 @@ import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
 # The scan reads every tracked file, except the paths below.  This file plants
-# references in its self-test.  AGENTS.md and the notes under misc/ are out of
-# scope, and the scan does not read them.
-SKIPPED_FILES = frozenset({"utils/scripts/check-no-coordination-refs.py", "AGENTS.md"})
+# references in its self-test.  The notes under misc/ are out of scope, and the
+# scan does not read them.
+SKIPPED_FILES = frozenset({"utils/scripts/check-no-coordination-refs.py"})
 SKIPPED_DIRS = ("misc/",)
 
 # One branch for each family.  The first lookbehind on the task branch refuses
@@ -122,7 +125,9 @@ def scoped_files(root: Path) -> list[Path]:
 
     The list comes from the index of git, through tsast.tracked_files, so a
     build product or an untracked scratch file is never read.  The self-test
-    makes its scratch tree a repository for the same reason.
+    makes its scratch tree a repository for the same reason.  A symbolic link
+    is in the list even when its target is missing, because the link holds its
+    own prose, the path of the target.
 
     Complexity: linear in the number of files under root.
 
@@ -134,7 +139,8 @@ def scoped_files(root: Path) -> list[Path]:
     """
     return sorted(
         Path(name) for name in tsast.tracked_files(root)
-        if name not in SKIPPED_FILES and not name.startswith(SKIPPED_DIRS) and (root / name).is_file()
+        if name not in SKIPPED_FILES and not name.startswith(SKIPPED_DIRS)
+        and ((root / name).is_symlink() or (root / name).is_file())
     )
 
 
@@ -234,11 +240,16 @@ def scan(root: Path) -> tuple[int, list[str]]:
         (exit status, report lines), with the status as the module docstring states
     """
     files = scoped_files(root)
+    # A symbolic link is read as the path of its target, the text that git
+    # stores for it.  The content behind the link is not read under the name of
+    # the link, so a reference in a linked document is not reported twice.
+    links = {f for f in files if (root / f).is_symlink()}
+    targets = [(link, 1, str((root / link).readlink())) for link in sorted(links)]
     # A file that the kit cannot parse, such as generated BPF C, is read line
     # by line, so no file in scope goes unread.
-    cpp = [f for f in files if tsast.is_in_cpp_scope(f)]
-    others = [f for f in files if not tsast.is_in_cpp_scope(f)]
-    hits: list[tuple[Path, int, str]] = []
+    cpp = [f for f in files if f not in links and tsast.is_in_cpp_scope(f)]
+    others = [f for f in files if f not in links and not tsast.is_in_cpp_scope(f)]
+    hits: list[tuple[Path, int, str]] = [hit for hit in targets if REFERENCE.search(hit[2])]
     try:
         for relative, line, text in cpp_prose(root, cpp):
             if REFERENCE.search(text):
@@ -314,9 +325,8 @@ NEWLY_COVERED = (
     ("include/crucible/perf/bpf/vmlinux.h", "struct planted { int operator; };  /* CR-05 */\n"),
 )
 
-# The three paths that stay out of scope, each with a planted reference.
+# The two paths that stay out of scope, each with a planted reference.
 OUT_OF_SCOPE = (
-    ("AGENTS.md", "Tracked as FIXY-V-264.\n"),
     ("misc/notes.md", "Stage D deletes the shim.\n"),
     ("utils/scripts/check-no-coordination-refs.py", "# Filed as #1519.\n"),
 )
@@ -417,15 +427,25 @@ def self_test() -> int:
                 "utils/scripts/doc.py:2:", "src/fixy/Moved.cpp:1:"], ["include/fixy/Code.h", "utils/scripts/code.py"])
 
         # The scope is every tracked file: each area that the scan once
-        # skipped reports its plant, and the three paths out of scope do not.
+        # skipped reports its plant, and the two paths out of scope do not.
         # A file that git does not track is not read.
         for relative, text in NEWLY_COVERED + OUT_OF_SCOPE:
             write(root, relative, text)
         track(root)
         write(root, "include/crucible/Untracked.h", "// Folded at #147.\n")
-        expect("every tracked file except AGENTS.md, misc/ and this guard is in scope", root, 1,
+        expect("every tracked file except misc/ and this guard is in scope", root, 1,
                [f"{relative}:1:" for relative, _ in NEWLY_COVERED],
                [relative for relative, _ in OUT_OF_SCOPE] + ["include/crucible/Untracked.h"])
+
+        # A symbolic link holds the path of its target.  The link to CLAUDE.md
+        # does not report the plant of CLAUDE.md a second time, and a link whose
+        # target path holds a reference reports it, although the target is
+        # missing.
+        (root / "AGENTS.md").symlink_to("CLAUDE.md")
+        (root / "planted-link.md").symlink_to("plans/FIXY-V-264.md")
+        track(root)
+        expect("a symbolic link is read as the path of its target, and a linked file under its own name only",
+               root, 1, ["CLAUDE.md:1:", "planted-link.md:1:"], ["AGENTS.md"])
 
     if failures:
         print(f"check-no-coordination-refs --self-test: FAILED, {len(failures)} case(s) did not hold")

@@ -30,6 +30,9 @@
 #
 # What is in: markdown at the repository root, and docs/ if it exists.
 # Those are the documents loaded as guidance, where a dead path misleads.
+# A symbolic link among them is not read.  Its target is a document that the
+# scan reads under its own name, or one that is out of scope.  AGENTS.md is a
+# link to CLAUDE.md, so a dead path in CLAUDE.md is reported one time.
 #
 # What is out, and why:
 #   * misc/*.md — dated design papers.  They record a finding against the
@@ -118,7 +121,8 @@ moved_candidates_() {
 #
 # The documents this reads, one per line.  The self-test points
 # PROSE_ROOT at its own fixture tree, which is why the walk takes a root
-# rather than naming files.
+# rather than naming files.  `-type f` does not match a symbolic link, and
+# that skip is deliberate: the header says why.
 prose_files_() {
     local root=${PROSE_ROOT:-$SCAN_ROOT}
     find "$root" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null
@@ -324,6 +328,8 @@ CLEAN
     #   2. a document naming a live path                  -> clean
     #   3. a longer filename with a shorter one as prefix -> clean
     #   4. a placeholder written with angle brackets      -> clean
+    #   5. a symbolic link to the document                -> not read, so
+    #      the dead path is reported one time, under the document's name
     mkdir -p "$tmp/tree/bench"
     : > "$tmp/tree/bench/serve.html"
 
@@ -332,6 +338,7 @@ The substrate lives in `include/planted/Moved.h` and the live one is
 `include/planted/Live.h`.  The dashboard is `bench/serve.html`.  A task
 re-targets `include/planted/<Name>.h` once the move happens.
 PROSE
+    ln -s Guidance.md "$tmp/tree/Mirror.md"
 
     out=$(SCAN_ROOT="$tmp/tree" PROSE_ROOT="$tmp/tree" scan_prose_ 2>&1)
     rc=$?
@@ -361,6 +368,10 @@ PROSE
         printf 'check-allowlist-keys self-test: an angle-bracket placeholder was read as a path.\n' >&2
         failures=1
     }
+    printf '%s' "$out" | grep -q 'Mirror.md' && {
+        printf 'check-allowlist-keys self-test: a symbolic link was read as a document of its own.\n' >&2
+        failures=1
+    }
 
     # The clean control for the prose half.  The last path ends its
     # sentence, so a `.` follows the extension.
@@ -378,7 +389,7 @@ PROSECLEAN
     if [ "$failures" -ne 0 ]; then
         return 1
     fi
-    printf 'check-allowlist-keys: self-test passed — a moved key, a vanished key and a key with a bar in its code text are caught, the move is named and a hidden work tree is not, a live key and a non-path key stay clean, a dead prose path is caught, and a live path, a path that ends a sentence, a prefix filename and a placeholder all stay clean.\n' >&2
+    printf 'check-allowlist-keys: self-test passed — a moved key, a vanished key and a key with a bar in its code text are caught, the move is named and a hidden work tree is not, a live key and a non-path key stay clean, a dead prose path is caught one time although a symbolic link names its document, and a live path, a path that ends a sentence, a prefix filename and a placeholder all stay clean.\n' >&2
     return 0
 }
 
