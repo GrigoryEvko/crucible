@@ -12,5 +12,4 @@ include/crucible/safety/
 include/crucible/algebra/
 include/crucible/effects/
 include/crucible/permissions/
-include/crucible/concurrent/
 include/crucible/_Saturate.h

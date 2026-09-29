@@ -22,12 +22,12 @@
 # AtomicSnapshot::publish does memcpy between two seq fetch_adds;
 # AtomicSnapshot::load does memcpy between two seq loads.  The seq
 # retry protocol guarantees torn reads are discarded before being
-# returned to the caller (proven by the test_atomic_snapshot stress
-# test's torn-read invariant).  TSan correctly observes the inner
-# memcpy race but cannot model the retry's invalidation.
+# returned to the caller (test_stress_multithread in
+# test/fixy/test_concurrent_snapshot.cpp counts the torn reads).  TSan
+# correctly observes the inner memcpy race but cannot model the retry's
+# invalidation.
 #
-# Same trade-off as Linux kernel's seqcount_t and Folly's seqlock.
-# See AtomicSnapshot.h §UB-adjacency (lines 64-91) for the full
-# rationale and mitigation argument.
-race:crucible::concurrent::AtomicSnapshot
+# Same trade-off as Linux kernel's seqcount_t and Folly's seqlock.  The
+# header comment of include/fixy/concurrent/AtomicSnapshot.h gives the
+# full rationale and mitigation argument.
 race:AtomicSnapshot.h

@@ -58,10 +58,9 @@ WHERE A SPECIALIZATION IS ADMITTED
         unnamed class, and a class that an alias or a typedef names.
 
     In an authoring location of the AUTHORING table, each with its reason.
-    A generator over every parent, a partial specialization over a tag
-    family and the frozen channels of the old tree still need it.  A
-    location that no specialization needs is stale, and the check fails
-    until it is removed.
+    A generator over every parent and a partial specialization over a tag
+    family still need it.  A location that no specialization needs is
+    stale, and the check fails until it is removed.
 
 WHAT THE GUARD CANNOT SEE
     A trait name that a macro builds with `##` is not in the text, so
@@ -99,15 +98,7 @@ LINE_SPLICE = re.compile(rb"\\\r?\n")
 # A key that ends in "/" admits every file under it, and any other key admits
 # one file.  A location that no specialization needs is stale, and the check
 # fails until the key is removed, so the table can only shrink.
-FROZEN_CHANNEL = ("a frozen channel of the old tree, which spells its tags relative to crucible::safety, "
-                  "so the lookup reaches a namespace that the guard cannot close without the other headers")
 AUTHORING: dict[str, str] = {
-    "include/crucible/concurrent/_PermissionedChaseLevDeque.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/_PermissionedMpmcChannel.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/_PermissionedMpscChannel.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/_PermissionedSnapshot.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/_PermissionedSpscChannel.h": FROZEN_CHANNEL,
-    "include/crucible/concurrent/_Queue.h": FROZEN_CHANNEL,
     "include/crucible/permissions/_FederationPermission.h":
         "the split of a federated peer is partial over its children, which are template parameters",
     "include/crucible/safety/_PermissionTreeGenerator.h": "the generator splits every parent into its slices",
@@ -670,7 +661,6 @@ def self_test() -> int:
         expect("a file beside a listed file is not", "include/fixy/Other.h" in exempt)
         expect("test/ is an authoring location", "test/fixy/Local.cpp" not in exempt, True)
         expect("a location that admits a site is not stale", bool(result.needed["include/fixy/OwnedRegion.h"]), True)
-        expect("a location that admits no site is stale", not result.needed["include/crucible/concurrent/_Queue.h"])
         expect("the planted tree parses", not broken)
 
         def captured(cwd: Path) -> tuple[int, str]:
@@ -700,16 +690,16 @@ def self_test() -> int:
                code == 1 and bool(scan(root).failures))
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
-        listed = root / "include/crucible/permissions/_FederationPermission.h"
+        listed = root / "include/fixy/OwnedRegion.h"
         listed.parent.mkdir(parents=True)
         listed.write_text("namespace foundation::permissions {\nstruct W {}; struct A {}; struct B {};\n"
                           "template <> struct can_split_into<W, A, B> {};\n}\n", encoding="utf-8")
+        expect("a location that admits no site is stale", not scan(root).needed["include/fixy/OwnedRegion.h"])
         buffer = io.StringIO()
         with contextlib.redirect_stderr(buffer):
             code = check(root)
         expect("a listed file whose splits all sit beside their tags is a stale location",
-               code == 2 and "stale authoring location include/crucible/permissions/_FederationPermission.h"
-               in buffer.getvalue())
+               code == 2 and "stale authoring location include/fixy/OwnedRegion.h" in buffer.getvalue())
     if failures:
         print(f"check-splits-orphan --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

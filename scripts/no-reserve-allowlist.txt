@@ -69,12 +69,6 @@ include/crucible/BackgroundThread.h:current_meta_starts.reserve(kInitialTraceCap
 include/crucible/BackgroundThread.h:current_scope_hashes.reserve(kInitialTraceCapacity);
 include/crucible/BackgroundThread.h:current_callsite_hashes.reserve(kInitialTraceCapacity);
 #
-# ── concurrent/_AdaptiveScheduler.h ─────────────────────────────────
-# workers_.reserve(worker_count_) during pool init — bounded by
-# the CostModel's cap, would convert cleanly to inplace_vector
-# with NUMA-pinned capacity.
-include/crucible/concurrent/_AdaptiveScheduler.h:workers_.reserve(worker_count_);
-#
 # ── bench/ COVERAGE EXTENSION — NOT pre-approved ────────────────────
 #
 # The entries below were NOT reviewed and NOT granted a waiver.  They
