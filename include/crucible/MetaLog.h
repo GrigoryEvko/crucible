@@ -15,7 +15,6 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
@@ -26,6 +25,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
 #include <foundation/AlignedBuffer.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/effects/Row.h>

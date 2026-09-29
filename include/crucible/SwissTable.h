@@ -1,12 +1,11 @@
 #pragma once
 
-#include <crucible/Platform.h>
-
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 #include <fixy/Refined.h>
 #include <fixy/atoms/Hw.h>
 #include <fixy/atoms/Simd.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 

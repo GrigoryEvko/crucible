@@ -1,8 +1,8 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/reflect/EnumPins.h>

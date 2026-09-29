@@ -21,12 +21,12 @@
 // per-lane so no lane order can be observed, and the fold that follows is the
 // same scalar code with the same overflow checks.
 
-#include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Saturated.h>
+#include <foundation/Platform.h>
 #include <foundation/Simd.h>
 
 #include <cstdint>

@@ -6,7 +6,6 @@
 //
 // foundation::reflect::enum_name gives the name of each enumerator.
 
-#include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/topology/CongestionTelemetry.h>
 #include <fixy/Ctx.h>
@@ -14,6 +13,7 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>

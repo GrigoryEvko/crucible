@@ -1,12 +1,12 @@
 #pragma once
 
 #include <crucible/Philox.h>
-#include <crucible/Platform.h>
 #include <crucible/cntp/Fec.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

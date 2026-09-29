@@ -1,7 +1,7 @@
 #include <crucible/topology/Ptp.h>
 
-#include <crucible/Platform.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Platform.h>
 
 #include <array>
 #include <cerrno>

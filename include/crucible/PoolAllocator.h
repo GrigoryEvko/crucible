@@ -14,11 +14,11 @@
 
 #include <crucible/ForegroundCtx.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>
 #include <crucible/warden/Registry.h>
 #include <fixy/Bands.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
+#include <foundation/Platform.h>
 #include <foundation/Saturate.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>

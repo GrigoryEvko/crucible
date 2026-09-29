@@ -10,11 +10,11 @@
 // and never follows a pointer to reach them.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
 #include <fixy/Borrowed.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>

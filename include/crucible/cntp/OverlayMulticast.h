@@ -3,13 +3,13 @@
 // Nothing here sends a packet.  These are per-stripe parent and child routes
 // plus message slice plans for a transport to consume.
 
-#include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/EnumName.h>

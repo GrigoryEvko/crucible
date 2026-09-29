@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <fixy/Bits.h>
 #include <fixy/Ctx.h>
@@ -8,6 +7,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>

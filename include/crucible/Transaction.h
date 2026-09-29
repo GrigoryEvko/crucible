@@ -10,13 +10,13 @@
 // thread that wants a change sends it to the owner as a message.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>
 #include <fixy/CyclicBuffer.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/effects/Ctx.h>

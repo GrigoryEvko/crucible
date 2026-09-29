@@ -9,11 +9,11 @@
 
 #include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Platform.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <foundation/Brand.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/effects/Effect.h>

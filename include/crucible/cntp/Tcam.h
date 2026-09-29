@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
 #include <fixy/Checked.h>
@@ -10,6 +9,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>

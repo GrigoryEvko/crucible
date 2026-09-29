@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/canopy/Hlc.h>
 #include <crucible/canopy/VectorClock.h>
 #include <fixy/FixedArray.h>
@@ -8,6 +7,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/Saturate.h>
 #include <foundation/reflect/Hash.h>
 

@@ -48,9 +48,9 @@
 // merkle_hash or the memory plan. A probe measures how fast the host is
 // and never what it computes.
 
-#include <crucible/Platform.h>
 #include <crucible/ledger/Ledger.h>
 #include <fixy/OwnedMmap.h>
+#include <foundation/Platform.h>
 
 #include <bench_harness.h>
 

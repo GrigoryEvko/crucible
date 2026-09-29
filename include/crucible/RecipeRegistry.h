@@ -1,7 +1,6 @@
 #pragma once
 
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
@@ -9,6 +8,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Brand.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 

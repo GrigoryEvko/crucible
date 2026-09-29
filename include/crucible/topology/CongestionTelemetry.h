@@ -1,11 +1,11 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cog/CogIdentity.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 
 #include <algorithm>

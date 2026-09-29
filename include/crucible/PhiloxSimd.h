@@ -14,7 +14,7 @@
 // shifting, which is what the scalar routine's high-multiply does.
 
 #include <crucible/Philox.h>
-#include <crucible/Platform.h>
+#include <foundation/Platform.h>
 #include <foundation/Simd.h>
 
 #include <cstdint>

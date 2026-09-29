@@ -11,9 +11,9 @@
 #include <crucible/Arena.h>
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
-#include <crucible/Platform.h>
 #include <fixy/Bits.h>
 #include <fixy/Mutation.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>

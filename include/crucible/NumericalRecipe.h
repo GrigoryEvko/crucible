@@ -4,9 +4,9 @@
 // kernel compiled against one recipe therefore agrees with itself across
 // chips, to within the tolerance the recipe's determinism tier declares.
 
-#include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <fixy/Bits.h>
+#include <foundation/Platform.h>
 
 #include <bit>
 #include <cstdint>

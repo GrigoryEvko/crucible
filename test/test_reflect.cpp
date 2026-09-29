@@ -1,7 +1,7 @@
 #include <crucible/Reflect.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Platform.h>
+#include <foundation/Platform.h>
 #include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>

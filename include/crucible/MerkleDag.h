@@ -6,7 +6,6 @@
 #include <crucible/Expr.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Platform.h>
 #include <crucible/Reflect.h>
 #include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
@@ -19,6 +18,7 @@
 #include <fixy/Saturated.h>
 #include <fixy/Tagged.h>
 #include <fixy/handle/PublishOnce.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>

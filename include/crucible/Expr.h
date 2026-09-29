@@ -1,9 +1,9 @@
 #pragma once
 
 #include <crucible/Ops.h>
-#include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <fixy/Tagged.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 

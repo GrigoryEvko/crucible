@@ -4,9 +4,9 @@
 // shards, each of equal length and contiguous in index order.  A peer
 // decoder must assume the same ordering.
 
-#include <crucible/Platform.h>
 #include <fixy/Qtt.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Resources.h>

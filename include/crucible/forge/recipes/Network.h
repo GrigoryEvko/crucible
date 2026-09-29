@@ -1,10 +1,10 @@
 #pragma once
 
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Platform.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 
 #include <cstdint>
 #include <concepts>

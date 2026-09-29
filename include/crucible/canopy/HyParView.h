@@ -1,7 +1,6 @@
 #pragma once
 
 #include <crucible/Philox.h>
-#include <crucible/Platform.h>
 #include <crucible/canopy/SlotTable.h>
 #include <crucible/canopy/Swim.h>
 #include <crucible/cog/CogIdentity.h>
@@ -11,6 +10,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
 #include <algorithm>

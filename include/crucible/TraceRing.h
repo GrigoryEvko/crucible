@@ -41,7 +41,6 @@
 #include <cstring>
 #include <type_traits>
 
-#include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
 
@@ -54,6 +53,7 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/atoms/Hw.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/effects/Row.h>

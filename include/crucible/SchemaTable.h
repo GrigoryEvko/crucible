@@ -1,7 +1,6 @@
 #pragma once
 
 #include <crucible/ForegroundCtx.h>
-#include <crucible/Platform.h>
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
 #include <fixy/Borrowed.h>
@@ -9,6 +8,7 @@
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>

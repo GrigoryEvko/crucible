@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/Platform.h>
+#include <foundation/Platform.h>
 #include <foundation/algebra/lattices/BarrierStrengthLattice.h>
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
 

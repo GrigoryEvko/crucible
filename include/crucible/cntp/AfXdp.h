@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/cntp/Pacing.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Ctx.h>
@@ -8,6 +7,7 @@
 #include <fixy/Tagged.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

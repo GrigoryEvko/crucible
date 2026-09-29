@@ -2,8 +2,8 @@
 // would deliver, in the same order.  Everything below is a way of
 // cornering that one claim.
 
-#include <crucible/Platform.h>
 #include <crucible/TraceRing.h>
+#include <foundation/Platform.h>
 
 #include <atomic>
 #include "test_assert.h"

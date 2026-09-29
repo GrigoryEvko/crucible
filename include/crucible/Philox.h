@@ -6,10 +6,10 @@
 // tier survives into whatever consumes the bytes. Test and bench code takes
 // the raw form because bit-level inspection is the point there.
 
-#include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
 #include <fixy/fp/Polynomial.h>
+#include <foundation/Platform.h>
 
 #include <array>
 #include <bit>

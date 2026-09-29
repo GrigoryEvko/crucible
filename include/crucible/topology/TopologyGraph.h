@@ -1,9 +1,9 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
 #include <fixy/Ctx.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 

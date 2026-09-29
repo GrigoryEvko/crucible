@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/canopy/Crdt.h>
 #include <crucible/canopy/SlotTable.h>
 #include <crucible/canopy/Swim.h>
@@ -8,6 +7,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
 #include <concepts>

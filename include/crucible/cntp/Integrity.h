@@ -4,10 +4,10 @@
 // the hash is platform-independent so a receiver on other hardware recomputes
 // the same value.
 
-#include <crucible/Platform.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
+#include <foundation/Platform.h>
 #include <foundation/Simd.h>
 
 #include <array>

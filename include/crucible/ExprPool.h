@@ -3,13 +3,13 @@
 #include <crucible/Arena.h>
 #include <crucible/Expr.h>
 #include <crucible/Ops.h>
-#include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
 #include <fixy/Bands.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 #include <foundation/Saturate.h>
 #include <foundation/SwissTableBuffer.h>
 #include <foundation/contracts/Decide.h>

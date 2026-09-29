@@ -10,12 +10,12 @@
 // this class deliberately does not have.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Cyclic.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 
 #include <array>
 #include <cstdint>

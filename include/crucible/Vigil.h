@@ -32,7 +32,6 @@
 #include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
@@ -48,6 +47,7 @@
 #include <fixy/Tags.h>
 #include <fixy/handle/PublishOnce.h>
 #include <fixy/session/VigilMode.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

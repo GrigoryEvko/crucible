@@ -1,9 +1,9 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Refined.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/effects/Effect.h>
 

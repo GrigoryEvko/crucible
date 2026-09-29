@@ -5,11 +5,11 @@
 // so the rewrite never has to ask the frontend.
 
 #include <crucible/Ops.h>
-#include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <fixy/Bits.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
 

@@ -15,7 +15,6 @@
 
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceGraph.h>
 #include <fixy/Ctx.h>
@@ -31,6 +30,7 @@
 #include <fixy/os/SpinLock.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Platform.h>
 #include <foundation/Saturate.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>

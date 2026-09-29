@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/canopy/HyParView.h>
 #include <crucible/canopy/SlotTable.h>
 #include <crucible/cntp/Integrity.h>
@@ -10,6 +9,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>

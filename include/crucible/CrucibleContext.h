@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
@@ -9,6 +8,7 @@
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>

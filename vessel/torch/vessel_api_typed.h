@@ -53,7 +53,6 @@
 
 #include "vessel_api.h"
 
-#include <crucible/Platform.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
@@ -61,6 +60,7 @@
 #include <crucible/Vigil.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Platform.h>
 
 #include <bit>
 #include <cstddef>

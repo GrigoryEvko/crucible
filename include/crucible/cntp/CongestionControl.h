@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Platform.h>
 #include <fixy/Bits.h>
 #include <fixy/Path.h>
 #include <fixy/Refined.h>
@@ -8,6 +7,7 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/Fs.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>

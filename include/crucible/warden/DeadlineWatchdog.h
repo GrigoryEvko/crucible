@@ -32,12 +32,12 @@
 // not reproducible. Calling the watchdog from a context that must
 // replay bit-exactly is a structural error.
 
-#include <crucible/Platform.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
+#include <foundation/Platform.h>
 #include <foundation/Saturate.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>

@@ -7,10 +7,10 @@
 #include <vector>
 
 #include <crucible/Expr.h>
-#include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 
 namespace crucible {
