@@ -44,34 +44,8 @@ src/observe/HdrHistogram.cpp:explicit-instantiation:class HdrHistogram<3,3600000
 src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<2>
 src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<4>
 
-# The frozen session layer specializes its own handle in the headers that
-# carry each protocol shape.  The freeze admits no new site, and the old
-# tree ends by deletion.
-include/crucible/sessions/_SessionCheckpoint.h:friend-template-specialization:template<typename ProtoBase,typename ProtoRollback,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
-include/crucible/sessions/_SessionCrash.h:friend-template-specialization:template<CrashClass C,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
-include/crucible/sessions/_SessionDelegate.h:friend-template-specialization:template<typename T,typename K,std::uint64_t MinEpoch,std::uint64_t MinGeneration,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
-include/crucible/sessions/_SessionDelegate.h:friend-template-specialization:template<typename T,typename K,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
-
-# The frozen session layer declares each handle primary with no body, and
-# the same header gives one partial specialization for each protocol shape.
-# A declaration with no body does not make its file the owner of the
-# template, so each shape needs its entry.  The old tree ends by deletion.
+# The frozen permission layer declares inherit_from_list with no body, and
+# the same header gives its partial specialization.  A declaration with no
+# body does not make its file the owner of the template, so the shape needs
+# its entry.  The old tree ends by deletion.
 include/crucible/permissions/_PermissionInherit.h:friend-template-specialization:template<typename DeadTag,typename...SurvivorTags>struct inherit_from_list<
-include/crucible/sessions/_PermissionedSession.h:friend-template-specialization:template<CrashClass C,typename PS,typename Resource,typename LoopCtx>class[[nodiscard]]PermissionedSessionHandle<
-include/crucible/sessions/_PermissionedSession.h:friend-template-specialization:template<typename...Branches,typename PS,typename Resource,typename LoopCtx>class[[nodiscard]]PermissionedSessionHandle< x2
-include/crucible/sessions/_PermissionedSession.h:friend-template-specialization:template<typename InnerProto,typename InnerPS,typename K,std::uint64_t MinEpoch,std::uint64_t MinGeneration,typename PS,typename Resource,typename LoopCtx>class x2
-include/crucible/sessions/_PermissionedSession.h:friend-template-specialization:template<typename InnerProto,typename InnerPS,typename K,typename PS,typename Resource,typename LoopCtx>class[[nodiscard]]PermissionedSessionHandle< x2
-include/crucible/sessions/_PermissionedSession.h:friend-template-specialization:template<typename ProtoBase,typename ProtoRollback,typename PS,typename Resource,typename LoopCtx>class[[nodiscard]]PermissionedSessionHandle<
-include/crucible/sessions/_PermissionedSession.h:friend-template-specialization:template<typename PS,typename Resource,typename LoopCtx>class[[nodiscard]]PermissionedSessionHandle<
-include/crucible/sessions/_PermissionedSession.h:friend-template-specialization:template<typename T,typename R,typename PS,typename Resource,typename LoopCtx>class[[nodiscard]]PermissionedSessionHandle< x2
-include/crucible/sessions/_Session.h:friend-template-specialization:template<typename...Branches,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
-include/crucible/sessions/_Session.h:friend-template-specialization:template<typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle<
-include/crucible/sessions/_Session.h:friend-template-specialization:template<typename T,typename R,typename Resource,typename LoopCtx>class[[nodiscard]]SessionHandle< x2
-
-# The session handle of fixy::session: the primary is declared with no
-# body, and the same header gives one partial specialization for each
-# protocol shape.  The declaration alone does not make the header the owner
-# of the template, so each shape needs its entry.
-include/fixy/session/Handle.h:friend-template-specialization:template<typename...Branches,typename Resource,typename LoopCtx,AbandonmentPolicy Policy,typename PS>class[[nodiscard]]SessionHandle< x2
-include/fixy/session/Handle.h:friend-template-specialization:template<typename Resource,typename LoopCtx,AbandonmentPolicy Policy,typename PS>class[[nodiscard]]SessionHandle<
-include/fixy/session/Handle.h:friend-template-specialization:template<typename T,typename R,typename Resource,typename LoopCtx,AbandonmentPolicy Policy,typename PS>class[[nodiscard]]SessionHandle< x2

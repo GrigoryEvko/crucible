@@ -24,4 +24,3 @@ include/crucible/effects/_ExecCtx.h x7  — the header-time self-tests of ExecCt
 include/crucible/safety/_ThreadName.h x1  — the runtime smoke test takes a startup context from the door.
 include/crucible/safety/_Mutation.h x1  — the runtime smoke test takes a background context from the door.
 include/crucible/safety/_OwnedRegion.h x1  — the runtime smoke test takes a test context from the door.
-include/crucible/sessions/_SessionRowExtraction.h x1  — the runtime smoke test of the payload row takes a background context from the door.

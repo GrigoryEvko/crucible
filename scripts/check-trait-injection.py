@@ -24,8 +24,6 @@ FAMILY B: FAIL-CLOSED RELATIONS
       predicate_implies<P, Q>       a refinement subsumption.
       survivor_registry<DeadTag>    who inherits the permissions of a dead
                                     peer on crash-stop recovery.
-      is_subsort<T, U>              a payload subtype, which widens what a
-                                    session channel accepts.
 
     can_split_into and can_split_into_pack have their own guard,
     scripts/check-splits-orphan.py.
@@ -104,11 +102,11 @@ WHAT IT CANNOT SEE
 
 AUTHORING SETS ARE PER RELATION
     A single shared set would admit a forged is_graded_specialization from
-    each directory that may declare is_subsort.  Each relation carries its own
-    globs in RELATIONS below, and `*` spans `/`.  Widening a set is a one-line
-    edit that a reviewer sees.  test/ may declare Family B and C edges, because
-    the negative-compile fixtures and the sentinels are the witnesses that the
-    relations stay fail-closed.
+    each directory that may declare machine_transition.  Each relation
+    carries its own globs in RELATIONS below, and `*` spans `/`.  Widening a
+    set is a one-line edit that a reviewer sees.  test/ may declare Family B
+    and C edges, because the negative-compile fixtures and the sentinels are
+    the witnesses that the relations stay fail-closed.
 
 Usage
     check-trait-injection.py              scan the tree
@@ -168,7 +166,6 @@ RELATIONS = (
              ("include/crucible/safety/_Refined.h", "include/crucible/safety/_RefinedAlgebra.h", "test/*")),
     Relation("survivor_registry", "specialization", ("survivor_registry",),
              ("include/crucible/permissions/_PermissionInherit.h", "test/*")),
-    Relation("is_subsort", "specialization", ("is_subsort",), ("include/crucible/sessions/*.h", "test/*")),
     Relation("admitted_retags", "reopening", ("admitted_retags",), ("include/fixy/Tagged.h", "test/*")),
     Relation("admitted_policies", "reopening", ("admitted_policies",), ("include/fixy/Secret.h", "test/*")),
     Relation("admitted_transitions", "reopening", ("admitted_transitions",), ("include/fixy/Machine.h", "test/*")),
@@ -632,11 +629,6 @@ def self_test() -> int:
             "template <>\n"
             "struct survivor_registry<PlantedDeadTag> { using type = inheritance_list<PlantedForeignTag>; };\n"
             "}\n"),
-        "src/planted/subsort.cpp": (
-            "namespace crucible::safety::proto {\n"
-            "template <>\n"
-            "struct is_subsort<PlantedNarrow, PlantedWide> : std::true_type {};\n"
-            "}\n"),
         "src/planted/retags.cpp": (
             "namespace fixy::tags::admitted_retags {\n"
             "inline constexpr ::foundation::fail_closed::edge<source::Sanitized, source::External> planted{};\n"
@@ -700,7 +692,6 @@ def self_test() -> int:
         ("machine_transition", "src/planted/machine.cpp", 3),
         ("predicate_implies", "src/planted/implies.cpp", 2),
         ("survivor_registry", "src/planted/survivor.cpp", 2),
-        ("is_subsort", "src/planted/subsort.cpp", 2),
         ("admitted_retags", "src/planted/retags.cpp", 1),
         ("admitted_retags", "src/planted/retags.cpp", 5),
         ("admitted_policies", "src/planted/policies.cpp", 1),
@@ -752,8 +743,6 @@ def self_test() -> int:
             "namespace crucible { template <> struct is_graded_specialization<planted::Exempt<int>> {}; }\n"),
         "include/crucible/safety/source/Planted.h": (
             "namespace crucible::safety { template <> struct retag_policy<source::Raw, source::Sanitized> {}; }\n"),
-        "include/crucible/sessions/Planted.h": (
-            "namespace crucible::safety::proto { template <> struct is_subsort<A, B> : std::true_type {}; }\n"),
         "test/planted_survivor.cpp": (
             "namespace crucible::safety { template <> struct survivor_registry<Dead> {}; }\n"),
         "include/crucible/safety/_Machine.h": (
