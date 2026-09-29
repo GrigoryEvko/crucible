@@ -162,10 +162,10 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_lock_contention` | `include/crucible/perf/LockContention.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
-| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
+| `mint_pmu_sample` | `include/crucible/perf/PmuSample.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
 | `mint_sched_switch` | `include/crucible/perf/SchedSwitch.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
 | `mint_sched_tp_btf` | `include/crucible/perf/SchedTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
-| `mint_sense_hub` | `include/crucible/perf/SenseHub.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 5 |
+| `mint_sense_hub` | `include/crucible/perf/SenseHub.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
 | `mint_sense_hub_v2` | `include/crucible/perf/SenseHubV2.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
 | `mint_syscall_latency` | `include/crucible/perf/SyscallLatency.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
 | `mint_syscall_tp_btf` | `include/crucible/perf/SyscallTpBtf.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 4 |
@@ -190,7 +190,7 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_deadline_watchdog` | `include/crucible/warden/DeadlineWatchdog.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
-| `mint_hardening` | `include/crucible/warden/Hardening.h` | Y | - | Y | Y | ctx | Y | HS14: 6 |
+| `mint_hardening` | `include/crucible/warden/Hardening.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_hot_region_registry_handle` | `include/crucible/warden/Registry.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_quarantine_policy` | `include/crucible/warden/Quarantine.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
 

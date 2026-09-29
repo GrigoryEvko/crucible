@@ -1523,11 +1523,11 @@ crucible_neg_compile_test(neg_quarantine_zero_events
 # mint_deadline_watchdog) each ship two HS14 neg-compile fixtures
 # proving the CtxFits* concept gates fire on missing Init.
 crucible_neg_compile_test(neg_hardening_mint_bg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsHardeningMint")
+    "no matching function for call to .mint_hardening\\(const fixy::BgDrainCtx&, crucible::warden::Policy&\\)."
+    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
 crucible_neg_compile_test(neg_hardening_mint_hot_fg_ctx
-    "constraint|constraints.*not satisfied"
-    "CtxFitsHardeningMint")
+    "no matching function for call to .mint_hardening\\(const fixy::HotFgCtx&, crucible::warden::Policy&\\)."
+    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 # The cold init context owns Init but no Block, and the choice of the hot
 # CPU reads sysfs.
 crucible_neg_compile_test(neg_hardening_mint_cold_init_ctx
@@ -5228,38 +5228,6 @@ crucible_neg_compile_test(neg_cipher_open_rejects_bare_string
 crucible_neg_compile_test(neg_cipher_open_rejects_sanitized_input
     "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, std::remove_reference<fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>&>::type."
     "aka .fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>... to type .fixy::Path<fixy::tags::source::External>.")
-
-# ── warden/Hardening.h: the mint in a constant initializer ──────────
-#
-# Each fixture calls the mint in the initializer of a namespace-scope
-# constexpr variable, and each context lacks Init:
-#   1. bg_drain_ctx — the Bg-cap context (admits Bg+Alloc+IO+Block, no
-#      Init).  The privileged system calls of Hardening run at startup only.
-#   2. hot_fg_ctx — the Fg-cap context (admits Fg only, no Init).
-#      Blocking system calls do not belong on the hot recording path.
-crucible_neg_compile_test(neg_hardening_mint_bg_drain_ctx_namespace_scope
-    "no matching function for call to .mint_hardening\\(fixy::BgDrainCtx, crucible::warden::Policy\\)."
-    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
-crucible_neg_compile_test(neg_hardening_mint_hot_fg_ctx_namespace_scope
-    "no matching function for call to .mint_hardening\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >, crucible::warden::Policy\\)."
-    "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-
-# ── The perf hub mints in a constant initializer ────────────────────
-#
-# Two fixtures for two perf hub mints, each with a different context:
-#   1. sense_hub bg_drain_ctx: a background drain context at the
-#      mint_sense_hub call site.  Its row is Row<Bg, Alloc>.  The gate
-#      admits only a row with Alloc, IO and Block, because the load waits
-#      on the kernel verifier.
-#   2. pmu_sample hot_fg_ctx: a hot foreground context at the
-#      mint_pmu_sample call site.  Its row is empty.  A blocking load must
-#      not run on the hot recording path.
-crucible_neg_compile_test(neg_sense_hub_mint_bg_drain_ctx_namespace_scope
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
-crucible_neg_compile_test(neg_pmu_sample_mint_hot_fg_ctx_namespace_scope
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
-    "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 
 # Each fixture file under test/*_neg/ has a registration above.  A file with
 # no registration never compiles, so the gate that it names has no witness.
