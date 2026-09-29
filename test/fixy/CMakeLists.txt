@@ -30,8 +30,8 @@ endfunction()
 # Negative-compile fixtures for the fixy layer.  Same contract as
 # foundation_neg_compile_test in test/foundation/CMakeLists.txt: at least
 # two regexes (reason + project token), every regex required, strict
-# single-error mode on.  The label is fixy_neg_new because "fixy_neg" is
-# the old corpus under test/fixy_neg/.
+# single-error mode on.  The label is fixy_neg_new, because the fixtures
+# under test/fixy_neg/ have the label fixy_neg.
 function(fixy_neg_compile_test name)
   set(_diags ${ARGN})
   list(LENGTH _diags _count)
@@ -507,8 +507,7 @@ fixy_neg_compile_test(neg_rule_v401_wide_scope_weak_fence
 # Two rules.  V101 refuses on the payload, as V203 does: a replay-
 # deterministic band against an ISA pinned to one vendor trunk.  V402
 # reads two axes of the pack, a trunk-pinned scope against a trunk-pinned
-# ISA, and it is the rule the old catalog carried as a marker trait no
-# atom ever set.  Neither fixture is hot, so the regime rules stand down.
+# ISA.  Neither fixture is hot, so the regime rules stand down.
 fixy_neg_compile_test(neg_rule_v101_replay_pinned_isa
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) V101:"
@@ -542,13 +541,13 @@ fixy_neg_compile_test(neg_rule_f102_replay_contract_fast
   "Collision rule\\(s\\) F102:"
   "${_fixy_tier5_member}")
 
-# ── Three rules the old tree carried as marker traits ─────────────────
+# ── Three rules whose premise is a grade ──────────────────────────────
 #
-# Each premise is a grade in the new tree, so each rule fires
-# structurally.  Two fixtures per rule, one per mismatch class the rule
-# reads, and each pack trips its rule alone.  S011's packs state a trust
-# grade so T001 stands down; L003's name no suspension and no Bg row so
-# L002 stands down.
+# Each premise is a grade, so each rule fires structurally.  Two
+# fixtures per rule, one per mismatch class that the rule reads, and each
+# pack trips its rule alone.  The packs of S011 state a trust grade, so
+# T001 stands down.  The packs of L003 name no suspension and no Bg row,
+# so L002 stands down.
 fixy_neg_compile_test(neg_rule_s011_capability_replay_pure
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) S011:"
@@ -852,13 +851,12 @@ fixy_neg_compile_test(neg_secret_transform_returns_void
   "required for the satisfaction of .TransformReturnsNonVoid<F, T>."
   "the expression .!\\(is_void_v<typename std::invoke_result<F, T&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
 
-# The combinatorial half, as one walk over the atom catalog instead of
-# the 566 files the old corpus spent on it.  Registered as a POSITIVE
-# test: the claims are static_asserts, so the build failing IS the
-# failure, and the run prints the shape of the input set — how many atoms
-# were walked, how many are refused alone and which they are, how many
-# axes contributed a same-axis pair, how many atoms carry a lift — so a
-# reader can judge whether the walk covered anything.
+# The combinatorial half, as one walk over the atom catalog.
+# Registered as a POSITIVE test: the claims are static_asserts, so the
+# build failing IS the failure, and the run prints the shape of the input
+# set — how many atoms were walked, how many are refused alone and which
+# they are, how many axes contributed a same-axis pair, how many atoms
+# carry a lift — so a reader can judge whether the walk covered anything.
 fixy_test(rejections_generated)
 
 # A cv-qualified atom fails the same-as clause of IsAtom; the compiler
@@ -1683,8 +1681,8 @@ fixy_neg_compile_test(neg_saturated_checked_op_on_float
   "constraints not satisfied"
   "required for the satisfaction of .integral<T>. \\[with T = float\\]")
 
-# The ninth value-wrapper header.  The old spelling was a pair that included
-# each other; here the sanitizer follows the declarations it reads.
+# The ninth value-wrapper header.  fixy/Path.h holds the declarations
+# and, after them, the sanitizer that reads them.
 fixy_test(test_path)
 
 # CipherPath has no edge into Sanitized, so its lane never reaches the
@@ -1860,9 +1858,9 @@ fixy_neg_compile_test(neg_sess_compose_at_branch_no_choice
 #
 # Every operation of Protocol.h is one fold over the registry in
 # fixy::session::combinators, so a node the registry does not know is
-# refused where a query first meets it, and the message names it.  The
-# involution and empty-choice fixtures compiled before the repair: the
-# two old primaries answered for every type they did not know.
+# refused where a query first meets it, and the message names it.  A
+# primary template that answered for each type that it does not know
+# would compile the involution and empty-choice fixtures.
 fixy_neg_compile_test(neg_sess_unregistered_combinator_involutive
   "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
   "the combinator .*Teleport<int, fixy::session::End> has no registration")
@@ -3497,9 +3495,8 @@ fixy_neg_compile_test(neg_swmr_session_reader_session_lvalue_handle
 # ── The handle poles and the stage shape ──────────────────────────────
 #
 # Which pole of a channel a handle is, and what shape a pipeline-stage
-# body has.  Both were in namespace crucible::safety::extract, which 57
-# headers reopened; they arrive here beside the channels whose handles
-# they read.
+# body has.  fixy/concurrent/HandleTraits.h and StageShape.h are beside
+# the channels whose handles they read.
 fixy_test(test_handle_traits)
 fixy_test(test_stage_shape)
 
@@ -3535,24 +3532,22 @@ fixy_neg_compile_test(neg_stage_shape_value_preserving_on_non_stage
 
 # ── The payload row is fail-closed ────────────────────────────────────
 #
-# The extractor is entirely compile-time, so this test is first the
-# sentinel that compiles its static_assert wall: until Stage.h lands,
-# nothing else includes the header.  It also pins the three roster
-# cardinalities, which is what makes a new payload family a two-place
-# edit a reviewer sees.
+# The extractor is entirely compile-time.  This test compiles its
+# static_assert wall and pins the three roster cardinalities, so a new
+# payload family is an edit in two places that a reviewer sees.
 fixy_test(test_payload_row)
 #
-# The old extractor's primary template answered Row<> for a payload
-# nobody classified, and an empty row means "needs no capability", so an
-# unrecognised wrapper satisfied every context.  Its own header said so.
-# The primary is a static_assert now, and these two fixtures are what
-# stands on it.  The first probes a wrapper holding an int, where Row<>
-# would have been right for the wrong reason; the second probes the same
-# wrapper holding a computation engaged at Row<Bg>, where Row<> would
-# have let a foreground context admit a background effect.  A check that
-# read the wrapper's contents rather than its family would pass the
-# first and fail the second, so both are required.  The type arrives in
-# the substitution note, which the fixture source does not contain.
+# An empty row means "needs no capability".  A primary template that
+# answered Row<> for a payload that nobody classified would let an
+# unrecognised wrapper satisfy each context.  The primary is a
+# static_assert, and these two fixtures stand on it.  The first probes a
+# wrapper that holds an int, where Row<> is right for the wrong reason.
+# The second probes the same wrapper around a computation engaged at
+# Row<Bg>, where Row<> lets a foreground context admit a background
+# effect.  A check that read the contents of the wrapper and not its
+# family would pass the first and fail the second, so both are
+# necessary.  The type arrives in the substitution note, which the
+# fixture source does not contain.
 fixy_neg_compile_test(neg_payload_row_unclassified_wrapper
   "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "with T = \\{anonymous\\}::UnclassifiedWrapper<int>")
@@ -3857,26 +3852,24 @@ fixy_neg_compile_test(neg_handle_lazy_init_explicit_conversion
   "no matching function for call to .fixy::handle::Lazy<int>::get_or_init"
   "the expression .is_invocable_r_v<T, F> \\[with T = int; F = .*\\]. evaluated to .false.")
 
-# ── The fixy/os smoke tests, migrated out of the headers ─────────────
+# ── The fixy/os smoke tests ──────────────────────────────────────────
 #
-# Each of these used to be a `runtime_smoke_test` inside the header it
-# exercises, compiled into every translation unit that included it.
-# Removing them is also what let three entries leave
-# scripts/ctx-testing-boundary-allowlist.txt: the headers no longer name
-# foundation::effects::testing, and the guard fails on a stale entry.
+# Each test exercises its header from outside.  The headers hold no
+# runtime smoke test and do not name foundation::effects::testing, so a
+# translation unit that includes one compiles no test.
 fixy_test(test_os_time)
 
-# The gate and the clamp safety/_Mutation.h's MonotonicClock carried,
-# restored to fixy/os/Time.h.  A clock read on the replay-bound
-# foreground path makes replay diverge across machines, so the reader is
-# minted only by a context owning Bg, Init or Test, and its constructor
-# is private with the mint as its only friend.  The first fixture is a
-# foreground context refused at the mint: the second regex names the
-# ported gate and the third the three effects it demanded, as the
-# compiler spells them, which the source does not.  The second fixture
-# is direct construction through the ported name, refused as private;
-# the constructor is matched with its parentheses, which a brace-spelled
-# fixture never contains.
+# The gate and the clamp of the monotonic clock in fixy/os/Time.h.  A
+# clock read on the replay-bound foreground path makes replay diverge
+# across machines.  So only a context that owns Bg, Init or Test mints
+# the reader, and its constructor is private with the mint as its only
+# friend.  The first fixture is a foreground context that the mint
+# refuses.  Its second regex names the gate, and its third names the
+# three effects that the gate demands, as the compiler spells them and
+# the source does not.  The second fixture constructs the reader
+# directly, and the compiler refuses it as private.  The regex matches
+# the constructor with its parentheses, which a fixture spelled with
+# braces never contains.
 fixy_neg_compile_test(neg_os_clock_reader_foreground_ctx
   "no matching function for call to .mint_clock_reader<foundation::algebra::lattices::ClockSource::Monotonic>\\(const \\{anonymous\\}::ForegroundCtx&\\)"
   "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]"
@@ -4086,13 +4079,12 @@ fixy_neg_compile_test(neg_os_sched_mint_priority_test_ctx
   "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, "
   "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
 
-# ── The mapping and io_uring surfaces get their first positive test ───
+# ── The positive tests of the mapping and io_uring surfaces ───────────
 #
-# Thirteen negative-compile fixtures stand over the headers these were
-# ported from, and not one positive case: the corpus says what the gates
-# refuse and nothing about what the mints do.  These two make real
-# mappings, set up a real ring, and move real bytes, so a mint that
-# compiles and returns garbage is caught.
+# The negative-compile fixtures say what the gates refuse.  These two
+# tests say what the mints do: they make real mappings, set up a real
+# ring and move real bytes, so a mint that compiles and returns garbage
+# fails.
 #
 # Legs the kernel refuses are skipped rather than failed.  io_uring can
 # be off entirely, and copy_file_range refuses some filesystem pairs.
@@ -4326,19 +4318,16 @@ fixy_neg_compile_test(neg_owned_file_temporary_without_io
 
 # ── The file surface and the three durable writers ───────────────────
 #
-# Neither header, nor the two they were ported from, ever had a
-# positive test; sixteen negative fixtures said what the gates refuse
-# and nothing about what the mints do — which is how the cold writer
-# shipped pinned to a commit that returned ENOSYS on every call.  The
-# test runs the whole sequence in an mkdtemp directory, and its second
-# leg is that path: it now has to reach the target.
+# The sixteen negative fixtures below say what the gates refuse.  This
+# test says what the mints do: it runs the whole sequence in an mkdtemp
+# directory.  Its second leg is the cold writer, which must reach the
+# target and not stop at a commit that returns ENOSYS on each call.
 fixy_test(test_fs)
 
-# The sixteen fixtures, ported from the old tree's v_224 / v_226 / v_228
-# families and renamed for what each refuses.  Every second regex is a
-# string the compiler emits and the fixture source does not: the
-# anonymous-namespace prefix on the context type, the libstdc++ inline
-# namespace on the path type, or the deduced call with its `> >`
+# The sixteen fixtures, each named for what it refuses.  Every second
+# regex is a string the compiler emits and the fixture source does not:
+# the anonymous-namespace prefix on the context type, the libstdc++
+# inline namespace on the path type, or the deduced call with its `> >`
 # spacing.  So the source echo cannot satisfy its own gate.
 fixy_neg_compile_test(neg_os_fs_mint_file_ctx_lacks_block
   "no matching function for call"
@@ -4468,16 +4457,15 @@ fixy_test(test_wrapper_verification)
 # injections, fifty-three asserted refused and two admitted by design
 # (cheat 4 and cheat 18).  Each injection is paired with the proof that
 # it took on the variable it named, so the refusal is the concept's.
-# The old probe admitted twenty-seven trait injections, because a
-# detection trait can be specialized from anywhere.  The seventeen with
-# a target here are all refused: the new tree's detection is a concept
-# over a reflection query and the opt-in is a member, so the
-# specialization reaches no gate.
+# Any translation unit can specialize a detection trait.  Here the
+# detection is a concept over a reflection query and the opt-in is a
+# member, so a specialization reaches no gate, and the concept refuses
+# each of the seventeen trait injections that has a target.
 fixy_test(test_cheat_probe)
 
-# The injection that no longer compiles at all: graded_modality's
-# primary is constrained to Graded, so specializing it for a fake
-# substrate is a constraint failure, not an inert declaration.
+# An injection that does not compile: the primary of graded_modality is
+# constrained to Graded, so a specialization for a fake substrate is a
+# constraint failure, not an inert declaration.
 fixy_neg_compile_test(neg_cheat_graded_modality_injection
   "template constraint failure"
   "IsGraded<T>. \\[with T = FakeSubstrate\\]")
@@ -4606,9 +4594,9 @@ fixy_neg_compile_test(neg_blocking_guard_without_permission
   "candidate expects 3 arguments, 2 provided")
 
 # Deviation 1 of fixy/os/Spawn.h, and the hole fixy/Throws.h closes: the
-# callable here carries the atom at a NAMED exception family, which the
-# old needle did not match because it compared against the default
-# specialization alone.
+# callable here carries the atom at a NAMED exception family.  A check
+# that compares against the default specialization alone does not match
+# it.
 fixy_neg_compile_test(neg_spawn_callable_carries_throws
   "static assertion failed: mint_spawn: a callable.s type carries fixy::atom::ctrl::throws"
   "tears through the join")
@@ -4682,13 +4670,14 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_not_copyable
 
 # ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
-# The port carried both gates of fixy/Qtt.h and neither table's arms, so
-# Affine<Linear<int>> compiled for a release and an exactly-once
-# obligation silently became at-most-once.  Both recognisers are
-# structural now, and these four fixtures are what holds them there:
-# each names one composition the gates must refuse, and the second
-# regex is the compiler's rendering of the instantiation, which the
-# fixture source never spells.
+# Both recognisers of fixy/Qtt.h are structural: one reflection query
+# recognises each grade of Qtt, and one concept names the two permission
+# tokens.  A recogniser that answers false for each type lets
+# Affine<Linear<int>> compile for a release, and an exactly-once
+# obligation then becomes at-most-once.  These four fixtures hold both
+# recognisers: each names one composition that the gates must refuse,
+# and the second regex is the compiler's rendering of the instantiation,
+# which the fixture source never spells.
 fixy_neg_compile_test(neg_qtt_affine_over_linear
   "Affine<Token> over a consume-disciplined token is unsound"
   "QttGrade::Zero, fixy::Qtt<foundation::algebra::lattices::QttGrade::One")
@@ -4846,12 +4835,10 @@ fixy_neg_compile_test(neg_disjoint_split_refuses_spelled_name
 # list did not reach 16 headers of the session layer, and the census never
 # saw the decorators, doors and queries that they declare.  The build does
 # the glob again, so a header that a later commit adds joins the census,
-# and a carrier in it with no row fails the census.  A superseded _Name.h
-# header is not public.
+# and a carrier in it with no row fails the census.
 fixy_test(test_row_hash_wrappers)
 file(GLOB_RECURSE _census_public_headers CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}/include"
   "${CMAKE_SOURCE_DIR}/include/fixy/*.h" "${CMAKE_SOURCE_DIR}/include/foundation/*.h")
-list(FILTER _census_public_headers EXCLUDE REGEX "(^|/)_[^/]*\\.h$")
 list(SORT _census_public_headers)
 list(LENGTH _census_public_headers _census_public_header_count)
 if(_census_public_header_count EQUAL 0)

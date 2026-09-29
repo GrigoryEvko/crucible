@@ -962,8 +962,8 @@ foundation_neg_compile_test(neg_brand_read_view_proves_another_region
   "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
 
 # A read proof comes from a door, and from nothing else.  A program that
-# defines the old host type reaches a private constructor, because no
-# friend names that type.
+# defines foundation::permissions::host::BorrowIssuer reaches a private
+# constructor, because no friend names that type.
 foundation_neg_compile_test(neg_read_view_host_door_closed
   "is private within this context"
   "ReadView<Tag, Brand>::ReadView\\(\\) .with Tag = .*Region")
@@ -1330,9 +1330,8 @@ foundation_test(test_share_pool_double_deposit_aborts)
 #
 # The static_assert message a mint hands the compiler when a row is not
 # admitted: the site, the caller's row, the row the callee requires and
-# the offending atoms, built at compile time.  The test keeps the file
-# name of the one it is ported from minus its _compile suffix, and the
-# runtime smoke the old header carried inline is its first case.
+# the offending atoms, built at compile time.  The first case reads the
+# message from a running program.
 foundation_test(test_row_mismatch)
 
 # A type that is not a diagnostic tag in the tag slot reaches the routed
@@ -1367,22 +1366,17 @@ foundation_neg_compile_test(neg_diag_category_of_refuses_an_unregistered_tag
 # ── The row hash, as one fold ─────────────────────────────────────────
 #
 # The half of the cache key that separates one effect regime from
-# another.  The old header carried a partial specialisation per wrapper,
-# fifty-two of them, each with a hand-allocated salt byte; here one
-# specialisation over Graded covers every wrapper, because a wrapper in
-# this tree is a spelling over Graded.
+# another.  One specialisation over Graded covers each wrapper, because
+# a wrapper in this tree is a spelling over Graded.
 #
-# Almost everything the header owes a consumer is a constant, so the
-# test is mostly static assertions and exists to make them run: an
-# assertion inside a header is checked only where some translation unit
-# includes it, and nothing else in the new tree includes this one yet.
-# Two cases are not constants, and they are the ones a header cannot
-# check on its own: that the folded values reach a running program.
+# Almost everything that the header owes a consumer is a constant, so
+# the test is mostly static assertions.  Two cases are not constants,
+# and a header cannot check them on its own: the folded values reach a
+# running program.
 #
 # The wire-format literals in that file are the published on-the-wire
-# contract and are reproduced from the old header unchanged, which is
-# the proof that the fold did not move a single row already in a peer's
-# cache.
+# contract.  The test fails when the fold moves a row that a peer
+# already holds in its cache.
 foundation_test(test_row_hash)
 
 # Legal C++ that tries to give two types one stable id.  An attack that
