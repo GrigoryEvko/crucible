@@ -190,7 +190,7 @@ inline constexpr cog::OffloadTargetRefusals<SharpError> sharp_target_refusals{
 [[nodiscard]] constexpr std::expected<void, SharpError>
 validate_sharp_switch(cog::CogIdentity const& fabric_switch, cog::NvSwitchTargetCaps const& caps) noexcept {
     return cog::validate_offload_target<cog::SwitchFeature::Sharp, cog::CogKind::NvSwitch>(fabric_switch, caps,
-                                                                                          sharp_target_refusals);
+                                                                                           sharp_target_refusals);
 }
 
 [[nodiscard]] constexpr std::expected<void, SharpError> validate_sharp_recipe(SharpRecipeLaws laws,
@@ -272,8 +272,8 @@ mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitch
 
 template <class Ctx>
     requires CtxFitsSharpMint<Ctx>
-[[nodiscard]] constexpr std::expected<SharpContext, SharpError> mint_sharp_context(Ctx const&,
-                                                                                  DeclaredSharpFabricPlan plan) noexcept {
+[[nodiscard]] constexpr std::expected<SharpContext, SharpError>
+mint_sharp_context(Ctx const&, DeclaredSharpFabricPlan plan) noexcept {
     auto const& raw = plan.value();
     if (!raw.runtime_loaded) {
         return std::unexpected(SharpError::RuntimeUnavailable);

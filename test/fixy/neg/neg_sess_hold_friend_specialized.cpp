@@ -24,7 +24,8 @@ namespace fixy::session {
 template <>
 class PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::ForgeTag>> {
 public:
-    static auto steal(PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::Region>>& held) {
+    static auto
+    steal(PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::Region>>& held) {
         return std::move(std::get<0>(held.slots_));
     }
 };

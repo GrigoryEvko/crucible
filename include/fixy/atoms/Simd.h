@@ -171,7 +171,8 @@ inline constexpr std::array<std::pair<simd::SimdIsa, std::uint16_t>, 12> simd_re
 
 [[nodiscard]] consteval std::size_t simd_register_bits_rows_for_(simd::SimdIsa isa) noexcept {
     std::size_t rows = 0;
-    for (const auto& row : simd_register_bits_table) rows += (row.first == isa) ? 1U : 0U;
+    for (const auto& row : simd_register_bits_table)
+        rows += (row.first == isa) ? 1U : 0U;
     return rows;
 }
 

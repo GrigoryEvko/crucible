@@ -90,8 +90,8 @@ template <typename Body>
 
 [[nodiscard]] bench::Report session_send() {
     Swmr swmr{reader_root(), payload_at(0)};
-    std::optional session{ses::mint_writer_runtime_session<Swmr>(
-        kForeground, ses::mint_swmr_writer<Swmr>(swmr, writer_root()))};
+    std::optional session{
+        ses::mint_writer_runtime_session<Swmr>(kForeground, ses::mint_swmr_writer<Swmr>(swmr, writer_root()))};
     std::uint64_t seq = 0;
     auto report = measure("SwmrSession session send", [&] {
         session.emplace(std::move(*session).send(payload_at(++seq), ses::publish_value));

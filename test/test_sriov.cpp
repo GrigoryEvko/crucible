@@ -51,8 +51,8 @@ cntp::NicInterfaceName iface() {
 }
 
 sriov::DeclaredSrIovPlan two_vf_plan(bool allow_privileged_apply = false) {
-    auto plan = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(2),
-                                       {}, allow_privileged_apply);
+    auto plan = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(2), {},
+                                       allow_privileged_apply);
     assert(plan.has_value());
     return *plan;
 }
@@ -111,8 +111,8 @@ void test_mint_and_handles() {
     config.max_qps = *sriov::admit_resource_limit(1024);
     config.max_mrs = *sriov::admit_resource_limit(2048);
 
-    auto plan = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(4),
-                                       config);
+    auto plan =
+        sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(4), config);
     assert(plan.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, sriov::DeclaredSrIovPlan>);
     assert(plan->value().num_vfs.value() == 4);
@@ -150,7 +150,8 @@ void test_mint_and_handles() {
 }
 
 void test_identity_and_capability_gates() {
-    auto zero = sriov::mint_sriov_plan(init_ctx(), cog::CogIdentity{}, sriov_caps(), iface(), *sriov::admit_vf_count(1));
+    auto zero =
+        sriov::mint_sriov_plan(init_ctx(), cog::CogIdentity{}, sriov_caps(), iface(), *sriov::admit_vf_count(1));
     assert(!zero.has_value());
     assert(zero.error() == sriov::SrIovError::ZeroCog);
 
@@ -166,8 +167,8 @@ void test_identity_and_capability_gates() {
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == sriov::SrIovError::MissingSrIovCapability);
 
-    auto no_name =
-        sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), cntp::NicInterfaceName{}, *sriov::admit_vf_count(1));
+    auto no_name = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), cntp::NicInterfaceName{},
+                                          *sriov::admit_vf_count(1));
     assert(!no_name.has_value());
     assert(no_name.error() == sriov::SrIovError::InvalidInterfaceName);
 

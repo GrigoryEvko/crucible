@@ -327,19 +327,18 @@ consteval std::string_view repeated_word_message() {
     text += hop_text(walked.hops[verdict.first]);
     text += " and the message ";
     text += hop_text(walked.hops[verdict.second]);
-    text +=
-        " go to one receiver with one word, and no receive of the first happens before the send of the second.  "
-        "The receive of the first can take the second.  Give the two messages different labels, let the receiver "
-        "answer the first before the second is sent, or bind to a per-pair FIFO carrier.";
+    text += " go to one receiver with one word, and no receive of the first happens before the send of the second.  "
+            "The receive of the first can take the second.  Give the two messages different labels, let the receiver "
+            "answer the first before the second is sent, or bind to a per-pair FIFO carrier.";
     return std::define_static_string(text);
 }
 
 // True when no receiver of the list has two different senders.  The
 // primary answers false, so a list of another shape is refused.
 template <typename Pair, typename... Others>
-inline constexpr bool sender_agrees_v =
-    ((!std::is_same_v<typename Pair::to, typename Others::to> || std::is_same_v<typename Pair::from, typename Others::from>)
-     && ...);
+inline constexpr bool sender_agrees_v = ((!std::is_same_v<typename Pair::to, typename Others::to>
+                                          || std::is_same_v<typename Pair::from, typename Others::from>)
+                                         && ...);
 
 template <typename List>
 inline constexpr bool each_receiver_one_sender_v = false;
@@ -364,8 +363,8 @@ consteval NetworkRefusal refusal_of() noexcept {
         return NetworkRefusal::RoleNotProjectable;
     } else if constexpr (N == Network::Local) {
         return std::meta::template_arguments_of(std::meta::dealias(^^g::roles_t<G>)).size() < 2
-                   ? NetworkRefusal::None
-                   : NetworkRefusal::PeerOnLocal;
+                 ? NetworkRefusal::None
+                 : NetworkRefusal::PeerOnLocal;
     } else if constexpr (N == Network::PerPairFifo) {
         return NetworkRefusal::None;
     } else if constexpr (!std::is_same_v<Reliable, EveryRoleReliable>) {
@@ -409,8 +408,8 @@ inline constexpr NetworkRefusal network_refusal_v = detail::network::refusal_of<
 // asks this concept, and ensure_carrier_implements names the reason of a
 // refusal.
 template <typename G, typename Resource, typename Reliable = EveryRoleReliable>
-concept CarrierImplements =
-    has_session_network_v<Resource> && is_implementable_on<Implementability<G, session_network_v<Resource>, Reliable>>::value;
+concept CarrierImplements = has_session_network_v<Resource>
+                         && is_implementable_on<Implementability<G, session_network_v<Resource>, Reliable>>::value;
 
 template <typename G, Network N, typename Reliable = EveryRoleReliable>
 consteval void ensure_implementable_on() noexcept {
@@ -450,8 +449,7 @@ consteval void ensure_implementable_on() noexcept {
                       "an earlier one, so the receiver can take the wrong branch.  Bind a protocol with choices to a "
                       "per-pair FIFO carrier.");
     } else if constexpr (refusal == NetworkRefusal::RepeatedWordOnBag) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
-                      detail::network::repeated_word_message<G>());
+        static_assert(detail::network::dependent_false_v<G, Reliable>, detail::network::repeated_word_message<G>());
     } else if constexpr (refusal == NetworkRefusal::PeerOnLocal) {
         static_assert(detail::network::dependent_false_v<G, Reliable>,
                       "fixy::session::diagnostic [Network_Local_Has_A_Peer]: the carrier states the Local network, "
@@ -496,11 +494,12 @@ using TwoSenders = global::Msg<RoleB, RoleA, LabelX, int, global::Msg<RoleC, Rol
 using TwoLabels = global::Msg<RoleB, RoleA, LabelX, int, global::Msg<RoleC, RoleA, LabelY, int, global::End>>;
 // RoleA tells RoleC to send after it received from RoleB, so the receive
 // orders the two messages with one label.
-using Answered = global::Msg<RoleB, RoleA, LabelX, int,
-                             global::Msg<RoleA, RoleC, LabelY, int, global::Msg<RoleC, RoleA, LabelX, int, global::End>>>;
+using Answered =
+    global::Msg<RoleB, RoleA, LabelX, int,
+                global::Msg<RoleA, RoleC, LabelY, int, global::Msg<RoleC, RoleA, LabelX, int, global::End>>>;
 // RoleA chooses, again and again, to go on or to stop.
-using LoopChoice = global::Rec<global::Comm<RoleA, RoleB, global::Branch<LabelX, int, global::Var>,
-                                            global::Branch<LabelY, int, global::End>>>;
+using LoopChoice = global::Rec<
+    global::Comm<RoleA, RoleB, global::Branch<LabelX, int, global::Var>, global::Branch<LabelY, int, global::End>>>;
 // One message from RoleA to RoleB.
 using OneMessage = global::Msg<RoleA, RoleB, LabelX, int, global::End>;
 
@@ -510,19 +509,18 @@ using OneMessage = global::Msg<RoleA, RoleB, LabelX, int, global::End>;
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_implementable_on> {
-    using accepts = witnesses<
-        ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoSenders,
-                                          ::fixy::session::Network::PerPairFifo>,
-        ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,
-                                          ::fixy::session::Network::Mailbox>,
-        ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoLabels,
-                                          ::fixy::session::Network::Bag>,
-        ::fixy::session::Implementability<::fixy::session::detail::network::witness::Answered,
-                                          ::fixy::session::Network::Bag>,
-        ::fixy::session::Implementability<::fixy::session::detail::network::witness::LoopChoice,
-                                          ::fixy::session::Network::Mailbox>,
-        ::fixy::session::Implementability<::fixy::session::detail::network::witness::LoopChoice,
-                                          ::fixy::session::Network::PerPairFifo>>;
+    using accepts = witnesses<::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoSenders,
+                                                                ::fixy::session::Network::PerPairFifo>,
+                              ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,
+                                                                ::fixy::session::Network::Mailbox>,
+                              ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoLabels,
+                                                                ::fixy::session::Network::Bag>,
+                              ::fixy::session::Implementability<::fixy::session::detail::network::witness::Answered,
+                                                                ::fixy::session::Network::Bag>,
+                              ::fixy::session::Implementability<::fixy::session::detail::network::witness::LoopChoice,
+                                                                ::fixy::session::Network::Mailbox>,
+                              ::fixy::session::Implementability<::fixy::session::detail::network::witness::LoopChoice,
+                                                                ::fixy::session::Network::PerPairFifo>>;
     using refuses = witnesses<
         int,
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::TwoSenders,

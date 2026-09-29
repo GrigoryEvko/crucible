@@ -237,20 +237,21 @@ namespace foundation::permissions {
 
 template <typename UserTag>
 struct can_split_into<::fixy::concurrent::mpsc_tag::Whole<UserTag>, ::fixy::concurrent::mpsc_tag::Producer<UserTag>,
-                   ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
+                      ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct can_split_into_pack<::fixy::concurrent::mpsc_tag::Whole<UserTag>, ::fixy::concurrent::mpsc_tag::Producer<UserTag>,
-                        ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
+struct can_split_into_pack<::fixy::concurrent::mpsc_tag::Whole<UserTag>,
+                           ::fixy::concurrent::mpsc_tag::Producer<UserTag>,
+                           ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
 struct has_split_authoring_witness<::fixy::concurrent::mpsc_tag::Whole<UserTag>,
-                                     ::fixy::concurrent::mpsc_tag::Producer<UserTag>,
-                                     ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
+                                   ::fixy::concurrent::mpsc_tag::Producer<UserTag>,
+                                   ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
 struct has_split_pack_authoring_witness<::fixy::concurrent::mpsc_tag::Whole<UserTag>,
-                                          ::fixy::concurrent::mpsc_tag::Producer<UserTag>,
-                                          ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
+                                        ::fixy::concurrent::mpsc_tag::Producer<UserTag>,
+                                        ::fixy::concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 }  // namespace foundation::permissions

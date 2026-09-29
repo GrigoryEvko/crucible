@@ -307,7 +307,8 @@ static_assert(every_axis_has_one_tag_template(),
         const auto zero_tag = std::meta::substitute(tag, {zero_budget_});
         bool aliased = false;
         for (const auto alias : std::meta::members_of(^^::foundation::effects, context)) {
-            if (!std::meta::is_alias_template(alias) || std::meta::identifier_of(alias) != std::meta::identifier_of(tag)) {
+            if (!std::meta::is_alias_template(alias)
+                || std::meta::identifier_of(alias) != std::meta::identifier_of(tag)) {
                 continue;
             }
             aliased = aliased || std::meta::dealias(std::meta::substitute(alias, {zero_budget_})) == zero_tag;

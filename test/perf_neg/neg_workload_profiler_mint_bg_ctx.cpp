@@ -9,8 +9,8 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto profiler = crucible::perf::mint_workload_profiler(
-        ::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, /*senses=*/nullptr);
+    auto profiler = crucible::perf::mint_workload_profiler(::fixy::BgDrainCtx{::foundation::effects::testing::bg()},
+                                                           /*senses=*/nullptr);
     (void)profiler;
     return 0;
 }

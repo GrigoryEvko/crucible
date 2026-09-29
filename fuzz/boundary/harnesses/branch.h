@@ -21,12 +21,13 @@ namespace crucible::fuzz::boundary {
     Arena arena;
     const auto alloc = test_alloc();
     const auto arms = static_cast<std::uint32_t>(values.size());
-    auto* branch = ::new (arena.alloc_obj<BranchNode>(alloc)) BranchNode{};
+    auto* branch = ::new(arena.alloc_obj<BranchNode>(alloc)) BranchNode{};
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
     branch->num_arms = arms;
     branch->arms = arms == 0 ? nullptr : arena.alloc_array<BranchNode::Arm>(alloc, arms);
-    for (std::uint32_t i = 0; i < arms; ++i) branch->arms[i] = BranchNode::Arm{.value = values[i]};
+    for (std::uint32_t i = 0; i < arms; ++i)
+        branch->arms[i] = BranchNode::Arm{.value = values[i]};
     std::vector<std::uint8_t> image(4096);
     image.resize(serialize_branch(branch, std::span<std::uint8_t>{image}));
     return image;

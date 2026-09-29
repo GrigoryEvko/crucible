@@ -94,7 +94,8 @@ void report(const char* label, double (*one_batch)(), std::size_t descriptors) {
     for (int run = 0; run < kRuns; run++) {
         std::vector<double> samples;
         samples.resize(kSamples);
-        for (int s = 0; s < kSamples; s++) samples[static_cast<std::size_t>(s)] = one_batch();
+        for (int s = 0; s < kSamples; s++)
+            samples[static_cast<std::size_t>(s)] = one_batch();
         last = percentiles_of(samples);
         run_p50s.push_back(last.p50);
     }

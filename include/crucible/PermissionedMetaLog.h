@@ -69,8 +69,8 @@ public:
         delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
     PermissionedMetaLog(PermissionedMetaLog&&) =
         delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
-    PermissionedMetaLog& operator=(PermissionedMetaLog&&) =
-        delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
+    PermissionedMetaLog&
+    operator=(PermissionedMetaLog&&) = delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
 
     class ProducerHandle {
         // The move clears the binding, so a moved-from handle cannot
@@ -194,13 +194,13 @@ public:
         [[nodiscard]] std::uint32_t size_approx() const { return log_->size().peek(); }
     };
 
-    [[nodiscard]] constexpr ProducerHandle producer(
-        ::foundation::permissions::Permission<producer_tag>&& perm) noexcept {
+    [[nodiscard]] constexpr ProducerHandle
+    producer(::foundation::permissions::Permission<producer_tag>&& perm) noexcept {
         return ProducerHandle{log_, std::move(perm)};
     }
 
-    [[nodiscard]] constexpr ConsumerHandle consumer(
-        ::foundation::permissions::Permission<consumer_tag>&& perm) noexcept {
+    [[nodiscard]] constexpr ConsumerHandle
+    consumer(::foundation::permissions::Permission<consumer_tag>&& perm) noexcept {
         return ConsumerHandle{log_, std::move(perm)};
     }
 

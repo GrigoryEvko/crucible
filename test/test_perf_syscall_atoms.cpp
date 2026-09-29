@@ -77,9 +77,8 @@ static_assert(!covers_the_load_calls_<fe::Row<>>());
 // Block, and each gate admits all three.
 template <template <class> class Gate>
 [[nodiscard]] consteval bool admits_only_the_blocking_contexts_() noexcept {
-    return !Gate<::fixy::ColdInitCtx>::value && !Gate<::fixy::BgCompileCtx>::value
-        && !Gate<::fixy::BgDrainCtx>::value && !Gate<::fixy::HotFgCtx>::value
-        && Gate<::fixy::InitLoadCtx>::value && Gate<::fixy::BgLoadCtx>::value
+    return !Gate<::fixy::ColdInitCtx>::value && !Gate<::fixy::BgCompileCtx>::value && !Gate<::fixy::BgDrainCtx>::value
+        && !Gate<::fixy::HotFgCtx>::value && Gate<::fixy::InitLoadCtx>::value && Gate<::fixy::BgLoadCtx>::value
         && Gate<::fixy::TestRunnerCtx>::value;
 }
 

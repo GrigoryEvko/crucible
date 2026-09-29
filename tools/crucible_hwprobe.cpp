@@ -155,7 +155,7 @@ using crucible::ledger::evidence_from_two_runs;
 // record has a field for each because they fail differently, and filling
 // the second one from the first would be a lie the reader cannot detect.
 [[nodiscard]] std::expected<VerdictMeasurement, LedgerError> probe_timer_floor(ledger::LedgerIoCtx const&,
-                                                                             CompetenceReport const&) noexcept {
+                                                                               CompetenceReport const&) noexcept {
     int sink = 0;
 
     auto one_run = [&](const char* name) {

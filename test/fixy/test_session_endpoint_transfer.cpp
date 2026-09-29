@@ -43,17 +43,17 @@ using Handle = decltype(s::mint_session_handle<Proto, Wire>(Wire{}));
 // Each key is final, has no public constructor, no copy and no move, and
 // is neither trivially copyable nor an implicit-lifetime type.
 template <typename Key>
-constexpr bool is_sealed_key = std::is_final_v<Key> && !std::is_default_constructible_v<Key>
-                            && !std::is_copy_constructible_v<Key> && !std::is_move_constructible_v<Key>
-                            && !std::is_trivially_copyable_v<Key> && !std::is_implicit_lifetime_v<Key>;
+constexpr bool is_sealed_key =
+    std::is_final_v<Key> && !std::is_default_constructible_v<Key> && !std::is_copy_constructible_v<Key>
+    && !std::is_move_constructible_v<Key> && !std::is_trivially_copyable_v<Key> && !std::is_implicit_lifetime_v<Key>;
 static_assert(is_sealed_key<s::HandleKey> && is_sealed_key<s::SessionOpenKey> && is_sealed_key<s::DelegationKey>);
 
 // A handle, its core and a DelegatedSession take a key, so no expression
 // without one builds them.
 static_assert(!std::is_constructible_v<Handle, Wire, s::watch::session_ref, std::source_location>);
-static_assert(!std::is_constructible_v<s::DelegatedSession<Proto, Wire, s::DefaultAbandonmentPolicy,
-                                                           ::foundation::permissions::EmptyPermSet>,
-                                       Handle, s::PermHold<::foundation::permissions::EmptyPermSet>>);
+static_assert(!std::is_constructible_v<
+              s::DelegatedSession<Proto, Wire, s::DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>,
+              Handle, s::PermHold<::foundation::permissions::EmptyPermSet>>);
 
 // The builders of the factory are private.
 template <typename R>

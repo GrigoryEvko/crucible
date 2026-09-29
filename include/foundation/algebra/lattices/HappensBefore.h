@@ -79,7 +79,7 @@ struct HappensBeforeLattice {
     // The slots are private, and only the lattice operations below produce
     // a clock, so a clock that exists cannot be edited in place and no
     // integer states one.
-    class [[=::foundation::lifetime::no_start_over_bytes{}]] element_type {
+    class[[= ::foundation::lifetime::no_start_over_bytes{}]] element_type {
     public:
         // The empty history.
         constexpr element_type() noexcept = default;
@@ -233,7 +233,8 @@ struct HappensBeforeLattice {
     {
         image_type image{};
         detail::count_image::write_word(image, 0, image_axis());
-        for (std::size_t p = 0; p < N; ++p) detail::count_image::write_word(image, 8 * (p + 1), clock.clock_[p]);
+        for (std::size_t p = 0; p < N; ++p)
+            detail::count_image::write_word(image, 8 * (p + 1), clock.clock_[p]);
         return image;
     }
 
@@ -242,11 +243,13 @@ struct HappensBeforeLattice {
     template <typename Ctx>
         requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO>
               && ClockWireProtocol<Tag>
-    [[nodiscard]] static constexpr std::expected<element_type, CountImageError> mint_from_image(
-        Ctx const&, image_type const& image) noexcept {
-        if (detail::count_image::read_word(image, 0) != image_axis()) return std::unexpected(CountImageError::OtherAxis);
+    [[nodiscard]] static constexpr std::expected<element_type, CountImageError>
+    mint_from_image(Ctx const&, image_type const& image) noexcept {
+        if (detail::count_image::read_word(image, 0) != image_axis())
+            return std::unexpected(CountImageError::OtherAxis);
         std::array<std::uint64_t, N> slots{};
-        for (std::size_t p = 0; p < N; ++p) slots[p] = detail::count_image::read_word(image, 8 * (p + 1));
+        for (std::size_t p = 0; p < N; ++p)
+            slots[p] = detail::count_image::read_word(image, 8 * (p + 1));
         return element_type{slots};
     }
 
@@ -270,11 +273,12 @@ namespace detail::happens_before_self_test {
 // process p: the only way a constant expression reaches an interior clock.
 // Linear in the sum of the steps.
 template <typename HB>
-[[nodiscard]] consteval typename HB::element_type clock_after(
-    std::array<std::uint64_t, HB::process_count> const& steps) noexcept {
+[[nodiscard]] consteval typename HB::element_type
+clock_after(std::array<std::uint64_t, HB::process_count> const& steps) noexcept {
     typename HB::element_type clock = HB::bottom();
     for (std::size_t p = 0; p < HB::process_count; ++p) {
-        for (std::uint64_t i = 0; i < steps[p]; ++i) clock = HB::successor_at(clock, p);
+        for (std::uint64_t i = 0; i < steps[p]; ++i)
+            clock = HB::successor_at(clock, p);
     }
     return clock;
 }
@@ -509,7 +513,8 @@ static_assert(HBReplay::name() == "HappensBeforeLattice");
 static_assert(!std::is_constructible_v<HB4::element_type, Slots4>);
 static_assert(!std::is_constructible_v<HB1::element_type, std::uint64_t>);
 static_assert(!std::is_convertible_v<Slots4, HB4::element_type>);
-static_assert(!std::is_trivially_copyable_v<HB4::element_type> && std::is_trivially_copy_constructible_v<HB4::element_type>
+static_assert(!std::is_trivially_copyable_v<HB4::element_type>
+              && std::is_trivially_copy_constructible_v<HB4::element_type>
               && !::foundation::lifetime::ImplicitLifetimeThroughout<HB4::element_type>);
 
 // The image names the lattice first, then each slot, and two protocols or

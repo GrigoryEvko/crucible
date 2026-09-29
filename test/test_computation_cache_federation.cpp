@@ -156,8 +156,9 @@ static void test_t10_codec_round_trip() {
         fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(local_cipher_permission(), buf, body);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                            static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
 
     const auto expected_key = fed::federation_key<&t_unary, R0, int>();
@@ -251,8 +252,9 @@ static void test_t15_payload_aliases_input() {
         fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(local_cipher_permission(), buf, body);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                            static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
 
@@ -439,8 +441,9 @@ static void test_audit_e_saturation_row_round_trip() {
         fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(local_cipher_permission(), buf, body);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                            static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->header.content_hash == k_full.content_hash);
     assert(view->header.row_hash == k_full.row_hash);

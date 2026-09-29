@@ -83,10 +83,10 @@ int main() {
     if (hub.has_value()) {
         const auto attached_refined = hub->attached_programs();
         const auto failures_refined = hub->attach_failures();
-        static_assert(std::is_same_v<decltype(attached_refined),
-                                     const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
-        static_assert(std::is_same_v<decltype(failures_refined),
-                                     const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
+        static_assert(
+            std::is_same_v<decltype(attached_refined), const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
+        static_assert(
+            std::is_same_v<decltype(failures_refined), const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
         const std::size_t attached = attached_refined.value();
         const std::size_t failures = failures_refined.value();
 
@@ -108,8 +108,8 @@ int main() {
         // The view spans the whole ring, not just the written prefix.
         const auto view = hub->timeline_view();
         static_assert(
-            std::is_same_v<decltype(view), const ::fixy::Borrowed<const crucible::perf::PmuSampleEvent,
-                                                                            crucible::perf::PmuSample>>);
+            std::is_same_v<decltype(view),
+                           const ::fixy::Borrowed<const crucible::perf::PmuSampleEvent, crucible::perf::PmuSample>>);
         if (view.size() != crucible::perf::PMU_SAMPLE_CAPACITY) {
             std::fprintf(stderr,
                          "perf::PmuSample::timeline_view() — expected "

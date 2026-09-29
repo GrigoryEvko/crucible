@@ -21,7 +21,6 @@ struct resume_count_proved final {};
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::coroutine, ::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
-                                ::fixy::atom::refined_with<fixture::resume_count_proved>>
-        refused{};
+                                ::fixy::atom::refined_with<fixture::resume_count_proved>> refused{};
     return 0;
 }

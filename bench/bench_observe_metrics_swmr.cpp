@@ -12,8 +12,12 @@ namespace observe = ::crucible::observe;
 namespace perm = ::foundation::permissions;
 
 namespace {
-[[nodiscard]] auto metrics_reader_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>(); }
-[[nodiscard]] auto metrics_writer_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsWriterTag>(); }
+[[nodiscard]] auto metrics_reader_root() noexcept {
+    return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>();
+}
+[[nodiscard]] auto metrics_writer_root() noexcept {
+    return perm::mint_permission_root<observe::RuntimeMetricsWriterTag>();
+}
 using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>,
                                                ::foundation::brand::brand_of_t<decltype(metrics_writer_root())>>;
 }  // namespace

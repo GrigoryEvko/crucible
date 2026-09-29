@@ -117,7 +117,10 @@ class SocketDoor final {
     template <MappedSocketKind Kind>
     [[nodiscard]] static std::expected<::fixy::fs::OwnedFd, int> open_() noexcept {
         constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
-        const int fd = ::socket(triple.domain, triple.type | SOCK_CLOEXEC, triple.protocol);  // SYSCALL-CAP-OK: SocketDoor::open_, sole caller mint_socket ctx-gate (CtxFitsSocketMint)
+        const int fd = ::socket(
+            triple.domain, triple.type | SOCK_CLOEXEC,
+            triple
+                .protocol);  // SYSCALL-CAP-OK: SocketDoor::open_, sole caller mint_socket ctx-gate (CtxFitsSocketMint)
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -165,9 +168,10 @@ static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_cons
 
 // Every tag in fixy::net::socket_kind has a row.  The walk is the check
 // that a new tag also has its row.
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::net::socket_kind, [](std::meta::info kind_tag) consteval {
-                  return ::fixy::atom_pack::has_row(socket_table, kind_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::net::socket_kind,
+                                                        [](std::meta::info kind_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(socket_table, kind_tag);
+                                                        }>(),
               "fixy/os/Socket.h: a tag in fixy::net::socket_kind has no row in socket_table.");
 
 }  // namespace fixy::net::detail::socket_surface_invariants

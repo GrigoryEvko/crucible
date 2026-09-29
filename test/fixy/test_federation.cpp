@@ -104,7 +104,8 @@ static_assert(!std::is_default_constructible_v<Admission>);
 // A foreground context cannot open the door; a context whose row holds
 // IO can.
 static_assert(fed::CtxFitsFederationAdmission<IoCtx, FederationTestOrg, TestPolicy>);
-static_assert(!fed::CtxFitsFederationAdmission<eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>, FederationTestOrg, TestPolicy>);
+static_assert(
+    !fed::CtxFitsFederationAdmission<eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>, FederationTestOrg, TestPolicy>);
 static_assert(!fed::CtxFitsFederationAdmission<IoCtx, FederationOtherOrg, TestPolicy>);
 
 // ── The replay window ───────────────────────────────────────────────
@@ -175,8 +176,8 @@ int check_admits_once() {
     auto replayed = admit(admission, local_cipher, handshake);
     if (replayed.has_value() || replayed.error() != fed::AdmittanceError::Replayed) return 11;
 
-    auto [kept, second] = fed::sign_handshake<FederationTestOrg>(std::move(peer_key), fed::PeerKeyFingerprint{42},
-                                                                 fed::Nonce{2});
+    auto [kept, second] =
+        fed::sign_handshake<FederationTestOrg>(std::move(peer_key), fed::PeerKeyFingerprint{42}, fed::Nonce{2});
     if (!admit(admission, local_cipher, second).has_value()) return 12;
     return 0;
 }
@@ -248,8 +249,8 @@ int check_too_old() {
     auto [peer_key, late] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(1)),
                                                                    fed::PeerKeyFingerprint{42}, fed::Nonce{100});
     if (!admit(admission, local_cipher, late).has_value()) return 40;
-    auto [kept, early] = fed::sign_handshake<FederationTestOrg>(std::move(peer_key), fed::PeerKeyFingerprint{42},
-                                                                fed::Nonce{36});
+    auto [kept, early] =
+        fed::sign_handshake<FederationTestOrg>(std::move(peer_key), fed::PeerKeyFingerprint{42}, fed::Nonce{36});
     auto refused = admit(admission, local_cipher, early);
     if (refused.has_value() || refused.error() != fed::AdmittanceError::NonceTooOld) return 41;
     return 0;

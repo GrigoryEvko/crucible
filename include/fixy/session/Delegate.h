@@ -222,8 +222,8 @@ public:
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS>
         requires DelegatableHandle<SessionHandle<Proto, Resource, void, Policy, PS>>
     [[nodiscard]] static constexpr DelegatedSession<Proto, Resource, Policy, PS>
-    give(SessionHandle<Proto, Resource, void, Policy, PS>&& handle, PermHold<PS>&& hold) noexcept(
-        std::is_nothrow_move_constructible_v<Resource>) {
+    give(SessionHandle<Proto, Resource, void, Policy, PS>&& handle,
+         PermHold<PS>&& hold) noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         using Handle = SessionHandle<Proto, Resource, void, Policy, PS>;
         if (!handle.is_live()) [[unlikely]]
             detail::report_use_after_consume(Handle::wrapper_name(), Handle::protocol_name(), std::source_location{});
@@ -235,8 +235,8 @@ public:
 // that carries it.  The payload travels as the value of a Send.
 template <typename H>
     requires DelegatableHandle<H> && detail::perm_set_is_empty_v<typename H::perm_set>
-[[nodiscard]] constexpr auto mint_delegated_session(H handle) noexcept(
-    std::is_nothrow_move_constructible_v<typename H::resource_type>) {
+[[nodiscard]] constexpr auto
+mint_delegated_session(H handle) noexcept(std::is_nothrow_move_constructible_v<typename H::resource_type>) {
     return DelegationDoor::give(std::move(handle), mint_permission_hold());
 }
 
@@ -245,8 +245,8 @@ template <typename H>
 // endpoint, and the recipient gets them with the handle.
 template <typename H, typename Hold>
     requires DelegatableHandle<H> && HoldsTokensOf<Hold, H>
-[[nodiscard]] constexpr auto mint_delegated_session(H handle, Hold hold) noexcept(
-    std::is_nothrow_move_constructible_v<typename H::resource_type>) {
+[[nodiscard]] constexpr auto
+mint_delegated_session(H handle, Hold hold) noexcept(std::is_nothrow_move_constructible_v<typename H::resource_type>) {
     return DelegationDoor::give(std::move(handle), std::move(hold));
 }
 
@@ -286,8 +286,8 @@ concept AcceptsFrom =
 namespace fixy::session::detail::delegatable_armed_witness {
 struct Wire {};
 using Loose = SessionHandle<End, Wire, void, DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>;
-using Branded =
-    SessionHandle<End, Wire, session_brand<Wire, void>, DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>;
+using Branded = SessionHandle<End, Wire, session_brand<Wire, void>, DefaultAbandonmentPolicy,
+                              ::foundation::permissions::EmptyPermSet>;
 using InLoop = SessionHandle<End, Wire, Loop<Send<int, Continue>>, DefaultAbandonmentPolicy,
                              ::foundation::permissions::EmptyPermSet>;
 }  // namespace fixy::session::detail::delegatable_armed_witness
@@ -312,17 +312,17 @@ template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_delegate> {
     using accepts = witnesses<::fixy::session::detail::delegation_head_armed_witness::Hands,
                               ::fixy::session::detail::delegation_head_armed_witness::PinnedHands>;
-    using refuses = witnesses<int, ::fixy::session::detail::delegation_head_armed_witness::Takes,
-                              ::fixy::session::Send<::fixy::session::detail::delegation_head_armed_witness::Carried,
-                                                    ::fixy::session::End>>;
+    using refuses = witnesses<
+        int, ::fixy::session::detail::delegation_head_armed_witness::Takes,
+        ::fixy::session::Send<::fixy::session::detail::delegation_head_armed_witness::Carried, ::fixy::session::End>>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_accept> {
     using accepts = witnesses<::fixy::session::detail::delegation_head_armed_witness::Takes>;
-    using refuses = witnesses<int, ::fixy::session::detail::delegation_head_armed_witness::Hands,
-                              ::fixy::session::Recv<::fixy::session::detail::delegation_head_armed_witness::Carried,
-                                                    ::fixy::session::End>>;
+    using refuses = witnesses<
+        int, ::fixy::session::detail::delegation_head_armed_witness::Hands,
+        ::fixy::session::Recv<::fixy::session::detail::delegation_head_armed_witness::Carried, ::fixy::session::End>>;
 };
 
 // The two traits are aliases, and the roster walk of

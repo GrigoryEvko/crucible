@@ -172,8 +172,8 @@ namespace sched {
 // A gate on Init alone is too narrow.  It refuses a background worker
 // that pins itself at startup.
 template <typename Ctx>
-concept CtxFitsRuntimeAffinity = ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Bg,
-                                                                     ::foundation::effects::Effect::Init>;
+concept CtxFitsRuntimeAffinity =
+    ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Init>;
 
 }  // namespace sched
 
@@ -282,9 +282,10 @@ static_assert(sizeof(CpuPinned<AffinityMask::single(7), PinningPosture::PinnedEx
 static_assert(!std::is_copy_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
               "CpuPinned MUST be move-only — a pin proof cannot be duplicated.");
 static_assert(std::is_move_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>);
-static_assert(!std::is_trivially_copyable_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>
-                  && !std::is_implicit_lifetime_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
-              "std::bit_cast and std::start_lifetime_as must not build a pin proof");
+static_assert(
+    !std::is_trivially_copyable_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>
+        && !std::is_implicit_lifetime_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
+    "std::bit_cast and std::start_lifetime_as must not build a pin proof");
 
 }  // namespace fixy
 

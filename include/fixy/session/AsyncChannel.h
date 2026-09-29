@@ -67,9 +67,8 @@ concept CtxFitsAsyncForkedChannel =
     WellFormedRunnableProtocol<SelfProto> && WellFormedRunnableProtocol<PeerProto>
     && PermissionFlowCloses<SelfProto, ::foundation::permissions::EmptyPermSet>
     && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
-    && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>
-    && StatesChannelCapacity<ResourceSelf> && StatesChannelCapacity<ResourcePeer>
-    && (channel_capacity_v<ResourceSelf> == channel_capacity_v<ResourcePeer>)
+    && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto> && StatesChannelCapacity<ResourceSelf>
+    && StatesChannelCapacity<ResourcePeer> && (channel_capacity_v<ResourceSelf> == channel_capacity_v<ResourcePeer>)
     && is_subtype_async_v<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
     && is_subtype_async_v<PeerProto, dual_of_t<SelfProto>, ResourcePeer>
     && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;

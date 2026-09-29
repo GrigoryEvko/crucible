@@ -10,7 +10,8 @@ namespace eff = foundation::effects;
 
 namespace {
 
-using TestCtx = eff::ExecCtx<eff::ctx_cap::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+using TestCtx = eff::ExecCtx<eff::ctx_cap::Test,
+                             eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
 [[maybe_unused]] void attempt(TestCtx const& ctx) {
     [[maybe_unused]] auto refused = fixy::sched::mint_scheduler_policy<fixy::SchedulerPolicy_v::Other>(ctx);

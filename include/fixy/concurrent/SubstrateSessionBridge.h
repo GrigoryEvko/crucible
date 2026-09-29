@@ -57,8 +57,8 @@ struct handle_for;
 template <class Substr, Direction Dir>
     requires detail::IsBridgedChannel<Substr>
 struct handle_for<Substr, Dir> {
-    using type =
-        std::conditional_t<Dir == Direction::Producer, typename Substr::ProducerHandle, typename Substr::ConsumerHandle>;
+    using type = std::conditional_t<Dir == Direction::Producer, typename Substr::ProducerHandle,
+                                    typename Substr::ConsumerHandle>;
 };
 
 template <class Substr, Direction Dir>
@@ -104,8 +104,8 @@ concept HandleHasPoleOf = (Dir == Direction::Producer && is_producer_handle_v<ha
 // protocol, and the handle has the pole shape of the direction.  Only the
 // two channels have a row, so the concept is closed over them.
 template <class Substr, Direction Dir>
-concept IsBridgeableDirection =
-    detail::HasHandleFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir> && detail::HandleHasPoleOf<Substr, Dir>;
+concept IsBridgeableDirection = detail::HasHandleFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir>
+                             && detail::HandleHasPoleOf<Substr, Dir>;
 
 // The gate of mint_substrate_session: a bridgeable direction, and the gate
 // of fixy::session::mint_session for its protocol over its handle.  So the

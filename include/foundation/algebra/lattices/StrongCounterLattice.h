@@ -121,7 +121,8 @@ template <std::size_t Size>
 constexpr void write_word(std::array<std::byte, Size>& image, std::size_t offset, std::uint64_t word) noexcept {
     static_assert(Size >= 8, "an image holds at least one word");
     CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
-    for (std::size_t i = 0; i < 8; ++i) image[offset + i] = static_cast<std::byte>((word >> (8 * i)) & 0xFFu);
+    for (std::size_t i = 0; i < 8; ++i)
+        image[offset + i] = static_cast<std::byte>((word >> (8 * i)) & 0xFFu);
 }
 
 template <std::size_t Size>
@@ -129,7 +130,8 @@ template <std::size_t Size>
     static_assert(Size >= 8, "an image holds at least one word");
     CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
     std::uint64_t word = 0;
-    for (std::size_t i = 0; i < 8; ++i) word |= std::uint64_t{std::to_integer<std::uint8_t>(image[offset + i])} << (8 * i);
+    for (std::size_t i = 0; i < 8; ++i)
+        word |= std::uint64_t{std::to_integer<std::uint8_t>(image[offset + i])} << (8 * i);
     return word;
 }
 
@@ -180,7 +182,7 @@ struct StrongCounterLattice {
     static constexpr ClaimOrientation claim_orientation = Tag::claim_orientation;
 
     // The count.  Nested in the template, so each tag gives a distinct type.
-    class [[=::foundation::lifetime::no_start_over_bytes{}]] element_type {
+    class[[= ::foundation::lifetime::no_start_over_bytes{}]] element_type {
     public:
         // The genesis count.
         constexpr element_type() noexcept = default;
@@ -297,9 +299,10 @@ struct StrongCounterLattice {
     // source path, and the image must name this axis.
     template <typename Ctx>
         requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::IO> && WireTag<Tag>
-    [[nodiscard]] static constexpr std::expected<element_type, CountImageError> mint_from_image(
-        Ctx const&, image_type const& image) noexcept {
-        if (detail::count_image::read_word(image, 0) != image_axis()) return std::unexpected(CountImageError::OtherAxis);
+    [[nodiscard]] static constexpr std::expected<element_type, CountImageError>
+    mint_from_image(Ctx const&, image_type const& image) noexcept {
+        if (detail::count_image::read_word(image, 0) != image_axis())
+            return std::unexpected(CountImageError::OtherAxis);
         return element_type{detail::count_image::read_word(image, 8)};
     }
 
@@ -374,7 +377,8 @@ namespace detail::strong_counter_lattice_self_test {
 template <typename L>
 [[nodiscard]] consteval typename L::element_type after_steps(std::uint64_t steps) noexcept {
     typename L::element_type count = L::bottom();
-    for (std::uint64_t i = 0; i < steps; ++i) count = L::successor(count);
+    for (std::uint64_t i = 0; i < steps; ++i)
+        count = L::successor(count);
     return count;
 }
 
@@ -405,10 +409,11 @@ template <typename L>
     return L::bottom().raw() == 0 && L::top().raw() == max && L::leq(L::bottom(), c3) && L::leq(c7, c7)
         && !L::leq(c7, c3) && L::join(c3, c7).raw() == 7 && L::join(c7, c3).raw() == 7 && L::meet(c3, c7).raw() == 3
         && L::meet(c7, c3).raw() == 3 && L::join(c41, L::bottom()) == c41 && L::meet(c41, L::top()) == c41
-        && L::join(L::top(), c41) == L::top() && L::meet(L::bottom(), c41) == L::bottom()
-        && typename L::element_type{} == L::bottom()
+        && L::join(L::top(), c41) == L::top() && L::meet(L::bottom(), c41) == L::bottom() &&
+           typename L::element_type{} == L::bottom()
         // The successor is one step up and strictly above its input.
-        && L::successor(L::bottom()).raw() == 1 && L::leq(c41, L::successor(c41)) && !(L::successor(c41) == c41)
+        && L::successor(L::bottom()).raw() == 1 && L::leq(c41, L::successor(c41))
+        && !(L::successor(c41) == c41)
         // A bound is compared, never joined: at least and at most meet at
         // the count itself.
         && L::is_at_least(c7, typename L::bound_type{7}) && !L::is_at_least(c7, typename L::bound_type{8})
@@ -433,11 +438,11 @@ template <typename L>
 [[nodiscard]] consteval bool shape_holds_for() noexcept {
     using E = typename L::element_type;
     using B = typename L::bound_type;
-    return Lattice<L> && BoundedLattice<L> && !UnboundedLattice<L> && !Semiring<L>
-        && sizeof(E) == sizeof(std::uint64_t) && std::is_standard_layout_v<E> && !std::is_same_v<E, std::uint64_t>
-        && !std::is_convertible_v<E, std::uint64_t> && !std::is_convertible_v<std::uint64_t, E>
-        && !std::is_constructible_v<E, std::uint64_t> && !std::is_constructible_v<E, int>
-        && !std::is_constructible_v<E, B> && !std::is_convertible_v<B, E>
+    return Lattice<L> && BoundedLattice<L> && !UnboundedLattice<L> && !Semiring<L> && sizeof(E) == sizeof(std::uint64_t)
+        && std::is_standard_layout_v<E> && !std::is_same_v<E, std::uint64_t> && !std::is_convertible_v<E, std::uint64_t>
+        && !std::is_convertible_v<std::uint64_t, E> && !std::is_constructible_v<E, std::uint64_t>
+        && !std::is_constructible_v<E, int> && !std::is_constructible_v<E, B>
+        && !std::is_convertible_v<B, E>
         // Not buildable from bytes, and still passed in a register.
         && !std::is_trivially_copyable_v<E> && std::is_trivially_copy_constructible_v<E>
         && std::is_trivially_move_constructible_v<E> && std::is_trivially_destructible_v<E>

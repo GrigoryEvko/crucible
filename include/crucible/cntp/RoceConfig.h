@@ -235,8 +235,8 @@ constexpr std::expected<void, RoceError> apply_roce_config(DeclaredRoceConfig co
     return std::unexpected(RoceError::VendorBackendUnavailable);
 }
 
-[[nodiscard]] constexpr std::expected<PfcPauseStats, RoceError> parse_pfc_pause_counters(std::string_view rx_text,
-                                                                                         std::string_view tx_text) noexcept {
+[[nodiscard]] constexpr std::expected<PfcPauseStats, RoceError>
+parse_pfc_pause_counters(std::string_view rx_text, std::string_view tx_text) noexcept {
     auto rx = detail::roce::parse_counter(rx_text);
     if (!rx.has_value()) {
         return std::unexpected(rx.error());

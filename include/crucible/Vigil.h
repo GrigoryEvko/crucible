@@ -314,9 +314,7 @@ public:
     // then ends the process, as dispatch_op does.  The output, input and
     // external-slot surfaces below ask for it.  Not constexpr: the claim
     // reads the thread id and an atomic.
-    [[nodiscard]] CRUCIBLE_INLINE VigilFgCtx mint_producer_context() noexcept {
-        return assert_producer_thread_();
-    }
+    [[nodiscard]] CRUCIBLE_INLINE VigilFgCtx mint_producer_context() noexcept { return assert_producer_thread_(); }
 
     // Only the foreground writes the mode, at each activation and
     // deactivation of the replay context.  The cell loads with acquire
@@ -376,9 +374,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool flush_complete() const {
-        return bg_.total_processed.load_acquire() >= ring_->total_produced();
-    }
+    [[nodiscard]] bool flush_complete() const { return bg_.total_processed.load_acquire() >= ring_->total_produced(); }
 
     // Makes the previously superseded transaction active again, restoring
     // the replay state to match.
@@ -624,8 +620,8 @@ private:
     // deliberately not recorded, as the tail of this function says, so no
     // metadata ever reaches a reader from here.
     [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(VigilFgCtx const& fg,
-                                                                                SchemaHash schema_hash,
-                                                                                ShapeHash shape_hash) {
+                                                                                 SchemaHash schema_hash,
+                                                                                 ShapeHash shape_hash) {
         const uint32_t div_pos = ctx_.engine().ops_matched();
 
         // A region the background thread published while the context was
@@ -691,10 +687,9 @@ private:
     // certified again before record_op will take it, and certifying one that
     // is already certified means minting the second tag with no check behind
     // it. Carrying the pointer keeps the caller's certification.
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult
-    dispatch_transition_(VigilFgCtx const& fg, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
-                         uint32_t n_metas, ScopeHash scope_hash, CallsiteHash callsite_hash)
-        pre(ve.value() != nullptr) {
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(
+        VigilFgCtx const& fg, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
+        ScopeHash scope_hash, CallsiteHash callsite_hash) pre(ve.value() != nullptr) {
         const TraceRing::Entry& entry = *ve.value();
         // A newer region arriving mid-alignment replaces the pending one and
         // restarts the alignment from zero.  That is correct: the newer

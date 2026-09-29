@@ -120,7 +120,8 @@ void test_cpulist_parser_refuses_malformed_text() {
     CHECK(parse_cpulist("8191").size() == 1, "the largest id below the ceiling");
 
     std::string repeated;
-    for (int i = 0; i < 4096; ++i) repeated += "0-8191,";
+    for (int i = 0; i < 4096; ++i)
+        repeated += "0-8191,";
     CHECK(parse_cpulist(repeated).size() == kMaxCpuCount, "a repeated full range stays at the ceiling");
 }
 

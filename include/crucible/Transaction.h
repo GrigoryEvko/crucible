@@ -108,17 +108,16 @@ inline void stamp_transaction(Transaction& tx,
 // copyable, so an owner type also needs a destructor that is not trivial.
 // An empty user-provided destructor is enough and costs nothing.
 template <typename P>
-concept OwnerProof = std::is_empty_v<P> && !std::is_copy_constructible_v<P> && !std::is_move_constructible_v<P>
-                     && !std::is_default_constructible_v<P> && !std::is_trivially_copyable_v<P>
-                     && !std::is_implicit_lifetime_v<P>;
+concept OwnerProof =
+    std::is_empty_v<P> && !std::is_copy_constructible_v<P> && !std::is_move_constructible_v<P>
+    && !std::is_default_constructible_v<P> && !std::is_trivially_copyable_v<P> && !std::is_implicit_lifetime_v<P>;
 
 // The log stamps each transaction with the monotonic clock, and a clock
 // reader is minted only by a context that owns Bg, Init or Test.  So the
 // log is built only from such a context.  The foreground dispatch path is
 // replay-bound and reads no clock.
 template <typename Ctx>
-concept CtxFitsTransactionLog =
-    ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy::ClockSource_v::Monotonic>;
+concept CtxFitsTransactionLog = ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy::ClockSource_v::Monotonic>;
 
 // A pointer the log returns stays valid for as long as the ring has not
 // wrapped past the slot it points into, and it is the owner's to use: the
@@ -177,8 +176,7 @@ public:
     // catches the case where the commit runs before the hash was recomputed.
     [[nodiscard]] bool commit(Owner const&, Transaction* const tx, Transaction::ArenaRegion region,
                               ContentHash content_hash, MerkleHash merkle_root) noexcept pre(tx != nullptr)
-        pre(region.value() != nullptr)
-        pre(::foundation::decide::is_non_zero(merkle_root)) {
+        pre(region.value() != nullptr) pre(::foundation::decide::is_non_zero(merkle_root)) {
         // A contract predicate that reads through a parameter's pointee is
         // skipped when the compiler folds the body at compile time, so every
         // such check in this file runs from the body rather than a clause.

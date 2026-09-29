@@ -140,60 +140,60 @@ struct insight_provider<::fixy::duplicate_atom_on<A>> {
 // surfaces cannot drift apart.
 
 CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::classified_io_without_declassify, ::foundation::diag::Severity::Fatal,
-                            "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 type-system foundation) "
-                            "implicit information flow: a classified value reaches an I/O boundary without an "
-                            "audit-discharging declassification policy.  Sequential IFC type systems require an "
-                            "explicit policy at every classified-to-IO transition, and only a policy whose mask "
-                            "names IO discharges it: AuditedLogging, WireSerialize or UserDisplay.",
-                            "The Security grade is the strict pole, atom::as_secret, atom::as_classified, or an "
-                            "atom::declassify<Policy> whose policy does not license IO, and the Effect grade is "
-                            "an atom::with<...> row naming IO.",
-                            "fixy::fn<T, atom::with_io, atom::as_public>  // role::IoFunction; or role::PublicEmit<T, "
-                            "tags::secret_policy::WireSerialize> for a licensed export",
-                            "fixy::fn<T, atom::as_secret, atom::with_io>  // classified IO");
+                          "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 type-system foundation) "
+                          "implicit information flow: a classified value reaches an I/O boundary without an "
+                          "audit-discharging declassification policy.  Sequential IFC type systems require an "
+                          "explicit policy at every classified-to-IO transition, and only a policy whose mask "
+                          "names IO discharges it: AuditedLogging, WireSerialize or UserDisplay.",
+                          "The Security grade is the strict pole, atom::as_secret, atom::as_classified, or an "
+                          "atom::declassify<Policy> whose policy does not license IO, and the Effect grade is "
+                          "an atom::with<...> row naming IO.",
+                          "fixy::fn<T, atom::with_io, atom::as_public>  // role::IoFunction; or role::PublicEmit<T, "
+                          "tags::secret_policy::WireSerialize> for a licensed export",
+                          "fixy::fn<T, atom::as_secret, atom::with_io>  // classified IO");
 
 CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::classified_bg_without_declassify, ::foundation::diag::Severity::Fatal,
-                            "Smith-Volpano 1998 + Sabelfeld-Sands 2000 + Hedin-Sabelfeld 2012 concurrent "
-                            "information flow: a classified value crosses into a background-thread context whose "
-                            "scheduling becomes secret-dependent.  Sequential IFC is UNSOUND under concurrency, "
-                            "and no policy discharges the Bg channel.",
-                            "The Security grade is the strict pole, atom::as_secret, atom::as_classified, or an "
-                            "atom::declassify<Policy>, and the Effect grade is an atom::with<...> row naming Bg.",
-                            "fixy::fn<T, atom::with<Effect::Bg, Effect::Alloc>, atom::as_public>  // role::BgWorker",
-                            "fixy::fn<T, atom::as_secret, atom::with_bg>  // classified Bg");
+                          "Smith-Volpano 1998 + Sabelfeld-Sands 2000 + Hedin-Sabelfeld 2012 concurrent "
+                          "information flow: a classified value crosses into a background-thread context whose "
+                          "scheduling becomes secret-dependent.  Sequential IFC is UNSOUND under concurrency, "
+                          "and no policy discharges the Bg channel.",
+                          "The Security grade is the strict pole, atom::as_secret, atom::as_classified, or an "
+                          "atom::declassify<Policy>, and the Effect grade is an atom::with<...> row naming Bg.",
+                          "fixy::fn<T, atom::with<Effect::Bg, Effect::Alloc>, atom::as_public>  // role::BgWorker",
+                          "fixy::fn<T, atom::as_secret, atom::with_bg>  // classified Bg");
 
 CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::staleness_secret_without_declassify, ::foundation::diag::Severity::Fatal,
-                            ::fixy::corpus::staleness_secret_without_declassify::cite(),
-                            "The Security grade is a carrier or an atom::declassify<Policy> whose policy does "
-                            "not discharge Staleness, and the Staleness grade is atom::stale_to<TauMax>.",
-                            "fixy::fn<T, atom::stale_to<100>, atom::declassify<tags::secret_policy::AuthorizedReplay>>",
-                            "fixy::fn<T, atom::as_secret, atom::stale_to<100>>  // no replay discharge");
+                          ::fixy::corpus::staleness_secret_without_declassify::cite(),
+                          "The Security grade is a carrier or an atom::declassify<Policy> whose policy does "
+                          "not discharge Staleness, and the Staleness grade is atom::stale_to<TauMax>.",
+                          "fixy::fn<T, atom::stale_to<100>, atom::declassify<tags::secret_policy::AuthorizedReplay>>",
+                          "fixy::fn<T, atom::as_secret, atom::stale_to<100>>  // no replay discharge");
 
 CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::ghost_runtime_observable, ::foundation::diag::Severity::Fatal,
-                            ::fixy::corpus::ghost_runtime_observable::cite(),
-                            "The Usage grade is atom::ghost and the Effect grade is an atom::with<...> row naming "
-                            "Alloc, IO, Block or Bg.",
-                            "fixy::fn<T, atom::with_io, atom::as_public>  // drop ghost: linear is the strict pole",
-                            "fixy::fn<T, atom::ghost, atom::with_io>  // erased code that must emit");
+                          ::fixy::corpus::ghost_runtime_observable::cite(),
+                          "The Usage grade is atom::ghost and the Effect grade is an atom::with<...> row naming "
+                          "Alloc, IO, Block or Bg.",
+                          "fixy::fn<T, atom::with_io, atom::as_public>  // drop ghost: linear is the strict pole",
+                          "fixy::fn<T, atom::ghost, atom::with_io>  // erased code that must emit");
 
 CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::internal_io_without_declassify, ::foundation::diag::Severity::Fatal,
-                            "Bell-LaPadula 1973 + Volpano-Smith-Irvine 1996 + Sabelfeld-Myers 2003 "
-                            "no-write-down: org-internal data (atom::as_internal, below the strict pole but "
-                            "above public) flows into an I/O sink without an audit-discharging declassification "
-                            "policy.  Every non-public to public crossing requires a discharge, not just the "
-                            "classified and secret tiers.  An internal value leaves through a policy whose mask "
-                            "names IO, written in place of atom::as_internal.",
-                            "The Security grade is atom::as_internal and the Effect grade is an atom::with<...> "
-                            "row naming IO.",
-                            "fixy::fn<T, atom::with_io, atom::as_public>  // or drop the IO atom",
-                            "fixy::fn<T, atom::as_internal, atom::with_io>  // internal write-down");
+                          "Bell-LaPadula 1973 + Volpano-Smith-Irvine 1996 + Sabelfeld-Myers 2003 "
+                          "no-write-down: org-internal data (atom::as_internal, below the strict pole but "
+                          "above public) flows into an I/O sink without an audit-discharging declassification "
+                          "policy.  Every non-public to public crossing requires a discharge, not just the "
+                          "classified and secret tiers.  An internal value leaves through a policy whose mask "
+                          "names IO, written in place of atom::as_internal.",
+                          "The Security grade is atom::as_internal and the Effect grade is an atom::with<...> "
+                          "row naming IO.",
+                          "fixy::fn<T, atom::with_io, atom::as_public>  // or drop the IO atom",
+                          "fixy::fn<T, atom::as_internal, atom::with_io>  // internal write-down");
 
 CRUCIBLE_DIAG_INSIGHTS_QV(::fixy::corpus::internal_bg_without_declassify, ::foundation::diag::Severity::Fatal,
-                            ::fixy::corpus::internal_bg_without_declassify::cite(),
-                            "The Security grade is atom::as_internal and the Effect grade is an atom::with<...> "
-                            "row naming Bg.",
-                            "fixy::fn<T, atom::with_bg, atom::as_public>  // or run on the foreground thread",
-                            "fixy::fn<T, atom::as_internal, atom::with_bg>  // internal concurrent write-down");
+                          ::fixy::corpus::internal_bg_without_declassify::cite(),
+                          "The Security grade is atom::as_internal and the Effect grade is an atom::with<...> "
+                          "row naming Bg.",
+                          "fixy::fn<T, atom::with_bg, atom::as_public>  // or run on the foreground thread",
+                          "fixy::fn<T, atom::as_internal, atom::with_bg>  // internal concurrent write-down");
 
 // The four policies below are named verbatim inside the inert strings
 // above, which no compiler ever checks.  These pins put a rename or a

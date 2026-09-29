@@ -68,7 +68,7 @@ using ::foundation::algebra::ModalityKind;
 // What a destructor does with a handle that still owes its protocol.
 enum class AbandonAction : std::uint8_t {
     Ignore,  // nothing
-    Abort,   // print the construction site, then std::abort
+    Abort,  // print the construction site, then std::abort
     Cancel,  // send a cancellation to the peer through the Resource
 };
 

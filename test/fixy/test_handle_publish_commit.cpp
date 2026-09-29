@@ -70,8 +70,7 @@ static_assert(!ReadsWithAnOrderArgument<Cell>);
     std::uint64_t slot = 0;
     std::uint64_t seen = 0;
     std::thread reader([&] {
-        while (cell.load_acquire() == 0) {
-        }
+        while (cell.load_acquire() == 0) {}
         seen = slot;
     });
     Publisher::publish(cell, &slot, 42);

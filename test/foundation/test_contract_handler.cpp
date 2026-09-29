@@ -52,8 +52,7 @@ void fill_standard_error() noexcept {
     const int flags = ::fcntl(STDERR_FILENO, F_GETFL);
     if (flags < 0 || ::fcntl(STDERR_FILENO, F_SETFL, flags | O_NONBLOCK) != 0) ::_exit(90);
     const char filler = 'f';
-    while (::write(STDERR_FILENO, &filler, 1) == 1 || errno == EINTR) {
-    }
+    while (::write(STDERR_FILENO, &filler, 1) == 1 || errno == EINTR) {}
     if (errno != EAGAIN || ::fcntl(STDERR_FILENO, F_SETFL, flags) != 0) ::_exit(91);
 }
 
@@ -76,7 +75,7 @@ template <typename Body>
     }
     ::close(channel[1]);
     int status = 0;
-    const ::timespec pause{0, 10'000'000};
+    const ::timespec pause{0, 10000000};
     for (int tick = 0; tick < 1000; ++tick) {
         const ::pid_t reaped = ::waitpid(child, &status, WNOHANG);  // SPAWN-PROCESS-OK: the death test reaps its child
         if (reaped == child) {

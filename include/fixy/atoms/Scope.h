@@ -134,7 +134,8 @@ static_assert(no_roster_member_lifts_<scope_atom_roster>(),
 // with Cluster, so it is neither at or above it nor below it.
 static_assert(scope::at_or_above(fal::MemoryScope::Gpu, fal::MemoryScope::Cluster));
 static_assert(scope::at_or_above(fal::MemoryScope::Cluster, fal::MemoryScope::Cluster));
-static_assert(scope::at_or_above(fal::MemoryScope::System, fal::MemoryScope::Cluster), "the shared top reaches everywhere");
+static_assert(scope::at_or_above(fal::MemoryScope::System, fal::MemoryScope::Cluster),
+              "the shared top reaches everywhere");
 static_assert(!scope::at_or_above(fal::MemoryScope::Cta, fal::MemoryScope::Cluster));
 static_assert(!scope::at_or_above(fal::MemoryScope::Inner, fal::MemoryScope::Cluster), "incomparable, not smaller");
 static_assert(!scope::at_or_above(fal::MemoryScope::Cluster, fal::MemoryScope::Inner));

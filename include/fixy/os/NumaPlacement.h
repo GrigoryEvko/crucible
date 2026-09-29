@@ -123,7 +123,10 @@ static_assert(std::to_underlying(NumaNodeId::None) <= numa_mask_bits,
     unsigned long mask[numa_mask_bits / numa_mask_word_bits]{};
     std::size_t const bit = std::to_underlying(node);
     mask[bit / numa_mask_word_bits] = 1UL << (bit % numa_mask_word_bits);
-    long const status = ::syscall(SYS_mbind, address, length, MPOL_BIND, mask, numa_mask_bits + 1, MPOL_MF_STRICT | MPOL_MF_MOVE);  // SYSCALL-CAP-OK: detail helper for mint_numa_placement ctx-gate (CtxFitsNumaBind: effects::IO+Block)
+    long const status = ::syscall(
+        SYS_mbind, address, length, MPOL_BIND, mask, numa_mask_bits + 1,
+        MPOL_MF_STRICT
+            | MPOL_MF_MOVE);  // SYSCALL-CAP-OK: detail helper for mint_numa_placement ctx-gate (CtxFitsNumaBind: effects::IO+Block)
     return status == 0 ? 0 : errno;
 }
 

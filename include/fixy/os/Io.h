@@ -302,8 +302,8 @@ concept CtxFitsSendfileTransfer =
     CtxFitsZerocopyTransfer<Ctx, Atoms...> && std::is_same_v<detail::zerocopy_of_t<Atoms...>, zerocopy::Sendfile>;
 
 template <typename Ctx, typename... Atoms>
-concept CtxFitsCopyRangeTransfer = CtxFitsZerocopyTransfer<Ctx, Atoms...>
-                                && std::is_same_v<detail::zerocopy_of_t<Atoms...>, zerocopy::CopyFileRange>;
+concept CtxFitsCopyRangeTransfer =
+    CtxFitsZerocopyTransfer<Ctx, Atoms...> && std::is_same_v<detail::zerocopy_of_t<Atoms...>, zerocopy::CopyFileRange>;
 
 // Declared before the class so the class can name it as its sole friend.
 // The definition follows the class, because it builds one.
@@ -351,8 +351,7 @@ class [[nodiscard]] IoUringRing {
     // fixy/os/CpuPinned.h, where a friend crosses a header boundary.
     template <typename... FriendAtoms, ::foundation::effects::IsExecCtx FriendCtx>
         requires CtxFitsIoUringMint<FriendCtx, FriendAtoms...>
-    friend auto mint_io_uring_ring(FriendCtx const&) noexcept
-        -> std::expected<Linear<IoUringRing>, std::error_code>;
+    friend auto mint_io_uring_ring(FriendCtx const&) noexcept -> std::expected<Linear<IoUringRing>, std::error_code>;
 
 public:
     // Default construction is the empty handle: it owns nothing, closes
@@ -551,7 +550,8 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
                   std::size_t length, ::off_t source_offset = 0) noexcept {
     return detail::transfer_all(source, destination, length, [&, offset = source_offset](std::size_t rest) mutable {
-        return ::sendfile(destination.get(), source.get(), &offset, rest);  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsSendfileTransfer, IO+Block)
+        return ::sendfile(destination.get(), source.get(), &offset,
+                          rest);  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsSendfileTransfer, IO+Block)
     });
 }
 
@@ -565,8 +565,9 @@ zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::Own
     return detail::transfer_all(
         source, destination, length,
         [&, in_offset = source_offset, out_offset = destination_offset](std::size_t rest) mutable {
-            return ::copy_file_range(  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsCopyRangeTransfer, IO+Block)
-                source.get(), &in_offset, destination.get(), &out_offset, rest, 0);
+            return ::
+                copy_file_range(  // SYSCALL-CAP-OK: zerocopy_transfer ctx-gate (CtxFitsCopyRangeTransfer, IO+Block)
+                    source.get(), &in_offset, destination.get(), &out_offset, rest, 0);
         });
 }
 
@@ -692,9 +693,10 @@ static_assert(!std::is_constructible_v<IoUringRing, int, void*, std::size_t, voi
 // Every tag fixy::io::ring_flag declares has an IORING_SETUP_* row in the
 // table.  The known-flag concept reads the table, so this walk is the
 // check that no declared tag is missing from it.
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::io::ring_flag, [](std::meta::info flag_tag) consteval {
-                  return ::fixy::atom_pack::has_row(ring_flag_table, flag_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::io::ring_flag,
+                                                        [](std::meta::info flag_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(ring_flag_table, flag_tag);
+                                                        }>(),
               "fixy/os/Io.h: a tag declared in fixy::io::ring_flag has no row in ring_flag_table, so the gate "
               "refuses every ring that names it.");
 

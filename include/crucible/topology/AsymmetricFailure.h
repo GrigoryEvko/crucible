@@ -134,7 +134,8 @@ template <class Ctx, std::size_t MaxPeers, std::size_t Window = 8, std::size_t M
 mint_asymmetric_failure_detector(Ctx const&, AsymmetricFailurePolicy policy = {}) noexcept;
 
 template <std::size_t MaxPeers, std::size_t Window, std::size_t MaxWitnesses>
-class AsymmetricFailureDetector : public ::foundation::Pinned<AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>> {
+class AsymmetricFailureDetector
+    : public ::foundation::Pinned<AsymmetricFailureDetector<MaxPeers, Window, MaxWitnesses>> {
     static_assert(MaxPeers > 0, "AsymmetricFailureDetector requires peer slots");
     static_assert(Window > 0, "AsymmetricFailureDetector requires a non-empty probe window");
     static_assert(Window <= 8, "AsymmetricFailureDetector local state is cache-line sized for Window <= 8");

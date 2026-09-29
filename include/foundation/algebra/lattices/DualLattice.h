@@ -44,12 +44,8 @@ struct DualLattice {
     static constexpr ClaimOrientation claim_orientation = turned_over(claim_orientation_v<L>);
 
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return L::leq(b, a); }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return L::meet(a, b);
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return L::join(a, b);
-    }
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return L::meet(a, b); }
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return L::join(a, b); }
 
     // Each extreme exists in the dual exactly when the opposite extreme
     // exists in the source.

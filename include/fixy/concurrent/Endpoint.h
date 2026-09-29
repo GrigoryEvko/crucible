@@ -131,7 +131,7 @@ template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsEndpointMint<Substr, Dir, Ctx>
 [[nodiscard]] constexpr auto mint_endpoint(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept {
     return ::fixy::session::detail::late_door_t<EndpointDoor, Substr>::template make_<Substr, Dir>(ctx,
-                                                                                                 std::move(handle));
+                                                                                                   std::move(handle));
 }
 
 // ── The door of the endpoint mint ────────────────────────────────────

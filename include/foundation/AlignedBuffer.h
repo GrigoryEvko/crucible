@@ -216,7 +216,7 @@ using ::foundation::lifetime::detail::lifetime_self_test::HoldsProof;
 
 // A count that refuses a start over bytes and builds from its own default
 // constructor, the shape of a provenance tag.
-struct [[=::foundation::lifetime::no_start_over_bytes{}]] MarkedCount {
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] MarkedCount {
     unsigned long long count = 0;
 };
 

@@ -130,11 +130,9 @@ int main() {
         const auto attached_refined = hub->attached_programs();
         const auto failures_refined = hub->attach_failures();
         static_assert(
-            std::is_same_v<decltype(attached_refined),
-                           const ::fixy::Refined<::fixy::bounded_above<64>, std::size_t>>);
+            std::is_same_v<decltype(attached_refined), const ::fixy::Refined<::fixy::bounded_above<64>, std::size_t>>);
         static_assert(
-            std::is_same_v<decltype(failures_refined),
-                           const ::fixy::Refined<::fixy::bounded_above<64>, std::size_t>>);
+            std::is_same_v<decltype(failures_refined), const ::fixy::Refined<::fixy::bounded_above<64>, std::size_t>>);
         const std::size_t attached = attached_refined.value();
         const std::size_t failures = failures_refined.value();
         // A hub with no programs at all is rejected by the loader, so a
@@ -157,9 +155,8 @@ int main() {
         // A successful load leaves the mapping live, so the view
         // borrows the whole counter array.
         const auto view = hub->counters_view();
-        static_assert(
-            std::is_same_v<decltype(view),
-                           const ::fixy::Borrowed<const volatile std::uint64_t, crucible::perf::SenseHub>>);
+        static_assert(std::is_same_v<decltype(view),
+                                     const ::fixy::Borrowed<const volatile std::uint64_t, crucible::perf::SenseHub>>);
         // The view must span exactly the whole counter array.  A
         // mismatch means the wrapper lost the count, since a wrongly
         // sized map would have been rejected by the verifier.

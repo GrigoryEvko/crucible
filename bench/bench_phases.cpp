@@ -345,10 +345,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-        char* aux = (aux_bytes > 0)
-                      ? static_cast<char*>(bg.arena.alloc(A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
-                                                          ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
-                      : nullptr;
+        char* aux = (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(
+                                          A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
+                                          ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
+                                    : nullptr;
         bg.ensure_scratch_buffers(total_inputs, total_outputs);
         const uint32_t slot_cap =
             std::min(bg.slot_cap_max_.get(), std::max(uint32_t{256}, total_inputs + total_outputs));
@@ -403,10 +403,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-        char* aux_cursor =
-            (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
-                                                                ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
-                            : nullptr;
+        char* aux_cursor = (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(
+                                                 A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
+                                                 ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
+                                           : nullptr;
 
         const uint64_t t0 = bench::rdtsc_start();
 
@@ -438,9 +438,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 const uint32_t meta_offset = ms.raw() - first_meta;
                 te.input_metas = meta_base + meta_offset;
                 te.output_metas = meta_base + meta_offset + n_in;
-                te.scalar_args =
-                    (n_scalars > 0) ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
-                                    : nullptr;
+                te.scalar_args = (n_scalars > 0)
+                                   ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
+                                   : nullptr;
                 aux_cursor += n_scalars * sizeof(int64_t);
                 te.input_trace_indices = ::foundation::lifetime::start_as_array<OpIndex>(aux_cursor, n_in).data();
                 aux_cursor += n_in * sizeof(OpIndex);

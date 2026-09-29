@@ -76,7 +76,8 @@ void test_admission_and_names() {
 
 void test_fabric_plan_minting() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
-    auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
+    auto plan =
+        shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, shp::DeclaredSharpFabricPlan>);
     assert(plan->value().participant_count.value() == 8);
@@ -90,7 +91,8 @@ void test_fabric_plan_minting() {
 
     auto wrong_kind = switch_identity();
     wrong_kind.kind = cog::CogKind::NicPort;
-    auto non_switch = shp::mint_sharp_fabric_plan(init, wrong_kind, switch_caps(), *shp::admit_sharp_participant_count(8));
+    auto non_switch =
+        shp::mint_sharp_fabric_plan(init, wrong_kind, switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(!non_switch.has_value());
     assert(non_switch.error() == shp::SharpError::NonSwitchCog);
 
@@ -105,7 +107,8 @@ void test_fabric_plan_minting() {
 
 void test_recipe_eligibility() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
-    auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
+    auto plan =
+        shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
 
     auto eligible = shp::eligibility_check(recipe(crucible::ReductionDeterminism::BITEXACT_TC),
@@ -135,7 +138,8 @@ void test_recipe_eligibility() {
 void test_dispatch_boundary() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     ::fixy::BgDrainCtx bg{fe::testing::bg()};
-    auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
+    auto plan =
+        shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(), *shp::admit_sharp_participant_count(8));
     assert(plan.has_value());
 
     std::array<float, 4> input{1.0f, 2.0f, 3.0f, 4.0f};

@@ -14,7 +14,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::ghost,
-                                ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::clock_gettime>>
-        refused{};
+                                ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::clock_gettime>> refused{};
     return 0;
 }

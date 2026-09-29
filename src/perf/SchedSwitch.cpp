@@ -30,8 +30,8 @@ std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const& ctx) noe
     const detail::RingSpec spec{
         .load = {.facade = "sched_switch",
                  .object_name = "crucible_sched_switch",
-                 .bytecode = std::span{sched_switch_bpf_bytecode,
-                                       static_cast<std::size_t>(sched_switch_bpf_bytecode_len)},
+                 .bytecode =
+                     std::span{sched_switch_bpf_bytecode, static_cast<std::size_t>(sched_switch_bpf_bytecode_len)},
                  .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel "
                                   "missing sched_switch tracepoint)"},
         .timeline_map = "sched_timeline",
@@ -48,7 +48,8 @@ std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const& ctx) noe
 uint64_t SchedSwitch::context_switches() const noexcept { return state_ != nullptr ? state_->count() : 0; }
 
 ::fixy::Borrowed<const TimelineSchedEvent, SchedSwitch> SchedSwitch::timeline_view() const noexcept {
-    return state_ != nullptr ? state_->events<SchedSwitch>() : ::fixy::Borrowed<const TimelineSchedEvent, SchedSwitch>{};
+    return state_ != nullptr ? state_->events<SchedSwitch>()
+                             : ::fixy::Borrowed<const TimelineSchedEvent, SchedSwitch>{};
 }
 
 uint64_t SchedSwitch::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }

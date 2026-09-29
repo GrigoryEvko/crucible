@@ -130,7 +130,8 @@ using SmallFileBuffer = std::array<char, kSmallFileBytes>;
 // open accepts.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHostProbe<Ctx>
-[[nodiscard]] inline std::string_view read_small_file(Ctx const& ctx, const char* path, SmallFileBuffer& into) noexcept {
+[[nodiscard]] inline std::string_view read_small_file(Ctx const& ctx, const char* path,
+                                                      SmallFileBuffer& into) noexcept {
     auto sanitized =
         ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{path}));
     if (!sanitized.has_value()) {

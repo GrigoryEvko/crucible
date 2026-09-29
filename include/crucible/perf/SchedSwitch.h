@@ -147,7 +147,8 @@ template <::foundation::effects::IsExecCtx Ctx>
 // §XXI carve-out: cx=alloc — the load path maps the timeline ring and
 // heap-allocates State.  Compile-time evaluation would lie about the
 // runtime cost.
-[[nodiscard]] inline std::optional<SchedSwitch> mint_sched_switch(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
+[[nodiscard]] inline std::optional<SchedSwitch> mint_sched_switch(Ctx const&,
+                                                                  ::fixy::InitLoadCtx const& init) noexcept {
     return SchedSwitch::load(init);
 }
 

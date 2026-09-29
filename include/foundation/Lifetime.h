@@ -72,7 +72,8 @@ inline constexpr int max_subobject_depth = 64;
     }
     const bool is_class_or_union = std::meta::is_class_type(type) || std::meta::is_union_type(type);
     if (is_class_or_union && !std::meta::is_complete_type(type)) return false;
-    if (is_class_or_union && ::foundation::reflect::holds_unreadable_state(::foundation::reflect::TypeNode{type, true})) {
+    if (is_class_or_union
+        && ::foundation::reflect::holds_unreadable_state(::foundation::reflect::TypeNode{type, true})) {
         return false;
     }
     if (is_class_or_union && !std::meta::annotations_of_with_type(type, ^^no_start_over_bytes).empty()) return false;
@@ -169,7 +170,7 @@ static_assert(!ImplicitLifetimeThroughout<HoldsReference>, "no lifetime start bi
 // A marked class is implicit-lifetime, so the marker alone refuses it, and
 // the walk carries the refusal through a member, an array, a base and a
 // union member.
-struct [[=::foundation::lifetime::no_start_over_bytes{}]] MarkedCount {
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] MarkedCount {
     unsigned long long count = 0;
 };
 struct HoldsMarked {

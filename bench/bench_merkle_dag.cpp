@@ -298,7 +298,8 @@ int main(int argc, char* argv[]) {
         std::vector<MetaIndex> meta_batch(4096);
         std::vector<ScopeHash> scope_batch(4096);
         std::vector<CallsiteHash> callsite_batch(4096);
-        const uint32_t n = ring->drain(batch.data(), 4096, meta_batch.data(), scope_batch.data(), callsite_batch.data());
+        const uint32_t n =
+            ring->drain(batch.data(), 4096, meta_batch.data(), scope_batch.data(), callsite_batch.data());
 
         std::vector<TraceRing::Entry> saved_trace(batch.begin(), batch.begin() + n);
         std::vector<MetaIndex> saved_meta(meta_batch.begin(), meta_batch.begin() + n);

@@ -131,7 +131,8 @@ template <typename HB>
 typename HB::element_type clock_after(std::array<std::uint64_t, HB::process_count> const& steps) {
     typename HB::element_type clock = HB::bottom();
     for (std::size_t p = 0; p < HB::process_count; ++p) {
-        for (std::uint64_t i = 0; i < steps[p]; ++i) clock = HB::successor_at(clock, p);
+        for (std::uint64_t i = 0; i < steps[p]; ++i)
+            clock = HB::successor_at(clock, p);
     }
     return clock;
 }

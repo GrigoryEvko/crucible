@@ -94,11 +94,24 @@ concept DenseEnum = ::foundation::reflect::ScopedEnum<E> && enumerators_are_dens
 
 namespace detail::dense_enum_self_test {
 
-enum class Dense : std::uint8_t { First, Second, Third };
-enum class Holed : std::uint8_t { First, Third = 2 };
-enum class Reordered : std::uint8_t { Second = 1, First = 0 };
-enum class Empty : std::uint8_t {};
-enum Unscoped : std::uint8_t { unscoped_first };
+enum class Dense : std::uint8_t {
+    First,
+    Second,
+    Third
+};
+enum class Holed : std::uint8_t {
+    First,
+    Third = 2
+};
+enum class Reordered : std::uint8_t {
+    Second = 1,
+    First = 0
+};
+enum class Empty : std::uint8_t {
+};
+enum Unscoped : std::uint8_t {
+    unscoped_first
+};
 
 static_assert(DenseEnum<Dense>);
 static_assert(!DenseEnum<Holed>);

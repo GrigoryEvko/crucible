@@ -120,9 +120,8 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
 
     // The whole permission is the proof that no handle is alive, so the
     // body reaches the ring itself.  Here it leaves one value behind.
-    auto returned = channel.with_recombined_access(std::move(whole), [](auto& ring) noexcept {
-        (void)ring.try_push(100);
-    });
+    auto returned =
+        channel.with_recombined_access(std::move(whole), [](auto& ring) noexcept { (void)ring.try_push(100); });
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(returned));
 

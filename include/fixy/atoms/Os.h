@@ -314,10 +314,9 @@ using os_atom_roster = roster_cat_t<io_atom_roster, fs_atom_roster, mmap_atom_ro
 // matters, and neg_os_tag_namespace_holds_a_non_tag plants one ahead of
 // the header to witness that the walk reads members no roster listed.
 inline constexpr std::meta::info os_tag_namespaces[] = {
-    ^^::fixy::io::engine,    ^^::fixy::io::zerocopy, ^^::fixy::io::ring_flag,
-    ^^::fixy::fs::open_mode, ^^::fixy::fs::flag,     ^^::fixy::fs::sync_op,
-    ^^::fixy::fs::atomicity, ^^::fixy::mmap::prot,   ^^::fixy::mmap::share,
-    ^^::fixy::mmap::advice,
+    ^^::fixy::io::engine,  ^^::fixy::io::zerocopy, ^^::fixy::io::ring_flag, ^^::fixy::fs::open_mode,
+    ^^::fixy::fs::flag,    ^^::fixy::fs::sync_op,  ^^::fixy::fs::atomicity, ^^::fixy::mmap::prot,
+    ^^::fixy::mmap::share, ^^::fixy::mmap::advice,
 };
 
 // Every member of the roster lifts to exactly the row given.

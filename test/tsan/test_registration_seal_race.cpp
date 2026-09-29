@@ -56,7 +56,8 @@ using RegisteredFlags = std::array<std::array<bool, WRITES_PER_WRITER>, WRITER_C
 [[nodiscard]] uint32_t seal_delay_of(uint32_t round) { return (round * 97u) % 4096u; }
 
 void pause_for(uint32_t pause_count) {
-    for (uint32_t i = 0; i < pause_count; ++i) CRUCIBLE_SPIN_PAUSE;
+    for (uint32_t i = 0; i < pause_count; ++i)
+        CRUCIBLE_SPIN_PAUSE;
 }
 
 // Keeps the writes of one writer in order and checks that a refusal is final.
@@ -76,7 +77,8 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
 [[nodiscard]] uint32_t count_true(RegisteredFlags const& registered) {
     uint32_t total = 0;
     for (auto const& per_writer : registered)
-        for (const bool was_registered : per_writer) total += was_registered ? 1u : 0u;
+        for (const bool was_registered : per_writer)
+            total += was_registered ? 1u : 0u;
     return total;
 }
 
@@ -92,9 +94,11 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
     std::latch start{WRITER_COUNT + 1};
     {
         std::jthread reader{[&] {
-            while (!table.is_sealed()) CRUCIBLE_SPIN_PAUSE;
+            while (!table.is_sealed())
+                CRUCIBLE_SPIN_PAUSE;
             const std::span<const crucible::SchemaEntry> entries = table.entries();
-            for (size_t i = 1; i < entries.size(); ++i) assert(entries[i - 1].hash < entries[i].hash);
+            for (size_t i = 1; i < entries.size(); ++i)
+                assert(entries[i - 1].hash < entries[i].hash);
             count_seen_by_reader = static_cast<uint32_t>(entries.size());
         }};
         std::jthread sealer{[&] {
@@ -106,12 +110,13 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
         std::array<std::jthread, WRITER_COUNT> writers;
         for (uint32_t writer = 0; writer < WRITER_COUNT; ++writer) {
             writers[writer] = std::jthread{[&, writer] {
-                run_writer(round, writer, start,
-                           [&](crucible::SchemaHash hash) {
-                               return table.register_name(
-                                   *view, hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::race"));
-                           },
-                           registered[writer]);
+                run_writer(
+                    round, writer, start,
+                    [&](crucible::SchemaHash hash) {
+                        return table.register_name(
+                            *view, hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::race"));
+                    },
+                    registered[writer]);
             }};
         }
     }
@@ -140,7 +145,8 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
     std::latch start{WRITER_COUNT + 1};
     {
         std::jthread reader{[&] {
-            while (!table.is_sealed()) CRUCIBLE_SPIN_PAUSE;
+            while (!table.is_sealed())
+                CRUCIBLE_SPIN_PAUSE;
             uint32_t found = 0;
             for (uint32_t writer = 0; writer < WRITER_COUNT; ++writer)
                 for (uint32_t index = 0; index < WRITES_PER_WRITER; ++index)
@@ -156,11 +162,12 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
         std::array<std::jthread, WRITER_COUNT> writers;
         for (uint32_t writer = 0; writer < WRITER_COUNT; ++writer) {
             writers[writer] = std::jthread{[&, writer] {
-                run_writer(round, writer, start,
-                           [&](crucible::SchemaHash hash) {
-                               return table.register_op(*view, hash, crucible::CKernelId::GEMM_MM);
-                           },
-                           registered[writer]);
+                run_writer(
+                    round, writer, start,
+                    [&](crucible::SchemaHash hash) {
+                        return table.register_op(*view, hash, crucible::CKernelId::GEMM_MM);
+                    },
+                    registered[writer]);
             }};
         }
     }
@@ -171,8 +178,7 @@ void run_writer(uint32_t round, uint32_t writer, std::latch& start, Register&& r
     assert(count_true(registered) == final_count);
     for (uint32_t writer = 0; writer < WRITER_COUNT; ++writer) {
         for (uint32_t index = 0; index < WRITES_PER_WRITER; ++index) {
-            const bool is_present =
-                table.classify(hash_of(round, writer, index)) == crucible::CKernelId::GEMM_MM;
+            const bool is_present = table.classify(hash_of(round, writer, index)) == crucible::CKernelId::GEMM_MM;
             assert(is_present == registered[writer][index]);
         }
     }

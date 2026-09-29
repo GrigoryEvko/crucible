@@ -14,6 +14,4 @@ namespace {
 struct LookAlike : ::fixy::session::CrashSessionDoor {};
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

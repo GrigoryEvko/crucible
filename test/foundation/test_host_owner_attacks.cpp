@@ -94,8 +94,10 @@ struct SelfBranded {
 };
 using SelfBrandedCtx = fe::ExecCtx<fe::ctx_cap::BrandedFg<SelfBranded>, fe::Row<>>;
 static_assert(std::is_same_v<decltype(std::declval<SelfBranded&>().claim.mint_producer_context()), SelfBrandedCtx>);
-static_assert(!std::is_convertible_v<SelfBrandedCtx, UnbrandedCtx> && !std::is_constructible_v<UnbrandedCtx, SelfBrandedCtx>);
-static_assert(!std::is_convertible_v<SelfBrandedCtx, ProducerCtx> && !std::is_constructible_v<ProducerCtx, SelfBrandedCtx>);
+static_assert(!std::is_convertible_v<SelfBrandedCtx, UnbrandedCtx>
+              && !std::is_constructible_v<UnbrandedCtx, SelfBrandedCtx>);
+static_assert(!std::is_convertible_v<SelfBrandedCtx, ProducerCtx>
+              && !std::is_constructible_v<ProducerCtx, SelfBrandedCtx>);
 static_assert(!std::is_convertible_v<ProducerCtx, UnbrandedCtx> && !std::is_constructible_v<UnbrandedCtx, ProducerCtx>);
 
 // The first thread that mints holds the claim, and a second thread reads

@@ -52,7 +52,8 @@ using CalibratedValue = ::fixy::Tagged<T, ::fixy::tags::source::Calibrated>;
 
 // A GPU warp is 32 lanes on NVIDIA and 64 on AMD. A CPU SIMD register
 // holds 4 to 64 lanes depending on the ISA.
-inline constexpr auto power_of_two_lane = ::fixy::all_of<::fixy::power_of_two, ::fixy::bounded_above<std::uint16_t{128}>>;
+inline constexpr auto power_of_two_lane =
+    ::fixy::all_of<::fixy::power_of_two, ::fixy::bounded_above<std::uint16_t{128}>>;
 using PowerOfTwoLane = ::fixy::Refined<power_of_two_lane, std::uint16_t>;
 static_assert(sizeof(PowerOfTwoLane) == sizeof(std::uint16_t),
               "PowerOfTwoLane must collapse to the size of the value it refines.");

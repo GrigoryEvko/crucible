@@ -73,8 +73,7 @@ static_assert(ranges_find_offset("0,1,2,3" + 2, 5) == 1);
 // Compares one answer with the run-time answer.  Returns true when they agree.
 bool agrees(const char* route, std::size_t folded, std::size_t runtime) {
     if (folded == runtime) return true;
-    std::fprintf(stderr, "%s: the folded answer is %zu, and the run-time answer is %zu\n", route, folded,
-                 runtime);
+    std::fprintf(stderr, "%s: the folded answer is %zu, and the run-time answer is %zu\n", route, folded, runtime);
     return false;
 }
 
@@ -92,8 +91,7 @@ int main() {
     all_agree &= agrees("std::string_view::find", string_view_find("0,1,2,3", 2),
                         string_view_find(std::string_view{text, 7}, 2));
     all_agree &= agrees("std::find", std_find_offset("0,1,2,3" + 2, 5), std_find_offset(text + 2, 5));
-    all_agree &= agrees("std::ranges::find", ranges_find_offset("0,1,2,3" + 2, 5),
-                        ranges_find_offset(text + 2, 5));
+    all_agree &= agrees("std::ranges::find", ranges_find_offset("0,1,2,3" + 2, 5), ranges_find_offset(text + 2, 5));
     if (!all_agree) return 1;
     std::printf("test_gcc_memchr_fold: every route gives the correct offset\n");
     return 0;

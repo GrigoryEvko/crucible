@@ -105,8 +105,10 @@ inline constexpr std::size_t kMaxCpuCount = 8192;
         const std::size_t comma = s.find(',');
         std::string_view entry = s.substr(0, comma);
         s.remove_prefix(comma < s.size() ? comma + 1 : s.size());
-        while (!entry.empty() && is_blank(entry.front())) entry.remove_prefix(1);
-        while (!entry.empty() && is_blank(entry.back())) entry.remove_suffix(1);
+        while (!entry.empty() && is_blank(entry.front()))
+            entry.remove_prefix(1);
+        while (!entry.empty() && is_blank(entry.back()))
+            entry.remove_suffix(1);
         if (entry.empty()) continue;
 
         const std::size_t dash = entry.find('-');

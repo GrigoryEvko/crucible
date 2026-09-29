@@ -10,7 +10,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::borrow,
-                                ::fixy::atom::spawn::syscall_only<"bpf loader needs CLONE_VM">>
-        refused{};
+                                ::fixy::atom::spawn::syscall_only<"bpf loader needs CLONE_VM">> refused{};
     return 0;
 }

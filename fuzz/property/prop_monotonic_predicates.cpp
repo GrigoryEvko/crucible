@@ -45,9 +45,7 @@ struct SeqSpec {
 };
 
 // The oracle: non-decreasing order, by iterators.
-[[nodiscard]] bool weak_oracle(std::span<const T> xs) noexcept {
-    return std::is_sorted(xs.begin(), xs.end());
-}
+[[nodiscard]] bool weak_oracle(std::span<const T> xs) noexcept { return std::is_sorted(xs.begin(), xs.end()); }
 
 }  // namespace
 

@@ -152,12 +152,11 @@ static void test_validate_config() {
 static void test_fusion_benefit() {
     // Two kernels of 5 µs each fuse into one of 6 µs once the round trip
     // through memory between them is gone: 4 µs saved, 10/6 speedup.
-    auto fb = compute_fusion_benefit(
-        pure_ctx,
-        /*unfused_ns=*/10000.0,
-        /*fused_ns=*/6000.0,
-        /*saved_bytes=*/1024000,
-        /*saved_launches=*/1);
+    auto fb = compute_fusion_benefit(pure_ctx,
+                                     /*unfused_ns=*/10000.0,
+                                     /*fused_ns=*/6000.0,
+                                     /*saved_bytes=*/1024000,
+                                     /*saved_launches=*/1);
     assert(approx(static_cast<float>(fb.saved_ns), 4000.0f));
     assert(approx(fb.speedup, 10.0f / 6.0f));
     assert(fb.saved_launches == 1);
@@ -166,9 +165,8 @@ static void test_fusion_benefit() {
 
 // One concept for each evaluator, so each gate is read on its own.
 template <class Ctx>
-concept TakesWaveEfficiency = requires(Ctx const& ctx, HardwareProfile const& hw) {
-    wave_efficiency(ctx, uint64_t{0}, hw);
-};
+concept TakesWaveEfficiency =
+    requires(Ctx const& ctx, HardwareProfile const& hw) { wave_efficiency(ctx, uint64_t{0}, hw); };
 template <class Ctx>
 concept TakesSmOccupancy = requires(Ctx const& ctx, HardwareProfile const& hw, ValidRegsPerThread r) {
     sm_occupancy(ctx, r, uint32_t{0}, uint16_t{8}, hw);
@@ -186,11 +184,11 @@ concept TakesFusionBenefit = requires(Ctx const& ctx) { compute_fusion_benefit(c
 
 template <class Ctx>
 concept TakesEveryEvaluator = TakesWaveEfficiency<Ctx> && TakesSmOccupancy<Ctx> && TakesEvaluateCost<Ctx>
-                              && TakesEvaluateCostDefault<Ctx> && TakesFusionBenefit<Ctx>;
+                           && TakesEvaluateCostDefault<Ctx> && TakesFusionBenefit<Ctx>;
 
 template <class Ctx>
 concept TakesAnyEvaluator = TakesWaveEfficiency<Ctx> || TakesSmOccupancy<Ctx> || TakesEvaluateCost<Ctx>
-                            || TakesEvaluateCostDefault<Ctx> || TakesFusionBenefit<Ctx>;
+                         || TakesEvaluateCostDefault<Ctx> || TakesFusionBenefit<Ctx>;
 
 using BgIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>;
 using AllocOnlyCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Alloc>>;

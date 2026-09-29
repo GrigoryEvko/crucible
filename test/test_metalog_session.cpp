@@ -56,12 +56,14 @@ using ConsumerSession = ms::ConsumerSessionHandle<PermissionedLog, FgCtx>;
 
 // A Loop at the head is unrolled one iteration, so each first handle sits
 // at the choice of its loop body.
-static_assert(std::is_same_v<ProducerSession::protocol,
-                             ::fixy::session::Select<::fixy::session::Send<ms::MetaLogRecord, ::fixy::session::Continue>,
-                                                     ::fixy::session::End>>);
-static_assert(std::is_same_v<ConsumerSession::protocol,
-                             ::fixy::session::Select<::fixy::session::Recv<ms::MetaLogRecord, ::fixy::session::Continue>,
-                                                     ::fixy::session::End>>);
+static_assert(
+    std::is_same_v<ProducerSession::protocol,
+                   ::fixy::session::Select<::fixy::session::Send<ms::MetaLogRecord, ::fixy::session::Continue>,
+                                           ::fixy::session::End>>);
+static_assert(
+    std::is_same_v<ConsumerSession::protocol,
+                   ::fixy::session::Select<::fixy::session::Recv<ms::MetaLogRecord, ::fixy::session::Continue>,
+                                           ::fixy::session::End>>);
 static_assert(std::is_same_v<ProducerSession::perm_set, fp::EmptyPermSet>);
 static_assert(std::is_same_v<ConsumerSession::perm_set, fp::EmptyPermSet>);
 
@@ -129,8 +131,8 @@ void run_test(const char* name, Body body) {
 
 [[nodiscard]] auto mint_handles(PermissionedLog& log) {
     auto whole = fp::mint_permission_root<PermissionedLog::whole_tag>();
-    auto [pp, cp] = fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(
-        std::move(whole));
+    auto [pp, cp] =
+        fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(std::move(whole));
     return std::pair{log.producer(std::move(pp)), log.consumer(std::move(cp))};
 }
 
@@ -277,8 +279,7 @@ void test_typed_session_round_trip() {
             head.emplace(std::move(*head).select<0>(::fixy::session::no_label).send(make_meta(i + 10), ms::append_one));
         }
         auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
-        producer_handle_back.store(back.size_approx() <= static_cast<std::uint32_t>(kCount),
-                                   std::memory_order_release);
+        producer_handle_back.store(back.size_approx() <= static_cast<std::uint32_t>(kCount), std::memory_order_release);
         producer_done.store(true, std::memory_order_release);
     }};
 
@@ -288,7 +289,8 @@ void test_typed_session_round_trip() {
             ctx, std::move(consumer), [&received](auto first) noexcept {
                 std::optional head{std::move(first)};
                 for (int i = 0; i < kCount; ++i) {
-                    auto [meta, next] = std::move(*head).template select<0>(::fixy::session::no_label).recv(ms::drain_one);
+                    auto [meta, next] =
+                        std::move(*head).template select<0>(::fixy::session::no_label).recv(ms::drain_one);
                     received[static_cast<std::size_t>(i)] = meta;
                     head.emplace(std::move(next));
                 }

@@ -116,8 +116,8 @@ class OwnedRegion;
 
 template <class T, class Tag, class Brand>
     requires ::foundation::brand::IsBrand<Brand>
-[[nodiscard]] constexpr Borrowed<T, Tag, Brand>
-mint_borrowed(OwnedRegion<T, Tag, Brand>& region CRUCIBLE_LIFETIMEBOUND) noexcept;
+[[nodiscard]] constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>& region
+                                                              CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // The detection surface of Borrowed and BorrowedRef.  One reflection
 // query answers each, and the associated types are read off the
@@ -167,8 +167,8 @@ constexpr auto mint_borrowed_ref(T&&) = delete("a borrow of a temporary dangles 
 // other rvalue selects the deleted twin.
 template <class Source, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
     requires(std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
-[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh>
-mint_borrowed(R&& range CRUCIBLE_LIFETIMEBOUND) noexcept;
+[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh> mint_borrowed(R&& range
+                                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 template <class Source, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
     requires(!std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && std::ranges::borrowed_range<R>
@@ -243,7 +243,7 @@ public:
     // address carries no identity a brand could name.
     [[nodiscard]] static constexpr BorrowedRef from_raw_nonnull(T* p) noexcept
         requires std::is_same_v<Brand, ::foundation::brand::DefaultBrand>
-        pre(p != nullptr) {
+    pre(p != nullptr) {
         return BorrowedRef{from_raw_tag_t{}, p};
     }
 
@@ -280,7 +280,8 @@ private:
 
     template <class USource, class R, class Fresh>
         requires(std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
-    friend constexpr Borrowed<range_element_t<R>, USource, Fresh> mint_borrowed(R&& range CRUCIBLE_LIFETIMEBOUND) noexcept;
+    friend constexpr Borrowed<range_element_t<R>, USource, Fresh> mint_borrowed(R&& range
+                                                                                CRUCIBLE_LIFETIMEBOUND) noexcept;
 
     template <class USource, class R, class Fresh>
         requires(!std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && std::ranges::borrowed_range<R>
@@ -291,8 +292,8 @@ private:
     // carries the region's brand, so it needs this door too.
     template <class U, class UTag, class UBrand>
         requires ::foundation::brand::IsBrand<UBrand>
-    friend constexpr Borrowed<U, UTag, UBrand>
-    mint_borrowed(OwnedRegion<U, UTag, UBrand>& region CRUCIBLE_LIFETIMEBOUND) noexcept;
+    friend constexpr Borrowed<U, UTag, UBrand> mint_borrowed(OwnedRegion<U, UTag, UBrand>& region
+                                                             CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 public:
     constexpr Borrowed() noexcept = default;
@@ -377,8 +378,8 @@ mint_borrowed_ref(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept {
 
 template <class Source, class R, class Fresh>
     requires(std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
-[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh>
-mint_borrowed(R&& range CRUCIBLE_LIFETIMEBOUND) noexcept {
+[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh> mint_borrowed(R&& range
+                                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept {
     return Borrowed<range_element_t<R>, Source, Fresh>{
         detail::borrow_mint_t{}, std::span<range_element_t<R>>{std::ranges::data(range), std::ranges::size(range)}};
 }
@@ -420,9 +421,7 @@ public:
     // BorrowedRef::from_raw_nonnull, so it is stated here rather than
     // annotated: a pointer parameter cannot tell a live pointee from a
     // dead one, and the T& constructor above is the door that can.
-    [[nodiscard]] static constexpr WeakRef from_raw(T* p) noexcept {
-        return WeakRef{from_raw_tag_t{}, p};
-    }
+    [[nodiscard]] static constexpr WeakRef from_raw(T* p) noexcept { return WeakRef{from_raw_tag_t{}, p}; }
 
     [[nodiscard]] constexpr bool has_value() const noexcept { return ptr_ != nullptr; }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }

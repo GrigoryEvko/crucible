@@ -60,7 +60,7 @@ struct CRUCIBLE_OWNER MetaLog {
     // sees the entries. That also reaches a consumer that only acquires the
     // recording ring's counter, since this one is released first in program
     // order.
-    alignas(64) ::fixy::AtomicMonotonic<uint32_t> head = ::fixy::mint_atomic_monotonic<uint32_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint32_t> head = ::fixy::mint_atomic_monotonic<uint32_t>(0);
     // The producer's private view of the consumer's counter, refreshed only
     // when it claims the buffer is full. A stale value can only under-report
     // free space, so acting on it is safe. The type enforces the direction,
@@ -71,11 +71,12 @@ struct CRUCIBLE_OWNER MetaLog {
     // hot path stays one load with no indirection through the owner.
     TensorMeta* entries = nullptr;
 
-    alignas(64) ::fixy::AtomicMonotonic<uint32_t> tail = ::fixy::mint_atomic_monotonic<uint32_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint32_t> tail = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
     MetaLog()
-        : entries_buffer_{::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes>::
-                              allocate_value_initialized(CAPACITY)},
+        : entries_buffer_{
+              ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes>::allocate_value_initialized(
+                  CAPACITY)},
           entries{entries_buffer_.data()} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
@@ -202,8 +203,8 @@ struct CRUCIBLE_OWNER MetaLog {
     // The same body, with the tier declared in the return type so a consumer
     // that demands a hot-tier producer can be checked at compile time.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
-    CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>
-    try_append_pinned(const TensorMeta* metas, uint32_t n)
+    CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex> try_append_pinned(const TensorMeta* metas,
+                                                                                             uint32_t n)
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::valid_span(n, metas)) {
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>>(try_append(metas, n));
     }

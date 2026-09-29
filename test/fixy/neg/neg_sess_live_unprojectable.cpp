@@ -18,8 +18,8 @@ struct Left {};
 struct Right {};
 struct Note {};
 
-using OneBranch = g::Comm<Alice, Bob, g::Branch<Left, int, g::Msg<Bob, Carol, Note, int, g::End>>,
-                          g::Branch<Right, int, g::End>>;
+using OneBranch =
+    g::Comm<Alice, Bob, g::Branch<Left, int, g::Msg<Bob, Carol, Note, int, g::End>>, g::Branch<Right, int, g::End>>;
 
 static_assert(g::is_balanced_plus_v<OneBranch>);
 

@@ -180,7 +180,8 @@ enum class SpecializationRead : unsigned char {
     if (std::meta::has_template_arguments(type)) return false;
     if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
     const auto unchecked = std::meta::access_context::unchecked();
-    return std::meta::bases_of(type, unchecked).empty() && std::meta::nonstatic_data_members_of(type, unchecked).empty();
+    return std::meta::bases_of(type, unchecked).empty()
+        && std::meta::nonstatic_data_members_of(type, unchecked).empty();
 }
 
 // The components one step below `type` that need no read of its
@@ -190,8 +191,8 @@ enum class SpecializationRead : unsigned char {
 // inherits `may_read_members`, because the element of a complete array is
 // complete.  Complexity: linear in the number of parameters or template
 // arguments.
-[[nodiscard]] consteval std::vector<TypeNode> argument_components_of(
-    TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
+[[nodiscard]] consteval std::vector<TypeNode>
+argument_components_of(TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
     std::vector<TypeNode> components;
     const std::meta::info type = bare_type(node.type);
 
@@ -231,8 +232,8 @@ enum class SpecializationRead : unsigned char {
 // members the walk may read.  For a specialization this read
 // instantiates the class, so the caller must know it is complete.
 // Complexity: linear in the number of bases and members.
-[[nodiscard]] consteval std::vector<TypeNode> member_components_of(
-    TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
+[[nodiscard]] consteval std::vector<TypeNode>
+member_components_of(TypeNode node, SpecializationRead read = SpecializationRead::ArgumentsOnly) {
     std::vector<TypeNode> components;
     const std::meta::info type = bare_type(node.type);
     if (!node.may_read_members) return components;

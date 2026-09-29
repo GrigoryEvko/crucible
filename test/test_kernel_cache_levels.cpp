@@ -47,12 +47,12 @@ static void test_lookup_l1_round_trip() {
 static void test_each_level_names_its_level() {
     KernelCache cache;
     FakeKernel fk{1};
-    static_assert(std::is_same_v<decltype(cache.lookup_l1(ContentHash{1}, RowHash{0})),
-                                 ::fixy::Tagged<CompiledKernel*, L1>>);
-    static_assert(std::is_same_v<decltype(cache.lookup_l2(ContentHash{1}, RowHash{0})),
-                                 ::fixy::Tagged<CompiledKernel*, L2>>);
-    static_assert(std::is_same_v<decltype(cache.lookup_l3(ContentHash{1}, RowHash{0})),
-                                 ::fixy::Tagged<CompiledKernel*, L3>>);
+    static_assert(
+        std::is_same_v<decltype(cache.lookup_l1(ContentHash{1}, RowHash{0})), ::fixy::Tagged<CompiledKernel*, L1>>);
+    static_assert(
+        std::is_same_v<decltype(cache.lookup_l2(ContentHash{1}, RowHash{0})), ::fixy::Tagged<CompiledKernel*, L2>>);
+    static_assert(
+        std::is_same_v<decltype(cache.lookup_l3(ContentHash{1}, RowHash{0})), ::fixy::Tagged<CompiledKernel*, L3>>);
     static_assert(std::is_same_v<decltype(cache.publish_l1(ContentHash{1}, RowHash{0}, fk_ptr(&fk))),
                                  ::fixy::Tagged<PublishResult, L1>>);
     static_assert(std::is_same_v<decltype(cache.publish_l2(ContentHash{1}, RowHash{0}, fk_ptr(&fk))),

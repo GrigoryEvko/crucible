@@ -53,8 +53,8 @@ using RuntimeMetricsComputation =
 
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 using RuntimeMetricsChannel =
-    ::fixy::concurrent::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag, RuntimeMetricsReaderTag,
-                                                  ReaderBrand, WriterBrand>;
+    ::fixy::concurrent::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag,
+                                                  RuntimeMetricsReaderTag, ReaderBrand, WriterBrand>;
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 using RuntimeMetricsWriter = typename RuntimeMetricsChannel<ReaderBrand, WriterBrand>::WriterHandle;
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>

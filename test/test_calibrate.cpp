@@ -205,8 +205,8 @@ void test_backend_boundaries() {
     assert(!specific.has_value());
     assert(specific.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto empty_specific =
-        cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(), std::span<const cog::GpuOpcode>{});
+    auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(),
+                                                                             std::span<const cog::GpuOpcode>{});
     assert(!empty_specific.has_value());
     assert(empty_specific.error() == cog::CalibrationError::EmptyOpcodeSet);
 
@@ -259,7 +259,8 @@ int main() {
     static_assert(::foundation::reflect::enum_name(cog::CalibrationError::BackendUnavailable) == "BackendUnavailable");
     static_assert(::foundation::reflect::enum_name(cog::CalibrationError::InvalidDriftBasisPoints)
                   == "InvalidDriftBasisPoints");
-    static_assert(::foundation::reflect::enum_name(static_cast<cog::CalibrationError>(200)) == "<unknown CalibrationError>");
+    static_assert(::foundation::reflect::enum_name(static_cast<cog::CalibrationError>(200))
+                  == "<unknown CalibrationError>");
 
     std::printf("test_calibrate:\n");
     test_admission();

@@ -58,15 +58,14 @@ void drop_open_loan() {
     auto [loan, lent] = std::move(lender).lend<Region>(1);
     auto [value, borrowing] = sess::mint_permission_hold().accept_loan(std::move(loan));
     (void)value;
-    {
-        auto dropped = std::move(borrowing);
-    }
+    { auto dropped = std::move(borrowing); }
 }
 
 }  // namespace
 
 int main() {
-    const bool refused = attack_aborts_with(drop_open_loan, "[Hold_Open_Loan]: a PermHold was destroyed with a loan open");
+    const bool refused =
+        attack_aborts_with(drop_open_loan, "[Hold_Open_Loan]: a PermHold was destroyed with a loan open");
     std::printf("test_session_hold_open_loan_aborts: %s\n", refused ? "refused" : "NOT REFUSED");
     return refused ? 0 : 1;
 }

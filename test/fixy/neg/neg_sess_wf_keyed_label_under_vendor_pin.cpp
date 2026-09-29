@@ -18,8 +18,9 @@ struct Bye {};
 
 using namespace neg_sess_wf_keyed_label_under_vendor_pin_types;
 
-using PinnedFirst = s::Offer<s::Sender<Bob>, s::VendorPinned<s::VendorBackend::NV, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>>,
-                             s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>>;
+using PinnedFirst =
+    s::Offer<s::Sender<Bob>, s::VendorPinned<s::VendorBackend::NV, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>>,
+             s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>>;
 
 int main() {
     s::ensure_choices_well_formed<PinnedFirst>();

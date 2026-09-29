@@ -23,8 +23,8 @@ namespace {
 
 template <cog::CogKind Kind>
 crucible::mimic::CogMimic<Kind> mimic_for(cog::CogIdentity const& identity) {
-    return crucible::mimic::mint_cog_mimic<Kind>(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
-                                                 identity, cog::caps_for_t<Kind>{}, cog::OpcodeLatencyTable<Kind>{});
+    return crucible::mimic::mint_cog_mimic<Kind>(::fixy::ColdInitCtx{::foundation::effects::testing::init()}, identity,
+                                                 cog::caps_for_t<Kind>{}, cog::OpcodeLatencyTable<Kind>{});
 }
 
 template <cog::CogKind Kind>

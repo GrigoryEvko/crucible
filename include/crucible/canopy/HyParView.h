@@ -48,7 +48,7 @@ struct HyParViewConfig {
     HyParViewPositiveCount active_random_walk_length = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{6});
     HyParViewPositiveCount passive_random_walk_length = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{6});
     HyParViewPositiveCount active_random_walk_acceptance = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{3});
-    HyParViewDurationNs shuffle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30'000'000'000});
+    HyParViewDurationNs shuffle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30000000000});
 };
 
 // A sample of a passive view, which a shuffle carries to a peer.
@@ -382,8 +382,7 @@ populate_hyparview_membership(HyParViewMembership<MaxActive, MaxPassive>& member
                               std::span<const HyParViewPeer> active_peers,
                               std::span<const HyParViewPeer> passive_peers) noexcept {
     const HyParViewConfig config = membership.config();
-    if (active_peers.size()
-        > static_cast<std::size_t>(config.active_size.value() - membership.active_size().value())) {
+    if (active_peers.size() > static_cast<std::size_t>(config.active_size.value() - membership.active_size().value())) {
         return std::unexpected(HyParViewError::ActiveViewFull);
     }
     if (passive_peers.size()
@@ -394,8 +393,9 @@ populate_hyparview_membership(HyParViewMembership<MaxActive, MaxPassive>& member
     // A peer is refused when it is zero, when a view holds it, or when an
     // entry before it names it.  `earlier` is the part of its own list
     // before it, and a passive peer is also checked against the active list.
-    auto const check_peer = [&membership](cog::Uuid uuid, std::span<const HyParViewPeer> earlier) noexcept
-        -> std::expected<void, HyParViewError> {
+    auto const check_peer =
+        [&membership](cog::Uuid uuid,
+                      std::span<const HyParViewPeer> earlier) noexcept -> std::expected<void, HyParViewError> {
         if (uuid.is_zero()) {
             return std::unexpected(HyParViewError::ZeroUuid);
         }

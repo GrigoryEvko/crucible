@@ -151,8 +151,7 @@ template <typename Parent, typename... Children>
 struct has_split_pack_authoring_witness : std::false_type {};
 
 template <typename Parent, typename... Children>
-inline constexpr bool has_split_pack_authoring_witness_v =
-    has_split_pack_authoring_witness<Parent, Children...>::value;
+inline constexpr bool has_split_pack_authoring_witness_v = has_split_pack_authoring_witness<Parent, Children...>::value;
 
 template <typename Parent, typename L, typename R>
 inline constexpr bool well_authored_split_v =
@@ -755,7 +754,7 @@ template <typename Tag, typename Brand, ::foundation::effects::IsExecCtx Ctx>
 template <typename L, typename R, typename... Args>
     requires PermissionSplitArgs<L, R, Args...>
 [[nodiscard]] constexpr std::pair<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
-                                  Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
+                                  Permission<R, detail::perm_brand_t<Args... [sizeof...(Args) - 1]>>>
 mint_permission_split(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
@@ -769,15 +768,15 @@ mint_permission_split(Args&&...) noexcept {
                   "only valid when parent and child permission rows are Row<>.  Use "
                   "the ctx-bound split overload for row-bearing permission tags.");
     static_assert(can_split_into_v<In, L, R>, "mint_permission_split<L, R>(Permission<In>&&) requires "
-                                           "can_split_into<In, L, R>::value to be specialized true.  "
-                                           "Declare the split in the same TU that defines the tags.");
+                                              "can_split_into<In, L, R>::value to be specialized true.  "
+                                              "Declare the split in the same TU that defines the tags.");
     static_assert(has_split_authoring_witness_v<In, L, R>, "can_split_into<In, L, R> is true but the accompanying "
-                                                             "has_split_authoring_witness<In, L, R> specialization "
-                                                             "is missing.  Every legitimate split ships the witness in "
-                                                             "the same TU as the trait.  Add `template <> struct "
-                                                             "has_split_authoring_witness<In, L, R> : "
-                                                             "std::true_type {};` next to the can_split_into "
-                                                             "specialization.");
+                                                           "has_split_authoring_witness<In, L, R> specialization "
+                                                           "is missing.  Every legitimate split ships the witness in "
+                                                           "the same TU as the trait.  Add `template <> struct "
+                                                           "has_split_authoring_witness<In, L, R> : "
+                                                           "std::true_type {};` next to the can_split_into "
+                                                           "specialization.");
     static_assert(all_distinct_tags_v<L, R>, "mint_permission_split<L, R> requires L and R to be "
                                              "DISTINCT region tags.  A manifest declaring "
                                              "can_split_into<In, A, A> would mint two Permission<A> from one "
@@ -789,8 +788,8 @@ mint_permission_split(Args&&...) noexcept {
 
 template <typename In, typename... Args>
     requires PermissionCombineArgs<In, Args...>
-[[nodiscard]] constexpr Permission<In, detail::perm_brand_t<Args...[sizeof...(Args) - 2]>>
-mint_permission_combine(Args&&...) noexcept {
+[[nodiscard]] constexpr Permission<In, detail::perm_brand_t<Args... [sizeof...(Args) - 2]>> mint_permission_combine(
+    Args&&...) noexcept {
     using L = detail::perm_tag_t<Args...[sizeof...(Args) - 2]>;
     using R = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 2]>;
@@ -807,17 +806,17 @@ mint_permission_combine(Args&&...) noexcept {
                   "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
                   "without ExecCtx is only valid for Row<> permission tags.");
     static_assert(can_split_into_v<In, L, R>, "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
-                                           "requires can_split_into<In, L, R>::value true.");
+                                              "requires can_split_into<In, L, R>::value true.");
     static_assert(has_split_authoring_witness_v<In, L, R>, "has_split_authoring_witness<In, L, R> missing for "
-                                                             "combine; declare it next to the can_split_into "
-                                                             "specialization.");
+                                                           "combine; declare it next to the can_split_into "
+                                                           "specialization.");
     return Permission<In, Brand>{perm_mint_key{}};
 }
 
 template <typename... Children, typename... Args>
     requires PermissionSplitNArgs<std::tuple<Children...>, Args...>
-[[nodiscard]] constexpr std::tuple<Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
-mint_permission_split_n(Args&&...) noexcept {
+[[nodiscard]] constexpr std::tuple<Permission<
+    Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...> mint_permission_split_n(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
     static_assert(has_permission_row_v<In> && (has_permission_row_v<Children> && ...),
@@ -830,7 +829,7 @@ mint_permission_split_n(Args&&...) noexcept {
                   "is only valid when every permission row is Row<>.  Use the ctx-bound "
                   "split_n overload for row-bearing permission tags.");
     static_assert(can_split_into_pack_v<In, Children...>, "mint_permission_split_n<Children...>(Permission<In>&&) "
-                                                       "requires can_split_into_pack<In, Children...>::value true.");
+                                                          "requires can_split_into_pack<In, Children...>::value true.");
     static_assert(has_split_pack_authoring_witness_v<In, Children...>,
                   "has_split_pack_authoring_witness<In, Children...> "
                   "missing; declare it next to the can_split_into_pack "
@@ -861,7 +860,7 @@ struct combine_n_manifest<Parent, std::tuple<Children...>> {
 
 template <typename Parent, typename... Args>
     requires PermissionCombineNArgs<Parent, Args...>
-[[nodiscard]] constexpr Permission<Parent, detail::perm_brand_t<Args...[detail::leading_ctx_count<Args...>()]>>
+[[nodiscard]] constexpr Permission<Parent, detail::perm_brand_t<Args... [detail::leading_ctx_count<Args...>()]>>
 mint_permission_combine_n(Args&&...) noexcept {
     using manifest = detail::combine_n_manifest<Parent, detail::perm_tags_t<Args...>>;
     using Brand = detail::perm_brand_t<Args...[detail::leading_ctx_count<Args...>()]>;
@@ -956,7 +955,8 @@ public:
     // the order dual of the shares, because Graded asks for that
     // orientation of a grade stored beside a value.
     using value_type = Tag;
-    using lattice_type = ::foundation::algebra::lattices::DualLattice<::foundation::algebra::lattices::FractionalLattice>;
+    using lattice_type =
+        ::foundation::algebra::lattices::DualLattice<::foundation::algebra::lattices::FractionalLattice>;
     static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
     using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, Tag>;
 
@@ -1020,9 +1020,9 @@ public:
         return SharedPermission<Tag, Brand>{};
     }
 
-    constexpr SharedPermission<Tag, Brand> token() const&& =
-        delete("a share proof minted from a temporary guard outlives the share; bind the guard to a name that "
-               "outlives the token");
+    constexpr SharedPermission<Tag, Brand> token() const&& = delete(
+        "a share proof minted from a temporary guard outlives the share; bind the guard to a name that "
+        "outlives the token");
 
     [[nodiscard]] constexpr bool holds_share() const noexcept { return pool_ != nullptr; }
 
@@ -1193,14 +1193,15 @@ inline SharedPermissionGuard<Tag, Brand>::~SharedPermissionGuard() {
 template <typename... Args>
     requires PermissionShareArgs<Args...>
 [[nodiscard]] constexpr SharedPermission<detail::perm_tag_t<Args...[sizeof...(Args) - 1]>,
-                                         detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>
+                                         detail::perm_brand_t<Args... [sizeof...(Args) - 1]>>
 mint_permission_share(Args&&...) noexcept {
     using Tag = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
     static_assert(has_permission_row_v<Tag>, "mint_permission_share: the tag declares no effect row.  Declare an "
                                              "edge in foundation::permissions::permission_rows or a "
                                              "permission_row member on the tag.");
-    static_assert(!has_permission_row_v<Tag> || detail::leading_ctx_count<Args...>() != 0 || permission_row_empty_v<Tag>,
+    static_assert(!has_permission_row_v<Tag> || detail::leading_ctx_count<Args...>() != 0
+                      || permission_row_empty_v<Tag>,
                   "mint_permission_share(Permission<Tag>&&) without ExecCtx is only "
                   "valid for permission_row<Tag> == Row<>.  Effectful permission tags "
                   "must use mint_permission_share(ctx, Permission<Tag>&&).");
@@ -1318,10 +1319,8 @@ struct seplog_derived_tag {
 }  // namespace detail
 
 namespace permission_rows {
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_tag, ::foundation::effects::Row<>>
-    seplog_test{};
-inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_left, ::foundation::effects::Row<>>
-    seplog_left{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_tag, ::foundation::effects::Row<>> seplog_test{};
+inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_left, ::foundation::effects::Row<>> seplog_left{};
 inline constexpr ::foundation::fail_closed::edge<detail::seplog_test_right, ::foundation::effects::Row<>>
     seplog_right{};
 inline constexpr ::foundation::fail_closed::edge<detail::seplog_io_tag,
@@ -1390,11 +1389,13 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
         // No route builds a token without a constructor: std::bit_cast
         // needs a trivially copyable type, and std::start_lifetime_as an
         // implicit-lifetime one.
-        && !std::is_trivially_copyable_v<Token> && !std::is_implicit_lifetime_v<Token>
+        && !std::is_trivially_copyable_v<Token>
+        && !std::is_implicit_lifetime_v<Token>
         // The key is the sole route in.  Both halves are load-bearing:
         // drop the first and a token is default-constructible by
         // anyone, drop the second and the mints cannot build one.
-        && !std::is_default_constructible_v<Token> && std::is_constructible_v<Token, perm_mint_key>
+        && !std::is_default_constructible_v<Token>
+        && std::is_constructible_v<Token, perm_mint_key>
         // Explicit, so that a copy of the key cannot convert itself
         // into a token without the construction being written out.
         && !std::is_convertible_v<perm_mint_key, Token>;
@@ -1413,11 +1414,11 @@ static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Per
               "a token of one brand does not become a token of another");
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag>, Permission<seplog_test_tag, brand_a> const&>,
               "erasure consumes the branded token; a copy would leave two");
-static_assert(std::is_convertible_v<SharedPermission<seplog_test_tag, brand_a> const&,
-                                    SharedPermission<seplog_test_tag>>);
+static_assert(
+    std::is_convertible_v<SharedPermission<seplog_test_tag, brand_a> const&, SharedPermission<seplog_test_tag>>);
 static_assert(!std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a>, SharedPermission<seplog_test_tag>>);
-static_assert(!std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a>,
-                                       SharedPermission<seplog_test_tag, brand_b>>);
+static_assert(
+    !std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a>, SharedPermission<seplog_test_tag, brand_b>>);
 
 // A translation unit that holds no friendship cannot make a key, so it
 // cannot reach the constructor above however it spells the call.
@@ -1535,7 +1536,8 @@ static_assert(!is_shared_permission_v<SharedPermissionGuard<detail::seplog_test_
 static_assert(IsPermission<Permission<detail::seplog_test_tag>>);
 static_assert(IsSharedPermission<SharedPermission<detail::seplog_test_tag>>);
 static_assert(IsPermissionFor<Permission<detail::seplog_test_tag>, detail::seplog_test_tag>);
-static_assert(IsPermissionFor<Permission<detail::seplog_test_tag, detail::seplog_roster::brand_a>, detail::seplog_test_tag>);
+static_assert(
+    IsPermissionFor<Permission<detail::seplog_test_tag, detail::seplog_roster::brand_a>, detail::seplog_test_tag>);
 static_assert(!IsPermissionFor<Permission<detail::seplog_test_tag>, detail::seplog_test_left>);
 static_assert(IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>, detail::seplog_test_tag>);
 static_assert(!IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>, detail::seplog_test_left>);
@@ -1622,11 +1624,11 @@ inline constexpr ::foundation::fail_closed::edge<detail::seplog_combine_n_c, ::f
 
 template <>
 struct can_split_into_pack<detail::seplog_combine_n_parent, detail::seplog_combine_n_a, detail::seplog_combine_n_b,
-                        detail::seplog_combine_n_c> : std::true_type {};
+                           detail::seplog_combine_n_c> : std::true_type {};
 
 template <>
 struct has_split_pack_authoring_witness<detail::seplog_combine_n_parent, detail::seplog_combine_n_a,
-                                          detail::seplog_combine_n_b, detail::seplog_combine_n_c> : std::true_type {};
+                                        detail::seplog_combine_n_b, detail::seplog_combine_n_c> : std::true_type {};
 
 namespace detail {
 constexpr bool combine_n_round_trip() noexcept {

@@ -25,8 +25,7 @@ struct Region {
 // Fact 1: a callee names the brand, and asks for two things about one
 // region with one parameter.
 template <class Brand>
-constexpr bool about_one_region(perm::Permission<Region, Brand> const&,
-                                perm::ReadView<Region, Brand> const&) noexcept {
+constexpr bool about_one_region(perm::Permission<Region, Brand> const&, perm::ReadView<Region, Brand> const&) noexcept {
     return true;
 }
 

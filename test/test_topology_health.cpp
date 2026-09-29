@@ -56,7 +56,8 @@ static void test_name_accessors() {
 }
 
 static void test_healthy_snapshot_is_stale_wrapped() {
-    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 4, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 4, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(1);
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
@@ -68,7 +69,8 @@ static void test_healthy_snapshot_is_stale_wrapped() {
                                  }));
     assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
     assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
-    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 100000, .sequence = 6}));
+    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                              topology::WearSample{.used_ppm = 100000, .sequence = 6}));
 
     auto snapshot = scorer.compute(p, 2500, 7);
     assert(snapshot.peek().state == topology::HealthState::Healthy);
@@ -83,7 +85,8 @@ static void test_healthy_snapshot_is_stale_wrapped() {
 }
 
 static void test_phi_delay_drives_suspect_state() {
-    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(2);
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
@@ -104,7 +107,8 @@ static void test_phi_delay_drives_suspect_state() {
 }
 
 static void test_thermal_ecc_and_drops_degrade_score() {
-    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(3);
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));
@@ -130,7 +134,8 @@ static void test_thermal_ecc_and_drops_degrade_score() {
 }
 
 static void test_counter_regression_is_rejected() {
-    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(33);
 
     assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(10, 0, 1)));
@@ -139,13 +144,16 @@ static void test_counter_regression_is_rejected() {
     assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 10, 3)));
     assert(!scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(90000, 10, 4)));
     assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(110000, 10, 4)));
-    assert(!scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
-    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, topology::WearSample{.used_ppm = 900000, .sequence = 5}));
+    assert(!scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                               topology::WearSample{.used_ppm = 1000001, .sequence = 5}));
+    assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                              topology::WearSample{.used_ppm = 900000, .sequence = 5}));
     std::printf("  test_counter_regression_is_rejected: PASSED\n");
 }
 
 static void test_permanent_fault_is_sticky() {
-    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto const p = peer(4);
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 1000, 1));
     assert(scorer.record_heartbeat(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, 2000, 2));

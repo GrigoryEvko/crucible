@@ -125,13 +125,13 @@ static_assert(::fixy::band_tier_v<decltype(std::declval<Arena&>().alloc_obj_pinn
               "alloc_obj_pinned must return AllocClass<Arena, T*>.  The tier pin "
               "production call sites fence on is gone.");
 
-static_assert(::fixy::band_tier_v<decltype(std::declval<Arena&>().alloc_array_pinned<int>(std::declval<AllocCap>(),
-                                                                                           size_t{0}))>
-                  == AllocClassTag_v::Arena,
-              "alloc_array_pinned MUST return AllocClass<Arena, T*>.");
+static_assert(
+    ::fixy::band_tier_v<decltype(std::declval<Arena&>().alloc_array_pinned<int>(std::declval<AllocCap>(), size_t{0}))>
+        == AllocClassTag_v::Arena,
+    "alloc_array_pinned MUST return AllocClass<Arena, T*>.");
 
-static_assert(::fixy::band_tier_v<decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(
-                  std::declval<AllocCap>(), size_t{1}))>
+static_assert(::fixy::band_tier_v<
+                  decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(std::declval<AllocCap>(), size_t{1}))>
                   == AllocClassTag_v::Arena,
               "alloc_array_nonzero_pinned MUST return AllocClass<Arena, T*>.");
 
@@ -147,11 +147,11 @@ static_assert(
                    AllocClass<AllocClassTag_v::Arena, int*>>,
     "alloc_array_pinned<int> MUST return EXACTLY AllocClass<Arena, int*>.");
 
-static_assert(
-    std::is_same_v<decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(std::declval<AllocCap>(), size_t{1})),
-                   AllocClass<AllocClassTag_v::Arena, int*>>,
-    "alloc_array_nonzero_pinned<int> MUST return EXACTLY "
-    "AllocClass<Arena, int*>.");
+static_assert(std::is_same_v<decltype(std::declval<Arena&>().alloc_array_nonzero_pinned<int>(std::declval<AllocCap>(),
+                                                                                             size_t{1})),
+                             AllocClass<AllocClassTag_v::Arena, int*>>,
+              "alloc_array_nonzero_pinned<int> MUST return EXACTLY "
+              "AllocClass<Arena, int*>.");
 
 // value_type is the pointer type itself, which is what lets a caller
 // name the unwrapped type without unwrapping a value first.
@@ -162,8 +162,8 @@ static_assert(std::is_same_v<AllocClass<AllocClassTag_v::Arena, int*>::value_typ
 // tier, evaluated per call.
 
 template <typename W>
-concept admissible_at_arena_fence = ::fixy::IsBandOf<::fixy::AllocClassLattice, W>
-                                 && ::fixy::satisfies_v<W, AllocClassTag_v::Arena>;
+concept admissible_at_arena_fence =
+    ::fixy::IsBandOf<::fixy::AllocClassLattice, W> && ::fixy::satisfies_v<W, AllocClassTag_v::Arena>;
 
 static_assert(admissible_at_arena_fence<AllocClass<AllocClassTag_v::Arena, int*>>,
               "Arena-tier wrapper MUST pass an Arena-or-stronger fence "

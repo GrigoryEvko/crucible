@@ -157,7 +157,7 @@ namespace detail {
 // Runs the qdisc dump over a netlink socket that the socket door opened.
 // The descriptor is borrowed; the caller's handle closes it.
 [[nodiscard]] std::expected<Qdisc, PacingError> query_active_qdisc_over(::fixy::fs::OwnedFd const& nl,
-                                                                      NicInterfaceName iface) noexcept;
+                                                                        NicInterfaceName iface) noexcept;
 
 }  // namespace detail
 

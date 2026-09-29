@@ -16,7 +16,7 @@ int main() {
     crucible::TraceRing::Entry entry{};
     crucible::TensorMeta meta{};
     (void)vigil.dispatch_op_pure(::foundation::effects::testing::foreground<Stranger>(),
-                                 crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
-                                 &meta, 1);
+                                 crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(), &meta,
+                                 1);
     return 0;
 }

@@ -191,9 +191,8 @@ using stage_output_handle_t = typename detail::stage_ports<std::remove_cvref_t<S
 // no value goes from one to the other, and the pipeline never ends.  The
 // caller checks the two port indices first.
 template <class From, std::size_t Output, class To, std::size_t Input>
-concept stage_port_feeds =
-    std::is_same_v<stage_output_value_t<From, Output>, stage_input_value_t<To, Input>>
-    && HandlesShareChannel<stage_output_handle_t<From, Output>, stage_input_handle_t<To, Input>>;
+concept stage_port_feeds = std::is_same_v<stage_output_value_t<From, Output>, stage_input_value_t<To, Input>>
+                        && HandlesShareChannel<stage_output_handle_t<From, Output>, stage_input_handle_t<To, Input>>;
 
 template <class S1, class S2>
 concept stages_chain = IsStage<S1> && IsStage<S2> && stage_output_count_v<S1> == 1 && stage_input_count_v<S2> == 1
@@ -253,8 +252,9 @@ concept CtxStartsStageThreads =
     ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Init>;
 
 template <class Ctx, class... Stages>
-concept CtxFitsPipeline = ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && pipeline_chain<Stages...>
-                       && ::foundation::decide::row_subset<pipeline_row_union_t<Stages...>, typename Ctx::row_type>();
+concept CtxFitsPipeline =
+    ::foundation::effects::IsExecCtx<Ctx> && CtxStartsStageThreads<Ctx> && pipeline_chain<Stages...>
+    && ::foundation::decide::row_subset<pipeline_row_union_t<Stages...>, typename Ctx::row_type>();
 
 template <class... Stages>
 struct StagePack {};
@@ -743,9 +743,8 @@ namespace detail {
 
 // Read only after CtxFitsPipelineDag holds, so Graph is a stage graph here.
 template <class Graph, class... Stages>
-concept graph_stage_pack_is =
-    std::is_same_v<typename stage_graph_traits<std::remove_cvref_t<Graph>>::stage_pack_type,
-                   StagePack<std::remove_cvref_t<Stages>...>>;
+concept graph_stage_pack_is = std::is_same_v<typename stage_graph_traits<std::remove_cvref_t<Graph>>::stage_pack_type,
+                                             StagePack<std::remove_cvref_t<Stages>...>>;
 
 }  // namespace detail
 

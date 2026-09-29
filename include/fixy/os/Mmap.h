@@ -267,13 +267,12 @@ inline constexpr bool pack_has_anonymous_v = (is_anonymous_share_v<Atoms> || ...
 // executable page and the row of a mapping are one rule, stated once, in
 // fixy/OwnedMmap.h.
 template <typename Ctx, typename... Atoms>
-concept CtxFitsMmapMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...>
-                       && detail::all_atom_tags_known_v<Atoms...>
-                       && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, Atoms...>
-                       && detail::HasOnePrimaryShareAtom<Atoms...>
-                       && detail::region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>,
-                                                       detail::primary_share_of_t<Atoms...>,
-                                                       detail::region_modifiers_t<Atoms...>>;
+concept CtxFitsMmapMint =
+    ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...> && detail::all_atom_tags_known_v<Atoms...>
+    && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, Atoms...>
+    && detail::HasOnePrimaryShareAtom<Atoms...>
+    && detail::region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>,
+                                    detail::region_modifiers_t<Atoms...>>;
 
 template <typename Ctx, typename... Atoms>
 concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Atoms...> && detail::pack_has_anonymous_v<Atoms...>;
@@ -316,9 +315,8 @@ template <typename Proof, typename Region>
 concept ProofNamesMappingBrand = ::foundation::brand::SameBrand<Proof, Region>;
 
 template <typename Ctx, typename Advice, typename Region, typename Proof>
-concept CtxFitsReleaseAwareAdvise =
-    CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice> && ProofNamesMappingTag<Proof, Region> && MappingIsBranded<Region>
-    && ProofNamesMappingBrand<Proof, Region>;
+concept CtxFitsReleaseAwareAdvise = CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice> && ProofNamesMappingTag<Proof, Region>
+                                 && MappingIsBranded<Region> && ProofNamesMappingBrand<Proof, Region>;
 
 // The mapping takes its tag and its brand from the exclusive permission
 // the caller presents.  The mint reads the permission and does not
@@ -342,8 +340,8 @@ mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> cons
     // fixy/OwnedMmap.h, so that no address but the kernel's can become a
     // region, and its bits come from the region type.  What this mint
     // adds is the atom pack: which atoms, and the row they lift to.
-    auto region = detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, fd, length,
-                                                    offset);
+    auto region =
+        detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, fd, length, offset);
     if (!region) {
         return std::unexpected{region.error()};
     }
@@ -501,8 +499,7 @@ static_assert(!CtxFitsMmapMint<FgCtx, A_RO, A_Shared>);
 static_assert(CtxFitsAnonMmapMint<IoBlockCtx, A_RO, A_Anon>);
 static_assert(!CtxFitsAnonMmapMint<IoBlockCtx, A_RO, A_Shared>);
 
-static_assert(!CtxFitsMmapMint<IoBlockCtx, A_Exec, A_Private>,
-              "an executable mapping needs the trusted_jit atom.");
+static_assert(!CtxFitsMmapMint<IoBlockCtx, A_Exec, A_Private>, "an executable mapping needs the trusted_jit atom.");
 static_assert(CtxFitsMmapMint<IoBlockCtx, A_Exec, A_Private, A_Jit>);
 
 static_assert(!CtxFitsMmapMint<IoBlockCtx>, "an empty atom pack names no protection and no share mode.");
@@ -592,14 +589,16 @@ static_assert(!CtxFitsMmapMint<IoBlockCtx, A_UnknownProt, A_Shared>,
 // Every tag fixy::mmap::prot and fixy::mmap::share declare has a row in
 // its table.  The known-tag concepts read the tables, so this walk is the
 // check that no declared tag is missing from them.
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::prot, [](std::meta::info prot_tag) consteval {
-                  return ::fixy::atom_pack::has_row(prot_table, prot_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::prot,
+                                                        [](std::meta::info prot_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(prot_table, prot_tag);
+                                                        }>(),
               "fixy/os/Mmap.h: a tag declared in fixy::mmap::prot has no row in prot_table, so the gate "
               "refuses every mapping that names it.");
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::share, [](std::meta::info share_tag) consteval {
-                  return ::fixy::atom_pack::has_row(share_table, share_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::share,
+                                                        [](std::meta::info share_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(share_table, share_tag);
+                                                        }>(),
               "fixy/os/Mmap.h: a tag declared in fixy::mmap::share has no row in share_table, so the gate "
               "refuses every mapping that names it.");
 
@@ -615,9 +614,10 @@ static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice, ProbeMapping, 
 // ten tag namespaces.  What that walk cannot check is the clause below:
 // the advice table is here, so only here can a walk ask whether every tag
 // has a row.
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::advice, [](std::meta::info advice_tag) consteval {
-                  return ::fixy::atom_pack::has_row(advice_table, advice_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::advice,
+                                                        [](std::meta::info advice_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(advice_table, advice_tag);
+                                                        }>(),
               "fixy/os/Mmap.h: a tag declared in fixy::mmap::advice has no row in advice_table, so every gate "
               "refuses it.  Add its value to the table, or delete the tag from fixy/atoms/Os.h.");
 

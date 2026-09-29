@@ -56,7 +56,8 @@ static_assert(!IsRoleFor<role::IoFunction, const int>);
 
 static_assert(IsAccepted<int, at::declassify<policy::AuditedLogging>>);
 static_assert(IsAccepted<int, at::with_io, at::declassify<policy::WireSerialize>>);
-static_assert(std::is_same_v<role::SecretConsumer<int, policy::AuditedLogging>, fn<int, at::declassify<policy::AuditedLogging>>>);
+static_assert(
+    std::is_same_v<role::SecretConsumer<int, policy::AuditedLogging>, fn<int, at::declassify<policy::AuditedLogging>>>);
 static_assert(std::is_same_v<role::PublicEmit<int, policy::WireSerialize>,
                              fn<int, at::with_io, at::declassify<policy::WireSerialize>>>);
 

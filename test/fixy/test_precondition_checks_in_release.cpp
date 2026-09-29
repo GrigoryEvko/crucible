@@ -41,7 +41,11 @@ int volatile opaque_positive = 7;
 int volatile opaque_one = 1;
 int volatile sink = 0;
 
-enum class ChildEnd : unsigned char { Aborted, ExitedZero, Other };
+enum class ChildEnd : unsigned char {
+    Aborted,
+    ExitedZero,
+    Other
+};
 
 struct ChildResult {
     ChildEnd end = ChildEnd::Other;
@@ -97,9 +101,7 @@ void mint_refined_of_a_positive_value() {
     return result;
 }
 
-void decrement_one() {
-    sink = decrement_to_positive(opaque_one);
-}
+void decrement_one() { sink = decrement_to_positive(opaque_one); }
 
 // Reports one case, and returns true when the child stopped as expected.
 [[nodiscard]] bool expect(char const* name, void (*body)(), bool must_abort) {

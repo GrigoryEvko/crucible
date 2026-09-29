@@ -43,8 +43,8 @@ std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const& ctx) noexcept 
     };
     auto state = std::make_unique<State>();
     if (!state->object.load(spec)) return std::nullopt;
-    state->counters = detail::map_array<SenseHubCountersTag>(ctx, state->object, facade, "counters",
-                                                             NUM_COUNTERS * sizeof(uint64_t));
+    state->counters =
+        detail::map_array<SenseHubCountersTag>(ctx, state->object, facade, "counters", NUM_COUNTERS * sizeof(uint64_t));
     if (!state->counters) return std::nullopt;
     state->object.report_partial(facade);
 

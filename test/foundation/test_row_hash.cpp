@@ -222,14 +222,17 @@ static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int
 
 // The payload recurses, which is what makes this a fold. A stack of two
 // is not either of its layers.
-static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, G<fa::ModalityKind::Absolute, DetPure, int>>>
-              != row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, int>>);
-static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, G<fa::ModalityKind::Absolute, DetPure, int>>>
-              != row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int>>);
+static_assert(
+    row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, G<fa::ModalityKind::Absolute, DetPure, int>>>
+    != row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, int>>);
+static_assert(
+    row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, G<fa::ModalityKind::Absolute, DetPure, int>>>
+    != row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int>>);
 
 // Nesting order carries meaning, so the combiner must not commute.
-static_assert(row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, G<fa::ModalityKind::Absolute, DetPure, int>>>
-              != row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, G<fa::ModalityKind::Absolute, HotHot, int>>>);
+static_assert(
+    row_hash_contribution_v<G<fa::ModalityKind::Absolute, HotHot, G<fa::ModalityKind::Absolute, DetPure, int>>>
+    != row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, G<fa::ModalityKind::Absolute, HotHot, int>>>);
 
 // A graded carrier is payload-blind for the same reason the computation
 // carrier is: which scalar sits underneath belongs to the content hash.
@@ -510,8 +513,7 @@ static_assert(row_hash_contribution_v<fe::Computation<Row<Effect::Alloc>, fe::Co
 
 static_assert(
     row_hash_contribution_v<
-        fe::Computation<Row<Effect::Alloc>,
-                        fe::Computation<Row<Effect::IO>, fe::Computation<Row<Effect::Block>, int>>>>
+        fe::Computation<Row<Effect::Alloc>, fe::Computation<Row<Effect::IO>, fe::Computation<Row<Effect::Block>, int>>>>
         == 0xAC3F22322B23C1FEULL,
     "the triple-nested carrier row_hash drifted — the chained fold must stay bit-stable");
 

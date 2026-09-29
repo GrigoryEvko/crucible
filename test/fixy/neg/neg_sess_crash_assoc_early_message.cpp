@@ -18,11 +18,11 @@ struct M {};
 
 using Guarded = g::Comm<P, Q, g::Branch<M, int, g::End>, g::Branch<g::CrashLabel, void, g::End>>;
 using OnlyQ = s::ReliableSet<Q>;
-using Early = s::TypingContext<
-    s::RoleState<P, s::OutQueue<s::Queued<Q, M, int>>, s::Send<s::PeerMsg<Q, M, int>, s::End>>,
-    s::RoleState<Q, s::OutQueue<>,
-                 s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M, int>, s::End>,
-                          s::Recv<s::PeerMsg<P, g::CrashLabel, void>, s::End>>>>;
+using Early =
+    s::TypingContext<s::RoleState<P, s::OutQueue<s::Queued<Q, M, int>>, s::Send<s::PeerMsg<Q, M, int>, s::End>>,
+                     s::RoleState<Q, s::OutQueue<>,
+                                  s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M, int>, s::End>,
+                                           s::Recv<s::PeerMsg<P, g::CrashLabel, void>, s::End>>>>;
 
 constexpr int check_context() noexcept {
     c::ensure_crash_associated<Early, g::State<g::Roles<>, Guarded>, OnlyQ>();

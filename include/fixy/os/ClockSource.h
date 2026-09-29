@@ -36,7 +36,7 @@ using SuspendBehavior_v = ::foundation::algebra::lattices::SuspendBehavior;
 using PinningRequirement_v = ::foundation::algebra::lattices::PinningRequirement;
 
 template <ClockSource_v Source, typename T>
-class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] ClockSource
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] ClockSource
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute, ClockSourceLattice::At<Source>, T> {
 public:
     // value_type, modality and the two name forwarders arrive from
@@ -65,7 +65,8 @@ private:
     // fixy/os/Time.h, right after the read of this same clock.  So a
     // ClockSource<Boot, T> holds a value that CLOCK_BOOTTIME returned.
     constexpr explicit ClockSource(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{::foundation::algebra::grade_key<ClockSource>{}, std::move(value), typename lattice_type::element_type{}} {}
+        : impl_{::foundation::algebra::grade_key<ClockSource>{}, std::move(value),
+                typename lattice_type::element_type{}} {}
 
     friend struct ::fixy::time::detail::clock_stamp_access;
 

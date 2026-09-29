@@ -24,7 +24,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::with<::foundation::effects::Effect::Bg>,
-                                ::fixy::atom::observe::surface<::foundation::effects::Effect::Bg>>
-        refused{};
+                                ::fixy::atom::observe::surface<::foundation::effects::Effect::Bg>> refused{};
     return 0;
 }

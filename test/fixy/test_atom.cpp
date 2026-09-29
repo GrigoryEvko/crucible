@@ -115,7 +115,8 @@ static_assert(every_atom_axis_has_a_name());
 // fixy/atoms/Syscall.h runs the roster walks of that family.  The core
 // families do not lift at all.
 static_assert(fad::every_roster_member_lifts_<fad::os_atom_roster>());
-static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::futex>>, fe::Row<fe::Effect::Block>>);
+static_assert(
+    std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::futex>>, fe::Row<fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::VdsoOnly>>, fe::Row<>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::io::engine<::fixy::io::engine::IoUring>>,
                              fe::Row<fe::Effect::IO, fe::Effect::Block>>);

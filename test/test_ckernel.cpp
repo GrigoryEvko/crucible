@@ -28,8 +28,7 @@ using ExtHash = ::fixy::Tagged<crucible::SchemaHash, ::fixy::tags::source::Exter
 
 // A mutable view asks for the context of a Vigil's producer claim.  These
 // tests use no Vigil, so they take that context from the test door.
-static constexpr crucible::VigilFgCtx kVigilForeground =
-    ::foundation::effects::testing::foreground<crucible::Vigil>();
+static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
 int main() {
     using namespace crucible;

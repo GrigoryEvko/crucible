@@ -135,8 +135,8 @@ static void test_permanent_requires_operator_permission() {
     assert(blocked.signals.test(warden::QuarantineSignal::PermanentRequiresOperator));
 
     auto authority = perm::mint_permission_root<warden::quarantine_tag::OperatorOverride>();
-    authority = policy.operator_override(init_ctx(), std::move(authority), target, warden::QuarantineState::Permanent,
-                                         1300, 3);
+    authority =
+        policy.operator_override(init_ctx(), std::move(authority), target, warden::QuarantineState::Permanent, 1300, 3);
     assert(policy.state(target) == warden::QuarantineState::Permanent);
     assert(policy.current(target).signals.test(warden::QuarantineSignal::OperatorOverride));
     perm::permission_drop(std::move(authority));

@@ -35,8 +35,9 @@ static_assert(fa::IsGraded<fe::ComputationGraded<Row<Effect::Bg>, int>>);
 static_assert(!fa::IsGraded<fe::Computation<Row<Effect::Bg>, int>>,
               "the derived class is not itself a Graded specialization; its graded_type is");
 static_assert(std::is_base_of_v<fe::ComputationGraded<Row<Effect::Bg>, int>, fe::Computation<Row<Effect::Bg>, int>>);
-static_assert(!std::is_convertible_v<fe::Computation<Row<Effect::Bg>, int>&, fe::ComputationGraded<Row<Effect::Bg>, int>&>,
-              "the base is private, so no conversion reaches the substrate and its unchecked consume");
+static_assert(
+    !std::is_convertible_v<fe::Computation<Row<Effect::Bg>, int>&, fe::ComputationGraded<Row<Effect::Bg>, int>&>,
+    "the base is private, so no conversion reaches the substrate and its unchecked consume");
 static_assert(fe::Computation<Row<Effect::Bg>, int>::modality == fa::ModalityKind::Relative);
 
 // Only a row names a substrate.  A class, a bare atom or a plain type has
@@ -82,8 +83,9 @@ static_assert(
         auto chained = bg.then(
             [&ctx](int x) { return fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::IO>(ctx, x + 1); });
         using Chained = decltype(chained);
-        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type> && fe::is_subrow_v<Row<Effect::IO>, Chained::row_type>
-            && std::is_same_v<Chained::value_type, int> && chained.graded().peek() == 11;
+        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type>
+            && fe::is_subrow_v<Row<Effect::IO>, Chained::row_type> && std::is_same_v<Chained::value_type, int>
+            && chained.graded().peek() == 11;
     }(),
     "A bind must carry the effects of both sides into the result row.");
 
@@ -96,7 +98,8 @@ static_assert(
         auto chained = std::move(bg).then(
             [&ctx](int x) { return fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, x); });
         using Chained = decltype(chained);
-        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type> && fe::is_subrow_v<Chained::row_type, Row<Effect::Bg>>;
+        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type>
+            && fe::is_subrow_v<Chained::row_type, Row<Effect::Bg>>;
     }(),
     "A bind over two rows naming the same effect must absorb the duplicate.");
 
@@ -217,8 +220,7 @@ static_assert(!fe::detail::extract_admits_payload_v<fe::detail::ctx_witnesses::B
 // two negative fixtures take.
 static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fe::Capability<Effect::IO, fe::Bg>>>);
 static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fp::Permission<PureRegionTag>>>);
-static_assert(
-    !fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fe::detail::ctx_witnesses::BgWitness>>);
+static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, fe::detail::ctx_witnesses::BgWitness>>);
 
 // The admitting direction, so the relation cannot be a blanket refusal.
 // A blanket refusal would satisfy both negative fixtures and every
@@ -229,8 +231,9 @@ struct PlainPayload {
 
 static_assert(fe::detail::extract_admits_payload_v<PlainPayload>);
 static_assert(fe::detail::extract_admits_payload_v<fe::Computation<Row<>, PlainPayload>>);
-static_assert(requires(fe::Computation<Row<>, PlainPayload> const& c) { c.extract(); },
-              "A payload that conveys no authority must still come out of a pure carrier.");
+static_assert(
+    requires(fe::Computation<Row<>, PlainPayload> const& c) { c.extract(); },
+    "A payload that conveys no authority must still come out of a pure carrier.");
 
 // A carrier that no list names conveys what it holds.  The walk over
 // components reads a member, a base, the target of a pointer and an
@@ -272,8 +275,8 @@ struct UnlistedValueCarrier {};
 static_assert(!fe::detail::extract_admits_payload_v<UnlistedCarrier<fe::Capability<Effect::IO, fe::Bg>>>);
 static_assert(!fe::detail::extract_admits_payload_v<UnlistedValueCarrier<3, fe::Capability<Effect::IO, fe::Bg>>>,
               "a template with a value parameter is still read for its type arguments");
-static_assert(!fe::detail::extract_admits_payload_v<
-              fe::Computation<Row<>, UnlistedCarrier<fe::Capability<Effect::IO, fe::Bg>>>>);
+static_assert(
+    !fe::detail::extract_admits_payload_v<fe::Computation<Row<>, UnlistedCarrier<fe::Capability<Effect::IO, fe::Bg>>>>);
 static_assert(fe::detail::extract_admits_payload_v<UnlistedCarrier<int>>);
 static_assert(fe::detail::extract_admits_payload_v<UnlistedCarrier<fe::Computation<Row<>, int>>>);
 static_assert(!fe::detail::extract_admits_payload_v<fe::Computation<Row<>, ValueTemplateHoldsCapability<1>>>,

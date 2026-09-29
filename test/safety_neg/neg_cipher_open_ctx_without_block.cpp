@@ -10,7 +10,8 @@
 
 int main() {
     const ::fixy::ColdInitCtx startup{::foundation::effects::testing::init()};
-    auto cipher = ::crucible::Cipher::open(startup, ::fixy::mint_tagged<::fixy::tags::source::External>(
-                                                        std::filesystem::path{"/tmp/crucible_neg_open_ctx_without_block"}));
+    auto cipher =
+        ::crucible::Cipher::open(startup, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                              std::filesystem::path{"/tmp/crucible_neg_open_ctx_without_block"}));
     return cipher.is_open() ? 0 : 1;
 }

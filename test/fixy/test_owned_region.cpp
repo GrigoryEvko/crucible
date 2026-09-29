@@ -131,7 +131,7 @@ void test_compile_time_properties() {
     static_assert(can_split_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>>);
     static_assert(can_split_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>, Slice<DataA, 2>, Slice<DataA, 3>>);
     static_assert(can_split_into_pack_v<DataA, Slice<DataA, 0>, Slice<DataA, 1>, Slice<DataA, 2>, Slice<DataA, 3>,
-                                     Slice<DataA, 4>, Slice<DataA, 5>, Slice<DataA, 6>, Slice<DataA, 7>>);
+                                        Slice<DataA, 4>, Slice<DataA, 5>, Slice<DataA, 6>, Slice<DataA, 7>>);
 
     // The detection surface, with the cv-ref strip, and the two
     // extractors.
@@ -372,8 +372,7 @@ void test_split_then_rebuild_through_recombine() {
 
     // The receipt the split wrote is surrendered beside the shards, and
     // it is what tells recombine that one split produced them.
-    auto recombined =
-        OwnedRegion<std::uint64_t, DataA>::recombine(std::move(parts.witness), std::move(parts.shards));
+    auto recombined = OwnedRegion<std::uint64_t, DataA>::recombine(std::move(parts.witness), std::move(parts.shards));
 
     // recombine derives both from the shards rather than being told, so
     // check it recovered the extent the split started from.
@@ -413,8 +412,7 @@ void test_brand_travels_through_split_and_recombine() {
     static_assert(std::is_same_v<decltype(parts.witness)::brand_type, Brand>);
     static_assert(decltype(parts.witness)::shard_count == 2);
 
-    auto whole =
-        OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
+    auto whole = OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
     static_assert(::foundation::brand::SameBrand<decltype(whole), decltype(borrow)>);
     CRUCIBLE_TEST_REQUIRE(whole.size() == 8);
     CRUCIBLE_TEST_REQUIRE(whole.data() == storage);
@@ -519,9 +517,7 @@ void test_every_consuming_door_empties_the_region() {
     CRUCIBLE_TEST_REQUIRE(whole.data() == storage && whole.size() == 4);
 }
 
-void test_recombine_refuses_shards_of_two_regions_of_one_site() {
-    require_mixed_rebuild_aborts(split_branded_in_two);
-}
+void test_recombine_refuses_shards_of_two_regions_of_one_site() { require_mixed_rebuild_aborts(split_branded_in_two); }
 
 // A zero-length request is the one arm of adopt that asks the arena for
 // nothing.  The region it returns has to answer as empty on all three

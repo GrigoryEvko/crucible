@@ -8,9 +8,7 @@
 template <typename Provider>
 concept covers_hot_requirement = fixy::satisfies_v<Provider, fixy::ResidencyHeatTag_v::Hot>;
 
-[[nodiscard]] int consume(covers_hot_requirement auto band) {
-    return band.peek();
-}
+[[nodiscard]] int consume(covers_hot_requirement auto band) { return band.peek(); }
 
 int main() {
     auto cold = fixy::mint_band<fixy::residency_heat::Cold<int>>(7);

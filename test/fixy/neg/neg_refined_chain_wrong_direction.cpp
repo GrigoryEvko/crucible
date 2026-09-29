@@ -18,7 +18,7 @@ template <auto P, auto Q, class T>
 
 int main() {
     fixy::Refined<fixy::bounded_above<20>, int> wide = fixy::mint_refined<fixy::bounded_above<20>>(15);
-    fixy::Refined<fixy::in_range<5, 9>, int> claimed = weaken<fixy::bounded_above<20>, fixy::in_range<5, 9>>(
-        std::move(wide));
+    fixy::Refined<fixy::in_range<5, 9>, int> claimed =
+        weaken<fixy::bounded_above<20>, fixy::in_range<5, 9>>(std::move(wide));
     return claimed.value();
 }

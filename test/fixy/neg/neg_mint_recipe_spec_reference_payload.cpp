@@ -5,7 +5,6 @@
 
 int main() {
     int value = 7;
-    auto const spec =
-        fixy::mint_recipe_spec<int&>(value, fixy::Tolerance::ULP_FP16, fixy::RecipeFamily::Kahan);
+    auto const spec = fixy::mint_recipe_spec<int&>(value, fixy::Tolerance::ULP_FP16, fixy::RecipeFamily::Kahan);
     return spec.peek();
 }

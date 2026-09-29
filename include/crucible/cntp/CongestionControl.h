@@ -209,8 +209,8 @@ inline constexpr std::size_t available_cc_capacity = 512;
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
 [[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control(Ctx const& ctx) noexcept {
-    auto path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(
-        std::filesystem::path{detail::available_cc_path}));
+    auto path = ::fixy::sanitize_path(
+        ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{detail::available_cc_path}));
     if (!path.has_value()) {
         return std::unexpected(CcError::SysctlUnavailable);
     }

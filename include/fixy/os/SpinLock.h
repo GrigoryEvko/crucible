@@ -110,10 +110,12 @@ public:
 
     constexpr UnwitnessedSpinLock() noexcept = default;
 
-    UnwitnessedSpinLock(const UnwitnessedSpinLock&) = delete("a lock is an identity; copying one would make two gates over one region");
+    UnwitnessedSpinLock(const UnwitnessedSpinLock&) =
+        delete("a lock is an identity; copying one would make two gates over one region");
     UnwitnessedSpinLock& operator=(const UnwitnessedSpinLock&) =
         delete("a lock is an identity; copying one would make two gates over one region");
-    UnwitnessedSpinLock(UnwitnessedSpinLock&&) = delete("a lock is an identity; moving one would leave a waiter spinning on the old address");
+    UnwitnessedSpinLock(UnwitnessedSpinLock&&) =
+        delete("a lock is an identity; moving one would leave a waiter spinning on the old address");
     UnwitnessedSpinLock& operator=(UnwitnessedSpinLock&&) =
         delete("a lock is an identity; moving one would leave a waiter spinning on the old address");
 
@@ -259,8 +261,8 @@ concept CtxMayBlock = eff::CtxOwnsCapability<Ctx, eff::Effect::Block>;
 // A strategy on either side of the kernel split picks its rule, so the
 // clause has no case to forget.
 template <typename Ctx, WaitStrategy Strategy>
-concept CtxMayAcquire = (waits_in_kernel(Strategy) && CtxMayBlock<Ctx>)
-                     || (!waits_in_kernel(Strategy) && CtxMayAcquireSpin<Ctx>);
+concept CtxMayAcquire =
+    (waits_in_kernel(Strategy) && CtxMayBlock<Ctx>) || (!waits_in_kernel(Strategy) && CtxMayAcquireSpin<Ctx>);
 
 template <typename Tag, WaitStrategy Strategy, typename Brand = ::foundation::brand::DefaultBrand>
 class GateGuard;
@@ -407,7 +409,8 @@ static_assert(std::is_same_v<SpinGuard<ProbeTag, ProbeBrand>::permission_t,
               "a guard must hold the Permission of its gate's tag under the brand it was given — drift would "
               "break the Permission-witness-at-acquire discipline.");
 
-static_assert(SpinLock<ProbeTag>::cache_tier == cache_tier_t::Hot && BlockingLock<ProbeTag>::cache_tier == cache_tier_t::Cold,
+static_assert(SpinLock<ProbeTag>::cache_tier == cache_tier_t::Hot
+                  && BlockingLock<ProbeTag>::cache_tier == cache_tier_t::Cold,
               "a spin gate is Hot and a blocking gate is Cold.  The annotation is how a gate is located.");
 
 static_assert(std::is_same_v<SpinLock<ProbeTag>::tag_type, ProbeTag>);
@@ -454,8 +457,7 @@ static_assert(!CtxMayAcquire<int, WaitStrategy::BoundedSpin> && !CtxMayAcquire<i
 
 // A cold init context owns Alloc and IO, and a test runner owns Block.
 // Neither may spin, and each may take the blocking gate when it owns Block.
-using ColdInitShape =
-    eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO>>;
+using ColdInitShape = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO>>;
 using AllocOnlyShape = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc>>;
 using TestRunnerShape =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
@@ -464,7 +466,7 @@ static_assert(!CtxMayAcquire<ColdInitShape, WaitStrategy::BoundedSpin>,
 static_assert(!CtxMayAcquire<AllocOnlyShape, WaitStrategy::BoundedSpin>,
               "a context that owns Alloc must NOT spin: the holder could enter the allocator inside the section.");
 static_assert(!CtxMayAcquire<TestRunnerShape, WaitStrategy::BoundedSpin>
-                  && CtxMayAcquire<TestRunnerShape, WaitStrategy::AcquireWait>);
+              && CtxMayAcquire<TestRunnerShape, WaitStrategy::AcquireWait>);
 
 // Seven claims about this header cannot be written here.  An access
 // failure inside a requires-expression is a hard error in GCC 16 rather

@@ -25,6 +25,7 @@ int main() {
         perm::mint_permission_root<Channel::whole_tag>());
     (void)consumer_perm;
     const int not_a_ctx = 0;
-    auto endpoint = c::mint_endpoint<Channel, c::Direction::Producer>(not_a_ctx, channel.producer(std::move(producer_perm)));
+    auto endpoint =
+        c::mint_endpoint<Channel, c::Direction::Producer>(not_a_ctx, channel.producer(std::move(producer_perm)));
     return endpoint.try_send(1) ? 0 : 1;
 }

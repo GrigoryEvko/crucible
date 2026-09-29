@@ -86,8 +86,7 @@ concept DurableStance = std::is_empty_v<S> && requires {
     typename S::flag_type;
     typename S::sync_op_type;
     typename S::atomicity_type;
-} && ::fixy::fs::MappedOpenMode<typename S::mode_type> && ::fixy::fs::MappedFlag<typename S::flag_type>
-    && ::fixy::fs::KnownSyncOp<typename S::sync_op_type> && ::fixy::fs::KnownAtomicity<typename S::atomicity_type>;
+} && ::fixy::fs::MappedOpenMode<typename S::mode_type> && ::fixy::fs::MappedFlag<typename S::flag_type> && ::fixy::fs::KnownSyncOp<typename S::sync_op_type> && ::fixy::fs::KnownAtomicity<typename S::atomicity_type>;
 
 // A stance pins the mode, durability and atomicity axes, so
 // caller-supplied extras must not engage them.  Composing a shadowing
@@ -108,12 +107,11 @@ inline constexpr bool extras_engage_atomic_write_v = (::fixy::fs::detail::is_ato
 }  // namespace detail
 
 template <typename Ctx, typename Stance, typename... Extras>
-concept CtxFitsDurableMint =
-    DurableStance<Stance>
-    && ::fixy::fs::CtxFitsFileMint<Ctx, atom_fs::mode<typename Stance::mode_type>,
-                                   atom_fs::with_flag<typename Stance::flag_type>, Extras...>
-    && !detail::extras_engage_mode_v<Extras...> && !detail::extras_engage_durable_v<Extras...>
-    && !detail::extras_engage_atomic_write_v<Extras...>;
+concept CtxFitsDurableMint = DurableStance<Stance>
+                          && ::fixy::fs::CtxFitsFileMint<Ctx, atom_fs::mode<typename Stance::mode_type>,
+                                                         atom_fs::with_flag<typename Stance::flag_type>, Extras...>
+                          && !detail::extras_engage_mode_v<Extras...> && !detail::extras_engage_durable_v<Extras...>
+                          && !detail::extras_engage_atomic_write_v<Extras...>;
 
 template <DurableStance Stance>
 class CipherDurableHandle;
@@ -175,7 +173,8 @@ public:
     CipherDurableHandle() noexcept = default;
 
     CipherDurableHandle(const CipherDurableHandle&) = delete("a descriptor is unique; copy would double-close");
-    CipherDurableHandle& operator=(const CipherDurableHandle&) = delete("a descriptor is unique; copy would double-close");
+    CipherDurableHandle&
+    operator=(const CipherDurableHandle&) = delete("a descriptor is unique; copy would double-close");
     CipherDurableHandle(CipherDurableHandle&&) noexcept = default;
     CipherDurableHandle& operator=(CipherDurableHandle&&) noexcept = default;
 
@@ -210,9 +209,9 @@ namespace detail {
 template <DurableStance Stance, typename... Extras, eff::IsExecCtx Ctx>
 [[nodiscard]] inline std::expected<::fixy::fs::OwnedFd, std::error_code>
 open_with_stance_(Ctx const& ctx, Path<tags::source::Sanitized> path, ::mode_t perms) noexcept {
-    auto fd = ::fixy::fs::mint_file<atom_fs::mode<typename Stance::mode_type>,
-                                    atom_fs::with_flag<typename Stance::flag_type>, Extras...>(ctx, std::move(path),
-                                                                                              perms);
+    auto fd =
+        ::fixy::fs::mint_file<atom_fs::mode<typename Stance::mode_type>, atom_fs::with_flag<typename Stance::flag_type>,
+                              Extras...>(ctx, std::move(path), perms);
     if (!fd) {
         return std::unexpected{fd.error()};
     }

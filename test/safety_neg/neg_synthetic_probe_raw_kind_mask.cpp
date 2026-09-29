@@ -10,8 +10,8 @@ namespace cog = crucible::cog;
 namespace observe = crucible::observe;
 
 int main() {
-    auto runner =
-        observe::mint_synthetic_probes<::fixy::ColdInitCtx, 1>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    auto runner = observe::mint_synthetic_probes<::fixy::ColdInitCtx, 1>(
+        ::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     cog::CogIdentity peer{};
     peer.uuid = cog::Uuid{0x141, 0x1};
     return runner.register_peer(peer, 1u) ? 0 : 1;

@@ -34,7 +34,8 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 int main() {
     auto whole = ::foundation::permissions::mint_permission_root<Whole>();
     [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork<Left, Right>(
-        ::foundation::effects::testing::foreground(), std::move(whole), [](auto const& /*left_view*/, FgCtx const&) noexcept {},
+        ::foundation::effects::testing::foreground(), std::move(whole),
+        [](auto const& /*left_view*/, FgCtx const&) noexcept {},
         [](auto const& /*right_view*/, FgCtx const&) noexcept {});
     return 0;
 }

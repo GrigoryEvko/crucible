@@ -43,7 +43,7 @@ class WorkloadProfiler;
 // and move constructors stay trivial, so the value still travels in
 // registers, and one decision can be dispatched more than once, which a
 // retry path needs.
-class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] ProfiledDecision {
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] ProfiledDecision {
 public:
     constexpr ProfiledDecision(const ProfiledDecision&) noexcept = default;
     constexpr ProfiledDecision(ProfiledDecision&&) noexcept = default;
@@ -113,7 +113,8 @@ public:
     // The bare form is for a caller that wants to read the decision
     // without acting on it.  Code that acts on a decision goes through
     // recommend, whose result is the only one the dispatch below takes.
-    [[nodiscard]] ::fixy::concurrent::ParallelismDecision recommend_bare(::fixy::concurrent::WorkBudget budget) noexcept {
+    [[nodiscard]] ::fixy::concurrent::ParallelismDecision
+    recommend_bare(::fixy::concurrent::WorkBudget budget) noexcept {
         const auto decision = ::fixy::concurrent::ParallelismRule::recommend(budget);
         if (!decision.is_parallel() || senses_ == nullptr) return pass_through_(decision);
 
@@ -185,8 +186,8 @@ private:
 
     // Every path that leaves the structural decision unchanged goes
     // through here, so each one clears the diagnostics of the last call.
-    [[nodiscard]] ::fixy::concurrent::ParallelismDecision pass_through_(
-        ::fixy::concurrent::ParallelismDecision decision) noexcept {
+    [[nodiscard]] ::fixy::concurrent::ParallelismDecision
+    pass_through_(::fixy::concurrent::ParallelismDecision decision) noexcept {
         clear_diagnostics_();
         return decision;
     }
@@ -220,10 +221,12 @@ template <::foundation::effects::IsExecCtx Ctx, class SeqBody, class ParBody>
     requires CtxFitsWorkloadDecisionDispatch<Ctx>
           && ::std::invocable<SeqBody&&, const ::fixy::concurrent::ParallelismDecision&>
           && ::std::invocable<ParBody&&, const ::fixy::concurrent::ParallelismDecision&>
-constexpr auto dispatch_workload_decision(Ctx const&, const ProfiledDecision& decision, SeqBody&& seq_body,
-                                          ParBody&& par_body)
-    noexcept(::std::is_nothrow_invocable_v<SeqBody&&, const ::fixy::concurrent::ParallelismDecision&>
-             && ::std::is_nothrow_invocable_v<ParBody&&, const ::fixy::concurrent::ParallelismDecision&>) {
+constexpr auto dispatch_workload_decision(
+    Ctx const&, const ProfiledDecision& decision, SeqBody&& seq_body,
+    ParBody&&
+        par_body) noexcept(::std::is_nothrow_invocable_v<SeqBody&&, const ::fixy::concurrent::ParallelismDecision&>
+                           && ::std::is_nothrow_invocable_v<ParBody&&,
+                                                            const ::fixy::concurrent::ParallelismDecision&>) {
     const auto& dec = decision.value();
     if (dec.is_parallel()) {
         return ::std::forward<ParBody>(par_body)(dec);

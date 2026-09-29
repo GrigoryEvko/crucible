@@ -408,8 +408,8 @@ class CompositeHealthScorer;
 // background worker then feeds it samples.
 template <class Ctx, std::size_t MaxPeers, std::size_t Window = 32, std::size_t MaxEvents = MaxPeers * 4>
     requires CtxFitsHealthMint<Ctx>
-[[nodiscard]] constexpr CompositeHealthScorer<MaxPeers, Window, MaxEvents> mint_topology_health(Ctx const&,
-                                                                                               HealthPolicy policy = {}) noexcept;
+[[nodiscard]] constexpr CompositeHealthScorer<MaxPeers, Window, MaxEvents>
+mint_topology_health(Ctx const&, HealthPolicy policy = {}) noexcept;
 
 template <std::size_t MaxPeers, std::size_t Window, std::size_t MaxEvents>
 class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeers, Window, MaxEvents>> {
@@ -444,7 +444,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
     template <class Ctx, std::size_t Peers, std::size_t W, std::size_t Events>
         requires CtxFitsHealthMint<Ctx>
     friend constexpr CompositeHealthScorer<Peers, W, Events> mint_topology_health(Ctx const&,
-                                                                                HealthPolicy policy) noexcept;
+                                                                                  HealthPolicy policy) noexcept;
 
     explicit constexpr CompositeHealthScorer(HealthPolicy policy) noexcept : policy_{policy}, phi_{policy} {}
 
@@ -459,7 +459,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
     // The snapshot for a peer the scorer has no slot for: quarantined,
     // scored zero and flagged as missing, one step stale.
     [[nodiscard]] static constexpr ::fixy::Stale<HealthSnapshot> missing_snapshot(cog::CogIdentity const& peer,
-                                                                                std::uint64_t sequence) noexcept {
+                                                                                  std::uint64_t sequence) noexcept {
         HealthSnapshot missing{};
         missing.cog_uuid = peer.uuid;
         missing.state = HealthState::Quarantined;
@@ -733,8 +733,8 @@ public:
 
 template <class Ctx, std::size_t MaxPeers, std::size_t Window, std::size_t MaxEvents>
     requires CtxFitsHealthMint<Ctx>
-[[nodiscard]] constexpr CompositeHealthScorer<MaxPeers, Window, MaxEvents> mint_topology_health(Ctx const&,
-                                                                                               HealthPolicy policy) noexcept {
+[[nodiscard]] constexpr CompositeHealthScorer<MaxPeers, Window, MaxEvents>
+mint_topology_health(Ctx const&, HealthPolicy policy) noexcept {
     return CompositeHealthScorer<MaxPeers, Window, MaxEvents>{policy};
 }
 

@@ -70,12 +70,13 @@ struct OverlayMulticastConfig {
 };
 
 template <std::size_t MaxPeers, std::size_t MaxStripes, std::size_t MaxFanout>
-concept OverlayMulticastShape = MaxPeers > 0 && MaxStripes > 0 && MaxStripes <= kOverlayMaxStripes && MaxFanout > 0
-                                && MaxFanout <= kOverlayMaxFanout;
+concept OverlayMulticastShape = MaxPeers > 0 && MaxStripes > 0 && MaxStripes <= kOverlayMaxStripes&& MaxFanout > 0
+                             && MaxFanout <= kOverlayMaxFanout;
 
 template <class Ctx>
-concept CtxFitsOverlayMulticastMint = ::foundation::effects::IsExecCtx<Ctx>
-                                      && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+concept CtxFitsOverlayMulticastMint =
+    ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
 [[nodiscard]] constexpr std::expected<OverlayStripeCount, OverlayMulticastError>
 admit_overlay_stripe_count(std::uint8_t stripes) noexcept {

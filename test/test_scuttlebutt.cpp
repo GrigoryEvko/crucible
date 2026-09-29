@@ -30,9 +30,9 @@ int main() {
                   "mint_scuttlebutt is the only door");
     static_assert(!std::is_constructible_v<cc::GossipedScuttlebuttDigest<4, 4>, cc::ScuttlebuttDigest<4, 4>>,
                   "a digest is gossiped only through admit_gossiped");
-    static_assert(!std::is_constructible_v<cc::GossipedScuttlebuttDelta<Set::state_type>,
-                                           cc::ScuttlebuttDelta<Set::state_type>>,
-                  "a delta is gossiped only through admit_gossiped");
+    static_assert(
+        !std::is_constructible_v<cc::GossipedScuttlebuttDelta<Set::state_type>, cc::ScuttlebuttDelta<Set::state_type>>,
+        "a delta is gossiped only through admit_gossiped");
 
     const auto p1 = cc::admit_swim_peer(peer(1));
     const auto p2 = cc::admit_swim_peer(peer(2));
@@ -41,8 +41,10 @@ int main() {
     std::array<cc::SwimPeer, 1> a_peers{p2};
     std::array<cc::SwimPeer, 1> b_peers{p1};
 
-    auto a = cc::mint_scuttlebutt<4, 4>(::foundation::effects::testing::init(), p1, std::span<const cc::SwimPeer>{a_peers});
-    auto b = cc::mint_scuttlebutt<4, 4>(::foundation::effects::testing::init(), p2, std::span<const cc::SwimPeer>{b_peers});
+    auto a =
+        cc::mint_scuttlebutt<4, 4>(::foundation::effects::testing::init(), p1, std::span<const cc::SwimPeer>{a_peers});
+    auto b =
+        cc::mint_scuttlebutt<4, 4>(::foundation::effects::testing::init(), p2, std::span<const cc::SwimPeer>{b_peers});
 
     assert(a.peer_count() == 2);
     assert(a.key_count() == 0);

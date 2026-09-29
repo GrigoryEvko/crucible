@@ -33,15 +33,16 @@ namespace wire_word_probe {
 struct Alice {};
 struct Hello {};
 struct Bye {};
-using Menu = ::fixy::session::Select<
-    ::fixy::session::Send<::fixy::session::PeerMsg<Alice, Hello, int>, ::fixy::session::End>,
-    ::fixy::session::Send<::fixy::session::PeerMsg<Alice, Bye, int>, ::fixy::session::End>>;
+using Menu =
+    ::fixy::session::Select<::fixy::session::Send<::fixy::session::PeerMsg<Alice, Hello, int>, ::fixy::session::End>,
+                            ::fixy::session::Send<::fixy::session::PeerMsg<Alice, Bye, int>, ::fixy::session::End>>;
 
 [[nodiscard]] std::array<std::uint64_t, 2> words_of_the_peer_unit() noexcept;
 
 using KeyedHello = ::fixy::session::Send<::fixy::session::Labelled<Hello, int>, ::fixy::session::End>;
-using KeyedPick = ::fixy::session::Select<::fixy::session::Send<::fixy::session::Labelled<Hello, void>, ::fixy::session::End>,
-                                          ::fixy::session::Send<::fixy::session::Labelled<Bye, void>, ::fixy::session::End>>;
+using KeyedPick =
+    ::fixy::session::Select<::fixy::session::Send<::fixy::session::Labelled<Hello, void>, ::fixy::session::End>,
+                            ::fixy::session::Send<::fixy::session::Labelled<Bye, void>, ::fixy::session::End>>;
 inline constexpr std::uint64_t forged_word = 7;
 }  // namespace wire_word_probe
 
@@ -114,8 +115,8 @@ static_assert(own_words[0] != own_words[1]);
 // its label alone, so a choice, its dual and its stripped view put the
 // same word on the wire for each label.
 struct Bob {};
-using AliceMenu = s::Offer<s::Sender<Bob>, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>,
-                           s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>>;
+using AliceMenu =
+    s::Offer<s::Sender<Bob>, s::Recv<s::PeerMsg<Bob, Hello, int>, s::End>, s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>>;
 using ViewMenu = s::Select<s::Send<s::Labelled<Hello, int>, s::End>, s::Send<s::Labelled<Bye, int>, s::End>>;
 static_assert(s::branch_wire_word_v<Menu, 0> == s::branch_wire_word_v<AliceMenu, 0>
               && s::branch_wire_word_v<Menu, 1> == s::branch_wire_word_v<AliceMenu, 1>);

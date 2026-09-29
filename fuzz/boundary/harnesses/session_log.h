@@ -19,7 +19,8 @@ namespace crucible::fuzz::boundary {
     std::vector<std::uint8_t> log;
     for (std::uint64_t role = 1; role <= 3; ++role) {
         const auto record = SessionEvent::close(RoleTagId{role}, RoleTagId{role + 1}).encode();
-        for (const std::byte b : record) log.push_back(static_cast<std::uint8_t>(b));
+        for (const std::byte b : record)
+            log.push_back(static_cast<std::uint8_t>(b));
     }
     return {log};
 }

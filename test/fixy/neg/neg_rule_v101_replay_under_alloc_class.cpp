@@ -11,7 +11,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<::fixy::alloc_class::Arena<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>,
-                                ::fixy::atom::simd::avx2>
-        refused{};
+                                ::fixy::atom::simd::avx2> refused{};
     return 0;
 }

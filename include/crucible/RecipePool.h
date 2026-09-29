@@ -44,8 +44,7 @@ public:
     // brand, so this constructor only checks and forwards.  The one body
     // below does the work out of line.
     template <typename Brand, typename CallerRow = init_required_row>
-        requires ::foundation::brand::IsFreshBrand<Brand>
-              && ::foundation::effects::Subrow<init_required_row, CallerRow>
+        requires ::foundation::brand::IsFreshBrand<Brand> && ::foundation::effects::Subrow<init_required_row, CallerRow>
     [[gnu::cold]] explicit RecipePool(::fixy::BorrowedRef<Arena, Brand> arena, ::foundation::effects::Init init,
                                       uint32_t initial_capacity = 32, std::type_identity<CallerRow> = {}) noexcept
         // The lower bound is a load-factor sanity floor. The power-of-two
@@ -63,7 +62,8 @@ public:
     // Two calls return the same pointer exactly when their arguments agree
     // on every field but the hash. The hash of the argument is ignored: the
     // pool computes and owns that field.
-    [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* intern(::foundation::effects::Alloc a, const NumericalRecipe& fields)
+    [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* intern(::foundation::effects::Alloc a,
+                                                                      const NumericalRecipe& fields)
         CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
         const RecipeHash h = compute_recipe_hash(fields);
         const uint64_t hv = h.raw();

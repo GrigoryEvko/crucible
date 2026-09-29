@@ -29,8 +29,7 @@ int main() {
         ctx, ::fixy::mint_secret<sh::Key>(shared_key));
     auto local_cipher = fp::mint_permission_root<door::LocalCipherTag>(ctx);
     auto [peer_key, handshake] = door::sign_handshake<OrgA>(::fixy::mint_secret<sh::Key>(shared_key),
-                                                             door::PeerKeyFingerprint{0xDEADBEEFULL},
-                                                             door::Nonce{1});
+                                                            door::PeerKeyFingerprint{0xDEADBEEFULL}, door::Nonce{1});
     auto [returned_cipher, admitted] = admission.mint_federation_admittance(std::move(local_cipher), handshake);
     (void)peer_key;
     (void)returned_cipher;

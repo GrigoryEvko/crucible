@@ -129,19 +129,24 @@ struct foundation::permissions::can_split_into_pack<attack_tags::Whole, attack_t
     : std::true_type {};
 template <>
 struct foundation::permissions::has_split_pack_authoring_witness<attack_tags::Whole, attack_tags::Left,
-                                                                  attack_tags::Right> : std::true_type {};
+                                                                 attack_tags::Right> : std::true_type {};
 template <>
 struct foundation::permissions::can_split_into_pack<attack_tags::Whole2, attack_tags::Left2, attack_tags::Right2>
     : std::true_type {};
 template <>
 struct foundation::permissions::has_split_pack_authoring_witness<attack_tags::Whole2, attack_tags::Left2,
-                                                                  attack_tags::Right2> : std::true_type {};
+                                                                 attack_tags::Right2> : std::true_type {};
 
 namespace {
 
 // ── The outcomes and the ledger ──────────────────────────────────────
 
-enum class Outcome : std::uint8_t { Caught, Silent, Deadlock, Correct };
+enum class Outcome : std::uint8_t {
+    Caught,
+    Silent,
+    Deadlock,
+    Correct
+};
 
 constexpr int kSilentExit = 0;
 constexpr int kDeadlockExit = 42;
@@ -378,8 +383,8 @@ struct Holder {
 }
 
 [[noreturn]] void close_twice() {
-    auto at_end =
-        s::mint_session_handle<s::Send<Ping, s::End>, Wire>(Wire{}).send(Ping{}, [](Wire&, Ping&) noexcept { return true; });
+    auto at_end = s::mint_session_handle<s::Send<Ping, s::End>, Wire>(Wire{}).send(
+        Ping{}, [](Wire&, Ping&) noexcept { return true; });
     auto& alias = at_end;
     (void)std::move(at_end).close();
     (void)std::move(alias).close();
@@ -540,7 +545,8 @@ using LeftProto = s::Recv<Ping, s::End>;
 // for its End handle to come back.  The brand makes it wait: no other End
 // handle has its type.
 struct GiveAwayBody;
-using RightHead = s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, GiveAwayBody>;
+using RightHead =
+    s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, GiveAwayBody>;
 using RightDone = decltype(std::declval<RightHead>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
 Slot<RightHead> g_right_endpoint;
@@ -557,7 +563,10 @@ struct GiveAwayBody {
 // How a left body receives: through a polling transport, which lets the
 // handle wait through the watch, or through a declared read, which waits
 // in the scope that the handle opened.
-enum class Receive : std::uint8_t { Polling, Declared };
+enum class Receive : std::uint8_t {
+    Polling,
+    Declared
+};
 
 // Receives one Ping on the left end of `head`, in the given way.
 template <Receive How, typename Head>
@@ -565,9 +574,8 @@ template <Receive How, typename Head>
     if constexpr (How == Receive::Polling) {
         return std::move(head).recv(PollLeftBox{where});
     } else {
-        return std::move(head).recv([where](LeftEnd& e, s::watch::wait_scope&) noexcept {
-            return Ping{take(e.pipe->to_left, where)};
-        });
+        return std::move(head).recv(
+            [where](LeftEnd& e, s::watch::wait_scope&) noexcept { return Ping{take(e.pipe->to_left, where)}; });
     }
 }
 
@@ -614,8 +622,10 @@ template <Receive How>
 // thread would send only after its own wait ends.
 struct CycleRightA;
 struct CycleRightB;
-using CycleHeadA = s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightA>;
-using CycleHeadB = s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightB>;
+using CycleHeadA =
+    s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightA>;
+using CycleHeadB =
+    s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightB>;
 using CycleDoneA = decltype(std::declval<CycleHeadA>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 using CycleDoneB = decltype(std::declval<CycleHeadB>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
@@ -769,7 +779,8 @@ using OneRead = s::Recv<int, s::End>;
                 std::move(waits).detach(s::detach_reason::AsyncCancellation{});
                 break;
             }
-            if (std::chrono::steady_clock::now() > deadline) deadlock_detected("the right side, for a Pong or a cancel");
+            if (std::chrono::steady_clock::now() > deadline)
+                deadlock_detected("the right side, for a Pong or a cancel");
             std::this_thread::yield();
         }
         left.join();
@@ -1026,8 +1037,8 @@ constexpr wait_refusal_case kWaitRefusals[] = {
     for (const wait_refusal_case& entry : kWaitRefusals) {
         const captured_end end = run_capturing(entry.run);
         const bool names_the_check = end.output.find(entry.diagnostic) != std::string::npos;
-        const bool is_expected = !end.is_clean_exit && names_the_check
-                              && end.output.find("DEADLOCK ACROSS SESSIONS") == std::string::npos;
+        const bool is_expected =
+            !end.is_clean_exit && names_the_check && end.output.find("DEADLOCK ACROSS SESSIONS") == std::string::npos;
         std::fprintf(stderr, "[wait] %-40.*s %s\n", static_cast<int>(entry.name.size()), entry.name.data(),
                      is_expected ? "refused before the wait" : "UNEXPECTED");
         if (!is_expected) {
@@ -1040,11 +1051,16 @@ constexpr wait_refusal_case kWaitRefusals[] = {
 
 [[nodiscard]] const char* outcome_name(Outcome outcome) noexcept {
     switch (outcome) {
-        case Outcome::Caught: return "caught";
-        case Outcome::Silent: return "silent";
-        case Outcome::Deadlock: return "deadlock";
-        case Outcome::Correct: return "correct";
-        default: return "unknown";
+        case Outcome::Caught:
+            return "caught";
+        case Outcome::Silent:
+            return "silent";
+        case Outcome::Deadlock:
+            return "deadlock";
+        case Outcome::Correct:
+            return "correct";
+        default:
+            return "unknown";
     }
 }
 

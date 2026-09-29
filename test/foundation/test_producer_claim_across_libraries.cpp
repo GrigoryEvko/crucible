@@ -33,9 +33,7 @@ void cycle_on_this_thread() {
 
 int main() {
     cycle_on_this_thread();
-    {
-        std::jthread second_thread{cycle_on_this_thread};
-    }
+    { std::jthread second_thread{cycle_on_this_thread}; }
     std::puts("test_producer_claim_across_libraries: a claim won in one shared object and destroyed in another "
               "leaves the record it entered");
     return 0;

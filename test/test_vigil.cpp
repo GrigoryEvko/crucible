@@ -125,12 +125,14 @@ static void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
     for (uint32_t iter = first_iter; iter < first_iter + 2; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto recorded = op_at(iter, i);
-            (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas, recorded.n_metas);
+            (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                                  recorded.n_metas);
         }
     }
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(first_iter + 2, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas, recorded.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                              recorded.n_metas);
     }
 }
 
@@ -150,13 +152,15 @@ static void test_divergence_drops_the_unobserved_region() {
 
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(3, i);
-        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas, recorded.n_metas);
+        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                                        recorded.n_metas);
         assert(result.action == DispatchResult::Action::RECORD && "alignment ops return RECORD");
     }
     assert(vigil.context().is_compiled() && "the context must be compiled after K alignment ops");
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto recorded = op_at(3, i);
-        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas, recorded.n_metas);
+        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                                        recorded.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
     }
 
@@ -179,7 +183,8 @@ static void test_divergence_drops_the_unobserved_region() {
     const uint32_t diverged_before = vigil.diverged_count();
     OpData foreign_op = op_at(7, 0);
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
-    auto result_diverged = vigil.dispatch_op(crucible::test::certify_synthetic_entry(foreign_op.entry), foreign_op.metas, foreign_op.n_metas);
+    auto result_diverged = vigil.dispatch_op(crucible::test::certify_synthetic_entry(foreign_op.entry),
+                                             foreign_op.metas, foreign_op.n_metas);
     assert(result_diverged.action == DispatchResult::Action::RECORD && "a divergence falls back to recording");
     assert(result_diverged.status == ReplayStatus::DIVERGED);
     assert(vigil.diverged_count() > diverged_before);
@@ -191,8 +196,8 @@ static void test_divergence_drops_the_unobserved_region() {
     // ring never grows.
     const uint64_t produced_before = vigil.ring_total_produced();
     auto after_divergence = op_at(7, 0);
-    auto result_after =
-        vigil.dispatch_op(crucible::test::certify_synthetic_entry(after_divergence.entry), after_divergence.metas, after_divergence.n_metas);
+    auto result_after = vigil.dispatch_op(crucible::test::certify_synthetic_entry(after_divergence.entry),
+                                          after_divergence.metas, after_divergence.n_metas);
     assert(result_after.action == DispatchResult::Action::RECORD);
     assert(vigil.ring_total_produced() == produced_before + 1
            && "the first op after a divergence must be recorded, not aligned against the region the "
@@ -234,7 +239,8 @@ static void test_divergence_drops_a_half_finished_alignment() {
     // Open a walk two ops deep and stop.  K is 5, so this does not activate.
     for (uint32_t i = 0; i < 2; i++) {
         auto recorded = op_at(8, i);
-        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas, recorded.n_metas);
+        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                                        recorded.n_metas);
         assert(result.action == DispatchResult::Action::RECORD);
     }
     assert(!vigil.context().is_compiled() && "two ops are short of the K that activates");
@@ -245,7 +251,8 @@ static void test_divergence_drops_a_half_finished_alignment() {
 
     OpData foreign_op = op_at(9, 0);
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
-    auto result_diverged = vigil.dispatch_op(crucible::test::certify_synthetic_entry(foreign_op.entry), foreign_op.metas, foreign_op.n_metas);
+    auto result_diverged = vigil.dispatch_op(crucible::test::certify_synthetic_entry(foreign_op.entry),
+                                             foreign_op.metas, foreign_op.n_metas);
     assert(result_diverged.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());
 
@@ -253,8 +260,8 @@ static void test_divergence_drops_a_half_finished_alignment() {
     // open, and reaches the ring if it is not.
     const uint64_t produced_before = vigil.ring_total_produced();
     auto after_divergence = op_at(9, 2);
-    auto result_after =
-        vigil.dispatch_op(crucible::test::certify_synthetic_entry(after_divergence.entry), after_divergence.metas, after_divergence.n_metas);
+    auto result_after = vigil.dispatch_op(crucible::test::certify_synthetic_entry(after_divergence.entry),
+                                          after_divergence.metas, after_divergence.n_metas);
     assert(result_after.action == DispatchResult::Action::RECORD);
     assert(vigil.ring_total_produced() == produced_before + 1
            && "the first op after a divergence must be recorded, not fed to an alignment walk the "

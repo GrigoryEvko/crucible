@@ -22,9 +22,8 @@ struct record_size_proved final {};
 }  // namespace fixture
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
-                                ::fixy::atom::with<::foundation::effects::Effect::IO>, ::fixy::atom::as_public,
-                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::record_size_proved>>
-        refused{};
+    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot, ::fixy::atom::with<::foundation::effects::Effect::IO>,
+                                ::fixy::atom::as_public, ::fixy::atom::cost_constant,
+                                ::fixy::atom::refined_with<fixture::record_size_proved>> refused{};
     return 0;
 }

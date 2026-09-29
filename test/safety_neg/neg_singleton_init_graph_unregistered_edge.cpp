@@ -18,5 +18,5 @@ namespace types = neg_singleton_init_graph_unregistered_edge_types;
 
 int main() {
     return sizeof(::crucible::singleton_init_graph::init_graph<std::tuple<types::Registered>, types::Edges>) == 1 ? 0
-                                                                                                                 : 1;
+                                                                                                                  : 1;
 }

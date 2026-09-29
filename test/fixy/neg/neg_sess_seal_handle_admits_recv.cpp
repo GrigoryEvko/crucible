@@ -18,8 +18,9 @@ using Moves = ::fixy::session::Transferable<int, Region>;
 
 namespace fixy::session::detail {
 template <>
-inline constexpr bool handle_admits_recv_v<::foundation::permissions::PermSet<neg_sess_seal_handle_admits_recv_types::Region>,
-                                           neg_sess_seal_handle_admits_recv_types::Moves> = true;
+inline constexpr bool
+    handle_admits_recv_v<::foundation::permissions::PermSet<neg_sess_seal_handle_admits_recv_types::Region>,
+                         neg_sess_seal_handle_admits_recv_types::Moves> = true;
 }  // namespace fixy::session::detail
 
 int main() { return 0; }

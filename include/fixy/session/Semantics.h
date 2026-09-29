@@ -190,7 +190,8 @@ struct unique<Seen, Actions<>> {
 };
 template <typename... Seen, typename A, typename... Rest>
 struct unique<Actions<Seen...>, Actions<A, Rest...>>
-    : unique<std::conditional_t<holds_v<Actions<Seen...>, A>, Actions<Seen...>, Actions<Seen..., A>>, Actions<Rest...>> {};
+    : unique<std::conditional_t<holds_v<Actions<Seen...>, A>, Actions<Seen...>, Actions<Seen..., A>>,
+             Actions<Rest...>> {};
 
 // True when the subject of A is one of Roles.
 template <typename A, typename... Roles>
@@ -313,8 +314,7 @@ struct comm_send<Lost, From, To, SendAction<From, To, L, B>, Branch<Ls, Ps, Cs>.
     using type = std::conditional_t<is_branch, sent, NoTransition>;
 };
 
-template <bool Lost, typename From, typename To, typename A, typename U, typename... Ls, typename... Ps,
-          typename... Cs>
+template <bool Lost, typename From, typename To, typename A, typename U, typename... Ls, typename... Ps, typename... Cs>
 consteval auto comm_step(Branch<Ls, Ps, Cs>*...) {
     using sent = typename comm_send<Lost, From, To, A, Branch<Ls, Ps, Cs>...>::type;
     if constexpr (!std::is_same_v<sent, NoTransition>) {
@@ -338,8 +338,7 @@ struct step<Comm<From, To, Branch<Ls, Ps, Cs>...>, A, U> {
 };
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename A, typename U>
 struct step<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>, A, U> {
-    using type =
-        typename decltype(comm_step<true, From, To, A, U>(static_cast<Branch<Ls, Ps, Cs>*>(nullptr)...))::type;
+    using type = typename decltype(comm_step<true, From, To, A, U>(static_cast<Branch<Ls, Ps, Cs>*>(nullptr)...))::type;
 };
 
 // The receipt ([GR-&]) or the detection ([GR-⊙]) that an en-route node
@@ -347,9 +346,9 @@ struct step<Comm<From, Crashed<To>, Branch<Ls, Ps, Cs>...>, A, U> {
 // node allows neither.
 template <typename From, typename To, typename Chosen, typename... Bs>
 struct en_route_actions {
-    using type = std::conditional_t<is_crash_label_v<Chosen>, Actions<>,
-                                    Actions<RecvAction<To, bare_role_t<From>, Chosen,
-                                                       typename payload_of<Chosen, Bs...>::type>>>;
+    using type = std::conditional_t<
+        is_crash_label_v<Chosen>, Actions<>,
+        Actions<RecvAction<To, bare_role_t<From>, Chosen, typename payload_of<Chosen, Bs...>::type>>>;
 };
 template <typename From, typename To, typename... Bs>
 struct en_route_actions<Crashed<From>, To, CrashLabel, Bs...> {
@@ -370,8 +369,8 @@ consteval auto en_route_step(Branch<Ls, Ps, Cs>*...) {
         return std::type_identity<NoTransition>{};
     } else {
         using stepped = step_t<chosen, A, U>;
-        return std::type_identity<
-            EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, std::conditional_t<std::is_same_v<Ls, Chosen>, stepped, Cs>>...>>{};
+        return std::type_identity<EnRouteChoice<
+            From, To, Chosen, Branch<Ls, Ps, std::conditional_t<std::is_same_v<Ls, Chosen>, stepped, Cs>>...>>{};
     }
 }
 
@@ -463,8 +462,9 @@ template <typename List, typename S, typename Reliable>
 struct keep_enabled;
 template <typename... As, typename S, typename Reliable>
 struct keep_enabled<Actions<As...>, S, Reliable> {
-    using type = typename concat<std::conditional_t<
-        std::is_same_v<typename state_step<S, As, Reliable>::type, NoTransition>, Actions<>, Actions<As>>...>::type;
+    using type =
+        typename concat<std::conditional_t<std::is_same_v<typename state_step<S, As, Reliable>::type, NoTransition>,
+                                           Actions<>, Actions<As>>...>::type;
 };
 
 template <typename RL>
@@ -522,11 +522,11 @@ using state_step_t = typename detail::lts::state_step<S, A, Reliable>::type;
 template <typename S, typename Reliable>
     requires is_global_state_v<S> && is_reliability_v<Reliable>
 using state_enabled_t = typename detail::lts::unique<
-    Actions<>,
-    typename detail::lts::keep_enabled<
-        typename detail::lts::concat<typename detail::lts::candidates<typename S::type>::type,
-                                     typename detail::lts::crash_candidates<active_roles_t<typename S::type>>::type>::type,
-        S, Reliable>::type>::type;
+    Actions<>, typename detail::lts::keep_enabled<
+                   typename detail::lts::concat<
+                       typename detail::lts::candidates<typename S::type>::type,
+                       typename detail::lts::crash_candidates<active_roles_t<typename S::type>>::type>::type,
+                   S, Reliable>::type>::type;
 
 }  // namespace fixy::session::global
 
@@ -564,7 +564,8 @@ struct head_for<OutQueue<>, D> {
 };
 template <typename M, typename... Rest, typename D>
 struct head_for<OutQueue<M, Rest...>, D> {
-    using type = std::conditional_t<std::is_same_v<typename M::to, D>, M, typename head_for<OutQueue<Rest...>, D>::type>;
+    using type =
+        std::conditional_t<std::is_same_v<typename M::to, D>, M, typename head_for<OutQueue<Rest...>, D>::type>;
 };
 
 // Q without its first message to D.
@@ -611,8 +612,8 @@ struct entry_of<TypingContext<>, R> {
 };
 template <typename E, typename... Rest, typename R>
 struct entry_of<TypingContext<E, Rest...>, R> {
-    using type = std::conditional_t<std::is_same_v<typename E::role, R>, E,
-                                    typename entry_of<TypingContext<Rest...>, R>::type>;
+    using type =
+        std::conditional_t<std::is_same_v<typename E::role, R>, E, typename entry_of<TypingContext<Rest...>, R>::type>;
 };
 
 template <typename Ctx, typename R>
@@ -680,8 +681,8 @@ struct detection {
 };
 template <typename Ctx, typename R, typename Q, typename... Ls, typename... Bs, typename... Ks>
 struct detection<Ctx, R, Q, Recv<PeerMsg<Q, Ls, Bs>, Ks>...> {
-    static constexpr bool is_detected = (std::is_same_v<Ls, g::CrashLabel> || ...) && is_stopped_v<Ctx, Q>
-                                     && std::is_void_v<typename message_from<Ctx, R, Q>::type>;
+    static constexpr bool is_detected = (std::is_same_v<Ls, g::CrashLabel> || ...)
+                                     && is_stopped_v<Ctx, Q> && std::is_void_v<typename message_from<Ctx, R, Q>::type>;
     using type = std::conditional_t<is_detected, Actions<DetectAction<R, Q>>, Actions<>>;
 };
 
@@ -703,16 +704,17 @@ struct entry_actions {
     using local = unfold_local_t<typename E::local>;
     static constexpr bool may_crash = !g::detail::lts::is_reliable_v<Reliable, typename E::role>
                                    && !std::is_same_v<local, End> && !std::is_same_v<local, Stop>;
-    using type = typename g::detail::lts::concat<typename role_actions<Ctx, typename E::role, local>::type,
-                                                 std::conditional_t<may_crash, Actions<CrashAction<typename E::role>>,
-                                                                    Actions<>>>::type;
+    using type = typename g::detail::lts::concat<
+        typename role_actions<Ctx, typename E::role, local>::type,
+        std::conditional_t<may_crash, Actions<CrashAction<typename E::role>>, Actions<>>>::type;
 };
 
 template <typename Ctx, typename Reliable>
 struct actions_of;
 template <typename... Es, typename Reliable>
 struct actions_of<TypingContext<Es...>, Reliable> {
-    using type = typename g::detail::lts::concat<typename entry_actions<TypingContext<Es...>, Reliable, Es>::type...>::type;
+    using type =
+        typename g::detail::lts::concat<typename entry_actions<TypingContext<Es...>, Reliable, Es>::type...>::type;
 };
 
 // ── One step of a configuration ──────────────────────────────────────
@@ -751,13 +753,13 @@ template <typename... Es, typename P, typename Q, typename L, typename B>
 struct context_after<TypingContext<Es...>, SendAction<P, Q, L, B>> {
     using Ctx = TypingContext<Es...>;
     template <typename E>
-    using image = std::conditional_t<
-        std::is_same_v<typename E::role, P>,
-        RoleState<P,
-                  std::conditional_t<is_stopped_v<Ctx, Q>, typename E::queue,
-                                     typename append<typename E::queue, Queued<Q, L, B>>::type>,
-                  typename branch_next<unfold_local_t<typename E::local>, L, B>::type>,
-        E>;
+    using image =
+        std::conditional_t<std::is_same_v<typename E::role, P>,
+                           RoleState<P,
+                                     std::conditional_t<is_stopped_v<Ctx, Q>, typename E::queue,
+                                                        typename append<typename E::queue, Queued<Q, L, B>>::type>,
+                                     typename branch_next<unfold_local_t<typename E::local>, L, B>::type>,
+                           E>;
     using type = TypingContext<image<Es>...>;
 };
 // [Γ-&]: the receiver continues, and the message leaves the queue of the
@@ -787,9 +789,9 @@ struct context_after<TypingContext<Es...>, DetectAction<P, Q>> {
 template <typename... Es, typename P>
 struct context_after<TypingContext<Es...>, CrashAction<P>> {
     template <typename E>
-    using image = std::conditional_t<std::is_same_v<typename E::role, P>, RoleState<P, typename E::queue, Stop>,
-                                     RoleState<typename E::role, typename drop_all_for<typename E::queue, P>::type,
-                                               typename E::local>>;
+    using image = std::conditional_t<
+        std::is_same_v<typename E::role, P>, RoleState<P, typename E::queue, Stop>,
+        RoleState<typename E::role, typename drop_all_for<typename E::queue, P>::type, typename E::local>>;
     using type = TypingContext<image<Es>...>;
 };
 
@@ -820,7 +822,8 @@ template <typename B>
 inline constexpr bool is_guarded_body_v<Loop<B>> = is_guarded_body_v<B>;
 
 template <typename B, bool InLoop>
-struct is_config_local_<Loop<B>, InLoop> : std::bool_constant<is_guarded_body_v<B> && is_config_local_<B, true>::value> {};
+struct is_config_local_<Loop<B>, InLoop>
+    : std::bool_constant<is_guarded_body_v<B> && is_config_local_<B, true>::value> {};
 
 template <typename Q, typename L, typename B, typename K, bool InLoop>
 struct is_config_local_<Send<PeerMsg<Q, L, B>, K>, InLoop>
@@ -835,9 +838,9 @@ struct is_config_local_<Select<Send<PeerMsg<Qs, Ls, Bs>, Ks>...>, InLoop>
                          && (is_config_local_<Ks, InLoop>::value && ...)> {};
 template <typename Q, typename... Qs, typename... Ls, typename... Bs, typename... Ks, bool InLoop>
 struct is_config_local_<Offer<Sender<Q>, Recv<PeerMsg<Qs, Ls, Bs>, Ks>...>, InLoop>
-    : std::bool_constant<(sizeof...(Qs) > 0) && (std::is_same_v<Qs, Q> && ...)
-                         && g::detail::label_set_distinct_v<Ls...> && !(g::detail::is_crash_label_v<Ls> && ...)
-                         && (is_config_local_<Ks, InLoop>::value && ...)> {};
+    : std::bool_constant<(sizeof...(Qs) > 0) && (std::is_same_v<Qs, Q> && ...) && g::detail::label_set_distinct_v<Ls...>
+                         && !(g::detail::is_crash_label_v<Ls> && ...) && (is_config_local_<Ks, InLoop>::value && ...)> {
+};
 
 }  // namespace detail
 
@@ -901,16 +904,16 @@ using SentAndStopped = TypingContext<RoleState<gw::RoleA, OutQueue<Queued<gw::Ro
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::global::is_transition_label> {
-    using accepts = witnesses<
-        ::fixy::session::global::SendAction<::fixy::session::global::detail::witness::RoleA,
-                                            ::fixy::session::global::detail::witness::RoleB,
-                                            ::fixy::session::global::detail::witness::LabelX, int>,
-        ::fixy::session::global::RecvAction<::fixy::session::global::detail::witness::RoleB,
-                                            ::fixy::session::global::detail::witness::RoleA,
-                                            ::fixy::session::global::detail::witness::LabelX, int>,
-        ::fixy::session::global::CrashAction<::fixy::session::global::detail::witness::RoleA>,
-        ::fixy::session::global::DetectAction<::fixy::session::global::detail::witness::RoleB,
-                                              ::fixy::session::global::detail::witness::RoleA>>;
+    using accepts =
+        witnesses<::fixy::session::global::SendAction<::fixy::session::global::detail::witness::RoleA,
+                                                      ::fixy::session::global::detail::witness::RoleB,
+                                                      ::fixy::session::global::detail::witness::LabelX, int>,
+                  ::fixy::session::global::RecvAction<::fixy::session::global::detail::witness::RoleB,
+                                                      ::fixy::session::global::detail::witness::RoleA,
+                                                      ::fixy::session::global::detail::witness::LabelX, int>,
+                  ::fixy::session::global::CrashAction<::fixy::session::global::detail::witness::RoleA>,
+                  ::fixy::session::global::DetectAction<::fixy::session::global::detail::witness::RoleB,
+                                                        ::fixy::session::global::detail::witness::RoleA>>;
     using refuses = witnesses<int, ::fixy::session::global::Actions<>, ::fixy::session::global::NoTransition>;
 };
 
@@ -927,9 +930,8 @@ struct foundation::contracts::armed_cell<::fixy::session::global::is_global_stat
         ::fixy::session::global::State<::fixy::session::global::Roles<>, ::fixy::session::global::End>,
         ::fixy::session::global::State<::fixy::session::global::Roles<>,
                                        ::fixy::session::global::detail::witness::Forever>,
-        ::fixy::session::global::State<
-            ::fixy::session::global::Roles<::fixy::session::global::detail::witness::RoleB>,
-            ::fixy::session::global::detail::witness::ReceiverCrashed>>;
+        ::fixy::session::global::State<::fixy::session::global::Roles<::fixy::session::global::detail::witness::RoleB>,
+                                       ::fixy::session::global::detail::witness::ReceiverCrashed>>;
     using refuses = witnesses<
         int, ::fixy::session::global::End, ::fixy::session::global::State<int, ::fixy::session::global::End>,
         ::fixy::session::global::State<::fixy::session::global::Roles<>, int>,
@@ -944,17 +946,15 @@ struct foundation::contracts::armed_cell<::fixy::session::config::is_configurati
                               ::fixy::session::config::detail::witness::SentAndStopped>;
     using refuses = witnesses<
         int, ::fixy::session::config::detail::witness::SendsX,
-        ::fixy::session::TypingContext<::fixy::session::RoleState<::fixy::session::global::detail::witness::RoleA,
-                                                                  ::fixy::session::OutQueue<>,
-                                                                  ::fixy::session::Recv<int, ::fixy::session::End>>>,
         ::fixy::session::TypingContext<
             ::fixy::session::RoleState<::fixy::session::global::detail::witness::RoleA, ::fixy::session::OutQueue<>,
-                                       ::fixy::session::End>,
-            ::fixy::session::RoleState<::fixy::session::global::detail::witness::RoleA, ::fixy::session::OutQueue<>,
-                                       ::fixy::session::End>>,
+                                       ::fixy::session::Recv<int, ::fixy::session::End>>>,
         ::fixy::session::TypingContext<::fixy::session::RoleState<::fixy::session::global::detail::witness::RoleA,
-                                                                  ::fixy::session::OutQueue<int>,
-                                                                  ::fixy::session::End>>>;
+                                                                  ::fixy::session::OutQueue<>, ::fixy::session::End>,
+                                       ::fixy::session::RoleState<::fixy::session::global::detail::witness::RoleA,
+                                                                  ::fixy::session::OutQueue<>, ::fixy::session::End>>,
+        ::fixy::session::TypingContext<::fixy::session::RoleState<
+            ::fixy::session::global::detail::witness::RoleA, ::fixy::session::OutQueue<int>, ::fixy::session::End>>>;
 };
 
 template <>
@@ -967,8 +967,7 @@ struct foundation::contracts::armed_instances<^^::fixy::session::config::detail:
         ::fixy::session::config::detail::is_config_local_<::fixy::session::config::detail::witness::GuardedX, false>>;
     using refuses = witnesses<
         ::fixy::session::config::detail::is_config_local_<::fixy::session::Continue, false>,
-        ::fixy::session::config::detail::is_config_local_<
-            ::fixy::session::Loop<::fixy::session::Continue>, false>,
+        ::fixy::session::config::detail::is_config_local_<::fixy::session::Loop<::fixy::session::Continue>, false>,
         ::fixy::session::config::detail::is_config_local_<::fixy::session::Recv<int, ::fixy::session::End>, false>,
         ::fixy::session::config::detail::is_config_local_<
             ::fixy::session::Recv<::fixy::session::PeerMsg<::fixy::session::global::detail::witness::RoleA,
@@ -976,9 +975,9 @@ struct foundation::contracts::armed_instances<^^::fixy::session::config::detail:
                                   ::fixy::session::End>,
             false>,
         ::fixy::session::config::detail::is_config_local_<
-            ::fixy::session::Offer<::fixy::session::Recv<
-                ::fixy::session::PeerMsg<::fixy::session::global::detail::witness::RoleA,
-                                         ::fixy::session::global::detail::witness::LabelX, int>,
-                ::fixy::session::End>>,
+            ::fixy::session::Offer<
+                ::fixy::session::Recv<::fixy::session::PeerMsg<::fixy::session::global::detail::witness::RoleA,
+                                                               ::fixy::session::global::detail::witness::LabelX, int>,
+                                      ::fixy::session::End>>,
             false>>;
 };

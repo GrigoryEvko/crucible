@@ -25,8 +25,9 @@ int main() {
     s::PeerCrashCell own;
     s::SessionEventLog log;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
-    auto handle = s::mint_recorded_session(s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, cell, s::mint_crash_writer(own)),
-                                           log, s::RoleTagId{1}, s::RoleTagId{2});
+    auto handle =
+        s::mint_recorded_session(s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, cell, s::mint_crash_writer(own)),
+                                 log, s::RoleTagId{1}, s::RoleTagId{2});
     auto chosen = std::move(handle).template select<0>([](Wire&, std::size_t) noexcept { return true; });
     auto sent = std::move(chosen).send(1, [](Wire&, int&) noexcept { return 1; });
     (void)std::move(sent.next).close();

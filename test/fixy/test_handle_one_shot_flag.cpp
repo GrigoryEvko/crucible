@@ -59,8 +59,7 @@ static_assert(std::is_same_v<decltype(std::declval<h::OneShotFlag&>().peek_acqui
         std::atomic<int> runs{0};
         std::atomic<bool> go{false};
         const auto consumer = [&] {
-            while (!go.load(std::memory_order_acquire)) {
-            }
+            while (!go.load(std::memory_order_acquire)) {}
             (void)flag.check_and_run([&]() noexcept { runs.fetch_add(1, std::memory_order_relaxed); });
         };
         std::thread first(consumer);
@@ -79,8 +78,7 @@ static_assert(std::is_same_v<decltype(std::declval<h::OneShotFlag&>().peek_acqui
     int payload = 0;
     int seen = 0;
     std::thread consumer([&] {
-        while (!flag.peek_acquire()) {
-        }
+        while (!flag.peek_acquire()) {}
         seen = payload;
     });
     payload = 42;

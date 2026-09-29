@@ -111,10 +111,10 @@ struct annotation_check<g::Roles<Cr...>, G, Reliable> {
     static consteval bool annotated_in_crashed(g::Roles<As...>*) noexcept {
         return (g::role_in_v<As, g::Roles<Cr...>> && ...);
     }
-    static constexpr bool is_satisfied =
-        g::is_well_annotated_v<G, typename reliable_roles<Reliable, G>::type>
-        && annotated_in_crashed(static_cast<g::crashed_roles_t<G>*>(nullptr))
-        && (!reliable_v<Reliable, Cr> && ...) && (!g::role_in_v<Cr, g::active_roles_t<G>> && ...);
+    static constexpr bool is_satisfied = g::is_well_annotated_v<G, typename reliable_roles<Reliable, G>::type>
+                                      && annotated_in_crashed(static_cast<g::crashed_roles_t<G>*>(nullptr))
+                                      && (!reliable_v<Reliable, Cr> && ...)
+                                      && (!g::role_in_v<Cr, g::active_roles_t<G>> && ...);
 };
 
 // A2: each role of C is at Stop, and each entry at Stop is in C.
@@ -148,7 +148,7 @@ consteval bool live_role_refines() noexcept {
             return false;
         } else {
             return !std::is_same_v<typename entry::local, Stop>
-                   && is_subtype_sync_v<typename entry::local, typename projected::local>;
+                && is_subtype_sync_v<typename entry::local, typename projected::local>;
         }
     }
 }
@@ -165,10 +165,9 @@ template <typename Ctx, typename Live, typename C>
 struct finished_check;
 template <typename... Es, typename Live, typename C>
 struct finished_check<TypingContext<Es...>, Live, C> {
-    static constexpr bool is_satisfied =
-        ((g::role_in_v<typename Es::role, Live> || g::role_in_v<typename Es::role, C>
-          || std::is_same_v<typename Es::local, End>)
-         && ...);
+    static constexpr bool is_satisfied = ((g::role_in_v<typename Es::role, Live> || g::role_in_v<typename Es::role, C>
+                                           || std::is_same_v<typename Es::local, End>)
+                                          && ...);
 };
 
 // ── A4: the queues ───────────────────────────────────────────────────
@@ -176,7 +175,8 @@ struct finished_check<TypingContext<Es...>, Live, C> {
 template <typename Ctx>
 inline constexpr bool every_queue_empty_v = false;
 template <typename... Es>
-inline constexpr bool every_queue_empty_v<TypingContext<Es...>> = (std::is_same_v<typename Es::queue, OutQueue<>> && ...);
+inline constexpr bool every_queue_empty_v<TypingContext<Es...>> =
+    (std::is_same_v<typename Es::queue, OutQueue<>> && ...);
 
 // True when the queue of From holds no message to To.
 template <typename Ctx, typename From, typename To>
@@ -270,14 +270,14 @@ consteval CrashAssociationFault fault_of() noexcept {
 // projection failure.
 template <typename G, typename Reliable, typename... Rs>
 consteval auto context_of(g::Roles<Rs...>) {
-    using failure = typename proj::first_failure<
-        typename decltype(proj::project_under<G, Rs, Reliable>())::type...>::type;
+    using failure =
+        typename proj::first_failure<typename decltype(proj::project_under<G, Rs, Reliable>())::type...>::type;
     if constexpr (!std::is_void_v<failure>) {
         return std::type_identity<failure>{};
     } else {
-        return std::type_identity<TypingContext<
-            RoleState<Rs, typename decltype(proj::project_under<G, Rs, Reliable>())::type::queue,
-                      typename decltype(proj::project_under<G, Rs, Reliable>())::type::local>...>>{};
+        return std::type_identity<
+            TypingContext<RoleState<Rs, typename decltype(proj::project_under<G, Rs, Reliable>())::type::queue,
+                                    typename decltype(proj::project_under<G, Rs, Reliable>())::type::local>...>>{};
     }
 }
 
@@ -286,8 +286,7 @@ consteval auto context_of(g::Roles<Rs...>) {
 // The fault that Definition 4.19 finds, or None.
 template <typename Ctx, typename S, typename Reliable>
     requires is_configuration_v<Ctx> && global::is_global_state_v<S> && global::is_reliability_v<Reliable>
-inline constexpr CrashAssociationFault crash_association_fault_v =
-    detail::crash_assoc::fault_of<Ctx, S, Reliable>();
+inline constexpr CrashAssociationFault crash_association_fault_v = detail::crash_assoc::fault_of<Ctx, S, Reliable>();
 
 template <typename Q>
 struct is_crash_associated : std::false_type {};
@@ -306,7 +305,7 @@ inline constexpr bool crash_association_holds_v = is_crash_associated<CrashAssoc
 // NotProjectable when a projection fails.
 template <typename G, typename Reliable>
     requires global::is_global_well_formed_v<G> && global::is_reliability_v<Reliable>
-             && (global::crashed_roles_t<G>::size == 0)
+              && (global::crashed_roles_t<G>::size == 0)
 using crash_projected_context_t =
     typename decltype(detail::crash_assoc::context_of<G, Reliable>(global::roles_t<G>{}))::type;
 
@@ -364,20 +363,20 @@ namespace fixy::session::config::detail::crash_assoc::witness {
 namespace gw = ::fixy::session::global::detail::witness;
 namespace gl = ::fixy::session::global;
 
-using Guarded = gl::Comm<gw::RoleA, gw::RoleB, gl::Branch<gw::LabelX, int, gl::End>, gl::Branch<gl::CrashLabel, void, gl::End>>;
+using Guarded =
+    gl::Comm<gw::RoleA, gw::RoleB, gl::Branch<gw::LabelX, int, gl::End>, gl::Branch<gl::CrashLabel, void, gl::End>>;
 using OnlyB = ReliableSet<gw::RoleB>;
 using Start = gl::State<gl::Roles<>, Guarded>;
 using StartCtx = crash_projected_context_t<Guarded, OnlyB>;
 using ACrashed = gl::State<gl::Roles<gw::RoleA>, gl::remove_role_t<Guarded, gw::RoleA>>;
-using ACrashedCtx =
-    TypingContext<RoleState<gw::RoleA, OutQueue<>, Stop>,
-                  RoleState<gw::RoleB, OutQueue<>, typename entry_t<StartCtx, gw::RoleB>::local>>;
+using ACrashedCtx = TypingContext<RoleState<gw::RoleA, OutQueue<>, Stop>,
+                                  RoleState<gw::RoleB, OutQueue<>, typename entry_t<StartCtx, gw::RoleB>::local>>;
 // A2 fails: A is at Stop, and the state says no role crashed.
 using StoppedButLive = ACrashedCtx;
 // A4 fails: B already has a message that A has not sent.
-using EarlyMessage =
-    TypingContext<RoleState<gw::RoleA, OutQueue<Queued<gw::RoleB, gw::LabelX, int>>, typename entry_t<StartCtx, gw::RoleA>::local>,
-                  RoleState<gw::RoleB, OutQueue<>, typename entry_t<StartCtx, gw::RoleB>::local>>;
+using EarlyMessage = TypingContext<
+    RoleState<gw::RoleA, OutQueue<Queued<gw::RoleB, gw::LabelX, int>>, typename entry_t<StartCtx, gw::RoleA>::local>,
+    RoleState<gw::RoleB, OutQueue<>, typename entry_t<StartCtx, gw::RoleB>::local>>;
 
 }  // namespace fixy::session::config::detail::crash_assoc::witness
 

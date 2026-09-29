@@ -80,11 +80,10 @@ namespace detail {
 // getter is called on.  A new getter with a new name is added here in a
 // reviewed edit, which is the point: a raw escape justifies itself.
 inline constexpr std::string_view accessor_names[] = {
-    "data",   "begin",  "end",     "cbegin", "cend",    "front",   "back",   "at",
-    "get",    "get_or_init",       "peek",   "peek_mut", "value",  "resource", "ctx",
-    "in",     "out",    "input",   "output", "stage",   "machine", "state",  "carrier",
-    "handle", "pin",    "c_str",   "sq_ring", "cq_ring", "sqes",   "observe", "consume",
-    "try_get", "raw_ptr", "graded", "cap",
+    "data",        "begin", "end",      "cbegin",  "cend",     "front",   "back",   "at",    "get",
+    "get_or_init", "peek",  "peek_mut", "value",   "resource", "ctx",     "in",     "out",   "input",
+    "output",      "stage", "machine",  "state",   "carrier",  "handle",  "pin",    "c_str", "sq_ring",
+    "cq_ring",     "sqes",  "observe",  "consume", "try_get",  "raw_ptr", "graded", "cap",
 };
 
 // The discouraged, type-checked escape hatches.
@@ -225,6 +224,6 @@ concept RawEscapesSanctioned = detail::raw_escape_refusal_v<T>.empty();
 // member.  The diagnostic names the member.  Place it beside a
 // wrapper's concrete instantiation; a later door added to that wrapper,
 // or to a base of it, stops the build.
-#define CRUCIBLE_NO_RAW_ESCAPE(...)                                          \
+#define CRUCIBLE_NO_RAW_ESCAPE(...)                                         \
     static_assert(::foundation::reflect::RawEscapesSanctioned<__VA_ARGS__>, \
                   ::foundation::reflect::detail::raw_escape_refusal_v<__VA_ARGS__>)

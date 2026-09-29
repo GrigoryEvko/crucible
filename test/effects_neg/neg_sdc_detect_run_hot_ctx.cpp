@@ -14,7 +14,8 @@ namespace eff = ::fixy;
 namespace observe = crucible::observe;
 
 int main() {
-    auto detector = observe::mint_sdc_detector<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()});
+    auto detector =
+        observe::mint_sdc_detector<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()});
     using Refused = decltype(detector.run_with_redundancy(std::declval<eff::HotFgCtx const&>(),
                                                           [](cog::CogIdentity const&) noexcept { return 1u; }));
     return sizeof(Refused) == 0 ? 1 : 0;

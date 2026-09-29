@@ -42,8 +42,8 @@ int main() {
     namespace rh = ::row_hash_translation_units;
     int failures = 0;
 
-    const std::string_view clean = rh::unqualified(
-        std::meta::display_string_of(^^decltype(rh::late_in_clean_unit::probe)));
+    const std::string_view clean =
+        rh::unqualified(std::meta::display_string_of(^^decltype(rh::late_in_clean_unit::probe)));
     const std::string_view shifted = rh::unqualified(rh::printed_late_closure_in_shifted_unit());
     if (clean == shifted) {
         std::fprintf(stderr, "positive control failed: both units print %.*s, so the shift moved no counter\n",

@@ -437,12 +437,11 @@ namespace detail {
     // call chain of Senses::load_subset() never reaches a hot frame.
     // Senses is move-only, and the static is built from the returned
     // value.
-    static ::crucible::perf::Senses slot =
-        ::crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
-                                              ::crucible::perf::SensesMask{
-                                                  .sense_hub = true,
-                                                  .sched_switch = true,
-                                              });
+    static ::crucible::perf::Senses slot = ::crucible::perf::Senses::load_subset(
+        ::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ::crucible::perf::SensesMask{
+                                                                         .sense_hub = true,
+                                                                         .sched_switch = true,
+                                                                     });
     return &slot;
 }
 #else
@@ -1752,8 +1751,8 @@ inline void elevate_priority() noexcept {
 // The mint returns `expected<SchedPriority<-10>, int>`.  A change to the
 // nice value or to the return type stops every bench TU that includes
 // this header.
-static_assert(std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(
-                                 ::fixy::ColdInitCtx{::foundation::effects::testing::init()})),
+static_assert(std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{
+                                 ::foundation::effects::testing::init()})),
                              std::expected<::fixy::sched::SchedPriority<-10>, int>>,
               "elevate_priority must mint a SchedPriority<-10> proof through "
               "fixy::sched::mint_priority<-10>(ColdInitCtx).");

@@ -74,9 +74,7 @@ namespace crucible::fuzz::prop {
 }
 
 // ─── LoopTermKind ──────────────────────────────────────────────────
-[[nodiscard]] inline LoopTermKind random_loop_term_kind(Rng& rng) noexcept {
-    return rng.pick<LoopTermKind>();
-}
+[[nodiscard]] inline LoopTermKind random_loop_term_kind(Rng& rng) noexcept { return rng.pick<LoopTermKind>(); }
 
 // ─── TensorMeta ────────────────────────────────────────────────────
 //

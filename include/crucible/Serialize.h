@@ -189,7 +189,8 @@ struct Reader {
     void read_zero_pad(uint8_t (&pad)[N]) {
         std::array<uint8_t, N> wire{};
         read_bytes(wire.data(), N);
-        if (!std::ranges::all_of(wire, [](uint8_t byte) noexcept { return byte == 0; })) [[unlikely]] ok = false;
+        if (!std::ranges::all_of(wire, [](uint8_t byte) noexcept { return byte == 0; })) [[unlikely]]
+            ok = false;
         std::ranges::fill(pad, uint8_t{0});
     }
 
@@ -345,7 +346,8 @@ inline Guard read_guard(Reader& r) {
     return guard;
 }
 
-static_assert(sizeof(Guard) == 12, "write_guard and read_guard move every field of Guard.  A new field needs a line in each.");
+static_assert(sizeof(Guard) == 12,
+              "write_guard and read_guard move every field of Guard.  A new field needs a line in each.");
 
 inline constexpr size_t kTensorSlotWireBytes = 40;
 static_assert(sizeof(TensorSlot) == kTensorSlotWireBytes,
@@ -562,7 +564,8 @@ inline Header read_header(Reader& r) {
             // set is not an image that the writer produced.
             constexpr uint8_t kWrittenFlags =
                 op_flag::INFERENCE_MODE | op_flag::IS_MUTABLE | op_flag::PHASE_MASK | op_flag::TORCH_FUNCTION;
-            const uint8_t flags = r.read_gated<uint8_t>([](uint8_t byte) noexcept { return (byte & ~kWrittenFlags) == 0; });
+            const uint8_t flags =
+                r.read_gated<uint8_t>([](uint8_t byte) noexcept { return (byte & ~kWrittenFlags) == 0; });
             te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
             te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
             te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);

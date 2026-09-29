@@ -47,8 +47,8 @@ using SendsM = s::Send<s::PeerMsg<Q, M, int>, s::End>;
 using TakesM =
     s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M, int>, s::End>, s::Recv<s::PeerMsg<P, Crash, void>, s::End>>;
 using Ctx0 = c::crash_projected_context_t<Guarded, OnlyQ>;
-static_assert(
-    std::is_same_v<Ctx0, s::TypingContext<s::RoleState<P, s::OutQueue<>, SendsM>, s::RoleState<Q, s::OutQueue<>, TakesM>>>);
+static_assert(std::is_same_v<
+              Ctx0, s::TypingContext<s::RoleState<P, s::OutQueue<>, SendsM>, s::RoleState<Q, s::OutQueue<>, TakesM>>>);
 static_assert(c::crash_association_holds_v<Ctx0, Start<Guarded>, OnlyQ>);
 
 // Each label keeps the association.
@@ -126,9 +126,9 @@ static_assert(std::is_same_v<QCrashedState, g::State<g::Roles<Q>, g::Comm<P, g::
 using ToCrashed = s::TypingContext<s::RoleState<P, s::OutQueue<s::Queued<Q, M, int>>, SendsM>,
                                    s::RoleState<Q, s::OutQueue<>, s::Stop>>;
 static_assert(c::crash_association_fault_v<ToCrashed, QCrashedState, s::NoReliableRoles> == F::QueueMismatch);
-static_assert(c::crash_association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, SendsM>,
-                                                            s::RoleState<Q, s::OutQueue<>, s::Stop>>,
-                                           QCrashedState, s::NoReliableRoles>);
+static_assert(c::crash_association_holds_v<
+              s::TypingContext<s::RoleState<P, s::OutQueue<>, SendsM>, s::RoleState<Q, s::OutQueue<>, s::Stop>>,
+              QCrashedState, s::NoReliableRoles>);
 
 // Definition 4.15: a reliable role never crashes, and each role with
 // the crash annotation is in the crashed set.
@@ -242,18 +242,18 @@ struct Read {};
 struct Report {};
 struct Fatal {};
 struct Log {};
-using Logging = g::Msg<L, I, Trigger, void,
-                       g::Comm<Cl, I,
-                               g::Branch<Read, void,
-                                         g::Msg<I, L, Read, void, g::Msg<L, I, Report, Log, g::Msg<I, Cl, Report, Log, g::End>>>>,
-                               g::Branch<Crash, void, g::Msg<I, L, Fatal, void, g::End>>>>;
+using Logging =
+    g::Msg<L, I, Trigger, void,
+           g::Comm<Cl, I,
+                   g::Branch<Read, void,
+                             g::Msg<I, L, Read, void, g::Msg<L, I, Report, Log, g::Msg<I, Cl, Report, Log, g::End>>>>,
+                   g::Branch<Crash, void, g::Msg<I, L, Fatal, void, g::End>>>>;
 
 // P chooses a label for Q, and then sends R the matching label, with no
 // role reliable.  After its first send P acts again at once, so the walk
 // passes through en-route nodes whose other branches can never run.
 using SenderGoesOn =
-    g::Comm<P, Q,
-            g::Branch<M1, int, g::Comm<P, R, g::Branch<Add, int, g::End>, g::Branch<Crash, void, g::End>>>,
+    g::Comm<P, Q, g::Branch<M1, int, g::Comm<P, R, g::Branch<Add, int, g::End>, g::Branch<Crash, void, g::End>>>,
             g::Branch<M2, int, g::Comm<P, R, g::Branch<Sub, int, g::End>, g::Branch<Crash, void, g::End>>>,
             g::Branch<Crash, void, g::Comm<P, R, g::Branch<Add, int, g::End>, g::Branch<Crash, void, g::End>>>>;
 
@@ -292,8 +292,8 @@ using Walk = t::Tally (*)() noexcept;
 int check(char const* name, Walk walk, t::Tally expected) {
     const t::Tally got = walk();
     const bool agrees = got.states == expected.states && got.labels == expected.labels
-                        && got.crashes == expected.crashes && got.enabled_mismatches == expected.enabled_mismatches
-                        && got.unassociated == expected.unassociated;
+                     && got.crashes == expected.crashes && got.enabled_mismatches == expected.enabled_mismatches
+                     && got.unassociated == expected.unassociated;
     if (!agrees) std::fprintf(stderr, "test_session_crash_association: %s: the runtime walk disagrees\n", name);
     return agrees ? 0 : 1;
 }

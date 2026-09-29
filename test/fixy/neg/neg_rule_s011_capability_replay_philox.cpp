@@ -11,8 +11,7 @@
 #include <fixy/Fn.h>
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>,
-                                ::fixy::atom::capability_usage, ::fixy::atom::trust_verified>
-        refused{};
+    [[maybe_unused]] ::fixy::fn<::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>, ::fixy::atom::capability_usage,
+                                ::fixy::atom::trust_verified> refused{};
     return 0;
 }

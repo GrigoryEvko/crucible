@@ -112,8 +112,7 @@ struct first_unprojectable {
 };
 template <typename G, typename R, typename... Rest>
 struct first_unprojectable<G, global::Roles<R, Rest...>> {
-    using type =
-        std::conditional_t<projects_v<G, R>, typename first_unprojectable<G, global::Roles<Rest...>>::type, R>;
+    using type = std::conditional_t<projects_v<G, R>, typename first_unprojectable<G, global::Roles<Rest...>>::type, R>;
 };
 
 }  // namespace detail::live
@@ -170,8 +169,9 @@ using global::detail::witness::LabelY;
 
 // Balanced, but RoleC cannot tell which label RoleA chose, and it must
 // send a different label in each branch.
-using UnprojectableForC = global::Comm<RoleA, RoleB, global::Branch<LabelX, int, global::Msg<RoleC, RoleA, LabelX, int, global::End>>,
-                                       global::Branch<LabelY, int, global::Msg<RoleC, RoleA, LabelY, int, global::End>>>;
+using UnprojectableForC =
+    global::Comm<RoleA, RoleB, global::Branch<LabelX, int, global::Msg<RoleC, RoleA, LabelX, int, global::End>>,
+                 global::Branch<LabelY, int, global::Msg<RoleC, RoleA, LabelY, int, global::End>>>;
 
 }  // namespace detail::live::witness
 

@@ -21,7 +21,6 @@ struct Region {
 int main() {
     namespace perm = ::foundation::permissions;
     perm::SharedPermissionPool pool{perm::mint_permission_root<Region>()};
-    [[maybe_unused]] auto result =
-        perm::with_shared_read(std::move(pool), [](auto) noexcept { return 7; });
+    [[maybe_unused]] auto result = perm::with_shared_read(std::move(pool), [](auto) noexcept { return 7; });
     return 0;
 }

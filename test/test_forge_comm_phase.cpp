@@ -16,9 +16,9 @@ namespace net = crucible::forge::recipes;
 
 namespace {
 
-using ComputeRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<16>,
-                                                        ::foundation::effects::HbmBytes<4096>,
-                                                        ::foundation::effects::HbmBandwidth<4096>>;
+using ComputeRow =
+    ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<16>, ::foundation::effects::HbmBytes<4096>,
+                                         ::foundation::effects::HbmBandwidth<4096>>;
 using CommRow = ::foundation::effects::ConcurrentRow<::foundation::effects::NvlinkBandwidth<4096>,
                                                      ::foundation::effects::HbmBandwidth<4096>>;
 

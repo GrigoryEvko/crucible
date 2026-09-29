@@ -103,8 +103,7 @@ template <typename Case>
     // The first acquisition is still held: a guard that did not acquire
     // must not have released it.
     if (is_free(ctx, gate, proof)) {
-        std::fprintf(stderr, "%s: a try guard that failed to acquire released the holder's gate anyway\n",
-                     Case::name);
+        std::fprintf(stderr, "%s: a try guard that failed to acquire released the holder's gate anyway\n", Case::name);
         return 1;
     }
     holder.reset();
@@ -131,7 +130,7 @@ template <typename Case>
     {
         std::array<std::jthread, kThreads> workers;
         for (std::jthread& worker : workers) {
-            worker = std::jthread{[&] () noexcept {
+            worker = std::jthread{[&]() noexcept {
                 auto proof = perm::mint_permission_root<GateTag>();
                 for (int iteration = 0; iteration < kPerThread; ++iteration) {
                     spin::GateGuard guard{ctx, gate, proof};
@@ -163,7 +162,7 @@ template <typename Case>
     using HolderGuard = decltype(spin::GateGuard{ctx, gate, holder_proof});
     std::optional<HolderGuard> holder;
     holder.emplace(ctx, gate, holder_proof);
-    std::jthread waiter{[&] () noexcept {
+    std::jthread waiter{[&]() noexcept {
         auto waiter_proof = perm::mint_permission_root<GateTag>();
         is_waiter_ready.store(true, std::memory_order_release);
         spin::GateGuard guard{ctx, gate, waiter_proof};

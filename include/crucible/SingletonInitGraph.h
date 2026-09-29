@@ -102,7 +102,8 @@ template <class Registry, class... From, class... To>
     const std::array<std::size_t, edge_count> targets{position_of_<To>(registry)...};
 
     std::array<std::size_t, nodes> in_degree{};
-    for (std::size_t edge = 0; edge < edge_count; ++edge) ++in_degree[targets[edge]];
+    for (std::size_t edge = 0; edge < edge_count; ++edge)
+        ++in_degree[targets[edge]];
 
     std::array<bool, nodes> is_retired{};
     std::size_t retired_count = 0;
@@ -170,7 +171,7 @@ using ProbeRegistry = std::tuple<ProbeFirst, ProbeSecond>;
 
 static_assert(AcyclicInitGraph<ProbeRegistry, std::tuple<init_edge<ProbeFirst, ProbeSecond>>>);
 static_assert(!AcyclicInitGraph<ProbeRegistry, std::tuple<init_edge<ProbeFirst, ProbeFirst>>>);
-static_assert(
-    !AcyclicInitGraph<ProbeRegistry, std::tuple<init_edge<ProbeFirst, ProbeSecond>, init_edge<ProbeSecond, ProbeFirst>>>);
+static_assert(!AcyclicInitGraph<ProbeRegistry,
+                                std::tuple<init_edge<ProbeFirst, ProbeSecond>, init_edge<ProbeSecond, ProbeFirst>>>);
 
 }  // namespace crucible::singleton_init_graph::detail::self_test

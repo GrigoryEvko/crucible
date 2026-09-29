@@ -95,9 +95,9 @@ void test_admission_and_names() {
 
 void test_rdma_plan_minting() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
-    auto plan = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
-                                            *gd::admit_gpu_virtual_address(0x2000u),
-                                            *gd::admit_gpu_direct_bytes(1u << 20u));
+    auto plan =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
+                                    *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(1u << 20u));
     assert(plan.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, gd::DeclaredGpuDirectMrPlan>);
     assert(plan->value().gpu.uuid == gpu_identity().uuid);
@@ -106,43 +106,43 @@ void test_rdma_plan_minting() {
 
     gd::PeerPlacement remote_root = same_root();
     remote_root.peer_pcie_root = pcie_root(8);
-    auto mismatch = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
-                                                remote_root, *gd::admit_gpu_virtual_address(0x2000u),
-                                                *gd::admit_gpu_direct_bytes(4096));
+    auto mismatch =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), remote_root,
+                                    *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(4096));
     assert(!mismatch.has_value());
     assert(mismatch.error() == gd::GpuDirectError::PcieRootMismatch);
 
     remote_root.peer_bridge_present = true;
-    auto bridged = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
-                                               remote_root, *gd::admit_gpu_virtual_address(0x2000u),
-                                               *gd::admit_gpu_direct_bytes(4096));
+    auto bridged =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), remote_root,
+                                    *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(4096));
     assert(bridged.has_value());
 
-    auto unknown_root = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
-                                                    gd::PeerPlacement{}, *gd::admit_gpu_virtual_address(0x2000u),
-                                                    *gd::admit_gpu_direct_bytes(4096));
+    auto unknown_root =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), gd::PeerPlacement{},
+                                    *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(4096));
     assert(!unknown_root.has_value());
     assert(unknown_root.error() == gd::GpuDirectError::PcieRootUnknown);
 
     auto no_gpu_cap = gpu_caps();
     no_gpu_cap.features.unset(cog::GpuFeature::GpuDirectRdma);
-    auto missing_gpu_cap = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), no_gpu_cap, nic_identity(), nic_caps(),
-                                                       same_root(), *gd::admit_gpu_virtual_address(0x2000u),
-                                                       *gd::admit_gpu_direct_bytes(4096));
+    auto missing_gpu_cap =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), no_gpu_cap, nic_identity(), nic_caps(), same_root(),
+                                    *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(4096));
     assert(!missing_gpu_cap.has_value());
     assert(missing_gpu_cap.error() == gd::GpuDirectError::MissingGpuRdmaCapability);
 
     auto no_nic_cap = nic_caps();
     no_nic_cap.features.unset(cog::NicFeature::GpuDirectRdma);
-    auto missing_nic_cap = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), no_nic_cap,
-                                                       same_root(), *gd::admit_gpu_virtual_address(0x2000u),
-                                                       *gd::admit_gpu_direct_bytes(4096));
+    auto missing_nic_cap =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), no_nic_cap, same_root(),
+                                    *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(4096));
     assert(!missing_nic_cap.has_value());
     assert(missing_nic_cap.error() == gd::GpuDirectError::MissingNicRdmaCapability);
 
-    auto not_a_nic = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nvme_identity(), nic_caps(),
-                                                 same_root(), *gd::admit_gpu_virtual_address(0x2000u),
-                                                 *gd::admit_gpu_direct_bytes(4096));
+    auto not_a_nic =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nvme_identity(), nic_caps(), same_root(),
+                                    *gd::admit_gpu_virtual_address(0x2000u), *gd::admit_gpu_direct_bytes(4096));
     assert(!not_a_nic.has_value());
     assert(not_a_nic.error() == gd::GpuDirectError::NonNicCog);
 
@@ -173,9 +173,9 @@ void test_registration_boundary() {
     assert(!reg_deferred.has_value());
     assert(reg_deferred.error() == gd::GpuDirectError::RegistrationDeferred);
 
-    auto unavailable = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(),
-                                                   same_root(), *gd::admit_gpu_virtual_address(0x3000u),
-                                                   *gd::admit_gpu_direct_bytes(4096), gd::mrc_write_access(), true, true);
+    auto unavailable = gd::mint_gpu_direct_mr_plan(
+        init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
+        *gd::admit_gpu_virtual_address(0x3000u), *gd::admit_gpu_direct_bytes(4096), gd::mrc_write_access(), true, true);
     assert(unavailable.has_value());
     auto reg_unavailable = gd::register_gpu_memory(*unavailable);
     assert(!reg_unavailable.has_value());

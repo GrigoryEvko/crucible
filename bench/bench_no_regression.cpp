@@ -301,13 +301,12 @@ void run_rule(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces)
     const BgCtx ctx{eff::testing::bg()};
     auto region = ::fixy::OwnedRegion<std::uint32_t, PieceTableWhole>::wrap(
         pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
-    auto whole = ::fixy::spawn::mint_parallel_for<kPieces>(ctx, w.budget, std::move(region),
-                                                           [&w, &sink](auto& shard) noexcept {
-                                                               for (const std::uint32_t piece : shard) {
-                                                                   w.run_range(split_range(w.units, piece, kPieces),
-                                                                               sink);
-                                                               }
-                                                           });
+    auto whole =
+        ::fixy::spawn::mint_parallel_for<kPieces>(ctx, w.budget, std::move(region), [&w, &sink](auto& shard) noexcept {
+            for (const std::uint32_t piece : shard) {
+                w.run_range(split_range(w.units, piece, kPieces), sink);
+            }
+        });
     (void)whole;
 }
 

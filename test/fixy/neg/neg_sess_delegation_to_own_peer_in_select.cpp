@@ -19,7 +19,8 @@ struct Wire {
 };
 using HearsFromCarol = s::Offer<s::Sender<Carol>, s::Recv<s::PeerMsg<Carol, Ask, int>, s::End>>;
 using Carried = s::DelegatedSession<HearsFromCarol, Wire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
-using Chooses = s::Select<s::Send<s::PeerMsg<Carol, Keep, int>, s::End>, s::Send<s::PeerMsg<Carol, Hand, Carried>, s::End>>;
+using Chooses =
+    s::Select<s::Send<s::PeerMsg<Carol, Keep, int>, s::End>, s::Send<s::PeerMsg<Carol, Hand, Carried>, s::End>>;
 
 }  // namespace neg_sess_delegation_to_own_peer_in_select_types
 

@@ -105,22 +105,29 @@ static_assert(!corpus::classified_bg_without_declassify::matches<int, at::as_pub
 
 // A declassification licenses the channels its policy names and no
 // other.  Each export policy licenses IO.
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_io>());
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::AuditedLogging>, at::with_io>());
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::UserDisplay>, at::with_io>());
+static_assert(
+    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_io>());
+static_assert(
+    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::AuditedLogging>, at::with_io>());
+static_assert(
+    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::UserDisplay>, at::with_io>());
 // A policy that names no channel, or another channel, leaves IO
 // classified.
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify,
                                       at::declassify<policy::AuthorizedReplay>, at::with_io>());
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, at::declassify<policy::LengthOnly>,
                                       at::with_io>());
-static_assert(corpus::classified_io_without_declassify::matches<int, at::declassify<policy::HashForCompare>, at::with_io>());
+static_assert(
+    corpus::classified_io_without_declassify::matches<int, at::declassify<policy::HashForCompare>, at::with_io>());
 // No policy licenses Bg, so every declassification leaves Bg classified.
 static_assert(only_this_entry_matches<corpus::classified_bg_without_declassify, at::declassify<policy::AuditedLogging>,
                                       at::with_bg>());
-static_assert(corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_bg>());
-static_assert(corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::LengthOnly>, at::with_bg>());
-static_assert(corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::AuthorizedReplay>, at::with_bg>());
+static_assert(
+    corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::with_bg>());
+static_assert(
+    corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::LengthOnly>, at::with_bg>());
+static_assert(
+    corpus::classified_bg_without_declassify::matches<int, at::declassify<policy::AuthorizedReplay>, at::with_bg>());
 
 // Internal is not classified, and classified is not internal.
 static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_internal, at::with_io>());
@@ -135,8 +142,10 @@ static_assert(!corpus::internal_bg_without_declassify::matches<int, at::as_inter
 static_assert(!corpus::internal_io_without_declassify::matches<int, at::as_internal, at::with<>>());
 
 // A row that names several effects is read for each.
-static_assert(corpus::classified_io_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
-static_assert(corpus::classified_bg_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
+static_assert(
+    corpus::classified_io_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
+static_assert(
+    corpus::classified_bg_without_declassify::matches<int, at::as_secret, at::with<Eff::Bg, Eff::Alloc, Eff::IO>>());
 
 // The row an entry reads is the row of the binding: the Effect grade
 // joined with the lifts of the atoms.  A system call that lifts IO opens
@@ -149,7 +158,8 @@ static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, 
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, at::as_secret, FileWrite>());
 static_assert(only_this_entry_matches<corpus::internal_io_without_declassify, at::as_internal, FileWrite>());
 static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_public, FileWrite>());
-static_assert(!corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, FileWrite>());
+static_assert(
+    !corpus::classified_io_without_declassify::matches<int, at::declassify<policy::WireSerialize>, FileWrite>());
 static_assert(!corpus::classified_io_without_declassify::matches<int, FutexCall>(), "a futex call lifts Block alone");
 using StderrWrite = at::stdio::write<at::stdio::streams::Stderr>;
 static_assert(only_this_entry_matches<corpus::classified_io_without_declassify, StderrWrite>(),
@@ -167,9 +177,12 @@ static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_
 
 static_assert(corpus::staleness_secret_without_declassify::matches<int, at::as_secret, at::stale_to<5>>());
 static_assert(corpus::staleness_secret_without_declassify::matches<int, at::as_classified, at::stale_to<5>>());
-static_assert(corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::AuditedLogging>, at::stale_to<5>>());
-static_assert(corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::WireSerialize>, at::stale_to<5>>());
-static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::AuthorizedReplay>, at::stale_to<5>>());
+static_assert(corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::AuditedLogging>,
+                                                                   at::stale_to<5>>());
+static_assert(corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::WireSerialize>,
+                                                                   at::stale_to<5>>());
+static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::declassify<policy::AuthorizedReplay>,
+                                                                    at::stale_to<5>>());
 static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::as_public, at::stale_to<5>>());
 static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::as_internal, at::stale_to<5>>());
 static_assert(!corpus::staleness_secret_without_declassify::matches<int, at::as_secret>());
@@ -233,11 +246,11 @@ static_assert(IsAccepted<int, at::as_public, at::with_bg>);
 static_assert(!IsAccepted<int, FileWrite>);
 static_assert(IsAccepted<int, at::as_public, FileWrite>);
 static_assert(IsAccepted<int, FutexCall>, "Block alone opens no channel the corpus reads");
-static_assert(std::is_same_v<corpus::matched_entry_or_void_t<int, ProcessStateRead>,
-                             corpus::classified_io_without_declassify>);
+static_assert(
+    std::is_same_v<corpus::matched_entry_or_void_t<int, ProcessStateRead>, corpus::classified_io_without_declassify>);
 
-static_assert(std::is_same_v<corpus::matched_entry_or_void_t<int, at::with_io>,
-                             corpus::classified_io_without_declassify>);
+static_assert(
+    std::is_same_v<corpus::matched_entry_or_void_t<int, at::with_io>, corpus::classified_io_without_declassify>);
 static_assert(std::is_same_v<corpus::matched_entry_or_void_t<int, at::ghost, at::as_public, at::with_bg>,
                              corpus::ghost_runtime_observable>);
 static_assert(std::is_same_v<corpus::matched_entry_or_void_t<int, at::with_io, at::as_public>, void>);

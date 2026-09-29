@@ -10,6 +10,4 @@
 static_assert(::fixy::PoleFitsClaim<::fixy::Claim::Right, ::fixy::pole::Unconstrained<::fixy::Axis::Effect>>,
               "a Right pole that claims nothing is the weakest claim");
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

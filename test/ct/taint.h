@@ -51,9 +51,7 @@ template <typename T>
 }
 
 // Marks a byte range as undefined.
-inline void make_secret_bytes(void* data, std::size_t size) noexcept {
-    (void)VALGRIND_MAKE_MEM_UNDEFINED(data, size);
-}
+inline void make_secret_bytes(void* data, std::size_t size) noexcept { (void)VALGRIND_MAKE_MEM_UNDEFINED(data, size); }
 
 // The number of memcheck errors so far in this process.
 [[nodiscard]] inline unsigned long reported_errors() noexcept {

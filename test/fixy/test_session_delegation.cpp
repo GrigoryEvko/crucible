@@ -72,10 +72,10 @@ static_assert(!s::is_payload_subsort_v<At<SendsPositive>, At<SendsAny>>,
 static_assert(s::is_subtype_sync_v<s::Send<At<SendsAny>, s::End>, s::Send<At<SendsPositive>, s::End>>);
 static_assert(!s::is_subtype_sync_v<s::Send<At<SendsPositive>, s::End>, s::Send<At<SendsAny>, s::End>>);
 struct OtherWire {};
-static_assert(!s::is_payload_subsort_v<At<SendsAny>,
-                                       s::DelegatedSession<SendsPositive, OtherWire, s::DefaultAbandonmentPolicy,
-                                                           fp::EmptyPermSet>>,
-              "a different Resource is a different endpoint");
+static_assert(
+    !s::is_payload_subsort_v<
+        At<SendsAny>, s::DelegatedSession<SendsPositive, OtherWire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>>,
+    "a different Resource is a different endpoint");
 
 // ── A send to a peer of the delegated session ────────────────────────
 struct Bob {};
@@ -106,9 +106,9 @@ static_assert(!s::delegates_to_own_peer_v<Outer> && !s::delegates_to_own_peer_v<
 using Hands = s::Delegate<Inner, s::End>;
 using Takes = s::Accept<Inner, s::End>;
 static_assert(std::is_same_v<s::dual_of_t<Hands>, Takes> && std::is_same_v<s::dual_of_t<Takes>, Hands>);
-static_assert(std::is_same_v<s::dual_of_t<s::Delegate<Inner, s::Send<int, s::End>>>,
-                             s::Accept<Inner, s::Recv<int, s::End>>>,
-              "the dual dualizes the continuation and keeps the delegated protocol");
+static_assert(
+    std::is_same_v<s::dual_of_t<s::Delegate<Inner, s::Send<int, s::End>>>, s::Accept<Inner, s::Recv<int, s::End>>>,
+    "the dual dualizes the continuation and keeps the delegated protocol");
 static_assert(s::is_dual_v<Hands, Takes> && !s::is_dual_v<Hands, Hands>);
 static_assert(s::DelegatesTo<Hands, Inner> && !s::DelegatesTo<Hands, SendsAny>);
 static_assert(!s::DelegatesTo<Takes, Inner> && !s::DelegatesTo<Inner, Inner>);
@@ -122,7 +122,8 @@ static_assert(!s::is_well_formed_v<s::Loop<s::Delegate<s::Send<int, s::Continue>
               "the delegated protocol cannot name a Loop of the carrier");
 static_assert(!s::is_well_formed_v<s::Accept<s::Send<int, s::Continue>, s::End>>);
 static_assert(!s::is_well_formed_v<s::Delegate<s::Stop, s::End>>, "a crashed endpoint is no design-time protocol");
-static_assert(s::is_empty_choice_v<s::Delegate<s::Select<>, s::End>> && s::is_empty_choice_v<s::Accept<Inner, s::Offer<>>>);
+static_assert(s::is_empty_choice_v<s::Delegate<s::Select<>, s::End>>
+              && s::is_empty_choice_v<s::Accept<Inner, s::Offer<>>>);
 static_assert(!s::is_empty_choice_v<Hands> && !s::is_well_formed_v<s::Delegate<s::Select<>, s::End>>);
 static_assert(std::is_same_v<s::compose_t<Hands, s::Send<int, s::End>>, s::Delegate<Inner, s::Send<int, s::End>>>,
               "composition replaces the End of the continuation, never the End of the delegated protocol");
@@ -130,8 +131,10 @@ static_assert(!s::is_terminal_state_v<Hands> && !s::is_terminal_state_v<Takes>);
 // The row of a protocol holds the rows of the protocol that a head hands
 // off, as it does for the protocol that a DelegatedSession carries.
 using SendsBlocking = s::Send<eff::Computation<eff::Row<eff::Effect::Block>, int>, s::End>;
-static_assert(std::is_same_v<s::protocol_payload_row_t<s::Delegate<SendsBlocking, s::End>>, eff::Row<eff::Effect::Block>>);
-static_assert(std::is_same_v<s::protocol_payload_row_t<s::Accept<SendsBlocking, s::End>>, eff::Row<eff::Effect::Block>>);
+static_assert(
+    std::is_same_v<s::protocol_payload_row_t<s::Delegate<SendsBlocking, s::End>>, eff::Row<eff::Effect::Block>>);
+static_assert(
+    std::is_same_v<s::protocol_payload_row_t<s::Accept<SendsBlocking, s::End>>, eff::Row<eff::Effect::Block>>);
 // A head refines only a head that hands off the same protocol.
 static_assert(s::is_subtype_sync_v<Hands, Hands>);
 static_assert(!s::is_subtype_sync_v<s::Delegate<SendsPositive, s::End>, s::Delegate<SendsAny, s::End>>);
@@ -186,12 +189,13 @@ static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermS
         end.slot->held.emplace(std::move(value));
         return true;
     });
-    auto [received, recipient_done] = std::move(recipient).recv([](RecipientEnd& end) noexcept -> std::optional<Carried> {
-        if (!end.slot->held.has_value()) return std::nullopt;
-        std::optional<Carried> taken{std::move(*end.slot->held)};
-        end.slot->held.reset();
-        return taken;
-    });
+    auto [received, recipient_done] =
+        std::move(recipient).recv([](RecipientEnd& end) noexcept -> std::optional<Carried> {
+            if (!end.slot->held.has_value()) return std::nullopt;
+            std::optional<Carried> taken{std::move(*end.slot->held)};
+            end.slot->held.reset();
+            return taken;
+        });
     static_cast<void>(std::move(sender_done).close());
     static_cast<void>(std::move(recipient_done).close());
 
@@ -219,14 +223,16 @@ using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
 template <typename H>
 concept DelegatesWithoutItsHold = requires(H handle) { s::mint_delegated_session(std::move(handle)); };
 template <typename H, typename Hold>
-concept DelegatesWithHold = requires(H handle, Hold hold) { s::mint_delegated_session(std::move(handle), std::move(hold)); };
+concept DelegatesWithHold =
+    requires(H handle, Hold hold) { s::mint_delegated_session(std::move(handle), std::move(hold)); };
 
 [[nodiscard]] static int tokens_travel_with_the_endpoint() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto [handle, hold] = s::mint_permissioned_session<SendsRegion>(ctx, Wire{}, fp::mint_permission_root<Region>());
     using H = decltype(handle);
     static_assert(!DelegatesWithoutItsHold<H>, "a handle whose set holds a tag travels with the hold of its token");
-    static_assert(!DelegatesWithHold<H, s::PermHold<fp::EmptyPermSet>>, "a hold of another set backs no tag of the handle");
+    static_assert(!DelegatesWithHold<H, s::PermHold<fp::EmptyPermSet>>,
+                  "a hold of another set backs no tag of the handle");
     static_assert(DelegatesWithHold<H, decltype(hold)>);
 
     auto parcel = s::mint_delegated_session(std::move(handle), std::move(hold));
@@ -235,11 +241,11 @@ concept DelegatesWithHold = requires(H handle, Hold hold) { s::mint_delegated_se
     static_assert(std::is_same_v<typename decltype(received)::perm_set, fp::PermSet<Region>>);
     auto [message, rest] = std::move(received_hold).template pack<Region>(9);
     static_assert(std::is_same_v<decltype(rest), s::PermHold<fp::EmptyPermSet>>);
-    auto at_end = std::move(received).send(std::move(message),
-                                           [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
-                                               wire.sent = sent.value;
-                                               return true;
-                                           });
+    auto at_end =
+        std::move(received).send(std::move(message), [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
+            wire.sent = sent.value;
+            return true;
+        });
     const Wire back = std::move(at_end).close();
     if (back.sent != 9) return fail("the recipient did not send with the token that came with the endpoint");
     return 0;

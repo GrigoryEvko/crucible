@@ -21,9 +21,8 @@ struct ready_count_proved final {};
 }  // namespace fixture
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
-                                ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::epoll_wait>,
-                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::ready_count_proved>>
-        refused{};
+    [[maybe_unused]] ::fixy::fn<
+        int, ::fixy::atom::regime::hot, ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::epoll_wait>,
+        ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::ready_count_proved>> refused{};
     return 0;
 }

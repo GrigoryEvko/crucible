@@ -8,8 +8,8 @@ int main() {
     namespace cntp = crucible::cntp::_wip;
 
     auto datagram = cntp::admit_quic_datagram_bytes(1200).value();
-    auto config = cntp::mint_quic_config(std::uint16_t{0}, datagram,
-                                         cntp::mint_cc_choice<cntp::CcAlgorithm::Bbr3, cntp::LinkClass::CrossDatacenter>());
+    auto config = cntp::mint_quic_config(
+        std::uint16_t{0}, datagram, cntp::mint_cc_choice<cntp::CcAlgorithm::Bbr3, cntp::LinkClass::CrossDatacenter>());
     (void)config;
     return 0;
 }

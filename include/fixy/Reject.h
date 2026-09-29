@@ -362,8 +362,7 @@ template <class T, class... Atoms>
     if constexpr (failed == Tier::Payload) {
         return ^^unholdable_payload<T>;
     } else if constexpr (failed == Tier::Malformed) {
-        return first_malformed_atom_<Atoms...>() == ^^void ? ^^void
-                                                           : malformed_tag_or_void_<Atoms...>();
+        return first_malformed_atom_<Atoms...>() == ^^void ? ^^void : malformed_tag_or_void_<Atoms...>();
     } else if constexpr (failed == Tier::Duplicate) {
         return duplicate_tag_or_void_<Atoms...>();
     } else if constexpr (failed == Tier::Composition) {
@@ -500,8 +499,8 @@ static_assert(!IsAccepted<int, ::fixy::atom::capability_usage, ::fixy::atom::tru
 // No collision rule reads this pair, so the refusal is the corpus's.
 static_assert(!IsAccepted<int, ::fixy::atom::with_io>, "classified_io_without_declassify refuses this pack");
 static_assert(IsAccepted<int, ::fixy::atom::with_io, ::fixy::atom::as_public>);
-static_assert(std::is_same_v<corpus_tag_or_void_t<int, ::fixy::atom::with_io>,
-                             ::fixy::corpus::classified_io_without_declassify>);
+static_assert(
+    std::is_same_v<corpus_tag_or_void_t<int, ::fixy::atom::with_io>, ::fixy::corpus::classified_io_without_declassify>);
 static_assert(std::is_same_v<corpus_tag_or_void_t<int, ::fixy::atom::with_io, ::fixy::atom::as_public>, void>);
 
 // The tier-5 message names the corpus entry that refused the pack, the
@@ -541,8 +540,8 @@ static_assert(::fixy::detail::text_contains(
 // The tier-4 message names the axis, not just the template that names
 // it.  Two packs on two different axes, so a message that spelled one
 // axis unconditionally would fail here.
-static_assert(::fixy::detail::text_contains(
-    detail::reject::tier4_message_<::fixy::atom::copy, ::fixy::atom::affine>(), "Usage"));
+static_assert(::fixy::detail::text_contains(detail::reject::tier4_message_<::fixy::atom::copy, ::fixy::atom::affine>(),
+                                            "Usage"));
 static_assert(::fixy::detail::text_contains(
     detail::reject::tier4_message_<::fixy::atom::mut_append, ::fixy::atom::mut_monotonic>(), "Mutation"));
 // And it says so rather than naming an axis when no axis is doubled.

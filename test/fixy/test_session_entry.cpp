@@ -64,9 +64,9 @@ using AllocWork = eff::Computation<eff::Row<eff::Effect::Alloc>, int>;
 using SendsIo = s::Send<IoWork, s::End>;
 using ReceivesIo = s::Recv<IoWork, s::End>;
 using BranchRows = s::Loop<s::Select<s::Send<AllocWork, s::Continue>, s::Recv<IoWork, s::End>>>;
-using DelegatesIo = s::Send<s::DelegatedSession<SendsIo, Counter, s::DefaultAbandonmentPolicy,
-                                                ::foundation::permissions::EmptyPermSet>,
-                            s::End>;
+using DelegatesIo =
+    s::Send<s::DelegatedSession<SendsIo, Counter, s::DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>,
+            s::End>;
 using SendsAllocRegion = s::Send<s::Transferable<AllocWork, Region>, s::End>;
 
 static_assert(std::is_same_v<s::protocol_payload_row_t<Once>, eff::Row<>>, "an int carries no effect");
@@ -109,30 +109,30 @@ using ReceivesIoThroughEndpoint =
 using ReceivesIoInBranch = s::Offer<s::Recv<int, s::End>, s::Recv<s::Transferable<int, IoRegion>, s::End>>;
 using ReceivesPureEndpoint =
     s::Recv<s::DelegatedSession<s::End, Counter, Policy, ::foundation::permissions::PermSet<PureRegion>>, s::End>;
-using ReceivesLoanInEndpoint =
-    s::Recv<s::DelegatedSession<s::Send<s::Released<int, IoRegion>, s::End>, Counter, Policy,
-                                ::foundation::permissions::PermSet<s::BorrowedIn<IoRegion>>>,
-            s::End>;
+using ReceivesLoanInEndpoint = s::Recv<s::DelegatedSession<s::Send<s::Released<int, IoRegion>, s::End>, Counter, Policy,
+                                                           ::foundation::permissions::PermSet<s::BorrowedIn<IoRegion>>>,
+                                       s::End>;
 
 static_assert(std::is_same_v<s::protocol_delivered_regions_t<Once>, ::foundation::permissions::PermSet<>>);
 static_assert(std::is_same_v<s::protocol_delivered_regions_t<SendsRegion>, ::foundation::permissions::PermSet<>>,
               "a send delivers nothing: the sender held the region");
-static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoRegion>,
-                             ::foundation::permissions::PermSet<IoRegion>>);
-static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoEndpoint>,
-                             ::foundation::permissions::PermSet<IoRegion>>,
-              "the permission set of a delegated endpoint moves with it");
+static_assert(
+    std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoRegion>, ::foundation::permissions::PermSet<IoRegion>>);
+static_assert(
+    std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoEndpoint>, ::foundation::permissions::PermSet<IoRegion>>,
+    "the permission set of a delegated endpoint moves with it");
 static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoThroughEndpoint>,
                              ::foundation::permissions::PermSet<IoRegion>>,
               "the receiver runs the protocol of the delegated endpoint");
-static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoInBranch>,
-                             ::foundation::permissions::PermSet<IoRegion>>,
-              "each branch counts");
+static_assert(
+    std::is_same_v<s::protocol_delivered_regions_t<ReceivesIoInBranch>, ::foundation::permissions::PermSet<IoRegion>>,
+    "each branch counts");
 static_assert(std::is_same_v<s::protocol_delivered_regions_t<ReceivesLoanInEndpoint>,
                              ::foundation::permissions::PermSet<IoRegion>>,
               "a loan state in the set of a delegated endpoint delivers its region");
 static_assert(std::is_same_v<s::protocol_delivered_permission_row_t<ReceivesIoRegion>, eff::Row<eff::Effect::IO>>);
-static_assert(std::is_same_v<s::protocol_delivered_permission_row_t<ReceivesLoanInEndpoint>, eff::Row<eff::Effect::IO>>);
+static_assert(
+    std::is_same_v<s::protocol_delivered_permission_row_t<ReceivesLoanInEndpoint>, eff::Row<eff::Effect::IO>>);
 static_assert(std::is_same_v<s::protocol_delivered_permission_row_t<ReceivesPureEndpoint>, eff::Row<>>);
 
 static_assert(!s::CtxFitsSession<BgCtx, ReceivesIoRegion, Counter>, "the background context holds no IO");

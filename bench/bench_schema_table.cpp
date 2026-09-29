@@ -33,7 +33,8 @@ int main() {
         hashes[i] = SchemaHash{h};
         std::snprintf(names[i], sizeof(names[i]), "aten::op%u", i);
         const bool was_registered = table.register_name(
-            *mutable_view, hashes[i], ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(static_cast<const char*>(names[i])));
+            *mutable_view, hashes[i],
+            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(static_cast<const char*>(names[i])));
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 

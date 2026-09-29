@@ -20,7 +20,6 @@ struct parser_scratch_tag final {};
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::global::thread_local_<fixture::parser_scratch_tag>,
-                                ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>
-        refused{};
+                                ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>> refused{};
     return 0;
 }

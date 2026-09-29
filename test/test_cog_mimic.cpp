@@ -24,13 +24,9 @@ namespace mimic = crucible::mimic;
 namespace {
 
 // The contexts a mint accepts, built through the test doors.
-constexpr ::fixy::ColdInitCtx init_context() {
-    return ::fixy::ColdInitCtx{::foundation::effects::testing::init()};
-}
+constexpr ::fixy::ColdInitCtx init_context() { return ::fixy::ColdInitCtx{::foundation::effects::testing::init()}; }
 
-constexpr ::fixy::BgDrainCtx background_context() {
-    return ::fixy::BgDrainCtx{::foundation::effects::testing::bg()};
-}
+constexpr ::fixy::BgDrainCtx background_context() { return ::fixy::BgDrainCtx{::foundation::effects::testing::bg()}; }
 
 constexpr cog::GpuTargetCaps gpu_caps(std::uint16_t sm_version, std::uint16_t sm_count) {
     cog::GpuTargetCaps caps{};
@@ -80,7 +76,7 @@ static_assert(
         cog::NicPortTargetCaps caps{};
         caps.link_layer = ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Roce);
         auto const m = mimic::mint_cog_mimic<cog::CogKind::NicPort>(init_context(), id, caps,
-                                                                   cog::OpcodeLatencyTable<cog::CogKind::NicPort>{});
+                                                                    cog::OpcodeLatencyTable<cog::CogKind::NicPort>{});
         return &m.identity() == &id && m.calibrated_caps().value().link_layer.value() == cog::LinkLayer::Roce
             && m.opcode_latency_table().empty() && m.is_uncalibrated();
     }(),
@@ -98,7 +94,8 @@ static_assert(
                          && target.target_caps_class_hash() == source.target_caps_class_hash();
         auto moved_into = mint_gpu(id_a, gpu_caps(90, 132));
         moved_into = mint_gpu(id_b, gpu_caps(100, 208));
-        return copied && &moved_into.identity() == &id_b && moved_into.calibrated_caps().value().sm_count.value() == 208;
+        return copied && &moved_into.identity() == &id_b
+            && moved_into.calibrated_caps().value().sm_count.value() == 208;
     }(),
     "The copy and move assignments of CogMimic must carry the identity, the caps and the opcode table.");
 
@@ -291,7 +288,8 @@ static void test_mint_cpu_paths() {
 
     cog::CpuSocketTargetCaps sock_caps{};
     sock_caps.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(96);
-    sock_caps.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(std::uint64_t{384U} * 1024 * 1024);
+    sock_caps.l3_bytes =
+        ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(std::uint64_t{384U} * 1024 * 1024);
 
     auto sock_mimic = mimic::mint_cog_mimic<cog::CogKind::CpuSocket>(
         ctx, sock_id, sock_caps, cog::OpcodeLatencyTable<cog::CogKind::CpuSocket>{});

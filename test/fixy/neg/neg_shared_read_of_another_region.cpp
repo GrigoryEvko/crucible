@@ -24,10 +24,10 @@ int main() {
     static int storage_b[2] = {};
     BgCtx ctx{::foundation::effects::testing::bg()};
 
-    auto region_a = ::fixy::mint_owned_region(storage_a, std::size_t{2},
-                                              ::foundation::permissions::mint_permission_root<Cache>());
-    auto region_b = ::fixy::mint_owned_region(storage_b, std::size_t{2},
-                                              ::foundation::permissions::mint_permission_root<Cache>());
+    auto region_a =
+        ::fixy::mint_owned_region(storage_a, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>());
+    auto region_b =
+        ::fixy::mint_owned_region(storage_b, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>());
     ::fixy::SharedRegion shared_a{std::move(region_a)};
     ::fixy::SharedRegion shared_b{std::move(region_b)};
 

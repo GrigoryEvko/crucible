@@ -361,12 +361,11 @@ inline constexpr std::uint64_t kFoldAnchor = 0x9519eba651644517ULL;
     return acc;
 }
 
-static_assert(fold_anchor() == kFoldAnchor,
-              "the matrix and the anchor disagree. An entry was added, removed or "
-              "reordered, or a row_hash_contribution specialisation moved. Re-roll "
-              "kFoldAnchor to the new fold_anchor() value, recapture "
-              "tools/row_hash_foundation_golden.txt from this binary, and commit both "
-              "together. The ceremony is at the top of this file.");
+static_assert(fold_anchor() == kFoldAnchor, "the matrix and the anchor disagree. An entry was added, removed or "
+                                            "reordered, or a row_hash_contribution specialisation moved. Re-roll "
+                                            "kFoldAnchor to the new fold_anchor() value, recapture "
+                                            "tools/row_hash_foundation_golden.txt from this binary, and commit both "
+                                            "together. The ceremony is at the top of this file.");
 
 // ── The properties a reader of the golden should not have to re-derive ──
 //
@@ -464,10 +463,9 @@ static_assert(no_reserved_values(), "an entry took a reserved row_hash value. Ze
 // these must never reach a cache entry filed under another.
 [[nodiscard]] consteval bool counters_and_clocks_are_distinct() noexcept {
     std::uint64_t const values[] = {
-        row_hash_contribution_v<K02_OnDualGeneration>,
-        row_hash_contribution_v<K03_OnPeakBytes>, row_hash_contribution_v<K04_OnBitsBudget>,
-        row_hash_contribution_v<K05_OnDualEpoch>,
-        row_hash_contribution_v<H01_ClockOfFour>, row_hash_contribution_v<H02_ClockOfFourTagged>,
+        row_hash_contribution_v<K02_OnDualGeneration>, row_hash_contribution_v<K03_OnPeakBytes>,
+        row_hash_contribution_v<K04_OnBitsBudget>,     row_hash_contribution_v<K05_OnDualEpoch>,
+        row_hash_contribution_v<H01_ClockOfFour>,      row_hash_contribution_v<H02_ClockOfFourTagged>,
         row_hash_contribution_v<H03_ClockOfEight>,
     };
     for (std::size_t i = 0; i < std::size(values); ++i) {
@@ -498,10 +496,9 @@ static_assert(counters_and_clocks_are_distinct(), "two counter axes, or two cloc
 // one that stands above them: R05 repeats R04, and B02, B06, B07 and S01
 // each repeat B01. Every one of those five has its own assert above, with
 // the property that makes the repeat correct.
-static_assert(distinct_value_count() == 51,
-              "the number of distinct values moved. Every repeat in this matrix is "
-              "named by an assert above, so a new one is a collision between two "
-              "claims that must not share a cache slot.");
+static_assert(distinct_value_count() == 51, "the number of distinct values moved. Every repeat in this matrix is "
+                                            "named by an assert above, so a new one is a collision between two "
+                                            "claims that must not share a cache slot.");
 
 }  // namespace
 

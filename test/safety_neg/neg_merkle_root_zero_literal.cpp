@@ -18,8 +18,7 @@
 #include <cstdint>
 
 int main() {
-    constexpr crucible::ValidMerkleRoot bad =
-        ::fixy::mint_refined<::fixy::non_zero>(crucible::MerkleHash{uint64_t{0}});
+    constexpr crucible::ValidMerkleRoot bad = ::fixy::mint_refined<::fixy::non_zero>(crucible::MerkleHash{uint64_t{0}});
     (void)bad;
     return 0;
 }

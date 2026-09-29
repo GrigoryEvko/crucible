@@ -399,8 +399,8 @@ static void test_counts_past_the_file_allocate_nothing() {
     // A loader that sizes its vectors from the counts before it compares
     // them with the file touches hundreds of megabytes here.
     const long peak_before_kb = peak_resident_kb();
-    for (const auto& [claimed_ops, claimed_metas] : {std::pair<uint32_t, uint32_t>{MAX_OPS, 0u},
-                                                    std::pair<uint32_t, uint32_t>{0u, 1u << 20}}) {
+    for (const auto& [claimed_ops, claimed_metas] :
+         {std::pair<uint32_t, uint32_t>{MAX_OPS, 0u}, std::pair<uint32_t, uint32_t>{0u, 1u << 20}}) {
         auto buf = make_zero_op_header();
         std::memcpy(buf.data() + 8, &claimed_ops, 4);
         std::memcpy(buf.data() + 12, &claimed_metas, 4);

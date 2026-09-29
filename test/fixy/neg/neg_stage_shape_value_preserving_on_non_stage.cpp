@@ -16,6 +16,4 @@ namespace {
 void nullary_body() noexcept {}
 }  // namespace
 
-int main() {
-    return ::fixy::concurrent::pipeline_stage_is_value_preserving_v<&nullary_body> ? 1 : 0;
-}
+int main() { return ::fixy::concurrent::pipeline_stage_is_value_preserving_v<&nullary_body> ? 1 : 0; }

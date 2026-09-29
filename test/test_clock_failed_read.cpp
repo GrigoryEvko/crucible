@@ -144,14 +144,14 @@ void realtime_reader_refuses_what_it_cannot_stamp(Tally& tally) {
     const auto before_epoch = realtime.read();
     give_each_read(0, -1);
     const auto negative_nanos = realtime.read();
-    give_each_read(0, 1'000'000'000);
+    give_each_read(0, 1000000000);
     const auto full_second = realtime.read();
-    give_each_read(max_seconds, 999'999'999);
+    give_each_read(max_seconds, 999999999);
     const auto past_64_bits = realtime.read();
     use_the_kernel_clock();
 
     const auto out_of_range = std::make_error_code(std::errc::result_out_of_range);
-    tally.expect(is_reading_of(fixed, 2'000'000'005, "Realtime, a reading of 2 s and 5 ns"));
+    tally.expect(is_reading_of(fixed, 2000000005, "Realtime, a reading of 2 s and 5 ns"));
     tally.expect(is_refused_with(failed, errno_code(EINVAL), "Realtime, a failed call"));
     tally.expect(is_refused_with(before_epoch, out_of_range, "Realtime, a second field of -5"));
     tally.expect(is_refused_with(negative_nanos, out_of_range, "Realtime, a nanosecond field of -1"));
@@ -175,20 +175,20 @@ void monotonic_reader_gives_no_floor_for_a_failed_read(Tally& tally) {
     const auto regressed = monotonic.read();
     give_each_read(-5, 0);
     const auto negative = monotonic.read();
-    give_each_read(max_seconds, 999'999'999);
+    give_each_read(max_seconds, 999999999);
     const auto past_64_bits = monotonic.read();
     give_each_read(150, 0);
     const auto later = monotonic.read();
     use_the_kernel_clock();
 
-    tally.expect(is_reading_of(first, 100'000'000'000, "Monotonic, a reading of 100 s"));
+    tally.expect(is_reading_of(first, 100000000000, "Monotonic, a reading of 100 s"));
     tally.expect(is_refused_with(failed, errno_code(EPERM), "Monotonic, a failed call after a reading of 100 s"));
-    tally.expect(is_reading_of(regressed, 100'000'000'000, "Monotonic, a reading of 50 s below a floor of 100 s"));
+    tally.expect(is_reading_of(regressed, 100000000000, "Monotonic, a reading of 50 s below a floor of 100 s"));
     tally.expect(is_refused_with(negative, std::make_error_code(std::errc::result_out_of_range),
                                  "Monotonic, a second field of -5"));
     tally.expect(is_refused_with(past_64_bits, std::make_error_code(std::errc::value_too_large),
                                  "Monotonic, a count past 64 bits"));
-    tally.expect(is_reading_of(later, 150'000'000'000, "Monotonic, a reading of 150 s after two refused values"));
+    tally.expect(is_reading_of(later, 150000000000, "Monotonic, a reading of 150 s after two refused values"));
 }
 
 // The owner proof of a log that this one thread operates.
@@ -280,7 +280,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
 
     give_each_read(7, 0);
     auto* first = log.begin_tx(owner, 1);
-    tally.expect(holds_reading(first, 7'000'000'000, "begin_tx of the first transaction at 7 s"));
+    tally.expect(holds_reading(first, 7000000000, "begin_tx of the first transaction at 7 s"));
 
     fail_each_read(EIO);
     tally.expect(commit(first, regions[0]));
@@ -288,7 +288,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
 
     give_each_read(8, 0);
     tally.expect(log.activate(owner, first) == nullptr);
-    tally.expect(holds_reading(first, 8'000'000'000, "activate of the first transaction at 8 s"));
+    tally.expect(holds_reading(first, 8000000000, "activate of the first transaction at 8 s"));
 
     fail_each_read(EIO);
     auto* second = log.begin_tx(owner, 2);
@@ -296,7 +296,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
 
     give_each_read(9, 0);
     tally.expect(commit(second, regions[1]));
-    tally.expect(holds_reading(second, 9'000'000'000, "commit of the second transaction at 9 s"));
+    tally.expect(holds_reading(second, 9000000000, "commit of the second transaction at 9 s"));
 
     fail_each_read(EIO);
     tally.expect(log.activate(owner, second) == first);
@@ -309,8 +309,8 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(commit(third, regions[2]));
     give_each_read(12, 0);
     tally.expect(log.activate(owner, third) == second);
-    tally.expect(holds_reading(second, 12'000'000'000, "the second transaction, displaced at 12 s"));
-    tally.expect(holds_reading(third, 12'000'000'000, "activate of the third transaction at 12 s"));
+    tally.expect(holds_reading(second, 12000000000, "the second transaction, displaced at 12 s"));
+    tally.expect(holds_reading(third, 12000000000, "activate of the third transaction at 12 s"));
 
     fail_each_read(EIO);
     tally.expect(log.rollback(owner));

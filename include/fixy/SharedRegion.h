@@ -107,9 +107,9 @@ class SharedRegion;
 // The brand must be fresh.  On the erased brand every region of the tag
 // is one type, so the deduction would pair any guard with any region.
 template <typename T, typename Tag, typename Brand, typename Ctx>
-concept CtxFitsSharedRead = std::is_object_v<T> && ::foundation::brand::IsFreshBrand<Brand>
-                         && ::foundation::effects::IsExecCtx<Ctx>
-                         && ::foundation::permissions::CtxAdmitsPermission<Tag, Ctx>;
+concept CtxFitsSharedRead =
+    std::is_object_v<T> && ::foundation::brand::IsFreshBrand<Brand> && ::foundation::effects::IsExecCtx<Ctx>
+    && ::foundation::permissions::CtxAdmitsPermission<Tag, Ctx>;
 
 template <typename T, typename Tag, typename Brand, typename Ctx>
     requires CtxFitsSharedRead<T, Tag, Brand, Ctx>
@@ -158,8 +158,7 @@ class SharedRegion : public ::foundation::Pinned<SharedRegion<T, Tag, Brand>> {
     template <typename U, typename UTag, typename UBrand, typename Ctx>
         requires CtxFitsSharedRead<U, UTag, UBrand, Ctx>
     friend constexpr SharedRead<U, UTag, UBrand>
-    mint_shared_read(Ctx const& ctx,
-                     ::foundation::permissions::SharedPermissionGuard<UTag, UBrand> const& guard,
+    mint_shared_read(Ctx const& ctx, ::foundation::permissions::SharedPermissionGuard<UTag, UBrand> const& guard,
                      SharedRegion<U, UTag, UBrand> const& region) noexcept;
 
 public:
@@ -177,16 +176,17 @@ public:
     // roster: a constructor that consumes its own evidence guards
     // nothing a private one would guard better.
     constexpr explicit SharedRegion(OwnedRegion<T, Tag, Brand>&& region) noexcept
-        : base_{std::exchange(region.base_, nullptr)}, count_{std::exchange(region.count_, 0)},
+        : base_{std::exchange(region.base_, nullptr)},
+          count_{std::exchange(region.count_, 0)},
           pool_{std::move(region.perm_)} {}
 
     // A caller who offers the region without surrendering it means to go
     // on reading it exclusively, and the rvalue reference alone answers
     // that with a binding error rather than with the reason.  The twin
     // says the reason.
-    SharedRegion(OwnedRegion<T, Tag, Brand>&) =
-        delete("a shared region consumes the exclusive one: the permission it parks is the region's, and a "
-               "region that kept it would read beside every share; pass std::move(region)");
+    SharedRegion(OwnedRegion<T, Tag, Brand>&) = delete(
+        "a shared region consumes the exclusive one: the permission it parks is the region's, and a "
+        "region that kept it would read beside every share; pass std::move(region)");
 
     // The extent is not the data.  A reader that has no share can still
     // ask how large the region is, which is what a scheduler does before
@@ -235,8 +235,7 @@ class [[nodiscard]] SharedRead {
     template <typename U, typename UTag, typename UBrand, typename Ctx>
         requires CtxFitsSharedRead<U, UTag, UBrand, Ctx>
     friend constexpr SharedRead<U, UTag, UBrand>
-    mint_shared_read(Ctx const& ctx,
-                     ::foundation::permissions::SharedPermissionGuard<UTag, UBrand> const& guard,
+    mint_shared_read(Ctx const& ctx, ::foundation::permissions::SharedPermissionGuard<UTag, UBrand> const& guard,
                      SharedRegion<U, UTag, UBrand> const& region) noexcept;
 
 public:

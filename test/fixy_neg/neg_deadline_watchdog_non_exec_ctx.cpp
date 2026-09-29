@@ -13,8 +13,9 @@
 int main() {
     using ::crucible::warden::Policy;
 
-    auto watchdog = ::crucible::warden::mint_deadline_watchdog(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
-                                                               /*senses=*/nullptr, Policy::production());
+    auto watchdog =
+        ::crucible::warden::mint_deadline_watchdog(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
+                                                   /*senses=*/nullptr, Policy::production());
 
     auto v = watchdog.observe(7);
     (void)v;

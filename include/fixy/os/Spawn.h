@@ -174,8 +174,7 @@ struct can_ctx_fit_spawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple
 // True when no callable's type carries the throws atom anywhere in its
 // type tree.  Read by the mint's body, per design note 1.
 template <typename... Callables>
-inline constexpr bool no_callable_throws_v =
-    !(::fixy::type_tree_contains_throws_v<std::decay_t<Callables>> || ...);
+inline constexpr bool no_callable_throws_v = !(::fixy::type_tree_contains_throws_v<std::decay_t<Callables>> || ...);
 
 }  // namespace detail
 
@@ -191,8 +190,8 @@ concept CtxFitsSpawn = detail::can_ctx_fit_spawn<Ctx, Parent, Brand, ChildrenTup
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsSpawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple<std::decay_t<Callables>...>>
 [[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
-                                                        perm::Permission<Parent, Brand>&& parent,
-                                                        Callables&&... callables) noexcept {
+                                                         perm::Permission<Parent, Brand>&& parent,
+                                                         Callables&&... callables) noexcept {
     // Design note 1.  The clause above has already checked each callable's
     // noexcept specification through foundation's gate; this is the
     // structural half, which foundation cannot express because the atom is
@@ -221,20 +220,18 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
 // clause and then fails inside, which is the one case where the
 // diagnostic lands in this header rather than at the call.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
-concept CtxFitsParallelFor =
-    (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
-    && perm::CtxAdmitsPermission<Whole, Ctx>
-    && std::is_nothrow_invocable_v<Body&, ::fixy::OwnedRegion<T, ::fixy::Slice<Whole, 0>, Brand>&>
-    && (N == 1 || std::is_copy_constructible_v<Body>);
+concept CtxFitsParallelFor = (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
+                          && perm::CtxAdmitsPermission<Whole, Ctx>
+                          && std::is_nothrow_invocable_v<Body&, ::fixy::OwnedRegion<T, ::fixy::Slice<Whole, 0>, Brand>&>
+                          && (N == 1 || std::is_copy_constructible_v<Body>);
 
 // Declared before the runner so that its friend declaration names this
 // mint and nothing else.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
-[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
-                                                                     ::fixy::concurrent::WorkBudget budget,
-                                                                     ::fixy::OwnedRegion<T, Whole, Brand>&& region,
-                                                                     Body body) noexcept;
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
+mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
+                  Body body) noexcept;
 
 namespace detail {
 
@@ -270,15 +267,15 @@ class ParallelForRunner final {
     // (std::bit_cast, std::start_lifetime_as) can make one either.
     ParallelForRunner() = delete("the parallel-for runner holds static members only; no object of it exists");
     ParallelForRunner(const ParallelForRunner&) = delete("the parallel-for runner holds static members only");
-    ParallelForRunner& operator=(const ParallelForRunner&) = delete("the parallel-for runner holds static members only");
+    ParallelForRunner&
+    operator=(const ParallelForRunner&) = delete("the parallel-for runner holds static members only");
     ParallelForRunner(ParallelForRunner&&) = delete("the parallel-for runner holds static members only");
     ParallelForRunner& operator=(ParallelForRunner&&) = delete("the parallel-for runner holds static members only");
     constexpr ~ParallelForRunner() noexcept {}
 
     template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
         requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
-    friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
-                                                                  ::fixy::concurrent::WorkBudget budget,
+    friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
                                                                   ::fixy::OwnedRegion<T, Whole, Brand>&& region,
                                                                   Body body) noexcept;
 
@@ -289,8 +286,7 @@ class ParallelForRunner final {
         std::array<std::jthread, sizeof...(Is)> workers{};
         for (std::size_t worker = 0; worker < threads; ++worker) {
             workers[worker] = std::jthread{[&shards, body, worker, threads](std::stop_token) mutable noexcept {
-                ((Is % threads == worker ? static_cast<void>(body(std::get<Is>(shards))) : static_cast<void>(0)),
-                 ...);
+                ((Is % threads == worker ? static_cast<void>(body(std::get<Is>(shards))) : static_cast<void>(0)), ...);
             }};
         }
     }
@@ -302,10 +298,9 @@ class ParallelForRunner final {
 // count from it, per design note 4.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
-[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx,
-                                                                     ::fixy::concurrent::WorkBudget budget,
-                                                                     ::fixy::OwnedRegion<T, Whole, Brand>&& region,
-                                                                     Body body) noexcept {
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
+mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
+                  Body body) noexcept {
     // The constraint on the declaration reads the context.  The runner
     // reads it too, and asks for the background effect again before it
     // starts a thread.
@@ -366,9 +361,9 @@ static_assert(!::foundation::effects::LiftsToRow<atom_spawn::subprocess<"r">>);
 
 static_assert(::fixy::atom::detail::every_roster_member_is_atom_<::fixy::atom::detail::spawn_atom_samples>(),
               "fixy/os/Spawn.h: a member of spawn_atom_samples is not an atom.");
-static_assert(::fixy::atom::detail::every_roster_member_on_axis_<::fixy::atom::detail::spawn_atom_samples,
-                                                                 Axis::Protocol>(),
-              "fixy/os/Spawn.h: every spawn rationale atom engages Axis::Protocol.");
+static_assert(
+    ::fixy::atom::detail::every_roster_member_on_axis_<::fixy::atom::detail::spawn_atom_samples, Axis::Protocol>(),
+    "fixy/os/Spawn.h: every spawn rationale atom engages Axis::Protocol.");
 
 static_assert(std::is_empty_v<atom_spawn::detach_with<"x">>);
 static_assert(sizeof(atom_spawn::detach_with<"x">) == 1);

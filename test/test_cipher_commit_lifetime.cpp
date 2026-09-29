@@ -288,9 +288,9 @@ static void test_non_opaque_lifetime_rejected() {
     static_assert(::fixy::is_band_of_v<::fixy::LifetimeLattice, OpaqueLifetime<Lifetime_v::PER_FLEET, ContentHash>>);
     static_assert(!crucible::cipher::LifetimePinnedRegion<const RegionNode*, Lifetime_v::PER_REQUEST>);
     static_assert(!crucible::cipher::LifetimePinnedRegion<Cold<const RegionNode*>, Lifetime_v::PER_REQUEST>);
-    static_assert(!crucible::cipher::LifetimePinnedRegion<OpaqueLifetime<Lifetime_v::PER_FLEET, int>,
-                                                          Lifetime_v::PER_REQUEST>,
-                  "a band over a value that is no region pointer is refused too");
+    static_assert(
+        !crucible::cipher::LifetimePinnedRegion<OpaqueLifetime<Lifetime_v::PER_FLEET, int>, Lifetime_v::PER_REQUEST>,
+        "a band over a value that is no region pointer is refused too");
 }
 
 static void test_layout_invariant() {

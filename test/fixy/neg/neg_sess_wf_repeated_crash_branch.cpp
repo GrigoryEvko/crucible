@@ -13,8 +13,8 @@ struct Ping {};
 struct Wire {};
 }  // namespace
 
-using TwoRecoveries = s::Offer<s::Recv<Ping, s::End>, s::Recv<s::Crash<Peer>, s::End>,
-                               s::Recv<s::Crash<Peer>, s::Send<Ping, s::End>>>;
+using TwoRecoveries =
+    s::Offer<s::Recv<Ping, s::End>, s::Recv<s::Crash<Peer>, s::End>, s::Recv<s::Crash<Peer>, s::Send<Ping, s::End>>>;
 
 int main() {
     auto handle = s::mint_session_handle<TwoRecoveries, Wire>(Wire{});

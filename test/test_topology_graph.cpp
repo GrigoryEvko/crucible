@@ -102,8 +102,8 @@ static void test_default_topology_edge() {
         topology::TopologyEdge const zero{};
         return zero.id.is_none() && zero.kind == topology::LinkKind::Unknown
             && zero.state == topology::CongestionState::Healthy && zero.peer == nullptr
-            && zero.bandwidth_bytes_per_sec.value() == 0 && zero.rtt_ns_p50.value() == 0
-            && zero.rtt_ns_p99.value() == 0 && std::bit_cast<std::uint32_t>(zero.drop_rate.value()) == 0u;
+            && zero.bandwidth_bytes_per_sec.value() == 0 && zero.rtt_ns_p50.value() == 0 && zero.rtt_ns_p99.value() == 0
+            && std::bit_cast<std::uint32_t>(zero.drop_rate.value()) == 0u;
     }());
 
     topology::TopologyEdge e{};

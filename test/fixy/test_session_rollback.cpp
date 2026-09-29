@@ -52,8 +52,9 @@ static_assert(!s::CheckpointSessionAdmissible<forged_verdict::Left, forged_verdi
               "the gate reads the walk, and the walk finds that the labels disagree");
 
 // The boolean verdict is a concept, and a concept has no specialization.
-static_assert(std::meta::is_concept(^^s::checkpoint_compliant_v),
-              "checkpoint_compliant_v must stay a concept, so that no specialization admits a pair that is not compliant");
+static_assert(
+    std::meta::is_concept(^^s::checkpoint_compliant_v),
+    "checkpoint_compliant_v must stay a concept, so that no specialization admits a pair that is not compliant");
 
 namespace {
 
@@ -80,29 +81,31 @@ struct Region {};
 
 // Fig. 1(b): U commits after the price, S commits after the quality
 // choice.  S's commit imposes a checkpoint on U, so U's roll fails.
-using UserB =
-    s::Send<Text,
-            s::Recv<int, s::Select<s::Commit<s::Recv<
-                             Text, s::Select<s::Offer<s::Commit<s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Roll>>>>,
-                                             s::Offer<s::Commit<s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Abort>>>>>>>>>>;
+using UserB = s::Send<
+    Text,
+    s::Recv<int,
+            s::Select<s::Commit<s::Recv<
+                Text, s::Select<s::Offer<s::Commit<s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Roll>>>>,
+                                s::Offer<s::Commit<s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Abort>>>>>>>>>>;
 using ServiceB = s::Recv<
     Text,
-    s::Send<int, s::Offer<s::Commit<s::Send<
-                     Text, s::Offer<s::Select<s::Commit<s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Roll>>>>,
-                                    s::Select<s::Commit<s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Abort>>>>>>>>>>;
+    s::Send<int,
+            s::Offer<s::Commit<s::Send<
+                Text, s::Offer<s::Select<s::Commit<s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Roll>>>>,
+                               s::Select<s::Commit<s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Abort>>>>>>>>>>;
 
 static_assert(s::checkpoint_verdict_v<UserB, ServiceB> == s::CheckpointVerdict::RollToImposedCheckpoint);
 
 // Fig. 1(c): S commits after it sends the price, and then U commits.  U
 // set the last checkpoint, so U's roll finds a checkpoint it owns.
-using UserC = s::Send<
-    Text, s::Recv<int, s::Offer<s::Commit<s::Select<s::Commit<s::Recv<
-                           Text, s::Select<s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Roll>>,
-                                           s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Abort>>>>>>>>>>;
-using ServiceC = s::Recv<
-    Text, s::Send<int, s::Select<s::Commit<s::Offer<s::Commit<s::Send<
-                           Text, s::Offer<s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Roll>>,
-                                          s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Abort>>>>>>>>>>;
+using UserC =
+    s::Send<Text, s::Recv<int, s::Offer<s::Commit<s::Select<s::Commit<s::Recv<
+                                   Text, s::Select<s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Roll>>,
+                                                   s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Abort>>>>>>>>>>;
+using ServiceC =
+    s::Recv<Text, s::Send<int, s::Select<s::Commit<s::Offer<s::Commit<s::Send<
+                                   Text, s::Offer<s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Roll>>,
+                                                  s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Abort>>>>>>>>>>;
 
 static_assert(s::checkpoint_verdict_v<UserC, ServiceC> == s::CheckpointVerdict::Compliant);
 static_assert(s::checkpoint_verdict_v<ServiceC, UserC> == s::CheckpointVerdict::Compliant);
@@ -110,14 +113,14 @@ static_assert(s::CheckpointSessionAdmissible<UserC, ServiceC>);
 
 // Fig. 1(d): both commit after the metadata, U first.  S's commit comes
 // last and imposes a checkpoint on U.
-using UserD = s::Send<
-    Text, s::Recv<int, s::Recv<Text, s::Select<s::Commit<s::Offer<s::Commit<
-                                  s::Select<s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Roll>>,
-                                            s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Abort>>>>>>>>>>;
-using ServiceD = s::Recv<
-    Text, s::Send<int, s::Send<Text, s::Offer<s::Commit<s::Select<s::Commit<
-                                  s::Offer<s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Roll>>,
-                                           s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Abort>>>>>>>>>>;
+using UserD =
+    s::Send<Text, s::Recv<int, s::Recv<Text, s::Select<s::Commit<s::Offer<s::Commit<s::Select<
+                                                 s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Roll>>,
+                                                 s::Recv<Text, s::Select<s::Recv<Text, s::End>, s::Abort>>>>>>>>>>;
+using ServiceD =
+    s::Recv<Text, s::Send<int, s::Send<Text, s::Offer<s::Commit<s::Select<s::Commit<s::Offer<
+                                                 s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Roll>>,
+                                                 s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Abort>>>>>>>>>>;
 
 static_assert(s::checkpoint_verdict_v<UserD, ServiceD> == s::CheckpointVerdict::RollToImposedCheckpoint);
 
@@ -136,7 +139,8 @@ static_assert(s::checkpoint_verdict_v<Decide, Decide> == s::CheckpointVerdict::S
 // A primitive outside a choice is a decision that one side takes alone.
 static_assert(s::checkpoint_verdict_v<s::Send<int, s::Roll>, s::Recv<int, s::Roll>>
               == s::CheckpointVerdict::NotCheckpointShaped);
-static_assert(s::checkpoint_verdict_v<s::Commit<s::End>, s::Commit<s::End>> == s::CheckpointVerdict::NotCheckpointShaped);
+static_assert(s::checkpoint_verdict_v<s::Commit<s::End>, s::Commit<s::End>>
+              == s::CheckpointVerdict::NotCheckpointShaped);
 // A label the receiver cannot take.
 static_assert(s::checkpoint_verdict_v<s::Select<s::End, s::Abort>, s::Offer<s::End>>
               == s::CheckpointVerdict::LabelOutOfRange);
@@ -161,9 +165,11 @@ static_assert(s::checkpoint_verdict_v<s::Offer<s::Commit<s::Select<s::End, s::Ro
 
 // A Sender note on a Select names the endpoint that picks.  The erasure
 // keeps the note and erases the branches only, as it does for an Offer.
-static_assert(std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s::Commit<s::Send<int, s::End>>, s::Roll>>,
-                             s::Select<s::Sender<Peer>, s::Send<int, s::End>, s::End>>);
-static_assert(std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s::End>>, s::Select<s::Sender<Peer>, s::End>>);
+static_assert(
+    std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s::Commit<s::Send<int, s::End>>, s::Roll>>,
+                   s::Select<s::Sender<Peer>, s::Send<int, s::End>, s::End>>);
+static_assert(
+    std::is_same_v<s::checkpoint_erase_t<s::Select<s::Sender<Peer>, s::End>>, s::Select<s::Sender<Peer>, s::End>>);
 
 // The handle steps the erased protocol, and the erasure decides where the
 // handle is terminal.  A branch that commits and then sends is not a

@@ -341,10 +341,9 @@ deserialize_untrusted_federation_entry(std::span<const std::uint8_t> in_buf,
 template <typename Org, typename Brand>
 [[nodiscard]] inline std::expected<
     ::fixy::Tagged<FederationEntryView, ::foundation::permissions::tag::FederatedPeer<Org>>, FederationError>
-deserialize_federation_entry(
-    const ::foundation::permissions::Permission<::foundation::permissions::tag::FederatedPeer<Org>, Brand>&
-        peer_permission,
-    std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
+deserialize_federation_entry(const ::foundation::permissions::Permission<
+                                 ::foundation::permissions::tag::FederatedPeer<Org>, Brand>& peer_permission,
+                             std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
     (void)peer_permission;
 
     auto view = deserialize_untrusted_federation_entry(in_buf, receiver_cardinality);
@@ -421,10 +420,10 @@ using FederationGlobal = ::fixy::session::global::Rec<::fixy::session::global::M
     SenderRole, CoordRole, HeaderLabel, HeaderPayload<KeyTag>,
     ::fixy::session::global::Msg<
         CoordRole, SenderRole, AckLabel, Ack<KeyTag>,
-        ::fixy::session::global::Msg<
-            CoordRole, ReceiverRole, PullLabel, PullRequest<KeyTag>,
-            ::fixy::session::global::Msg<ReceiverRole, CoordRole, BodyLabel, BodyPayload<KeyTag>,
-                                         ::fixy::session::global::Var>>>>>;
+        ::fixy::session::global::Msg<CoordRole, ReceiverRole, PullLabel, PullRequest<KeyTag>,
+                                     ::fixy::session::global::Msg<ReceiverRole, CoordRole, BodyLabel,
+                                                                  BodyPayload<KeyTag>,
+                                                                  ::fixy::session::global::Var>>>>>;
 
 // A projection gives a queue and a local type.  At the start of the
 // protocol each queue is empty, so a role protocol is the local type.
@@ -438,10 +437,9 @@ template <typename KeyTag = AnyFederationKey>
 using CoordProto = typename ::fixy::session::project_t<FederationGlobal<KeyTag>, CoordRole>::local;
 
 template <typename KeyTag = AnyFederationKey>
-using ExpectedSenderProto = ::fixy::session::Loop<
-    ::fixy::session::Send<::fixy::session::PeerMsg<CoordRole, HeaderLabel, HeaderPayload<KeyTag>>,
-                          ::fixy::session::Recv<::fixy::session::PeerMsg<CoordRole, AckLabel, Ack<KeyTag>>,
-                                                ::fixy::session::Continue>>>;
+using ExpectedSenderProto = ::fixy::session::Loop<::fixy::session::Send<
+    ::fixy::session::PeerMsg<CoordRole, HeaderLabel, HeaderPayload<KeyTag>>,
+    ::fixy::session::Recv<::fixy::session::PeerMsg<CoordRole, AckLabel, Ack<KeyTag>>, ::fixy::session::Continue>>>;
 
 template <typename KeyTag = AnyFederationKey>
 using ExpectedReceiverProto = ::fixy::session::Loop<
@@ -452,11 +450,11 @@ using ExpectedReceiverProto = ::fixy::session::Loop<
 template <typename KeyTag = AnyFederationKey>
 using ExpectedCoordProto = ::fixy::session::Loop<::fixy::session::Recv<
     ::fixy::session::PeerMsg<SenderRole, HeaderLabel, HeaderPayload<KeyTag>>,
-    ::fixy::session::Send<
-        ::fixy::session::PeerMsg<SenderRole, AckLabel, Ack<KeyTag>>,
-        ::fixy::session::Send<::fixy::session::PeerMsg<ReceiverRole, PullLabel, PullRequest<KeyTag>>,
-                              ::fixy::session::Recv<::fixy::session::PeerMsg<ReceiverRole, BodyLabel, BodyPayload<KeyTag>>,
-                                                    ::fixy::session::Continue>>>>>;
+    ::fixy::session::Send<::fixy::session::PeerMsg<SenderRole, AckLabel, Ack<KeyTag>>,
+                          ::fixy::session::Send<::fixy::session::PeerMsg<ReceiverRole, PullLabel, PullRequest<KeyTag>>,
+                                                ::fixy::session::Recv<::fixy::session::PeerMsg<ReceiverRole, BodyLabel,
+                                                                                               BodyPayload<KeyTag>>,
+                                                                      ::fixy::session::Continue>>>>>;
 
 template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
 struct role_protocol_matches : std::false_type {};

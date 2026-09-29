@@ -86,9 +86,7 @@ class Connection;
 template <TransportClass T>
 using LinearConnection = ::fixy::Linear<Connection<T>>;
 
-[[nodiscard]] constexpr bool is_valid_remote(cog::CogIdentity const& remote) noexcept {
-    return !remote.uuid.is_zero();
-}
+[[nodiscard]] constexpr bool is_valid_remote(cog::CogIdentity const& remote) noexcept { return !remote.uuid.is_zero(); }
 
 template <TransportClass T>
     requires PoolTransportClass<T>

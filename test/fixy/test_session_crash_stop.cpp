@@ -60,8 +60,9 @@ struct Text {
 // change the answer of one of these verdicts.
 static_assert(std::meta::is_concept(^^s::every_reception_handles_crash_v),
               "every_reception_handles_crash_v must stay a concept, so that no specialization hides a bare reception");
-static_assert(std::meta::is_concept(^^s::is_crash_well_formed_v),
-              "is_crash_well_formed_v must stay a concept, so that no specialization admits a crash label that is sent");
+static_assert(
+    std::meta::is_concept(^^s::is_crash_well_formed_v),
+    "is_crash_well_formed_v must stay a concept, so that no specialization admits a crash label that is sent");
 
 // ── Rule 1: the crash label is never sent ───────────────────────────
 static_assert(!s::is_well_formed_v<s::Send<s::Crash<Q>, s::End>>);
@@ -100,13 +101,14 @@ static_assert(!s::every_reception_handles_crash_v<s::Offer<s::Recv<int, s::End>,
                                                   s::ReliableSet<>>);
 // The payload of a message branch travels with its label.  The payload
 // that follows the payload does not.
-static_assert(!s::every_reception_handles_crash_v<s::Offer<s::Recv<int, s::Recv<int, s::End>>, s::Recv<s::Crash<Q>, s::End>>,
-                                                  Q, s::ReliableSet<>>);
+static_assert(!s::every_reception_handles_crash_v<
+              s::Offer<s::Recv<int, s::Recv<int, s::End>>, s::Recv<s::Crash<Q>, s::End>>, Q, s::ReliableSet<>>);
 // A bare reception hidden inside a loop body is found.
-static_assert(!s::every_reception_handles_crash_v<s::Loop<s::Send<int, s::Recv<int, s::Continue>>>, Q, s::ReliableSet<>>);
 static_assert(
-    s::every_reception_handles_crash_v<s::Loop<s::Send<int, s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<Q>, s::End>>>>,
-                                       Q, s::ReliableSet<>>);
+    !s::every_reception_handles_crash_v<s::Loop<s::Send<int, s::Recv<int, s::Continue>>>, Q, s::ReliableSet<>>);
+static_assert(
+    s::every_reception_handles_crash_v<
+        s::Loop<s::Send<int, s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<Q>, s::End>>>>, Q, s::ReliableSet<>>);
 // A sender-annotated Offer is checked against its own sender.
 static_assert(s::every_reception_handles_crash_v<s::Offer<s::Sender<R>, s::Recv<int, s::End>>, Q, s::ReliableSet<R>>);
 static_assert(!s::every_reception_handles_crash_v<s::Offer<s::Sender<R>, s::Recv<int, s::End>>, Q, s::ReliableSet<>>);
@@ -154,10 +156,12 @@ static_assert(walk::is_delegation_free_v<NotedSelect>);
 static_assert(!walk::is_delegation_free_v<NotedSelectDelegates>);
 static_assert(s::every_reception_handles_crash_v<NotedSelect, Q, s::ReliableSet<>>);
 static_assert(!s::every_reception_handles_crash_v<NotedSelectThenBare, Q, s::ReliableSet<>>);
-static_assert(std::is_same_v<s::erase_crash_t<NotedSelect>, s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Recv<int, s::End>>>>>);
+static_assert(std::is_same_v<s::erase_crash_t<NotedSelect>,
+                             s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Recv<int, s::End>>>>>);
 static_assert(walk::is_every_sender_watched_v<NotedSelect, Q, s::ReliableSet<>>);
 static_assert(!walk::is_every_sender_watched_v<
-              s::Select<s::Sender<P>, s::Send<int, s::Offer<s::Sender<R>, s::Recv<int, s::End>, s::Recv<s::Crash<R>, s::End>>>>,
+              s::Select<s::Sender<P>,
+                        s::Send<int, s::Offer<s::Sender<R>, s::Recv<int, s::End>, s::Recv<s::Crash<R>, s::End>>>>,
               Q, s::ReliableSet<>>);
 
 // ── The roles that a keyed message names ────────────────────────────
@@ -207,8 +211,8 @@ static_assert(!s::is_subtype_sync_v<s::Stop, s::Stop>);
 static_assert(!s::is_subtype_sync_v<s::Stop, s::End>);
 static_assert(!s::is_subtype_sync_v<s::End, s::Stop>);
 // The subtype Offer may have more message branches.
-static_assert(s::is_subtype_sync_v<s::Offer<s::Recv<int, s::End>, s::Recv<long, s::End>, s::Recv<s::Crash<Q>, s::End>>,
-                                   Guarded>);
+static_assert(
+    s::is_subtype_sync_v<s::Offer<s::Recv<int, s::End>, s::Recv<long, s::End>, s::Recv<s::Crash<Q>, s::End>>, Guarded>);
 // It may not add a crash branch the supertype lacks.
 static_assert(!s::is_subtype_sync_v<Guarded, s::Offer<s::Recv<int, s::End>>>);
 // The supertype may not be a pure crash choice.
@@ -262,9 +266,8 @@ constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t
     return static_cast<std::size_t>(slot);
 };
 
-using CheckedP = decltype(s::mint_crash_session<ProtoP, P, Q>(std::declval<const BgCtx&>(), Port{},
-                                                               std::declval<const s::PeerCrashCell&>(),
-                                                               std::declval<s::CrashWriter>()));
+using CheckedP = decltype(s::mint_crash_session<ProtoP, P, Q>(
+    std::declval<const BgCtx&>(), Port{}, std::declval<const s::PeerCrashCell&>(), std::declval<s::CrashWriter>()));
 static_assert(std::is_same_v<CheckedP::protocol, ProtoP>);
 
 // The context of a crash session admits the effect row of each payload,
@@ -272,7 +275,8 @@ static_assert(std::is_same_v<CheckedP::protocol, ProtoP>);
 using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, int>;
 using ReceivesIo = s::Offer<s::Recv<IoPayload, s::End>, s::Recv<s::Crash<P>, s::End>>;
 static_assert(s::CrashSessionAdmissible<ReceivesIo, Q, P, s::ReliableSet<>>);
-static_assert(!s::CtxFitsCrashSession<BgCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port>, "the background context holds no IO");
+static_assert(!s::CtxFitsCrashSession<BgCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port>,
+              "the background context holds no IO");
 static_assert(s::CtxFitsCrashSession<BgIoCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port>);
 static_assert(!s::CtxFitsCrashSession<int, ProtoQ, Q, P, s::ReliableSet<>, Port>, "an int is not an execution context");
 static_assert(!std::is_copy_constructible_v<CheckedP>);
@@ -460,9 +464,8 @@ struct WirePort {
 
 using StreamP = s::Loop<s::Select<s::Send<int, s::Continue>>>;
 using StreamQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
-using StreamQHandle = decltype(s::mint_crash_session<StreamQ, Q, P>(std::declval<const BgCtx&>(), WirePort{},
-                                                                    std::declval<const s::PeerCrashCell&>(),
-                                                                    std::declval<s::CrashWriter>()));
+using StreamQHandle = decltype(s::mint_crash_session<StreamQ, Q, P>(
+    std::declval<const BgCtx&>(), WirePort{}, std::declval<const s::PeerCrashCell&>(), std::declval<s::CrashWriter>()));
 
 constexpr int kStreamMessages = 200;
 constexpr int kStreamRuns = 50;
@@ -482,8 +485,8 @@ int run_stream_across_threads() {
         bool took_crash_branch = false;
 
         std::jthread receiver([&] {
-            std::optional<StreamQHandle> q{
-                s::mint_crash_session<StreamQ, Q, P>(bg_ctx(), WirePort{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q))};
+            std::optional<StreamQHandle> q{s::mint_crash_session<StreamQ, Q, P>(bg_ctx(), WirePort{&to_q, &to_p},
+                                                                                cell_p, s::mint_crash_writer(cell_q))};
             bool is_done = false;
             while (!is_done) {
                 StreamQHandle current = std::move(*q);
@@ -502,11 +505,12 @@ int run_stream_across_threads() {
                             (void)std::move(end).close();
                             is_done = true;
                         } else {
-                            auto [value, next] = std::move(branch).recv([](WirePort& port) noexcept -> std::optional<int> {
-                                const auto word = port.in->pop();
-                                if (!word) return std::nullopt;
-                                return static_cast<int>(*word);
-                            });
+                            auto [value, next] =
+                                std::move(branch).recv([](WirePort& port) noexcept -> std::optional<int> {
+                                    const auto word = port.in->pop();
+                                    if (!word) return std::nullopt;
+                                    return static_cast<int>(*word);
+                                });
                             is_in_order = is_in_order && value == received;
                             ++received;
                             q.emplace(std::move(next));
@@ -518,7 +522,8 @@ int run_stream_across_threads() {
         // The crash at the end also releases q if a send goes wrong, so
         // the join always returns.
         bool was_payload_returned = false;
-        auto p = s::mint_crash_session<StreamP, P, Q>(bg_ctx(), WirePort{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+        auto p = s::mint_crash_session<StreamP, P, Q>(bg_ctx(), WirePort{&to_p, &to_q}, cell_q,
+                                                      s::mint_crash_writer(cell_p));
         for (int message = 0; message < kStreamMessages; ++message) {
             auto chosen = std::move(p).select<0>([](WirePort& port, std::size_t label) noexcept {
                 port.out->push(label);

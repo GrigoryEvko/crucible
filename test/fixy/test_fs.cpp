@@ -134,10 +134,12 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     }
     // Dropping the Linear closes the descriptor; the commit renames the
     // closed file into place.
-    { auto closed = std::move(*opened).consume(); (void)closed; }
+    {
+        auto closed = std::move(*opened).consume();
+        (void)closed;
+    }
 
-    if (auto committed = fs::commit_atomic<fs::atomicity::Rename>(ctx, sanitized(tmp), sanitized(target));
-        !committed) {
+    if (auto committed = fs::commit_atomic<fs::atomicity::Rename>(ctx, sanitized(tmp), sanitized(target)); !committed) {
         std::fprintf(stderr, "commit_atomic<Rename> failed (%s)\n", committed.error().message().c_str());
         return 1;
     }
@@ -228,7 +230,8 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         return 1;
     }
     if (refused.error().value() == EINVAL) {
-        std::fprintf(stderr, "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
+        std::fprintf(stderr,
+                     "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
         return 0;
     }
     if (refused.error().value() != EEXIST) {
@@ -306,7 +309,10 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         std::fprintf(stderr, "file_size did not report the bytes that write_full put\n");
         return 1;
     }
-    { auto closed = std::move(*writer).consume(); (void)closed; }
+    {
+        auto closed = std::move(*writer).consume();
+        (void)closed;
+    }
 
     auto reader = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path));
     if (!reader) {

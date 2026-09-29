@@ -241,11 +241,27 @@ namespace foundation::algebra::transition {
 
 // ── Registration vocabulary ───────────────────────────────────────────
 
-enum class shape_kind : std::uint8_t { step, choice, binder, back, terminal, wrapper, marker };
+enum class shape_kind : std::uint8_t {
+    step,
+    choice,
+    binder,
+    back,
+    terminal,
+    wrapper,
+    marker
+};
 
-enum class polarity : std::uint8_t { neutral, output, input };
+enum class polarity : std::uint8_t {
+    neutral,
+    output,
+    input
+};
 
-enum class variance : std::uint8_t { invariant, covariant, contravariant };
+enum class variance : std::uint8_t {
+    invariant,
+    covariant,
+    contravariant
+};
 
 struct combinator {
     std::meta::info shape{};
@@ -347,7 +363,11 @@ void a_kind_of_registration_has_two_seals() noexcept;
 
 }  // namespace detail
 
-enum class seal_fault : std::uint8_t { none, count_differs, sealed_twice };
+enum class seal_fault : std::uint8_t {
+    none,
+    count_differs,
+    sealed_twice
+};
 
 struct seal_reading {
     bool is_sealed = false;
@@ -559,7 +579,7 @@ namespace detail {
     // backwards.  An output that is contravariant lets the subtype send a
     // wider payload than the peer of the supertype receives.
     const bool is_backwards = (entry.direction == polarity::output && entry.payload_variance == variance::contravariant)
-                              || (entry.direction == polarity::input && entry.payload_variance == variance::covariant);
+                           || (entry.direction == polarity::input && entry.payload_variance == variance::covariant);
     if (entry.kind == shape_kind::step && is_backwards) return {incoherence::variance_against_direction, shape};
     // A keyed step stands for a choice of its own direction, and its dual
     // stands for the dual of that choice.
@@ -676,8 +696,8 @@ struct node {
             result.is_malformed = has_arguments;
             break;
         case shape_kind::step:
-            result.is_malformed = arguments.size() != 2 || !std::meta::is_type(arguments[0])
-                                  || !std::meta::is_type(arguments[1]);
+            result.is_malformed =
+                arguments.size() != 2 || !std::meta::is_type(arguments[0]) || !std::meta::is_type(arguments[1]);
             if (!result.is_malformed) {
                 result.payload = std::meta::dealias(arguments[0]);
                 result.next = std::meta::dealias(arguments[1]);
@@ -689,8 +709,8 @@ struct node {
             if (!result.is_malformed) result.next = std::meta::dealias(arguments[0]);
             break;
         case shape_kind::wrapper:
-            result.is_malformed = arguments.size() != 2 || std::meta::is_type(arguments[0])
-                                  || !std::meta::is_type(arguments[1]);
+            result.is_malformed =
+                arguments.size() != 2 || std::meta::is_type(arguments[0]) || !std::meta::is_type(arguments[1]);
             if (!result.is_malformed) {
                 result.value = arguments[0];
                 result.next = std::meta::dealias(arguments[1]);
@@ -698,8 +718,8 @@ struct node {
             break;
         case shape_kind::choice: {
             std::size_t first = 0;
-            if (!arguments.empty() && result.entry.annotation != std::meta::info{}
-                && std::meta::is_type(arguments[0]) && shape_of(arguments[0]) == result.entry.annotation) {
+            if (!arguments.empty() && result.entry.annotation != std::meta::info{} && std::meta::is_type(arguments[0])
+                && shape_of(arguments[0]) == result.entry.annotation) {
                 result.annotation = std::meta::dealias(arguments[0]);
                 first = 1;
             }
@@ -1039,7 +1059,8 @@ namespace detail {
 // uniqueness rule.
 [[nodiscard]] consteval choice_fault fault_of_choice(std::meta::info registry, const node& choice) {
     std::vector<branch_head> heads;
-    for (const std::meta::info branch : choice.branches) heads.push_back(detail::head_of_branch(registry, branch));
+    for (const std::meta::info branch : choice.branches)
+        heads.push_back(detail::head_of_branch(registry, branch));
     bool has_label = false;
     bool non_label_seen = false;
     for (const branch_head& head : heads) {
@@ -1218,7 +1239,8 @@ namespace detail {
         && target.entry.annotation == choice.entry.annotation) {
         arguments.push_back(choice.annotation);
     }
-    for (const std::meta::info branch : mapped) arguments.push_back(branch);
+    for (const std::meta::info branch : mapped)
+        arguments.push_back(branch);
     return arguments;
 }
 
@@ -1403,7 +1425,8 @@ struct dual_algebra {
     template <class Child>
     consteval std::meta::info choice(const node& view, context ctx, const Child& child) const {
         std::vector<std::meta::info> mapped;
-        for (const std::meta::info branch : view.branches) mapped.push_back(child(branch, ctx));
+        for (const std::meta::info branch : view.branches)
+            mapped.push_back(child(branch, ctx));
         return std::meta::substitute(view.entry.dual,
                                      detail::choice_arguments(registry, view, view.entry.dual, mapped));
     }
@@ -1471,7 +1494,8 @@ struct canonical_algebra {
             }
         }
         std::vector<std::meta::info> mapped;
-        for (const std::meta::info branch : view.branches) mapped.push_back(child(branch, ctx));
+        for (const std::meta::info branch : view.branches)
+            mapped.push_back(child(branch, ctx));
         return std::meta::substitute(view.entry.shape,
                                      detail::choice_arguments(registry, view, view.entry.shape, mapped));
     }
@@ -1514,7 +1538,8 @@ struct compose_algebra {
     template <class Child>
     consteval std::meta::info choice(const node& view, context ctx, const Child& child) const {
         std::vector<std::meta::info> mapped;
-        for (const std::meta::info branch : view.branches) mapped.push_back(child(branch, ctx));
+        for (const std::meta::info branch : view.branches)
+            mapped.push_back(child(branch, ctx));
         return std::meta::substitute(view.entry.shape,
                                      detail::choice_arguments(registry, view, view.entry.shape, mapped));
     }
@@ -1593,8 +1618,8 @@ namespace detail {
 // True for a node that the walk to the first stop of a spine passes.
 [[nodiscard]] consteval bool passes_to_first_stop(const node& view) {
     return view.is_registered
-           && (view.entry.kind == shape_kind::step || view.entry.kind == shape_kind::binder
-               || view.entry.kind == shape_kind::wrapper || view.entry.kind == shape_kind::marker);
+        && (view.entry.kind == shape_kind::step || view.entry.kind == shape_kind::binder
+            || view.entry.kind == shape_kind::wrapper || view.entry.kind == shape_kind::marker);
 }
 
 }  // namespace detail
@@ -1604,7 +1629,8 @@ namespace detail {
 // and markers at the head.
 [[nodiscard]] consteval node first_stop_of_spine(std::meta::info registry, std::meta::info type) {
     node view = decompose(registry, type);
-    while (detail::passes_to_first_stop(view)) view = decompose(registry, view.next);
+    while (detail::passes_to_first_stop(view))
+        view = decompose(registry, view.next);
     return view;
 }
 
@@ -1644,7 +1670,10 @@ namespace detail {
 // replaces with a binder above it.  The context is the number of binders
 // above the node.
 struct binding_probe_algebra {
-    enum class probe : std::uint8_t { open_back, bound_terminal };
+    enum class probe : std::uint8_t {
+        open_back,
+        bound_terminal
+    };
     using result = bool;
     using context = std::size_t;
     probe target = probe::open_back;
@@ -1780,9 +1809,9 @@ inline constexpr bool subsorts_v = detail::subsorts_within(Axioms, Sub, Super, d
     const std::meta::info low = std::meta::dealias(sub);
     const std::meta::info high = std::meta::dealias(super);
     if (low == high) return true;
-    return std::meta::extract<bool>(std::meta::substitute(
-        ^^subsorts_v,
-        {std::meta::reflect_constant(axioms), std::meta::reflect_constant(low), std::meta::reflect_constant(high)}));
+    return std::meta::extract<bool>(
+        std::meta::substitute(^^subsorts_v, {std::meta::reflect_constant(axioms), std::meta::reflect_constant(low),
+                                             std::meta::reflect_constant(high)}));
 }
 
 // ── The type graph ────────────────────────────────────────────────────
@@ -1941,7 +1970,8 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
             }
             graph.nodes[here].first_child = graph.children.size();
             graph.nodes[here].child_count = own.size();
-            for (const std::size_t index : own) graph.children.push_back(index);
+            for (const std::size_t index : own)
+                graph.children.push_back(index);
             if (is_keyed_choice(registry, view)) {
                 // The label branches in the order of their label words, by
                 // an insertion sort, because a choice has few branches.
@@ -1961,7 +1991,8 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
                 graph.nodes[here].is_keyed = true;
                 graph.nodes[here].first_label = graph.sorted_labels.size();
                 graph.nodes[here].label_count = labels.size();
-                for (const std::size_t index : labels) graph.sorted_labels.push_back(index);
+                for (const std::size_t index : labels)
+                    graph.sorted_labels.push_back(index);
             }
             break;
         }
@@ -2412,13 +2443,14 @@ struct label_pairing {
                 if (a.is_keyed) {
                     const detail::label_pairing pairing = detail::pair_by_label(left, a, right, b, is_output);
                     if (pairing.reason != mismatch::none) return {false, pairing.reason, a.type, b.type};
-                    for (const std::size_t index : pairing.pairs) pending.push_back(index);
+                    for (const std::size_t index : pairing.pairs)
+                        pending.push_back(index);
                 } else {
                     const bool count_is_wrong =
                         is_output ? own.labels.size() > other.labels.size() : own.labels.size() < other.labels.size();
                     if (count_is_wrong) return {false, mismatch::branch_count, a.type, b.type};
-                    const std::size_t shared = own.labels.size() < other.labels.size() ? own.labels.size()
-                                                                                        : other.labels.size();
+                    const std::size_t shared =
+                        own.labels.size() < other.labels.size() ? own.labels.size() : other.labels.size();
                     for (std::size_t k = 0; k < shared; ++k) {
                         pending.push_back(own.labels[k]);
                         pending.push_back(other.labels[k]);
@@ -2586,16 +2618,10 @@ inline constexpr combinator grab{.shape = ^^Grab,
                                  .direction = polarity::input,
                                  .dual = ^^Drop,
                                  .payload_variance = variance::contravariant};
-inline constexpr combinator pick{.shape = ^^Pick,
-                                 .kind = shape_kind::choice,
-                                 .direction = polarity::output,
-                                 .dual = ^^Wait,
-                                 .annotation = ^^From};
-inline constexpr combinator wait{.shape = ^^Wait,
-                                 .kind = shape_kind::choice,
-                                 .direction = polarity::input,
-                                 .dual = ^^Pick,
-                                 .annotation = ^^From};
+inline constexpr combinator pick{
+    .shape = ^^Pick, .kind = shape_kind::choice, .direction = polarity::output, .dual = ^^Wait, .annotation = ^^From};
+inline constexpr combinator wait{
+    .shape = ^^Wait, .kind = shape_kind::choice, .direction = polarity::input, .dual = ^^Pick, .annotation = ^^From};
 inline constexpr combinator again{.shape = ^^Again, .kind = shape_kind::binder, .dual = ^^Again};
 inline constexpr combinator back{.shape = ^^Back, .kind = shape_kind::back, .dual = ^^Back};
 inline constexpr combinator done{.shape = ^^Done, .kind = shape_kind::terminal, .dual = ^^Done};
@@ -2661,8 +2687,8 @@ inline constexpr combinator wait{
 
 static_assert(check_combinator(^^keyed_backwards, ^^Put).reason == incoherence::keyed_choice_not_a_choice,
               "the keyed choice of an output step is an output choice");
-static_assert(check_combinator(^^keyed_one_sided, ^^Put).reason == incoherence::keyed_choice_not_dual &&
-                  check_combinator(^^keyed_one_sided, ^^Take).reason == incoherence::keyed_choice_not_dual,
+static_assert(check_combinator(^^keyed_one_sided, ^^Put).reason == incoherence::keyed_choice_not_dual
+                  && check_combinator(^^keyed_one_sided, ^^Take).reason == incoherence::keyed_choice_not_dual,
               "a keyed step and its dual stand for dual choices, or neither is keyed");
 
 namespace no_axioms {}
@@ -2715,10 +2741,11 @@ static_assert(first_faulty_choice(reg, ^^Pick<Put<Named<LabelA, int>, Done>, Put
                   == choice_fault::mixed_label_keys,
               "a choice mixes a keyed and a positional label branch");
 static_assert(first_faulty_choice(reg, ^^Pick<Put<Named<LabelA, int>, Done>, Put<Named<LabelA, char>, Done>>).fault
-                  == choice_fault::repeated_label_key);
+              == choice_fault::repeated_label_key);
 static_assert(is_keyed_choice_type(reg, ^^KeyedPick) && !is_keyed_choice_type(reg, ^^Pick<Put<int, Done>>));
 static_assert((label_word_of(^^LabelA) & label_word_bit) != 0 && label_word_of(^^LabelA) != label_word_of(^^LabelB));
-static_assert(wire_word_of(reg, ^^KeyedPick, 1).is_wired && wire_word_of(reg, ^^KeyedPick, 1).value == label_word_of(^^LabelB),
+static_assert(wire_word_of(reg, ^^KeyedPick, 1).is_wired
+                  && wire_word_of(reg, ^^KeyedPick, 1).value == label_word_of(^^LabelB),
               "the word of a keyed branch is the label word of its key, not its position");
 static_assert(wire_word_of(reg, ^^Pick<Put<int, Done>, Put<char, Done>>, 1).value == 1,
               "the word of a positional branch is its position");
@@ -2732,19 +2759,20 @@ using SendA = Put<Named<LabelA, int>, Done>;
 using RecvA = Take<Named<LabelA, int>, Done>;
 using KeyedWait = Wait<From<LabelA>, Take<Named<LabelA, int>, Done>, Take<Named<LabelB, int>, Done>>;
 static_assert(is_keyed_step_type(reg, ^^SendA) && !is_keyed_step_type(reg, ^^Put<int, Done>));
-static_assert(wire_word_of_step(reg, ^^SendA).is_wired && wire_word_of_step(reg, ^^SendA).value == label_word_of(^^LabelA),
+static_assert(wire_word_of_step(reg, ^^SendA).is_wired
+                  && wire_word_of_step(reg, ^^SendA).value == label_word_of(^^LabelA),
               "a keyed step sends the label word of its key");
 static_assert(!wire_word_of_step(reg, ^^Put<int, Done>).is_wired, "a plain step has no word");
 static_assert(refines_plain(^^SendA, ^^KeyedPick), "a keyed step sends one label of the larger choice");
 static_assert(refines(reg, ^^no_axioms, ^^Put<Named<LabelC, int>, Done>, ^^KeyedPick).reason == mismatch::label_set);
 static_assert(refines_plain(^^KeyedWait, ^^RecvA), "a choice that receives more labels stands for a keyed step");
 static_assert(refines(reg, ^^no_axioms, ^^RecvA, ^^KeyedWait).reason == mismatch::label_set);
-static_assert(refines(reg, ^^no_axioms, ^^Wait<From<LabelC>, Take<Named<LabelA, int>, Done>, Take<Named<LabelB, int>, Done>>,
+static_assert(refines(reg, ^^no_axioms,
+                      ^^Wait<From<LabelC>, Take<Named<LabelA, int>, Done>, Take<Named<LabelB, int>, Done>>,
                       ^^Take<Named<LabelC, int>, Done>)
                   .reason
               == mismatch::label_set);
-static_assert(refines(reg, ^^no_axioms, ^^Wait<Take<Named<LabelA, int>, Done>>, ^^RecvA).reason
-                  == mismatch::annotation,
+static_assert(refines(reg, ^^no_axioms, ^^Wait<Take<Named<LabelA, int>, Done>>, ^^RecvA).reason == mismatch::annotation,
               "an input keyed step takes the note of its payload rule");
 static_assert(refines_plain(^^SendA, ^^Pick<SendA>) && refines_plain(^^Pick<SendA>, ^^SendA),
               "a keyed step and the choice of that one branch are one type");
@@ -2757,8 +2785,7 @@ static_assert(first_faulty_choice(reg, ^^Pick<Pin<1, SendA>>).fault == choice_fa
 static_assert(first_faulty_choice(reg, ^^Pick<Again<Put<int, Back>>>).fault == choice_fault::none,
               "a positional label branch may start with a binder");
 
-static_assert(fold(reg, ^^Put<int, Pick<Done, Halt>>, compose_algebra{reg, ^^Ping}, 0)
-              == ^^Put<int, Pick<Ping, Halt>>);
+static_assert(fold(reg, ^^Put<int, Pick<Done, Halt>>, compose_algebra{reg, ^^Ping}, 0) == ^^Put<int, Pick<Ping, Halt>>);
 static_assert(fold(reg, ^^Put<int, Pick<Done, Done>>, compose_at_choice_algebra{reg, 1, ^^Ping}, 0)
               == ^^Put<int, Pick<Done, Ping>>);
 static_assert(fold(reg, ^^Put<int, Done>, compose_at_choice_algebra{reg, 0, ^^Ping}, 0) == std::meta::info{});
@@ -2786,7 +2813,6 @@ static_assert(refines(reg, ^^no_axioms, ^^Wait<Take<int, Done>>, ^^Wait<Take<int
 static_assert(!refines_plain(^^Wait<Take<char, Done>, Take<int, Done>>, ^^Wait<Take<int, Done>, Take<char, Done>>),
               "the position of a label branch is its wire label, so another order is another choice");
 
-
 // Exit preservation: a subtype that drops the only exit of a loop loses
 // termination, and a stream refines a stream.
 using Exiting = Again<Pick<Put<int, Back>, Done>>;
@@ -2800,7 +2826,8 @@ static_assert(is_terminable(reg, ^^Exiting) && !is_terminable(reg, ^^Endless));
 static_assert(has_open_back(reg, ^^Back) && has_open_back(reg, ^^Put<int, Back>));
 static_assert(!has_open_back(reg, ^^Again<Put<int, Back>>));
 static_assert(has_bound_terminal(reg, ^^Exiting) && !has_bound_terminal(reg, ^^Pick<Done>));
-static_assert(!has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Halt>>), "a terminal that absorbs the suffix stays");
+static_assert(!has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Halt>>),
+              "a terminal that absorbs the suffix stays");
 static_assert(has_bound_terminal(reg, ^^Pick<Done>, 1), "a binder above the type binds its terminals");
 
 // ── Markers, plainness and payload protocols ──────────────────────────
@@ -2825,13 +2852,15 @@ static_assert(!well_formed(^^Mark<Done>) && !well_formed(^^Put<int, Mark<Done>>)
               "no plain protocol holds a marker that is not plain");
 static_assert(!well_formed(^^Stall) && !well_formed(^^Put<int, Pick<Stall, Done>>),
               "no plain protocol holds a terminal that is not plain");
-static_assert(fold(reg, ^^Put<int, Pick<Stall, Done>>, compose_algebra{reg, ^^Ping}, 0) == ^^Put<int, Pick<Stall, Ping>>,
+static_assert(fold(reg, ^^Put<int, Pick<Stall, Done>>, compose_algebra{reg, ^^Ping}, 0)
+                  == ^^Put<int, Pick<Stall, Ping>>,
               "a terminal that absorbs the suffix keeps its place");
 
 // A step whose payload is a protocol: that protocol is well-formed
 // outside every binder, and an empty choice in it is found.  Duality
 // keeps it as it is.
-static_assert(well_formed(^^Give<Ping, Done>) && !well_formed(^^Give<Back, Done>) && !well_formed(^^Give<Pick<>, Done>));
+static_assert(well_formed(^^Give<Ping, Done>) && !well_formed(^^Give<Back, Done>)
+              && !well_formed(^^Give<Pick<>, Done>));
 static_assert(well_formed(^^Again<Give<Ping, Back>>) && !well_formed(^^Again<Give<Put<int, Back>, Back>>),
               "a back node of the payload protocol binds no binder of the carrier");
 static_assert(!well_formed(^^Give<Mark<Done>, Done>), "the payload protocol is plain too");
@@ -2932,26 +2961,17 @@ static_assert(check_combinator(^^variance_backwards, ^^Push).reason == incoheren
 namespace note_dropped {
 inline constexpr combinator ask{
     .shape = ^^Ask, .kind = shape_kind::choice, .direction = polarity::output, .dual = ^^Answer};
-inline constexpr combinator answer{.shape = ^^Answer,
-                                   .kind = shape_kind::choice,
-                                   .direction = polarity::input,
-                                   .dual = ^^Ask,
-                                   .annotation = ^^From};
+inline constexpr combinator answer{
+    .shape = ^^Answer, .kind = shape_kind::choice, .direction = polarity::input, .dual = ^^Ask, .annotation = ^^From};
 }  // namespace note_dropped
 static_assert(check_combinator(^^note_dropped, ^^Answer).reason == incoherence::annotation_differs,
               "the dual of a choice with a note names no note template, so the dual drops the note");
 
 namespace note_differs {
-inline constexpr combinator ask{.shape = ^^Ask,
-                                .kind = shape_kind::choice,
-                                .direction = polarity::output,
-                                .dual = ^^Answer,
-                                .annotation = ^^Other};
-inline constexpr combinator answer{.shape = ^^Answer,
-                                   .kind = shape_kind::choice,
-                                   .direction = polarity::input,
-                                   .dual = ^^Ask,
-                                   .annotation = ^^From};
+inline constexpr combinator ask{
+    .shape = ^^Ask, .kind = shape_kind::choice, .direction = polarity::output, .dual = ^^Answer, .annotation = ^^Other};
+inline constexpr combinator answer{
+    .shape = ^^Answer, .kind = shape_kind::choice, .direction = polarity::input, .dual = ^^Ask, .annotation = ^^From};
 }  // namespace note_differs
 static_assert(check_combinator(^^note_differs, ^^Ask).reason == incoherence::annotation_differs,
               "a choice and its dual name one note template");

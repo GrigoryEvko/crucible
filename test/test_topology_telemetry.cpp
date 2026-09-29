@@ -57,7 +57,8 @@ struct Samples {
 static void test_enumerator_names() {
     using ::foundation::reflect::enum_name;
     assert(enum_name(topology::NicTelemetryError::InvalidNicCog) == std::string_view{"InvalidNicCog"});
-    assert(enum_name(static_cast<topology::NicTelemetryError>(0xFF)) == std::string_view{"<unknown NicTelemetryError>"});
+    assert(enum_name(static_cast<topology::NicTelemetryError>(0xFF))
+           == std::string_view{"<unknown NicTelemetryError>"});
     std::printf("  test_enumerator_names:                PASSED\n");
 }
 
@@ -103,9 +104,9 @@ static void test_parsers_and_drop_rate() {
 
 static void test_snapshot_mint() {
     Samples samples{};
-    auto first = topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog,
-                                                       samples.sysctl, tcp_sample(80000000000ull, 1000, 1000),
-                                                       samples.thermal, 1);
+    auto first =
+        topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
+                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, 1);
     assert(first.has_value());
     assert(first->nic_uuid() == nic().uuid);
     assert(first->sequence() == 1);
@@ -142,13 +143,13 @@ static void test_effective_bandwidth_and_history() {
     assert(!history.detect_drift(bg).has_value());
 
     Samples samples{};
-    auto first = topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog,
-                                                       samples.sysctl, tcp_sample(80000000000ull, 1000, 1000),
-                                                       samples.thermal, 1);
+    auto first =
+        topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
+                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, 1);
     assert(first.has_value());
-    auto second = topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog,
-                                                        samples.sysctl, tcp_sample(50000000000ull, 1000, 1000),
-                                                        samples.thermal, 2);
+    auto second =
+        topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
+                                              tcp_sample(50000000000ull, 1000, 1000), samples.thermal, 2);
     assert(second.has_value());
     assert(first->effective_bandwidth_bps().value() > second->effective_bandwidth_bps().value());
 

@@ -17,8 +17,7 @@
 namespace ml = foundation::algebra::lattices;
 
 int main() {
-    auto forged =
-        fixy::mint_cpu_pinned<ml::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>(0);
+    auto forged = fixy::mint_cpu_pinned<ml::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>(0);
     (void)forged;
     return 0;
 }

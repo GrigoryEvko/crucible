@@ -62,7 +62,9 @@ public:
 
         [[nodiscard]] constexpr int64_t value() const noexcept { return *lane; }
 
-        [[nodiscard]] constexpr operator TensorDim() const noexcept { return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(*lane); }
+        [[nodiscard]] constexpr operator TensorDim() const noexcept {
+            return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(*lane);
+        }
     };
 
     struct ConstSlot {
@@ -70,7 +72,9 @@ public:
 
         [[nodiscard]] constexpr int64_t value() const noexcept { return *lane; }
 
-        [[nodiscard]] constexpr operator TensorDim() const noexcept { return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(*lane); }
+        [[nodiscard]] constexpr operator TensorDim() const noexcept {
+            return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(*lane);
+        }
     };
 
     [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept { return Slot{&lanes_[index]}; }

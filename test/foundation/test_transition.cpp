@@ -406,7 +406,8 @@ static_assert(!tr::has_open_back(reg, ^^Again<Pick<Done, Put<int, Back>>>) && !t
 static_assert(tr::has_open_back(reg, ^^Unknown), "a node the probe cannot read may hide a back node");
 static_assert(tr::has_bound_terminal(reg, ^^Put<int, Again<Pick<Put<int, Back>, Done>>>));
 static_assert(!tr::has_bound_terminal(reg, ^^Put<int, Pick<Done, Done>>));
-static_assert(!tr::has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Halt>>), "a terminal that absorbs the suffix stays");
+static_assert(!tr::has_bound_terminal(reg, ^^Again<Pick<Put<int, Back>, Halt>>),
+              "a terminal that absorbs the suffix stays");
 static_assert(tr::has_bound_terminal(reg, ^^Pick<Done>, 1), "the binders above the type count");
 static_assert(tr::binders_above_first_stop(reg, ^^Again<Put<int, Again<Pick<Done>>>>) == 2);
 
@@ -414,7 +415,8 @@ static_assert(tr::binders_above_first_stop(reg, ^^Again<Put<int, Again<Pick<Done
 // result can end when each node of the prefix and of the suffix can.
 using Exiting = Again<Pick<Put<int, Back>, Done>>;
 using Endless = Again<Put<int, Back>>;
-static_assert(tr::is_terminable(reg, ^^Exiting) && tr::is_terminable(reg, ^^Ping) && !tr::is_terminable(reg, ^^Endless));
+static_assert(tr::is_terminable(reg, ^^Exiting) && tr::is_terminable(reg, ^^Ping)
+              && !tr::is_terminable(reg, ^^Endless));
 static_assert(tr::is_terminable(reg, compose(^^Exiting, ^^Ping)));
 static_assert(tr::is_terminable(reg, compose(^^Pick<Done, Put<int, Done>>, ^^Exiting)));
 static_assert(!tr::is_terminable(reg, compose(^^Exiting, ^^Endless)), "a suffix that never ends stays one");
@@ -562,8 +564,8 @@ static_assert(!well_formed(^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<En
 static_assert(well_formed(^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Bob, Hello, int>, Done>>),
               "the peer is part of the label");
 static_assert(well_formed(^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Bye, int>, Done>>));
-static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, Hello, int>, Done>,
-                                                   Put<Envelope<Alice, Hello, long>, Done>>)
+static_assert(tr::first_faulty_choice(
+                  reg, ^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<Envelope<Alice, Hello, long>, Done>>)
                   .fault
               == tr::choice_fault::repeated_label_key);
 
@@ -618,7 +620,7 @@ static_assert(!tr::subsorts(^^looping_axioms, ^^int, ^^long));
 consteval bool graph_links_back_to_binder() {
     const tr::graph_view graph = tr::graph_of(reg, ^^Again<Put<int, Back>>);
     return graph.nodes.size() == 3 && graph.nodes[0].next == 1 && graph.nodes[1].next == 2 && graph.nodes[2].next == 0
-           && tr::settle(graph, 2) == 1;
+        && tr::settle(graph, 2) == 1;
 }
 static_assert(graph_links_back_to_binder());
 
@@ -631,8 +633,8 @@ static_assert(graph_records_the_unknown());
 consteval bool graph_marks_labels_and_payloads() {
     const tr::graph_view graph = tr::graph_of(reg, ^^Wait<Take<Fault<int>, Done>, Put<Fault<int>, Done>>);
     return graph.nodes[1].is_label == false && graph.nodes[1].has_restricted_payload
-           && graph.nodes[1].head_payload == (^^Fault<int>) && graph.nodes[3].has_restricted_payload
-           && graph.nodes[3].is_label;
+        && graph.nodes[1].head_payload == (^^Fault<int>) && graph.nodes[3].has_restricted_payload
+        && graph.nodes[3].is_label;
 }
 static_assert(graph_marks_labels_and_payloads());
 
@@ -696,7 +698,7 @@ static_assert(refines(^^Wait<Done, Take<Fault<char>, Done>, Take<Fault<int>, Don
 static_assert(refine(^^Wait<Done>, ^^Wait<Done, Take<Fault<int>, Done>>).reason
               == tr::mismatch::missing_non_label_branch);
 static_assert(refine(^^Wait<Done, Take<Fault<char>, Done>>, ^^Wait<Done, Take<Fault<int>, Done>>).reason
-              == tr::mismatch::non_label_branch,
+                  == tr::mismatch::non_label_branch,
               "a branch that is no label with no partner of the same payload");
 static_assert(!refines(^^Wait<Ping, Done>, ^^Wait<Done, Ping>),
               "another order of positional label branches is another choice");
@@ -729,9 +731,11 @@ static_assert(dual(dual(^^SendByeHello)) == plain(^^SendByeHello), "duality keep
 struct Hi {};
 using SendByeStep = Put<Envelope<Alice, Bye, int>, Done>;
 using HearByeStep = Take<Envelope<Alice, Bye, int>, Done>;
-static_assert(refines(^^SendByeStep, ^^SendHelloBye) && refines(^^SendByeStep, ^^SendBye) && refines(^^SendBye, ^^SendByeStep),
+static_assert(refines(^^SendByeStep, ^^SendHelloBye) && refines(^^SendByeStep, ^^SendBye)
+                  && refines(^^SendBye, ^^SendByeStep),
               "a keyed send step sends one label of the choice");
-static_assert(refines(^^HearHelloBye, ^^HearByeStep) && refines(^^HearByeStep, ^^HearBye) && refines(^^HearBye, ^^HearByeStep),
+static_assert(refines(^^HearHelloBye, ^^HearByeStep) && refines(^^HearByeStep, ^^HearBye)
+                  && refines(^^HearBye, ^^HearByeStep),
               "a choice that receives more labels stands for a keyed receive step");
 static_assert(refine(^^HearByeStep, ^^HearHelloBye).reason == tr::mismatch::label_set);
 static_assert(refine(^^Put<Envelope<Alice, Hi, int>, Done>, ^^SendHelloBye).reason == tr::mismatch::label_set);
@@ -748,18 +752,18 @@ static_assert(tr::wire_word_of_step(reg, ^^SendByeStep).value == tr::wire_word_o
 // key takes no label word.
 static_assert(refine(^^Pick<Put<Envelope<Alice, Hello, int>, Done>>, ^^Pick<Put<int, Done>>).reason
               == tr::mismatch::label_discipline);
-static_assert(refine(^^Wait<Take<Envelope<Alice, Hello, int>, Done>>, ^^Wait<Take<Envelope<Bob, Hello, int>, Done>>)
-                  .reason
-              == tr::mismatch::label_set,
-              "a label to another peer is another label");
+static_assert(
+    refine(^^Wait<Take<Envelope<Alice, Hello, int>, Done>>, ^^Wait<Take<Envelope<Bob, Hello, int>, Done>>).reason
+        == tr::mismatch::label_set,
+    "a label to another peer is another label");
 
 // A keyed choice that repeats a label word is not well-formed.  The
 // relation refuses it also when the layer does not check well-formedness
 // first, because the peer could not tell the two branches apart.
 static_assert(refine(^^Wait<Take<Envelope<Alice, Hello, int>, Done>, Take<Envelope<Alice, Hello, long>, Done>>,
                      ^^Wait<Take<Envelope<Alice, Hello, int>, Done>>)
-                  .reason
-              == tr::mismatch::ill_formed,
+                      .reason
+                  == tr::mismatch::ill_formed,
               "an input choice of the subtype repeats a label");
 
 // A paired label compares its payloads, and a crash branch still pairs by
@@ -792,8 +796,8 @@ static_assert(refine(^^Again<Pick<Put<int, Back>>>, ^^Exiting).reason == tr::mis
 static_assert(refines(^^Endless, ^^Endless) && refines(^^Exiting, ^^Again<Pick<Put<int, Back>, Done, Done>>));
 static_assert(refine(^^Pick<Done, Put<int, Pick<Put<int, Endless>>>>,
                      ^^Pick<Done, Put<int, Pick<Put<int, Endless>, Done>>>)
-                  .reason
-              == tr::mismatch::loses_termination,
+                      .reason
+                  == tr::mismatch::loses_termination,
               "the exit is lost at an inner position while the root can still end");
 // Exit preservation is not closed under duality: the dual of the pair
 // refines, because a receiver that never ends keeps no exit.
@@ -825,9 +829,17 @@ constexpr bool runtime_facts[] = {
 };
 
 constexpr std::string_view names[] = {
-    "coherent registry",      "narrow output choice", "wide output choice refused", "guarded loop",
-    "unguarded loop refused", "drop then weaken",     "congruent payload",          "other peer refused",
-    "label word by label",    "closure label key refused",    "keyed branches pair by label",
+    "coherent registry",
+    "narrow output choice",
+    "wide output choice refused",
+    "guarded loop",
+    "unguarded loop refused",
+    "drop then weaken",
+    "congruent payload",
+    "other peer refused",
+    "label word by label",
+    "closure label key refused",
+    "keyed branches pair by label",
     "input label set refused",
 };
 

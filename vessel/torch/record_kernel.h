@@ -405,9 +405,7 @@ inline thread_local uint32_t backward_depth = 0;
 // belongs to the gradient scaler rather than to a fused update, and it runs
 // inside an optimizer step with gradients off, so the phase it derives is the
 // one it should have.
-[[nodiscard]] constexpr bool is_foreach_op_name(std::string_view name) noexcept {
-    return name.contains("_foreach_");
-}
+[[nodiscard]] constexpr bool is_foreach_op_name(std::string_view name) noexcept { return name.contains("_foreach_"); }
 
 // Everything below DispatchKey::Crucible, which is the backend that computes
 // the operation. The constructor is constexpr, so this costs no initializer.
@@ -954,7 +952,7 @@ template <bool IsMutable, bool IsForeach>
 // most `capacity`, because Recording stops both at its capacity. The scalar
 // count is at most ScalarArgs::kCapacity, because push saturates there.
 [[nodiscard]] consteval crucible::TraceRing::Entry unboxed_entry_ceiling(crucible::SchemaHash schema_hash,
-                                                                        uint32_t capacity) {
+                                                                         uint32_t capacity) {
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = schema_hash;
     entry.num_inputs = static_cast<uint16_t>(capacity);

@@ -154,8 +154,7 @@ inline constexpr std::size_t kPageBytes = 4096;
     // holds its own reference to the file.
     ::close(fd);
     if (!mapped) {
-        std::fprintf(stderr, "a shared read-only mapping of the memfd failed (%s)\n",
-                     mapped.error().message().c_str());
+        std::fprintf(stderr, "a shared read-only mapping of the memfd failed (%s)\n", mapped.error().message().c_str());
         return 1;
     }
 
@@ -280,8 +279,7 @@ inline constexpr std::size_t kPageBytes = 4096;
     auto region = std::move(*mapped).consume();
     void* const expected_address = region.data();
 
-    const auto [address, length] =
-        std::move(region).release(fixy::atom::leak::resource<UnmappedByTheTestItself>{});
+    const auto [address, length] = std::move(region).release(fixy::atom::leak::resource<UnmappedByTheTestItself>{});
     if (address != expected_address || length != kPageBytes) {
         std::fprintf(stderr, "release handed back an address or length the region did not hold\n");
         return 1;

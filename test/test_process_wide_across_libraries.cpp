@@ -93,7 +93,8 @@ void test_each_thread_object_is_one_for_the_thread(const Library& writer, const 
         writer.symbol<decltype(process_wide_thread_object_address)>("process_wide_thread_object_address");
     auto* const reader_address =
         reader.symbol<decltype(process_wide_thread_object_address)>("process_wide_thread_object_address");
-    auto* const writer_set = writer.symbol<decltype(process_wide_set_thread_objects)>("process_wide_set_thread_objects");
+    auto* const writer_set =
+        writer.symbol<decltype(process_wide_set_thread_objects)>("process_wide_set_thread_objects");
     auto* const reader_value =
         reader.symbol<decltype(process_wide_thread_object_value)>("process_wide_thread_object_value");
 
@@ -120,7 +121,8 @@ void test_each_thread_object_is_one_for_the_thread(const Library& writer, const 
     });
     require(is_other_thread_right,
             "a second thread has objects of its own, one address in the two libraries, and sees its own writes");
-    require(reader_value(0) == 7 && reader_value(1) == 7, "the write of the second thread did not reach the main thread");
+    require(reader_value(0) == 7 && reader_value(1) == 7,
+            "the write of the second thread did not reach the main thread");
     std::printf("  test_each_thread_object_is_one_for_the_thread: PASSED (%u objects)\n", count);
 }
 

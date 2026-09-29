@@ -152,7 +152,8 @@ int main() {
     }
 
     auto tot_all = fixy::mint_band<fixy::Tot<fixy::AllRow, std::unique_ptr<int>>>(
-        Computation<Row<>, std::unique_ptr<int>>::mint_computation_in_ctx<Effect::IO>(io_ctx, std::make_unique<int>(seed))
+        Computation<Row<>, std::unique_ptr<int>>::mint_computation_in_ctx<Effect::IO>(io_ctx,
+                                                                                      std::make_unique<int>(seed))
             .template weaken<fixy::AllRow>());
     if (*tot_all.peek().graded().peek() != seed) {
         std::fprintf(stderr, "test_aliases: Tot<AllRow, unique_ptr<int>> lost its value\n");

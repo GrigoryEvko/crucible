@@ -12,7 +12,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::with_bg,
-                                ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>
-        refused{};
+                                ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>> refused{};
     return 0;
 }

@@ -261,18 +261,19 @@ static_assert(!is_canonically_ordered_v<::fixy::Linear<::fixy::HotPath<HotPathTi
 static_assert(
     !is_canonically_ordered_v<::fixy::HotPath<HotPathTier_v::Hot, ::fixy::HotPath<HotPathTier_v::Cold, int>>>);
 
-static_assert(is_canonically_ordered_v<::fixy::HotPath<
-                  HotPathTier_v::Hot,
-                  ::fixy::DetSafe<DetSafeTier_v::Pure,
-                                  ::fixy::NumericalTier<Tolerance::BITEXACT,
-                                                        ::fixy::Vendor<VendorBackend_v::NV, PureComputation>>>>>);
+static_assert(
+    is_canonically_ordered_v<
+        ::fixy::HotPath<HotPathTier_v::Hot,
+                        ::fixy::DetSafe<DetSafeTier_v::Pure,
+                                        ::fixy::NumericalTier<Tolerance::BITEXACT,
+                                                              ::fixy::Vendor<VendorBackend_v::NV, PureComputation>>>>>);
 
 static_assert(is_canonically_ordered_v<::fixy::Tagged<BoundedInt, FromUser>>);
 
 static_assert(is_canonically_ordered_v<::fixy::Stale<::fixy::Tagged<BoundedInt, FromUser>>>);
 
-static_assert(!is_canonically_ordered_v<::fixy::Refined<::fixy::bounded_above<int{8}>,
-                                                        ::fixy::Tagged<::fixy::Stale<int>, FromUser>>>);
+static_assert(!is_canonically_ordered_v<
+              ::fixy::Refined<::fixy::bounded_above<int{8}>, ::fixy::Tagged<::fixy::Stale<int>, FromUser>>>);
 
 }  // namespace detail::canonical_order_self_test
 }  // namespace fixy::canonical_order

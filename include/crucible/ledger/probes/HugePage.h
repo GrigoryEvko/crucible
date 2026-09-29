@@ -171,8 +171,8 @@ struct FaultInOutcome {
     bench::Report second{};
 };
 
-[[nodiscard]] inline FaultInOutcome measure_fault_in(LedgerIoCtx const& ctx, PagePolicy policy,
-                                                     const char* first_name, const char* second_name) noexcept {
+[[nodiscard]] inline FaultInOutcome measure_fault_in(LedgerIoCtx const& ctx, PagePolicy policy, const char* first_name,
+                                                     const char* second_name) noexcept {
     FaultInOutcome outcome{};
     bool every_sample_took = true;
 

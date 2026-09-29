@@ -295,9 +295,9 @@ class [[nodiscard]] OwnedRegion {
 
     template <typename U, typename Allocator, typename UTag, typename UBrand>
         requires ArrayArena<Allocator, U>
-    friend OwnedRegion<U, UTag, UBrand> mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena,
-                                                          std::size_t count,
-                                                          ::foundation::permissions::Permission<UTag, UBrand>&& perm) noexcept;
+    friend OwnedRegion<U, UTag, UBrand>
+    mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
+                      ::foundation::permissions::Permission<UTag, UBrand>&& perm) noexcept;
 
 public:
     using value_type = T;
@@ -316,7 +316,8 @@ public:
     // and recombine aborts on the tuple.  The use-after-move guard sees a
     // moved name, but not a moved tuple element.
     constexpr OwnedRegion(OwnedRegion&& other) noexcept
-        : base_{std::exchange(other.base_, nullptr)}, count_{std::exchange(other.count_, 0)},
+        : base_{std::exchange(other.base_, nullptr)},
+          count_{std::exchange(other.count_, 0)},
           perm_{std::move(other.perm_)} {}
     constexpr OwnedRegion& operator=(OwnedRegion&& other) noexcept {
         base_ = std::exchange(other.base_, nullptr);
@@ -332,7 +333,8 @@ public:
     template <typename Other>
         requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
     constexpr OwnedRegion(OwnedRegion<T, Tag, Other>&& other) noexcept
-        : base_{std::exchange(other.base_, nullptr)}, count_{std::exchange(other.count_, 0)},
+        : base_{std::exchange(other.base_, nullptr)},
+          count_{std::exchange(other.count_, 0)},
           perm_{std::move(other.perm_)} {}
 
     // The caller proves exclusive ownership by surrendering the
@@ -449,8 +451,8 @@ template <typename T, typename Allocator, typename Tag, typename Brand>
 // statement.  Declared in Borrowed.h, which befriends it.
 template <typename T, typename Tag, typename Brand>
     requires ::foundation::brand::IsBrand<Brand>
-[[nodiscard]] constexpr Borrowed<T, Tag, Brand>
-mint_borrowed(OwnedRegion<T, Tag, Brand>& region CRUCIBLE_LIFETIMEBOUND) noexcept {
+[[nodiscard]] constexpr Borrowed<T, Tag, Brand> mint_borrowed(OwnedRegion<T, Tag, Brand>& region
+                                                              CRUCIBLE_LIFETIMEBOUND) noexcept {
     return Borrowed<T, Tag, Brand>{detail::borrow_mint_t{}, region.span()};
 }
 
@@ -481,17 +483,15 @@ auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) &&
     T* const base = std::exchange(base_, nullptr);
     const std::size_t total = std::exchange(count_, 0);
 
-    auto sub_perms =
-        ::foundation::permissions::mint_permission_split_n<Slice<Tag, Is, SplitName>...>(std::move(perm_));
+    auto sub_perms = ::foundation::permissions::mint_permission_split_n<Slice<Tag, Is, SplitName>...>(std::move(perm_));
 
     using Shards = std::tuple<OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>...>;
     using Witness = Disjoint<Tag, Brand, SplitName, N>;
-    return SplitParts<Witness, Shards>{
-        Witness{detail::split_mint_t{}},
-        Shards{OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>{
-            base + detail::shard_start(total, N, Is),
-            detail::shard_start(total, N, Is + 1) - detail::shard_start(total, N, Is),
-            std::move(std::get<Is>(sub_perms))}...}};
+    return SplitParts<Witness, Shards>{Witness{detail::split_mint_t{}},
+                                       Shards{OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>{
+                                           base + detail::shard_start(total, N, Is),
+                                           detail::shard_start(total, N, Is + 1) - detail::shard_start(total, N, Is),
+                                           std::move(std::get<Is>(sub_perms))}...}};
 }
 
 // The detection surface of OwnedRegion.  One reflection query answers

@@ -12,9 +12,8 @@
 int main() {
     namespace tcam = crucible::cntp::tcam;
 
-    auto forged = ::fixy::mint_linear<tcam::TcamRuleHandle>(crucible::cog::Uuid{1, 2},
-                                                            tcam::admit_tcam_rule_id(1).value(), std::uint32_t{0},
-                                                            std::uint32_t{1});
+    auto forged = ::fixy::mint_linear<tcam::TcamRuleHandle>(
+        crucible::cog::Uuid{1, 2}, tcam::admit_tcam_rule_id(1).value(), std::uint32_t{0}, std::uint32_t{1});
     (void)forged;
     return 0;
 }

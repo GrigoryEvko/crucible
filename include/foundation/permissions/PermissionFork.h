@@ -101,8 +101,8 @@ public:
 
     static void* operator new(std::size_t) = delete("a WriteView lives in the frame of its body, not on the heap");
     static void* operator new[](std::size_t) = delete("a WriteView lives in the frame of its body, not on the heap");
-    static void* operator new(std::size_t, std::align_val_t) =
-        delete("a WriteView lives in the frame of its body, not on the heap");
+    static void* operator new(std::size_t,
+                              std::align_val_t) = delete("a WriteView lives in the frame of its body, not on the heap");
     static void* operator new[](std::size_t, std::align_val_t) =
         delete("a WriteView lives in the frame of its body, not on the heap");
     static void operator delete(void*) = delete;
@@ -262,9 +262,8 @@ class PermissionForkRunner final {
     template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
         requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
               && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
-    friend constexpr Permission<Parent, Brand> mint_permission_fork_inline(Ctx const& ctx,
-                                                                           Permission<Parent, Brand>&& parent,
-                                                                           Callables&&... callables) noexcept;
+    friend constexpr Permission<Parent, Brand>
+    mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept;
 
     // Runs one body with the view of its child.  The view is a local of
     // this frame, so it ends when the body returns.
@@ -285,8 +284,8 @@ class PermissionForkRunner final {
 #if defined(__cpp_exceptions)
         try {
 #endif
-            [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
-                std::jthread{[body = std::move(std::get<Is>(bodies)), child_ctx = ctx](std::stop_token) mutable noexcept {
+            [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
+                [body = std::move(std::get<Is>(bodies)), child_ctx = ctx](std::stop_token) mutable noexcept {
                     run_body_<Children...[Is], Brand>(body, child_ctx);
                 }}...};
 #if defined(__cpp_exceptions)

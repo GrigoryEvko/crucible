@@ -14,7 +14,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::with_io,
-                                ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>
-        refused{};
+                                ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>> refused{};
     return 0;
 }

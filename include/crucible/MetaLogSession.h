@@ -42,37 +42,35 @@ namespace crucible::metalog_session {
 
 using MetaLogRecord = ::crucible::TensorMeta;
 
-using ProducerProto =
-    ::fixy::session::Loop<::fixy::session::Select<::fixy::session::Send<MetaLogRecord, ::fixy::session::Continue>,
-                                                  ::fixy::session::End>>;
-using ConsumerProto =
-    ::fixy::session::Loop<::fixy::session::Select<::fixy::session::Recv<MetaLogRecord, ::fixy::session::Continue>,
-                                                  ::fixy::session::End>>;
+using ProducerProto = ::fixy::session::Loop<
+    ::fixy::session::Select<::fixy::session::Send<MetaLogRecord, ::fixy::session::Continue>, ::fixy::session::End>>;
+using ConsumerProto = ::fixy::session::Loop<
+    ::fixy::session::Select<::fixy::session::Recv<MetaLogRecord, ::fixy::session::Continue>, ::fixy::session::End>>;
 
 // The shape the facade needs from a permissioned log: the three tags, the
 // two role-typed handles, and the operations the transports call.
 template <typename Log>
-concept MetaLogSessionSurface = requires(Log& log, typename Log::ProducerHandle& producer,
-                                         typename Log::ConsumerHandle& consumer,
-                                         ::foundation::permissions::Permission<typename Log::producer_tag> prod_perm,
-                                         ::foundation::permissions::Permission<typename Log::consumer_tag> cons_perm,
-                                         const MetaLogRecord* records, const MetaLogRecord& record) {
-    typename Log::value_type;
-    typename Log::producer_tag;
-    typename Log::consumer_tag;
-    typename Log::ProducerHandle;
-    typename Log::ConsumerHandle;
+concept MetaLogSessionSurface =
+    requires(Log& log, typename Log::ProducerHandle& producer, typename Log::ConsumerHandle& consumer,
+             ::foundation::permissions::Permission<typename Log::producer_tag> prod_perm,
+             ::foundation::permissions::Permission<typename Log::consumer_tag> cons_perm, const MetaLogRecord* records,
+             const MetaLogRecord& record) {
+        typename Log::value_type;
+        typename Log::producer_tag;
+        typename Log::consumer_tag;
+        typename Log::ProducerHandle;
+        typename Log::ConsumerHandle;
 
-    requires std::same_as<typename Log::value_type, MetaLogRecord>;
-    requires std::same_as<typename Log::ProducerHandle::value_type, MetaLogRecord>;
-    requires std::same_as<typename Log::ConsumerHandle::value_type, MetaLogRecord>;
+        requires std::same_as<typename Log::value_type, MetaLogRecord>;
+        requires std::same_as<typename Log::ProducerHandle::value_type, MetaLogRecord>;
+        requires std::same_as<typename Log::ConsumerHandle::value_type, MetaLogRecord>;
 
-    { log.producer(std::move(prod_perm)) } -> std::same_as<typename Log::ProducerHandle>;
-    { log.consumer(std::move(cons_perm)) } -> std::same_as<typename Log::ConsumerHandle>;
-    { producer.try_append(records, std::uint32_t{1}) } -> std::same_as<::crucible::MetaIndex>;
-    { producer.try_append_one(record) } -> std::same_as<bool>;
-    { consumer.try_drain_one() } -> std::same_as<std::optional<MetaLogRecord>>;
-};
+        { log.producer(std::move(prod_perm)) } -> std::same_as<typename Log::ProducerHandle>;
+        { log.consumer(std::move(cons_perm)) } -> std::same_as<typename Log::ConsumerHandle>;
+        { producer.try_append(records, std::uint32_t{1}) } -> std::same_as<::crucible::MetaIndex>;
+        { producer.try_append_one(record) } -> std::same_as<bool>;
+        { consumer.try_drain_one() } -> std::same_as<std::optional<MetaLogRecord>>;
+    };
 
 // The trying write of the producer: true when the log took the record.
 inline constexpr auto append_one = [](auto& producer, MetaLogRecord& record) -> bool {
@@ -92,14 +90,12 @@ inline constexpr auto drain_one = [](auto& consumer) -> std::optional<MetaLogRec
 // that is not a permissioned log, a handle of the other role, and a handle
 // passed as an lvalue all fail here.
 template <typename Ctx, typename Log, typename Handle>
-concept CtxFitsMetaLogProducerSession =
-    MetaLogSessionSurface<Log> && std::same_as<Handle, typename Log::ProducerHandle>
-    && ::fixy::session::CtxFitsSession<Ctx, ProducerProto, Handle>;
+concept CtxFitsMetaLogProducerSession = MetaLogSessionSurface<Log> && std::same_as<Handle, typename Log::ProducerHandle>
+                                     && ::fixy::session::CtxFitsSession<Ctx, ProducerProto, Handle>;
 
 template <typename Ctx, typename Log, typename Handle>
-concept CtxFitsMetaLogConsumerSession =
-    MetaLogSessionSurface<Log> && std::same_as<Handle, typename Log::ConsumerHandle>
-    && ::fixy::session::CtxFitsSession<Ctx, ConsumerProto, Handle>;
+concept CtxFitsMetaLogConsumerSession = MetaLogSessionSurface<Log> && std::same_as<Handle, typename Log::ConsumerHandle>
+                                     && ::fixy::session::CtxFitsSession<Ctx, ConsumerProto, Handle>;
 
 template <typename Log, typename Ctx, typename Handle>
     requires CtxFitsMetaLogProducerSession<Ctx, Log, Handle>

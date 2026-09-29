@@ -18,9 +18,11 @@ struct Authority {
 };
 
 constexpr Grade stale{Authority::key(), 1, Version{fixy::EpochLattice::bottom(), fixy::GenerationLattice::bottom()}};
-static_assert(stale.weaken(Version{fixy::EpochLattice::successor(fixy::EpochLattice::bottom()),
-                                   fixy::GenerationLattice::successor(fixy::GenerationLattice::bottom())})
-                  .peek() == 1);
+static_assert(stale
+                  .weaken(Version{fixy::EpochLattice::successor(fixy::EpochLattice::bottom()),
+                                  fixy::GenerationLattice::successor(fixy::GenerationLattice::bottom())})
+                  .peek()
+              == 1);
 
 }  // namespace
 

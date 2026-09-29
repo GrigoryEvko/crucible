@@ -21,8 +21,8 @@ namespace crucible::canopy {
 // The peer, piggyback and event tables are slot tables, and the round-trip
 // window holds at least two samples.
 template <std::size_t MaxPeers, std::size_t MaxPiggyback, std::size_t RttWindow, std::size_t MaxEvents>
-concept LifeguardShape = SwimShape<MaxPeers, MaxPiggyback> && SlotCapacity<MaxEvents> && SlotCapacity<RttWindow>
-                      && RttWindow > 1;
+concept LifeguardShape =
+    SwimShape<MaxPeers, MaxPiggyback> && SlotCapacity<MaxEvents> && SlotCapacity<RttWindow> && RttWindow > 1;
 
 using LifeguardDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 using LifeguardPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;

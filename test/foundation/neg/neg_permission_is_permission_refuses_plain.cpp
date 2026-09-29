@@ -16,6 +16,4 @@ constexpr int takes_a_token(T&&) noexcept {
 }
 }  // namespace
 
-int main() {
-    return takes_a_token(0);
-}
+int main() { return takes_a_token(0); }

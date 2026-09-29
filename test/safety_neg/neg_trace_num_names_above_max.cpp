@@ -17,8 +17,7 @@
 #include <cstdint>
 
 int main() {
-    constexpr auto bad =
-        ::fixy::mint_refined<crucible::kTraceNumNamesBound>(uint32_t{crucible::SCHEMA_TABLE_CAP} + 1u);
+    constexpr auto bad = ::fixy::mint_refined<crucible::kTraceNumNamesBound>(uint32_t{crucible::SCHEMA_TABLE_CAP} + 1u);
     (void)bad;
     return 0;
 }

@@ -18,7 +18,8 @@ namespace crucible::fuzz::boundary {
     append_raw(seed, std::uint8_t{0x05});
     append_raw(seed, std::uint16_t{8});
     append_raw(seed, std::uint16_t{12});
-    for (std::uint8_t i = 0; i < 12; ++i) seed.push_back(i);
+    for (std::uint8_t i = 0; i < 12; ++i)
+        seed.push_back(i);
     append_bytes(seed, text_bytes("reed-solomon seed input"));
     return {seed};
 }
@@ -34,7 +35,8 @@ inline void run_fec(std::span<const std::uint8_t> bytes) {
     const auto received = cursor.take_bytes(cursor.take<std::uint16_t>());
     std::array<bool, Codec::total_shards> mask{};
     const auto bit_is_set = [mask_bits](std::size_t i) noexcept { return ((unsigned{mask_bits} >> i) & 1U) != 0; };
-    for (std::size_t i = 0; i < mask.size(); ++i) mask[i] = bit_is_set(i);
+    for (std::size_t i = 0; i < mask.size(); ++i)
+        mask[i] = bit_is_set(i);
     std::vector<std::byte> output(output_size);
     (void)codec.decode(as_bytes_view(received), std::span<const bool>{mask}, std::span<std::byte>{output});
 
@@ -50,10 +52,12 @@ inline void run_fec(std::span<const std::uint8_t> bytes) {
         if (!bit_is_set(i)) continue;
         erased[i] = true;
         ++erased_count;
-        for (std::size_t b = 0; b < shard; ++b) encoded[i * shard + b] = std::byte{0xA5};
+        for (std::size_t b = 0; b < shard; ++b)
+            encoded[i * shard + b] = std::byte{0xA5};
     }
     std::vector<std::byte> decoded(input.size());
-    CRUCIBLE_FUZZ_CLAIM("fec", codec.decode(encoded, std::span<const bool>{erased}, std::span<std::byte>{decoded}).has_value());
+    CRUCIBLE_FUZZ_CLAIM(
+        "fec", codec.decode(encoded, std::span<const bool>{erased}, std::span<std::byte>{decoded}).has_value());
     CRUCIBLE_FUZZ_CLAIM("fec", std::ranges::equal(decoded, as_bytes_view(input)));
 }
 

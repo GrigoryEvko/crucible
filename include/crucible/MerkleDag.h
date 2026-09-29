@@ -277,8 +277,8 @@ struct TraceNode {
     // accessor makes "the hash is computed" a precondition instead.  It spells
     // the return type out because the alias for it needs MerkleHash complete
     // and so is declared below.
-    [[nodiscard]] ::fixy::Refined<::fixy::non_zero, MerkleHash>
-    computed_merkle_hash() const noexcept pre(::foundation::decide::is_non_zero(merkle_hash)) {
+    [[nodiscard]] ::fixy::Refined<::fixy::non_zero, MerkleHash> computed_merkle_hash() const noexcept
+        pre(::foundation::decide::is_non_zero(merkle_hash)) {
         return ::fixy::mint_refined<::fixy::non_zero>(merkle_hash);
     }
 };
@@ -999,8 +999,7 @@ public:
                         // Variant update: the row stays pinned and only the
                         // kernel changes, so a concurrent reader observes one
                         // kernel or the other and both are valid.
-                        auto writer =
-                            entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
+                        auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
                         writer.publish_kernel_variant(kernel);
                         return {};
                     }
@@ -1054,8 +1053,8 @@ public:
     // Both hash guards are needed here and on the two levels below: UINT64_MAX
     // is non-zero, and zero is not the reserved sentinel.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
-    AtLevel<VendorNeutralLevel, std::expected<void, InsertError>>
-    publish_l1(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
+    AtLevel<VendorNeutralLevel, std::expected<void, InsertError>> publish_l1(ContentHash content_hash, RowHash row_hash,
+                                                                             CompiledKernel* kernel)
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash))
             pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
         return ::fixy::mint_tagged<VendorNeutralLevel>(insert(content_hash, row_hash, kernel));
@@ -1064,8 +1063,8 @@ public:
     [[nodiscard]]
     AtLevel<VendorFamilyLevel, std::expected<void, InsertError>>
     publish_l2(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept
-        pre(::foundation::decide::is_non_zero(content_hash))
-            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
+        pre(::foundation::decide::is_non_zero(content_hash)) pre(::foundation::decide::not_sentinel_hash(content_hash))
+            pre(kernel != nullptr) {
         (void)content_hash;
         (void)kernel;
         return ::fixy::mint_tagged<VendorFamilyLevel>(
@@ -1073,10 +1072,10 @@ public:
     }
 
     [[nodiscard]]
-    AtLevel<ChipLevel, std::expected<void, InsertError>>
-    publish_l3(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept
-        pre(::foundation::decide::is_non_zero(content_hash))
-            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
+    AtLevel<ChipLevel, std::expected<void, InsertError>> publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
+                                                                    CompiledKernel* kernel) noexcept
+        pre(::foundation::decide::is_non_zero(content_hash)) pre(::foundation::decide::not_sentinel_hash(content_hash))
+            pre(kernel != nullptr) {
         (void)content_hash;
         (void)kernel;
         return ::fixy::mint_tagged<ChipLevel>(
@@ -1152,8 +1151,8 @@ private:
 // out: a region hashed under the wrong numerics shares a kernel-cache slot
 // with one hashed under the right ones, and the runtime would serve either
 // kernel to either caller.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
-                                             uint32_t num_ops) noexcept
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
+                                             TraceEntry* ops, uint32_t num_ops) noexcept
     pre(::foundation::decide::valid_span(num_ops, ops)) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
@@ -1173,8 +1172,8 @@ private:
 }
 
 // For a caller that has already folded the hash while streaming the ops.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
-                                             uint32_t num_ops, ContentHash precomputed_hash) noexcept
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
+                                             TraceEntry* ops, uint32_t num_ops, ContentHash precomputed_hash) noexcept
     pre(::foundation::decide::valid_span(num_ops, ops))
         pre(::foundation::decide::is_non_zero(precomputed_hash) || num_ops == 0) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
@@ -1196,8 +1195,8 @@ private:
 // the content hash and is then dropped, so a caller that needs to recover the
 // recipe later must track it separately.  A null recipe is rejected rather
 // than accepted, because the overload above already covers that case.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceEntry* ops,
-                                             uint32_t num_ops, const NumericalRecipe* recipe) noexcept
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
+                                             TraceEntry* ops, uint32_t num_ops, const NumericalRecipe* recipe) noexcept
     pre(::foundation::decide::valid_span(num_ops, ops)) pre(recipe != nullptr)
         pre(::foundation::decide::is_non_zero(recipe->hash)) pre(!recipe->hash.is_sentinel()) {
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
@@ -1225,10 +1224,11 @@ private:
 
 // The body must be a complete sub-DAG ending in TERMINAL, and
 // body_content_hash must already be folded from that body's region chain.
-[[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode* body,
-                                         ContentHash body_content_hash, FeedbackEdge* feedback, uint16_t num_feedback,
-                                         LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept
-    pre(body != nullptr) pre(::foundation::decide::valid_span(num_feedback, feedback))
+[[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
+                                         TraceNode* body, ContentHash body_content_hash, FeedbackEdge* feedback,
+                                         uint16_t num_feedback, LoopTermKind term_kind, uint32_t repeat_count,
+                                         float epsilon = 0.0f) noexcept pre(body != nullptr)
+    pre(::foundation::decide::valid_span(num_feedback, feedback))
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
     // so two loops that behave identically would otherwise hash differently.

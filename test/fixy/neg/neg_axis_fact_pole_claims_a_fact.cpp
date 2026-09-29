@@ -12,6 +12,4 @@
 static_assert(::fixy::PoleFitsClaim<::fixy::Claim::Fact, ::fixy::tags::source::FromInternal>,
               "a Fact pole that names an internal source is the weakest claim");
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

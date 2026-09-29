@@ -18,7 +18,8 @@ static void consume(crucible::ExprPool::PureInternedExpr) {}
 
 int main() {
     const crucible::Expr* const no_expr = nullptr;
-    ExternalExpr external = ::fixy::mint_band<ExternalExpr>(::fixy::mint_tagged<::fixy::tags::source::External>(no_expr));
+    ExternalExpr external =
+        ::fixy::mint_band<ExternalExpr>(::fixy::mint_tagged<::fixy::tags::source::External>(no_expr));
     consume(external);
     return 0;
 }

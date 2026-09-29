@@ -88,8 +88,8 @@ struct ctrl_sample_exception final {};
 using ctrl_atom_roster =
     std::tuple<ctrl::throws<>, ctrl::throws<ctrl_sample_exception>, ctrl::abort<"oom unrecoverable">,
                ctrl::longjmp_unsafe<"setjmp island">, ctrl::exit<ctrl::at_exit>, ctrl::exit<ctrl::no_cleanup>,
-               ctrl::exit<ctrl::exit_immediate>, ctrl::builtin_trap_ok, ctrl::unreachable_ok,
-               ctrl::raises_signal, ctrl::coroutine<ctrl::co_await_only>, ctrl::coroutine<ctrl::generator>,
+               ctrl::exit<ctrl::exit_immediate>, ctrl::builtin_trap_ok, ctrl::unreachable_ok, ctrl::raises_signal,
+               ctrl::coroutine<ctrl::co_await_only>, ctrl::coroutine<ctrl::generator>,
                ctrl::coroutine<ctrl::async_task>>;
 
 }  // namespace fixy::atom::detail

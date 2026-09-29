@@ -21,7 +21,7 @@ namespace eff = foundation::effects;
 int main() {
     eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
     std::tuple<int, int> shards{0, 0};
-    fixy::spawn::ParallelForRunner::run_shards_(ctx, shards, [](int& shard) noexcept { ++shard; }, std::size_t{2},
-                                                std::make_index_sequence<2>{});
+    fixy::spawn::ParallelForRunner::run_shards_(
+        ctx, shards, [](int& shard) noexcept { ++shard; }, std::size_t{2}, std::make_index_sequence<2>{});
     return 0;
 }

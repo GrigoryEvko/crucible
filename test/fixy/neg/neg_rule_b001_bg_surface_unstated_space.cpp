@@ -16,7 +16,6 @@
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::with<::foundation::effects::Effect::Bg>,
                                 ::fixy::atom::observe::surface<::foundation::effects::Effect::Bg>,
-                                ::fixy::atom::cost_linear<8>, ::fixy::atom::as_public>
-        refused{};
+                                ::fixy::atom::cost_linear<8>, ::fixy::atom::as_public> refused{};
     return 0;
 }

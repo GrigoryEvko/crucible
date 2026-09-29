@@ -14,9 +14,8 @@ struct Carol {};
 struct Ping {};
 struct Pong {};
 
-using HiddenInLoop =
-    g::Rec<g::Comm<Alice, Bob, g::Branch<Ping, int, g::Msg<Alice, Bob, Pong, int, g::Var>>,
-                   g::Branch<g::CrashLabel, void, g::End>>>;
+using HiddenInLoop = g::Rec<g::Comm<Alice, Bob, g::Branch<Ping, int, g::Msg<Alice, Bob, Pong, int, g::Var>>,
+                                    g::Branch<g::CrashLabel, void, g::End>>>;
 
 static_assert(g::is_balanced_plus_v<HiddenInLoop>);
 

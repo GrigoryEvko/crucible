@@ -19,9 +19,8 @@
 namespace crucible::cntp {
 
 template <class Ctx>
-concept CtxFitsBackpressureMint =
-    ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+concept CtxFitsBackpressureMint = ::foundation::effects::IsExecCtx<Ctx>
+                               && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
 template <class Ctx>
 concept CtxFitsBackpressureRuntime =
@@ -93,8 +92,8 @@ public:
 
     template <class Ctx>
         requires CtxFitsBackpressureStart<Ctx>
-    [[nodiscard]] std::expected<void, BackpressureError>
-    start_flow(Ctx const& ctx, SocketFd fd, PositiveBackpressureBytes initial_credit) noexcept {
+    [[nodiscard]] std::expected<void, BackpressureError> start_flow(Ctx const& ctx, SocketFd fd,
+                                                                    PositiveBackpressureBytes initial_credit) noexcept {
         auto proof = ::foundation::permissions::mint_permission_root<StartGateTag>();
         ::fixy::spin::GateGuard guard{ctx, start_gate_, proof};
 

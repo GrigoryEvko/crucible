@@ -246,8 +246,8 @@ class SchedProofDoor final {
     [[nodiscard]] static std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
     policy_proof_(int rt_priority) noexcept {
         const key_ key{};
-        return std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>{
-            std::in_place, key, rt_priority};
+        return std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>{std::in_place,
+                                                                                                      key, rt_priority};
     }
 
     template <int Nice>

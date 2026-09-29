@@ -150,7 +150,7 @@ using classified_on = ::fixy::corpus::detail::is_classified_on_<C, Grade>;
 // The split that the spawn fit reads, declared beside its tags.
 template <>
 struct foundation::permissions::can_split_into_pack<armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft,
-                                                 armed_roster_witness::SpawnRight> : std::true_type {};
+                                                    armed_roster_witness::SpawnRight> : std::true_type {};
 template <>
 struct foundation::permissions::has_split_pack_authoring_witness<
     armed_roster_witness::SpawnWhole, armed_roster_witness::SpawnLeft, armed_roster_witness::SpawnRight>
@@ -242,8 +242,8 @@ struct foundation::contracts::armed_cell<::foundation::diag::is_diagnostic> {
 // shape that is not a row is in no subrow relation.
 template <>
 struct foundation::contracts::armed_instances<^^fe::is_subrow> {
-    using accepts = witnesses<fe::is_subrow<Row<>, Row<Effect::IO>>,
-                              fe::is_subrow<Row<Effect::IO>, Row<Effect::Bg, Effect::IO>>>;
+    using accepts =
+        witnesses<fe::is_subrow<Row<>, Row<Effect::IO>>, fe::is_subrow<Row<Effect::IO>, Row<Effect::Bg, Effect::IO>>>;
     using refuses = witnesses<fe::is_subrow<Row<Effect::IO>, Row<>>,
                               fe::is_subrow<Row<Effect::IO, Effect::Bg>, Row<Effect::IO>>, fe::is_subrow<int, Row<>>>;
 };
@@ -292,8 +292,8 @@ struct foundation::contracts::armed_instances<^^fp::has_split_pack_authoring_wit
 // A tag pack is distinct when no tag occurs twice in it.
 template <>
 struct foundation::contracts::armed_instances<^^fp::detail::is_each_tag_distinct> {
-    using accepts = witnesses<fp::detail::is_each_tag_distinct<>,
-                              fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight>>;
+    using accepts =
+        witnesses<fp::detail::is_each_tag_distinct<>, fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight>>;
     using refuses = witnesses<fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnLeft>,
                               fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight, w::SpawnLeft>>;
 };
@@ -380,9 +380,10 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_live_hand
 // value that is not a handle holds none.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_live_handle_payload_> {
-    using accepts = witnesses<sess::SessionHandle<sess::Send<int, sess::End>, armed_roster_witness::Plain>,
-                              ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure,
-                                              sess::SessionHandle<sess::Recv<int, sess::End>, armed_roster_witness::Plain>>>;
+    using accepts =
+        witnesses<sess::SessionHandle<sess::Send<int, sess::End>, armed_roster_witness::Plain>,
+                  ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure,
+                                  sess::SessionHandle<sess::Recv<int, sess::End>, armed_roster_witness::Plain>>>;
     using refuses = witnesses<int, void, sess::SessionHandle<sess::End, armed_roster_witness::Plain>>;
 };
 
@@ -391,9 +392,10 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_live_hand
 // band, claim nothing.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_replay_deterministic_> {
-    using accepts = witnesses<
-        ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>, ::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>,
-        ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>>;
+    using accepts =
+        witnesses<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>,
+                  ::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>,
+                  ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>>;
     using refuses = witnesses<int, void, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>,
                               ::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>>;
 };
@@ -455,12 +457,12 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_signature
 // An opaque tag family names no signature, so the call can throw.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::can_indirect_call_throw_> {
-    using accepts = witnesses<at::dispatch::indirect_call<int(char)>, at::dispatch::indirect_call<w::Plain>,
-                              at::dispatch::indirect_call<void (w::Plain::*)() &>,
-                              at::dispatch::indirect_call<int (*)(char, ...)>>;
-    using refuses = witnesses<at::dispatch::indirect_call<int(char) noexcept>,
-                              at::dispatch::indirect_call<void (*)() noexcept>,
-                              at::dispatch::indirect_call<w::NamesNoexceptSignature>, int>;
+    using accepts =
+        witnesses<at::dispatch::indirect_call<int(char)>, at::dispatch::indirect_call<w::Plain>,
+                  at::dispatch::indirect_call<void (w::Plain::*)() &>, at::dispatch::indirect_call<int (*)(char, ...)>>;
+    using refuses =
+        witnesses<at::dispatch::indirect_call<int(char) noexcept>, at::dispatch::indirect_call<void (*)() noexcept>,
+                  at::dispatch::indirect_call<w::NamesNoexceptSignature>, int>;
 };
 
 // A subprocess has its own copy of the address space, so it cannot
@@ -483,8 +485,9 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::control_flow
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_hw_at_or_above_> {
     using Tier = ::fixy::atom::hw::HwInstruction;
-    using accepts = witnesses<::fixy::collision::detail::is_hw_at_or_above_<Tier::NonDeterministicTsc, at::hw::privileged_msr>,
-                              ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, at::hw::scalar>>;
+    using accepts =
+        witnesses<::fixy::collision::detail::is_hw_at_or_above_<Tier::NonDeterministicTsc, at::hw::privileged_msr>,
+                  ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, at::hw::scalar>>;
     using refuses = witnesses<::fixy::collision::detail::is_hw_at_or_above_<Tier::PrivilegedMsr, at::hw::vectorizable>,
                               ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, int>,
                               ::fixy::collision::detail::is_hw_at_or_above_<Tier::Scalar, at::barrier::full_fence>>;
@@ -493,14 +496,16 @@ struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_hw
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_barrier_at_or_above_> {
     using Strength = ::foundation::algebra::lattices::BarrierStrength;
-    using accepts = witnesses<::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::full_fence>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, at::barrier::seq_cst>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcquireLoad, at::barrier::acq_rel>>;
-    using refuses = witnesses<::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::acq_rel>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, int>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::None, at::hw::privileged_msr>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcquireLoad, at::barrier::release_store>,
-                              ::fixy::collision::detail::is_barrier_at_or_above_<Strength::ReleaseStore, at::barrier::acquire_load>>;
+    using accepts =
+        witnesses<::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::full_fence>,
+                  ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, at::barrier::seq_cst>,
+                  ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcquireLoad, at::barrier::acq_rel>>;
+    using refuses = witnesses<
+        ::fixy::collision::detail::is_barrier_at_or_above_<Strength::SeqCst, at::barrier::acq_rel>,
+        ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcqRel, int>,
+        ::fixy::collision::detail::is_barrier_at_or_above_<Strength::None, at::hw::privileged_msr>,
+        ::fixy::collision::detail::is_barrier_at_or_above_<Strength::AcquireLoad, at::barrier::release_store>,
+        ::fixy::collision::detail::is_barrier_at_or_above_<Strength::ReleaseStore, at::barrier::acquire_load>>;
 };
 
 // The scope lattice has two trunks, so a host scope is not at or above an
@@ -518,15 +523,15 @@ struct foundation::contracts::armed_instances<^^::fixy::collision::detail::is_sc
 // A mode names only the settings it was written with.
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::collision::detail::fp_mode_has_setting_> {
-    using accepts = witnesses<
-        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, at::fp::mode<at::fp::FpContract::Fast>>,
-        ::fixy::collision::detail::fp_mode_has_setting_<
-            at::fp::FpReassociate::UnrestrictedRewrite,
-            at::fp::mode<at::fp::FpContract::Fast, at::fp::FpReassociate::UnrestrictedRewrite>>>;
-    using refuses = witnesses<
-        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Off, at::fp::mode<at::fp::FpContract::Fast>>,
-        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, at::fp::mode<>>,
-        ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, int>>;
+    using accepts = witnesses<::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast,
+                                                                              at::fp::mode<at::fp::FpContract::Fast>>,
+                              ::fixy::collision::detail::fp_mode_has_setting_<
+                                  at::fp::FpReassociate::UnrestrictedRewrite,
+                                  at::fp::mode<at::fp::FpContract::Fast, at::fp::FpReassociate::UnrestrictedRewrite>>>;
+    using refuses = witnesses<::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Off,
+                                                                              at::fp::mode<at::fp::FpContract::Fast>>,
+                              ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, at::fp::mode<>>,
+                              ::fixy::collision::detail::fp_mode_has_setting_<at::fp::FpContract::Fast, int>>;
 };
 
 // ── fixy: concurrency handles and pipelines ─────────────────────────
@@ -566,8 +571,8 @@ struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_stage_ed
 // stage, so no handle and no channel is made here.
 template <>
 struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_stage> {
-    using accepts = witnesses<::fixy::concurrent::Stage<&::fixy::concurrent::detail::stage_self_test::stage_pass_through,
-                                                        ::fixy::HotFgCtx>>;
+    using accepts = witnesses<
+        ::fixy::concurrent::Stage<&::fixy::concurrent::detail::stage_self_test::stage_pass_through, ::fixy::HotFgCtx>>;
     using refuses = witnesses<int, ::fixy::concurrent::StagePack<>, ::fixy::concurrent::StageEdge<0, 1, 0, 0>>;
 };
 
@@ -610,15 +615,15 @@ struct foundation::contracts::armed_cell<::fixy::is_already_consume_disciplined>
 // classified on each channel its policy does not name.
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::corpus::detail::is_classified_on_> {
-    using accepts = witnesses<w::classified_on<w::Channel::IO, at::as_secret>,
-                              w::classified_on<w::Channel::Bg, at::constant_time>,
-                              w::classified_on<w::Channel::Bg, at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
-                              w::classified_on<w::Channel::IO, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>>;
-    using refuses = witnesses<w::classified_on<w::Channel::IO, at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
-                              w::classified_on<w::Channel::Staleness,
-                                               at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
-                              w::classified_on<w::Channel::IO, at::as_public>,
-                              w::classified_on<w::Channel::Bg, at::as_internal>, w::classified_on<w::Channel::IO, int>>;
+    using accepts =
+        witnesses<w::classified_on<w::Channel::IO, at::as_secret>, w::classified_on<w::Channel::Bg, at::constant_time>,
+                  w::classified_on<w::Channel::Bg, at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
+                  w::classified_on<w::Channel::IO, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>>;
+    using refuses = witnesses<
+        w::classified_on<w::Channel::IO, at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
+        w::classified_on<w::Channel::Staleness, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
+        w::classified_on<w::Channel::IO, at::as_public>, w::classified_on<w::Channel::Bg, at::as_internal>,
+        w::classified_on<w::Channel::IO, int>>;
 };
 
 template <>
@@ -653,12 +658,12 @@ template <>
 struct foundation::contracts::armed_instances<^^::fixy::corpus::detail::can_discharge_> {
     using accepts = witnesses<::fixy::corpus::detail::can_discharge_<
         ::fixy::corpus::DischargeAxis::Staleness, at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>>;
-    using refuses = witnesses<
-        ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::IO,
-                                               at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
-        ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness,
-                                               at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
-        ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness, int>>;
+    using refuses =
+        witnesses<::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::IO,
+                                                         at::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
+                  ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness,
+                                                         at::declassify<::fixy::tags::secret_policy::WireSerialize>>,
+                  ::fixy::corpus::detail::can_discharge_<::fixy::corpus::DischargeAxis::Staleness, int>>;
 };
 
 template <>
@@ -716,10 +721,10 @@ struct foundation::contracts::armed_cell<gd::has_en_route> {
 template <>
 struct foundation::contracts::armed_cell<gd::has_live_en_route> {
     using accepts = witnesses<w::EnRoutePQ, w::EnRouteAfterMsg>;
-    using refuses = witnesses<
-        w::gl::End, w::OneMsg, w::LoopPQ,
-        w::gl::EnRouteChoice<w::gl::Crashed<w::RoleP>, w::RoleQ, w::gl::CrashLabel,
-                             w::gl::Branch<w::LabelA, int, w::gl::End>, w::gl::Branch<w::gl::CrashLabel, void, w::gl::End>>>;
+    using refuses = witnesses<w::gl::End, w::OneMsg, w::LoopPQ,
+                              w::gl::EnRouteChoice<w::gl::Crashed<w::RoleP>, w::RoleQ, w::gl::CrashLabel,
+                                                   w::gl::Branch<w::LabelA, int, w::gl::End>,
+                                                   w::gl::Branch<w::gl::CrashLabel, void, w::gl::End>>>;
 };
 
 // A Rec body is guarded when its first node is a communication.
@@ -732,10 +737,10 @@ struct foundation::contracts::armed_cell<gd::is_rec_guarded> {
 // Every path from the body back to its Rec meets the role.
 template <>
 struct foundation::contracts::armed_instances<^^gd::is_met_on_every_path> {
-    using accepts = witnesses<gd::is_met_on_every_path<w::RoleP, w::FreeVar>,
-                              gd::is_met_on_every_path<w::RoleR, w::gl::End>>;
-    using refuses = witnesses<gd::is_met_on_every_path<w::RoleR, w::FreeVar>,
-                              gd::is_met_on_every_path<w::RoleP, w::gl::Var>>;
+    using accepts =
+        witnesses<gd::is_met_on_every_path<w::RoleP, w::FreeVar>, gd::is_met_on_every_path<w::RoleR, w::gl::End>>;
+    using refuses =
+        witnesses<gd::is_met_on_every_path<w::RoleR, w::FreeVar>, gd::is_met_on_every_path<w::RoleP, w::gl::Var>>;
 };
 
 template <>
@@ -802,8 +807,7 @@ namespace stage_fakes = ::fixy::concurrent::detail::stage_self_test;
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_variadic_stage_take_handles> {
     using accepts = witnesses<::fixy::concurrent::detail::can_variadic_stage_take_handles<
-        &stage_fakes::stage_fan_in_two,
-        std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<int>>,
+        &stage_fakes::stage_fan_in_two, std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<int>>,
         std::tuple<stage_fakes::FakeProducer<int>>>>;
     using refuses = witnesses<
         ::fixy::concurrent::detail::can_variadic_stage_take_handles<&stage_fakes::stage_fan_in_two,
@@ -820,20 +824,20 @@ struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_
 // nothrow body per child.
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::spawn::detail::can_ctx_fit_spawn> {
-    using accepts = witnesses<::fixy::spawn::detail::can_ctx_fit_spawn<
-        w::BgCtx, w::SpawnWhole, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
-        std::tuple<w::LeftBody, w::RightBody>>>;
-    using refuses = witnesses<
-        ::fixy::spawn::detail::can_ctx_fit_spawn<fe::ExecCtx<>, w::SpawnWhole, w::SpawnBrand,
-                                                 std::tuple<w::SpawnLeft, w::SpawnRight>,
-                                                 std::tuple<w::LeftBody, w::RightBody>>,
-        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                                 std::tuple<w::SpawnLeft, w::SpawnRight>,
-                                                 std::tuple<w::LeftBody, w::LeftBody>>,
-        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                                 std::tuple<w::SpawnRight, w::SpawnLeft>,
-                                                 std::tuple<w::RightBody, w::LeftBody>>,
-        ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, int, int>>;
+    using accepts = witnesses<::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
+                                                                       std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                                       std::tuple<w::LeftBody, w::RightBody>>>;
+    using refuses =
+        witnesses<::fixy::spawn::detail::can_ctx_fit_spawn<fe::ExecCtx<>, w::SpawnWhole, w::SpawnBrand,
+                                                           std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                           std::tuple<w::LeftBody, w::RightBody>>,
+                  ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
+                                                           std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                           std::tuple<w::LeftBody, w::LeftBody>>,
+                  ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
+                                                           std::tuple<w::SpawnRight, w::SpawnLeft>,
+                                                           std::tuple<w::RightBody, w::LeftBody>>,
+                  ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, int, int>>;
 };
 
 template <>
@@ -848,17 +852,19 @@ template <>
 struct foundation::contracts::armed_instances<^^::fixy::mach::detail::can_transition_impl> {
     using accepts = witnesses<::fixy::mach::detail::can_transition_impl<w::IdleMachine, w::Busy, true>,
                               ::fixy::mach::detail::can_transition_impl<w::IdleMachine, w::Idle, true>>;
-    using refuses = witnesses<::fixy::mach::detail::can_transition_impl<w::IdleMachine, w::Done, true>,
-                              ::fixy::mach::detail::can_transition_impl<::fixy::Machine<w::Busy, ^^w::idle_edges>, w::Idle, true>,
-                              ::fixy::mach::detail::can_transition_impl<int, double, false>>;
+    using refuses =
+        witnesses<::fixy::mach::detail::can_transition_impl<w::IdleMachine, w::Done, true>,
+                  ::fixy::mach::detail::can_transition_impl<::fixy::Machine<w::Busy, ^^w::idle_edges>, w::Idle, true>,
+                  ::fixy::mach::detail::can_transition_impl<int, double, false>>;
 };
 
 // ── fixy: session protocol shapes ───────────────────────────────────
 
 template <>
 struct foundation::contracts::armed_cell<sess::is_send> {
-    using accepts = witnesses<sess::Send<int, sess::End>, sess::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV,
-                                                                             sess::Send<int, sess::End>>>;
+    using accepts =
+        witnesses<sess::Send<int, sess::End>,
+                  sess::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, sess::Send<int, sess::End>>>;
     using refuses = witnesses<sess::Recv<int, sess::End>, sess::End>;
 };
 

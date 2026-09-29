@@ -101,7 +101,8 @@ static_assert(std::is_same_v<decltype(add_sat_det<std::uint32_t>(1u, 2u)), DetSa
 static_assert(std::is_same_v<decltype(sub_sat_det<std::int8_t>(1, 2)), DetSatPure<std::int8_t>>);
 static_assert(std::is_same_v<decltype(mul_sat_det<std::uint64_t>(1u, 2u)), DetSatPure<std::uint64_t>>);
 static_assert(sizeof(DetSatPure<std::uint64_t>) == sizeof(Saturated<std::uint64_t>));
-static_assert(std::is_same_v<decltype(add_sat_from(std::declval<std::uint32_t const&>(), 1u)), Saturated<std::uint32_t>>);
+static_assert(
+    std::is_same_v<decltype(add_sat_from(std::declval<std::uint32_t const&>(), 1u)), Saturated<std::uint32_t>>);
 static_assert(std::is_same_v<decltype(add_sat_into(std::declval<std::uint32_t&>(), 1u)), Saturated<std::uint32_t>>);
 static_assert(std::is_same_v<decltype(add_sat<std::uint32_t>(1u, 2u)), std::uint32_t>);
 

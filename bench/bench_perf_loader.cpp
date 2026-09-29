@@ -744,7 +744,8 @@ int main() {
     if (cov.syscall_latency_attached) {
         const auto d = sl_post - sl_pre;
         std::printf("  SyscallLatency.delta:  total_syscalls=%llu  timeline_events=%llu\n",
-                    static_cast<unsigned long long>(d.total_syscalls), static_cast<unsigned long long>(d.timeline_index));
+                    static_cast<unsigned long long>(d.total_syscalls),
+                    static_cast<unsigned long long>(d.timeline_index));
     }
     if (cov.sched_tp_btf_attached) {
         const auto d = stp_post - stp_pre;
@@ -754,7 +755,8 @@ int main() {
     if (cov.syscall_tp_btf_attached) {
         const auto d = syt_post - syt_pre;
         std::printf("  SyscallTpBtf.delta:    total_syscalls=%llu  timeline_events=%llu\n",
-                    static_cast<unsigned long long>(d.total_syscalls), static_cast<unsigned long long>(d.timeline_index));
+                    static_cast<unsigned long long>(d.total_syscalls),
+                    static_cast<unsigned long long>(d.timeline_index));
     }
     if (cov.attached_count() == 0) {
         std::printf("  (no facades attached; deltas would have been printed here.\n"

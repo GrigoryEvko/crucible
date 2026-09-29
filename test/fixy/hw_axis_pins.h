@@ -100,12 +100,12 @@ template <std::meta::info Block, ::fixy::Axis... Listed>
         add_finding(report, "the row of the hardware-axis block " + block + " lists no axis, so it states nothing.");
     }
     if (std::string const lost = axes_missing_from(listed, engaged); !lost.empty()) {
-        add_finding(report, "the hardware-axis block " + block + " holds no atom alias of the listed axis" + lost +
-                                ".  Restore the alias, or take the axis off its row.");
+        add_finding(report, "the hardware-axis block " + block + " holds no atom alias of the listed axis" + lost
+                                + ".  Restore the alias, or take the axis off its row.");
     }
     if (std::string const extra = axes_missing_from(engaged, listed); !extra.empty()) {
-        add_finding(report, "the hardware-axis block " + block + " holds an atom alias of the unlisted axis" + extra +
-                                ".  Add the axis to its row.");
+        add_finding(report, "the hardware-axis block " + block + " holds an atom alias of the unlisted axis" + extra
+                                + ".  Add the axis to its row.");
     }
     return std::string_view{std::define_static_string(report)};
 }

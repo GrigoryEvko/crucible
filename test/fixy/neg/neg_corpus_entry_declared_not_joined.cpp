@@ -29,6 +29,4 @@ struct here final {};
 static_assert(::fixy::corpus::corpus_entries_declared_but_not_joined<fixture_site::here>().empty(),
               ::fixy::corpus::corpus_join_diagnostic<fixture_site::here>());
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

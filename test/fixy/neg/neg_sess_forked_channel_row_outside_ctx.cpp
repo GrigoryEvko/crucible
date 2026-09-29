@@ -44,8 +44,8 @@ template <>
 struct can_split_into_pack<forked_row_fixture::Whole, forked_row_fixture::Left, forked_row_fixture::Right>
     : std::true_type {};
 template <>
-struct has_split_pack_authoring_witness<forked_row_fixture::Whole, forked_row_fixture::Left,
-                                        forked_row_fixture::Right> : std::true_type {};
+struct has_split_pack_authoring_witness<forked_row_fixture::Whole, forked_row_fixture::Left, forked_row_fixture::Right>
+    : std::true_type {};
 }  // namespace foundation::permissions
 
 int main() {
@@ -57,7 +57,8 @@ int main() {
             return std::move(head).send(IoWork{7}, [](Wire&, IoWork&) noexcept { return true; });
         },
         [](auto head, auto const& /*right_view*/, BgCtx const&) noexcept {
-            auto [work, at_end] = std::move(head).recv([](Wire&) noexcept -> std::optional<IoWork> { return IoWork{7}; });
+            auto [work, at_end] =
+                std::move(head).recv([](Wire&) noexcept -> std::optional<IoWork> { return IoWork{7}; });
             (void)work;
             return std::move(at_end);
         });

@@ -291,9 +291,7 @@ using syscall_family_row_t = ::foundation::effects::row_union_t<
 // A value of SyscallId that names a call of the catalog.  A cast from an
 // integer can make any value of the underlying type, and such a value
 // holds no row.
-[[nodiscard]] consteval bool is_catalogued_call_(sc::SyscallId id) noexcept {
-    return syscall_rows_naming_(id) == 1;
-}
+[[nodiscard]] consteval bool is_catalogued_call_(sc::SyscallId id) noexcept { return syscall_rows_naming_(id) == 1; }
 
 // A value of SyscallFamily that names a family of the chain.
 [[nodiscard]] consteval bool is_catalogued_family_(sc::SyscallFamily family) noexcept {
@@ -301,9 +299,7 @@ using syscall_family_row_t = ::foundation::effects::row_union_t<
     static constexpr auto families = std::define_static_array(std::meta::enumerators_of(^^sc::SyscallFamily));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto family_member : families) {
-        known = known || ([:family_member:] == family);
-    }
+    template for (constexpr auto family_member : families) { known = known || ([:family_member:] == family); }
 #pragma GCC diagnostic pop
     return known;
 }
@@ -336,8 +332,7 @@ struct family final : lifting_atom_of<Axis::SyscallSurface, ::fixy::atom::detail
 namespace fixy::atom::detail {
 
 inline constexpr auto syscall_calls_ = std::define_static_array(std::meta::enumerators_of(^^syscall::SyscallId));
-inline constexpr auto syscall_families_ =
-    std::define_static_array(std::meta::enumerators_of(^^syscall::SyscallFamily));
+inline constexpr auto syscall_families_ = std::define_static_array(std::meta::enumerators_of(^^syscall::SyscallFamily));
 
 // Declared and never defined: only its return type is read.
 template <std::size_t... Call, std::size_t... Family>
@@ -383,9 +378,7 @@ using SI = syscall::SyscallId;
     static constexpr auto calls = std::define_static_array(std::meta::enumerators_of(^^SI));
     for (const auto& [row_id, row_family] : syscall_family_table) {
         bool known = false;
-        template for (constexpr auto call_member : calls) {
-            known = known || ([:call_member:] == row_id);
-        }
+        template for (constexpr auto call_member : calls) { known = known || ([:call_member:] == row_id); }
         if (!known) return false;
     }
     return true;

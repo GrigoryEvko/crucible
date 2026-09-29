@@ -15,7 +15,8 @@ struct Bob {};
 struct L0 {};
 struct L1 {};
 struct L2 {};
-using Sub = s::Offer<s::Sender<Bob>, s::Recv<s::PeerMsg<Bob, L0, int>, s::End>, s::Recv<s::PeerMsg<Bob, L1, int>, s::End>>;
+using Sub =
+    s::Offer<s::Sender<Bob>, s::Recv<s::PeerMsg<Bob, L0, int>, s::End>, s::Recv<s::PeerMsg<Bob, L1, int>, s::End>>;
 using Super = s::Recv<s::PeerMsg<Bob, L2, int>, s::End>;
 
 }  // namespace neg_sess_subtype_keyed_step_label_set_input_types

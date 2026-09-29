@@ -303,7 +303,8 @@ public:
 
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshRecord<Ctx>
-    [[nodiscard]] PingmeshError record_measurement(Ctx const&, DeclaredPingmeshMeasurement const& measurement) noexcept {
+    [[nodiscard]] PingmeshError record_measurement(Ctx const&,
+                                                   DeclaredPingmeshMeasurement const& measurement) noexcept {
         auto const& value = measurement.value();
         auto const src = find_peer(value.src);
         auto const dst = find_peer(value.dst);
@@ -410,6 +411,7 @@ static_assert(CtxFitsPingmeshMint<::fixy::ColdInitCtx>);
 static_assert(!CtxFitsPingmeshRecord<::fixy::HotFgCtx>);
 static_assert(CtxFitsPingmeshRecord<::fixy::BgDrainCtx>);
 static_assert(std::is_base_of_v<::foundation::Pinned<Pingmesh<2>>, Pingmesh<2>>);
-static_assert(!std::is_constructible_v<Pingmesh<2>, PingmeshConfig>, "a pingmesh is reached only through mint_pingmesh");
+static_assert(!std::is_constructible_v<Pingmesh<2>, PingmeshConfig>,
+              "a pingmesh is reached only through mint_pingmesh");
 
 }  // namespace crucible::topology

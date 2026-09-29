@@ -178,8 +178,7 @@ inline constexpr auto may_carry_a_read_view = [](::foundation::reflect::TypeNode
 template <typename R>
 concept ReadViewResultStaysInside =
     std::is_void_v<R>
-    || (!std::is_reference_v<R>
-        && !::foundation::reflect::any_component_satisfies<detail::may_carry_a_read_view>(^^R));
+    || (!std::is_reference_v<R> && !::foundation::reflect::any_component_satisfies<detail::may_carry_a_read_view>(^^R));
 
 // ── The door ─────────────────────────────────────────────────────────
 
@@ -234,7 +233,7 @@ struct read_view_door {
 // pair of that value and the source.
 template <typename Source, typename Body>
     requires ReadViewSource<Source> && ReadViewNeedsNoCtx<typename Source::tag_type>
-             && ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>
+          && ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>
 [[nodiscard]] constexpr auto with_read_view(Source&& source,
                                             Body&& body) noexcept(detail::read_view_door_nothrow_v<Source, Body>) {
     return detail::read_view_door::lend(std::move(source), std::forward<Body>(body));
@@ -247,8 +246,8 @@ template <typename Source, typename Body>
 // that names the row.
 template <typename Source, typename Body>
     requires(std::is_lvalue_reference_v<Source> || std::is_const_v<std::remove_reference_t<Source>>)
-            && ReadViewSource<std::remove_cvref_t<Source>>
-            && ReadViewNeedsNoCtx<typename std::remove_cvref_t<Source>::tag_type>
+             && ReadViewSource<std::remove_cvref_t<Source>>
+             && ReadViewNeedsNoCtx<typename std::remove_cvref_t<Source>::tag_type>
 constexpr void with_read_view(Source&&, Body&&) =
     delete("with_read_view lends its source to the body and hands the source back.  Pass the source with "
            "std::move, and keep the source that the call returns");
@@ -284,8 +283,8 @@ public:
 
     static void* operator new(std::size_t) = delete("a ReadView lives in the frame of its door, not on the heap");
     static void* operator new[](std::size_t) = delete("a ReadView lives in the frame of its door, not on the heap");
-    static void* operator new(std::size_t, std::align_val_t) =
-        delete("a ReadView lives in the frame of its door, not on the heap");
+    static void* operator new(std::size_t,
+                              std::align_val_t) = delete("a ReadView lives in the frame of its door, not on the heap");
     static void* operator new[](std::size_t, std::align_val_t) =
         delete("a ReadView lives in the frame of its door, not on the heap");
     static void operator delete(void*) = delete;
@@ -359,11 +358,11 @@ public:
     constexpr LentPermission(LentPermission<Tag, Other>&& other) noexcept : parked_{std::move(other.parked_)} {}
 
     LentPermission(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
-    LentPermission& operator=(const LentPermission&) =
-        delete("a LentPermission holds a linear token. A copy is a second owner");
+    LentPermission&
+    operator=(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
     constexpr LentPermission(LentPermission&& other) noexcept : parked_{std::move(other.parked_)} {}
-    LentPermission& operator=(LentPermission&&) =
-        delete("a LentPermission binds one loan. Assignment would drop the token it holds");
+    LentPermission&
+    operator=(LentPermission&&) = delete("a LentPermission binds one loan. Assignment would drop the token it holds");
     ~LentPermission() = default;
 
 private:
@@ -478,9 +477,8 @@ static_assert(door_hands_the_source_back());
 // A loan opens a view, and the token comes back only with the loan.
 [[nodiscard]] consteval bool loan_round_trip() noexcept {
     auto [loan, lent] = mint_read_loan(Permission<read_view_test_tag>{mint_permission_root<read_view_test_tag>()});
-    auto [value, loan_back] = with_read_view(std::move(loan), [](ReadView<read_view_test_tag> const&) noexcept {
-        return 7;
-    });
+    auto [value, loan_back] =
+        with_read_view(std::move(loan), [](ReadView<read_view_test_tag> const&) noexcept { return 7; });
     auto token = mint_permission_after_loan(std::move(lent), std::move(loan_back));
     permission_drop(std::move(token));
     return value == 7;

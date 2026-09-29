@@ -284,9 +284,10 @@ private:
                 return;
             }
         }
-        refuted_[refuted_next_] = RefutedPeriod{
-            .period = period, .body_sum = body_sum, .breaks = std::min(BREAKS_TO_REFUTE, breaks),
-            .broke_since_restart = false};
+        refuted_[refuted_next_] = RefutedPeriod{.period = period,
+                                                .body_sum = body_sum,
+                                                .breaks = std::min(BREAKS_TO_REFUTE, breaks),
+                                                .broke_since_restart = false};
         refuted_next_ = (refuted_next_ + 1) % REFUTED_CAPACITY;
         if (refuted_count_ < REFUTED_CAPACITY) ++refuted_count_;
     }
@@ -432,7 +433,8 @@ private:
 
     void mark_broke_since_restart_(uint32_t period, uint64_t body_sum) {
         for (uint32_t i = 0; i < refuted_count_; ++i) {
-            if (refuted_[i].period == period && refuted_[i].body_sum == body_sum) refuted_[i].broke_since_restart = true;
+            if (refuted_[i].period == period && refuted_[i].body_sum == body_sum)
+                refuted_[i].broke_since_restart = true;
         }
     }
 

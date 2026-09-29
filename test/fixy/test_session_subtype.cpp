@@ -166,16 +166,16 @@ static_assert(!s::is_well_formed_v<Offer<AliceCrash>>, "a choice of crash branch
 // alone.  Two branches of one choice that name the same label are not
 // well-formed, whatever their payloads and their peers.
 
-static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
-                                          Send<s::PeerMsg<Bob, PingReq, int>, Send<int, End>>>>);
-static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
-                                          Send<s::PeerMsg<Bob, PingReq, bool>, End>>>,
-              "the payload is not part of the label");
-static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>,
-                                          Send<s::PeerMsg<Alice, PingReq, int>, End>>>,
-              "the peer is not part of the label, so each side of a channel puts one word on the wire");
-static_assert(!s::is_well_formed_v<Offer<Sender<Bob>, Recv<s::PeerMsg<Bob, PingReq, int>, End>,
-                                         Recv<s::PeerMsg<Bob, PingReq, int>, End>>>);
+static_assert(!s::is_well_formed_v<
+              Select<Send<s::PeerMsg<Bob, PingReq, int>, End>, Send<s::PeerMsg<Bob, PingReq, int>, Send<int, End>>>>);
+static_assert(
+    !s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>, Send<s::PeerMsg<Bob, PingReq, bool>, End>>>,
+    "the payload is not part of the label");
+static_assert(
+    !s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, PingReq, int>, End>, Send<s::PeerMsg<Alice, PingReq, int>, End>>>,
+    "the peer is not part of the label, so each side of a channel puts one word on the wire");
+static_assert(!s::is_well_formed_v<
+              Offer<Sender<Bob>, Recv<s::PeerMsg<Bob, PingReq, int>, End>, Recv<s::PeerMsg<Bob, PingReq, int>, End>>>);
 
 // The relation is on the unfoldings, so a loop and its unfolding relate
 // in both directions.  A lockstep walk of the syntax cannot see that.
@@ -188,8 +188,8 @@ static_assert(!s::is_subtype_sync_v<Send<int, End>, Loop<Send<int, Continue>>>);
 namespace evolution {
 using ServerV1 =
     Loop<Offer<Recv<Req, Send<Resp, Continue>>, Recv<CloseCmd, End>, Recv<PingReq, Send<PingReq, Continue>>>>;
-using ServerV2 = Loop<Offer<Recv<Req, Send<Resp, Continue>>, Recv<CloseCmd, End>, Recv<PingReq, Send<PingReq, Continue>>,
-                            Recv<StopReq, Send<Resp, End>>>>;
+using ServerV2 = Loop<Offer<Recv<Req, Send<Resp, Continue>>, Recv<CloseCmd, End>,
+                            Recv<PingReq, Send<PingReq, Continue>>, Recv<StopReq, Send<Resp, End>>>>;
 static_assert(s::is_subtype_sync_v<ServerV2, ServerV1> && !s::is_subtype_sync_v<ServerV1, ServerV2>);
 
 consteval bool evolution_holds() {
@@ -234,11 +234,13 @@ using NestedT = Loop<Send<int, Recv<int, Continue>>>;
 using NestedU = Loop<Send<int, Recv<long, Continue>>>;
 static_assert(std::is_same_v<s::subtype_reason_t<NestedT, NestedU>, s::SubtypeRejection<mismatch::payload, long, int>>,
               "the innermost cause is reported, not the outer loop");
-static_assert(std::is_same_v<s::subtype_reason_t<Select<Send<int, End>, Send<int, End>>,
-                                                 Select<Send<int, End>, Send<long, End>>>,
-                             s::SubtypeRejection<mismatch::payload, int, long>>);
-static_assert(std::is_same_v<s::subtype_reason_t<Continue, End>, s::SubtypeRejection<mismatch::ill_formed, Continue, void>>);
-static_assert(std::is_same_v<s::subtype_reason_t<End, Loop<End>>, s::SubtypeRejection<mismatch::ill_formed, void, Loop<End>>>);
+static_assert(
+    std::is_same_v<s::subtype_reason_t<Select<Send<int, End>, Send<int, End>>, Select<Send<int, End>, Send<long, End>>>,
+                   s::SubtypeRejection<mismatch::payload, int, long>>);
+static_assert(
+    std::is_same_v<s::subtype_reason_t<Continue, End>, s::SubtypeRejection<mismatch::ill_formed, Continue, void>>);
+static_assert(
+    std::is_same_v<s::subtype_reason_t<End, Loop<End>>, s::SubtypeRejection<mismatch::ill_formed, void, Loop<End>>>);
 static_assert(std::is_same_v<s::subtype_reason_t<Offer<Sender<Alice>, End>, Offer<End>>,
                              s::SubtypeRejection<mismatch::annotation, Offer<Sender<Alice>, End>, Offer<End>>>);
 static_assert(s::SubtypeRejection<mismatch::payload, int, long>::description == tr::mismatch_name(mismatch::payload));
@@ -312,7 +314,8 @@ static_assert(s::is_subtype_sync_v<s::dual_of_t<DS2>, s::dual_of_t<DS1>>);
 static_assert(s::is_subtype_sync_v<s::dual_of_t<DO2>, s::dual_of_t<DO1>>);
 using DLoopS1 = Loop<Send<int, Select<Send<PingReq, Continue>, Send<StopReq, End>>>>;
 using DLoopS2 = Loop<Send<int, Select<Send<PingReq, Continue>, Send<StopReq, End>, Send<int, End>>>>;
-static_assert(s::is_subtype_sync_v<DLoopS1, DLoopS2> && s::is_subtype_sync_v<s::dual_of_t<DLoopS2>, s::dual_of_t<DLoopS1>>);
+static_assert(s::is_subtype_sync_v<DLoopS1, DLoopS2>
+              && s::is_subtype_sync_v<s::dual_of_t<DLoopS2>, s::dual_of_t<DLoopS1>>);
 
 // Exit preservation is not closed under duality.  The loop that never
 // picks its exit does not refine the loop that can, and the dual pair
@@ -322,7 +325,8 @@ static_assert(s::is_subtype_sync_v<DLoopS1, DLoopS2> && s::is_subtype_sync_v<s::
 using NeverStops = Loop<Send<int, Select<Send<PingReq, Continue>>>>;
 static_assert(s::subtype_mismatch_v<NeverStops, DLoopS1> == tr::mismatch::loses_termination);
 static_assert(s::is_subtype_sync_v<s::dual_of_t<DLoopS1>, s::dual_of_t<NeverStops>>);
-static_assert(!s::CompatibleServer<NeverStops, s::dual_of_t<DLoopS1>> && !s::CompatibleClient<s::dual_of_t<DLoopS1>, NeverStops>);
+static_assert(!s::CompatibleServer<NeverStops, s::dual_of_t<DLoopS1>>
+              && !s::CompatibleClient<s::dual_of_t<DLoopS1>, NeverStops>);
 
 // The asynchronous relation reads exit preservation on its derivation.
 // The eager loop sends before it receives and never stops.  The bounded
@@ -385,9 +389,11 @@ static_assert(!s::is_payload_subsort_v<Tagged<int, tags::source::Sanitized>,
 
 static_assert(s::is_payload_subsort_v<Refined<::fixy::positive, int>, Refined<::fixy::non_negative, int>>);
 static_assert(!s::is_payload_subsort_v<Refined<::fixy::non_negative, int>, Refined<::fixy::positive, int>>);
-static_assert(s::is_payload_subsort_v<Refined<::fixy::power_of_two, std::size_t>, Refined<::fixy::non_zero, std::size_t>>);
+static_assert(
+    s::is_payload_subsort_v<Refined<::fixy::power_of_two, std::size_t>, Refined<::fixy::non_zero, std::size_t>>);
 static_assert(!s::is_payload_subsort_v<Refined<::fixy::non_zero, int>, Refined<::fixy::non_negative, int>>);
-static_assert(s::is_payload_subsort_v<Refined<::fixy::bounded_above<8u>, unsigned>, Refined<::fixy::bounded_above<16u>, unsigned>>);
+static_assert(s::is_payload_subsort_v<Refined<::fixy::bounded_above<8u>, unsigned>,
+                                      Refined<::fixy::bounded_above<16u>, unsigned>>);
 static_assert(s::is_payload_subsort_v<Refined<::fixy::in_range<10, 20>, int>, Refined<::fixy::in_range<0, 100>, int>>);
 static_assert(s::is_payload_subsort_v<Refined<::fixy::aligned<64>, void*>, Refined<::fixy::aligned<8>, void*>>);
 static_assert(s::is_payload_subsort_v<Refined<::fixy::positive, int*>, Refined<::fixy::non_null, int*>>,
@@ -470,8 +476,9 @@ static_assert(s::is_subtype_sync_v<Select<Send<projected::HelloBob, End>>, proje
               "an output choice of the subtype can drop a label");
 static_assert(s::is_subtype_sync_v<Select<Send<projected::ByeBob, End>>, projected::Menu>,
               "a keyed choice pairs by label, so a choice that keeps only the second label refines");
-static_assert(s::is_subtype_sync_v<Select<Send<projected::ByeBob, End>, Send<projected::HelloBob, End>>, projected::Menu>,
-              "a keyed choice with its labels in another order is the same choice");
+static_assert(
+    s::is_subtype_sync_v<Select<Send<projected::ByeBob, End>, Send<projected::HelloBob, End>>, projected::Menu>,
+    "a keyed choice with its labels in another order is the same choice");
 static_assert(s::is_subtype_sync_v<projected::Inbox, Offer<s::Sender<Bob>, Recv<projected::HelloBob, End>>>,
               "an input choice of the subtype can add a label");
 static_assert(s::is_subtype_sync_v<projected::Inbox, Offer<s::Sender<Bob>, Recv<projected::ByeBob, End>>>,
@@ -479,11 +486,11 @@ static_assert(s::is_subtype_sync_v<projected::Inbox, Offer<s::Sender<Bob>, Recv<
 static_assert(s::subtype_mismatch_v<Offer<s::Sender<Bob>, Recv<projected::ByeBob, End>>, projected::Inbox>
                   == tr::mismatch::label_set,
               "an input choice of the subtype receives each label of the supertype");
-static_assert(s::subtype_mismatch_v<projected::Inbox,
-                                    Offer<s::Sender<Alice>, Recv<projected::HelloBob, End>,
-                                          Recv<projected::ByeBob, End>>>
-                  == tr::mismatch::annotation,
-              "the sender of an input choice is compared for identity");
+static_assert(
+    s::subtype_mismatch_v<projected::Inbox,
+                          Offer<s::Sender<Alice>, Recv<projected::HelloBob, End>, Recv<projected::ByeBob, End>>>
+        == tr::mismatch::annotation,
+    "the sender of an input choice is compared for identity");
 
 // A keyed step is a choice with one branch: p⊕q:m(B) and p&q:m(B) of
 // Definition 4.9 of the crash-stop paper.  So a keyed Send pairs with a
@@ -503,10 +510,10 @@ static_assert(s::subtype_mismatch_v<Recv<projected::RetryBob, End>, projected::I
 static_assert(s::subtype_mismatch_v<Send<projected::RetryBob, End>, projected::Menu> == tr::mismatch::label_set
                   && s::subtype_mismatch_v<projected::Menu, Send<projected::RetryBob, End>> == tr::mismatch::label_set,
               "a keyed Send of a label the Select does not name is refused both ways");
-static_assert(s::equivalent_sync_v<Send<projected::HelloBob, End>, Select<Send<projected::HelloBob, End>>>
-                  && s::equivalent_sync_v<Recv<projected::HelloBob, End>,
-                                          Offer<s::Sender<Bob>, Recv<projected::HelloBob, End>>>,
-              "a keyed step and the choice of its one branch are one type");
+static_assert(
+    s::equivalent_sync_v<Send<projected::HelloBob, End>, Select<Send<projected::HelloBob, End>>>
+        && s::equivalent_sync_v<Recv<projected::HelloBob, End>, Offer<s::Sender<Bob>, Recv<projected::HelloBob, End>>>,
+    "a keyed step and the choice of its one branch are one type");
 static_assert(s::subtype_mismatch_v<Offer<Recv<projected::HelloBob, End>>, Recv<projected::HelloBob, End>>
                   == tr::mismatch::annotation,
               "a keyed Recv of a message from Bob is the Offer that Bob signals");
@@ -618,21 +625,23 @@ consteval std::meta::info generate(lcg& random, std::size_t depth, std::size_t l
     }
     switch (random.below(6)) {
         case 0:
-            return std::meta::substitute(send_shape, {ladder[random.below(ladder.size())],
-                                                      generate(random, depth - 1, loops, true)});
+            return std::meta::substitute(
+                send_shape, {ladder[random.below(ladder.size())], generate(random, depth - 1, loops, true)});
         case 1:
-            return std::meta::substitute(recv_shape, {ladder[random.below(ladder.size())],
-                                                      generate(random, depth - 1, loops, true)});
+            return std::meta::substitute(
+                recv_shape, {ladder[random.below(ladder.size())], generate(random, depth - 1, loops, true)});
         case 2: {
             std::vector<std::meta::info> branches;
             const std::size_t count = 1 + random.below(2);
-            for (std::size_t index = 0; index < count; ++index) branches.push_back(generate(random, depth - 1, loops, true));
+            for (std::size_t index = 0; index < count; ++index)
+                branches.push_back(generate(random, depth - 1, loops, true));
             return std::meta::substitute(select_shape, branches);
         }
         case 3: {
             std::vector<std::meta::info> branches;
             const std::size_t count = 1 + random.below(2);
-            for (std::size_t index = 0; index < count; ++index) branches.push_back(generate(random, depth - 1, loops, true));
+            for (std::size_t index = 0; index < count; ++index)
+                branches.push_back(generate(random, depth - 1, loops, true));
             return std::meta::substitute(offer_shape, branches);
         }
         case 4:
@@ -665,13 +674,15 @@ consteval std::meta::info widen(std::meta::info type) {
     if (shape == select_shape) {
         // The supertype gains a copy of the last branch.  A copy adds no
         // exit that the subtype lacks, so the pair keeps its exits.
-        for (std::meta::info& branch : arguments) branch = widen(branch);
+        for (std::meta::info& branch : arguments)
+            branch = widen(branch);
         arguments.push_back(arguments.back());
         return std::meta::substitute(select_shape, arguments);
     }
     if (shape == offer_shape) {
         if (arguments.size() > 1) arguments.pop_back();
-        for (std::meta::info& branch : arguments) branch = widen(branch);
+        for (std::meta::info& branch : arguments)
+            branch = widen(branch);
         return std::meta::substitute(offer_shape, arguments);
     }
     if (shape == loop_shape) return std::meta::substitute(loop_shape, {widen(arguments[0])});
@@ -685,12 +696,11 @@ consteval bool sync(std::meta::info sub, std::meta::info super) {
 // up to exits.  This part is closed under duality.
 consteval bool safe(std::meta::info sub, std::meta::info super) {
     return sync(sub, super)
-           || std::meta::extract<tr::mismatch>(std::meta::substitute(^^s::subtype_mismatch_v, {sub, super}))
-                  == tr::mismatch::loses_termination;
+        || std::meta::extract<tr::mismatch>(std::meta::substitute(^^s::subtype_mismatch_v, {sub, super}))
+               == tr::mismatch::loses_termination;
 }
 consteval bool async_at_one(std::meta::info sub, std::meta::info super) {
-    return std::meta::extract<bool>(
-        std::meta::substitute(^^s::is_subtype_async_v, {sub, super, ^^Slots<1>}));
+    return std::meta::extract<bool>(std::meta::substitute(^^s::is_subtype_async_v, {sub, super, ^^Slots<1>}));
 }
 consteval std::meta::info dual(std::meta::info type) {
     return std::meta::dealias(std::meta::substitute(^^s::dual_of_t, {type}));
@@ -752,7 +762,8 @@ static_assert(generated.dual_closed == generated_chains,
               "the relation up to exits is closed under duality on each chain");
 static_assert(generated.involutive == generated_chains, "duality is an involution");
 static_assert(generated.dual_well_formed == generated_chains, "the dual of a well-formed protocol is well-formed");
-static_assert(generated.async_contains_sync == generated_chains, "the asynchronous relation holds each synchronous pair");
+static_assert(generated.async_contains_sync == generated_chains,
+              "the asynchronous relation holds each synchronous pair");
 static_assert(generated.pair_closure == generated.pairs,
               "on every generated pair, T refines U up to exits exactly when the dual of U refines the dual of T up "
               "to exits");
@@ -765,7 +776,7 @@ int main() {
     // The generated counts reach the program, so a law that no longer
     // holds shows here as well as in the build.
     const bool holds = generated.reflexive == generated.chains && generated.transitive == generated.chains
-                       && generated.dual_closed == generated.chains && generated.pair_closure == generated.pairs;
+                    && generated.dual_closed == generated.chains && generated.pair_closure == generated.pairs;
     if (!holds) {
         std::fprintf(stderr, "test_session_subtype: a generated law does not hold\n");
         return 1;

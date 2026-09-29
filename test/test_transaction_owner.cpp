@@ -149,9 +149,8 @@ void job_runs_on_the_caller_without_a_stage() {
 
 std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
     std::thread::id ran_on{};
-    background.run_on_publish_stage([&ran_on](crucible::BackgroundThread::PublishStage const&) noexcept {
-        ran_on = std::this_thread::get_id();
-    });
+    background.run_on_publish_stage(
+        [&ran_on](crucible::BackgroundThread::PublishStage const&) noexcept { ran_on = std::this_thread::get_id(); });
     return ran_on;
 }
 

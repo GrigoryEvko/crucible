@@ -66,9 +66,9 @@ using atoms_row_t = typename detail::atoms_row_<Atoms...>::type;
 // A context admits a pack when each member is an atom that lifts to a row,
 // and the context admits the union of those rows.
 template <typename Ctx, typename... Atoms>
-concept CtxAdmitsAtomRow = eff::IsExecCtx<Ctx> && (::fixy::atom::IsAtom<std::remove_cvref_t<Atoms>> && ...)
-                        && (eff::LiftsToRow<std::remove_cvref_t<Atoms>> && ...)
-                        && eff::CtxAdmits<Ctx, atoms_row_t<Atoms...>>;
+concept CtxAdmitsAtomRow =
+    eff::IsExecCtx<Ctx> && (::fixy::atom::IsAtom<std::remove_cvref_t<Atoms>> && ...)
+    && (eff::LiftsToRow<std::remove_cvref_t<Atoms>> && ...) && eff::CtxAdmits<Ctx, atoms_row_t<Atoms...>>;
 
 // True when A is an atom of the class template that Template reflects.
 template <typename A, std::meta::info Template>
@@ -183,8 +183,8 @@ template <std::meta::info Ns, auto Predicate>
 namespace fixy::atom_pack::detail::atom_pack_self_test {
 
 template <typename T>
-struct probe_atom final : ::fixy::atom::lifting_atom_of<::fixy::Axis::SyscallSurface,
-                                                         eff::Row<eff::Effect::IO, eff::Effect::Block>> {};
+struct probe_atom final
+    : ::fixy::atom::lifting_atom_of<::fixy::Axis::SyscallSurface, eff::Row<eff::Effect::IO, eff::Effect::Block>> {};
 struct probe_flag final : ::fixy::atom::lifting_atom_of<::fixy::Axis::SyscallSurface, eff::Row<eff::Effect::IO>> {};
 struct probe_tag_a final {};
 struct probe_tag_b final {};

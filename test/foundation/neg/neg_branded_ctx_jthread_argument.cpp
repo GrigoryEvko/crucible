@@ -14,8 +14,8 @@
 namespace {
 struct Brand {};
 
-using BrandedCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::BrandedFg<Brand>,
-                                                  ::foundation::effects::Row<>>;
+using BrandedCtx =
+    ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::BrandedFg<Brand>, ::foundation::effects::Row<>>;
 
 void use_context(BrandedCtx const& fg) noexcept { static_cast<void>(fg); }
 }  // namespace

@@ -261,8 +261,7 @@ struct TransferFiles final {
         return 1;
     }
 
-    const auto moved =
-        fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source, files.destination, kPayloadBytes);
+    const auto moved = fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source, files.destination, kPayloadBytes);
     if (!moved) {
         // copy_file_range refuses some filesystem pairs outright, and
         // which pairs it refuses has changed across kernels.

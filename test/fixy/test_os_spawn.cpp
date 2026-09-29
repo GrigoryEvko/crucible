@@ -140,24 +140,26 @@ namespace {
     static std::array<int, kCount> storage{};
     storage.fill(0);
 
-    auto region = fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), kCount,
-                                                            perm::mint_permission_root<RegionWhole>());
+    auto region =
+        fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
 
     // The body takes its shard by mutable reference, so the shard stays in
     // the tuple and recombine can consume it.
-    auto whole = spawn::mint_parallel_for<kShards>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
-        for (int& element : shard) {
-            element += 1;
-        }
-    });
+    auto whole =
+        spawn::mint_parallel_for<kShards>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
+            for (int& element : shard) {
+                element += 1;
+            }
+        });
 
     long sum = 0;
     for (const int element : storage) {
         sum += element;
     }
     if (sum != static_cast<long>(kCount)) {
-        std::fprintf(stderr, "mint_parallel_for: visited sum is %ld, want %zu — a shard was skipped or "
-                             "visited twice\n",
+        std::fprintf(stderr,
+                     "mint_parallel_for: visited sum is %ld, want %zu — a shard was skipped or "
+                     "visited twice\n",
                      sum, kCount);
         return 1;
     }
@@ -186,8 +188,8 @@ namespace {
     static std::array<int, kCount> storage{};
     storage.fill(7);
 
-    auto region = fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), kCount,
-                                                            perm::mint_permission_root<RegionWhole>());
+    auto region =
+        fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
     auto whole = spawn::mint_parallel_for<1>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
         for (int& element : shard) {
             element = 9;
@@ -256,8 +258,9 @@ struct ShardThreads {
         return 1;
     }
     if (record.distinct_threads() != 1 || !record.ran_on(std::this_thread::get_id())) {
-        std::fprintf(stderr, "mint_parallel_for: a core-resident budget must run every shard on the calling thread, "
-                             "but the shards ran on %zu threads\n",
+        std::fprintf(stderr,
+                     "mint_parallel_for: a core-resident budget must run every shard on the calling thread, "
+                     "but the shards ran on %zu threads\n",
                      record.distinct_threads());
         return 1;
     }
@@ -303,8 +306,9 @@ struct ShardThreads {
     }
     const std::size_t want_threads = decision.is_parallel() ? std::min<std::size_t>(16, decision.factor) : 1;
     if (record.distinct_threads() > want_threads || want_threads >= 16) {
-        std::fprintf(stderr, "mint_parallel_for: an L3-resident run used %zu threads for 16 shards, and the rule "
-                             "allows %zu\n",
+        std::fprintf(stderr,
+                     "mint_parallel_for: an L3-resident run used %zu threads for 16 shards, and the rule "
+                     "allows %zu\n",
                      record.distinct_threads(), want_threads);
         return 1;
     }

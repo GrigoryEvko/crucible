@@ -86,7 +86,7 @@ static_assert(!std::is_move_assignable_v<AtomicSnapshot<TestPayload>>);
 
 // A trivially copyable class that refuses a lifetime start over bytes is
 // no snapshot value, because the read starts a T lifetime over a buffer.
-struct [[=::foundation::lifetime::no_start_over_bytes{}]] MarkedCount {
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] MarkedCount {
     std::uint64_t count = 0;
 };
 static_assert(std::is_trivially_copyable_v<MarkedCount> && !SnapshotValue<MarkedCount>,
@@ -297,8 +297,7 @@ void test_try_load_rejects_in_progress() {
 constexpr int kLinearityViolationSeen = 42;
 constexpr int kOtherViolationSeen = 43;
 
-void exit_on_linearity_violation(::foundation::diag::Category category, std::string_view,
-                                 std::string_view) noexcept {
+void exit_on_linearity_violation(::foundation::diag::Category category, std::string_view, std::string_view) noexcept {
     std::_Exit(category == ::foundation::diag::Category::LinearityViolation ? kLinearityViolationSeen
                                                                             : kOtherViolationSeen);
 }
@@ -312,7 +311,8 @@ void test_two_writers_end_through_the_catalog() {
         (void)::foundation::diag::set_violation_sink(&exit_on_linearity_violation);
         AtomicSnapshot<TestPayload> snap{TestPayload::from(0)};
         auto hammer = [&snap] {
-            for (std::uint64_t i = 1; i < 50'000'000; ++i) snap.publish(TestPayload::from(i));
+            for (std::uint64_t i = 1; i < 50000000; ++i)
+                snap.publish(TestPayload::from(i));
         };
         std::jthread first(hammer);
         std::jthread second(hammer);

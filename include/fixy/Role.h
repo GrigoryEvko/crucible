@@ -100,16 +100,16 @@ static_assert(::fixy::IsRoleFor<::fixy::role::CtCrypto, int>);
 
 // The binary roles pass the same gate with their pack spelled.
 static_assert(::fixy::IsAccepted<int, ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>);
-static_assert(
-    ::fixy::IsAccepted<int, ::fixy::atom::with_io, ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
+static_assert(::fixy::IsAccepted<int, ::fixy::atom::with_io,
+                                 ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
 
 // Why IoFunction and BgWorker pin as_public: the same pack without it
 // is a classified value on an observable channel, and the corpus
 // refuses it.
 static_assert(!::fixy::IsAccepted<int, ::fixy::atom::with_io>,
               "classified_io_without_declassify refuses an IO row on the strict Security pole");
-static_assert(!::fixy::IsAccepted<int, ::fixy::atom::with<::foundation::effects::Effect::Bg,
-                                                            ::foundation::effects::Effect::Alloc>>,
+static_assert(!::fixy::IsAccepted<
+                  int, ::fixy::atom::with<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>,
               "classified_bg_without_declassify refuses a Bg row on the strict Security pole");
 
 // A role is the binding it spells, not a lookalike.
@@ -131,8 +131,9 @@ static_assert(std::is_same_v<::fixy::role::PureCopy<int>::grade_on<Axis::Refinem
                              typename ::fixy::axis_traits<Axis::Refinement>::strict>);
 static_assert(std::is_same_v<::fixy::role::IoFunction<int>::grade_on<Axis::Effect>, ::fixy::atom::with_io>);
 static_assert(std::is_same_v<::fixy::role::IoFunction<int>::grade_on<Axis::Security>, ::fixy::atom::as_public>);
-static_assert(std::is_same_v<::fixy::role::BgWorker<int>::grade_on<Axis::Effect>,
-                             ::fixy::atom::with<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>);
+static_assert(
+    std::is_same_v<::fixy::role::BgWorker<int>::grade_on<Axis::Effect>,
+                   ::fixy::atom::with<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>);
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Effect>, ::fixy::atom::with<>>);
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>, ::fixy::atom::constant_time>);
 static_assert(::fixy::atom::is_constant_time_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>>,
@@ -143,12 +144,12 @@ static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Reentra
                              typename ::fixy::axis_traits<Axis::Reentrancy>::strict>);
 
 // The policy is recoverable from the type.
-static_assert(std::is_same_v<::fixy::role::PublicEmit<int, ::fixy::tags::secret_policy::WireSerialize>::grade_on<
-                                 Axis::Security>,
-                             ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
-static_assert(std::is_same_v<::fixy::role::SecretConsumer<int, ::fixy::tags::secret_policy::AuditedLogging>::grade_on<
-                                 Axis::Security>,
-                             ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>);
+static_assert(
+    std::is_same_v<::fixy::role::PublicEmit<int, ::fixy::tags::secret_policy::WireSerialize>::grade_on<Axis::Security>,
+                   ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
+static_assert(std::is_same_v<
+              ::fixy::role::SecretConsumer<int, ::fixy::tags::secret_policy::AuditedLogging>::grade_on<Axis::Security>,
+              ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>);
 
 // ---------------------------------------------------------------------
 // Two roles must never share a federation cache slot.

@@ -20,6 +20,6 @@ inline constexpr ::foundation::algebra::transition::subsort_axiom long_to_int{.w
 int main() {
     return ::fixy::session::is_subtype_sync_v<::fixy::session::Send<long, ::fixy::session::End>,
                                               ::fixy::session::Send<int, ::fixy::session::End>>
-               ? 0
-               : 1;
+             ? 0
+             : 1;
 }

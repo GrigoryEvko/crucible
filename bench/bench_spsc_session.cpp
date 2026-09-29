@@ -109,7 +109,8 @@ struct Rig {
     constexpr const char* name = "round-trip: typed send + bare pop";
     Rig<1> rig;
     auto& [producer, consumer] = rig.handles;
-    std::optional session{cc::mint_substrate_session<Channel<1>, cc::Direction::Producer>(kForeground, std::move(producer))};
+    std::optional session{
+        cc::mint_substrate_session<Channel<1>, cc::Direction::Producer>(kForeground, std::move(producer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
         session.emplace(std::move(*session).send(++item, try_push_item));
@@ -123,7 +124,8 @@ struct Rig {
     constexpr const char* name = "round-trip: bare push + typed recv";
     Rig<2> rig;
     auto& [producer, consumer] = rig.handles;
-    std::optional session{cc::mint_substrate_session<Channel<2>, cc::Direction::Consumer>(kForeground, std::move(consumer))};
+    std::optional session{
+        cc::mint_substrate_session<Channel<2>, cc::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
         if (!producer.try_push(++item)) [[unlikely]]
@@ -140,8 +142,10 @@ struct Rig {
     constexpr const char* name = "round-trip: typed send + typed recv";
     Rig<3> rig;
     auto& [producer, consumer] = rig.handles;
-    std::optional sender{cc::mint_substrate_session<Channel<3>, cc::Direction::Producer>(kForeground, std::move(producer))};
-    std::optional receiver{cc::mint_substrate_session<Channel<3>, cc::Direction::Consumer>(kForeground, std::move(consumer))};
+    std::optional sender{
+        cc::mint_substrate_session<Channel<3>, cc::Direction::Producer>(kForeground, std::move(producer))};
+    std::optional receiver{
+        cc::mint_substrate_session<Channel<3>, cc::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
     auto report = bench::run(name, [&] {
         sender.emplace(std::move(*sender).send(++item, try_push_item));

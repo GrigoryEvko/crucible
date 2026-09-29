@@ -161,7 +161,8 @@ void attack_select_fresher_grid() {
                    "the result is at or above both operands");
             // The reversed call must agree on the payload.
             auto const reversed = fixy::select_fresher(b, a);
-            expect(reversed.has_value() && reversed->peek() == result->peek() && reversed->version() == result->version(),
+            expect(reversed.has_value() && reversed->peek() == result->peek()
+                       && reversed->version() == result->version(),
                    "the order of the operands does not change the answer");
         }
     }
@@ -187,7 +188,8 @@ void attack_is_at_least_matches_the_numeric_order() {
     EpochVersioned<int> const newest{1, stamp_at(kMax, kMax)};
     expect(newest.is_at_least(EpochBound{kMax}, GenerationBound{kMax}), "the top passes the top gate");
     EpochVersioned<int> const genesis = EpochVersioned<int>::at_genesis(1);
-    expect(genesis.is_at_least(EpochBound{0}, GenerationBound{0}) && !genesis.is_at_least(EpochBound{0}, GenerationBound{1}),
+    expect(genesis.is_at_least(EpochBound{0}, GenerationBound{0})
+               && !genesis.is_at_least(EpochBound{0}, GenerationBound{1}),
            "genesis passes the genesis gate and no other");
 }
 
@@ -249,8 +251,10 @@ void attack_budget_edges() {
     std::uint64_t const s = g_seed;
     Budgeted<int> const unmeasured{};
     expect(unmeasured.is_unbounded(), "the default is unbounded");
-    expect(!unmeasured.satisfies(BitsBudgetBound{kMax - 1}, PeakBytesBound{kMax}), "the default fails a finite bits gate");
-    expect(!unmeasured.satisfies(BitsBudgetBound{kMax}, PeakBytesBound{kMax - 1}), "the default fails a finite peak gate");
+    expect(!unmeasured.satisfies(BitsBudgetBound{kMax - 1}, PeakBytesBound{kMax}),
+           "the default fails a finite bits gate");
+    expect(!unmeasured.satisfies(BitsBudgetBound{kMax}, PeakBytesBound{kMax - 1}),
+           "the default fails a finite peak gate");
     // A gate at the top of both axes is no gate, and admits anything.
     expect(unmeasured.satisfies(BitsBudgetBound{kMax}, PeakBytesBound{kMax}),
            "a gate at the top admits the unbounded claim");
@@ -259,7 +263,8 @@ void attack_budget_edges() {
     Budgeted<int> const small{2, grant(s * 2, s * 2)};
     Budgeted<int> const summed = near_top.accumulate(small);
     expect(summed.is_unbounded(), "a sum past the top clamps to unbounded");
-    expect(!summed.satisfies(BitsBudgetBound{kMax - 1}, PeakBytesBound{kMax - 1}), "a clamped sum fails every finite gate");
+    expect(!summed.satisfies(BitsBudgetBound{kMax - 1}, PeakBytesBound{kMax - 1}),
+           "a clamped sum fails every finite gate");
 
     // The two compositions commute and associate on the grade.
     Budgeted<int> const a{1, grant(s, s * 5)};
@@ -389,13 +394,11 @@ struct FriendDefaultedEquality {
     friend bool operator==(FriendDefaultedEquality const&, FriendDefaultedEquality const&) = default;
 };
 template <typename T>
-concept can_select_copies = requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) {
-    fixy::select_fresher(a, b);
-};
+concept can_select_copies =
+    requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) { fixy::select_fresher(a, b); };
 template <typename T>
-concept can_select_moves = requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) {
-    fixy::select_fresher(std::move(a), std::move(b));
-};
+concept can_select_moves =
+    requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) { fixy::select_fresher(std::move(a), std::move(b)); };
 static_assert(can_select_copies<NoEquality> && can_select_moves<NoEquality>,
               "a payload with no equality compares by its members");
 static_assert(can_select_copies<std::string> && can_select_moves<std::string>);

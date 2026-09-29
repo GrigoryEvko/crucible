@@ -208,7 +208,7 @@ private:
     // Every thread reads the counter, and the writer writes both it and
     // the payload.  Each takes a cache line of its own so a publish
     // does not invalidate the other's line.
-    alignas(64) ::fixy::AtomicMonotonic<std::uint64_t> seq_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<std::uint64_t> seq_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 
     alignas(64) std::array<std::byte, sizeof(T)> storage_{};
 };

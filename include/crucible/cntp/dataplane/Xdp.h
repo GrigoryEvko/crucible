@@ -120,7 +120,7 @@ using DeclaredBpfMap = ::fixy::Tagged<BpfMapSpec, ::fixy::tags::source::BpfMap>;
 
 template <class Ctx>
 concept CtxFitsXdpMint = ::foundation::effects::IsExecCtx<Ctx>
-                         && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+                      && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
 template <class T>
 concept BpfScalar = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;

@@ -17,10 +17,10 @@ struct Region {
 struct Wire {
     [[no_unique_address]] ::fixy::session::MoveOnlyResource one_holder{};
 };
-using InLoop = ::fixy::session::SessionHandle<
-    ::fixy::session::Send<int, ::fixy::session::Continue>, Wire,
-    ::fixy::session::Loop<::fixy::session::Send<int, ::fixy::session::Continue>>, ::fixy::session::check::Enforced,
-    ::foundation::permissions::PermSet<Region>>;
+using InLoop =
+    ::fixy::session::SessionHandle<::fixy::session::Send<int, ::fixy::session::Continue>, Wire,
+                                   ::fixy::session::Loop<::fixy::session::Send<int, ::fixy::session::Continue>>,
+                                   ::fixy::session::check::Enforced, ::foundation::permissions::PermSet<Region>>;
 using Carrier = ::fixy::session::Send<InLoop, ::fixy::session::End>;
 }  // namespace neg_sess_payload_bare_endpoint_mint_types
 

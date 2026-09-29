@@ -123,7 +123,8 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
     std::atomic<int> refusals{0};
     auto observe = [&] {
         const BgCtx ctx{eff::testing::bg()};
-        while (!go.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
+        while (!go.load(std::memory_order_acquire))
+            CRUCIBLE_SPIN_PAUSE;
         auto head = channel.mint_established_session(ctx);
         if (head.has_value()) {
             sessions.fetch_add(1, std::memory_order_acq_rel);

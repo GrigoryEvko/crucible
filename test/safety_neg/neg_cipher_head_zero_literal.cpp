@@ -18,7 +18,8 @@
 #include <crucible/Types.h>
 
 int main() {
-    constexpr crucible::ValidCipherHead bad = ::fixy::mint_refined<::fixy::non_zero>(crucible::ContentHash{uint64_t{0}});
+    constexpr crucible::ValidCipherHead bad =
+        ::fixy::mint_refined<::fixy::non_zero>(crucible::ContentHash{uint64_t{0}});
     (void)bad;
     return 0;
 }

@@ -12,9 +12,9 @@ int main() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     auto fd = cntp::admit_socket_fd(3).value();
     cntp::AuthenticatedMtlsPeer peer{};
-    auto config = cntp::mint_quic_config(cntp::admit_quic_stream_limit(2).value(),
-                                         cntp::admit_quic_datagram_bytes(1200).value(),
-                                         cntp::mint_cc_choice<cntp::CcAlgorithm::Bbr3, cntp::LinkClass::CrossDatacenter>());
+    auto config =
+        cntp::mint_quic_config(cntp::admit_quic_stream_limit(2).value(), cntp::admit_quic_datagram_bytes(1200).value(),
+                               cntp::mint_cc_choice<cntp::CcAlgorithm::Bbr3, cntp::LinkClass::CrossDatacenter>());
     auto minted = cntp::mint_quic_connection<4>(init, fd, peer, config);
     (void)minted;
     cntp::QuicConnection<4> forged{fd, peer, config};

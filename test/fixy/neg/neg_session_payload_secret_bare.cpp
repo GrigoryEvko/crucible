@@ -13,7 +13,7 @@
 namespace sess = ::fixy::session;
 
 namespace {
-struct [[=sess::constant_time_value{}]] AuthTag {
+struct[[= sess::constant_time_value{}]] AuthTag {
     std::byte bytes[16]{};
 };
 struct UnadmittedPolicy : ::fixy::tags::secret_policy::secret_policy_base {};

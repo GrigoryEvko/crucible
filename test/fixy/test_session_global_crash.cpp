@@ -40,11 +40,12 @@ struct Report {};
 struct Fatal {};
 struct Log {};
 
-using Logging = g::Msg<L, I, Trigger, void,
-                       g::Comm<C, I,
-                               g::Branch<Read, void,
-                                         g::Msg<I, L, Read, void, g::Msg<L, I, Report, Log, g::Msg<I, C, Report, Log, g::End>>>>,
-                               g::Branch<g::CrashLabel, void, g::Msg<I, L, Fatal, void, g::End>>>>;
+using Logging =
+    g::Msg<L, I, Trigger, void,
+           g::Comm<C, I,
+                   g::Branch<Read, void,
+                             g::Msg<I, L, Read, void, g::Msg<L, I, Report, Log, g::Msg<I, C, Report, Log, g::End>>>>,
+                   g::Branch<g::CrashLabel, void, g::Msg<I, L, Fatal, void, g::End>>>>;
 using LoggerAndInterface = s::ReliableSet<L, I>;
 
 static_assert(g::is_global_well_formed_v<Logging>);
@@ -57,20 +58,24 @@ static_assert(std::is_same_v<g::crashed_roles_t<Logging>, g::Roles<>>);
 using ProjC = s::project_crash_t<Logging, C, LoggerAndInterface>;
 using ProjL = s::project_crash_t<Logging, L, LoggerAndInterface>;
 using ProjI = s::project_crash_t<Logging, I, LoggerAndInterface>;
-static_assert(std::is_same_v<ProjC::local, s::Send<s::PeerMsg<I, Read, void>, s::Recv<s::PeerMsg<I, Report, Log>, s::End>>>);
-static_assert(std::is_same_v<ProjL::local,
-                             s::Send<s::PeerMsg<I, Trigger, void>,
-                                     s::Offer<s::Sender<I>,
-                                              s::Recv<s::PeerMsg<I, Read, void>, s::Send<s::PeerMsg<I, Report, Log>, s::End>>,
-                                              s::Recv<s::PeerMsg<I, Fatal, void>, s::End>>>>);
-static_assert(std::is_same_v<
-              ProjI::local,
-              s::Recv<s::PeerMsg<L, Trigger, void>,
-                      s::Offer<s::Sender<C>,
-                               s::Recv<s::PeerMsg<C, Read, void>,
-                                       s::Send<s::PeerMsg<L, Read, void>,
-                                               s::Recv<s::PeerMsg<L, Report, Log>, s::Send<s::PeerMsg<C, Report, Log>, s::End>>>>,
-                               s::Recv<s::PeerMsg<C, g::CrashLabel, void>, s::Send<s::PeerMsg<L, Fatal, void>, s::End>>>>>);
+static_assert(
+    std::is_same_v<ProjC::local, s::Send<s::PeerMsg<I, Read, void>, s::Recv<s::PeerMsg<I, Report, Log>, s::End>>>);
+static_assert(
+    std::is_same_v<
+        ProjL::local,
+        s::Send<s::PeerMsg<I, Trigger, void>,
+                s::Offer<s::Sender<I>, s::Recv<s::PeerMsg<I, Read, void>, s::Send<s::PeerMsg<I, Report, Log>, s::End>>,
+                         s::Recv<s::PeerMsg<I, Fatal, void>, s::End>>>>);
+static_assert(
+    std::is_same_v<
+        ProjI::local,
+        s::Recv<
+            s::PeerMsg<L, Trigger, void>,
+            s::Offer<s::Sender<C>,
+                     s::Recv<s::PeerMsg<C, Read, void>,
+                             s::Send<s::PeerMsg<L, Read, void>,
+                                     s::Recv<s::PeerMsg<L, Report, Log>, s::Send<s::PeerMsg<C, Report, Log>, s::End>>>>,
+                     s::Recv<s::PeerMsg<C, g::CrashLabel, void>, s::Send<s::PeerMsg<L, Fatal, void>, s::End>>>>>);
 static_assert(ProjC::queue::size == 0 && ProjL::queue::size == 0 && ProjI::queue::size == 0);
 static_assert(s::crash_live_by_construction_v<Logging, LoggerAndInterface>);
 
@@ -83,11 +88,13 @@ static_assert(std::is_same_v<s::project_crash_t<Logging, I, s::ReliableSet<L, I,
                              s::NotProjectable<s::projection_failure::CrashBranchFromReliableSender>>);
 // project_t counts every role reliable, and the liveness of the
 // asynchronous paper has no crash, so neither accepts the crash branch.
-static_assert(std::is_same_v<s::project_t<Logging, I>, s::NotProjectable<s::projection_failure::CrashBranchFromReliableSender>>);
+static_assert(
+    std::is_same_v<s::project_t<Logging, I>, s::NotProjectable<s::projection_failure::CrashBranchFromReliableSender>>);
 static_assert(!s::is_live_by_construction_v<Logging>);
 // The crash-free protocol G0 of section 2 projects in both theories.
-using Logging0 = g::Msg<L, I, Trigger, void,
-                        g::Msg<C, I, Read, void, g::Msg<I, L, Read, void, g::Msg<L, I, Report, Log, g::Msg<I, C, Report, Log, g::End>>>>>;
+using Logging0 = g::Msg<
+    L, I, Trigger, void,
+    g::Msg<C, I, Read, void, g::Msg<I, L, Read, void, g::Msg<L, I, Report, Log, g::Msg<I, C, Report, Log, g::End>>>>>;
 static_assert(s::is_live_by_construction_v<Logging0>);
 static_assert(s::crash_live_by_construction_v<Logging0, s::ReliableSet<L, I, C>>);
 static_assert(!s::crash_live_by_construction_v<Logging0, LoggerAndInterface>);
@@ -98,15 +105,16 @@ static_assert(!s::crash_live_by_construction_v<Logging0, LoggerAndInterface>);
 // choice until it detects the crash.  The report to the crashed C goes
 // into a lost queue.
 using LoggingWithoutC = g::remove_role_t<Logging, C>;
-static_assert(std::is_same_v<
-              LoggingWithoutC,
-              g::Msg<L, I, Trigger, void,
-                     g::EnRouteChoice<g::Crashed<C>, I, g::CrashLabel,
-                                      g::Branch<Read, void,
-                                                g::Msg<I, L, Read, void,
-                                                       g::Msg<L, I, Report, Log,
-                                                              g::Comm<I, g::Crashed<C>, g::Branch<Report, Log, g::End>>>>>,
-                                      g::Branch<g::CrashLabel, void, g::Msg<I, L, Fatal, void, g::End>>>>>);
+static_assert(
+    std::is_same_v<
+        LoggingWithoutC,
+        g::Msg<L, I, Trigger, void,
+               g::EnRouteChoice<g::Crashed<C>, I, g::CrashLabel,
+                                g::Branch<Read, void,
+                                          g::Msg<I, L, Read, void,
+                                                 g::Msg<L, I, Report, Log,
+                                                        g::Comm<I, g::Crashed<C>, g::Branch<Report, Log, g::End>>>>>,
+                                g::Branch<g::CrashLabel, void, g::Msg<I, L, Fatal, void, g::End>>>>>);
 static_assert(g::is_global_well_formed_v<LoggingWithoutC>);
 static_assert(g::is_balanced_plus_v<LoggingWithoutC>);
 static_assert(g::is_well_annotated_v<LoggingWithoutC, g::Roles<L, I>>);
@@ -143,7 +151,9 @@ struct Q {};
 struct M {};
 using Remark = g::Comm<P, Q, g::Branch<M, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>;
 using RemarkWithoutQ = g::remove_role_t<Remark, Q>;
-static_assert(std::is_same_v<RemarkWithoutQ, g::Comm<P, g::Crashed<Q>, g::Branch<M, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>);
+static_assert(
+    std::is_same_v<RemarkWithoutQ,
+                   g::Comm<P, g::Crashed<Q>, g::Branch<M, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>);
 static_assert(std::is_same_v<g::active_roles_t<RemarkWithoutQ>, g::Roles<P>>);
 static_assert(std::is_same_v<g::crashed_roles_t<RemarkWithoutQ>, g::Roles<Q>>);
 // p still sends, into a lost queue.
@@ -158,13 +168,17 @@ static_assert(g::global_fault_v<g::Msg<P, Q, g::CrashLabel, void, g::End>> == g:
 static_assert(g::global_fault_v<g::Comm<P, Q, g::Branch<M, int, g::End>, g::Branch<g::CrashLabel, int, g::End>>>
               == g::GlobalFault::CrashLabelPayload);
 static_assert(g::global_fault_v<g::Msg<g::Crashed<P>, Q, M, int, g::End>> == g::GlobalFault::MisplacedCrashAnnotation);
-static_assert(g::global_fault_v<g::Msg<P, g::Crashed<g::Crashed<Q>>, M, int, g::End>> == g::GlobalFault::MisplacedCrashAnnotation);
-static_assert(g::global_fault_v<g::EnRoute<P, g::Crashed<Q>, M, int, g::End>> == g::GlobalFault::MisplacedCrashAnnotation);
-static_assert(g::global_fault_v<g::EnRoute<P, Q, g::CrashLabel, void, g::End>> == g::GlobalFault::MisplacedCrashAnnotation);
+static_assert(g::global_fault_v<g::Msg<P, g::Crashed<g::Crashed<Q>>, M, int, g::End>>
+              == g::GlobalFault::MisplacedCrashAnnotation);
+static_assert(g::global_fault_v<g::EnRoute<P, g::Crashed<Q>, M, int, g::End>>
+              == g::GlobalFault::MisplacedCrashAnnotation);
+static_assert(g::global_fault_v<g::EnRoute<P, Q, g::CrashLabel, void, g::End>>
+              == g::GlobalFault::MisplacedCrashAnnotation);
 static_assert(g::global_fault_v<g::Comm<P, g::Crashed<Q>>> == g::GlobalFault::EmptyChoice);
 static_assert(g::global_fault_v<g::Msg<P, g::Crashed<P>, M, int, g::End>> == g::GlobalFault::SelfCommunication);
 // A role that crashed at one position and acts at another.
-static_assert(!g::is_well_annotated_v<g::Comm<P, g::Crashed<Q>, g::Branch<M, int, g::Msg<Q, P, M, int, g::End>>>, g::Roles<>>);
+static_assert(
+    !g::is_well_annotated_v<g::Comm<P, g::Crashed<Q>, g::Branch<M, int, g::Msg<Q, P, M, int, g::End>>>, g::Roles<>>);
 
 // ── A missing crash branch cannot hide ──────────────────────────────
 
@@ -179,17 +193,21 @@ static_assert(!s::crash_live_by_construction_v<HiddenInLoop, s::NoReliableRoles>
 // Behind a third role: C merges two receptions from I, and the one in
 // the crash branch has no crash branch of its own.
 using HiddenBehindMerge =
-    g::Comm<C, I, g::Branch<Read, void, g::Comm<I, L, g::Branch<Read, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>,
+    g::Comm<C, I,
+            g::Branch<Read, void, g::Comm<I, L, g::Branch<Read, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>,
             g::Branch<g::CrashLabel, void, g::Msg<I, L, Fatal, void, g::End>>>;
 static_assert(std::is_same_v<s::project_crash_t<HiddenBehindMerge, L, s::NoReliableRoles>,
                              s::NotProjectable<s::projection_failure::MissingCrashBranch>>);
 static_assert(s::projects_crash_v<HiddenBehindMerge, L, s::ReliableSet<I>> == false);
 using MergedWithCrash =
-    g::Comm<C, I, g::Branch<Read, void, g::Comm<I, L, g::Branch<Read, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>,
-            g::Branch<g::CrashLabel, void, g::Comm<I, L, g::Branch<Fatal, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>>;
+    g::Comm<C, I,
+            g::Branch<Read, void, g::Comm<I, L, g::Branch<Read, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>,
+            g::Branch<g::CrashLabel, void,
+                      g::Comm<I, L, g::Branch<Fatal, void, g::End>, g::Branch<g::CrashLabel, void, g::End>>>>;
 // L merges the two receptions into one choice with one crash branch, last.
 static_assert(std::is_same_v<s::project_crash_t<MergedWithCrash, L, s::NoReliableRoles>::local,
-                             s::Offer<s::Sender<I>, s::Recv<s::PeerMsg<I, Read, void>, s::End>, s::Recv<s::PeerMsg<I, Fatal, void>, s::End>,
+                             s::Offer<s::Sender<I>, s::Recv<s::PeerMsg<I, Read, void>, s::End>,
+                                      s::Recv<s::PeerMsg<I, Fatal, void>, s::End>,
                                       s::Recv<s::PeerMsg<I, g::CrashLabel, void>, s::End>>>);
 static_assert(s::crash_live_by_construction_v<MergedWithCrash, s::NoReliableRoles>);
 
@@ -207,14 +225,16 @@ static_assert(g::is_balanced_v<g::remove_role_t<DetectEachTime, P>>);
 
 struct Text {};
 struct Answer {};
-using Example = g::Comm<P, Q, g::Branch<M, int, g::Comm<Q, P, g::Branch<Answer, int, g::End>, g::Branch<g::CrashLabel, void, g::End>>>,
-                        g::Branch<g::CrashLabel, void, g::End>>;
+using Example =
+    g::Comm<P, Q,
+            g::Branch<M, int, g::Comm<Q, P, g::Branch<Answer, int, g::End>, g::Branch<g::CrashLabel, void, g::End>>>,
+            g::Branch<g::CrashLabel, void, g::End>>;
 static_assert(s::crash_live_by_construction_v<Example, s::NoReliableRoles>);
 
 using BinaryP = s::strip_peers_t<s::project_crash_t<Example, P, s::NoReliableRoles>::local>;
 using BinaryQ = s::strip_peers_t<s::project_crash_t<Example, Q, s::NoReliableRoles>::local>;
-static_assert(std::is_same_v<BinaryP, s::Send<s::Labelled<M, int>,
-                                              s::Offer<s::Recv<s::Labelled<Answer, int>, s::End>, s::Recv<s::Crash<Q>, s::End>>>>);
+static_assert(std::is_same_v<BinaryP, s::Send<s::Labelled<M, int>, s::Offer<s::Recv<s::Labelled<Answer, int>, s::End>,
+                                                                            s::Recv<s::Crash<Q>, s::End>>>>);
 static_assert(std::is_same_v<BinaryQ, s::Offer<s::Recv<s::Labelled<M, int>, s::Send<s::Labelled<Answer, int>, s::End>>,
                                                s::Recv<s::Crash<P>, s::End>>>);
 // The two binary views are crash duals, and the crash transport admits

@@ -188,8 +188,7 @@ template <typename Proto, typename Ctx, typename Cell>
 
 template <typename Cell>
     requires AtomicMachineCell<Cell>
-[[nodiscard]] constexpr typename std::remove_cvref_t<Cell>::state_type
-atomic_machine_state(const Cell& cell) noexcept {
+[[nodiscard]] constexpr typename std::remove_cvref_t<Cell>::state_type atomic_machine_state(const Cell& cell) noexcept {
     return cell.load();
 }
 
@@ -202,8 +201,9 @@ atomic_machine_state(const Cell& cell) noexcept {
 // succeed.  The cell chooses the memory order of its publication, because
 // the order is part of what the cell promises its observers.
 template <typename Event, AtomicMachineCell Cell>
-[[nodiscard]] constexpr bool publish_atomic_machine_transition(Cell& cell, Event& event) noexcept(
-    noexcept(cell.publish_from_session(std::move(event))))
+[[nodiscard]] constexpr bool
+publish_atomic_machine_transition(Cell& cell,
+                                  Event& event) noexcept(noexcept(cell.publish_from_session(std::move(event))))
     requires requires {
         { cell.publish_from_session(std::move(event)) } -> std::same_as<bool>;
     }

@@ -27,8 +27,8 @@ int main() {
     using VigilRegion = ::fixy::Tagged<const crucible::FakeRegionNode*, ::fixy::tags::source::Vigil>;
 
     crucible::FakeRegionNode region{};
-    auto arena_tagged = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-        static_cast<const crucible::FakeRegionNode*>(&region));
+    auto arena_tagged =
+        ::fixy::mint_tagged<::fixy::tags::source::Arena>(static_cast<const crucible::FakeRegionNode*>(&region));
 
     // Should FAIL: the two sources are distinct types, and no edge of the
     // retag catalog carries a value from Arena to Vigil.

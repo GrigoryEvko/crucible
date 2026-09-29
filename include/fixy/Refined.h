@@ -175,9 +175,8 @@ namespace refined {
 // An integer type that std::cmp_less and std::in_range accept.  The
 // standard excludes bool and the character types from both.
 template <class T>
-concept ExactInteger =
-    std::integral<T> && !std::same_as<T, bool> && !std::same_as<T, char> && !std::same_as<T, wchar_t>
-    && !std::same_as<T, char8_t> && !std::same_as<T, char16_t> && !std::same_as<T, char32_t>;
+concept ExactInteger = std::integral<T> && !std::same_as<T, bool> && !std::same_as<T, char> && !std::same_as<T, wchar_t>
+                    && !std::same_as<T, char8_t> && !std::same_as<T, char16_t> && !std::same_as<T, char32_t>;
 
 // True when the value type V holds the bound exactly.  A bound compared
 // after a conversion to the value type changes: 256 as a std::uint8_t is
@@ -203,8 +202,8 @@ template <class V, auto Bound>
         }
     } else if constexpr (std::floating_point<V> && std::floating_point<B>) {
         constexpr bool no_wider = std::numeric_limits<B>::digits <= std::numeric_limits<V>::digits
-                                  && std::numeric_limits<B>::max_exponent <= std::numeric_limits<V>::max_exponent
-                                  && std::numeric_limits<B>::min_exponent >= std::numeric_limits<V>::min_exponent;
+                               && std::numeric_limits<B>::max_exponent <= std::numeric_limits<V>::max_exponent
+                               && std::numeric_limits<B>::min_exponent >= std::numeric_limits<V>::min_exponent;
         return no_wider && std::isfinite(Bound);
     } else {
         return false;
@@ -527,7 +526,7 @@ mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible
 // positive int that holds -1.  The constructors stay trivial, so a refined
 // value still passes in a register.
 template <auto Pred, typename T, bool Sealed>
-class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] Refinement
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] Refinement
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
                            ::foundation::algebra::lattices::BoolLattice<refined::predicate_t<Pred>>, T>,
       public refined::detail::sealed_row_discipline<Sealed> {
@@ -707,7 +706,9 @@ admit_refined(T value, Error refusal) noexcept(std::is_nothrow_move_constructibl
 
 namespace detail::admit_refined_self_test {
 
-enum class Refusal : std::uint8_t { NotPositive };
+enum class Refusal : std::uint8_t {
+    NotPositive
+};
 
 static_assert(admit_refined<positive>(3, Refusal::NotPositive).value().value() == 3);
 static_assert(admit_refined<positive>(0, Refusal::NotPositive).error() == Refusal::NotPositive);
@@ -722,7 +723,8 @@ static_assert(!std::is_trivially_copyable_v<Refined<positive, int>>
               "std::bit_cast must not build a refined value from bytes that the predicate never saw");
 static_assert(std::is_trivially_copy_constructible_v<Refined<positive, int>>
                   && std::is_trivially_move_constructible_v<Refined<positive, int>>
-                  && std::is_trivially_destructible_v<Refined<positive, int>> && sizeof(Refined<positive, int>) == sizeof(int),
+                  && std::is_trivially_destructible_v<Refined<positive, int>>
+                  && sizeof(Refined<positive, int>) == sizeof(int),
               "a refined int keeps the layout and the register passing of an int");
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Refined<positive, int>>,
               "the checked lifetime start refuses a refined value over bytes");
@@ -1380,7 +1382,8 @@ void implication_cycle_between_two_names_for_one_predicate() noexcept;
             if (next == node) continue;
             if (next == premise) implication_cycle_between_two_names_for_one_predicate();
             bool is_reached = false;
-            for (const std::meta::info seen : reached) is_reached = is_reached || seen == next;
+            for (const std::meta::info seen : reached)
+                is_reached = is_reached || seen == next;
             if (is_reached) continue;
             if (reached.size() == closure_node_limit) return false;
             reached.push_back(next);

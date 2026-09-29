@@ -33,8 +33,7 @@ namespace {
 
 // Admits everything mint_file's own atoms lift to, and not Bg.
 using IoBlockCtx =
-    eff::ExecCtx<eff::Test,
-                 eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+    eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
 [[maybe_unused]] fixy::Path<src::Sanitized> sanitized(const char* raw) {
     return *fixy::sanitize::path_traversal::sanitize_path_no_dotdot(

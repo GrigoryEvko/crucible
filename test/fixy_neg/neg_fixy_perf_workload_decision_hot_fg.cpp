@@ -15,8 +15,8 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto profiler = crucible::perf::mint_workload_profiler(
-        ::fixy::ColdInitCtx{::foundation::effects::testing::init()}, /*senses=*/nullptr);
+    auto profiler = crucible::perf::mint_workload_profiler(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
+                                                           /*senses=*/nullptr);
     const ::fixy::concurrent::WorkBudget budget{.read_bytes = 1024, .write_bytes = 1024, .item_count = 256};
     const auto decision = profiler.recommend(budget);
 

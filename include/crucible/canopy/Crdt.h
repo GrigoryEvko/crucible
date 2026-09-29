@@ -239,7 +239,9 @@ public:
         return detail::commit_merge(state_, other.value(), merge_state_into_);
     }
 
-    [[nodiscard]] bool merge(GSet const& other) { return detail::commit_merge(state_, other.state_, merge_state_into_); }
+    [[nodiscard]] bool merge(GSet const& other) {
+        return detail::commit_merge(state_, other.state_, merge_state_into_);
+    }
 
     // `a` is the merge TARGET and arrives from the caller, so it is as
     // untrusted as `b`.  BoundedHashSetState::merge validates only `b`,
@@ -321,7 +323,9 @@ public:
         return detail::commit_merge(state_, other.value(), merge_state_into_);
     }
 
-    [[nodiscard]] bool merge(OrSet const& other) { return detail::commit_merge(state_, other.state_, merge_state_into_); }
+    [[nodiscard]] bool merge(OrSet const& other) {
+        return detail::commit_merge(state_, other.state_, merge_state_into_);
+    }
 
     // `a` is the merge TARGET and arrives from the caller, so it is as
     // untrusted as `b`.  merge_state_into_ validates only `b`, so a

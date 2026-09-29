@@ -17,9 +17,8 @@ namespace ffc = ::foundation::fail_closed;
 
 // A weakening constrained on the relation, the shape a caller writes.
 template <auto P, auto Q, class T>
-concept Weakens = fixy::implies_v<P, Q> && requires(fixy::Refined<P, T> refined) {
-    fixy::mint_refined_trusted<Q>(std::move(refined).into());
-};
+concept Weakens = fixy::implies_v<P, Q>
+               && requires(fixy::Refined<P, T> refined) { fixy::mint_refined_trusted<Q>(std::move(refined).into()); };
 
 // ── Attack 1: a rule family outside the namespace ────────────────────
 //
@@ -31,8 +30,7 @@ struct non_negative_is_positive : rel::rule_family<non_negative_is_positive> {
     static consteval bool holds_(rel::predicate_t<fixy::non_negative>*, rel::predicate_t<fixy::positive>*) noexcept {
         return true;
     }
-    static consteval auto next_(rel::predicate_t<fixy::non_negative>*) noexcept
-        -> rel::predicate_t<fixy::positive>* {
+    static consteval auto next_(rel::predicate_t<fixy::non_negative>*) noexcept -> rel::predicate_t<fixy::positive>* {
         return nullptr;
     }
 };
@@ -103,7 +101,8 @@ inline constexpr auto positive_rewritten = [](auto x) constexpr noexcept { retur
 using ceiling_alias = rel::predicate_t<fixy::bounded_above<9>>;
 
 static_assert(fixy::implies_v<positive_again, fixy::non_zero> && fixy::implies_v<positive_again, fixy::non_null>);
-static_assert(!fixy::implies_v<positive_rewritten, fixy::non_zero> && !fixy::implies_v<positive_rewritten, fixy::positive>);
+static_assert(!fixy::implies_v<positive_rewritten, fixy::non_zero>
+              && !fixy::implies_v<positive_rewritten, fixy::positive>);
 static_assert(rel::implies_types<ceiling_alias, rel::predicate_t<fixy::bounded_above<20>>>());
 
 // ── Attack 5: bounds of mixed signedness ─────────────────────────────
@@ -159,8 +158,8 @@ static_assert(fixy::session::is_subtype_sync_v<
     fixy::Refined<fixy::in_range<5, 9>, int> narrow = fixy::mint_refined<fixy::in_range<5, 9>>(int{vol});
     static_assert(Weakens<fixy::in_range<5, 9>, fixy::bounded_above<20>, int>);
     static_assert(!Weakens<fixy::non_negative, fixy::positive, int>);
-    fixy::Refined<fixy::bounded_above<20>, int> wide = fixy::mint_refined_trusted<fixy::bounded_above<20>>(
-        std::move(narrow).into());
+    fixy::Refined<fixy::bounded_above<20>, int> wide =
+        fixy::mint_refined_trusted<fixy::bounded_above<20>>(std::move(narrow).into());
     if (wide.value() != 6) return 1;
     int volatile zero = 0;
     if (fixy::positive(int{zero})) return 2;

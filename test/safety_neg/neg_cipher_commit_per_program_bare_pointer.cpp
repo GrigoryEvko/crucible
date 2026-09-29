@@ -12,8 +12,9 @@
 
 int main() {
     const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
-    auto cipher = ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
-                                                          std::filesystem::path{"/tmp/crucible_neg_program_bare_pointer"}));
+    auto cipher =
+        ::crucible::Cipher::open(store_ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                                std::filesystem::path{"/tmp/crucible_neg_program_bare_pointer"}));
     const auto view = cipher.mint_open_view(store_ctx);
     ::crucible::MetaLog log;
 

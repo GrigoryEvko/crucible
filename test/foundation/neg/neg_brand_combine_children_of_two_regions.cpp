@@ -33,8 +33,8 @@ int main() {
         ::foundation::permissions::mint_permission_root<Whole>());
     auto second = ::foundation::permissions::mint_permission_split<Left, Right>(
         ::foundation::permissions::mint_permission_root<Whole>());
-    auto folded = ::foundation::permissions::mint_permission_combine<Whole>(std::move(first.first),
-                                                                           std::move(second.second));
+    auto folded =
+        ::foundation::permissions::mint_permission_combine<Whole>(std::move(first.first), std::move(second.second));
     (void)folded;
     return 0;
 }

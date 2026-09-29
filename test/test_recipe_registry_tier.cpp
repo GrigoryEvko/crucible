@@ -95,8 +95,8 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict);
         assert(pinned.has_value());
-        static_assert(std::is_same_v<decltype(pinned)::value_type,
-                                     NumericalTier<Tolerance::BITEXACT, const NumericalRecipe*>>);
+        static_assert(
+            std::is_same_v<decltype(pinned)::value_type, NumericalTier<Tolerance::BITEXACT, const NumericalRecipe*>>);
         assert(pinned->peek() != nullptr);
         assert(pinned->peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
     }
@@ -105,8 +105,8 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     {
         auto pinned = reg.by_name_pinned<Tolerance::RELAXED>(names::kF32Strict);
         assert(pinned.has_value());
-        static_assert(std::is_same_v<decltype(pinned)::value_type,
-                                     NumericalTier<Tolerance::RELAXED, const NumericalRecipe*>>);
+        static_assert(
+            std::is_same_v<decltype(pinned)::value_type, NumericalTier<Tolerance::RELAXED, const NumericalRecipe*>>);
     }
 
     // The reverse direction is the bug this gate exists for: an ordered

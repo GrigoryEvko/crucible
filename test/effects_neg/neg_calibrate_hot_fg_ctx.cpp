@@ -13,6 +13,7 @@
 
 namespace cog = crucible::cog;
 
-using Refused = decltype(cog::calibrate_cog<cog::CogKind::Gpu>(std::declval<::fixy::HotFgCtx const&>(), cog::CogIdentity{}));
+using Refused =
+    decltype(cog::calibrate_cog<cog::CogKind::Gpu>(std::declval<::fixy::HotFgCtx const&>(), cog::CogIdentity{}));
 
 int main() { return 0; }

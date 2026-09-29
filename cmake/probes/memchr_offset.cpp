@@ -21,6 +21,4 @@ static_assert(strchr_offset("0,1,2,3" + 2) == 1);
 static_assert(strrchr_offset("0,1,2,3" + 2) == 3);
 static_assert(strstr_offset("0,1,2,3" + 2) == 1);
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

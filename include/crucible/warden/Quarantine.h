@@ -109,22 +109,20 @@ struct QuarantineEvent {
 
 // Building a policy belongs to process startup.
 template <class Ctx>
-concept CtxFitsQuarantineMint =
-    ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+concept CtxFitsQuarantineMint = ::foundation::effects::IsExecCtx<Ctx>
+                             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
 // A health, failure or probe fact changes the state from a background
 // thread.  The hot foreground records nothing.
 template <class Ctx>
-concept CtxFitsQuarantineRecord =
-    ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
+concept CtxFitsQuarantineRecord = ::foundation::effects::IsExecCtx<Ctx>
+                               && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
 
 // An operator forces a state from startup or from a test.
 template <class Ctx>
-concept CtxFitsQuarantineOverride =
-    ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Init, ::foundation::effects::Effect::Test>;
+concept CtxFitsQuarantineOverride = ::foundation::effects::IsExecCtx<Ctx>
+                                 && ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Init,
+                                                                        ::foundation::effects::Effect::Test>;
 
 namespace detail {
 
@@ -164,8 +162,8 @@ class QuarantinePolicy;
 // is its one friend.
 template <std::size_t MaxCogs, std::size_t MaxEvents = MaxCogs * 4, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsQuarantineMint<Ctx>
-[[nodiscard]] constexpr QuarantinePolicy<MaxCogs, MaxEvents> mint_quarantine_policy(Ctx const&,
-                                                                                    QuarantineConfig config = {}) noexcept;
+[[nodiscard]] constexpr QuarantinePolicy<MaxCogs, MaxEvents>
+mint_quarantine_policy(Ctx const&, QuarantineConfig config = {}) noexcept;
 
 template <std::size_t MaxCogs, std::size_t MaxEvents>
 class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, MaxEvents>> {

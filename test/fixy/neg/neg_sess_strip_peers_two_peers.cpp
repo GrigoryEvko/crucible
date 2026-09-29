@@ -15,7 +15,8 @@ struct Bob {};
 struct Carol {};
 struct Token {};
 
-using Ring = g::Rec<g::Msg<Alice, Bob, Token, int, g::Msg<Bob, Carol, Token, int, g::Msg<Carol, Alice, Token, int, g::Var>>>>;
+using Ring =
+    g::Rec<g::Msg<Alice, Bob, Token, int, g::Msg<Bob, Carol, Token, int, g::Msg<Carol, Alice, Token, int, g::Var>>>>;
 
 using AliceLocal = typename s::project_t<Ring, Alice>::local;
 

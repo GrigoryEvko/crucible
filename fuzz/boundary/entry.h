@@ -13,8 +13,8 @@
 #include <vector>
 
 #define CRUCIBLE_FUZZ_DECLARE_HARNESS(name)                              \
-    namespace crucible::fuzz::boundary::entry {                         \
-    void run_##name(std::span<const std::uint8_t> bytes);               \
+    namespace crucible::fuzz::boundary::entry {                          \
+    void run_##name(std::span<const std::uint8_t> bytes);                \
     [[nodiscard]] std::vector<std::vector<std::uint8_t>> seeds_##name(); \
     }
 

@@ -36,7 +36,7 @@ using ScuttlebuttDurationNs = ::fixy::Refined<::fixy::positive, std::uint64_t>;
 using ScuttlebuttPositiveCount = ::fixy::Refined<::fixy::positive, std::uint16_t>;
 
 struct ScuttlebuttConfig {
-    ScuttlebuttDurationNs period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{5'000'000'000});
+    ScuttlebuttDurationNs period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{5000000000});
     ScuttlebuttPositiveCount max_stale_rounds = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{64});
 };
 
@@ -363,8 +363,7 @@ public:
                     .key = keys_[k].key,
                     .version = local_version,
                 };
-                if (version_in_digest_(incoming, entry.origin, entry.key) < local_version
-                    && !out.offers.push(entry)) {
+                if (version_in_digest_(incoming, entry.origin, entry.key) < local_version && !out.offers.push(entry)) {
                     return std::unexpected(ScuttlebuttError::CapacityExceeded);
                 }
             }

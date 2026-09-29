@@ -155,10 +155,10 @@ mint_af_xdp_config(NicInterfaceName interface, AfXdpIfIndex ifindex, AfXdpQueueI
 
 template <std::uint32_t UmemBytes, std::uint32_t FrameSize, std::uint32_t FillRing, std::uint32_t CompletionRing,
           std::uint32_t RxRing, std::uint32_t TxRing>
-concept AfXdpStaticShape = ::fixy::power_of_two(UmemBytes) && af_xdp_frame_bytes(FrameSize)
-                        && (UmemBytes % FrameSize) == 0u && af_xdp_ring_depth(UmemBytes / FrameSize)
-                        && af_xdp_ring_depth(FillRing) && af_xdp_ring_depth(CompletionRing)
-                        && af_xdp_ring_depth(RxRing) && af_xdp_ring_depth(TxRing);
+concept AfXdpStaticShape =
+    ::fixy::power_of_two(UmemBytes) && af_xdp_frame_bytes(FrameSize) && (UmemBytes % FrameSize) == 0u
+    && af_xdp_ring_depth(UmemBytes / FrameSize) && af_xdp_ring_depth(FillRing) && af_xdp_ring_depth(CompletionRing)
+    && af_xdp_ring_depth(RxRing) && af_xdp_ring_depth(TxRing);
 
 // Minting a socket allocates its UMEM, so the context must own Alloc as
 // well as the startup capability.

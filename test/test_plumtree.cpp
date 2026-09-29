@@ -200,9 +200,9 @@ int main() {
     // becomes a link, the first two eager and the rest lazy.
     {
         std::array full_active{hp(70), hp(71), hp(72), hp(73)};
-        auto full_membership = cc::mint_hyparview<4, 8>(::foundation::effects::testing::init(),
-                                                        std::span<const cc::HyParViewPeer>{full_active}, {},
-                                                        overlay_config(4, 8));
+        auto full_membership =
+            cc::mint_hyparview<4, 8>(::foundation::effects::testing::init(),
+                                     std::span<const cc::HyParViewPeer>{full_active}, {}, overlay_config(4, 8));
         auto b = cc::mint_plumtree<4, 8>(::foundation::effects::testing::init(), full_membership, broadcast_config(2));
         assert(b.link_count().value() == 4);
         assert(b.eager_count().value() == 2);

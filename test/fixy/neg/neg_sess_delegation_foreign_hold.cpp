@@ -32,7 +32,8 @@ int main() {
     using namespace neg_sess_delegation_foreign_hold_types;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto [handle, hold] = s::mint_permissioned_session<Inner>(ctx, Wire{}, fp::mint_permission_root<Region>());
-    auto parcel = s::mint_delegated_session(std::move(handle), s::mint_permission_hold(fp::mint_permission_root<Other>()));
+    auto parcel =
+        s::mint_delegated_session(std::move(handle), s::mint_permission_hold(fp::mint_permission_root<Other>()));
     static_cast<void>(parcel);
     static_cast<void>(hold);
     return 0;

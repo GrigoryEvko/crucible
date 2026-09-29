@@ -33,8 +33,8 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const& ctx) n
     const detail::RingSpec spec{
         .load = {.facade = "syscall_tp_btf",
                  .object_name = "crucible_syscall_tp_btf",
-                 .bytecode = std::span{syscall_tp_btf_bpf_bytecode,
-                                       static_cast<std::size_t>(syscall_tp_btf_bpf_bytecode_len)},
+                 .bytecode =
+                     std::span{syscall_tp_btf_bpf_bytecode, static_cast<std::size_t>(syscall_tp_btf_bpf_bytecode_len)},
                  .probe_tracepoints = false,
                  .load_advice = "(apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel < 5.5, "
                                 "CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",
@@ -59,9 +59,7 @@ uint64_t SyscallTpBtf::total_syscalls() const noexcept { return state_ != nullpt
                              : ::fixy::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>{};
 }
 
-uint64_t SyscallTpBtf::timeline_write_index() const noexcept {
-    return state_ != nullptr ? state_->write_index() : 0;
-}
+uint64_t SyscallTpBtf::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallTpBtf::attached_programs() const noexcept {
     return detail::attached_programs(state_.get());

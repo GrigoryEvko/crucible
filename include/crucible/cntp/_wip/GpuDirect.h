@@ -114,7 +114,8 @@ class GpuDirectMrRegistry;
 class GpuDirectMrHandle {
 public:
     GpuDirectMrHandle(GpuDirectMrHandle const&) = delete("a memory region handle names one registered region");
-    GpuDirectMrHandle& operator=(GpuDirectMrHandle const&) = delete("a memory region handle names one registered region");
+    GpuDirectMrHandle&
+    operator=(GpuDirectMrHandle const&) = delete("a memory region handle names one registered region");
     GpuDirectMrHandle(GpuDirectMrHandle&&) noexcept = default;
     GpuDirectMrHandle& operator=(GpuDirectMrHandle&&) noexcept = default;
     ~GpuDirectMrHandle() = default;
@@ -207,7 +208,7 @@ inline constexpr cog::CogTargetRefusals<GpuDirectError> nvme_target_refusals{
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
 validate_gpu_for_rdma(cog::CogIdentity const& gpu, cog::GpuTargetCaps const& caps) noexcept {
     return cog::validate_offload_target<cog::GpuFeature::GpuDirectRdma, cog::CogKind::Gpu>(gpu, caps,
-                                                                                          gpu_rdma_target_refusals);
+                                                                                           gpu_rdma_target_refusals);
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
@@ -218,8 +219,8 @@ validate_gpu_for_storage(cog::CogIdentity const& gpu, cog::GpuTargetCaps const& 
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
 validate_nic_for_rdma(cog::CogIdentity const& nic, cog::NicPortTargetCaps const& caps) noexcept {
-    return cog::validate_offload_target<cog::NicFeature::GpuDirectRdma, cog::CogKind::NicPort>(nic, caps,
-                                                                                              nic_rdma_target_refusals);
+    return cog::validate_offload_target<cog::NicFeature::GpuDirectRdma, cog::CogKind::NicPort>(
+        nic, caps, nic_rdma_target_refusals);
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError> validate_nvme_peer(cog::CogIdentity const& nvme) noexcept {

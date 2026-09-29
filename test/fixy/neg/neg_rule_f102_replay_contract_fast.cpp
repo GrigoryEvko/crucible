@@ -12,7 +12,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>,
-                                ::fixy::atom::fp::mode<::fixy::atom::fp::FpContract::Fast>>
-        refused{};
+                                ::fixy::atom::fp::mode<::fixy::atom::fp::FpContract::Fast>> refused{};
     return 0;
 }

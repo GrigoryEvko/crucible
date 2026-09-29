@@ -76,8 +76,8 @@ concept IsFreshBrand = IsBrand<B> && !std::is_same_v<B, DefaultBrand>;
 
 // A type that carries a brand exposes it as brand_type.
 template <class T>
-concept HasBrand = requires { typename std::remove_cvref_t<T>::brand_type; }
-                && IsBrand<typename std::remove_cvref_t<T>::brand_type>;
+concept HasBrand =
+    requires { typename std::remove_cvref_t<T>::brand_type; } && IsBrand<typename std::remove_cvref_t<T>::brand_type>;
 
 template <class T>
     requires HasBrand<T>

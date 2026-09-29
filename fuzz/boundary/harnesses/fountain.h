@@ -23,7 +23,8 @@ namespace crucible::fuzz::boundary {
         append_raw(seed, std::uint16_t{16});
         append_raw(seed, std::uint16_t{128});
         append_raw(seed, std::uint64_t{1} << symbol);
-        for (std::uint8_t b = 0; b < 16; ++b) seed.push_back(static_cast<std::uint8_t>(symbol * 16 + b));
+        for (std::uint8_t b = 0; b < 16; ++b)
+            seed.push_back(static_cast<std::uint8_t>(symbol * 16 + b));
     }
     return {seed};
 }
@@ -48,7 +49,8 @@ inline void run_fountain(std::span<const std::uint8_t> bytes) {
         packet.source_bytes = *admitted;
         packet.mask = cursor.take<std::uint64_t>();
         const auto payload = cursor.take_bytes(packet.payload.size());
-        for (std::size_t i = 0; i < payload.size(); ++i) packet.payload[i] = std::byte{payload[i]};
+        for (std::size_t i = 0; i < payload.size(); ++i)
+            packet.payload[i] = std::byte{payload[i]};
 
         auto state = decoder.add_packet(packet);
         if (!state) continue;

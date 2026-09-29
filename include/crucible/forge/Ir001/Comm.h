@@ -114,8 +114,7 @@ enum class Ir001OpKind : std::uint16_t {
     ScuttlebuttDeltaSend,
 };
 
-inline constexpr auto kIr001OpKindCount =
-    static_cast<std::uint16_t>(::foundation::reflect::enum_count<Ir001OpKind>);
+inline constexpr auto kIr001OpKindCount = static_cast<std::uint16_t>(::foundation::reflect::enum_count<Ir001OpKind>);
 inline constexpr std::uint16_t kIr001MaxParticipants = 4096;
 inline constexpr std::uint32_t kIr001MaxTimeoutMs = 600000;
 

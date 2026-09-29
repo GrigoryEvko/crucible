@@ -72,7 +72,8 @@ template <typename L, std::size_t Words>
 typename L::image_type image_with(std::uint64_t axis, std::array<std::uint64_t, Words> const& words) {
     typename L::image_type image{};
     static_assert(image.size() == 8 * (Words + 1));
-    for (std::size_t i = 0; i < 8; ++i) image[i] = static_cast<std::byte>((axis >> (8 * i)) & 0xFFu);
+    for (std::size_t i = 0; i < 8; ++i)
+        image[i] = static_cast<std::byte>((axis >> (8 * i)) & 0xFFu);
     for (std::size_t w = 0; w < Words; ++w) {
         for (std::size_t i = 0; i < 8; ++i) {
             image[8 * (w + 1) + i] = static_cast<std::byte>((words[w] >> (8 * i)) & 0xFFu);
@@ -152,9 +153,7 @@ concept compare_across = requires(A a, B b) {
     { a <=> b };
 };
 template <typename L, typename A, typename B>
-concept lattice_accepts = requires(A a, B b) {
-    L::join(a, b);
-} || requires(A a, B b) { L::leq(a, b); };
+concept lattice_accepts = requires(A a, B b) { L::join(a, b); } || requires(A a, B b) { L::leq(a, b); };
 
 // Every pair of axes, every implicit path.  The positive controls prove
 // that the detectors answer yes where a path exists.
@@ -175,8 +174,10 @@ static_assert(construct_across<fl::Epoch, fl::Epoch> && compare_across<fl::Epoch
 static_assert(!std::is_convertible_v<fl::Epoch, std::uint64_t> && !std::is_convertible_v<std::uint64_t, fl::Epoch>);
 static_assert(!std::is_convertible_v<int, fl::Epoch> && !std::is_convertible_v<bool, fl::Epoch>);
 static_assert(!std::is_constructible_v<fl::Epoch, std::uint64_t> && !std::is_constructible_v<fl::Generation, int>);
-static_assert(!std::is_constructible_v<fl::Epoch, fl::EpochBound> && !std::is_constructible_v<fl::Epoch, fl::Generation>);
-static_assert(std::is_constructible_v<fl::EpochBound, std::uint64_t> && std::is_constructible_v<fl::EpochBound, fl::Epoch>);
+static_assert(!std::is_constructible_v<fl::Epoch, fl::EpochBound>
+              && !std::is_constructible_v<fl::Epoch, fl::Generation>);
+static_assert(std::is_constructible_v<fl::EpochBound, std::uint64_t>
+              && std::is_constructible_v<fl::EpochBound, fl::Epoch>);
 
 // A count is not buildable from bytes: std::bit_cast needs a trivially
 // copyable type, and the checked lifetime start refuses the annotation.
@@ -210,8 +211,9 @@ namespace {
 using namespace test_counter_clock_types;
 
 // Clocks of two protocols, or of two widths, never meet.
-static_assert(!lattice_accepts<fl::HappensBeforeLattice<2, ReplayClock>, fl::HappensBeforeLattice<2, ReplayClock>::element_type,
-                               fl::HappensBeforeLattice<2, KernelClock>::element_type>);
+static_assert(
+    !lattice_accepts<fl::HappensBeforeLattice<2, ReplayClock>, fl::HappensBeforeLattice<2, ReplayClock>::element_type,
+                     fl::HappensBeforeLattice<2, KernelClock>::element_type>);
 static_assert(!lattice_accepts<fl::HappensBeforeLattice<2>, fl::HappensBeforeLattice<2>::element_type,
                                fl::HappensBeforeLattice<3>::element_type>);
 static_assert(lattice_accepts<fl::HappensBeforeLattice<2>, fl::HappensBeforeLattice<2>::element_type,
@@ -535,8 +537,8 @@ void attack_the_closed_routes() {
     auto const relabelled = fl::GenerationLattice::mint_from_image(ctx, fl::EpochLattice::image_of(epoch));
     expect(!relabelled && relabelled.error() == fl::CountImageError::OtherAxis,
            "an image of an epoch is refused as a generation");
-    auto const as_bits = fl::BitsBudgetLattice::mint_from_image(ctx, fl::PeakBytesLattice::image_of(
-                                                                          count_at<fl::PeakBytesLattice>(s)));
+    auto const as_bits =
+        fl::BitsBudgetLattice::mint_from_image(ctx, fl::PeakBytesLattice::image_of(count_at<fl::PeakBytesLattice>(s)));
     expect(!as_bits && as_bits.error() == fl::CountImageError::OtherAxis, "an image of bytes is refused as bits");
     auto const as_forged = ForgedEpochLattice::mint_from_image(ctx, fl::EpochLattice::image_of(epoch));
     expect(!as_forged && as_forged.error() == fl::CountImageError::OtherAxis,
@@ -586,7 +588,8 @@ int main() {
     attack_graded_version_orientation();
     attack_the_closed_routes();
     reproduce_the_ledger();
-    for (std::uint64_t const identity : kIdentities) expect(identity != 0, "an identity reached run time as zero");
+    for (std::uint64_t const identity : kIdentities)
+        expect(identity != 0, "an identity reached run time as zero");
 
     if (g_failures != 0) {
         std::fprintf(stderr, "test_counter_clock_attacks: %d case(s) failed\n", g_failures);

@@ -284,8 +284,9 @@ static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::found
               "the row-aware cache must key the same function and arguments "
               "under different rows to different slots.");
 
-static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>
-              != ::crucible::cipher::computation_cache_key_in_row<&p_binary, ::foundation::effects::Row<>, int, double>);
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>
+    != ::crucible::cipher::computation_cache_key_in_row<&p_binary, ::foundation::effects::Row<>, int, double>);
 
 static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>
               == ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::foundation::effects::Row<>, int>);
@@ -294,7 +295,8 @@ static_assert(
     ::crucible::cipher::computation_cache_key_in_row<
         &p_unary, ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO>, int>
         == ::crucible::cipher::computation_cache_key_in_row<
-            &p_unary, ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Bg>, int>,
+            &p_unary, ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Bg>,
+            int>,
     "the row-aware cache key must not change when the effect pack is "
     "reordered, because the row hash sorts before it folds.");
 

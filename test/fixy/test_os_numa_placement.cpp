@@ -72,8 +72,8 @@ struct AddressPolicy {
 
 [[nodiscard]] AddressPolicy policy_at(void* address) noexcept {
     AddressPolicy policy;
-    long const status = ::syscall(SYS_get_mempolicy, &policy.mode, policy.mask, fixy::detail::numa_mask_bits + 1,
-                                  address, MPOL_F_ADDR);
+    long const status =
+        ::syscall(SYS_get_mempolicy, &policy.mode, policy.mask, fixy::detail::numa_mask_bits + 1, address, MPOL_F_ADDR);
     policy.is_known = status == 0;
     return policy;
 }
@@ -81,8 +81,7 @@ struct AddressPolicy {
 // The node that holds the page at the address, or -1.
 [[nodiscard]] int node_of_page(void* address) noexcept {
     int node = -1;
-    long const status =
-        ::syscall(SYS_get_mempolicy, &node, nullptr, 0UL, address, MPOL_F_NODE | MPOL_F_ADDR);
+    long const status = ::syscall(SYS_get_mempolicy, &node, nullptr, 0UL, address, MPOL_F_NODE | MPOL_F_ADDR);
     return status == 0 ? node : -1;
 }
 
@@ -112,8 +111,7 @@ struct AddressPolicy {
 
     AddressPolicy const policy = policy_at(placed->data());
     if (!policy.is_known || policy.mode != MPOL_BIND) {
-        std::fprintf(stderr, "the kernel does not report MPOL_BIND for a region with a proof (mode %d)\n",
-                     policy.mode);
+        std::fprintf(stderr, "the kernel does not report MPOL_BIND for a region with a proof (mode %d)\n", policy.mode);
         return 1;
     }
     if (policy.mask[0] != 1UL) {

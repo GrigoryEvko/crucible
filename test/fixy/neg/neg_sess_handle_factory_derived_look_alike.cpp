@@ -13,6 +13,4 @@ namespace {
 struct LookAlike : ::fixy::session::HandleFactory {};
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

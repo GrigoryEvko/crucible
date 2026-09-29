@@ -15,6 +15,7 @@ int main() {
     cog::CogIdentity id{};
     id.uuid = cog::Uuid{1, 2};
     id.kind = cog::CogKind::PsuRail;
-    auto result = cog::calibrate_cog<cog::CogKind::PsuRail>(::fixy::ColdInitCtx{::foundation::effects::testing::init()}, id);
+    auto result =
+        cog::calibrate_cog<cog::CogKind::PsuRail>(::fixy::ColdInitCtx{::foundation::effects::testing::init()}, id);
     return result.has_value() ? 0 : 1;
 }

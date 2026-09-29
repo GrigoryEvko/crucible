@@ -24,8 +24,7 @@ struct ring_depth_proved final {};
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
-                                ::fixy::atom::with<::foundation::effects::Effect::Block>,
-                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::ring_depth_proved>>
-        refused{};
+                                ::fixy::atom::with<::foundation::effects::Effect::Block>, ::fixy::atom::cost_constant,
+                                ::fixy::atom::refined_with<fixture::ring_depth_proved>> refused{};
     return 0;
 }

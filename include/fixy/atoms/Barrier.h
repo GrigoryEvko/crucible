@@ -89,8 +89,7 @@ struct full_fence final : atom_of<Axis::BarrierStrength> {
 namespace fixy::atom::detail {
 
 using barrier_atom_roster = std::tuple<barrier::none, barrier::compiler_barrier, barrier::acquire_load,
-                                       barrier::release_store, barrier::acq_rel, barrier::seq_cst,
-                                       barrier::full_fence>;
+                                       barrier::release_store, barrier::acq_rel, barrier::seq_cst, barrier::full_fence>;
 
 }  // namespace fixy::atom::detail
 

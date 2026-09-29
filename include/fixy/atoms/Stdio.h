@@ -31,9 +31,8 @@ struct Debug final {};
 }  // namespace streams
 
 template <class Stream>
-struct write final
-    : lifting_atom_of<Axis::Stdio,
-                      ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>> {};
+struct write final : lifting_atom_of<Axis::Stdio, ::foundation::effects::Row<::foundation::effects::Effect::IO,
+                                                                             ::foundation::effects::Effect::Block>> {};
 
 }  // namespace fixy::atom::stdio
 
@@ -61,9 +60,9 @@ static_assert(every_roster_member_lifts_<stdio_atom_roster>(),
               "fixy/atoms/Stdio.h: every stdio atom lifts to an effect row.");
 
 // A write lifts IO and Block, whatever the stream.
-static_assert(std::is_same_v<::foundation::effects::lift_row_t<stdio::write<stdio::streams::Stderr>>,
-                             ::foundation::effects::Row<::foundation::effects::Effect::IO,
-                                                        ::foundation::effects::Effect::Block>>);
+static_assert(std::is_same_v<
+              ::foundation::effects::lift_row_t<stdio::write<stdio::streams::Stderr>>,
+              ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>);
 static_assert(std::is_same_v<::foundation::effects::lift_row_t<stdio::write<stdio::streams::Debug>>,
                              ::foundation::effects::lift_row_t<stdio::write<stdio::streams::Stdout>>>);
 

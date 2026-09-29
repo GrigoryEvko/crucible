@@ -324,13 +324,13 @@ int main() {
     auto p0 = build_pkt(net.ops[0], 9999);
     auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p0.entry), p0.metas, p0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
-    std::memset(vigil.output_ptr(vigil.mint_producer_context(),0), 0xAB, 64);
+    std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), 0xAB, 64);
 
     auto p1 = build_pkt(net.ops[1], 9999);
     auto r1 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p1.entry), p1.metas, p1.n_metas);
     assert(r1.action == DispatchResult::Action::COMPILED);
 
-    auto* d = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(),0));
+    auto* d = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     bool flow_ok = true;
     for (int i = 0; i < 64; i++)
         if (d[i] != 0xAB) {

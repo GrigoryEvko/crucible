@@ -49,7 +49,7 @@ int main() {
         .active_random_walk_length = positive(3),
         .passive_random_walk_length = positive(3),
         .active_random_walk_acceptance = positive(2),
-        .shuffle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30'000'000'000}),
+        .shuffle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30000000000}),
     };
     auto membership =
         cc::mint_hyparview<3, 6>(::foundation::effects::testing::init(), std::span<const cc::HyParViewPeer>{active},

@@ -17,10 +17,10 @@ constexpr void same_region(::foundation::permissions::SharedPermission<Region, B
 }  // namespace
 
 int main() {
-    auto first = ::foundation::permissions::mint_permission_share(
-        ::foundation::permissions::mint_permission_root<Region>());
-    auto second = ::foundation::permissions::mint_permission_share(
-        ::foundation::permissions::mint_permission_root<Region>());
+    auto first =
+        ::foundation::permissions::mint_permission_share(::foundation::permissions::mint_permission_root<Region>());
+    auto second =
+        ::foundation::permissions::mint_permission_share(::foundation::permissions::mint_permission_root<Region>());
     same_region(first, second);
     return 0;
 }

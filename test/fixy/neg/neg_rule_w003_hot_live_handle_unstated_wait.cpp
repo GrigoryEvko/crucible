@@ -24,7 +24,6 @@ struct ring_depth_proved final {};
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
                                 ::fixy::atom::refined_with<fixture::ring_depth_proved>,
-                                ::fixy::atom::session::live_handle<fixture::handshake>>
-        refused{};
+                                ::fixy::atom::session::live_handle<fixture::handshake>> refused{};
     return 0;
 }

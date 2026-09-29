@@ -154,7 +154,8 @@ static_assert(atoms_clearing_the_structural_tiers() == atom_members.size(),
             }
             first = false;
             const std::string_view name = std::meta::display_string_of(std::meta::dealias(member));
-            for (std::size_t i = 0; i < name.size(); ++i) joined.push_back(name[i]);
+            for (std::size_t i = 0; i < name.size(); ++i)
+                joined.push_back(name[i]);
         }
     }
     return std::string_view{std::define_static_string(joined)};

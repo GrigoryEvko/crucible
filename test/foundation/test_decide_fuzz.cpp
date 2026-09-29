@@ -257,8 +257,10 @@ void fuzz_intervals_pairwise_disjoint() {
                 std::swap(reference[k], reference[count - 1 - k]);
             }
         }
-        bool const fast = dc::intervals_pairwise_disjoint(std::span<const dc::Interval<std::int32_t>>{production, count});
-        bool const orcl = dco::intervals_pairwise_disjoint_oracle(std::span<const dco::Range<std::int32_t>>{reference, count});
+        bool const fast =
+            dc::intervals_pairwise_disjoint(std::span<const dc::Interval<std::int32_t>>{production, count});
+        bool const orcl =
+            dco::intervals_pairwise_disjoint_oracle(std::span<const dco::Range<std::int32_t>>{reference, count});
         if (fast != orcl) {
             std::fprintf(stderr, "  count=%zu disjoint_by_construction=%d fast=%d oracle=%d\n", count,
                          make_disjoint ? 1 : 0, fast, orcl);

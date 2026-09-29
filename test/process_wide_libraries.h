@@ -41,9 +41,9 @@ inline constinit std::uint64_t control_value = 0;
 inline constinit thread_local std::uint64_t control_thread_value = 0;
 
 // Arbitrary schema hashes.  The test is about the tables, not the hash.
-inline constexpr std::uint64_t kPublishedHash = 0x5A11'0000'0000'0001ULL;
-inline constexpr std::uint64_t kRegisteredHash = 0x5A11'0000'0000'0002ULL;
-inline constexpr std::uint64_t kNamedHash = 0x5A11'0000'0000'0003ULL;
+inline constexpr std::uint64_t kPublishedHash = 0x5A11000000000001ULL;
+inline constexpr std::uint64_t kRegisteredHash = 0x5A11000000000002ULL;
+inline constexpr std::uint64_t kNamedHash = 0x5A11000000000003ULL;
 inline constexpr char kSchemaName[] = "aten::process_wide_probe";
 
 }  // namespace process_wide_libraries

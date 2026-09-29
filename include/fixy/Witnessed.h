@@ -130,8 +130,7 @@ struct UnderRow {
     // refused here, because permission_row_lookup answers only for a
     // tag that declares one.
     template <typename Presented>
-    static constexpr bool admits =
-        ::foundation::permissions::CtxAdmitsPermission<Tag, std::remove_cvref_t<Presented>>;
+    static constexpr bool admits = ::foundation::permissions::CtxAdmitsPermission<Tag, std::remove_cvref_t<Presented>>;
 };
 
 }  // namespace witness
@@ -142,8 +141,7 @@ struct UnderRow {
 // witnesses at the foot of this header fail if this line and the kinds
 // above stop agreeing.
 template <typename W>
-concept IsWitnessKind =
-    ::foundation::reflect::IsInstanceOfAny<W, ^^witness::AtProtocol, ^^witness::UnderRow>;
+concept IsWitnessKind = ::foundation::reflect::IsInstanceOfAny<W, ^^witness::AtProtocol, ^^witness::UnderRow>;
 
 // ── The one gate ─────────────────────────────────────────────────────
 //
@@ -195,14 +193,14 @@ private:
     template <typename UBorrow, typename Proto, typename Resource, typename LoopCtx,
               ::fixy::session::AbandonmentPolicy Policy>
         requires IsBorrowed<UBorrow>
-    friend constexpr Witnessed<UBorrow, witness::AtProtocol<Proto>> mint_witnessed_at(
-        ::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy> const& handle, UBorrow borrow) noexcept;
+    friend constexpr Witnessed<UBorrow, witness::AtProtocol<Proto>>
+    mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy> const& handle,
+                      UBorrow borrow) noexcept;
 
     template <typename UBorrow>
-        requires(IsBorrowed<UBorrow>
-                 && ::foundation::permissions::has_permission_row_v<typename UBorrow::source_type>)
-    friend constexpr Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>> mint_witnessed_under(
-        UBorrow borrow) noexcept;
+        requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row_v<typename UBorrow::source_type>)
+    friend constexpr Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>
+    mint_witnessed_under(UBorrow borrow) noexcept;
 
 public:
     // There is no default: a witnessed borrow nobody minted carries an

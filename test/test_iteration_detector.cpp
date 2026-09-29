@@ -58,7 +58,7 @@ uint32_t expected_period(const std::vector<Op>& body) {
         bool is_period = true;
         for (uint32_t i = 0; i < length && is_period; ++i) {
             is_period = body[i].schema == body[(i + divisor) % length].schema
-                        && body[i].shape == body[(i + divisor) % length].shape;
+                     && body[i].shape == body[(i + divisor) % length].shape;
         }
         if (is_period) {
             primitive = divisor;
@@ -124,14 +124,14 @@ std::vector<Op> inference_mlp_body() {
     constexpr uint64_t RELU = 0x4e408bc8ab40f455ULL;
 
     const std::vector<Op> hidden = {
-        {AS_STRIDED, 0xe8173d7fadd93585ULL}, {TRANSPOSE, 0xe8173d7fadd93585ULL}, {T, 0xe8173d7fadd93585ULL},
-        {AS_STRIDED, 0xcffdb162079a442cULL}, {EXPAND, 0xcffdb162079a442cULL},    {COPY, 0x2441b799b8336b25ULL},
+        {AS_STRIDED, 0xe8173d7fadd93585ULL},   {TRANSPOSE, 0xe8173d7fadd93585ULL},    {T, 0xe8173d7fadd93585ULL},
+        {AS_STRIDED, 0xcffdb162079a442cULL},   {EXPAND, 0xcffdb162079a442cULL},       {COPY, 0x2441b799b8336b25ULL},
         {RESOLVE_CONJ, 0x48cf127885f01d25ULL}, {RESOLVE_CONJ, 0x48cf127885f01d25ULL}, {ADDMM, 0x1ec472dd81226a98ULL},
-        {LINEAR, 0xf96bd5f4ed8bab4cULL},     {CLAMP_MIN, 0x48cf127885f01d25ULL}, {RELU, 0x48cf127885f01d25ULL},
+        {LINEAR, 0xf96bd5f4ed8bab4cULL},       {CLAMP_MIN, 0x48cf127885f01d25ULL},    {RELU, 0x48cf127885f01d25ULL},
     };
     const std::vector<Op> head = {
-        {AS_STRIDED, 0x7ef93346e220078fULL}, {TRANSPOSE, 0x7ef93346e220078fULL}, {T, 0x7ef93346e220078fULL},
-        {AS_STRIDED, 0x98b982a64e5976e6ULL}, {EXPAND, 0x98b982a64e5976e6ULL},    {COPY, 0xf67909131a9e601dULL},
+        {AS_STRIDED, 0x7ef93346e220078fULL},   {TRANSPOSE, 0x7ef93346e220078fULL},    {T, 0x7ef93346e220078fULL},
+        {AS_STRIDED, 0x98b982a64e5976e6ULL},   {EXPAND, 0x98b982a64e5976e6ULL},       {COPY, 0xf67909131a9e601dULL},
         {RESOLVE_CONJ, 0x0137544d7ba3f1efULL}, {RESOLVE_CONJ, 0x48cf127885f01d25ULL}, {ADDMM, 0x79016729776b50c0ULL},
         {LINEAR, 0xd6d938c419a8e840ULL},
     };
@@ -348,10 +348,10 @@ void test_gap_in_the_recording_does_not_refute() {
 void test_short_periods() {
     // A period below K gets its smallest multiple that is K or more.
     const std::vector<std::vector<Op>> bodies = {
-        {{1, 0}},                                         // 1 -> 5
-        {{1, 0}, {2, 0}},                                 // 2 -> 6
-        {{1, 0}, {2, 0}, {3, 0}},                         // 3 -> 6
-        {{1, 0}, {2, 0}, {1, 0}, {2, 0}, {3, 0}, {3, 0}}, // 6
+        {{1, 0}},  // 1 -> 5
+        {{1, 0}, {2, 0}},  // 2 -> 6
+        {{1, 0}, {2, 0}, {3, 0}},  // 3 -> 6
+        {{1, 0}, {2, 0}, {1, 0}, {2, 0}, {3, 0}, {3, 0}},  // 6
         {{1, 0}, {2, 0}, {1, 0}, {2, 0}, {1, 0}, {2, 0}, {3, 0}},  // 7
         {{1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {2, 0}},  // 6, the signature is five equal ops
     };

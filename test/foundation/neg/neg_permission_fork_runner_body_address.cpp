@@ -43,9 +43,8 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 
 int main() {
     // The target type deduces everything after the child pack.
-    using Door = ::foundation::permissions::Permission<Whole> (*)(FgCtx const&,
-                                                                   ::foundation::permissions::Permission<Whole>&&,
-                                                                   LeftBody&&, RightBody&&) noexcept;
+    using Door = ::foundation::permissions::Permission<Whole> (*)(
+        FgCtx const&, ::foundation::permissions::Permission<Whole>&&, LeftBody&&, RightBody&&) noexcept;
     [[maybe_unused]] Door door = &::foundation::permissions::PermissionForkRunner::run_<false, Left, Right>;
     return 0;
 }

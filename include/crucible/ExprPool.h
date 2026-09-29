@@ -428,7 +428,8 @@ public:
     // ---- Atom construction ----
 
     [[nodiscard]] const Expr* integer(::foundation::effects::Alloc a, int64_t val) {
-        if (val >= kIntCacheLow && val <= kIntCacheHigh) return cached_integer(::fixy::mint_refined<kIntCacheRange>(val));
+        if (val >= kIntCacheLow && val <= kIntCacheHigh)
+            return cached_integer(::fixy::mint_refined<kIntCacheRange>(val));
         return make_integer(a, val);
     }
 
@@ -447,7 +448,8 @@ public:
         return intern_node(a, Op::FLOAT, nullptr, 0, assumption_flags_combined, SymbolId{}, bit_payload);
     }
 
-    [[nodiscard]] const Expr* symbol(::foundation::effects::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
+    [[nodiscard]] const Expr* symbol(::foundation::effects::Alloc a, const char* name, SymbolId id,
+                                     uint16_t assumption_flags) {
         if (id.raw() >= symbol_names_.size()) symbol_names_.resize(id.raw() + 1, nullptr);
         if (symbol_names_[id.raw()] == nullptr) {
             size_t name_len_with_null = std::strlen(name) + 1;
@@ -739,7 +741,8 @@ public:
             // Python modulo: result has the same sign as the divisor; C truncation
             // gives the wrong sign when remainder and divisor disagree.  The
             // sum stays inside the type, because the two have opposite signs.
-            if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder = ::foundation::sat::add_sat(remainder, divisor);
+            if (remainder != 0 && ((remainder ^ divisor) < 0))
+                remainder = ::foundation::sat::add_sat(remainder, divisor);
             return integer(a, remainder);
         }
         if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
@@ -857,7 +860,8 @@ public:
     // footprint enough to make the hit path several times slower.  Default
     // inlining already pulls in the small binary helpers.
     [[nodiscard]] PureInternedExpr make(::foundation::effects::Alloc a, Op op, std::span<const Expr* const> args) {
-        return ::fixy::mint_band<PureInternedExpr>(::fixy::mint_tagged<::fixy::tags::source::Interned>(make_raw_(a, op, args)));
+        return ::fixy::mint_band<PureInternedExpr>(
+            ::fixy::mint_tagged<::fixy::tags::source::Interned>(make_raw_(a, op, args)));
     }
 
 private:
@@ -1354,7 +1358,8 @@ private:
     // Interns a full-width operand list and pairs it with the folded constant
     // one level up.  Used by add_n and mul_n when the terms alone reach the
     // arity ceiling, which leaves the constant no sibling slot.
-    const Expr* nest_folded_constant_(::foundation::effects::Alloc a, Op op, const Expr* const* terms, int64_t folded_constant) {
+    const Expr* nest_folded_constant_(::foundation::effects::Alloc a, Op op, const Expr* const* terms,
+                                      int64_t folded_constant) {
         const uint16_t inner_flags = detail::composite_flags(op, terms, Expr::kMaxArgs);
         const Expr* inner = intern_node(a, op, terms, Expr::kMaxArgs, inner_flags, SymbolId{}, 0);
         const Expr* constant = integer(a, folded_constant);

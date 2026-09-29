@@ -377,9 +377,9 @@ public:
 
 template <std::size_t MaxStreams, class Ctx>
     requires CtxFitsQuicMint<Ctx>
-[[nodiscard]] constexpr QuicConnection<MaxStreams> mint_quic_connection(Ctx const&, SocketFd socket,
-                                                                        AuthenticatedMtlsPeer peer,
-                                                                        DeclaredQuicConfig const& quic_config) noexcept {
+[[nodiscard]] constexpr QuicConnection<MaxStreams>
+mint_quic_connection(Ctx const&, SocketFd socket, AuthenticatedMtlsPeer peer,
+                     DeclaredQuicConfig const& quic_config) noexcept {
     return QuicConnection<MaxStreams>{socket, peer, quic_config};
 }
 

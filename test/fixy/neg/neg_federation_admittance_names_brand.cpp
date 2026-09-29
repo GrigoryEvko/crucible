@@ -18,7 +18,8 @@ struct LocalCipherBrand {};
 [[maybe_unused]] void attempt(fp::FederationAdmission<NegBrandOrg>& admission,
                               fp::Permission<fed::LocalCipherTag, LocalCipherBrand>&& local_cipher,
                               fed::FederationHandshake const& handshake) {
-    [[maybe_unused]] auto admitted = admission.mint_federation_admittance<HeldBrand>(std::move(local_cipher), handshake);
+    [[maybe_unused]] auto admitted =
+        admission.mint_federation_admittance<HeldBrand>(std::move(local_cipher), handshake);
 }
 
 }  // namespace

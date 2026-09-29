@@ -120,7 +120,7 @@ template <class Ctx>
     auto const init = fe::testing::init();
     auto const test = fe::testing::test();
     int sum = spend(fe::mint_cap<Effect::Bg>(bg)) + spend(fe::mint_cap<Effect::Init>(init))
-              + spend(fe::mint_cap<Effect::Test>(test));
+            + spend(fe::mint_cap<Effect::Test>(test));
     [[maybe_unused]] fe::cap::Alloc alloc = fe::extract_bare(fe::mint_cap<Effect::Alloc>(bg));
     [[maybe_unused]] fe::cap::IO io = fe::extract_bare(fe::mint_cap<Effect::IO>(init));
     [[maybe_unused]] fe::cap::Block block = fe::extract_bare(fe::mint_cap<Effect::Block>(test));

@@ -14,8 +14,7 @@ namespace eff = ::foundation::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block>> ctx{
-        eff::testing::bg()};
+    const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block>> ctx{eff::testing::bg()};
     bt.run_in_row(ctx);
     return 0;
 }

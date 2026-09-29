@@ -49,8 +49,8 @@ static void test_name_accessors() {
 }
 
 static void test_local_bidirectional_classification() {
-    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 8, 4, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()},
-                                                                                              test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 8, 4, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
 
     auto ok = peer(1);
     record_pair(detector, ok, true, true, 1);
@@ -76,8 +76,8 @@ static void test_local_bidirectional_classification() {
 }
 
 static void test_multi_vantage_overrides_naive_dead_peer() {
-    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 4, 4, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()},
-                                                                                              test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 4, 4, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
 
     auto target = peer(10);
     record_pair(detector, target, false, false, 1);
@@ -97,8 +97,8 @@ static void test_multi_vantage_overrides_naive_dead_peer() {
 }
 
 static void test_witness_majority_unreachable_keeps_dead_class() {
-    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 4, 4, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()},
-                                                                                              test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 4, 4, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
 
     auto target = peer(11);
     record_pair(detector, target, false, false, 1);
@@ -116,12 +116,14 @@ static void test_witness_majority_unreachable_keeps_dead_class() {
 }
 
 static void test_synthetic_round_and_transition_events() {
-    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 2, 4, 2>(eff::ColdInitCtx{::foundation::effects::testing::init()},
-                                                                                              test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<eff::ColdInitCtx, 2, 4, 2>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
     auto target = peer(12);
 
-    assert(detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target, outcome(false, 1), outcome(true, 2)));
-    assert(detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target, outcome(false, 3), outcome(true, 4)));
+    assert(detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
+                                           outcome(false, 1), outcome(true, 2)));
+    assert(detector.record_synthetic_round(eff::BgDrainCtx{::foundation::effects::testing::bg()}, target,
+                                           outcome(false, 3), outcome(true, 4)));
 
     assert(detector.classify(target) == topology::FailureClass::TxBroken);
     assert(detector.event_count() >= 1);

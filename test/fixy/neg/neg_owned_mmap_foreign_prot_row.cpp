@@ -16,6 +16,4 @@ struct WriteExec final {};
 template <>
 inline constexpr int fixy::mmap::prot_bits_v<WriteExec> = PROT_READ | PROT_WRITE | PROT_EXEC;
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

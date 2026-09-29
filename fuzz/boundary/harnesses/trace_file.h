@@ -50,7 +50,8 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
 
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace->metas.size() == trace->num_metas);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace->entries.size() == trace->num_ops);
-    for (const TensorMeta& meta : trace->metas) claim_meta_in_range("trace_file", meta);
+    for (const TensorMeta& meta : trace->metas)
+        claim_meta_in_range("trace_file", meta);
     for (std::uint32_t i = 0; i < trace->num_ops; ++i) {
         const auto& entry = trace->entries[i];
         const std::uint32_t tensors = std::uint32_t{entry.num_inputs} + std::uint32_t{entry.num_outputs};

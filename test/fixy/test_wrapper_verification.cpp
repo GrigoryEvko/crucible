@@ -106,10 +106,10 @@ inline constexpr bool keeps_the_value_layout_with_no_byte_route =
     && !std::is_trivially_copyable_v<Wrapper<T>>;
 
 template <template <typename> class Wrapper>
-inline constexpr bool keeps_the_layout_of_every_shape =
-    keeps_the_value_layout_with_no_byte_route<Wrapper, int> && keeps_the_value_layout_with_no_byte_route<Wrapper, double>
-    && keeps_the_value_layout_with_no_byte_route<Wrapper, int*>
-    && keeps_the_value_layout_with_no_byte_route<Wrapper, TwoWords>;
+inline constexpr bool keeps_the_layout_of_every_shape = keeps_the_value_layout_with_no_byte_route<Wrapper, int>
+                                                     && keeps_the_value_layout_with_no_byte_route<Wrapper, double>
+                                                     && keeps_the_value_layout_with_no_byte_route<Wrapper, int*>
+                                                     && keeps_the_value_layout_with_no_byte_route<Wrapper, TwoWords>;
 
 static_assert(keeps_the_layout_of_every_shape<RefinedAny> && keeps_the_layout_of_every_shape<SealedAny>
               && keeps_the_layout_of_every_shape<Secret>);
@@ -190,7 +190,8 @@ static_assert(sizeof(RecipeSpec<int>) >= sizeof(int) + 2);
 static_assert(!std::is_same_v<Stale<Tagged<int, FromUser>>, Tagged<Stale<int>, FromUser>>);
 static_assert(!std::is_same_v<Refined<positive_local, Linear<int>>, Linear<Refined<positive_local, int>>>);
 static_assert(!std::is_same_v<Secret<Tagged<int, FromUser>>, Tagged<Secret<int>, FromUser>>);
-static_assert(!std::is_same_v<hot_path::Hot<numerical_tier::Bitexact<int>>, numerical_tier::Bitexact<hot_path::Hot<int>>>);
+static_assert(
+    !std::is_same_v<hot_path::Hot<numerical_tier::Bitexact<int>>, numerical_tier::Bitexact<hot_path::Hot<int>>>);
 static_assert(!std::is_same_v<cipher_tier::Hot<det_safe::Pure<int>>, det_safe::Pure<cipher_tier::Hot<int>>>);
 
 // ── The diagnostic surface ──────────────────────────────────────────
@@ -407,16 +408,16 @@ static_assert(sizeof(ThreeHotsAtTop) == sizeof(int), "Three tier axes that spell
                                                      "cross-lattice identity collapsed.");
 static_assert(IsBand<ThreeHotsAtTop>);
 
-using SevenBands = hot_path::Hot<
-    wait::SpinPause<alloc_class::Arena<cipher_tier::Hot<opaque_lifetime::PerFleet<det_safe::Pure<numerical_tier::Bitexact<int>>>>>>>;
+using SevenBands = hot_path::Hot<wait::SpinPause<
+    alloc_class::Arena<cipher_tier::Hot<opaque_lifetime::PerFleet<det_safe::Pure<numerical_tier::Bitexact<int>>>>>>>;
 static_assert(sizeof(SevenBands) == sizeof(int), "Every band stacked over one int must still cost one int: "
                                                  "seven regime-1 wrappers over seven distinct lattices.  If "
                                                  "this fires, one band stopped collapsing.");
 static_assert(alignof(SevenBands) == alignof(int));
 static_assert(IsBandOf<HotPathLattice, SevenBands>);
 
-using SevenBandsOverStale = hot_path::Hot<
-    wait::SpinPause<alloc_class::Arena<cipher_tier::Hot<opaque_lifetime::PerFleet<det_safe::Pure<numerical_tier::Bitexact<Stale<int>>>>>>>>;
+using SevenBandsOverStale = hot_path::Hot<wait::SpinPause<alloc_class::Arena<
+    cipher_tier::Hot<opaque_lifetime::PerFleet<det_safe::Pure<numerical_tier::Bitexact<Stale<int>>>>>>>>;
 static_assert(sizeof(SevenBandsOverStale) == sizeof(Stale<int>),
               "Seven bands over a Stale must collapse to the Stale: the one runtime grade at the root is "
               "the whole layout.");

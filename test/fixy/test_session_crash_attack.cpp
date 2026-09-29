@@ -70,7 +70,8 @@ struct X {
 // the delegation rule this protocol was admitted, and a crash of the
 // delegated peer left the holder waiting.
 struct DelegatedWire {};
-using Delegated = s::DelegatedSession<s::Recv<int, s::End>, DelegatedWire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
+using Delegated =
+    s::DelegatedSession<s::Recv<int, s::End>, DelegatedWire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
 using ReceivesDelegation = s::Offer<s::Recv<Delegated, s::End>, s::Recv<s::Crash<P>, s::End>>;
 static_assert(!s::CrashSessionAdmissible<ReceivesDelegation, Q, P, s::NoReliableRoles>);
 struct HidesDelegation {
@@ -300,8 +301,9 @@ static_assert(s::checkpoint_verdict_v<DelegatesThenCommits, s::dual_of_t<Delegat
 // not compose, and the checkpoint mint refuses the mixture.
 using CrashInsideCheckpoint =
     s::Offer<s::Recv<int, s::Offer<s::Commit<s::End>, s::Abort>>, s::Recv<s::Crash<P>, s::End>>;
-static_assert(s::checkpoint_verdict_v<CrashInsideCheckpoint, s::Select<s::Send<int, s::Select<s::Commit<s::End>, s::Abort>>>>
-              != s::CheckpointVerdict::Compliant);
+static_assert(
+    s::checkpoint_verdict_v<CrashInsideCheckpoint, s::Select<s::Send<int, s::Select<s::Commit<s::End>, s::Abort>>>>
+    != s::CheckpointVerdict::Compliant);
 
 // A crash session cannot start with a token: its mint has an empty set,
 // so the only token in flight is one it received.
@@ -309,8 +311,7 @@ using SendsToken = s::Select<s::Send<s::Transferable<int, X>, s::End>>;
 static_assert(!s::CrashSessionAdmissible<SendsToken, Q, P, s::NoReliableRoles>);
 
 // A reception hidden in a loop, one step after the guarded choice.
-using HiddenInLoop =
-    s::Loop<s::Offer<s::Recv<int, s::Recv<int, s::Continue>>, s::Recv<s::Crash<P>, s::End>>>;
+using HiddenInLoop = s::Loop<s::Offer<s::Recv<int, s::Recv<int, s::Continue>>, s::Recv<s::Crash<P>, s::End>>>;
 static_assert(!s::CrashSessionAdmissible<HiddenInLoop, Q, P, s::NoReliableRoles>);
 
 // A crash branch for a peer that the endpoint counts reliable.
@@ -434,11 +435,15 @@ void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& 
 [[noreturn]] void finish(Outcome outcome) {
     std::fflush(stderr);
     switch (outcome) {
-        case Outcome::Correct: std::_Exit(kCorrectExit);
-        case Outcome::Silent: std::_Exit(kSilentExit);
-        case Outcome::Deadlock: std::_Exit(kDeadlockExit);
+        case Outcome::Correct:
+            std::_Exit(kCorrectExit);
+        case Outcome::Silent:
+            std::_Exit(kSilentExit);
+        case Outcome::Deadlock:
+            std::_Exit(kDeadlockExit);
         case Outcome::Caught:
-        default: std::abort();
+        default:
+            std::abort();
     }
 }
 
@@ -593,7 +598,8 @@ void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& 
     s::PeerCrashCell cell_p;
     s::PeerCrashCell cell_q;
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
-    std::move(q).branch(poll_label, [](auto branch) noexcept { std::move(branch).detach(s::detach_reason::TestInstrumentation{}); });
+    std::move(q).branch(
+        poll_label, [](auto branch) noexcept { std::move(branch).detach(s::detach_reason::TestInstrumentation{}); });
     finish(Outcome::Silent);
 }
 
@@ -687,7 +693,8 @@ void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& 
         if (empty_polls < 3) {
             ++empty_polls;
             if (empty_polls == 3) {
-                for (const std::uint64_t slot : in_flight.slots) to_q.slots.push_back(slot);
+                for (const std::uint64_t slot : in_flight.slots)
+                    to_q.slots.push_back(slot);
                 in_flight.slots.clear();
             }
             return std::nullopt;
@@ -1001,7 +1008,8 @@ void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& 
         if (decoded || decoded.error() != s::EventDecodeError::Truncated) finish(Outcome::Silent);
     }
     std::array<std::byte, 2 * s::session_event_size - 1> torn{};
-    for (std::size_t index = 0; index < bytes.size(); ++index) torn[index] = bytes[index];
+    for (std::size_t index = 0; index < bytes.size(); ++index)
+        torn[index] = bytes[index];
     const auto torn_log = s::decode_session_log(torn);
     if (torn_log || torn_log.error().error != s::EventDecodeError::Truncated) finish(Outcome::Silent);
     finish(refused > 0 && accepted > 0 ? Outcome::Correct : Outcome::Silent);
@@ -1103,11 +1111,16 @@ void on_watchdog(int) { std::_Exit(kDeadlockExit); }
 
 [[nodiscard]] const char* outcome_name(Outcome outcome) noexcept {
     switch (outcome) {
-        case Outcome::Caught: return "caught";
-        case Outcome::Silent: return "silent";
-        case Outcome::Deadlock: return "deadlock";
-        case Outcome::Correct: return "correct";
-        default: return "unknown";
+        case Outcome::Caught:
+            return "caught";
+        case Outcome::Silent:
+            return "silent";
+        case Outcome::Deadlock:
+            return "deadlock";
+        case Outcome::Correct:
+            return "correct";
+        default:
+            return "unknown";
     }
 }
 

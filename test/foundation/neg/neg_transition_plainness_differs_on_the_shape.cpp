@@ -21,14 +21,15 @@ template <class K>
 struct Unmark {};
 
 namespace registry {
-inline constexpr tr::combinator mark{.shape = ^^Mark, .kind = tr::shape_kind::marker, .dual = ^^Unmark, .is_plain = false};
+inline constexpr tr::combinator mark{
+    .shape = ^^Mark, .kind = tr::shape_kind::marker, .dual = ^^Unmark, .is_plain = false};
 inline constexpr tr::combinator unmark{.shape = ^^Unmark, .kind = tr::shape_kind::marker, .dual = ^^Mark};
 }  // namespace registry
 }  // namespace neg_transition_plainness_differs_on_the_shape_types
 
-static_assert(tr::check_registry(^^neg_transition_plainness_differs_on_the_shape_types::registry).reason
-                  == tr::incoherence::none,
-              tr::incoherent_message("layer [Incoherent_Registration]: ",
-                                     tr::check_registry(^^neg_transition_plainness_differs_on_the_shape_types::registry)));
+static_assert(
+    tr::check_registry(^^neg_transition_plainness_differs_on_the_shape_types::registry).reason == tr::incoherence::none,
+    tr::incoherent_message("layer [Incoherent_Registration]: ",
+                           tr::check_registry(^^neg_transition_plainness_differs_on_the_shape_types::registry)));
 
 int main() { return 0; }

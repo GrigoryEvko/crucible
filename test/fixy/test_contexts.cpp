@@ -41,8 +41,8 @@ static_assert(std::is_same_v<HotFgCtx, fe::ExecCtx<fe::ctx_cap::Fg, Row<>>>);
 static_assert(std::is_same_v<BgDrainCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc>>>);
 static_assert(std::is_same_v<BgCompileCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>>);
 static_assert(std::is_same_v<ColdInitCtx, fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
-static_assert(std::is_same_v<TestRunnerCtx,
-                             fe::ExecCtx<fe::Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>>);
+static_assert(
+    std::is_same_v<TestRunnerCtx, fe::ExecCtx<fe::Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>>);
 static_assert(
     std::is_same_v<BgLoadCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>>);
 static_assert(
@@ -120,17 +120,16 @@ static_assert(CanDoNothing<HotFgCtx> && CanDoNothing<BgDrainCtx> && CanDoNothing
 // Narrowing the compile row by IO is the drain context: the two
 // production names are one narrowing apart, not two spellings.
 
-static_assert(std::is_same_v<decltype(std::declval<BgCompileCtx const&>().in_row<Row<Effect::Bg, Effect::Alloc>>()),
-                             BgDrainCtx>);
+static_assert(
+    std::is_same_v<decltype(std::declval<BgCompileCtx const&>().in_row<Row<Effect::Bg, Effect::Alloc>>()), BgDrainCtx>);
 
 // A row only narrows.  The drain context does not widen by Block,
 // although its source permits Block: the atom needs the source as
 // evidence, and the drain context does not lend its source.  The
 // foreground context cannot claim Bg at all.
 template <class Ctx>
-concept CanWidenByBlock = requires(Ctx const& ctx) {
-    ctx.template in_row<Row<Effect::Bg, Effect::Alloc, Effect::Block>>();
-};
+concept CanWidenByBlock =
+    requires(Ctx const& ctx) { ctx.template in_row<Row<Effect::Bg, Effect::Alloc, Effect::Block>>(); };
 template <class Ctx>
 concept CanClaimBg = requires(Ctx const& ctx) { ctx.template in_row<Row<Effect::Bg>>(); };
 template <class Ctx>
@@ -138,16 +137,17 @@ concept LendsItsSource = requires(Ctx const& ctx) { ctx.cap(); };
 static_assert(!CanWidenByBlock<BgDrainCtx>);
 static_assert(CanWidenByBlock<BgLoadCtx>, "the load row covers the narrower row");
 static_assert(!CanClaimBg<HotFgCtx>);
-static_assert(!CanWidenByBlock<ColdInitCtx>, "the init row is not a subrow of the drain row, and an init source permits no Bg");
+static_assert(!CanWidenByBlock<ColdInitCtx>,
+              "the init row is not a subrow of the drain row, and an init source permits no Bg");
 static_assert(!LendsItsSource<BgDrainCtx> && !LendsItsSource<BgCompileCtx> && !LendsItsSource<ColdInitCtx>);
 static_assert(LendsItsSource<BgLoadCtx> && LendsItsSource<InitLoadCtx> && LendsItsSource<TestRunnerCtx>);
 
 // The startup load context narrowed by Block is the cold init context.
 // The two production names are one narrowing apart, as the compile and
 // the drain contexts are.
-static_assert(std::is_same_v<decltype(std::declval<InitLoadCtx const&>()
-                                          .in_row<Row<Effect::Init, Effect::Alloc, Effect::IO>>()),
-                             ColdInitCtx>);
+static_assert(
+    std::is_same_v<decltype(std::declval<InitLoadCtx const&>().in_row<Row<Effect::Init, Effect::Alloc, Effect::IO>>()),
+                   ColdInitCtx>);
 
 // ---------------------------------------------------------------------
 // A static_assert proves the constant-evaluated path only.  These run.

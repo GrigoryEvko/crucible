@@ -347,7 +347,7 @@ private:
         }
     }
 
-    alignas(64) ::fixy::FixedArray<std::atomic<std::uint64_t>, MaxNodes> entries_{};
+    alignas(64)::fixy::FixedArray<std::atomic<std::uint64_t>, MaxNodes> entries_{};
     [[no_unique_address]] node_index_type self_id_;
 };
 

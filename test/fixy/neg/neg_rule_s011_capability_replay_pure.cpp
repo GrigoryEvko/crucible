@@ -13,7 +13,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>, ::fixy::atom::capability_usage,
-                                ::fixy::atom::trust_verified>
-        refused{};
+                                ::fixy::atom::trust_verified> refused{};
     return 0;
 }

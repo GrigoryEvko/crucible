@@ -203,9 +203,7 @@ void set_branches(System& sys, int node, std::initializer_list<BranchSpec> specs
     sys.nodes[static_cast<std::size_t>(node)].branches = std::move(branches);
 }
 
-void set_alias(System& sys, int node, int target) {
-    sys.nodes[static_cast<std::size_t>(node)].alias = target;
-}
+void set_alias(System& sys, int node, int target) { sys.nodes[static_cast<std::size_t>(node)].alias = target; }
 
 void add_queued(System& sys, std::string_view from, std::string_view to, std::string_view label,
                 std::string_view payload) {
@@ -246,7 +244,8 @@ template <typename Q, typename L, typename P, typename K>
 struct LocalBuild<s::Send<s::PeerMsg<Q, L, P>, K>> {
     static int build(System& sys, int loop) {
         const int self = sys.add_node(NodeKind::Internal);
-        set_branches(sys, self, {BranchSpec{name_of<Q>(), name_of<L>(), name_of<P>(), LocalBuild<K>::build(sys, loop)}});
+        set_branches(sys, self,
+                     {BranchSpec{name_of<Q>(), name_of<L>(), name_of<P>(), LocalBuild<K>::build(sys, loop)}});
         return self;
     }
 };
@@ -255,7 +254,8 @@ template <typename Q, typename L, typename P, typename K>
 struct LocalBuild<s::Recv<s::PeerMsg<Q, L, P>, K>> {
     static int build(System& sys, int loop) {
         const int self = sys.add_node(NodeKind::External);
-        set_branches(sys, self, {BranchSpec{name_of<Q>(), name_of<L>(), name_of<P>(), LocalBuild<K>::build(sys, loop)}});
+        set_branches(sys, self,
+                     {BranchSpec{name_of<Q>(), name_of<L>(), name_of<P>(), LocalBuild<K>::build(sys, loop)}});
         return self;
     }
 };
@@ -298,7 +298,8 @@ struct ContextLoad<s::TypingContext<s::RoleState<Rs, Qs, Ts>...>> {
         sys.roles = {name_of<Rs>()...};
         sys.initial_queues.assign(sys.roles.size() * sys.roles.size(), {});
         (sys.start.push_back(LocalBuild<Ts>::build(sys, -1)), ...);
-        for (int& entry : sys.start) entry = sys.resolve(entry);
+        for (int& entry : sys.start)
+            entry = sys.resolve(entry);
         (QueueLoad<Rs, Qs>::load(sys), ...);
         return sys;
     }
@@ -413,8 +414,9 @@ constexpr std::size_t state_cap = 200000;
                 const std::size_t pair = sys.pair_of(peer, static_cast<int>(role));
                 if (here.queues[pair].empty()) continue;
                 const int head = here.queues[pair].front();
-                const auto match = std::ranges::find_if(
-                    node.branches, [&](const Branch& branch) { return branch.peer == peer && sys.fits(head, branch.message); });
+                const auto match = std::ranges::find_if(node.branches, [&](const Branch& branch) {
+                    return branch.peer == peer && sys.fits(head, branch.message);
+                });
                 if (match == node.branches.end()) {
                     bad = true;
                     continue;
@@ -440,9 +442,9 @@ constexpr std::size_t state_cap = 200000;
 
 struct Obligation {
     bool is_queue = false;  // L1 when true, L2 when false
-    int first = -1;         // L1: the sender; L2: the waiting role
-    int second = -1;        // L1: the receiver; L2: the peer it waits on
-    int message = -1;       // L1 only
+    int first = -1;  // L1: the sender; L2: the waiting role
+    int second = -1;  // L1: the receiver; L2: the peer it waits on
+    int message = -1;  // L1 only
 
     auto operator<=>(const Obligation&) const = default;
 };
@@ -542,7 +544,8 @@ struct Obligation {
         work.pop_back();
         for (const std::vector<int>& component : components(adjacency, current)) {
             std::vector<char> inside(count, 0);
-            for (const int node : component) inside[static_cast<std::size_t>(node)] = 1;
+            for (const int node : component)
+                inside[static_cast<std::size_t>(node)] = 1;
             std::vector<std::uint64_t> taken;
             bool has_cycle = false;
             for (const int node : component) {
@@ -620,7 +623,8 @@ struct Verdict {
     const std::vector<char> could_end = nodes_that_can_end(projected);
     const std::size_t count = ex.states.size();
     std::vector<std::vector<int>> predecessors(count);
-    for (const Edge& edge : ex.edges) predecessors[static_cast<std::size_t>(edge.to)].push_back(edge.from);
+    for (const Edge& edge : ex.edges)
+        predecessors[static_cast<std::size_t>(edge.to)].push_back(edge.from);
     std::vector<char> ends(count, 0);
     std::vector<int> frontier;
     for (std::size_t state = 0; state < count; ++state) {
@@ -641,7 +645,7 @@ struct Verdict {
         if (ends[state] != 0) continue;
         const bool each_could_end = std::ranges::all_of(ex.states[state].at, [&](int node) {
             return node >= 0 && static_cast<std::size_t>(node) < could_end.size()
-                   && could_end[static_cast<std::size_t>(node)] != 0;
+                && could_end[static_cast<std::size_t>(node)] != 0;
         });
         if (each_could_end) return true;
     }
@@ -662,7 +666,8 @@ struct Verdict {
             for (std::size_t to = 0; to < sys.roles.size(); ++to) {
                 const std::vector<int>& queue = state.queues[sys.pair_of(static_cast<int>(from), static_cast<int>(to))];
                 if (!queue.empty()) {
-                    obligations.push_back(Obligation{true, static_cast<int>(from), static_cast<int>(to), queue.front()});
+                    obligations.push_back(
+                        Obligation{true, static_cast<int>(from), static_cast<int>(to), queue.front()});
                 }
             }
             const Node& node = sys.nodes[static_cast<std::size_t>(state.at[from])];
@@ -711,7 +716,8 @@ void run_context(const System& sys, std::string_view label, bool expect_clean) {
         print_verdict(line, verdict);
         expect(!verdict.capped, line + ": the state cap stopped the explorer");
         expect(verdict.is_clean() == expect_clean,
-               line + (expect_clean ? ": expected live, the explorer found a fault" : ": expected a fault, found none"));
+               line
+                   + (expect_clean ? ": expected live, the explorer found a fault" : ": expected a fault, found none"));
     }
 }
 
@@ -770,8 +776,10 @@ namespace {
 using test_session_global_attack_roles::NeverSent;
 using Checked = ::fixy::Tagged<int, ::fixy::tags::source::Sanitized>;
 static_assert(s::is_payload_subsort_v<Checked, int>);
-static_assert(s::is_payload_subsort_v<s::PeerMsg<NeverSent, NeverSent, Checked>, s::PeerMsg<NeverSent, NeverSent, int>>);
-static_assert(!s::is_payload_subsort_v<s::PeerMsg<NeverSent, NeverSent, int>, s::PeerMsg<NeverSent, NeverSent, Checked>>);
+static_assert(
+    s::is_payload_subsort_v<s::PeerMsg<NeverSent, NeverSent, Checked>, s::PeerMsg<NeverSent, NeverSent, int>>);
+static_assert(
+    !s::is_payload_subsort_v<s::PeerMsg<NeverSent, NeverSent, int>, s::PeerMsg<NeverSent, NeverSent, Checked>>);
 
 template <typename Policy, typename T>
 struct Rewrite;
@@ -840,7 +848,8 @@ struct send_peer<s::Send<s::PeerMsg<Q, L, P>, K>> {
 struct WidenPolicy : IdentityPolicy {
     template <typename First, typename... Bs>
     struct select {
-        using type = s::Select<First, Bs..., s::Send<s::PeerMsg<typename send_peer<First>::type, NeverSent, int>, s::End>>;
+        using type =
+            s::Select<First, Bs..., s::Send<s::PeerMsg<typename send_peer<First>::type, NeverSent, int>, s::End>>;
     };
 };
 
@@ -1055,9 +1064,8 @@ void check_association_step(std::string_view label) {
     using Widened = typename MapContext<Ctx, WidenRewrite>::type;
     judge_narrowed(label, "safe rewrite", s::association_holds_v<Safe, G>, base, rewritten(base, GraphRewrite::Safe));
     if constexpr (!std::is_same_v<Widened, Ctx>) {
-        judge_refused(label, "widened Select", s::association_holds_v<Widened, G>,
-                      rewritten(base, GraphRewrite::Widen), association_counts.refused,
-                      association_counts.refused_faulty);
+        judge_refused(label, "widened Select", s::association_holds_v<Widened, G>, rewritten(base, GraphRewrite::Widen),
+                      association_counts.refused, association_counts.refused_faulty);
     }
     if constexpr (Full) {
         ++association_counts.full_types;
@@ -1187,12 +1195,13 @@ using Tirore3 = g::Msg<P, Q, Kk, int, g::Rec<g::Comm<R, S, g::Branch<L1, int, g:
 // a Var reaches only the nearest Rec.  That limit costs expressiveness,
 // not safety.
 using Tirore5 = g::Rec<g::Msg<P, Q, Kk, int, g::Msg<R, S, Kk, int, g::Var>>>;
-using Nested = g::Rec<g::Msg<P, Q, M, int, g::Rec<g::Comm<Q, R, g::Branch<L1, int, g::Var>, g::Branch<L2, int, g::End>>>>>;
+using Nested =
+    g::Rec<g::Msg<P, Q, M, int, g::Rec<g::Comm<Q, R, g::Branch<L1, int, g::Var>, g::Branch<L2, int, g::End>>>>>;
 using FanIn = g::Rec<g::Msg<P, S, X, int, g::Msg<Q, S, Y, int, g::Msg<R, S, Z, int, g::Msg<S, P, M, int, g::Var>>>>>;
 using RunAhead = g::Rec<g::Msg<P, Q, X, int, g::Msg<P, R, Y, int, g::Var>>>;
 using SentOnly = g::EnRoute<P, Q, M, int, g::End>;
-using AfterChoice = g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>,
-                            g::Branch<M2, int, g::Msg<Q, R, M2, int, g::End>>>;
+using AfterChoice =
+    g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>, g::Branch<M2, int, g::Msg<Q, R, M2, int, g::End>>>;
 // A merge whose union hides nothing: R learns the branch from P's label.
 using MergedUnion = g::Comm<P, Q, g::Branch<L1, int, g::Msg<P, R, M1, int, g::Msg<R, Q, X, int, g::End>>>,
                             g::Branch<L2, int, g::Msg<P, R, M2, int, g::Msg<Q, R, Y, int, g::End>>>>;
@@ -1234,15 +1243,17 @@ void run_accepted() {
 using Ex12G1 = g::Rec<g::Comm<P, Q, g::Branch<M0, int, g::Var>, g::Branch<M1, int, g::Msg<P, R, M, int, g::End>>>>;
 static_assert(!g::is_balanced_v<Ex12G1>);
 static_assert(!s::projects_v<Ex12G1, R>);
-using Ex12G1Coinductive = s::TypingContext<
-    At<P, s::Loop<s::Select<Out<Q, M0, s::Continue>, Out<Q, M1, Out<R, M, s::End>>>>>,
-    At<Q, s::Loop<s::Offer<s::Sender<P>, In<P, M0, s::Continue>, In<P, M1, s::End>>>>, At<R, In<P, M, s::End>>>;
+using Ex12G1Coinductive =
+    s::TypingContext<At<P, s::Loop<s::Select<Out<Q, M0, s::Continue>, Out<Q, M1, Out<R, M, s::End>>>>>,
+                     At<Q, s::Loop<s::Offer<s::Sender<P>, In<P, M0, s::Continue>, In<P, M1, s::End>>>>,
+                     At<R, In<P, M, s::End>>>;
 
 // PMY25 equation (49): an en-route message behind a transmission of the
 // same pair.  The projection that ignores the count is unsafe.
 using Ex49 = g::Msg<P, Q, M, int, g::EnRoute<P, Q, M1, int, g::End>>;
 static_assert(!g::is_balanced_plus_v<Ex49>);
-using Ex49Naive = s::TypingContext<At<P, Out<Q, M, s::End>, s::OutQueue<s::Queued<Q, M1, int>>>, At<Q, In<P, M, In<P, M1, s::End>>>>;
+using Ex49Naive =
+    s::TypingContext<At<P, Out<Q, M, s::End>, s::OutQueue<s::Queued<Q, M1, int>>>, At<Q, In<P, M, In<P, M1, s::End>>>>;
 
 // A role in one branch only: plain merge would need End = Recv.
 using OneBranchOnly = g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>, g::Branch<M2, int, g::End>>;
@@ -1263,8 +1274,8 @@ using TiroreGuess = s::TypingContext<
     At<R, s::Recv<s::PeerMsg<Q, Kk, bool>, s::End>>>;
 
 // An internal choice that a role must make without seeing the choice.
-using BlindSender = g::Comm<P, Q, g::Branch<L1, int, g::Msg<R, S, X, int, g::End>>,
-                            g::Branch<L2, int, g::Msg<R, S, Y, int, g::End>>>;
+using BlindSender =
+    g::Comm<P, Q, g::Branch<L1, int, g::Msg<R, S, X, int, g::End>>, g::Branch<L2, int, g::Msg<R, S, Y, int, g::End>>>;
 static_assert(!s::projects_v<BlindSender, R>);
 using BlindGuess = s::TypingContext<At<P, s::Select<Out<Q, L1, s::End>, Out<Q, L2, s::End>>>,
                                     At<Q, s::Offer<s::Sender<P>, In<P, L1, s::End>, In<P, L2, s::End>>>,
@@ -1272,9 +1283,10 @@ using BlindGuess = s::TypingContext<At<P, s::Select<Out<Q, L1, s::End>, Out<Q, L
 
 // A merge that would hide a deadlock: R sends in one branch and receives
 // in the other, from the same peer.
-using CrossedMerge = g::Comm<P, Q, g::Branch<L1, int, g::Msg<R, S, X, int, g::End>>,
-                             g::Branch<L2, int, g::Msg<S, R, Y, int, g::End>>>;
-static_assert(std::is_same_v<s::project_t<CrossedMerge, R>, s::NotProjectable<s::projection_failure::MergeShapeMismatch>>);
+using CrossedMerge =
+    g::Comm<P, Q, g::Branch<L1, int, g::Msg<R, S, X, int, g::End>>, g::Branch<L2, int, g::Msg<S, R, Y, int, g::End>>>;
+static_assert(
+    std::is_same_v<s::project_t<CrossedMerge, R>, s::NotProjectable<s::projection_failure::MergeShapeMismatch>>);
 using CrossedGuess = s::TypingContext<At<P, s::Select<Out<Q, L1, s::End>, Out<Q, L2, s::End>>>,
                                       At<Q, s::Offer<s::Sender<P>, In<P, L1, s::End>, In<P, L2, s::End>>>,
                                       At<R, In<S, Y, s::End>>, At<S, In<R, X, s::End>>>;
@@ -1284,15 +1296,16 @@ using InnerBranchOnly =
     g::Rec<g::Comm<P, Q, g::Branch<L1, int, g::Msg<Q, R, X, int, g::Var>>, g::Branch<L2, int, g::Var>>>;
 static_assert(!g::is_balanced_v<InnerBranchOnly>);
 static_assert(!s::is_live_by_construction_v<InnerBranchOnly>);
-using InnerBranchCoinductive = s::TypingContext<
-    At<P, s::Loop<s::Select<Out<Q, L1, s::Continue>, Out<Q, L2, s::Continue>>>>,
-    At<Q, s::Loop<s::Offer<s::Sender<P>, In<P, L1, Out<R, X, s::Continue>>, In<P, L2, s::Continue>>>>,
-    At<R, s::Loop<In<Q, X, s::Continue>>>>;
+using InnerBranchCoinductive =
+    s::TypingContext<At<P, s::Loop<s::Select<Out<Q, L1, s::Continue>, Out<Q, L2, s::Continue>>>>,
+                     At<Q, s::Loop<s::Offer<s::Sender<P>, In<P, L1, Out<R, X, s::Continue>>, In<P, L2, s::Continue>>>>,
+                     At<R, s::Loop<In<Q, X, s::Continue>>>>;
 
 // A role absent from a loop projects to End, not to Loop<Continue>.
 // Loop<Continue> spins without an action, and the explorer refuses it.
-static_assert(std::is_same_v<typename s::project_t<g::Msg<P, R, M, int, g::Rec<g::Msg<P, Q, M, int, g::Var>>>, R>::local,
-                             In<P, M, s::End>>);
+static_assert(
+    std::is_same_v<typename s::project_t<g::Msg<P, R, M, int, g::Rec<g::Msg<P, Q, M, int, g::Var>>>, R>::local,
+                   In<P, M, s::End>>);
 
 // PMY25 Example 12, G2: refused as unbalanced, although its coinductive
 // context is live.  The paper refuses it because the global type does not
@@ -1300,10 +1313,10 @@ static_assert(std::is_same_v<typename s::project_t<g::Msg<P, R, M, int, g::Rec<g
 // completeness, not safety.
 using Ex12G2 = g::Rec<g::Comm<P, Q, g::Branch<M0, int, g::Var>, g::Branch<M1, int, g::Msg<S, R, M, int, g::End>>>>;
 static_assert(!s::is_live_by_construction_v<Ex12G2>);
-using Ex12G2Coinductive = s::TypingContext<
-    At<P, s::Loop<s::Select<Out<Q, M0, s::Continue>, Out<Q, M1, s::End>>>>,
-    At<Q, s::Loop<s::Offer<s::Sender<P>, In<P, M0, s::Continue>, In<P, M1, s::End>>>>, At<R, In<S, M, s::End>>,
-    At<S, Out<R, M, s::End>>>;
+using Ex12G2Coinductive =
+    s::TypingContext<At<P, s::Loop<s::Select<Out<Q, M0, s::Continue>, Out<Q, M1, s::End>>>>,
+                     At<Q, s::Loop<s::Offer<s::Sender<P>, In<P, M0, s::Continue>, In<P, M1, s::End>>>>,
+                     At<R, In<S, M, s::End>>, At<S, Out<R, M, s::End>>>;
 
 void run_refusals() {
     std::printf("refused types (each weaker context must show a fault)\n");
@@ -1431,10 +1444,12 @@ consteval auto gen_select() {
     } else if constexpr (pick < 3 && InLoop) {
         return std::type_identity<g::Var>{};
     } else if constexpr (pick < 9) {
-        return std::type_identity<g::Msg<From, To, Label, int, typename Gen<Seed * 3 + 1, Depth - 1, InLoop, RoleCount>::type>>{};
+        return std::type_identity<
+            g::Msg<From, To, Label, int, typename Gen<Seed * 3 + 1, Depth - 1, InLoop, RoleCount>::type>>{};
     } else if constexpr (pick < 13) {
-        return std::type_identity<g::Comm<From, To, g::Branch<GenL0, int, typename Gen<Seed * 5 + 2, Depth - 1, InLoop, RoleCount>::type>,
-                                          g::Branch<GenL1, int, typename Gen<Seed * 7 + 3, Depth - 1, InLoop, RoleCount>::type>>>{};
+        return std::type_identity<
+            g::Comm<From, To, g::Branch<GenL0, int, typename Gen<Seed * 5 + 2, Depth - 1, InLoop, RoleCount>::type>,
+                    g::Branch<GenL1, int, typename Gen<Seed * 7 + 3, Depth - 1, InLoop, RoleCount>::type>>>{};
     } else {
         return std::type_identity<
             g::Rec<g::Msg<From, To, Label, int, typename Gen<Seed * 11 + 4, Depth - 1, true, RoleCount>::type>>>{};
@@ -1572,8 +1587,9 @@ void check_generated(FamilyCounts& counts, std::string_view family, std::uint64_
 // Half of the seeds start the type with a loop, so that balancedness and
 // the merge of loop-backs are exercised.
 template <std::uint64_t Seed, int Depth, std::size_t RoleCount>
-using generated_t = std::conditional_t<Seed % 2 == 0, typename Gen<Seed, Depth, false, RoleCount>::type,
-                                       g::Rec<g::Msg<GenA, GenB, GenL0, int, typename Gen<Seed, Depth, true, RoleCount>::type>>>;
+using generated_t =
+    std::conditional_t<Seed % 2 == 0, typename Gen<Seed, Depth, false, RoleCount>::type,
+                       g::Rec<g::Msg<GenA, GenB, GenL0, int, typename Gen<Seed, Depth, true, RoleCount>::type>>>;
 
 template <std::size_t RoleCount, int Depth, std::uint64_t Base, bool FullAssociation, std::size_t... Index>
 void run_family(std::string_view family, std::index_sequence<Index...>) {
@@ -1605,13 +1621,9 @@ void run_generated() {
 // be live.
 
 using Shapes = std::tuple<
-    g::End,
-    g::Msg<GenA, GenC, GenL0, int, g::End>,
-    g::Msg<GenA, GenC, GenL1, int, g::End>,
-    g::Msg<GenB, GenC, GenL0, int, g::End>,
-    g::Msg<GenC, GenA, GenL0, int, g::End>,
-    g::Msg<GenC, GenA, GenL1, int, g::End>,
-    g::Rec<g::Msg<GenA, GenC, GenL0, int, g::Var>>,
+    g::End, g::Msg<GenA, GenC, GenL0, int, g::End>, g::Msg<GenA, GenC, GenL1, int, g::End>,
+    g::Msg<GenB, GenC, GenL0, int, g::End>, g::Msg<GenC, GenA, GenL0, int, g::End>,
+    g::Msg<GenC, GenA, GenL1, int, g::End>, g::Rec<g::Msg<GenA, GenC, GenL0, int, g::Var>>,
     g::Msg<GenA, GenC, GenL0, int, g::Rec<g::Msg<GenA, GenC, GenL0, int, g::Var>>>,
     g::Rec<g::Msg<GenA, GenC, GenL0, int, g::Msg<GenC, GenB, GenL1, int, g::Var>>>,
     g::Msg<GenA, GenC, GenL1, int, g::Rec<g::Msg<GenA, GenC, GenL0, int, g::Var>>>,

@@ -98,7 +98,8 @@ static_assert(!is_concrete_numa_node(NumaNodeId::None) && !is_concrete_numa_node
 static_assert(NumaNodeLattice::leq(NumaNodeId::None, NumaNodeId{0}));
 static_assert(NumaNodeLattice::leq(NumaNodeId{42}, NumaNodeId::Any));
 static_assert(NumaNodeLattice::leq(NumaNodeId{42}, NumaNodeId{42}));
-static_assert(!NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId{1}) && !NumaNodeLattice::leq(NumaNodeId{1}, NumaNodeId{0}),
+static_assert(!NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId{1})
+                  && !NumaNodeLattice::leq(NumaNodeId{1}, NumaNodeId{0}),
               "two concrete nodes are siblings: neither covers the other");
 static_assert(!NumaNodeLattice::leq(NumaNodeId::Any, NumaNodeId{0}));
 

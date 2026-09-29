@@ -24,7 +24,6 @@ struct parser_bounds_proved final {};
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot, ::fixy::atom::cost_unbounded,
-                                ::fixy::atom::refined_with<fixture::parser_bounds_proved>>
-        refused{};
+                                ::fixy::atom::refined_with<fixture::parser_bounds_proved>> refused{};
     return 0;
 }

@@ -75,8 +75,9 @@ public:
         return alloc_slow_(s, a);
     }
 
-    [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE void*
-    alloc(::foundation::effects::Alloc a, ::fixy::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
+    [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE void* alloc(::foundation::effects::Alloc a,
+                                                                                 ::fixy::Positive<size_t> size) noexcept
+        CRUCIBLE_LIFETIMEBOUND {
         return alloc(a, size, ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(std::max_align_t)}));
     }
 

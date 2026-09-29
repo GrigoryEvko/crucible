@@ -56,9 +56,7 @@ uint64_t LockContention::wait_count() const noexcept { return state_ != nullptr 
                              : ::fixy::Borrowed<const TimelineLockEvent, LockContention>{};
 }
 
-uint64_t LockContention::timeline_write_index() const noexcept {
-    return state_ != nullptr ? state_->write_index() : 0;
-}
+uint64_t LockContention::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> LockContention::attached_programs() const noexcept {
     return detail::attached_programs(state_.get());

@@ -82,12 +82,15 @@ int main() {
     assert(lifeguard.adaptive_timeout(peer(1).uuid)->value() == 400000000ULL);
     assert(lifeguard.swim().health(peer(1).uuid).peek().state == cc::SwimState::Dead);
 
-    assert(lifeguard.on_indirect_ack(peer(1).uuid, 9000, ::fixy::mint_refined<::fixy::positive>(std::uint64_t{40000000ULL})).has_value());
+    assert(lifeguard
+               .on_indirect_ack(peer(1).uuid, 9000, ::fixy::mint_refined<::fixy::positive>(std::uint64_t{40000000ULL}))
+               .has_value());
     assert(lifeguard.swim().health(peer(1).uuid).peek().state == cc::SwimState::Alive);
     assert(lifeguard.local_health_multiplier(peer(1).uuid)->value() == 3);
     assert(lifeguard.adaptive_timeout(peer(1).uuid)->value() == 300000000ULL);
 
-    assert(lifeguard.on_ack(peer(1).uuid, 10000, ::fixy::mint_refined<::fixy::positive>(std::uint64_t{150000000ULL})).has_value());
+    assert(lifeguard.on_ack(peer(1).uuid, 10000, ::fixy::mint_refined<::fixy::positive>(std::uint64_t{150000000ULL}))
+               .has_value());
     assert(lifeguard.local_health_multiplier(peer(1).uuid)->value() == 2);
     assert(lifeguard.adaptive_timeout(peer(1).uuid)->value() == 285000000ULL);
 

@@ -353,7 +353,8 @@ declare_sysctl_config(SysctlConfig const& config) noexcept {
     }
 }
 
-[[nodiscard]] constexpr ::fixy::Bits<NicFeature> audit_features_from_offloads(::fixy::Bits<NicOffload> offloads) noexcept {
+[[nodiscard]] constexpr ::fixy::Bits<NicFeature>
+audit_features_from_offloads(::fixy::Bits<NicOffload> offloads) noexcept {
     ::fixy::Bits<NicFeature> out{};
     if (offloads.test(NicOffload::Tso)) out.set(NicFeature::Tso);
     if (offloads.test(NicOffload::Gso)) out.set(NicFeature::Gso);

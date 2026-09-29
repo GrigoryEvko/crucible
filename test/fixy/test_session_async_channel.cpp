@@ -48,8 +48,8 @@ template <>
 struct foundation::permissions::can_split_into_pack<async_tags::Whole, async_tags::Left, async_tags::Right>
     : std::true_type {};
 template <>
-struct foundation::permissions::has_split_pack_authoring_witness<async_tags::Whole, async_tags::Left,
-                                                                    async_tags::Right> : std::true_type {};
+struct foundation::permissions::has_split_pack_authoring_witness<async_tags::Whole, async_tags::Left, async_tags::Right>
+    : std::true_type {};
 
 namespace {
 
@@ -243,10 +243,10 @@ struct RightBody {
     const BgCtx ctx{eff::testing::bg()};
     const std::uint32_t live_before = s::watch::live_count();
     auto back = s::mint_forked_async_channel<LeftProto, RightProto, async_tags::Left, async_tags::Right>(
-        ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, LeftBody{},
-        RightBody{});
+        ctx, perm::mint_permission_root<async_tags::Whole>(), LeftEnd{&pipe}, RightEnd{&pipe}, LeftBody{}, RightBody{});
     perm::permission_drop(std::move(back));
-    if (g_left_received.load(std::memory_order_relaxed) != 22 || g_right_received.load(std::memory_order_relaxed) != 11) {
+    if (g_left_received.load(std::memory_order_relaxed) != 22
+        || g_right_received.load(std::memory_order_relaxed) != 11) {
         std::fprintf(stderr, "test_session_async_channel: the pair did not exchange its two messages\n");
         return 1;
     }

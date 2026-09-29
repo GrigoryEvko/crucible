@@ -59,9 +59,9 @@ enum class PlumtreeError : std::uint8_t {
 };
 
 struct PlumtreeConfig {
-    PlumtreeDurationNs ihave_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{100'000'000});
-    PlumtreeDurationNs repair_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{200'000'000});
-    PlumtreeDurationNs lazy_push_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{100'000'000});
+    PlumtreeDurationNs ihave_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{100000000});
+    PlumtreeDurationNs repair_timeout_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{200000000});
+    PlumtreeDurationNs lazy_push_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{100000000});
     PlumtreePositiveCount max_eager_fanout = ::fixy::mint_refined<::fixy::positive>(std::uint16_t{5});
 };
 

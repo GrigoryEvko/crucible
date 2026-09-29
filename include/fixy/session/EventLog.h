@@ -328,7 +328,8 @@ public:
                                                      PayloadHash payload = {},
                                                      DeliveryFate fate = DeliveryFate::Delivered) noexcept {
         CRUCIBLE_PRE(detail::event_log::names_enumerator<DeliveryFate>(static_cast<std::uint8_t>(fate)));
-        return SessionEvent{SessionOp::Send, self, peer, schema.value, payload.value, 0, static_cast<std::uint8_t>(fate)};
+        return SessionEvent{
+            SessionOp::Send, self, peer, schema.value, payload.value, 0, static_cast<std::uint8_t>(fate)};
     }
 
     [[nodiscard]] static constexpr SessionEvent recv(RoleTagId self, RoleTagId peer, SchemaHash schema,
@@ -357,7 +358,8 @@ public:
     [[nodiscard]] static constexpr SessionEvent detach(RoleTagId self, RoleTagId peer, DetachReasonKind reason,
                                                        SchemaHash reason_schema = {}) noexcept {
         CRUCIBLE_PRE(detail::event_log::names_enumerator<DetachReasonKind>(static_cast<std::uint8_t>(reason)));
-        return SessionEvent{SessionOp::Detach, self, peer, reason_schema.value, 0, 0, static_cast<std::uint8_t>(reason)};
+        return SessionEvent{
+            SessionOp::Detach, self, peer, reason_schema.value, 0, 0, static_cast<std::uint8_t>(reason)};
     }
 
     [[nodiscard]] static constexpr SessionEvent stop(RoleTagId self, RoleTagId peer, RoleTagId stopped,
@@ -365,8 +367,8 @@ public:
                                                      RecoveryPathHash recovery_path = {}) noexcept {
         CRUCIBLE_PRE(detail::event_log::names_enumerator<StopReasonKind>(static_cast<std::uint8_t>(reason)));
         CRUCIBLE_PRE(detail::event_log::names_enumerator<CrashCause>(static_cast<std::uint8_t>(cause)));
-        SessionEvent event{SessionOp::Stop, self, peer, stopped.value, recovery_path.value, 0,
-                           static_cast<std::uint8_t>(reason)};
+        SessionEvent event{
+            SessionOp::Stop, self, peer, stopped.value, recovery_path.value, 0, static_cast<std::uint8_t>(reason)};
         event.pad_[0] = static_cast<std::uint8_t>(cause);
         return event;
     }
@@ -376,7 +378,7 @@ public:
     [[nodiscard]] static constexpr SessionEvent checkpoint_commit(RoleTagId self, RoleTagId peer, CheckpointRole role,
                                                                   StateHash saved_state = {}) noexcept {
         CRUCIBLE_PRE(detail::event_log::names_enumerator<CheckpointRole>(static_cast<std::uint8_t>(role)));
-        return SessionEvent{SessionOp::CheckpointCommit, self, peer, 0, saved_state.value, 0,
+        return SessionEvent{SessionOp::CheckpointCommit,    self, peer, 0, saved_state.value, 0,
                             static_cast<std::uint8_t>(role)};
     }
 
@@ -558,7 +560,8 @@ decode_session_event(std::span<const std::byte> bytes) noexcept {
     using detail::event_log::names_enumerator;
     if (bytes.size() < session_event_size) return std::unexpected(EventDecodeError::Truncated);
     std::array<std::byte, session_event_size> block{};
-    for (std::size_t index = 0; index < session_event_size; ++index) block[index] = bytes[index];
+    for (std::size_t index = 0; index < session_event_size; ++index)
+        block[index] = bytes[index];
     const auto raw = std::bit_cast<detail::event_log::RawEvent>(block);
 
     if (!names_enumerator<SessionOp>(raw.op)) return std::unexpected(EventDecodeError::UnknownOperation);

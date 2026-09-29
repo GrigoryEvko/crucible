@@ -80,8 +80,7 @@ enum class WatchdogVerdict : uint8_t {
 // foreground is rejected.  A poll reads the boot clock, so the gate is
 // the gate of the clock reader.
 template <typename Ctx>
-concept CtxFitsDeadlineWatchdog =
-    ::foundation::effects::IsExecCtx<Ctx> && ::fixy::time::CtxFitsMonotonicClock<Ctx>;
+concept CtxFitsDeadlineWatchdog = ::foundation::effects::IsExecCtx<Ctx> && ::fixy::time::CtxFitsMonotonicClock<Ctx>;
 
 // Building a watchdog belongs to process startup, because the watchdog
 // takes the baseline that the first window is measured against.  The
@@ -119,7 +118,6 @@ class DeadlineWatchdog {
                                                              const Policy& policy) noexcept;
 
 public:
-
     // The clock read is the boot clock rather than the monotonic clock,
     // because a host suspend freezes the monotonic clock. The window
     // would then never close and the verdict would stay at
@@ -138,8 +136,9 @@ public:
     // a caller cannot give a time that the boot clock never returned.
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsDeadlineWatchdog<Ctx>
-    [[nodiscard]] WatchdogVerdict observe_at(
-        Ctx const& /*ctx*/, std::expected<::fixy::BootClockBytes<uint64_t>, std::error_code> const& now) noexcept {
+    [[nodiscard]] WatchdogVerdict
+    observe_at(Ctx const& /*ctx*/,
+               std::expected<::fixy::BootClockBytes<uint64_t>, std::error_code> const& now) noexcept {
         // A budget of zero is the opt-out. A window of zero is also
         // treated as off: every elapsed-time test would pass trivially
         // and the verdict would come from an observation covering
@@ -263,11 +262,13 @@ namespace fe = ::foundation::effects;
 using ColdInit = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO>>;
 using InitLoad = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
 using BgLoad = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
-using TestRunner = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
+using TestRunner =
+    fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>;
 static_assert(CtxFitsDeadlineWatchdogMint<ColdInit> && CtxFitsDeadlineWatchdogMint<InitLoad>);
 static_assert(!CtxFitsDeadlineWatchdogMint<BgLoad> && !CtxFitsDeadlineWatchdogMint<TestRunner>);
 static_assert(!CtxFitsDeadlineWatchdogMint<fe::ExecCtx<>>);
-static_assert(CtxFitsDeadlineWatchdog<BgLoad> && CtxFitsDeadlineWatchdog<ColdInit> && CtxFitsDeadlineWatchdog<TestRunner>);
+static_assert(CtxFitsDeadlineWatchdog<BgLoad> && CtxFitsDeadlineWatchdog<ColdInit>
+              && CtxFitsDeadlineWatchdog<TestRunner>);
 static_assert(!CtxFitsDeadlineWatchdog<::fixy::HotFgCtx> && !CtxFitsDeadlineWatchdog<int>);
 static_assert(!std::is_constructible_v<DeadlineWatchdog, const ::crucible::perf::Senses*, const Policy&>,
               "The constructor is private.  A watchdog comes only from mint_deadline_watchdog.");

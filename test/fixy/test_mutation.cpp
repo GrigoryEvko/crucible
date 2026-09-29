@@ -612,7 +612,8 @@ int check_atomic_monotonic() {
                 workers.emplace_back([&shared_count, &slot_sum, &start_gate] {
                     start_gate.arrive_and_wait();
                     std::uint64_t local_sum = 0;
-                    for (std::uint64_t i = 0; i < kPerThread; ++i) local_sum += shared_count.bump();
+                    for (std::uint64_t i = 0; i < kPerThread; ++i)
+                        local_sum += shared_count.bump();
                     slot_sum.fetch_add(local_sum, std::memory_order_relaxed);
                 });
             }

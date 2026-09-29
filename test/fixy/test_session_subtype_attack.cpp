@@ -138,7 +138,8 @@ template <class P>
 inline constexpr std::array<step, script_length_v<P>> script_v = [] {
     std::array<step, script_length_v<P>> out{};
     const std::vector<step> steps = script_steps(^^P);
-    for (std::size_t index = 0; index < steps.size(); ++index) out[index] = steps[index];
+    for (std::size_t index = 0; index < steps.size(); ++index)
+        out[index] = steps[index];
     return out;
 }();
 
@@ -179,7 +180,12 @@ private:
     std::size_t capacity_;
 };
 
-enum class outcome : std::uint8_t { completed, deadlocked, wrong_message, orphan };
+enum class outcome : std::uint8_t {
+    completed,
+    deadlocked,
+    wrong_message,
+    orphan
+};
 
 constexpr std::string_view outcome_name(outcome value) {
     switch (value) {
@@ -198,7 +204,11 @@ constexpr std::string_view outcome_name(outcome value) {
 }
 
 // The state of one side of a run.
-enum class side : int { running, waiting, finished };
+enum class side : int {
+    running,
+    waiting,
+    finished
+};
 
 // Runs the two scripts against each other.  A run is a deadlock when
 // each side that has not finished waits, and no side makes progress for
@@ -255,15 +265,17 @@ outcome run_pair(std::span<const step> left, std::span<const step> right, std::s
             quiet = now == last ? quiet + 1 : 0;
             last = now;
             const bool is_blocked = sides[0].load(std::memory_order_acquire) != side::running
-                                    && sides[1].load(std::memory_order_acquire) != side::running;
+                                 && sides[1].load(std::memory_order_acquire) != side::running;
             if (is_blocked && quiet >= stall_ticks) {
                 is_deadlocked = true;
                 stop.store(true, std::memory_order_release);
                 break;
             }
             if (quiet >= hard_ticks) {
-                std::fprintf(stderr, "test_session_subtype_attack: a run made no progress for %d ticks while a side "
-                             "still ran; the harness is wrong\n", hard_ticks);
+                std::fprintf(stderr,
+                             "test_session_subtype_attack: a run made no progress for %d ticks while a side "
+                             "still ran; the harness is wrong\n",
+                             hard_ticks);
                 std::abort();
             }
         }
@@ -355,7 +367,8 @@ consteval std::meta::info replace_continue(std::meta::info type, std::meta::info
     if (shape == send_shape || shape == recv_shape) {
         arguments[1] = replace_continue(arguments[1], with);
     } else {
-        for (std::meta::info& branch : arguments) branch = replace_continue(branch, with);
+        for (std::meta::info& branch : arguments)
+            branch = replace_continue(branch, with);
     }
     return std::meta::substitute(shape, arguments);
 }
@@ -377,8 +390,9 @@ consteval std::meta::info body(lcg& random, std::size_t depth) {
         case 1:
             return std::meta::substitute(recv_shape, {^^B, body(random, depth - 1)});
         default:
-            return std::meta::substitute(select_shape, {std::meta::substitute(send_shape, {^^A, body(random, depth - 1)}),
-                                                        std::meta::substitute(send_shape, {^^B, body(random, depth - 1)})});
+            return std::meta::substitute(select_shape,
+                                         {std::meta::substitute(send_shape, {^^A, body(random, depth - 1)}),
+                                          std::meta::substitute(send_shape, {^^B, body(random, depth - 1)})});
     }
 }
 
@@ -461,13 +475,16 @@ consteval generated_case make_case(lcg& random) {
     const std::meta::info super = protocol_of(super_actions);
     const std::vector<step> peer = script_steps(std::meta::dealias(std::meta::substitute(^^s::dual_of_t, {super})));
     generated_case out{};
-    for (std::size_t index = 0; index < sub_actions.size(); ++index) out.sub[index] = sub_actions[index];
+    for (std::size_t index = 0; index < sub_actions.size(); ++index)
+        out.sub[index] = sub_actions[index];
     out.sub_length = sub_actions.size();
-    for (std::size_t index = 0; index < peer.size(); ++index) out.peer[index] = peer[index];
+    for (std::size_t index = 0; index < peer.size(); ++index)
+        out.peer[index] = peer[index];
     out.peer_length = peer.size();
     for (std::size_t capacity = 1; capacity <= checked_capacity; ++capacity) {
         const std::meta::info channel = std::meta::substitute(^^ring, {std::meta::reflect_constant(capacity)});
-        const bool admits = std::meta::extract<bool>(std::meta::substitute(^^s::is_subtype_async_v, {sub, super, channel}));
+        const bool admits =
+            std::meta::extract<bool>(std::meta::substitute(^^s::is_subtype_async_v, {sub, super, channel}));
         if (admits) out.admitted = static_cast<std::uint8_t>(out.admitted | (1U << (capacity - 1)));
     }
     out.is_synchronous = std::meta::extract<bool>(std::meta::substitute(^^s::is_subtype_sync_v, {sub, super}));
@@ -477,7 +494,8 @@ consteval generated_case make_case(lcg& random) {
 consteval std::vector<generated_case> make_cases() {
     lcg random{0x9e3779b97f4a7c15ULL};
     std::vector<generated_case> cases;
-    for (std::size_t index = 0; index < generated_count; ++index) cases.push_back(make_case(random));
+    for (std::size_t index = 0; index < generated_count; ++index)
+        cases.push_back(make_case(random));
     return cases;
 }
 
@@ -485,12 +503,14 @@ inline constexpr std::span<const generated_case> generated_cases = std::define_s
 
 consteval std::size_t admitted_pairs() {
     std::size_t count = 0;
-    for (const generated_case& item : generated_cases) count += static_cast<std::size_t>(std::popcount(item.admitted));
+    for (const generated_case& item : generated_cases)
+        count += static_cast<std::size_t>(std::popcount(item.admitted));
     return count;
 }
 consteval std::size_t refused_cases() {
     std::size_t count = 0;
-    for (const generated_case& item : generated_cases) count += item.admitted == 0 ? 1 : 0;
+    for (const generated_case& item : generated_cases)
+        count += item.admitted == 0 ? 1 : 0;
     return count;
 }
 static_assert(generated_cases.size() == generated_count);
@@ -590,8 +610,9 @@ namespace second {
 struct Hello {};
 }  // namespace second
 
-static_assert(!s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L0Again, int>, End>>>,
-              "one label through two aliases");
+static_assert(
+    !s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L0Again, int>, End>>>,
+    "one label through two aliases");
 static_assert(std::meta::identifier_of(^^first::Hello) == std::meta::identifier_of(^^second::Hello));
 static_assert(s::is_well_formed_v<Select<Send<s::PeerMsg<Bob, first::Hello, int>, End>,
                                          Send<s::PeerMsg<Bob, second::Hello, int>, End>>>,
@@ -605,8 +626,8 @@ static_assert(!s::is_subtype_sync_v<Select<Send<s::PeerMsg<Bob, first::Hello, in
 // key is refused, because the choice then has no single kind of wire word.
 static_assert(s::is_well_formed_v<Select<Send<std::pair<s::PeerMsg<Bob, L0, int>, int>, End>,
                                          Send<std::pair<s::PeerMsg<Bob, L0, int>, long>, End>>>);
-static_assert(!s::is_well_formed_v<Select<Send<std::pair<s::PeerMsg<Bob, L0, int>, int>, End>,
-                                          Send<s::PeerMsg<Bob, L0, int>, End>>>,
+static_assert(!s::is_well_formed_v<
+                  Select<Send<std::pair<s::PeerMsg<Bob, L0, int>, int>, End>, Send<s::PeerMsg<Bob, L0, int>, End>>>,
               "a branch with a label key beside a branch without one");
 
 // Crash branches pair by payload.  A crash branch hidden under a wrapper
@@ -640,7 +661,8 @@ static_assert(!s::is_subtype_sync_v<Loop<Select<Send<A, Continue>>>, Loop<Select
 using Projected = Select<Send<s::PeerMsg<Bob, L0, int>, End>, Send<s::PeerMsg<Bob, L1, int>, Send<int, End>>>;
 using Permuted = Select<Send<s::PeerMsg<Bob, L1, int>, Send<int, End>>, Send<s::PeerMsg<Bob, L0, int>, End>>;
 static_assert(s::is_subtype_sync_v<Permuted, Projected> && s::is_subtype_sync_v<Projected, Permuted>);
-static_assert(s::is_subtype_async_v<Permuted, Projected, ring<4>> && s::CompatibleServer<Permuted, s::dual_of_t<Projected>>);
+static_assert(s::is_subtype_async_v<Permuted, Projected, ring<4>>
+              && s::CompatibleServer<Permuted, s::dual_of_t<Projected>>);
 
 // A keyed Select drops labels in any position, and a keyed Offer adds
 // them in any position.  A label that the supertype does not send is
@@ -815,15 +837,15 @@ struct WideEnd {
 
 struct Nat {};
 struct Bool {};
-using HardSub = Loop<Offer<
-    Select<Offer<Loop<Recv<Nat, End>>, Recv<Bool, Continue>>, Send<Nat, Send<Bool, Continue>>>,
-    Select<Offer<End, Continue, Send<Bool, Continue>>, Continue, Send<Bool, Continue>>,
-    Send<Bool, Recv<Bool, Recv<Nat, Continue>>>>>;
-using HardSuper = Loop<Offer<
-    Select<Offer<Loop<Recv<Bool, End>>, Recv<Bool, Continue>>, Send<Nat, Send<Bool, Continue>>>,
-    Select<Offer<End, Continue, Send<Bool, Continue>>, Continue, Send<Bool, Continue>>,
-    Send<Bool, Recv<Bool, Recv<Nat, Continue>>>>>;
-static_assert(!s::is_subtype_async_v<HardSub, HardSuper, ring<3>> && !s::is_subtype_async_v<HardSuper, HardSub, ring<3>>);
+using HardSub = Loop<Offer<Select<Offer<Loop<Recv<Nat, End>>, Recv<Bool, Continue>>, Send<Nat, Send<Bool, Continue>>>,
+                           Select<Offer<End, Continue, Send<Bool, Continue>>, Continue, Send<Bool, Continue>>,
+                           Send<Bool, Recv<Bool, Recv<Nat, Continue>>>>>;
+using HardSuper =
+    Loop<Offer<Select<Offer<Loop<Recv<Bool, End>>, Recv<Bool, Continue>>, Send<Nat, Send<Bool, Continue>>>,
+               Select<Offer<End, Continue, Send<Bool, Continue>>, Continue, Send<Bool, Continue>>,
+               Send<Bool, Recv<Bool, Recv<Nat, Continue>>>>>;
+static_assert(!s::is_subtype_async_v<HardSub, HardSuper, ring<3>>
+              && !s::is_subtype_async_v<HardSuper, HardSub, ring<3>>);
 
 // ── The known-limitation ledger ──────────────────────────────────────
 //
@@ -873,7 +895,8 @@ using PatientLoop = Loop<Recv<B, Select<Send<A, Continue>, Send<C, End>>>>;
 using EagerEndless = Loop<Select<Send<A, Recv<B, Continue>>>>;
 using EagerExiting = Loop<Select<Send<A, Recv<B, Continue>>, Send<C, Recv<B, End>>>>;
 static_assert(!s::is_subtype_async_v<EagerEndless, PatientLoop, ring<2>>);
-static_assert(s::is_subtype_async_v<EagerExiting, PatientLoop, ring<2>> && !s::is_subtype_sync_v<EagerExiting, PatientLoop>);
+static_assert(s::is_subtype_async_v<EagerExiting, PatientLoop, ring<2>>
+              && !s::is_subtype_sync_v<EagerExiting, PatientLoop>);
 
 // The loss at an inner position, while the root can still end.
 using Stream = Loop<Send<C, Continue>>;

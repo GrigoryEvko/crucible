@@ -19,6 +19,4 @@ struct StatefulBrand {
 };
 }  // namespace
 
-int main() {
-    return static_cast<int>(sizeof(::foundation::permissions::Permission<Region, StatefulBrand>));
-}
+int main() { return static_cast<int>(sizeof(::foundation::permissions::Permission<Region, StatefulBrand>)); }

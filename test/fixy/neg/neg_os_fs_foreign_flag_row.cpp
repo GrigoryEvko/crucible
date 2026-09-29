@@ -16,6 +16,4 @@ struct Truncate final {};
 template <>
 inline constexpr int fixy::fs::flag_bits_v<Truncate> = O_TRUNC;
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

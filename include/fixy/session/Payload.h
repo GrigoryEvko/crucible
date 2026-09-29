@@ -246,8 +246,8 @@ struct [[nodiscard]] Transferable {
         : value{std::move(v)}, perm{std::move(p)} {}
 
     Transferable(const Transferable&) = delete("Transferable carries a linear token. A copy is a second owner");
-    Transferable& operator=(const Transferable&) =
-        delete("Transferable carries a linear token. A copy is a second owner");
+    Transferable&
+    operator=(const Transferable&) = delete("Transferable carries a linear token. A copy is a second owner");
     constexpr Transferable(Transferable&&) noexcept = default;
     constexpr Transferable& operator=(Transferable&&) noexcept = default;
     ~Transferable() = default;
@@ -290,8 +290,8 @@ struct [[nodiscard]] Borrowed {
         : value{std::move(v)}, loan_{std::move(loan)} {}
 
     Borrowed(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
-    Borrowed& operator=(const Borrowed&) =
-        delete("Borrowed is one read loan. A copy is a second loan that no set records");
+    Borrowed&
+    operator=(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
     constexpr Borrowed(Borrowed&&) noexcept = default;
     Borrowed& operator=(Borrowed&&) = delete("Borrowed holds one read loan for its whole life");
     ~Borrowed() = default;
@@ -353,8 +353,8 @@ public:
     }
 
     SharedReader(const SharedReader&) = delete("a SharedReader owns one share of the pool. A copy counts it twice");
-    SharedReader& operator=(const SharedReader&) =
-        delete("a SharedReader owns one share of the pool. A copy counts it twice");
+    SharedReader&
+    operator=(const SharedReader&) = delete("a SharedReader owns one share of the pool. A copy counts it twice");
     SharedReader(SharedReader&&) noexcept = default;
     SharedReader& operator=(SharedReader&&) = delete("a SharedReader binds one share for its whole life");
     ~SharedReader() = default;
@@ -366,12 +366,11 @@ public:
     // value gives a pair of that value and the reader.
     template <class Body>
         requires ::foundation::permissions::ReadViewBody<Body, Tag, Brand>
-    [[nodiscard]] auto read(Body&& body) && noexcept(
-        ::foundation::permissions::detail::read_view_door_nothrow_v<
-            ::foundation::permissions::SharedPermissionGuard<Tag, Brand>, Body>) {
+    [[nodiscard]] auto
+    read(Body&& body) && noexcept(::foundation::permissions::detail::read_view_door_nothrow_v<
+                                  ::foundation::permissions::SharedPermissionGuard<Tag, Brand>, Body>) {
         auto lent = ::foundation::permissions::with_read_view(std::move(guard_), std::forward<Body>(body));
-        if constexpr (std::is_same_v<decltype(lent),
-                                     ::foundation::permissions::SharedPermissionGuard<Tag, Brand>>) {
+        if constexpr (std::is_same_v<decltype(lent), ::foundation::permissions::SharedPermissionGuard<Tag, Brand>>) {
             return SharedReader{std::move(lent)};
         } else {
             return std::pair{std::move(lent.first), SharedReader{std::move(lent.second)}};
@@ -527,16 +526,16 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
 // no definition here.  None of them is an endpoint.
 enum class PayloadFamily : std::uint8_t {
     Other,
-    Token,         // Permission<Tag>
-    Moves,         // Transferable<T, Tag>, Returned<T, Tag>
-    Lends,         // Borrowed<T, Tag>
-    Releases,      // Released<T, Tag>
-    Share,         // SharedReader<Tag, Brand>
-    Keyed,         // PeerMsg<Q, L, U>, Labelled<L, U>
+    Token,  // Permission<Tag>
+    Moves,  // Transferable<T, Tag>, Returned<T, Tag>
+    Lends,  // Borrowed<T, Tag>
+    Releases,  // Released<T, Tag>
+    Share,  // SharedReader<Tag, Brand>
+    Keyed,  // PeerMsg<Q, L, U>, Labelled<L, U>
     Declassified,  // DeclassifyOnSend<T, Policy>
     ConstantTime,  // CTPayload<T>
-    Classified,    // fixy::Secret<T>
-    Proof,         // a family of payload_proof_families
+    Classified,  // fixy::Secret<T>
+    Proof,  // a family of payload_proof_families
 };
 
 [[nodiscard]] consteval PayloadFamily payload_family_of(std::meta::info type) {
@@ -614,7 +613,8 @@ consteval void refuse_payload(PayloadWalk& walk, PayloadRefusal why, std::meta::
     walk.census.refused_type = type;
 }
 
-consteval void note_carrier(PayloadWalk& walk, std::optional<DelegationCarrier> carrier, std::meta::info type) noexcept {
+consteval void note_carrier(PayloadWalk& walk, std::optional<DelegationCarrier> carrier,
+                            std::meta::info type) noexcept {
     if (walk.census.has_carrier) return;
     if (carrier.has_value() && *carrier == DelegationCarrier::None) return;
     walk.census.has_carrier = true;
@@ -626,7 +626,7 @@ consteval void note_carrier(PayloadWalk& walk, std::optional<DelegationCarrier> 
 // Records one tag that the payload moves, lends or releases, and refuses
 // a tag that the payload names already.  A refused payload changes no
 // set, so the walk records nothing after a refusal.
-consteval void record_payload_tag(PayloadWalk& walk, std::vector<std::meta::info> PayloadCensus::*into,
+consteval void record_payload_tag(PayloadWalk& walk, std::vector<std::meta::info> PayloadCensus::* into,
                                   std::meta::info tag, std::meta::info at) {
     if (walk.census.refusal != PayloadRefusal::None) return;
     const std::meta::info bare_tag = std::meta::dealias(tag);
@@ -701,7 +701,8 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
     }
     const std::meta::info inner_set = std::meta::dealias(std::meta::template_arguments_of(node.type)[3]);
     const std::vector<std::meta::info> inner_tags = std::meta::template_arguments_of(inner_set);
-    for (const std::meta::info tag : inner_tags) record_payload_tag(walk, &PayloadCensus::moved, tag, node.type);
+    for (const std::meta::info tag : inner_tags)
+        record_payload_tag(walk, &PayloadCensus::moved, tag, node.type);
     if (walk.census.refusal == PayloadRefusal::None) walk.census.hand_offs.push_back(node.type);
     return inner_tags.empty() ? std::meta::info{} : node.type;
 }
@@ -709,7 +710,7 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
 // A marker records its tag, and the value that it carries is a by-value
 // member of the marker.
 [[nodiscard]] consteval std::meta::info take_marker(PayloadWalk& walk, const PayloadNode& node,
-                                                    std::vector<std::meta::info> PayloadCensus::*into) {
+                                                    std::vector<std::meta::info> PayloadCensus::* into) {
     if (!is_owned_or_refused(walk, node)) return {};
     const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(node.type);
     record_payload_tag(walk, into, arguments[1], node.type);
@@ -780,8 +781,10 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     } else {
         return;
     }
-    const refl::TypeNode reached = refl::node_reached_indirectly(argument_type, refl::SpecializationRead::Instantiating);
-    static_cast<void>(visit_payload_node(walk, PayloadNode{reached.type, reached.may_read_members, PayloadReach::Named}));
+    const refl::TypeNode reached =
+        refl::node_reached_indirectly(argument_type, refl::SpecializationRead::Instantiating);
+    static_cast<void>(
+        visit_payload_node(walk, PayloadNode{reached.type, reached.may_read_members, PayloadReach::Named}));
 }
 
 // Reads one node: its delegation, its template arguments, its family,
@@ -845,8 +848,8 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
         // counts as a member of the message.  A payload of void is no
         // class, so it adds nothing.
         case PayloadFamily::Keyed:
-            return visit_payload_node(
-                walk, PayloadNode{refl::bare_type(arguments.back()), true, reach, node.in_ct_carrier});
+            return visit_payload_node(walk,
+                                      PayloadNode{refl::bare_type(arguments.back()), true, reach, node.in_ct_carrier});
         // The carrier declassifies at the transport, so the Secret it holds
         // is not read.  The value it will hand over is, for the tokens in
         // it.
@@ -892,9 +895,8 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     }
     if (std::meta::is_array_type(type)) {
         const PayloadReach element_reach = reach == PayloadReach::Owned ? PayloadReach::InArray : reach;
-        static_cast<void>(visit_payload_node(
-            walk, PayloadNode{refl::bare_type(std::meta::remove_all_extents(type)), node.readable, element_reach,
-                              node.in_ct_carrier}));
+        static_cast<void>(visit_payload_node(walk, PayloadNode{refl::bare_type(std::meta::remove_all_extents(type)),
+                                                               node.readable, element_reach, node.in_ct_carrier}));
         return {};
     }
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return {};
@@ -964,7 +966,8 @@ struct PayloadFacts {
 [[nodiscard]] consteval std::meta::info payload_wrap_each(std::meta::info wrapper,
                                                           const std::vector<std::meta::info>& tags) {
     std::vector<std::meta::info> wrapped;
-    for (const std::meta::info tag : tags) wrapped.push_back(std::meta::substitute(wrapper, {tag}));
+    for (const std::meta::info tag : tags)
+        wrapped.push_back(std::meta::substitute(wrapper, {tag}));
     return std::meta::substitute(^^::foundation::permissions::PermSet, wrapped);
 }
 
@@ -984,7 +987,8 @@ struct PayloadFacts {
     // member.
     if (std::meta::is_reference_type(std::meta::dealias(payload))) {
         const refl::TypeNode reached = refl::node_reached_indirectly(payload, refl::SpecializationRead::Instantiating);
-        static_cast<void>(visit_payload_node(walk, PayloadNode{reached.type, reached.may_read_members, PayloadReach::Aliased}));
+        static_cast<void>(
+            visit_payload_node(walk, PayloadNode{reached.type, reached.may_read_members, PayloadReach::Aliased}));
     } else {
         static_cast<void>(visit_payload_node(walk, PayloadNode{refl::bare_type(payload), true, PayloadReach::Owned}));
     }
@@ -1208,8 +1212,7 @@ using receiver_gains_t = [:payload_facts_of(^^P).receiver_gains:];
 // True when the walk accepts the payload.  A refused payload answers
 // false here, and the refusal text comes from payload_perm_delta.
 template <class P>
-concept is_permission_classified_v =
-    detail::payload_readable_gate<P>::holds && detail::payload_is_admitted(^^P);
+concept is_permission_classified_v = detail::payload_readable_gate<P>::holds && detail::payload_is_admitted(^^P);
 
 template <class P>
 struct is_permission_classified : std::bool_constant<is_permission_classified_v<P>> {};
@@ -1257,7 +1260,7 @@ struct is_plain_payload : std::bool_constant<is_plain_payload_v<P>> {};
 template <class P>
 inline constexpr DelegationCarrier payload_delegation_carrier_v =
     detail::delegation_readable_gate<P>::holds ? detail::payload_facts_of(^^P).carrier
-                                                : DelegationCarrier::UnreadableState;
+                                               : DelegationCarrier::UnreadableState;
 
 // True when P gives the recipient authority over a session endpoint.  A
 // crash session and a checkpoint session refuse such a payload.  A gate
@@ -1468,8 +1471,8 @@ struct DeliveryFacts {
     DeliveryWalk walk;
     walk_delivered_regions(protocol, walk);
     const std::meta::info regions = delivery_is_refused(walk.verdict)
-                                        ? std::meta::dealias(^^::foundation::permissions::EmptyPermSet)
-                                        : std::meta::substitute(^^::foundation::permissions::PermSet, walk.regions);
+                                      ? std::meta::dealias(^^::foundation::permissions::EmptyPermSet)
+                                      : std::meta::substitute(^^::foundation::permissions::PermSet, walk.regions);
     return DeliveryFacts{walk.verdict, regions};
 }
 
@@ -1548,11 +1551,9 @@ using perm_set_after_recv_t = ::foundation::permissions::perm_set_union_t<
 // still holds in another state.
 template <class P, class PS>
 concept SendablePayload =
-    is_permission_classified_v<P>
-    && ::foundation::permissions::perm_set_subset_v<detail::sender_requires_t<P>, PS>
-    && detail::regions_disjoint(
-        ^^::foundation::permissions::perm_set_difference_t<PS, detail::sender_requires_t<P>>,
-        ^^detail::sender_gains_t<P>);
+    is_permission_classified_v<P> && ::foundation::permissions::perm_set_subset_v<detail::sender_requires_t<P>, PS>
+    && detail::regions_disjoint(^^::foundation::permissions::perm_set_difference_t<PS, detail::sender_requires_t<P>>,
+                                ^^detail::sender_gains_t<P>);
 
 // A recipient can receive a payload when the walk accepts it, the
 // recipient holds what the payload closes, and nothing it gains names a region
@@ -1560,17 +1561,14 @@ concept SendablePayload =
 // in one set are two owners of it.
 template <class P, class PS>
 concept ReceivablePayload =
-    is_permission_classified_v<P>
-    && ::foundation::permissions::perm_set_subset_v<detail::receiver_requires_t<P>, PS>
-    && detail::regions_disjoint(
-        ^^::foundation::permissions::perm_set_difference_t<PS, detail::receiver_requires_t<P>>,
-        ^^detail::receiver_gains_t<P>);
+    is_permission_classified_v<P> && ::foundation::permissions::perm_set_subset_v<detail::receiver_requires_t<P>, PS>
+    && detail::regions_disjoint(^^::foundation::permissions::perm_set_difference_t<PS, detail::receiver_requires_t<P>>,
+                                ^^detail::receiver_gains_t<P>);
 
 // True when the set holds an open loan: a LentOut or a BorrowedIn.  A
 // handle must not close while one is open.
 template <class PS>
 concept perm_set_has_open_loan_v = detail::holds_open_loan(^^PS);
-
 
 // ── The tokens of a set, held ───────────────────────────────────────
 //
@@ -1629,7 +1627,7 @@ using hold_slot_t = [:hold_slot_of(^^Element):];
 // True when the element is a plain tag, and not a loan state.
 template <class Element>
 concept PlainTag = !payload_family_is(std::meta::dealias(^^Element), ^^LentOut)
-                   && !payload_family_is(std::meta::dealias(^^Element), ^^BorrowedIn);
+                && !payload_family_is(std::meta::dealias(^^Element), ^^BorrowedIn);
 
 // True when the message moves its token to the recipient: a Transferable
 // or a Returned, received as an rvalue.
@@ -1692,7 +1690,7 @@ class HoldFactory final {
     // the incoming object.
     template <class Element, class Set, class Incoming>
     [[nodiscard]] static constexpr detail::hold_slot_t<Element> pick_(PermHold<Set>& from,
-                                                                     Incoming&& incoming) noexcept {
+                                                                      Incoming&& incoming) noexcept {
         if constexpr (::foundation::permissions::perm_set_contains_v<Set, Element>) {
             return std::move(slot_<Element>(from));
         } else {
@@ -1706,7 +1704,8 @@ class HoldFactory final {
     [[nodiscard]] static constexpr PermHold<Next> transition_(PermHold<Set>& from, Incoming&& incoming = {}) noexcept {
         from.live_ = false;
         return [&]<class... Following>(std::type_identity<::foundation::permissions::PermSet<Following...>>) {
-            return PermHold<Next>{detail::hold_from_slots{}, pick_<Following>(from, std::forward<Incoming>(incoming))...};
+            return PermHold<Next>{detail::hold_from_slots{},
+                                  pick_<Following>(from, std::forward<Incoming>(incoming))...};
         }(std::type_identity<Next>{});
     }
 
@@ -1733,8 +1732,7 @@ public:
     }
 
     template <class Set, class Tag, class Brand>
-        requires(detail::PlainTag<Tag>
-                 && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
+        requires(detail::PlainTag<Tag> && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
     [[nodiscard]] static constexpr auto put(PermHold<Set>&& hold,
                                             ::foundation::permissions::Permission<Tag, Brand> token) noexcept
         -> PermHold<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
@@ -1745,8 +1743,9 @@ public:
 
     template <class Set, class Message>
         requires detail::MovesAToken<Message> && ReceivablePayload<Message, Set>
-    [[nodiscard]] static constexpr auto unpack(PermHold<Set>&& hold, Message&& message) noexcept(
-        std::is_nothrow_move_constructible_v<typename Message::payload_type>)
+    [[nodiscard]] static constexpr auto
+    unpack(PermHold<Set>&& hold,
+           Message&& message) noexcept(std::is_nothrow_move_constructible_v<typename Message::payload_type>)
         -> std::pair<typename Message::payload_type, PermHold<perm_set_after_recv_t<Set, Message>>> {
         hold.require_live_();
         typename Message::payload_type value = std::move(message.value);
@@ -1759,8 +1758,8 @@ public:
     // carries the same loan back unparks the token.
     template <class Tag, class Set, class T>
         requires detail::HoldCanLend<Set, Tag, T>
-    [[nodiscard]] static constexpr auto lend(PermHold<Set>&& hold, T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr auto lend(PermHold<Set>&& hold,
+                                             T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
         hold.require_live_();
         auto [loan, parked] = ::foundation::permissions::mint_read_loan(std::move(slot_<Tag>(hold)));
@@ -1771,8 +1770,8 @@ public:
 
     template <class Set, class T, class Tag>
         requires ReceivablePayload<Released<T, Tag>, Set>
-    [[nodiscard]] static constexpr auto end_loan(PermHold<Set>&& hold, Released<T, Tag>&& message) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr auto
+    end_loan(PermHold<Set>&& hold, Released<T, Tag>&& message) noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag>>>> {
         hold.require_live_();
         T value = std::move(message.value);
@@ -1784,8 +1783,8 @@ public:
 
     template <class Set, class T, class Tag>
         requires detail::HoldCanAcceptLoan<Set, T, Tag>
-    [[nodiscard]] static constexpr auto accept_loan(PermHold<Set>&& hold, Borrowed<T, Tag>&& message) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr auto
+    accept_loan(PermHold<Set>&& hold, Borrowed<T, Tag>&& message) noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>> {
         hold.require_live_();
         T value = std::move(message.value);
@@ -1795,8 +1794,8 @@ public:
 
     template <class Tag, class Set, class T>
         requires SendablePayload<Released<T, Tag>, Set>
-    [[nodiscard]] static constexpr auto release(PermHold<Set>&& hold, T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr auto release(PermHold<Set>&& hold,
+                                                T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
         hold.require_live_();
         Released<T, Tag> message{std::move(value), std::move(slot_<BorrowedIn<Tag>>(hold))};
@@ -1847,8 +1846,7 @@ public:
     }
 
     template <class Tag, class Brand>
-        requires(detail::PlainTag<Tag>
-                 && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
+        requires(detail::PlainTag<Tag> && detail::regions_disjoint(^^Set, ^^::foundation::permissions::PermSet<Tag>))
     [[nodiscard]] constexpr auto put(::foundation::permissions::Permission<Tag, Brand> token) && noexcept {
         return HoldFactory::put(std::move(*this), std::move(token));
     }
@@ -1866,8 +1864,8 @@ public:
     // Receives a Transferable or a Returned, as an rvalue.
     template <class Message>
         requires detail::MovesAToken<Message> && ReceivablePayload<Message, Set>
-    [[nodiscard]] constexpr auto unpack(Message&& message) && noexcept(
-        std::is_nothrow_move_constructible_v<typename Message::payload_type>) {
+    [[nodiscard]] constexpr auto
+    unpack(Message&& message) && noexcept(std::is_nothrow_move_constructible_v<typename Message::payload_type>) {
         return HoldFactory::unpack(std::move(*this), std::move(message));
     }
 
@@ -1881,8 +1879,8 @@ public:
 
     template <class T, class Tag>
         requires ReceivablePayload<Released<T, Tag>, Set>
-    [[nodiscard]] constexpr auto end_loan(Released<T, Tag>&& message) && noexcept(
-        std::is_nothrow_move_constructible_v<T>) {
+    [[nodiscard]] constexpr auto
+    end_loan(Released<T, Tag>&& message) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return HoldFactory::end_loan(std::move(*this), std::move(message));
     }
 
@@ -1890,8 +1888,8 @@ public:
 
     template <class T, class Tag>
         requires detail::HoldCanAcceptLoan<Set, T, Tag>
-    [[nodiscard]] constexpr auto accept_loan(Borrowed<T, Tag>&& message) && noexcept(
-        std::is_nothrow_move_constructible_v<T>) {
+    [[nodiscard]] constexpr auto
+    accept_loan(Borrowed<T, Tag>&& message) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return HoldFactory::accept_loan(std::move(*this), std::move(message));
     }
 
@@ -1903,7 +1901,7 @@ public:
     // value and the hold.
     template <class Tag, class Body>
         requires(::foundation::permissions::perm_set_contains_v<Set, BorrowedIn<Tag>>)
-                && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
+             && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
     [[nodiscard]] constexpr auto read(Body&& body) && noexcept(
         ::foundation::permissions::detail::read_view_door_nothrow_v<::foundation::permissions::ReadLoan<Tag>, Body>) {
         require_live_();
@@ -1949,7 +1947,8 @@ private:
         : slots_{std::forward<Slots>(slots)...} {}
 
     constexpr void require_live_() const noexcept {
-        if (!live_) [[unlikely]] detail::hold_consumed_abort_();
+        if (!live_) [[unlikely]]
+            detail::hold_consumed_abort_();
     }
 
     // The position of an element in the set.  Complexity: linear in the
@@ -1989,12 +1988,11 @@ struct PlainMessage {
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::detail::payload_conveys_delegation> {
-    using accepts =
-        witnesses<::fixy::session::DelegatedSession<::fixy::session::End,
-                                                    ::fixy::session::detail::delegation_armed_witness::Wire, void,
-                                                    ::foundation::permissions::EmptyPermSet>,
-                  ::fixy::session::detail::delegation_armed_witness::HoldsEndpoint,
-                  ::fixy::session::detail::delegation_armed_witness::NamesItsProtocol*, void*>;
+    using accepts = witnesses<
+        ::fixy::session::DelegatedSession<::fixy::session::End, ::fixy::session::detail::delegation_armed_witness::Wire,
+                                          void, ::foundation::permissions::EmptyPermSet>,
+        ::fixy::session::detail::delegation_armed_witness::HoldsEndpoint,
+        ::fixy::session::detail::delegation_armed_witness::NamesItsProtocol*, void*>;
     using refuses =
         witnesses<int, ::fixy::session::detail::delegation_armed_witness::PlainMessage,
                   ::fixy::session::Send<int, ::fixy::session::End>,

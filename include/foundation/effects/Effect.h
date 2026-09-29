@@ -325,7 +325,7 @@ template <class T>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto entry : context_roster) {
-        if constexpr (std::is_same_v<T, typename [:entry:]>) return true;
+        if constexpr (std::is_same_v<T, typename[:entry:]>) return true;
     }
 #pragma GCC diagnostic pop
     return false;
@@ -444,8 +444,8 @@ class Bg final
     friend constexpr Ctx mint_context(Key) noexcept;
 };
 
-class Init final
-    : public detail::ContextBase<Init, detail::ctx_mint::init_key, Effect::Init, Effect::Alloc, Effect::IO, Effect::Block> {
+class Init final : public detail::ContextBase<Init, detail::ctx_mint::init_key, Effect::Init, Effect::Alloc, Effect::IO,
+                                              Effect::Block> {
     constexpr Init() noexcept = default;
 
     template <class Ctx, class Key>
@@ -453,8 +453,8 @@ class Init final
     friend constexpr Ctx mint_context(Key) noexcept;
 };
 
-class Test final
-    : public detail::ContextBase<Test, detail::ctx_mint::test_key, Effect::Test, Effect::Alloc, Effect::IO, Effect::Block> {
+class Test final : public detail::ContextBase<Test, detail::ctx_mint::test_key, Effect::Test, Effect::Alloc, Effect::IO,
+                                              Effect::Block> {
     constexpr Test() noexcept = default;
 
     template <class Ctx, class Key>
@@ -557,7 +557,8 @@ template <class C>
     static_assert(!std::is_default_constructible_v<C>,
                   "A context's default constructor must stay private.  Build one through a friended entry "
                   "point, or through the test witness.");
-    static_assert(effect_name(C::own_effect) == std::meta::identifier_of(^^C), "A context is named after its own atom.");
+    static_assert(effect_name(C::own_effect) == std::meta::identifier_of(^^C),
+                  "A context is named after its own atom.");
     return true;
 }
 
@@ -565,10 +566,10 @@ template <class C>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto entry : context_roster) {
-        (void)context_invariants_hold_<typename [:entry:]>();
+        (void)context_invariants_hold_<typename[:entry:]>();
         template for (constexpr auto other : context_roster) {
             if constexpr (entry != other) {
-                static_assert(!std::is_same_v<typename [:entry:]::key_type, typename [:other:]::key_type>,
+                static_assert(!std::is_same_v<typename[:entry:] ::key_type, typename[:other:] ::key_type>,
                               "Two contexts share a passkey, so one key would mint either.");
             }
         }

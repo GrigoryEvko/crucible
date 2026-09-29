@@ -189,8 +189,10 @@ int main(int argc, char** argv) {
             for (unsigned i = 0; i < b.count; ++i) {
                 const CallsiteHash h{b.recs[i].hash_raw};
                 CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
-                CallSiteTable::ExternalName fn = ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].filename);
-                CallSiteTable::ExternalName gn = ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].funcname);
+                CallSiteTable::ExternalName fn =
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].filename);
+                CallSiteTable::ExternalName gn =
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].funcname);
                 t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno);
             }
 
@@ -221,8 +223,10 @@ int main(int argc, char** argv) {
             for (unsigned i = 0; i < b.count; ++i) {
                 const CallsiteHash h{b.recs[i].hash_raw};
                 CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
-                CallSiteTable::ExternalName fn = ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"OVERWRITTEN"});
-                CallSiteTable::ExternalName gn = ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"ATTEMPT"});
+                CallSiteTable::ExternalName fn =
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"OVERWRITTEN"});
+                CallSiteTable::ExternalName gn =
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"ATTEMPT"});
                 t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno + 777);
             }
             if (t.size() != b.count) return false;

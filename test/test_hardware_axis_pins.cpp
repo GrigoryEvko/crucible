@@ -26,8 +26,7 @@
 
 // The control-byte probe is emitted for the ISA that the preprocessor
 // selects, and it issues the instruction class of that ISA.
-static_assert(hw_axis_pins::pinned<^^::crucible::detail::swiss_hw, ::fixy::Axis::SimdIsa,
-                                   ::fixy::Axis::HwInstruction>);
+static_assert(hw_axis_pins::pinned<^^::crucible::detail::swiss_hw, ::fixy::Axis::SimdIsa, ::fixy::Axis::HwInstruction>);
 
 // The append issues a prefetch, and the hot path bounds its instruction class.
 static_assert(hw_axis_pins::pinned<^^::crucible::tracering_hw, ::fixy::Axis::HwInstruction>);

@@ -257,8 +257,7 @@ static_assert(row_hash_contribution_v<TaggedVerified> != row_hash_contribution_v
 // the two orders are different keys.
 static_assert(row_hash_contribution_v<::fixy::Secret<LinearInt>> != row_hash_contribution_v<SecretInt>);
 static_assert(row_hash_contribution_v<::fixy::Secret<LinearInt>> != row_hash_contribution_v<LinearInt>);
-static_assert(row_hash_contribution_v<::fixy::Secret<LinearInt>>
-              != row_hash_contribution_v<::fixy::Linear<SecretInt>>);
+static_assert(row_hash_contribution_v<::fixy::Secret<LinearInt>> != row_hash_contribution_v<::fixy::Linear<SecretInt>>);
 
 // A class-shaped wrapper nests inside an alias-shaped one and stays
 // visible, which is the property that makes the two shapes one fold.
@@ -481,7 +480,7 @@ struct Verdict {
 [[nodiscard]] consteval bool is_roster_member(std::meta::info member) {
     if (std::meta::is_class_template(member)) return true;
     return std::meta::is_type(member) && !std::meta::is_type_alias(member) && std::meta::is_class_type(member)
-           && std::meta::has_identifier(member);
+        && std::meta::has_identifier(member);
 }
 
 // A witness must be an instance of the member it stands for, so that a
@@ -788,7 +787,6 @@ struct NamespaceVerdict {
 
 inline constexpr NamespaceVerdict kNamespaceVerdict = namespace_verdict();
 
-
 static_assert(kNamespaceVerdict.declaring > 0, "no namespace under fixy or foundation declares a class, so the "
                                                "namespace census proves nothing");
 static_assert(kNamespaceVerdict.disposed == kNamespaceVerdict.declaring,
@@ -841,13 +839,14 @@ using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;
 
 // The decorators of a session handle, each over one plain handle at End.
 using PlainHandle = ::fixy::session::SessionHandle<::fixy::session::End, int>;
-using CrashWatchedHandle = ::fixy::session::CrashWatched<PlainHandle, SelfRole, PeerRole, ::fixy::session::ReliableSet<>,
-                                                         fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg>>>;
+using CrashWatchedHandle =
+    ::fixy::session::CrashWatched<PlainHandle, SelfRole, PeerRole, ::fixy::session::ReliableSet<>,
+                                  fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg>>>;
 using RecordedHandle = ::fixy::session::Recorded<PlainHandle>;
 using RecordedCrashWatchedHandle = ::fixy::session::Recorded<CrashWatchedHandle>;
-using CheckpointAtEnd =
-    ::fixy::session::CheckpointHandle<PlainHandle, ::fixy::session::End, void,
-                                      ::fixy::session::CheckpointFrame<::fixy::session::End, ::fixy::session::End, void>>;
+using CheckpointAtEnd = ::fixy::session::CheckpointHandle<
+    PlainHandle, ::fixy::session::End, void,
+    ::fixy::session::CheckpointFrame<::fixy::session::End, ::fixy::session::End, void>>;
 
 namespace stage_probe = ::fixy::concurrent::detail::stage_self_test;
 namespace pipeline_probe = ::fixy::concurrent::detail::pipeline_self_test;
@@ -935,8 +934,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::Witnessed, ^^::fixy::Witnessed<BorrowedInt, ::fixy::witness::UnderRow<PureRegionTag>>},
 
     {^^::fixy::session::SessionHandle, ^^::fixy::session::SessionHandle<::fixy::session::End, int>},
-    {^^::fixy::session::SessionFromMachine,
-     ^^::fixy::session::SessionFromMachine<MachineState, ::fixy::session::End>},
+    {^^::fixy::session::SessionFromMachine, ^^::fixy::session::SessionFromMachine<MachineState, ::fixy::session::End>},
     {^^::fixy::session::CrashWatched, ^^CrashWatchedHandle},
     {^^::fixy::session::Recorded, ^^RecordedHandle},
     {^^::fixy::session::CheckpointHandle, ^^CheckpointAtEnd},
@@ -1007,12 +1005,16 @@ inline constexpr std::string_view kDescriptorDoor =
 
 inline constexpr StatedZero kZeros[] = {
     {^^::foundation::Pinned, "a CRTP marker base: it forbids moves on its deriver and is never a value"},
-    {^^::foundation::ChannelBinding, "a handle's binding to its channel: a member of a handle, never a kernel signature argument"},
+    {^^::foundation::ChannelBinding,
+     "a handle's binding to its channel: a member of a handle, never a kernel signature argument"},
     {^^::foundation::simd::vec, kPayload},
     {^^::foundation::simd::mask, kPayload},
-    {^^::foundation::AlignedBuffer, "an owned allocation of elements: it holds storage and makes no claim about what the elements hold"},
-    {^^::foundation::SwissTableBuffer, "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
-    {^^::foundation::ThreadLocalRef, "a stateless handle onto a cell of the thread: it holds nothing, and the cell it names is process state, not a claim"},
+    {^^::foundation::AlignedBuffer,
+     "an owned allocation of elements: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::SwissTableBuffer,
+     "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
+    {^^::foundation::ThreadLocalRef,
+     "a stateless handle onto a cell of the thread: it holds nothing, and the cell it names is process state, not a claim"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},
@@ -1044,7 +1046,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::ResourceTagDescriptor, kPayload},
     {^^fe::concurrent_row_value, kMetafunction},
     {^^fe::concurrent_row_descriptors, kMetafunction},
-    {^^fe::EffectMask, "a set of effect atoms read at run time, from a sample or from bytes on the wire: its type names no row, and bits_from_row projects a row into it"},
+    {^^fe::EffectMask,
+     "a set of effect atoms read at run time, from a sample or from bytes on the wire: its type names no row, and bits_from_row projects a row into it"},
 
     {^^::fixy::axis_traits, kMetafunction},
     {^^::fixy::Bits, kPayload},
@@ -1316,7 +1319,6 @@ inline constexpr StatedZero kZeros[] = {
 
 inline constexpr Verdict kVerdict = run<kCensusNamespaces, kCarriers, kZeros>();
 
-
 static_assert(kVerdict.roster > 0, "the reflected carrier roster is empty, so the census proves nothing");
 static_assert(kVerdict.proven == kVerdict.roster,
               "a carrier in a censused namespace is unproven.  Either it folds to the zero slot that every bare "
@@ -1371,9 +1373,9 @@ static_assert(row_hash_contribution_v<fp::PermSet<PureRegionTag>>
 static_assert(row_hash_contribution_v<fp::PermSet<>> != 0);
 
 // A session handle's grade is its protocol position.
-static_assert(row_hash_contribution_v<::fixy::session::SessionHandle<::fixy::session::End, int>>
-              != row_hash_contribution_v<
-                  ::fixy::session::SessionHandle<::fixy::session::Send<int, ::fixy::session::End>, int>>);
+static_assert(
+    row_hash_contribution_v<::fixy::session::SessionHandle<::fixy::session::End, int>>
+    != row_hash_contribution_v<::fixy::session::SessionHandle<::fixy::session::Send<int, ::fixy::session::End>, int>>);
 static_assert(::foundation::diag::SteppingShaped<::fixy::session::SessionHandle<::fixy::session::End, int>>);
 static_assert(::foundation::diag::PublishesGradedMember<::fixy::session::SessionHandleBase<::fixy::session::End>>
                   && !::foundation::diag::SteppingShaped<::fixy::session::SessionHandleBase<::fixy::session::End>>,
@@ -1416,8 +1418,7 @@ static_assert(row_hash_contribution_v<::fixy::AtomicMonotonic<std::uint64_t>>
 
 // A pipeline is not the stage it runs, and the two ends of a channel are
 // two claims.
-static_assert(row_hash_contribution_v<pipeline_probe::P1>
-              != row_hash_contribution_v<pipeline_probe::S_int_to_int>);
+static_assert(row_hash_contribution_v<pipeline_probe::P1> != row_hash_contribution_v<pipeline_probe::S_int_to_int>);
 static_assert(row_hash_contribution_v<stage_probe::S1> != row_hash_contribution_v<stage_probe::W1>);
 static_assert(row_hash_contribution_v<SpscWitness::ProducerHandle>
               != row_hash_contribution_v<SpscWitness::ConsumerHandle>);
@@ -1521,7 +1522,8 @@ void test_every_role_is_off_the_zero_slot() {
 void test_every_carrier_is_off_the_zero_slot() {
     std::size_t const roster = census::kVerdict.roster;
     std::size_t const proven = census::kVerdict.proven;
-    std::fprintf(stderr, "(%zu carriers and stated zeros across %zu class-declaring namespaces, from %d public headers) ",
+    std::fprintf(stderr,
+                 "(%zu carriers and stated zeros across %zu class-declaring namespaces, from %d public headers) ",
                  roster, census::kNamespaceVerdict.declaring, CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT);
     check(CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT > 0, "the census includes no public header, so it proves nothing");
     check(roster > 0, "the reflected carrier roster is empty, so the census proves nothing");
@@ -1536,7 +1538,8 @@ void test_every_carrier_is_off_the_zero_slot() {
     check(handle != 0 && token != 0, "a session handle or a permission token reaches the zero slot at run time");
     std::uint64_t const pure_share =
         row_hash_contribution_v<::foundation::permissions::SharedPermission<census::PureRegionTag>>;
-    std::uint64_t const io_share = row_hash_contribution_v<::foundation::permissions::SharedPermission<census::IoRegionTag>>;
+    std::uint64_t const io_share =
+        row_hash_contribution_v<::foundation::permissions::SharedPermission<census::IoRegionTag>>;
     check(pure_share != io_share, "a share over an IO region and a share over a pure region share a slot at run time");
 }
 

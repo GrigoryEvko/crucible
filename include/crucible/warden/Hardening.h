@@ -202,10 +202,9 @@ private:
 // context must own Init, IO and Block, and a hot foreground or a drain
 // context does not reach this surface.
 template <class Ctx>
-concept CtxFitsHardeningMint =
-    ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
-    && ::fixy::CtxFitsFileOpen<Ctx>;
+concept CtxFitsHardeningMint = ::foundation::effects::IsExecCtx<Ctx>
+                            && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+                            && ::fixy::CtxFitsFileOpen<Ctx>;
 
 class Hardening {
 public:
@@ -510,7 +509,8 @@ template <::foundation::effects::IsExecCtx Ctx>
 }
 
 static_assert(CtxFitsHardeningMint<::fixy::InitLoadCtx>);
-static_assert(!CtxFitsHardeningMint<::fixy::ColdInitCtx>, "The cold init context owns no Block, so it cannot read sysfs.");
+static_assert(!CtxFitsHardeningMint<::fixy::ColdInitCtx>,
+              "The cold init context owns no Block, so it cannot read sysfs.");
 static_assert(!CtxFitsHardeningMint<::fixy::BgDrainCtx>);
 static_assert(!CtxFitsHardeningMint<::fixy::HotFgCtx>);
 

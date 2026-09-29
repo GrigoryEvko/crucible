@@ -116,7 +116,8 @@ void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it() {
     CRUCIBLE_TEST_REQUIRE(read[3] == 8);
 
     std::uint64_t sum = 0;
-    for (std::uint64_t value : read) sum += value;
+    for (std::uint64_t value : read)
+        sum += value;
     CRUCIBLE_TEST_REQUIRE(sum == 20);
 }
 
@@ -210,7 +211,8 @@ int main() {
     std::fprintf(stderr, "test_witnessed:\n");
     run_test("test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it",
              test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it);
-    run_test("test_a_context_that_refuses_the_row_refuses_the_read", test_a_context_that_refuses_the_row_refuses_the_read);
+    run_test("test_a_context_that_refuses_the_row_refuses_the_read",
+             test_a_context_that_refuses_the_row_refuses_the_read);
     run_test("test_a_protocol_witnessed_borrow_reads_while_the_session_is_there",
              test_a_protocol_witnessed_borrow_reads_while_the_session_is_there);
     run_test("test_the_position_is_the_witness_and_not_the_spelling",

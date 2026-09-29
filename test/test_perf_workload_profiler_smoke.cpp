@@ -21,8 +21,7 @@ using fixy::concurrent::WorkBudget;
 // Every profiler in this test comes from the mint, under a cold init
 // context.
 [[nodiscard]] WorkloadProfiler make_profiler(const crucible::perf::Senses* senses) noexcept {
-    return crucible::perf::mint_workload_profiler(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
-                                                  senses);
+    return crucible::perf::mint_workload_profiler(::fixy::ColdInitCtx{::foundation::effects::testing::init()}, senses);
 }
 
 // The header asserts that the proof of origin carries no storage.

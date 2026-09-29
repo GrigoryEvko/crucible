@@ -15,7 +15,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>,
-                                ::fixy::atom::hw::non_deterministic_tsc>
-        refused{};
+                                ::fixy::atom::hw::non_deterministic_tsc> refused{};
     return 0;
 }

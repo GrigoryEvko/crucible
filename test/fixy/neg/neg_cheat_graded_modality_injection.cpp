@@ -15,7 +15,8 @@
 
 struct FakeSubstrate {
     using value_type = int;
-    using lattice_type = ::foundation::algebra::lattices::QttSemiring::At<::foundation::algebra::lattices::QttGrade::One>;
+    using lattice_type =
+        ::foundation::algebra::lattices::QttSemiring::At<::foundation::algebra::lattices::QttGrade::One>;
     static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
     static consteval std::string_view value_type_name() noexcept { return "int"; }
     static consteval std::string_view lattice_name() noexcept { return "QttSemiring::At<1>"; }

@@ -229,7 +229,8 @@ static_assert(!live_rules<at::regime::hot, at::with<Eff::Block>, at::cost_unboun
 
 // H010 hot x Row<Bg>.  The cost_constant and refined_with atoms are what
 // make this cell prove H010 rather than H001 or H002 in disguise.
-static_assert(!live_rules<at::regime::hot, at::with<Eff::Bg>, at::cost_constant, at::refined_with<hot_invariant>>::H010_ok);
+static_assert(
+    !live_rules<at::regime::hot, at::with<Eff::Bg>, at::cost_constant, at::refined_with<hot_invariant>>::H010_ok);
 static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::H010_ok);
 static_assert(live_rules<at::with<Eff::Bg>>::H010_ok);
 static_assert(live_rules<at::regime::cold, at::with<Eff::Bg>>::H010_ok, "a cold background body is ordinary");
@@ -270,18 +271,18 @@ static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<ho
 
 // W001 hot x a kernel wait.  The three lowest grades trip it and the
 // three highest do not, which is the WaitLattice's own division.
-static_assert(!live_rules<at::regime::hot, at::sync::block, at::cost_constant,
-                          at::refined_with<hot_invariant>>::W001_ok);
-static_assert(!live_rules<at::regime::hot, at::sync::park, at::cost_constant,
-                          at::refined_with<hot_invariant>>::W001_ok);
-static_assert(!live_rules<at::regime::hot, at::sync::acquire_wait, at::cost_constant,
-                          at::refined_with<hot_invariant>>::W001_ok);
-static_assert(live_rules<at::regime::hot, at::sync::umwait_c01, at::cost_constant,
-                         at::refined_with<hot_invariant>>::W001_ok);
-static_assert(live_rules<at::regime::hot, at::sync::bounded_spin, at::cost_constant,
-                         at::refined_with<hot_invariant>>::W001_ok);
-static_assert(live_rules<at::regime::hot, at::sync::spin_pause, at::cost_constant,
-                         at::refined_with<hot_invariant>>::W001_ok);
+static_assert(
+    !live_rules<at::regime::hot, at::sync::block, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+static_assert(
+    !live_rules<at::regime::hot, at::sync::park, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+static_assert(
+    !live_rules<at::regime::hot, at::sync::acquire_wait, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+static_assert(
+    live_rules<at::regime::hot, at::sync::umwait_c01, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+static_assert(
+    live_rules<at::regime::hot, at::sync::bounded_spin, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
+static_assert(
+    live_rules<at::regime::hot, at::sync::spin_pause, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok);
 // Each half alone is fine: a cold body may block, and a hot body may wait
 // however it likes as long as it stays out of the kernel.
 static_assert(live_rules<at::sync::block>::W001_ok);
@@ -423,11 +424,11 @@ static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>>::B00
 static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>>::B001_ok,
               "a stated cost with no space grade states no bound on what the surface holds");
 static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_unbounded>::B001_ok);
-static_assert(!live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>,
-                          at::space_unbounded>::B001_ok);
-static_assert(live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>,
-                         at::space_bounded<4096>>::B001_ok,
-              "the remedy the theorem names: a bounded space and a linear cost");
+static_assert(
+    !live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>, at::space_unbounded>::B001_ok);
+static_assert(
+    live_rules<at::with<Eff::Bg>, at::observe::surface<Eff::Bg>, at::cost_linear<8>, at::space_bounded<4096>>::B001_ok,
+    "the remedy the theorem names: a bounded space and a linear cost");
 // Each premise alone stands down.
 static_assert(live_rules<at::with<Eff::Bg>, at::cost_unbounded>::B001_ok, "no surface, so nothing is observable");
 static_assert(live_rules<at::observe::surface<Eff::IO>, at::with<Eff::IO>, at::cost_unbounded>::B001_ok,
@@ -496,9 +497,9 @@ static_assert(!live_rules<at::regime::hot, at::hw::non_deterministic_tsc, at::co
 static_assert(!live_rules<at::regime::hot, at::hw::privileged_msr, at::with<Eff::Init>, at::cost_constant,
                           at::refined_with<hot_invariant>>::V201_ok,
               "the privileged tier is at or above the timestamp tier, so the hot path refuses it too");
-static_assert(live_rules<at::regime::hot, at::hw::vectorizable, at::cost_constant,
-                         at::refined_with<hot_invariant>>::V201_ok,
-              "SIMD intrinsics sit below the timestamp tier and are what a hot path is made of");
+static_assert(
+    live_rules<at::regime::hot, at::hw::vectorizable, at::cost_constant, at::refined_with<hot_invariant>>::V201_ok,
+    "SIMD intrinsics sit below the timestamp tier and are what a hot path is made of");
 static_assert(live_rules<at::hw::non_deterministic_tsc>::V201_ok, "not hot, so a timestamp read is ordinary");
 static_assert(live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>>::V201_ok);
 
@@ -544,14 +545,14 @@ static_assert(rules_of<det<DetTier::Pure>, at::hw::vectorizable>::valid);
 static_assert(col::axis_has_an_atom<Axis::BarrierStrength>);
 
 // V301 hot x a fence at or above SeqCst.
-static_assert(!live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
-                          at::refined_with<hot_invariant>>::V301_ok);
-static_assert(!live_rules<at::regime::hot, at::barrier::full_fence, at::cost_constant,
-                          at::refined_with<hot_invariant>>::V301_ok,
-              "the standalone fence is above seq_cst on the ladder, so the hot path refuses it too");
-static_assert(live_rules<at::regime::hot, at::barrier::acq_rel, at::cost_constant,
-                         at::refined_with<hot_invariant>>::V301_ok,
-              "acq_rel is one MOV each way on x86 and is what a hot SPSC ring is made of");
+static_assert(
+    !live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok);
+static_assert(
+    !live_rules<at::regime::hot, at::barrier::full_fence, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok,
+    "the standalone fence is above seq_cst on the ladder, so the hot path refuses it too");
+static_assert(
+    live_rules<at::regime::hot, at::barrier::acq_rel, at::cost_constant, at::refined_with<hot_invariant>>::V301_ok,
+    "acq_rel is one MOV each way on x86 and is what a hot SPSC ring is made of");
 static_assert(live_rules<at::regime::hot, at::barrier::release_store, at::cost_constant,
                          at::refined_with<hot_invariant>>::V301_ok);
 static_assert(live_rules<at::regime::hot, at::barrier::compiler_barrier, at::cost_constant,
@@ -566,14 +567,11 @@ static_assert(live_rules<>::V301_ok);
 // The fixture's pack trips V301 and nothing else: the two hot rules its
 // cost and refinement atoms answer, the wait rule, and the hardware rule
 // all stand down.
-static_assert(live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
-                         at::refined_with<hot_invariant>>::H001_ok
-              && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
-                            at::refined_with<hot_invariant>>::H002_ok
-              && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
-                            at::refined_with<hot_invariant>>::W001_ok
-              && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant,
-                            at::refined_with<hot_invariant>>::V201_ok);
+static_assert(
+    live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::H001_ok
+    && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::H002_ok
+    && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::W001_ok
+    && live_rules<at::regime::hot, at::barrier::seq_cst, at::cost_constant, at::refined_with<hot_invariant>>::V201_ok);
 
 // The two `tier` families do not answer for each other: a hardware tier
 // is not a fence strength, and a fence strength is not a hardware tier.
@@ -593,8 +591,8 @@ static_assert(!col::detail::is_barrier_at_or_above_<::foundation::algebra::latti
                                                     at::barrier::acquire_load>::value);
 static_assert(col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcquireLoad,
                                                    at::barrier::acq_rel>::value
-              && col::detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::ReleaseStore,
-                                                      at::barrier::acq_rel>::value,
+                  && col::detail::is_barrier_at_or_above_<
+                      ::foundation::algebra::lattices::BarrierStrength::ReleaseStore, at::barrier::acq_rel>::value,
               "acq_rel is both an acquire and a release");
 
 // ---------------------------------------------------------------------
@@ -936,8 +934,8 @@ static_assert(!::fixy::IsAccepted<int, at::regime::hot, at::cost_constant, at::r
 static_assert(!::fixy::IsAccepted<int, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
                                   at::syscall::per<at::syscall::SyscallId::getpid>, at::as_public>);
 static_assert(::fixy::IsAccepted<int, at::regime::warm, at::cost_constant, at::with<Eff::Alloc>>);
-static_assert(::fixy::IsAccepted<int, at::regime::warm, at::syscall::per<at::syscall::SyscallId::getpid>,
-                                 at::as_public>);
+static_assert(
+    ::fixy::IsAccepted<int, at::regime::warm, at::syscall::per<at::syscall::SyscallId::getpid>, at::as_public>);
 
 // The constant-time family and the failure family reach the same gate.
 // The failure rules read the payload, which only the bound view carries,
@@ -973,8 +971,8 @@ using PureUnderHotPath = ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::Det
 using PureUnderArena = ::fixy::alloc_class::Arena<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
 using ClockUnderHotPath =
     ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>>;
-using ClockOverPure = ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead,
-                                      ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
+using ClockOverPure =
+    ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
 
 static_assert(col::detail::is_replay_deterministic_<PureUnderHotPath>::value);
 static_assert(col::detail::is_replay_deterministic_<PureUnderArena>::value);
@@ -1019,13 +1017,12 @@ static_assert(!col::detail::is_signature_noexcept_<void (attack_owner::*)() cons
 // ref-qualified, volatile or const volatile member function, a C
 // variadic function, and a reference or a const pointer to a function.
 using throwing_forms = std::tuple<void (attack_owner::*)() &, void (attack_owner::*)() &&,
-                                  void (attack_owner::*)() volatile, void (attack_owner::*)() const volatile &,
-                                  int (*)(char, ...), int (*&)(char), int (*const)(char), int(&)(char)>;
-using noexcept_forms =
-    std::tuple<void (attack_owner::*)() & noexcept, void (attack_owner::*)() && noexcept,
-               void (attack_owner::*)() volatile noexcept, void (attack_owner::*)() const volatile & noexcept,
-               int (*)(char, ...) noexcept, int (*&)(char) noexcept, int (*const)(char) noexcept,
-               int (&)(char) noexcept>;
+                                  void (attack_owner::*)() volatile, void (attack_owner::*)() const volatile&,
+                                  int (*)(char, ...), int (*&)(char), int (*const)(char), int (&)(char)>;
+using noexcept_forms = std::tuple<void (attack_owner::*)() & noexcept, void (attack_owner::*)() && noexcept,
+                                  void (attack_owner::*)() volatile noexcept,
+                                  void (attack_owner::*)() const volatile & noexcept, int (*)(char, ...) noexcept,
+                                  int (*&)(char) noexcept, int (*const)(char) noexcept, int (&)(char) noexcept>;
 
 template <class Forms, std::size_t... Index>
 [[nodiscard]] consteval bool every_form_refused_(std::index_sequence<Index...>) noexcept {
@@ -1082,11 +1079,20 @@ static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D00
     for (const col::corpus_entry& entry : col::rule_corpus) {
         if (entry.code.empty() || entry.note.empty()) return 7;
         switch (entry.disposition) {
-            case col::Disposition::Live: ++live; break;
-            case col::Disposition::Pending: ++pending; break;
-            case col::Disposition::Absent: ++absent; break;
-            case col::Disposition::Retired: ++retired; break;
-            default: return 8;
+            case col::Disposition::Live:
+                ++live;
+                break;
+            case col::Disposition::Pending:
+                ++pending;
+                break;
+            case col::Disposition::Absent:
+                ++absent;
+                break;
+            case col::Disposition::Retired:
+                ++retired;
+                break;
+            default:
+                return 8;
         }
     }
     if (live != 43 || pending != 0 || absent != 6 || retired != 8) return 9;

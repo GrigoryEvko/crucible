@@ -88,12 +88,14 @@ public:
     // table across cases, so this takes the test context, which code that
     // ships cannot mint.  The caller makes sure that no writer and no reader
     // uses the table at the same time.
-    void reopen(::foundation::effects::Test const&) noexcept {
-        phase_.store(Phase::Open, std::memory_order_release);
-    }
+    void reopen(::foundation::effects::Test const&) noexcept { phase_.store(Phase::Open, std::memory_order_release); }
 
 private:
-    enum class Phase : std::uint8_t { Open, Writing, Sealed };
+    enum class Phase : std::uint8_t {
+        Open,
+        Writing,
+        Sealed
+    };
 
     // Takes the section.  Returns false when the table is sealed.
     [[nodiscard]] bool enter_writer_() noexcept {

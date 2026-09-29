@@ -337,7 +337,7 @@ void det_safe_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<det_safe_tier::PureTier, OneByteValue> initial{test_authority::key(), v,
-                                                               det_safe_tier::PureTier::bottom()};
+                                                                det_safe_tier::PureTier::bottom()};
     auto widened = initial.weaken(det_safe_tier::PureTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(det_safe_tier::PureTier::top());
@@ -368,7 +368,7 @@ void alloc_class_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<alloc_class_tag::StackAlloc, OneByteValue> initial{test_authority::key(), v,
-                                                                   alloc_class_tag::StackAlloc::bottom()};
+                                                                    alloc_class_tag::StackAlloc::bottom()};
     auto widened = initial.weaken(alloc_class_tag::StackAlloc::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(alloc_class_tag::StackAlloc::top());
@@ -398,7 +398,7 @@ void hot_path_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<hot_path_tier::HotTier, OneByteValue> initial{test_authority::key(), v,
-                                                              hot_path_tier::HotTier::bottom()};
+                                                               hot_path_tier::HotTier::bottom()};
     auto widened = initial.weaken(hot_path_tier::HotTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(hot_path_tier::HotTier::top());
@@ -428,7 +428,7 @@ void cipher_tier_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<cipher_tier_tag::HotTier, OneByteValue> initial{test_authority::key(), v,
-                                                                cipher_tier_tag::HotTier::bottom()};
+                                                                 cipher_tier_tag::HotTier::bottom()};
     auto widened = initial.weaken(cipher_tier_tag::HotTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(cipher_tier_tag::HotTier::top());
@@ -459,7 +459,7 @@ void tolerance_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<tolerance::BitexactTier, OneByteValue> initial{test_authority::key(), v,
-                                                               tolerance::BitexactTier::bottom()};
+                                                                tolerance::BitexactTier::bottom()};
     auto widened = initial.weaken(tolerance::BitexactTier::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(tolerance::BitexactTier::top());
@@ -490,7 +490,7 @@ void wait_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<wait_strategy::SpinPauseStrategy, OneByteValue> initial{test_authority::key(), v,
-                                                                        wait_strategy::SpinPauseStrategy::bottom()};
+                                                                         wait_strategy::SpinPauseStrategy::bottom()};
     auto widened = initial.weaken(wait_strategy::SpinPauseStrategy::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(wait_strategy::SpinPauseStrategy::top());
@@ -549,7 +549,7 @@ void vendor_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<vendor_backend::PortableVendor, OneByteValue> initial{test_authority::key(), v,
-                                                                      vendor_backend::PortableVendor::bottom()};
+                                                                       vendor_backend::PortableVendor::bottom()};
     auto widened = initial.weaken(vendor_backend::PortableVendor::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(vendor_backend::PortableVendor::top());
@@ -634,7 +634,7 @@ void memory_scope_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<memory_scope::SystemScope, OneByteValue> initial{test_authority::key(), v,
-                                                                 memory_scope::SystemScope::bottom()};
+                                                                  memory_scope::SystemScope::bottom()};
     auto widened = initial.weaken(memory_scope::SystemScope::top());
     auto composed = initial.compose(widened);
     [[maybe_unused]] auto g = widened.grade();
@@ -712,7 +712,7 @@ void pinning_requirement_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<pinning_requirement::PerCorePin, OneByteValue> initial{test_authority::key(), v,
-                                                                       pinning_requirement::PerCorePin::bottom()};
+                                                                        pinning_requirement::PerCorePin::bottom()};
     auto widened = initial.weaken(pinning_requirement::PerCorePin::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(pinning_requirement::PerCorePin::top());
@@ -867,7 +867,7 @@ void scheduler_policy_lattice_runs_at_run_time() {
 
     OneByteValue v{42};
     PinnedGraded<scheduler_policy::FifoClass, OneByteValue> initial{test_authority::key(), v,
-                                                                   scheduler_policy::FifoClass::bottom()};
+                                                                    scheduler_policy::FifoClass::bottom()};
     auto widened = initial.weaken(scheduler_policy::FifoClass::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(scheduler_policy::FifoClass::top());

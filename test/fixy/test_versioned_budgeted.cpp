@@ -37,7 +37,8 @@ static_assert(fa::GradedWrapper<fixy::Budgeted<int>>);
 
 static_assert(fd::row_hash_contribution_v<fixy::EpochVersioned<int>> != 0);
 static_assert(fd::row_hash_contribution_v<fixy::Budgeted<int>> != 0);
-static_assert(fd::row_hash_contribution_v<fixy::EpochVersioned<int>> != fd::row_hash_contribution_v<fixy::Budgeted<int>>);
+static_assert(fd::row_hash_contribution_v<fixy::EpochVersioned<int>>
+              != fd::row_hash_contribution_v<fixy::Budgeted<int>>);
 
 // The payload recurses into the fold, so a version over a budget and a
 // budget over a version are two nestings and two slots.

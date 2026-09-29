@@ -117,11 +117,11 @@ template <auto A, auto B>
 // most once.  A repeated enum is refused here rather than resolved by
 // order, because "the last one wins" is the kind of rule nobody reads.
 template <auto... Settings>
-    requires ((detail::IsFpSetting<decltype(Settings)> && ...))
-          && (detail::settings_from_<FpReassociate, Settings...>() <= 1)
-          && (detail::settings_from_<FpContract, Settings...>() <= 1)
-          && (detail::settings_from_<FpFtz, Settings...>() <= 1)
-          && (detail::settings_from_<FpDenormalInput, Settings...>() <= 1)
+    requires((detail::IsFpSetting<decltype(Settings)> && ...))
+         && (detail::settings_from_<FpReassociate, Settings...>() <= 1)
+         && (detail::settings_from_<FpContract, Settings...>() <= 1)
+         && (detail::settings_from_<FpFtz, Settings...>() <= 1)
+         && (detail::settings_from_<FpDenormalInput, Settings...>() <= 1)
 struct mode final : atom_of<Axis::FpMode> {
     // Whether the mode names a particular setting value.  A rule asks
     // this and nothing else.
@@ -133,10 +133,11 @@ struct mode final : atom_of<Axis::FpMode> {
 
 namespace fixy::atom::detail {
 
-using fp_atom_roster = std::tuple<fp::mode<>, fp::mode<fp::FpReassociate::UnrestrictedRewrite>,
-                                  fp::mode<fp::FpReassociate::BoundedTreeDepth>, fp::mode<fp::FpContract::Fast>,
-                                  fp::mode<fp::FpFtz::PreserveSubnormals>, fp::mode<fp::FpDenormalInput::HonorDenormals>,
-                                  fp::mode<fp::FpContract::Fast, fp::FpReassociate::UnrestrictedRewrite>>;
+using fp_atom_roster =
+    std::tuple<fp::mode<>, fp::mode<fp::FpReassociate::UnrestrictedRewrite>,
+               fp::mode<fp::FpReassociate::BoundedTreeDepth>, fp::mode<fp::FpContract::Fast>,
+               fp::mode<fp::FpFtz::PreserveSubnormals>, fp::mode<fp::FpDenormalInput::HonorDenormals>,
+               fp::mode<fp::FpContract::Fast, fp::FpReassociate::UnrestrictedRewrite>>;
 
 }  // namespace fixy::atom::detail
 

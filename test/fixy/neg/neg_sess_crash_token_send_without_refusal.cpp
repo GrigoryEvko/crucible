@@ -33,7 +33,8 @@ int main() {
     s::PeerCrashCell cell;
     s::PeerCrashCell own;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
-    auto handle = s::mint_crash_session<Relay, Alice, Bob, s::ReliableSet<Bob>>(ctx, Wire{}, cell, s::mint_crash_writer(own));
+    auto handle =
+        s::mint_crash_session<Relay, Alice, Bob, s::ReliableSet<Bob>>(ctx, Wire{}, cell, s::mint_crash_writer(own));
     auto [token, reply] = std::move(handle).recv(
         [](Wire&) noexcept -> std::optional<Token> { return Token{1, fp::mint_permission_root<Region>()}; });
     auto chosen = std::move(reply).template select<0>([](Wire&, std::size_t) noexcept { return true; });

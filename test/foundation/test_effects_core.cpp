@@ -61,7 +61,8 @@ static_assert(std::is_empty_v<fe::host::BackgroundOwner> && std::is_empty_v<fe::
 // a value atom and a lookalike that derives from the family base with a
 // real key are not contexts, so nothing a translation unit declares
 // reaches a gate.
-struct Lookalike final : fe::detail::ContextBase<Lookalike, fe::detail::ctx_mint::bg_key, fe::Effect::Bg, fe::Effect::Alloc> {
+struct Lookalike final
+    : fe::detail::ContextBase<Lookalike, fe::detail::ctx_mint::bg_key, fe::Effect::Bg, fe::Effect::Alloc> {
     constexpr Lookalike() noexcept = default;
 };
 static_assert(fe::IsContext<fe::Bg> && fe::IsContext<fe::Init> && fe::IsContext<fe::Test>);
@@ -74,7 +75,8 @@ static_assert(!fe::IsContext<fe::Bg const> && !fe::IsContext<fe::Bg&>, "The rost
 static_assert(fe::CanMintContext<fe::Bg, fe::detail::ctx_mint::bg_key>);
 static_assert(fe::CanMintContext<fe::Init, fe::detail::ctx_mint::init_key>);
 static_assert(fe::CanMintContext<fe::Test, fe::detail::ctx_mint::test_key>);
-static_assert(!fe::CanMintContext<fe::Init, fe::detail::ctx_mint::bg_key>, "A background key cannot mint an init context.");
+static_assert(!fe::CanMintContext<fe::Init, fe::detail::ctx_mint::bg_key>,
+              "A background key cannot mint an init context.");
 static_assert(!fe::CanMintContext<fe::Bg, fe::detail::ctx_mint::init_key>);
 static_assert(!fe::CanMintContext<fe::Test, fe::detail::ctx_mint::bg_key>);
 static_assert(!fe::CanMintContext<Lookalike, fe::detail::ctx_mint::bg_key>);

@@ -63,8 +63,7 @@ static_assert(!std::is_move_assignable_v<Mpsc::ConsumerHandle>);
 
 [[nodiscard]] auto spsc_handles(Spsc& channel) {
     auto whole = perm::mint_permission_root<Spsc::whole_tag>();
-    auto [producer, consumer] =
-        perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(whole));
+    auto [producer, consumer] = perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(whole));
     return std::pair{channel.producer(std::move(producer)), channel.consumer(std::move(consumer))};
 }
 
@@ -127,12 +126,9 @@ struct Attack {
 };
 
 constexpr Attack kAttacks[] = {
-    {"spsc producer", &spsc_producer},
-    {"spsc consumer", &spsc_consumer},
-    {"mpsc producer", &mpsc_producer},
-    {"mpsc producer in the drained window", &mpsc_producer_in_drained_window},
-    {"mpsc consumer", &mpsc_consumer},
-    {"bare binding", &binding_after_move},
+    {"spsc producer", &spsc_producer}, {"spsc consumer", &spsc_consumer},
+    {"mpsc producer", &mpsc_producer}, {"mpsc producer in the drained window", &mpsc_producer_in_drained_window},
+    {"mpsc consumer", &mpsc_consumer}, {"bare binding", &binding_after_move},
 };
 
 [[nodiscard]] bool ends_the_process(void (*attack)()) {

@@ -81,8 +81,8 @@ static_assert(sizeof(crucible::Cipher::ContentAddressedRegionPayload) == sizeof(
 // A load result that holds a region comes only from the store, because its
 // cache flag is a claim about where the bytes came from.  A payload comes
 // only from content_addressed_payload.
-static_assert(!std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, crucible::RegionNode*,
-                                       bool>);
+static_assert(
+    !std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, crucible::RegionNode*, bool>);
 static_assert(std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, std::nullptr_t>);
 static_assert(!std::is_constructible_v<crucible::Cipher::ContentAddressedRegionPayload, const crucible::RegionNode*>);
 static_assert(!std::is_default_constructible_v<crucible::Cipher::ContentAddressedRegionPayload>);

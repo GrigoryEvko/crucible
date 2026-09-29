@@ -31,7 +31,8 @@ static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
 static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
 static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
 
-static_assert(std::is_same_v<TypedMeta, ::fixy::Tagged<const crucible::TensorMeta*, ::fixy::tags::source::ABIBoundary>>);
+static_assert(
+    std::is_same_v<TypedMeta, ::fixy::Tagged<const crucible::TensorMeta*, ::fixy::tags::source::ABIBoundary>>);
 static_assert(sizeof(TypedMeta) == sizeof(const CrucibleMeta*));
 static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
 static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
@@ -52,7 +53,8 @@ static_assert(!::fixy::MintableTag<::fixy::tags::source::Sanitized>);
 // schema name wraps a borrowed span, and the tag collapses around it
 // while the span keeps its owner and its byte length visible.
 
-static_assert(std::is_same_v<decltype(crucible::vessel::data_ptr_typed(std::declval<TypedMeta>(), 0)), ExternalDataPtr>);
+static_assert(
+    std::is_same_v<decltype(crucible::vessel::data_ptr_typed(std::declval<TypedMeta>(), 0)), ExternalDataPtr>);
 static_assert(std::is_same_v<ExternalDataPtr, ::fixy::Tagged<void*, ::fixy::tags::source::External>>);
 static_assert(sizeof(ExternalDataPtr) == sizeof(void*));
 static_assert(alignof(ExternalDataPtr) == alignof(void*));
@@ -219,11 +221,13 @@ void test_schema_name_typed() {
 
     constexpr crucible::VigilFgCtx fg = ::foundation::effects::testing::foreground<crucible::Vigil>();
     if (const auto view = crucible::global_schema_table().mint_mutable_view(fg)) {
-        const bool was_a_registered = crucible::register_schema_name(
-            *view, crucible::SchemaHash{hash_a}, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::test_op_a"));
+        const bool was_a_registered =
+            crucible::register_schema_name(*view, crucible::SchemaHash{hash_a},
+                                           ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::test_op_a"));
         EXPECT(was_a_registered, "an open schema table must take the first registration");
-        const bool was_b_registered = crucible::register_schema_name(
-            *view, crucible::SchemaHash{hash_b}, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::test_op_b"));
+        const bool was_b_registered =
+            crucible::register_schema_name(*view, crucible::SchemaHash{hash_b},
+                                           ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::test_op_b"));
         EXPECT(was_b_registered, "an open schema table must take the second registration");
     }
 

@@ -4,4 +4,6 @@
 
 #include <fixy/atoms/Syscall.h>
 
-int main() { return sizeof(::fixy::atom::syscall::per<static_cast<::fixy::atom::syscall::SyscallId>(99)>) == 1 ? 0 : 1; }
+int main() {
+    return sizeof(::fixy::atom::syscall::per<static_cast<::fixy::atom::syscall::SyscallId>(99)>) == 1 ? 0 : 1;
+}

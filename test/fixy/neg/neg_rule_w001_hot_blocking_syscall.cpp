@@ -21,9 +21,8 @@ struct ring_depth_proved final {};
 }  // namespace fixture
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
-                                ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::futex>,
-                                ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::ring_depth_proved>>
-        refused{};
+    [[maybe_unused]] ::fixy::fn<
+        int, ::fixy::atom::regime::hot, ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::futex>,
+        ::fixy::atom::cost_constant, ::fixy::atom::refined_with<fixture::ring_depth_proved>> refused{};
     return 0;
 }

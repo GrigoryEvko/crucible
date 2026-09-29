@@ -276,7 +276,8 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
             digits[count++] = static_cast<char>('0' + number % 10);
             number /= 10;
         } while (number != 0);
-        while (count != 0) suffix += digits[--count];
+        while (count != 0)
+            suffix += digits[--count];
     };
     suffix += " @";
     append_number(where.line());
@@ -434,7 +435,7 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
     if (named == std::meta::info{}) return {};
     if (std::meta::is_type(named)) return identity_of_type(named, suffix);
     if (std::meta::is_function(named)) return identity_of_function(named, suffix);
-    if (std::meta::is_namespace(named)) return named == ^^:: ? identity_verdict{} : identity_of_scope(named, suffix);
+    if (std::meta::is_namespace(named)) return named == ^^::? identity_verdict{} : identity_of_scope(named, suffix);
     if (std::meta::is_variable(named) || std::meta::is_template(named)) {
         if (std::meta::has_internal_linkage(named)) return {identity_fault::internal_linkage, named};
         if (!std::meta::has_identifier(named)) return {identity_fault::no_declared_name, named};
@@ -786,7 +787,9 @@ template <auto V>
 struct Holds {};
 template <template <typename> typename Tmpl>
 struct HoldsTemplate {};
-enum class Colour : std::uint8_t { red };
+enum class Colour : std::uint8_t {
+    red
+};
 inline constexpr auto closure = [](auto value) { return value; };
 inline constexpr auto plain_closure = [](int value) { return value; };
 inline constexpr int (*closure_invoker)(int) = +[](int value) { return value; };
@@ -833,7 +836,9 @@ inline auto unnamed_class_of_named() {
     } value{};
     return value;
 }
-enum { unnamed_enumerator };
+enum {
+    unnamed_enumerator
+};
 namespace {
 struct Internal {};
 template <typename T>

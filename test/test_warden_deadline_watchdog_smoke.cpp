@@ -233,8 +233,9 @@ int main() {
         // With a scheduler source, a real reading opens the window and a
         // failed read changes nothing.  The source needs a BPF load, so a
         // host without the capability skips this part.
-        const ::crucible::perf::Senses senses = ::crucible::perf::Senses::load_subset(
-            ::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ::crucible::perf::SensesMask{.sched_switch = true});
+        const ::crucible::perf::Senses senses =
+            ::crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
+                                                  ::crucible::perf::SensesMask{.sched_switch = true});
         if (senses.sched_switch() == nullptr) {
             std::fprintf(stderr, "[skipped] no sched_switch source on this host\n");
         } else {

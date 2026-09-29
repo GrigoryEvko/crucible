@@ -131,19 +131,18 @@ inline constexpr atom_seal atom_namespace_seal{};
 namespace detail {
 
 inline constexpr std::meta::info atom_families[] = {
-    ^^barrier, ^^ctrl,    ^^dispatch, ^^fp,    ^^global, ^^hw,    ^^io,    ^^fs,    ^^mmap, ^^leak,
-    ^^observe, ^^regime,  ^^scope,    ^^session, ^^simd, ^^spawn, ^^stack, ^^stdio, ^^sync,
-    ^^syscall,
+    ^^barrier, ^^ctrl,   ^^dispatch, ^^fp,      ^^global, ^^hw,    ^^io,    ^^fs,    ^^mmap, ^^leak,
+    ^^observe, ^^regime, ^^scope,    ^^session, ^^simd,   ^^spawn, ^^stack, ^^stdio, ^^sync, ^^syscall,
 };
 
 // Why a type with the shape of an atom is refused, or none.
 enum class atom_refusal : std::uint8_t {
     none,
-    outside_the_catalog,       // not declared directly in fixy::atom or in a family
-    namespace_unsealed,        // the namespace holds no atom_seal
-    namespace_sealed_twice,     // the namespace holds two atom_seal variables
+    outside_the_catalog,  // not declared directly in fixy::atom or in a family
+    namespace_unsealed,  // the namespace holds no atom_seal
+    namespace_sealed_twice,  // the namespace holds two atom_seal variables
     declared_outside_its_seal,  // declared in a file other than the one that seals its namespace
-    no_stable_identity          // its name is not a function of the type in every translation unit
+    no_stable_identity  // its name is not a function of the type in every translation unit
 };
 
 // The namespace that declares a type.  A specialization is placed where
@@ -227,8 +226,7 @@ concept HasAtomShape =
 // second seal that a translation unit adds later refuses each atom first
 // asked about after it.
 template <class G>
-inline constexpr atom_refusal atom_refusal_v =
-    atom_refusal_of_(^^G, ::foundation::reflect::HasStableIdentity<G>);
+inline constexpr atom_refusal atom_refusal_v = atom_refusal_of_(^^G, ::foundation::reflect::HasStableIdentity<G>);
 
 }  // namespace detail
 
@@ -267,9 +265,9 @@ concept IsSessionProtocol = std::is_same_v<Proto, std::remove_cvref_t<Proto>> &&
 // passes this gate.  IsAtom refuses the atom, because the name of a
 // closure type is not a function of the type.
 template <typename Pred>
-concept IsRefinementPredicate = std::is_same_v<Pred, std::remove_cvref_t<Pred>> && std::is_class_v<Pred>
-                             && std::is_empty_v<Pred> && std::is_default_constructible_v<Pred>
-                             && !std::is_same_v<Pred, ::fixy::pole::pred::True>;
+concept IsRefinementPredicate =
+    std::is_same_v<Pred, std::remove_cvref_t<Pred>> && std::is_class_v<Pred> && std::is_empty_v<Pred>
+    && std::is_default_constructible_v<Pred> && !std::is_same_v<Pred, ::fixy::pole::pred::True>;
 
 // A provenance source is an empty marker class by convention, and this gate
 // is stricter than the two above because that convention is stricter.  A
@@ -1053,8 +1051,7 @@ struct StatefulPredicate {
     int threshold = 0;
     [[nodiscard]] constexpr bool operator()(int v) const noexcept { return v > threshold; }
 };
-static_assert(!IsRefinementPredicate<StatefulPredicate>,
-              "A stateful predicate makes a claim its type does not state.");
+static_assert(!IsRefinementPredicate<StatefulPredicate>, "A stateful predicate makes a claim its type does not state.");
 
 struct NonDefaultConstructiblePredicate {
     constexpr NonDefaultConstructiblePredicate(int) noexcept {}

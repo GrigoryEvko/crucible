@@ -32,7 +32,7 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 // concept also refuses a value that no enumerator holds.
 template <VendorBackend Backend>
 concept SemaphoreBackend = !::foundation::reflect::enumerator_name(Backend).empty()
-                           && Backend != VendorLattice::bottom() && Backend != VendorLattice::top();
+                        && Backend != VendorLattice::bottom() && Backend != VendorLattice::top();
 
 template <VendorBackend Backend>
     requires SemaphoreBackend<Backend>
@@ -43,9 +43,8 @@ class DeviceSemaphore;
 // class.
 template <VendorBackend Backend>
     requires SemaphoreBackend<Backend>
-[[nodiscard]] constexpr DeviceSemaphore<Backend> mint_device_semaphore(std::atomic<std::uint64_t>& counter
-                                                                           CRUCIBLE_LIFETIMEBOUND,
-                                                                       std::uint64_t native_handle) noexcept;
+[[nodiscard]] constexpr DeviceSemaphore<Backend>
+mint_device_semaphore(std::atomic<std::uint64_t>& counter CRUCIBLE_LIFETIMEBOUND, std::uint64_t native_handle) noexcept;
 
 // The descriptor borrows its counter, so a temporary counter dangles at the
 // end of the full expression.  This form is the better match for a
@@ -66,7 +65,7 @@ constexpr DeviceSemaphore<Backend> mint_device_semaphore(std::atomic<std::uint64
 // trivial, so a descriptor goes in registers.
 template <VendorBackend Backend>
     requires SemaphoreBackend<Backend>
-class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] DeviceSemaphore {
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] DeviceSemaphore {
 public:
     static constexpr VendorBackend backend = Backend;
 
@@ -126,8 +125,8 @@ namespace detail::device_semaphore_self_test {
 // because it owns nothing.
 template <VendorBackend Backend>
 inline constexpr bool descriptor_is_closed_v =
-    DeviceSemaphore<Backend>::backend == Backend && !std::is_default_constructible_v<DeviceSemaphore<Backend>>
-    && !std::is_aggregate_v<DeviceSemaphore<Backend>>
+    DeviceSemaphore<Backend>::backend == Backend
+    && !std::is_default_constructible_v<DeviceSemaphore<Backend>> && !std::is_aggregate_v<DeviceSemaphore<Backend>>
     && !std::is_constructible_v<DeviceSemaphore<Backend>, std::atomic<std::uint64_t>&, std::uint64_t>
     && !std::is_trivially_copyable_v<DeviceSemaphore<Backend>>
     && !::foundation::lifetime::ImplicitLifetimeThroughout<DeviceSemaphore<Backend>>

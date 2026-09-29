@@ -260,8 +260,8 @@ static_assert(!federation_key<&f12_p_unary, EmptyR, ::fixy::Stale<::fixy::Tagged
 // that permission is minted once per program under a context that
 // admits its IO row, and a library header does not mint one.
 template <typename Brand>
-[[nodiscard]] inline bool computation_cache_federation_smoke_test(
-    const LocalCipherPermission<Brand>& local_permission) noexcept {
+[[nodiscard]] inline bool
+computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& local_permission) noexcept {
     using namespace detail::computation_cache_federation_self_test;
 
     bool ok = true;
@@ -275,9 +275,9 @@ template <typename Brand>
         ok = ok && written.has_value();
         if (!written.has_value()) return false;
 
-        auto view = deserialize_untrusted_federation_entry(
-            std::span<const std::uint8_t>(buf.data(), *written),
-            static_cast<std::uint16_t>(::foundation::effects::effect_count));
+        auto view =
+            deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                   static_cast<std::uint16_t>(::foundation::effects::effect_count));
         ok = ok && view.has_value();
         if (!view.has_value()) return false;
 

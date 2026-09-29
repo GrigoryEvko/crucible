@@ -412,8 +412,8 @@ inline constexpr ::foundation::algebra::transition::payload_rule peer_message{
 
 // A message of the binary view names a label key too, so a choice of the
 // binary view is keyed, and the handle sends the label word.
-inline constexpr ::foundation::algebra::transition::payload_rule labelled{
-    .shape = ^^Labelled, .label_key = ^^detail::labelled::label_of_t};
+inline constexpr ::foundation::algebra::transition::payload_rule labelled{.shape = ^^Labelled,
+                                                                          .label_key = ^^detail::labelled::label_of_t};
 
 inline constexpr ::foundation::algebra::transition::seal payload_rule_seal{
     .kind = ^^::foundation::algebra::transition::payload_rule, .count = 3};
@@ -424,7 +424,8 @@ namespace detail {
 
 inline constexpr std::meta::info protocol_registry = ^^::fixy::session::combinators;
 
-inline constexpr std::string_view unregistered_prefix = "fixy::session::diagnostic [Protocol_Unregistered_Combinator]: ";
+inline constexpr std::string_view unregistered_prefix =
+    "fixy::session::diagnostic [Protocol_Unregistered_Combinator]: ";
 inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic [Protocol_Incoherent_Registration]: ";
 
 // The refusal every primary template states first.  The head of P must
@@ -433,8 +434,8 @@ template <typename P>
 consteval void require_registered_head() {
     static_assert(::foundation::algebra::transition::is_registered(protocol_registry, ^^P),
                   ::foundation::algebra::transition::unregistered_message(unregistered_prefix, ^^P));
-    static_assert(::foundation::algebra::transition::check_combinator(
-                      protocol_registry, ::foundation::algebra::transition::shape_of(^^P))
+    static_assert(::foundation::algebra::transition::check_combinator(protocol_registry,
+                                                                      ::foundation::algebra::transition::shape_of(^^P))
                           .reason
                       == ::foundation::algebra::transition::incoherence::none,
                   ::foundation::algebra::transition::incoherent_message(
@@ -490,7 +491,8 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
             return result;
         }
     }
-    const ::foundation::algebra::transition::node view = ::foundation::algebra::transition::decompose(protocol_registry, type);
+    const ::foundation::algebra::transition::node view =
+        ::foundation::algebra::transition::decompose(protocol_registry, type);
     if (!view.is_registered) return result;
     result.is_node = true;
     const std::meta::info shape = view.entry.shape;
@@ -510,14 +512,15 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
                          member_claim{"branches_tuple", std::meta::substitute(^^std::tuple, view.branches)}};
         if (shape == ^^Offer) {
             const std::meta::info sender = view.annotation == std::meta::info{}
-                                               ? ^^AnonymousPeer
-                                               : std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
+                                             ? ^^AnonymousPeer
+                                             : std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
             result.claims.push_back(member_claim{"sender", sender});
         }
     }
     if (view.payload != std::meta::info{}) result.children.push_back(view.payload);
     if (view.next != std::meta::info{}) result.children.push_back(view.next);
-    for (const std::meta::info branch : view.branches) result.children.push_back(branch);
+    for (const std::meta::info branch : view.branches)
+        result.children.push_back(branch);
     return result;
 }
 
@@ -545,9 +548,8 @@ consteval bool require_agreeing_members() {
 template <typename P>
 consteval bool require_registered_spine() {
     constexpr std::meta::info missing = ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P);
-    static_assert(missing == std::meta::info{},
-                  ::foundation::algebra::transition::unregistered_message(
-                      unregistered_prefix, missing == std::meta::info{} ? ^^P : missing));
+    static_assert(missing == std::meta::info{}, ::foundation::algebra::transition::unregistered_message(
+                                                    unregistered_prefix, missing == std::meta::info{} ? ^^P : missing));
     if constexpr (missing == std::meta::info{}) {
         require_registered_head<P>();
         return require_agreeing_members<P>();
@@ -999,8 +1001,8 @@ consteval bool branch_composition_captures() {
 template <typename P, std::size_t I, typename Q>
 consteval std::meta::info compose_at_branch_type_of() {
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P,
-        ::foundation::algebra::transition::compose_at_choice_algebra{protocol_registry, I, ^^Q}, 0);
+        protocol_registry, ^^P, ::foundation::algebra::transition::compose_at_choice_algebra{protocol_registry, I, ^^Q},
+        0);
 }
 
 template <typename P, std::size_t I, typename Q>
@@ -1036,9 +1038,9 @@ private:
                   "branch would loop where it ends.  Put the Loop that the Continue means inside Q.");
 
 public:
-    using type = typename[:is_head_checked && reaches_choice && index_fits && !captures
-                              ? compose_at_branch_type_of<P, I, Q>()
-                              : ^^void:];
+    using type =
+        typename[:is_head_checked && reaches_choice && index_fits && !captures ? compose_at_branch_type_of<P, I, Q>()
+                                                                               : ^^void:];
 };
 
 }  // namespace detail
@@ -1119,8 +1121,8 @@ consteval std::string_view choice_fault_message() {
     const ::foundation::algebra::transition::choice_verdict verdict =
         ::foundation::algebra::transition::first_faulty_choice(protocol_registry, ^^P);
     std::string text = "fixy::session::diagnostic [Protocol_Choice_Ill_Formed]: the choice ";
-    text += verdict.choice == std::meta::info{} ? std::string_view{"(none)"}
-                                                : std::meta::display_string_of(verdict.choice);
+    text +=
+        verdict.choice == std::meta::info{} ? std::string_view{"(none)"} : std::meta::display_string_of(verdict.choice);
     text += " is not well-formed: ";
     text += ::foundation::algebra::transition::choice_fault_name(verdict.fault);
     text += ".";

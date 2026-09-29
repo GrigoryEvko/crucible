@@ -12,6 +12,4 @@ consteval int held_value(int value) pre(false) { return value; }
 
 static_assert(held_value(42) == 42);
 
-int main() {
-    return held_value(42);
-}
+int main() { return held_value(42); }

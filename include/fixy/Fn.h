@@ -291,8 +291,7 @@ using binding_row_t = typename detail::binding_row::of_<std::remove_cvref_t<F>>:
 // context fails here rather than being read as one.
 template <class Ctx, class F>
 concept CtxAdmitsBinding =
-    ::foundation::effects::IsExecCtx<Ctx> && is_fn_v<F>
-    && ::foundation::effects::CtxAdmits<Ctx, binding_row_t<F>>;
+    ::foundation::effects::IsExecCtx<Ctx> && is_fn_v<F> && ::foundation::effects::CtxAdmits<Ctx, binding_row_t<F>>;
 
 // ---------------------------------------------------------------------
 // The federation cache key of a binding.

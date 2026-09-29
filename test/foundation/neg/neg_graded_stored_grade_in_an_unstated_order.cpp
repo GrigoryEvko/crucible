@@ -23,6 +23,6 @@ int main() {
     namespace fa = ::foundation::algebra;
     using Authority = fa::detail::graded_self_test::self_test_authority;
     fa::Graded<fa::ModalityKind::Absolute, UnstatedChain, int> const graded{Authority::key(), 1,
-                                                                           UnstatedChain::bottom()};
+                                                                            UnstatedChain::bottom()};
     return graded.peek();
 }

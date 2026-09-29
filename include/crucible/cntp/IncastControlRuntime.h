@@ -168,7 +168,7 @@ public:
 
 template <std::size_t MaxFlows, class Ctx>
     requires ::foundation::effects::IsExecCtx<Ctx>
-             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+          && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
 [[nodiscard]] constexpr IncastController<MaxFlows> mint_incast_controller(Ctx const&) noexcept {
     return {};
 }

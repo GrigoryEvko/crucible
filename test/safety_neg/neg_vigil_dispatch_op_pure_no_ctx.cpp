@@ -9,7 +9,7 @@ int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry entry{};
     crucible::TensorMeta meta{};
-    (void)vigil.dispatch_op_pure(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
-                                 &meta, 1);
+    (void)vigil.dispatch_op_pure(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(), &meta,
+                                 1);
     return 0;
 }

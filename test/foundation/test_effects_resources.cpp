@@ -143,10 +143,9 @@ static_assert(sizeof(every_kind) / sizeof(every_kind[0]) == fe::resource_kind_co
     using Sum = fe::concurrent_row_sum_t<R1, R2>;
     static_assert(std::is_empty_v<Sum> && std::is_trivially_copyable_v<Sum>);
 
-    using Total = fe::concurrent_row_n_t<fe::ConcurrentRow<fe::resource::SmBudget<10>>,
-                                         fe::ConcurrentRow<fe::resource::SmBudget<20>>,
-                                         fe::ConcurrentRow<fe::resource::SmBudget<30>>,
-                                         fe::ConcurrentRow<fe::resource::SmBudget<40>>>;
+    using Total = fe::concurrent_row_n_t<
+        fe::ConcurrentRow<fe::resource::SmBudget<10>>, fe::ConcurrentRow<fe::resource::SmBudget<20>>,
+        fe::ConcurrentRow<fe::resource::SmBudget<30>>, fe::ConcurrentRow<fe::resource::SmBudget<40>>>;
 
     [[maybe_unused]] Sum sum{};
     [[maybe_unused]] Total total{};

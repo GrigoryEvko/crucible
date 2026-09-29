@@ -30,8 +30,8 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const& ctx) noexc
     const detail::RingSpec spec{
         .load = {.facade = "sched_tp_btf",
                  .object_name = "crucible_sched_tp_btf",
-                 .bytecode = std::span{sched_tp_btf_bpf_bytecode,
-                                       static_cast<std::size_t>(sched_tp_btf_bpf_bytecode_len)},
+                 .bytecode =
+                     std::span{sched_tp_btf_bpf_bytecode, static_cast<std::size_t>(sched_tp_btf_bpf_bytecode_len)},
                  .probe_tracepoints = false,
                  .load_advice = "(apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel < 5.5, "
                                 "CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",

@@ -71,7 +71,7 @@ struct seal {
 enum class seal_fault : unsigned char {
     none,
     count_differs,  // the namespace holds a different number of members than its seal states
-    sealed_twice,   // the namespace holds two seals
+    sealed_twice,  // the namespace holds two seals
 };
 
 struct seal_reading {

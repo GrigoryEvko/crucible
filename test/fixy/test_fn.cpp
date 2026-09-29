@@ -277,9 +277,9 @@ using ParkBinding = fn<int, ::fixy::atom::sync::park>;
 static_assert(std::is_same_v<::fixy::binding_row_t<FutexBinding>, fe::Row<fe::Effect::Block>>);
 static_assert(std::is_same_v<::fixy::binding_row_t<ProcessStateBinding>, fe::Row<fe::Effect::IO>>);
 static_assert(std::is_same_v<::fixy::binding_row_t<ParkBinding>, fe::Row<fe::Effect::Block>>);
-static_assert(std::is_same_v<::fixy::binding_row_t<fn<int, ::fixy::atom::with_io, ::fixy::atom::as_public,
-                                                      ::fixy::atom::sync::park>>,
-                             fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<
+              ::fixy::binding_row_t<fn<int, ::fixy::atom::with_io, ::fixy::atom::as_public, ::fixy::atom::sync::park>>,
+              fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 
 static_assert(::fixy::CtxAdmitsBinding<::fixy::BgLoadCtx, FutexBinding>, "the load context holds Block");
 static_assert(::fixy::CtxAdmitsBinding<::fixy::TestRunnerCtx, ParkBinding>);

@@ -10,7 +10,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::borrow,
-                                ::fixy::atom::spawn::detach_with<"logger drain outlives the owner">>
-        refused{};
+                                ::fixy::atom::spawn::detach_with<"logger drain outlives the owner">> refused{};
     return 0;
 }

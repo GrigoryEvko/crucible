@@ -16,8 +16,8 @@ struct Again {};
 struct Stop {};
 struct Note {};
 
-using Starves = g::Rec<g::Comm<Alice, Bob, g::Branch<Again, int, g::Var>,
-                               g::Branch<Stop, int, g::Msg<Alice, Carol, Note, int, g::End>>>>;
+using Starves = g::Rec<
+    g::Comm<Alice, Bob, g::Branch<Again, int, g::Var>, g::Branch<Stop, int, g::Msg<Alice, Carol, Note, int, g::End>>>>;
 
 constexpr int require_live() noexcept {
     s::ensure_live_by_construction<Starves>();

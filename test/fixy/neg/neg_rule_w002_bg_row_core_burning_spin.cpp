@@ -18,7 +18,6 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::with<::foundation::effects::Effect::Bg>,
-                                ::fixy::atom::sync::spin_pause>
-        refused{};
+                                ::fixy::atom::sync::spin_pause> refused{};
     return 0;
 }

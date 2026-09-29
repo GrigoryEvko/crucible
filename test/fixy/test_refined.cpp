@@ -210,8 +210,8 @@ namespace rel = ::fixy::refined;
 // not.  non_zero ⇒ non_null is the fifth atomic step, and it is a
 // narrowing edge, which fail_closed does not count as an edge.
 static_assert(ffc::edge_count<^^rel::admitted_implications>() == 4);
-static_assert(!ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::non_zero>,
-                             rel::predicate_t<fixy::non_null>>);
+static_assert(
+    !ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::non_zero>, rel::predicate_t<fixy::non_null>>);
 static_assert(fixy::implies_v<fixy::non_zero, fixy::non_null>, "the narrowing edge is a step of the relation");
 static_assert(ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::positive>,
                             rel::predicate_t<fixy::non_negative>>);

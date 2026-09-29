@@ -560,8 +560,7 @@ inline void Topology::probe_linux_(std::string_view sysfs_root) noexcept {
 
         namespace fs = std::filesystem;
         try {
-            const auto entries =
-                fs::exists(base) ? fs::directory_iterator{base} : fs::directory_iterator{};
+            const auto entries = fs::exists(base) ? fs::directory_iterator{base} : fs::directory_iterator{};
             for (auto const& entry : entries) {
                 const auto name = entry.path().filename().string();
                 if (name.size() < 6 || name.substr(0, 5) != "index") continue;

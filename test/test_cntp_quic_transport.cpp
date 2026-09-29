@@ -84,7 +84,8 @@ void test_name_surfaces() {
     static_assert(cntp::quic_backend_name(cntp::QuicBackend::Ngtcp2) == std::string_view{"ngtcp2"});
     static_assert(cntp::quic_backend_name(cntp::QuicBackend::KernelMsQuic) == std::string_view{"kernel-msquic"});
     static_assert(cntp::quic_feature_name(cntp::QuicFeature::Migration) == std::string_view{"Migration"});
-    static_assert(cntp::quic_stream_kind_name(cntp::QuicStreamKind::Unidirectional) == std::string_view{"Unidirectional"});
+    static_assert(cntp::quic_stream_kind_name(cntp::QuicStreamKind::Unidirectional)
+                  == std::string_view{"Unidirectional"});
     assert(cntp::quic_error_name(static_cast<cntp::QuicError>(250)) == std::string_view{"<unknown QuicError>"});
     std::printf("  test_name_surfaces: PASSED\n");
 }

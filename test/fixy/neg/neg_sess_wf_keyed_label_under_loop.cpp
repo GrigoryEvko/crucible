@@ -18,8 +18,8 @@ struct Stop {};
 
 using namespace neg_sess_wf_keyed_label_under_loop_types;
 
-using LoopFirst = s::Select<s::Loop<s::Send<s::PeerMsg<Bob, Tick, int>, s::Continue>>,
-                            s::Send<s::PeerMsg<Bob, Stop, int>, s::End>>;
+using LoopFirst =
+    s::Select<s::Loop<s::Send<s::PeerMsg<Bob, Tick, int>, s::Continue>>, s::Send<s::PeerMsg<Bob, Stop, int>, s::End>>;
 
 int main() {
     s::ensure_choices_well_formed<LoopFirst>();

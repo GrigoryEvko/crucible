@@ -19,7 +19,8 @@
 #include <cstdint>
 
 int main() {
-    constexpr crucible::ValidCKernelIdRaw bad = ::fixy::mint_refined<crucible::kValidCKernelIdBound>(uint8_t{UINT8_MAX});
+    constexpr crucible::ValidCKernelIdRaw bad =
+        ::fixy::mint_refined<crucible::kValidCKernelIdBound>(uint8_t{UINT8_MAX});
     (void)bad;
     return 0;
 }

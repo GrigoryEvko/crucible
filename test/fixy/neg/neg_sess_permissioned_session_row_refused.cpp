@@ -29,8 +29,8 @@ int main() {
     using namespace row_refused_fixture;
     const eff::detail::ctx_witnesses::TestRunnerCtx test_ctx{eff::testing::test()};
     const eff::detail::ctx_witnesses::BgWitness drain_ctx{eff::testing::bg()};
-    auto [head, hold] = s::mint_permissioned_session<SendsRegion>(drain_ctx, Wire{},
-                                                                  perm::mint_permission_root<DiskRegion>(test_ctx));
+    auto [head, hold] =
+        s::mint_permissioned_session<SendsRegion>(drain_ctx, Wire{}, perm::mint_permission_root<DiskRegion>(test_ctx));
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
     static_cast<void>(std::move(hold).into_permissions());
     return 0;

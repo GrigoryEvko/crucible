@@ -18,7 +18,8 @@ struct Wire {};
 
 using namespace neg_sess_wf_repeated_label_types;
 
-using SameLabel = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<s::PeerMsg<Bob, Hello, bool>, s::End>>;
+using SameLabel =
+    s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<s::PeerMsg<Bob, Hello, bool>, s::End>>;
 
 int main() {
     auto handle = s::mint_session_handle<SameLabel, Wire>(Wire{});

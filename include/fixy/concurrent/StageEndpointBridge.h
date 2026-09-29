@@ -190,8 +190,8 @@ private:
         } else {
             using inputs = endpoint_take_pack_t<arity::input_count, std::remove_cvref_t<Endpoints>...>;
             using outputs = endpoint_drop_pack_t<arity::input_count, std::remove_cvref_t<Endpoints>...>;
-            return (IsMovedEndpoint<Endpoints> && ...) && CtxFitsVariadicStage<FnPtr, Ctx>
-                && StageHandlesMatchEndpointsExtended<FnPtr, inputs, outputs>;
+            return (IsMovedEndpoint<Endpoints> && ...)
+                && CtxFitsVariadicStage<FnPtr, Ctx> && StageHandlesMatchEndpointsExtended<FnPtr, inputs, outputs>;
         }
     }
 
@@ -246,7 +246,7 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
 [[nodiscard]] constexpr auto mint_mpmc_stage_from_endpoints(Ctx const& ctx, Endpoints&&... endpoints) noexcept {
     std::tuple<std::remove_cvref_t<Endpoints>...> endpoint_tuple{std::move(endpoints)...};
     return ::fixy::session::detail::late_door_t<StageEndpointDoor, Ctx>::template make_mpmc_<FnPtr>(ctx,
-                                                                                                  endpoint_tuple);
+                                                                                                    endpoint_tuple);
 }
 
 template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>

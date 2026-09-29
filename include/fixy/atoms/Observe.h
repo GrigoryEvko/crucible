@@ -97,8 +97,7 @@ namespace fixy::atom::detail {
 // enumerated, so these stand for the family in the joined roster the way
 // stack::alloc<64> and stack::alloc<4096> stand for theirs.
 using observe_atom_roster =
-    std::tuple<observe::surface<::foundation::effects::Effect::IO>,
-               observe::surface<::foundation::effects::Effect::Bg>,
+    std::tuple<observe::surface<::foundation::effects::Effect::IO>, observe::surface<::foundation::effects::Effect::Bg>,
                observe::surface<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Bg>>;
 
 }  // namespace fixy::atom::detail

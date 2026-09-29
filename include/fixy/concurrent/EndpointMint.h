@@ -29,10 +29,9 @@ namespace fixy::concurrent {
 
 template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
     requires IsBridgeableDirection<Substr, Dir>
-[[nodiscard]] constexpr auto mint_recording_endpoint(Endpoint<Substr, Dir, Ctx>&& ep,
-                                                     ::fixy::session::SessionEventLog& log,
-                                                     ::fixy::session::RoleTagId self_role,
-                                                     ::fixy::session::RoleTagId peer_role) noexcept {
+[[nodiscard]] constexpr auto
+mint_recording_endpoint(Endpoint<Substr, Dir, Ctx>&& ep, ::fixy::session::SessionEventLog& log,
+                        ::fixy::session::RoleTagId self_role, ::fixy::session::RoleTagId peer_role) noexcept {
     return ::fixy::session::mint_recorded_session(std::move(ep).into_bare_session(), log, self_role, peer_role);
 }
 

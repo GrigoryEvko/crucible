@@ -30,8 +30,8 @@ int main() {
     RecipePool pool{::fixy::mint_borrowed_ref(arena), init_ctx};
     RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test_ctx.alloc};
 
-    std::expected<::fixy::NumericalTier<::fixy::Tolerance::BITEXACT, const NumericalRecipe*>, RecipeError>
-        wrong_slot = reg.by_name_spec(recipe_names::kF32Strict);
+    std::expected<::fixy::NumericalTier<::fixy::Tolerance::BITEXACT, const NumericalRecipe*>, RecipeError> wrong_slot =
+        reg.by_name_spec(recipe_names::kF32Strict);
     (void)wrong_slot;
     return 0;
 }

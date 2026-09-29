@@ -311,9 +311,8 @@ inline constexpr bool conveys_authority_directly_v = conveys_authority_directly<
 
 template <typename T>
 struct conveys_authority
-    : std::bool_constant<::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
-          return node_conveys_authority(node);
-      }>(^^T)> {};
+    : std::bool_constant<::foundation::reflect::any_component_satisfies<
+          [](::foundation::reflect::TypeNode node) consteval { return node_conveys_authority(node); }>(^^T)> {};
 
 template <typename T>
 inline constexpr bool conveys_authority_v = conveys_authority<std::remove_cvref_t<T>>::value;
@@ -592,7 +591,8 @@ concept ExposesSubstratePayload = requires(C& c) {
     { std::move(c).consume() };
 };
 static_assert(!ExposesSubstratePayload<C_empty> && !ExposesSubstratePayload<C_eight_byte>);
-static_assert(!std::is_constructible_v<C_eight_byte, EightByteValue> && !std::is_constructible_v<C_one_byte, OneByteValue>);
+static_assert(!std::is_constructible_v<C_eight_byte, EightByteValue>
+              && !std::is_constructible_v<C_one_byte, OneByteValue>);
 static_assert(!std::is_convertible_v<C_eight_byte*, typename C_eight_byte::graded_type*>,
               "The substrate is a private base, so no pointer conversion reaches it.");
 
@@ -823,7 +823,8 @@ static_assert(std::is_same_v<decltype(Computation<Row<>, int>::template mint_com
               "must return a Computation at the one-atom row.");
 
 template <Effect Cap, class Ctx>
-concept MintsInCtx = requires(Ctx const& ctx) { Computation<Row<>, int>::template mint_computation_in_ctx<Cap>(ctx, 0); };
+concept MintsInCtx =
+    requires(Ctx const& ctx) { Computation<Row<>, int>::template mint_computation_in_ctx<Cap>(ctx, 0); };
 static_assert(MintsInCtx<Effect::Bg, detail::ctx_witnesses::BgWitness>);
 static_assert(!MintsInCtx<Effect::IO, detail::ctx_witnesses::BgWitness>);
 static_assert(!MintsInCtx<Effect::Bg, detail::ctx_witnesses::FgWitness>);

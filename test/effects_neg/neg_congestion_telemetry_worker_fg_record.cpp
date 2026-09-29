@@ -23,7 +23,8 @@ int main() {
     (void)started;
     std::array<topology::TcpInfoSnapshot, 1> samples{};
     return sizeof(worker.record_link(std::declval<::fixy::HotFgCtx const&>(), nic,
-                                     std::span<const topology::TcpInfoSnapshot>{samples}, 1)) == 0
-               ? 1
-               : 0;
+                                     std::span<const topology::TcpInfoSnapshot>{samples}, 1))
+                == 0
+             ? 1
+             : 0;
 }

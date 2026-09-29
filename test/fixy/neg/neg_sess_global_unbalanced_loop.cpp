@@ -19,8 +19,8 @@ struct Again {};
 struct Stop {};
 struct Note {};
 
-using Starves = g::Rec<g::Comm<Alice, Bob, g::Branch<Again, int, g::Var>,
-                               g::Branch<Stop, int, g::Msg<Alice, Carol, Note, int, g::End>>>>;
+using Starves = g::Rec<
+    g::Comm<Alice, Bob, g::Branch<Again, int, g::Var>, g::Branch<Stop, int, g::Msg<Alice, Carol, Note, int, g::End>>>>;
 
 static_assert(g::is_global_well_formed_v<Starves>);
 

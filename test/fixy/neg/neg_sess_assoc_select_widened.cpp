@@ -24,12 +24,13 @@ struct Left {};
 struct Right {};
 struct Stop {};
 
-using Relay = g::Msg<Alice, Bob, Go, int,
-                     g::Comm<Bob, Carol, g::Branch<Left, int, g::End>, g::Branch<Right, int, g::End>>>;
+using Relay =
+    g::Msg<Alice, Bob, Go, int, g::Comm<Bob, Carol, g::Branch<Left, int, g::End>, g::Branch<Right, int, g::End>>>;
 
-using BobWide = s::Recv<s::PeerMsg<Alice, Go, int>,
-                        s::Select<s::Send<s::PeerMsg<Carol, Left, int>, s::End>, s::Send<s::PeerMsg<Carol, Right, int>, s::End>,
-                                  s::Send<s::PeerMsg<Carol, Stop, int>, s::End>>>;
+using BobWide =
+    s::Recv<s::PeerMsg<Alice, Go, int>,
+            s::Select<s::Send<s::PeerMsg<Carol, Left, int>, s::End>, s::Send<s::PeerMsg<Carol, Right, int>, s::End>,
+                      s::Send<s::PeerMsg<Carol, Stop, int>, s::End>>>;
 
 using WideBob = s::TypingContext<s::RoleState<Alice, s::OutQueue<>, typename s::project_t<Relay, Alice>::local>,
                                  s::RoleState<Bob, s::OutQueue<>, BobWide>,

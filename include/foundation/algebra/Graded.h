@@ -75,7 +75,7 @@ class [[nodiscard]] grade_key {
 
 public:
     grade_key& operator=(grade_key const&) = delete("a grade key lives for one expression.  Build a new one in the "
-                                                   "authority.");
+                                                    "authority.");
 };
 
 template <typename L, typename T>
@@ -89,8 +89,8 @@ concept LatticeDerivesGrade = requires(T const& v) {
 // derives from it, names the value itself and claims nothing that can be
 // false.  Any orientation of L is permitted for such a grade.
 template <typename L, typename T>
-concept LatticeGradesValue = Lattice<L> && (GradableLattice<L> || std::same_as<LatticeElement<L>, T>
-                                            || LatticeDerivesGrade<L, T>);
+concept LatticeGradesValue =
+    Lattice<L> && (GradableLattice<L> || std::same_as<LatticeElement<L>, T> || LatticeDerivesGrade<L, T>);
 
 namespace detail::graded {
 
@@ -176,16 +176,19 @@ private:
         && std::is_nothrow_copy_constructible_v<grade_type> && std::is_nothrow_move_constructible_v<grade_type>;
 
     static constexpr bool grade_is_nothrow_ = [] {
-        if constexpr (stores_grade_) return std::is_nothrow_copy_constructible_v<grade_type>;
-        else if constexpr (grade_is_value_) return std::is_nothrow_copy_constructible_v<T>;
-        else return noexcept(L::grade_of(std::declval<T const&>()));
+        if constexpr (stores_grade_)
+            return std::is_nothrow_copy_constructible_v<grade_type>;
+        else if constexpr (grade_is_value_)
+            return std::is_nothrow_copy_constructible_v<T>;
+        else
+            return noexcept(L::grade_of(std::declval<T const&>()));
     }();
 
     [[no_unique_address]] T value_{};
     [[no_unique_address]] stored_grade_type grade_{};
 
-    [[nodiscard]] static constexpr stored_grade_type stored_(grade_type& grade) noexcept(
-        std::is_nothrow_move_constructible_v<grade_type>) {
+    [[nodiscard]] static constexpr stored_grade_type
+    stored_(grade_type& grade) noexcept(std::is_nothrow_move_constructible_v<grade_type>) {
         if constexpr (stores_grade_) {
             return std::move(grade);
         } else {
@@ -359,10 +362,8 @@ public:
     // The grade is a claim, so the unit takes the key the constructor
     // takes.
     template <typename Authority>
-    [[nodiscard]] static constexpr Graded inject(grade_key<Authority> const& key, T value,
-                                                 grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
-                                                                            && std::is_nothrow_move_constructible_v<
-                                                                                grade_type>)
+    [[nodiscard]] static constexpr Graded inject(grade_key<Authority> const& key, T value, grade_type grade) noexcept(
+        std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_constructible_v<grade_type>)
         requires RelativeMonadModality<M>
     {
         return Graded{key, std::move(value), std::move(grade)};
@@ -589,7 +590,8 @@ concept CanNameGraded = requires { typename Graded<ModalityKind::Absolute, L, T>
 
 static_assert(claim_orientation_v<UnstatedChainLattice> == ClaimOrientation::unstated);
 static_assert(CanNameGraded<UnstatedChainLattice, unsigned char>);
-static_assert(!CanNameGraded<UnstatedChainLattice, OneByteValue>, "an unstated orientation is refused as a stored grade");
+static_assert(!CanNameGraded<UnstatedChainLattice, OneByteValue>,
+              "an unstated orientation is refused as a stored grade");
 static_assert(CanNameGraded<TrivialChainLattice, OneByteValue>);
 
 // The reachability tests go through named concepts.  An inline

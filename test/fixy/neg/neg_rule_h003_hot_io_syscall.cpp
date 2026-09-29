@@ -26,7 +26,6 @@ int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
                                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::getpid>,
                                 ::fixy::atom::as_public, ::fixy::atom::cost_constant,
-                                ::fixy::atom::refined_with<fixture::owner_pid_proved>>
-        refused{};
+                                ::fixy::atom::refined_with<fixture::owner_pid_proved>> refused{};
     return 0;
 }

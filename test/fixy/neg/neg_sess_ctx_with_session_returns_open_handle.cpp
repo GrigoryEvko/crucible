@@ -22,8 +22,8 @@ using Stream = s::Loop<s::Select<s::Send<int, s::Continue>, s::End>>;
 int main() {
     using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
     const BgCtx ctx{::foundation::effects::testing::bg()};
-    auto back = ::fixy::session::with_session<returns_open_fixture::Stream>(
-        ctx, returns_open_fixture::Channel{}, [](auto head) noexcept { return head; });
+    auto back = ::fixy::session::with_session<returns_open_fixture::Stream>(ctx, returns_open_fixture::Channel{},
+                                                                            [](auto head) noexcept { return head; });
     (void)back;
     return 0;
 }

@@ -171,7 +171,7 @@ using BgWitness = fixy::BgDrainCtx;
 void ignore_the_signal(int) noexcept {}
 
 [[nodiscard]] int sleep_lasts_through_a_signal() {
-    constexpr std::uint64_t sleep_nanos = 50'000'000;
+    constexpr std::uint64_t sleep_nanos = 50000000;
     BlockWitness blocking{eff::testing::test()};
     BgWitness bg{eff::testing::bg()};
 
@@ -186,10 +186,10 @@ void ignore_the_signal(int) noexcept {}
     const ::pthread_t sleeping_thread = ::pthread_self();
     std::atomic<bool> is_sleep_done{false};
     std::jthread signaller([sleeping_thread, &is_sleep_done, blocking] {
-        auto pause = fixy::time::mint_bounded_sleep<1'000'000>(blocking);
+        auto pause = fixy::time::mint_bounded_sleep<1000000>(blocking);
         while (!is_sleep_done.load(std::memory_order_acquire)) {
             (void)::pthread_kill(sleeping_thread, SIGUSR1);
-            (void)pause.sleep_for(1'000'000);
+            (void)pause.sleep_for(1000000);
         }
     });
 
@@ -429,7 +429,8 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
             std::fprintf(stderr, "the PTP capability query failed with no errno\n");
             return 1;
         }
-    } else if (reader.error() != std::errc::no_such_file_or_directory && reader.error() != std::errc::permission_denied) {
+    } else if (reader.error() != std::errc::no_such_file_or_directory
+               && reader.error() != std::errc::permission_denied) {
         std::fprintf(stderr, "the PTP mint failed with an unexpected error: %s\n", reader.error().message().c_str());
         return 1;
     }
@@ -452,16 +453,16 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     }
     // A negative second field is also the form of a Realtime reading
     // before 1970, which the readers refuse rather than wrap.
-    for (std::timespec refused : {std::timespec{-seconds, 0}, std::timespec{0, -nanos},
-                                  std::timespec{0, 1000000000L}}) {
+    for (std::timespec refused :
+         {std::timespec{-seconds, 0}, std::timespec{0, -nanos}, std::timespec{0, 1000000000L}}) {
         const auto result = fixy::time::nanos_from_timespec(refused);
         if (result || result.error() != std::errc::result_out_of_range) {
             std::fprintf(stderr, "the conversion accepted a negative or out-of-range timespec\n");
             return 1;
         }
     }
-    const auto overflow = fixy::time::nanos_from_timespec(
-        std::timespec{std::numeric_limits<std::time_t>::max(), 999999999L});
+    const auto overflow =
+        fixy::time::nanos_from_timespec(std::timespec{std::numeric_limits<std::time_t>::max(), 999999999L});
     if (overflow || overflow.error() != std::errc::value_too_large) {
         std::fprintf(stderr, "the conversion did not refuse a count past 64 bits\n");
         return 1;

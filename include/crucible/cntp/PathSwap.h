@@ -111,7 +111,7 @@ private:
     PositiveNanoseconds timeout_ns_;
 
     friend constexpr std::expected<DeclaredPathSwapPlan, SwapError>
-    mint_path_swap_plan(PositivePathId, PositivePathId, PositivePathId, PositiveNanoseconds) noexcept;
+        mint_path_swap_plan(PositivePathId, PositivePathId, PositivePathId, PositiveNanoseconds) noexcept;
 };
 
 [[nodiscard]] constexpr std::expected<DeclaredPathSwapPlan, SwapError>
@@ -356,7 +356,8 @@ public:
             return std::unexpected(SwapError::InvalidTransition);
         }
         std::move(current).detach(::fixy::session::detach_reason::TransportClosedOutOfBand{});
-        return ::fixy::session::mint_session_handle<Proto, NewResource, Policy>(std::forward<NewResource>(new_resource));
+        return ::fixy::session::mint_session_handle<Proto, NewResource, Policy>(
+            std::forward<NewResource>(new_resource));
     }
 
     template <class Ctx>

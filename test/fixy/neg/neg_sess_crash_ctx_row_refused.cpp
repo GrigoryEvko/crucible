@@ -20,7 +20,8 @@ int main() {
     namespace s = ::fixy::session;
     namespace eff = ::foundation::effects;
     using namespace neg_sess_crash_ctx_row_refused_types;
-    using ReceivesIo = s::Offer<s::Recv<eff::Computation<eff::Row<eff::Effect::IO>, int>, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
+    using ReceivesIo =
+        s::Offer<s::Recv<eff::Computation<eff::Row<eff::Effect::IO>, int>, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
     s::PeerCrashCell cell;
     s::PeerCrashCell own;

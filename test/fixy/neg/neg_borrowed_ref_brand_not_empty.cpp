@@ -16,6 +16,4 @@ struct StatefulBrand {
 };
 }  // namespace
 
-int main() {
-    return static_cast<int>(sizeof(::fixy::BorrowedRef<int, StatefulBrand>));
-}
+int main() { return static_cast<int>(sizeof(::fixy::BorrowedRef<int, StatefulBrand>)); }

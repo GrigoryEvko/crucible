@@ -306,8 +306,8 @@ private:
         return ::fixy::mint_view<pool_state::Initialized>(*this);
     }
 
-    [[noreturn, gnu::cold, gnu::noinline]] static void report_unservable_slot_(uint32_t slot_index, const TensorSlot& slot,
-                                                                            uint64_t pool_bytes) noexcept {
+    [[noreturn, gnu::cold, gnu::noinline]] static void
+    report_unservable_slot_(uint32_t slot_index, const TensorSlot& slot, uint64_t pool_bytes) noexcept {
         std::fprintf(stderr,
                      "PoolAllocator: slot %u does not fit the pool: offset=%llu nbytes=%llu pool_bytes=%llu "
                      "alignment=%u\n",

@@ -160,9 +160,9 @@ static_assert(std::is_same_v<decltype(mint_promote<CipherTierTag_v::Cold, Cipher
 static_assert(std::is_same_v<decltype(mint_demote<CipherTierTag_v::Hot, CipherTierTag_v::Cold>(
                                  ::fixy::mint_band<HotHash>(ContentHash{2}))),
                              ColdHash>);
-static_assert(mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Hot>(::fixy::mint_band<ColdHash>(ContentHash{3}))
-                  .peek()
-              == ContentHash{3});
+static_assert(
+    mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Hot>(::fixy::mint_band<ColdHash>(ContentHash{3})).peek()
+    == ContentHash{3});
 
 static_assert(::foundation::reflect::enum_name(RestoreError::ContentHashMismatch) == "ContentHashMismatch");
 

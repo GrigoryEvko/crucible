@@ -11,7 +11,8 @@
 
 int main() {
     return sizeof(crucible::topology::admit_ptp_daemon_report(std::declval<::fixy::HotFgCtx const&>(),
-                                                              crucible::topology::PtpDaemonReport{})) == 0
-               ? 1
-               : 0;
+                                                              crucible::topology::PtpDaemonReport{}))
+                == 0
+             ? 1
+             : 0;
 }

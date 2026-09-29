@@ -113,7 +113,8 @@ class CongestionTelemetryWorker;
 // background worker then records into it.
 template <std::size_t MaxLinks, std::size_t MaxFlows, class Ctx>
     requires CtxFitsCongestionTelemetryStart<Ctx>
-[[nodiscard]] constexpr CongestionTelemetryWorker<MaxLinks, MaxFlows> mint_congestion_telemetry_worker(Ctx const&) noexcept;
+[[nodiscard]] constexpr CongestionTelemetryWorker<MaxLinks, MaxFlows>
+mint_congestion_telemetry_worker(Ctx const&) noexcept;
 
 template <std::size_t MaxLinks, std::size_t MaxFlows>
 class CongestionTelemetryWorker : public ::foundation::Pinned<CongestionTelemetryWorker<MaxLinks, MaxFlows>> {
@@ -220,7 +221,8 @@ public:
 
 template <std::size_t MaxLinks, std::size_t MaxFlows, class Ctx>
     requires CtxFitsCongestionTelemetryStart<Ctx>
-[[nodiscard]] constexpr CongestionTelemetryWorker<MaxLinks, MaxFlows> mint_congestion_telemetry_worker(Ctx const&) noexcept {
+[[nodiscard]] constexpr CongestionTelemetryWorker<MaxLinks, MaxFlows>
+mint_congestion_telemetry_worker(Ctx const&) noexcept {
     return CongestionTelemetryWorker<MaxLinks, MaxFlows>{};
 }
 

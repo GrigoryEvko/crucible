@@ -247,9 +247,9 @@ namespace detail::payload_order {
 template <typename T, typename U>
 inline constexpr bool delegation_weakens_v = false;
 template <typename P, typename Q, typename Resource, typename Policy, typename PS>
-inline constexpr bool delegation_weakens_v<DelegatedSession<P, Resource, Policy, PS>,
-                                           DelegatedSession<Q, Resource, Policy, PS>> =
-    ::fixy::session::detail::subtype::sync_verdict<Q, P>().holds;
+inline constexpr bool
+    delegation_weakens_v<DelegatedSession<P, Resource, Policy, PS>, DelegatedSession<Q, Resource, Policy, PS>> =
+        ::fixy::session::detail::subtype::sync_verdict<Q, P>().holds;
 
 template <typename T>
 struct refinement_parts {
@@ -333,7 +333,7 @@ inline constexpr ::foundation::algebra::transition::subsort_axiom tier_weakens{
 // labels are the same, and the payload is below in the payload order.
 // Bit 2 marks the position of Payload.
 inline constexpr ::foundation::algebra::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg,
-                                                                              .covariant = 0b100};
+                                                                               .covariant = 0b100};
 
 // A delegated endpoint is below another when its protocol is refined by
 // the protocol of the other, and the Resource, the policy and the set are
@@ -376,10 +376,10 @@ inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic
 // reads every node, so a combinator it does not know stops the build.
 template <typename P>
 consteval void require_registered_spine() {
-    static_assert(::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P) == std::meta::info{},
-                  ::foundation::algebra::transition::unregistered_message(
-                      unregistered_prefix,
-                      ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P)));
+    static_assert(
+        ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P) == std::meta::info{},
+        ::foundation::algebra::transition::unregistered_message(
+            unregistered_prefix, ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P)));
     static_assert(::foundation::algebra::transition::first_incoherent(protocol_registry, ^^P).reason
                       == ::foundation::algebra::transition::incoherence::none,
                   ::foundation::algebra::transition::incoherent_message(
@@ -451,9 +451,9 @@ namespace detail::subtype {
 template <typename Sub, typename Super>
 struct reason_of {
     static constexpr ::foundation::algebra::transition::verdict found = subtype_verdict_v<Sub, Super>;
-    using type = std::conditional_t<found.holds, SubtypeOk,
-                                    SubtypeRejection<found.reason, typename[:or_void(found.sub):],
-                                                     typename[:or_void(found.super):]>>;
+    using type = std::conditional_t<
+        found.holds, SubtypeOk,
+        SubtypeRejection<found.reason, typename[:or_void(found.sub):], typename[:or_void(found.super):]>>;
 };
 
 [[nodiscard]] consteval std::string_view mismatch_token(::foundation::algebra::transition::mismatch reason) {
@@ -547,9 +547,8 @@ consteval bool chain_holds() {
     if constexpr (sizeof...(Ts) < 2) {
         return true;
     } else {
-        return []<typename First, typename Second, typename... Rest>(std::type_identity<First>,
-                                                                     std::type_identity<Second>,
-                                                                     std::type_identity<Rest>...) {
+        return []<typename First, typename Second, typename... Rest>(
+                   std::type_identity<First>, std::type_identity<Second>, std::type_identity<Rest>...) {
             return is_subtype_sync_v<First, Second> && chain_holds<Second, Rest...>();
         }(std::type_identity<Ts>{}...);
     }
@@ -572,8 +571,8 @@ inline constexpr bool subtype_chain_v = detail::subtype::chain_holds<Ts...>();
 // one symmetric relation, so CompatibleClient<C, S> and
 // CompatibleServer<S, C> always agree.
 template <typename ClientProto, typename ServerProto>
-concept CompatibleClient = is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>
-                           && is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
+concept CompatibleClient =
+    is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>> && is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
 
 template <typename ServerProto, typename ClientProto>
 concept CompatibleServer = CompatibleClient<ClientProto, ServerProto>;
@@ -731,8 +730,8 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
 
 [[nodiscard]] consteval bool same_action(const action& left, const action& right) {
     return left.is_output == right.is_output && left.is_label == right.is_label && left.is_keyed == right.is_keyed
-           && left.label == right.label && left.key == right.key && left.payload == right.payload
-           && left.note == right.note;
+        && left.label == right.label && left.key == right.key && left.payload == right.payload
+        && left.note == right.note;
 }
 
 [[nodiscard]] consteval bool same_prefix(const std::vector<action>& left, const std::vector<action>& right) {
@@ -752,7 +751,7 @@ consteval void add_edge(search& state, std::size_t from, std::size_t to) {
     if (sub.is_output != super.is_output || sub.is_label != super.is_label) return false;
     if (sub.is_label) {
         return sub.is_keyed == super.is_keyed && sub.label == super.label && sub.key == super.key
-               && sub.note == super.note;
+            && sub.note == super.note;
     }
     return sub.is_output ? ::foundation::algebra::transition::subsorts(axioms, sub.payload, super.payload)
                          : ::foundation::algebra::transition::subsorts(axioms, super.payload, sub.payload);
@@ -789,9 +788,11 @@ consteval void reduce(std::meta::info axioms, std::vector<action>& sub_prefix, s
 [[nodiscard]] consteval bool fits(std::size_t capacity, const std::vector<action>& sub_prefix,
                                   const std::vector<action>& super_prefix) {
     std::size_t ahead = 0;
-    for (const action& act : sub_prefix) ahead += act.is_output ? 1 : 0;
+    for (const action& act : sub_prefix)
+        ahead += act.is_output ? 1 : 0;
     std::size_t queued = 0;
-    for (const action& act : super_prefix) queued += act.is_output ? 0 : 1;
+    for (const action& act : super_prefix)
+        queued += act.is_output ? 0 : 1;
     return ahead <= capacity && queued <= capacity;
 }
 
@@ -816,7 +817,7 @@ consteval void reduce(std::meta::info axioms, std::vector<action>& sub_prefix, s
 
 [[nodiscard]] consteval bool is_action_node(const ::foundation::algebra::transition::graph_node& node) {
     return node.entry.kind == ::foundation::algebra::transition::shape_kind::step
-           || node.entry.kind == ::foundation::algebra::transition::shape_kind::choice;
+        || node.entry.kind == ::foundation::algebra::transition::shape_kind::choice;
 }
 
 [[nodiscard]] consteval std::vector<move> moves_of(const ::foundation::algebra::transition::graph_view& graph,
@@ -873,10 +874,10 @@ consteval bool exchange(search& state, const std::vector<action>& sub_prefix, st
         if (!holds) drop_after(state, mark);
         return holds;
     };
-    const bool sub_sends = state.sub.nodes[sub_index].entry.direction
-                           == ::foundation::algebra::transition::polarity::output;
-    const bool super_sends = state.super.nodes[super_index].entry.direction
-                             == ::foundation::algebra::transition::polarity::output;
+    const bool sub_sends =
+        state.sub.nodes[sub_index].entry.direction == ::foundation::algebra::transition::polarity::output;
+    const bool super_sends =
+        state.super.nodes[super_index].entry.direction == ::foundation::algebra::transition::polarity::output;
     if (sub_sends && !super_sends) {
         // Rule oi: every output of the subtype against every input of
         // the supertype.
@@ -935,7 +936,8 @@ consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t 
     if (!spend(state, 1 + prefix_length + state.rho.size() + state.sigma.size() * (1 + prefix_length))) return false;
     sub_index = to_binder(state.sub, sub_index);
     super_index = to_binder(state.super, super_index);
-    if (sub_index == ::foundation::algebra::transition::npos || super_index == ::foundation::algebra::transition::npos) {
+    if (sub_index == ::foundation::algebra::transition::npos
+        || super_index == ::foundation::algebra::transition::npos) {
         return false;
     }
     reduce(state.axioms, sub_prefix, super_prefix);
@@ -1059,7 +1061,8 @@ consteval bool bounded() {
     if (is_outside_the_check(state.sub, sub_top) || is_outside_the_check(state.super, super_top)) {
         return false;
     }
-    if (!prove(state, {}, sub_top, Capacity + 1, {}, super_top, Capacity + 1, ::foundation::algebra::transition::npos)) {
+    if (!prove(state, {}, sub_top, Capacity + 1, {}, super_top, Capacity + 1,
+               ::foundation::algebra::transition::npos)) {
         return false;
     }
     return !ChecksExits || keeps_exits(state);
@@ -1142,8 +1145,8 @@ using Wide = ::fixy::session::Select<::fixy::session::Send<Ping, ::fixy::session
 using Early = ::fixy::session::Send<Ping, ::fixy::session::Recv<Stop, ::fixy::session::End>>;
 using Late = ::fixy::session::Recv<Stop, ::fixy::session::Send<Ping, ::fixy::session::End>>;
 using EarlyTwice = ::fixy::session::Send<Ping, Early>;
-using LateTwice = ::fixy::session::Recv<Stop, ::fixy::session::Recv<Stop, ::fixy::session::Send<
-                                                  Ping, ::fixy::session::Send<Ping, ::fixy::session::End>>>>;
+using LateTwice = ::fixy::session::Recv<
+    Stop, ::fixy::session::Recv<Stop, ::fixy::session::Send<Ping, ::fixy::session::Send<Ping, ::fixy::session::End>>>>;
 // Channel ends that state a capacity.
 struct OneSlot {
     static constexpr std::size_t channel_capacity = 1;
@@ -1155,32 +1158,30 @@ struct FourSlots {
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_sync_subtype> {
-    using accepts = witnesses<
-        ::fixy::session::SubtypeQuery<::fixy::session::End, ::fixy::session::End>,
-        ::fixy::session::SubtypeQuery<::fixy::session::detail::subtype_armed_witness::Narrow,
-                                      ::fixy::session::detail::subtype_armed_witness::Wide>>;
-    using refuses = witnesses<
-        int,
-        ::fixy::session::SubtypeQuery<::fixy::session::detail::subtype_armed_witness::Wide,
-                                      ::fixy::session::detail::subtype_armed_witness::Narrow>,
-        ::fixy::session::SubtypeQuery<::fixy::session::detail::subtype_armed_witness::Early,
-                                      ::fixy::session::detail::subtype_armed_witness::Late>>;
+    using accepts = witnesses<::fixy::session::SubtypeQuery<::fixy::session::End, ::fixy::session::End>,
+                              ::fixy::session::SubtypeQuery<::fixy::session::detail::subtype_armed_witness::Narrow,
+                                                            ::fixy::session::detail::subtype_armed_witness::Wide>>;
+    using refuses = witnesses<int,
+                              ::fixy::session::SubtypeQuery<::fixy::session::detail::subtype_armed_witness::Wide,
+                                                            ::fixy::session::detail::subtype_armed_witness::Narrow>,
+                              ::fixy::session::SubtypeQuery<::fixy::session::detail::subtype_armed_witness::Early,
+                                                            ::fixy::session::detail::subtype_armed_witness::Late>>;
 };
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_async_subtype> {
-    using accepts = witnesses<
-        ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::Early,
-                                           ::fixy::session::detail::subtype_armed_witness::Late,
-                                           ::fixy::session::detail::subtype_armed_witness::OneSlot>,
-        ::fixy::session::AsyncSubtypeQuery<::fixy::session::End, ::fixy::session::End,
-                                           ::fixy::session::detail::subtype_armed_witness::OneSlot>>;
-    using refuses = witnesses<
-        int,
-        ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::Late,
-                                           ::fixy::session::detail::subtype_armed_witness::Early,
-                                           ::fixy::session::detail::subtype_armed_witness::FourSlots>,
-        ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::EarlyTwice,
-                                           ::fixy::session::detail::subtype_armed_witness::LateTwice,
-                                           ::fixy::session::detail::subtype_armed_witness::OneSlot>>;
+    using accepts =
+        witnesses<::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::Early,
+                                                     ::fixy::session::detail::subtype_armed_witness::Late,
+                                                     ::fixy::session::detail::subtype_armed_witness::OneSlot>,
+                  ::fixy::session::AsyncSubtypeQuery<::fixy::session::End, ::fixy::session::End,
+                                                     ::fixy::session::detail::subtype_armed_witness::OneSlot>>;
+    using refuses =
+        witnesses<int,
+                  ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::Late,
+                                                     ::fixy::session::detail::subtype_armed_witness::Early,
+                                                     ::fixy::session::detail::subtype_armed_witness::FourSlots>,
+                  ::fixy::session::AsyncSubtypeQuery<::fixy::session::detail::subtype_armed_witness::EarlyTwice,
+                                                     ::fixy::session::detail::subtype_armed_witness::LateTwice,
+                                                     ::fixy::session::detail::subtype_armed_witness::OneSlot>>;
 };

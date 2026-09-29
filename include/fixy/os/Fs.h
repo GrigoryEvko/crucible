@@ -214,8 +214,7 @@ concept CtxAdmitsFs = eff::CtxOwnsAllOf<Ctx, eff::Effect::IO, eff::Effect::Block
 // its only constructor; defined after it.
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] std::expected<Dirfd, std::error_code> open_dirfd(Ctx const&,
-                                                              Path<tags::source::Sanitized> dir) noexcept;
+[[nodiscard]] std::expected<Dirfd, std::error_code> open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept;
 
 // A descriptor that is known to be a directory, opened O_DIRECTORY and
 // O_NOFOLLOW.  sync<FsyncParentDir> takes this rather than any OwnedFd,
@@ -262,8 +261,7 @@ inline constexpr bool is_flag_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::
 template <typename A>
 inline constexpr bool is_durable_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::fs::durable>;
 template <typename A>
-inline constexpr bool is_atomic_write_atom_v =
-    ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::fs::atomic_write>;
+inline constexpr bool is_atomic_write_atom_v = ::fixy::atom_pack::IsAtomOf<A, ^^::fixy::atom::fs::atomic_write>;
 
 template <typename A>
 struct extract_mode {
@@ -342,10 +340,10 @@ template <typename... Atoms>
 // An atom of another kind answers true, so the fold is a conjunction
 // over the whole pack.
 template <typename A>
-inline constexpr bool atom_tag_is_known_v = (!is_mode_atom_v<A> || MappedOpenMode<extract_mode_t<A>>)
-                                         && (!is_flag_atom_v<A> || MappedFlag<extract_flag_t<A>>)
-                                         && (!is_durable_atom_v<A> || KnownSyncOp<extract_sync_op_t<A>>)
-                                         && (!is_atomic_write_atom_v<A> || KnownAtomicity<extract_atomicity_t<A>>);
+inline constexpr bool atom_tag_is_known_v =
+    (!is_mode_atom_v<A> || MappedOpenMode<extract_mode_t<A>>) && (!is_flag_atom_v<A> || MappedFlag<extract_flag_t<A>>)
+    && (!is_durable_atom_v<A> || KnownSyncOp<extract_sync_op_t<A>>)
+    && (!is_atomic_write_atom_v<A> || KnownAtomicity<extract_atomicity_t<A>>);
 
 template <typename... Atoms>
 inline constexpr bool all_atom_tags_known_v = (atom_tag_is_known_v<Atoms> && ... && true);
@@ -413,7 +411,9 @@ class FileDoor final {
     // it otherwise, so it is passed unconditionally.  Returns the errno on
     // failure and no handle.
     [[nodiscard]] static std::expected<OwnedFd, int> open_path_(const char* path, int flags, ::mode_t perms) noexcept {
-        const int fd = ::open(path, flags, perms);  // SYSCALL-CAP-OK: FileDoor::open_path_, sole caller mint_file ctx-gate (CtxFitsFileMint)
+        const int fd =
+            ::open(path, flags,
+                   perms);  // SYSCALL-CAP-OK: FileDoor::open_path_, sole caller mint_file ctx-gate (CtxFitsFileMint)
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -424,7 +424,10 @@ class FileDoor final {
     // that stands in for the directory, and the descriptor is what a later
     // fsync flushes the entry through.
     [[nodiscard]] static std::expected<OwnedFd, int> open_directory_(const char* dir_path) noexcept {
-        const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);  // SYSCALL-CAP-OK: FileDoor::open_directory_, sole caller open_dirfd ctx-gate (CtxAdmitsFs)
+        const int fd = ::open(
+            dir_path,
+            O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+                | O_RDONLY);  // SYSCALL-CAP-OK: FileDoor::open_directory_, sole caller open_dirfd ctx-gate (CtxAdmitsFs)
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -484,12 +487,13 @@ template <typename SyncOp, eff::IsExecCtx Ctx>
 // Not a mint: this renames existing paths and synthesizes nothing.
 template <typename Atomicity, eff::IsExecCtx Ctx>
     requires CtxFitsCommitAtomic<Ctx, Atomicity>
-[[nodiscard]] inline std::expected<void, std::error_code>
-commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp, Path<tags::source::Sanitized> target) noexcept {
+[[nodiscard]] inline std::expected<void, std::error_code> commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp,
+                                                                        Path<tags::source::Sanitized> target) noexcept {
     int rc = 0;
     if constexpr (std::is_same_v<Atomicity, atomicity::Rename>) {
-        rc = ::rename(tmp.value().c_str(),
-                      target.value().c_str());  // SYSCALL-CAP-OK: commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
+        rc = ::rename(
+            tmp.value().c_str(),
+            target.value().c_str());  // SYSCALL-CAP-OK: commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
     } else {
         rc = ::renameat2(AT_FDCWD, tmp.value().c_str(), AT_FDCWD, target.value().c_str(),
                          RENAME_NOREPLACE);  // SYSCALL-CAP-OK: commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
@@ -529,7 +533,8 @@ template <eff::IsExecCtx Ctx>
     std::size_t total = 0;
     while (total < buffer.size()) {
         const ::ssize_t transferred =
-            ::read(handle.get(), buffer.data() + total, buffer.size() - total);  // SYSCALL-CAP-OK: read_full ctx-gate (CtxAdmitsFs)
+            ::read(handle.get(), buffer.data() + total,
+                   buffer.size() - total);  // SYSCALL-CAP-OK: read_full ctx-gate (CtxAdmitsFs)
         if (transferred == 0) break;
         if (transferred < 0) {
             if (errno == EINTR) continue;
@@ -550,7 +555,8 @@ template <eff::IsExecCtx Ctx>
     std::size_t total = 0;
     while (total < buffer.size()) {
         const ::ssize_t transferred =
-            ::write(handle.get(), buffer.data() + total, buffer.size() - total);  // SYSCALL-CAP-OK: write_full ctx-gate (CtxAdmitsFs)
+            ::write(handle.get(), buffer.data() + total,
+                    buffer.size() - total);  // SYSCALL-CAP-OK: write_full ctx-gate (CtxAdmitsFs)
         if (transferred < 0) {
             if (errno == EINTR) continue;
             return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -583,7 +589,8 @@ using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
 // §XXI carve-out: cx=alloc — opening a file invokes the kernel.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteTruncate>,
-                             ::fixy::atom::fs::durable<sync_op::Fsync>, ::fixy::atom::fs::atomic_write<atomicity::Rename>>
+                             ::fixy::atom::fs::durable<sync_op::Fsync>,
+                             ::fixy::atom::fs::atomic_write<atomicity::Rename>>
 [[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
 mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> path, ::mode_t perms = 0644) noexcept {
     return mint_file<::fixy::atom::fs::mode<open_mode::WriteTruncate>, ::fixy::atom::fs::durable<sync_op::Fsync>,
@@ -703,21 +710,26 @@ static_assert(!std::is_default_constructible_v<FileDoor> && !std::is_copy_constr
 // Every tag the four fixy::fs namespaces declare is known to the concept
 // that gates it.  Each concept reads a closed table or a closed list, so
 // this walk is the check that each declared tag has a row.
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::open_mode, [](std::meta::info mode_tag) consteval {
-                  return ::fixy::atom_pack::has_row(open_mode_table, mode_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::open_mode,
+                                                        [](std::meta::info mode_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(open_mode_table, mode_tag);
+                                                        }>(),
               "fixy/os/Fs.h: a tag in fixy::fs::open_mode has no row in open_mode_table.");
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::flag, [](std::meta::info flag_tag) consteval {
-                  return ::fixy::atom_pack::has_row(flag_table, flag_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::flag,
+                                                        [](std::meta::info flag_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(flag_table, flag_tag);
+                                                        }>(),
               "fixy/os/Fs.h: a tag in fixy::fs::flag has no row in flag_table.");
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::sync_op, [](std::meta::info sync_tag) consteval {
-                  return ::fixy::atom_pack::names_tag(sync_op_tags, sync_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::sync_op,
+                                                        [](std::meta::info sync_tag) consteval {
+                                                          return ::fixy::atom_pack::names_tag(sync_op_tags, sync_tag);
+                                                        }>(),
               "fixy/os/Fs.h: a tag in fixy::fs::sync_op is missing from sync_op_tags.");
-static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::atomicity, [](std::meta::info commit_tag) consteval {
-                  return ::fixy::atom_pack::names_tag(atomicity_tags, commit_tag);
-              }>(),
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::atomicity,
+                                                        [](std::meta::info commit_tag) consteval {
+                                                          return ::fixy::atom_pack::names_tag(atomicity_tags,
+                                                                                              commit_tag);
+                                                        }>(),
               "fixy/os/Fs.h: a tag in fixy::fs::atomicity is missing from atomicity_tags.");
 
 }  // namespace fixy::fs::detail::fs_surface_invariants

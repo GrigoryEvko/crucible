@@ -77,8 +77,9 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
                       "RecipeRegistry takes the borrow that mint_borrowed_ref gives");
         static_assert(!std::is_constructible_v<RecipeRegistry, RecipeRegistry::PoolBorrow, eff::Alloc>,
                       "RecipeRegistry refuses a borrow that names no brand");
-        static_assert(std::is_same_v<RecipeRegistry::Entries, ::fixy::Tagged<std::span<const RecipeRegistry::Entry>,
-                                                                             ::fixy::tags::source::JsonRegistry>>);
+        static_assert(
+            std::is_same_v<RecipeRegistry::Entries,
+                           ::fixy::Tagged<std::span<const RecipeRegistry::Entry>, ::fixy::tags::source::JsonRegistry>>);
         static_assert(sizeof(RecipeRegistry::Entries) == sizeof(std::span<const RecipeRegistry::Entry>));
         static_assert(!std::is_convertible_v<std::span<const RecipeRegistry::Entry>, RecipeRegistry::Entries>);
         static_assert(eff::Subrow<RecipeRegistry::pure_projection_row, eff::Row<>>);

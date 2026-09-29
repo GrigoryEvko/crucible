@@ -28,7 +28,6 @@ struct log_rate_proved final {};
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::stdio::write<::fixy::atom::stdio::streams::Stdout>,
                                 ::fixy::atom::regime::hot, ::fixy::atom::as_public, ::fixy::atom::cost_constant,
-                                ::fixy::atom::refined_with<fixture::log_rate_proved>>
-        refused{};
+                                ::fixy::atom::refined_with<fixture::log_rate_proved>> refused{};
     return 0;
 }

@@ -98,7 +98,8 @@ inline void mutate(std::vector<std::uint8_t>& bytes, std::span<const std::uint8_
                 if (!donor.empty()) {
                     const std::size_t from = (r >> 20) % donor.size();
                     const std::size_t len = std::min<std::size_t>(1 + (r >> 40) % 64, donor.size() - from);
-                    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(at), donor.begin() + static_cast<std::ptrdiff_t>(from),
+                    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(at),
+                                 donor.begin() + static_cast<std::ptrdiff_t>(from),
                                  donor.begin() + static_cast<std::ptrdiff_t>(from + len));
                 }
                 break;
@@ -182,7 +183,8 @@ inline int run_corpus_or_file(const char* arg, std::uint64_t mutations) {
     std::ranges::sort(seeds);
     if (seeds.empty()) seeds.emplace_back();
 
-    for (const auto& seed : seeds) feed(seed);
+    for (const auto& seed : seeds)
+        feed(seed);
 
     std::uint64_t state = 0x6372756369626c65ULL;
     for (std::uint64_t i = 0; i < mutations; ++i) {

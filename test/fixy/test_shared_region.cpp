@@ -83,7 +83,8 @@ void test_a_read_sees_the_region() {
     CRUCIBLE_TEST_REQUIRE(read[5] == 15);
 
     std::uint64_t sum = 0;
-    for (std::uint64_t value : read) sum += value;
+    for (std::uint64_t value : read)
+        sum += value;
     CRUCIBLE_TEST_REQUIRE(sum == 75);
 
     // The read names the instance it was taken against, and the share

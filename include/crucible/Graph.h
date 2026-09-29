@@ -351,8 +351,9 @@ public:
         return n;
     }
 
-    [[nodiscard]] GraphNode* add_pointwise(::foundation::effects::Alloc a, std::span<const Expr* const> ranges, ScalarType dtype,
-                                           int8_t device_idx, ComputeBody* body, std::span<GraphNode* const> inputs) {
+    [[nodiscard]] GraphNode* add_pointwise(::foundation::effects::Alloc a, std::span<const Expr* const> ranges,
+                                           ScalarType dtype, int8_t device_idx, ComputeBody* body,
+                                           std::span<GraphNode* const> inputs) {
         GraphNode* n = alloc_node_(a);
         n->kind = NodeKind::POINTWISE;
         n->dtype = dtype;
@@ -393,8 +394,8 @@ public:
         return n;
     }
 
-    [[nodiscard]] GraphNode* add_extern(::foundation::effects::Alloc a, const char* py_name, const char* cpp_name, ScalarType dtype,
-                                        int8_t device_idx, std::span<const Expr* const> size,
+    [[nodiscard]] GraphNode* add_extern(::foundation::effects::Alloc a, const char* py_name, const char* cpp_name,
+                                        ScalarType dtype, int8_t device_idx, std::span<const Expr* const> size,
                                         std::span<GraphNode* const> inputs,
                                         std::span<const int64_t> constant_args = {}) {
         GraphNode* n = alloc_node_(a);
@@ -845,8 +846,8 @@ private:
     const char* copy_string_(::foundation::effects::Alloc a, const char* src) {
         if (!src) return nullptr;
         size_t len = std::strlen(src) + 1;
-        auto* dst = static_cast<char*>(
-            arena_.alloc(a, ::fixy::mint_refined<::fixy::positive>(len), ::fixy::mint_refined<::fixy::power_of_two>(size_t{1})));
+        auto* dst = static_cast<char*>(arena_.alloc(a, ::fixy::mint_refined<::fixy::positive>(len),
+                                                    ::fixy::mint_refined<::fixy::power_of_two>(size_t{1})));
         std::memcpy(dst, src, len);
         return dst;
     }

@@ -162,9 +162,9 @@ static void test_round_trip_empty_payload() {
     ASSERT_TRUE(written.has_value());
     assert(*written == fed::FEDERATION_HEADER_BYTES);  // header only
 
-    auto view = fed::deserialize_untrusted_federation_entry(
-        std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.empty());
     assert(view->header.payload_size == 0u);
@@ -541,9 +541,9 @@ static void test_round_trip_full_byte_range() {
     auto written = fed::serialize_federation_entry(buf, key, payload);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_untrusted_federation_entry(
-        std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.size() == payload.size());
     for (std::size_t i = 0; i < payload.size(); ++i) {
@@ -564,9 +564,9 @@ static void test_view_payload_aliases_input() {
     auto written = fed::serialize_federation_entry(buf, key, payload);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_untrusted_federation_entry(
-        std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
 
     assert(view->payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
@@ -820,9 +820,9 @@ static void test_audit_e_same_bit_pattern_axes() {
     auto written = fed::serialize_federation_entry(buf, key, payload);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_untrusted_federation_entry(
-        std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->header.content_hash.raw() == SHARED_BITS);
     assert(view->header.row_hash.raw() == SHARED_BITS);
@@ -925,9 +925,9 @@ static void test_audit_i_vector_buffer_roundtrip() {
     ASSERT_TRUE(written.has_value());
     assert(*written == buf.size());
 
-    auto view = fed::deserialize_untrusted_federation_entry(
-        std::span<const std::uint8_t>(buf.data(), *written),
-        static_cast<std::uint16_t>(::foundation::effects::effect_count));
+    auto view =
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
     ASSERT_TRUE(view.has_value());
     assert(view->payload.size() == payload.size());
     for (std::size_t i = 0; i < payload.size(); ++i) {

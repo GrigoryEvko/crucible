@@ -85,11 +85,13 @@ concept CtxFitsSessionBody = CtxFitsSession<Ctx, Proto, Resource> && SessionBody
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
           typename Body>
     requires CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>
-[[nodiscard]] constexpr Resource
-with_session(Ctx const&, Resource resource, Body body, std::source_location loc = std::source_location::current()) noexcept(
-    std::is_nothrow_invocable_v<Body, detail::first_handle_t<Proto, Resource, Policy,
-                                                             ::foundation::permissions::EmptyPermSet,
-                                                             detail::brand_ctx_t<Body>>>) {
+[[nodiscard]] constexpr Resource with_session(
+    Ctx const&, Resource resource, Body body,
+    std::source_location loc = std::source_location::
+        current()) noexcept(std::is_nothrow_invocable_v<Body,
+                                                        detail::first_handle_t<Proto, Resource, Policy,
+                                                                               ::foundation::permissions::EmptyPermSet,
+                                                                               detail::brand_ctx_t<Body>>>) {
     return with_session<Proto, Resource, Policy>(std::forward<Resource>(resource), std::move(body), loc);
 }
 

@@ -49,8 +49,9 @@ static_assert(!c::IsBridgeableDirection<BridgeSpsc, static_cast<c::Direction>(2)
 [[nodiscard]] int bridge_round_trip() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     BridgeSpsc channel{};
-    auto [producer_perm, consumer_perm] = perm::mint_permission_split<BridgeSpsc::producer_tag, BridgeSpsc::consumer_tag>(
-        perm::mint_permission_root<BridgeSpsc::whole_tag>());
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<BridgeSpsc::producer_tag, BridgeSpsc::consumer_tag>(
+            perm::mint_permission_root<BridgeSpsc::whole_tag>());
 
     std::optional producer{
         c::mint_substrate_session<BridgeSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)))};
@@ -84,8 +85,10 @@ using EndpointSpsc = c::PermissionedSpscChannel<int, 8, EndpointTag>;
         perm::mint_permission_split<EndpointSpsc::producer_tag, EndpointSpsc::consumer_tag>(
             perm::mint_permission_root<EndpointSpsc::whole_tag>());
 
-    auto producer = c::mint_endpoint<EndpointSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)));
-    auto consumer = c::mint_endpoint<EndpointSpsc, c::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm)));
+    auto producer =
+        c::mint_endpoint<EndpointSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)));
+    auto consumer =
+        c::mint_endpoint<EndpointSpsc, c::Direction::Consumer>(ctx, channel.consumer(std::move(consumer_perm)));
 
     if (!producer.try_send(7)) return fail("the producer endpoint was refused below capacity");
     if (producer.size_approx() != 1) return fail("the producer endpoint saw the wrong size");
@@ -131,8 +134,9 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     StageIn in_channel{};
     StageOut out_channel{};
-    auto [in_producer_perm, in_consumer_perm] = perm::mint_permission_split<StageIn::producer_tag, StageIn::consumer_tag>(
-        perm::mint_permission_root<StageIn::whole_tag>());
+    auto [in_producer_perm, in_consumer_perm] =
+        perm::mint_permission_split<StageIn::producer_tag, StageIn::consumer_tag>(
+            perm::mint_permission_root<StageIn::whole_tag>());
     auto [out_producer_perm, out_consumer_perm] =
         perm::mint_permission_split<StageOut::producer_tag, StageOut::consumer_tag>(
             perm::mint_permission_root<StageOut::whole_tag>());
@@ -142,7 +146,8 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
     (void)feeder.try_push(1);
     (void)feeder.try_push(2);
 
-    auto in_ep = c::mint_endpoint<StageIn, c::Direction::Consumer>(ctx, in_channel.consumer(std::move(in_consumer_perm)));
+    auto in_ep =
+        c::mint_endpoint<StageIn, c::Direction::Consumer>(ctx, in_channel.consumer(std::move(in_consumer_perm)));
     auto out_ep =
         c::mint_endpoint<StageOut, c::Direction::Producer>(ctx, out_channel.producer(std::move(out_producer_perm)));
     auto stage = c::mint_stage_from_endpoints<&doubling_stage>(ctx, std::move(in_ep), std::move(out_ep));
@@ -213,13 +218,15 @@ void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& ri
     FanLeft left{};
     FanRight right{};
     FanOut out{};
-    auto [left_producer_perm, left_consumer_perm] = perm::mint_permission_split<FanLeft::producer_tag, FanLeft::consumer_tag>(
-        perm::mint_permission_root<FanLeft::whole_tag>());
+    auto [left_producer_perm, left_consumer_perm] =
+        perm::mint_permission_split<FanLeft::producer_tag, FanLeft::consumer_tag>(
+            perm::mint_permission_root<FanLeft::whole_tag>());
     auto [right_producer_perm, right_consumer_perm] =
         perm::mint_permission_split<FanRight::producer_tag, FanRight::consumer_tag>(
             perm::mint_permission_root<FanRight::whole_tag>());
-    auto [out_producer_perm, out_consumer_perm] = perm::mint_permission_split<FanOut::producer_tag, FanOut::consumer_tag>(
-        perm::mint_permission_root<FanOut::whole_tag>());
+    auto [out_producer_perm, out_consumer_perm] =
+        perm::mint_permission_split<FanOut::producer_tag, FanOut::consumer_tag>(
+            perm::mint_permission_root<FanOut::whole_tag>());
 
     auto left_feeder = left.producer(std::move(left_producer_perm));
     auto right_feeder = right.producer(std::move(right_producer_perm));
@@ -280,8 +287,9 @@ using RecordSpsc = c::PermissionedSpscChannel<int, 8, RecordTag>;
 [[nodiscard]] int recording_endpoint_records_each_step() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     RecordSpsc channel{};
-    auto [producer_perm, consumer_perm] = perm::mint_permission_split<RecordSpsc::producer_tag, RecordSpsc::consumer_tag>(
-        perm::mint_permission_root<RecordSpsc::whole_tag>());
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<RecordSpsc::producer_tag, RecordSpsc::consumer_tag>(
+            perm::mint_permission_root<RecordSpsc::whole_tag>());
     auto consumer = channel.consumer(std::move(consumer_perm));
 
     s::SessionEventLog log;

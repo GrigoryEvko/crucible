@@ -241,7 +241,7 @@ static void test_dispatch_data_flow() {
     auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d0.entry), d0.metas, d0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     assert(r0.status == ReplayStatus::MATCH);
-    std::memset(vigil.output_ptr(vigil.mint_producer_context(),0), 0x42, 4096);
+    std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), 0x42, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         auto d = make_op(4, i);
@@ -249,12 +249,12 @@ static void test_dispatch_data_flow() {
         assert(r.action == DispatchResult::Action::COMPILED);
         assert(r.status == ReplayStatus::MATCH);
 
-        auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(),0));
+        auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
         uint8_t expected = static_cast<uint8_t>(0x42 + i - 1);
         for (uint32_t b = 0; b < 4096; b++)
             assert(in_data[b] == expected);
 
-        std::memset(vigil.output_ptr(vigil.mint_producer_context(),0), static_cast<int>(0x42 + i), 4096);
+        std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), static_cast<int>(0x42 + i), 4096);
     }
 
     auto d7 = make_op(4, NUM_OPS - 1);
@@ -262,7 +262,7 @@ static void test_dispatch_data_flow() {
     assert(r7.action == DispatchResult::Action::COMPILED);
     assert(r7.status == ReplayStatus::COMPLETE);
 
-    auto* in_last = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(),0));
+    auto* in_last = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     uint8_t expected_last = static_cast<uint8_t>(0x42 + NUM_OPS - 2);
     for (uint32_t b = 0; b < 4096; b++)
         assert(in_last[b] == expected_last);
@@ -295,7 +295,7 @@ static void test_dispatch_pool_bounds() {
         auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
 
-        auto* p = static_cast<uint8_t*>(vigil.output_ptr(vigil.mint_producer_context(),0));
+        auto* p = static_cast<uint8_t*>(vigil.output_ptr(vigil.mint_producer_context(), 0));
         assert(p >= pool_base);
         assert(p + 4096 <= pool_base + pool_bytes);
     }
@@ -543,7 +543,8 @@ static void test_second_producer_is_rejected() {
         std::thread intruder([&vigil, &rejected] {
             rejected = crucible::test::aborts([&vigil] {
                 auto second = make_op(0, 1);
-                (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(second.entry), second.metas, second.n_metas);
+                (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(second.entry), second.metas,
+                                        second.n_metas);
             });
         });
         intruder.join();
@@ -583,8 +584,8 @@ static void test_cold_gates_reject_a_context_on_another_thread() {
     std::thread intruder([&] {
         is_schema_view_rejected =
             crucible::test::aborts([&fg] { static_cast<void>(global_schema_table().mint_mutable_view(fg)); });
-        is_ckernel_view_rejected = crucible::test::aborts(
-            [&fg] { static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg)); });
+        is_ckernel_view_rejected =
+            crucible::test::aborts([&fg] { static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg)); });
         is_ring_rejected = crucible::test::aborts([&vigil, &fg] { static_cast<void>(vigil.ring(fg)); });
         is_meta_log_rejected = crucible::test::aborts([&vigil, &fg] { static_cast<void>(vigil.meta_log(fg)); });
     });

@@ -122,7 +122,8 @@ template <typename R1, typename R2>
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto axis : axes) {
         constexpr ResourceKind kind = [:axis:];
-        if (!::foundation::decide::no_overflow_sum(concurrent_row_value_v<kind, R1>, concurrent_row_value_v<kind, R2>)) {
+        if (!::foundation::decide::no_overflow_sum(concurrent_row_value_v<kind, R1>,
+                                                   concurrent_row_value_v<kind, R2>)) {
             return false;
         }
     }
@@ -133,8 +134,7 @@ template <typename R1, typename R2>
 }  // namespace detail
 
 template <typename R1, typename R2>
-concept ConcurrentlySchedulable =
-    IsConcurrentRow<R1> && IsConcurrentRow<R2> && detail::sums_fit_pairwise_<R1, R2>();
+concept ConcurrentlySchedulable = IsConcurrentRow<R1> && IsConcurrentRow<R2> && detail::sums_fit_pairwise_<R1, R2>();
 
 // The sum of two rows holds one tag per axis with a non-zero sum, in
 // catalog order.  It is canonical, and its order does not depend on the
@@ -305,9 +305,9 @@ static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<SmBudget<32>>, C
                              ConcurrentRow<SmBudget<32>, NicQp<4>>>);
 static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<NicQp<4>>, ConcurrentRow<SmBudget<32>>>,
                              ConcurrentRow<SmBudget<32>, NicQp<4>>>);
-static_assert(std::is_same_v<
-              concurrent_row_sum_t<ConcurrentRow<SmBudget<32>, NicQp<4>>, ConcurrentRow<SmBudget<64>, NicQp<2>>>,
-              ConcurrentRow<SmBudget<96>, NicQp<6>>>);
+static_assert(
+    std::is_same_v<concurrent_row_sum_t<ConcurrentRow<SmBudget<32>, NicQp<4>>, ConcurrentRow<SmBudget<64>, NicQp<2>>>,
+                   ConcurrentRow<SmBudget<96>, NicQp<6>>>);
 
 // The last axis of the catalog joins the sum, so the walk reaches the
 // end of the catalog.
@@ -338,8 +338,9 @@ static_assert(concurrent_row_value_v<ResourceKind::Sm, ConcurrentRow<SmBudget<32
 static_assert(concurrent_row_value_v<ResourceKind::NicQp, ConcurrentRow<SmBudget<32>>> == 0);
 static_assert(concurrent_row_value_v<ResourceKind::Sm, ConcurrentRow<>> == 0);
 static_assert(concurrent_row_value_v<ResourceKind::Sm, ConcurrentRow<SmBudget<10>, SmBudget<20>, SmBudget<30>>> == 60);
-static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<SmBudget<10>, SmBudget<20>>, ConcurrentRow<SmBudget<30>>>,
-                             ConcurrentRow<SmBudget<60>>>);
+static_assert(
+    std::is_same_v<concurrent_row_sum_t<ConcurrentRow<SmBudget<10>, SmBudget<20>>, ConcurrentRow<SmBudget<30>>>,
+                   ConcurrentRow<SmBudget<60>>>);
 
 // A row naming an axis once cannot wrap, whatever the value, because
 // the fold starts from zero.
@@ -358,14 +359,15 @@ static_assert(!row_is_formable<SmBudget<UINT64_MAX - 10>, SmBudget<20>, SmBudget
 static_assert(!row_is_formable<int>);
 
 static_assert(ConcurrentlySchedulable<ConcurrentRow<SmBudget<32>>, ConcurrentRow<SmBudget<64>>>);
-static_assert(ConcurrentlySchedulable<ConcurrentRow<HbmBytes<40000000000ULL>>, ConcurrentRow<HbmBytes<40000000000ULL>>>);
+static_assert(
+    ConcurrentlySchedulable<ConcurrentRow<HbmBytes<40000000000ULL>>, ConcurrentRow<HbmBytes<40000000000ULL>>>);
 static_assert(ConcurrentlySchedulable<ConcurrentRow<>, ConcurrentRow<>>);
 static_assert(ConcurrentlySchedulable<ConcurrentRow<SmBudget<1>>, ConcurrentRow<>>);
 static_assert(ConcurrentlySchedulable<ConcurrentRow<SmBudget<UINT64_MAX>>, ConcurrentRow<>>);
 
 static_assert(!ConcurrentlySchedulable<ConcurrentRow<HbmBytes<UINT64_MAX>>, ConcurrentRow<HbmBytes<1>>>);
-static_assert(
-    !ConcurrentlySchedulable<ConcurrentRow<SmBudget<32>, HbmBytes<UINT64_MAX>>, ConcurrentRow<SmBudget<64>, HbmBytes<1>>>);
+static_assert(!ConcurrentlySchedulable<ConcurrentRow<SmBudget<32>, HbmBytes<UINT64_MAX>>,
+                                       ConcurrentRow<SmBudget<64>, HbmBytes<1>>>);
 static_assert(
     !ConcurrentlySchedulable<ConcurrentRow<CarbonGramsPerKwh<UINT64_MAX>>, ConcurrentRow<CarbonGramsPerKwh<1>>>);
 static_assert(!ConcurrentlySchedulable<int, ConcurrentRow<>>);
@@ -389,8 +391,8 @@ static_assert(!IsCanonicalConcurrentRow<ConcurrentRow<SmBudget<32>, NicQp<4>, Sm
 static_assert(!IsCanonicalConcurrentRow<ConcurrentRow<CarbonGramsPerKwh<10>, CarbonGramsPerKwh<20>>>);
 static_assert(!IsCanonicalConcurrentRow<int>);
 
-static_assert(
-    IsCanonicalConcurrentRow<concurrent_row_sum_t<ConcurrentRow<SmBudget<10>, SmBudget<20>>, ConcurrentRow<SmBudget<30>>>>);
+static_assert(IsCanonicalConcurrentRow<
+              concurrent_row_sum_t<ConcurrentRow<SmBudget<10>, SmBudget<20>>, ConcurrentRow<SmBudget<30>>>>);
 static_assert(IsCanonicalConcurrentRow<
               concurrent_row_sum_t<ConcurrentRow<SmBudget<32>, NicQp<4>>, ConcurrentRow<SmBudget<64>, NicQp<2>>>>);
 

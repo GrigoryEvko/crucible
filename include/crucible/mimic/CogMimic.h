@@ -132,9 +132,9 @@ concept CtxFitsCogMimic =
 // as the friend of its only constructor.  Defined after the class.
 template <cog::CogKind K, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsCogMimic<Ctx, K>
-[[nodiscard]] constexpr CogMimic<K> mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const& identity CRUCIBLE_LIFETIMEBOUND,
-                                                   cog::caps_for_t<K> calibrated_caps,
-                                                   cog::OpcodeLatencyTable<K> opcodes) noexcept;
+[[nodiscard]] constexpr CogMimic<K>
+mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const& identity CRUCIBLE_LIFETIMEBOUND,
+               cog::caps_for_t<K> calibrated_caps, cog::OpcodeLatencyTable<K> opcodes) noexcept;
 
 // The CogMimic borrows its identity, so an identity that is a temporary
 // would dangle at the end of the full expression.  This form is the better
@@ -158,7 +158,7 @@ constexpr CogMimic<K> mint_cog_mimic(Ctx const& ctx, cog::CogIdentity const&& id
 // constructors stay trivial, so a minted value still travels in registers.
 template <cog::CogKind K>
     requires cog::IsMimicSubstrate<K> && cog::HasCaps<K> && cog::HasOpcodeTable<K> && detail::HasCogMimicProjection<K>
-class [[nodiscard]] [[=::foundation::lifetime::no_start_over_bytes{}]] CogMimic {
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] CogMimic {
 public:
     static constexpr cog::CogKind kind = K;
     static constexpr cog::CogFamily family = cog::cog_family_v<K>;
@@ -214,7 +214,9 @@ public:
 
 private:
     constexpr CogMimic(cog::CogIdentity const& identity, CalibratedCaps calibrated_caps, OpcodeTable opcodes) noexcept
-        : identity_{&identity}, calibrated_caps_{std::move(calibrated_caps)}, opcode_latency_table_{std::move(opcodes)} {}
+        : identity_{&identity},
+          calibrated_caps_{std::move(calibrated_caps)},
+          opcode_latency_table_{std::move(opcodes)} {}
 
     template <cog::CogKind Kind, ::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsCogMimic<Ctx, Kind>
@@ -256,9 +258,9 @@ inline constexpr bool has_carrier_v =
 // and its destruction stays trivial because it owns no heap.
 template <cog::CogKind K>
 inline constexpr bool carrier_is_closed_v =
-    CogMimic<K>::kind == K && CogMimic<K>::family == cog::cog_family_v<K>
-    && std::is_trivially_destructible_v<CogMimic<K>> && !std::is_default_constructible_v<CogMimic<K>>
-    && !std::is_aggregate_v<CogMimic<K>>
+    CogMimic<K>::kind == K
+    && CogMimic<K>::family == cog::cog_family_v<K> && std::is_trivially_destructible_v<CogMimic<K>>
+    && !std::is_default_constructible_v<CogMimic<K>> && !std::is_aggregate_v<CogMimic<K>>
     && !std::is_constructible_v<CogMimic<K>, cog::CogIdentity const&, typename CogMimic<K>::CalibratedCaps,
                                 typename CogMimic<K>::OpcodeTable>
     && !std::is_trivially_copyable_v<CogMimic<K>> && !::foundation::lifetime::ImplicitLifetimeThroughout<CogMimic<K>>
@@ -329,7 +331,8 @@ static_assert(
         infiniband.link_layer =
             ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Infiniband);
         cog::NicPortTargetCaps ethernet{};
-        ethernet.link_layer = ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Ethernet);
+        ethernet.link_layer =
+            ::fixy::mint_tagged<::fixy::tags::source::Vendor, cog::LinkLayer>(cog::LinkLayer::Ethernet);
         return caps_class_projection<cog::CogKind::NicPort>::fold(infiniband)
             != caps_class_projection<cog::CogKind::NicPort>::fold(ethernet);
     }(),

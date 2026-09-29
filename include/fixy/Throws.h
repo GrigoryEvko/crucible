@@ -65,9 +65,10 @@ inline constexpr bool node_matches_v = Match<Node>::value;
 // reference to a carrier answers the same as the carrier.
 template <template <class> class Match, typename Haystack>
 struct type_tree_any
-    : std::bool_constant<::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
-          return std::meta::extract<bool>(std::meta::substitute(^^node_matches_v, {^^Match, node.type}));
-      }>(^^Haystack)> {};
+    : std::bool_constant<
+          ::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
+              return std::meta::extract<bool>(std::meta::substitute(^^node_matches_v, {^^Match, node.type}));
+          }>(^^Haystack)> {};
 
 // The exact-type predicate, as a member template so the needle binds
 // before type_tree_any takes the predicate as a template-template
@@ -83,8 +84,8 @@ struct match_exactly {
 // no translation unit can specialize its answer.
 template <typename Node>
 struct is_throws_atom
-    : std::bool_constant<
-          ::foundation::reflect::IsInstanceOf<std::remove_cvref_t<Node>, ^^::fixy::atom::ctrl::throws>> {};
+    : std::bool_constant<::foundation::reflect::IsInstanceOf<std::remove_cvref_t<Node>, ^^::fixy::atom::ctrl::throws>> {
+};
 
 }  // namespace detail
 

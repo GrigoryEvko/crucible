@@ -82,7 +82,8 @@ public:
     BpfObject() noexcept = default;
 
     ~BpfObject() {
-        for (bpf_link* link : links_) bpf_link__destroy(link);
+        for (bpf_link* link : links_)
+            bpf_link__destroy(link);
         if (obj_ != nullptr) bpf_object__close(obj_);
     }
 
@@ -251,7 +252,8 @@ using ReadOnlyMapping =
 // A facade loads under a context that may map a BPF map read-only and
 // shared: one that owns IO and Block.
 template <class Ctx>
-concept CtxFitsMapArray = ::fixy::mmap::CtxFitsRegionMint<Ctx, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
+concept CtxFitsMapArray =
+    ::fixy::mmap::CtxFitsRegionMint<Ctx, ::fixy::mmap::prot::ReadOnly, ::fixy::mmap::share::Shared>;
 
 // Maps the BPF_F_MMAPABLE array map `map_name` read-only and shared,
 // rounded up to whole pages.  Tag keeps one facade's mapping from passing
@@ -316,12 +318,13 @@ struct RingLayout {
     // span<const volatile T> for a non-scalar T.  A consumer does its own
     // atomic load at each field access.
     template <class Owner, class Tag>
-    [[nodiscard]] static ::fixy::Borrowed<const Event, Owner> events(
-        const std::optional<ReadOnlyMapping<Tag>>& mapping) noexcept {
+    [[nodiscard]] static ::fixy::Borrowed<const Event, Owner>
+    events(const std::optional<ReadOnlyMapping<Tag>>& mapping) noexcept {
         if (!mapping) return ::fixy::Borrowed<const Event, Owner>{};
         auto* const base = std::bit_cast<volatile uint8_t*>(mapping->data());
         auto* const first = ::foundation::lifetime::start_as_array<Event>(
-            std::bit_cast<const uint8_t*>(base + sizeof(Header)), Capacity).data();
+                                std::bit_cast<const uint8_t*>(base + sizeof(Header)), Capacity)
+                                .data();
         return ::fixy::Borrowed<const Event, Owner>{first, Capacity};
     }
 

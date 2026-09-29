@@ -48,8 +48,8 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 int main() {
     BgCtx ctx{eff::testing::bg()};
     auto whole = perm::mint_permission_root<Whole>();
-    [[maybe_unused]] auto rebuilt = fixy::spawn::mint_spawn<Left, Right>(
-        ctx, fixy::concurrent::WorkBudget{}, std::move(whole), HoldsMarkedMember{},
-        [](auto const& /*right_view*/, BgCtx const&) noexcept {});
+    [[maybe_unused]] auto rebuilt =
+        fixy::spawn::mint_spawn<Left, Right>(ctx, fixy::concurrent::WorkBudget{}, std::move(whole), HoldsMarkedMember{},
+                                             [](auto const& /*right_view*/, BgCtx const&) noexcept {});
     return 0;
 }

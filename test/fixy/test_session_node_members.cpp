@@ -35,8 +35,8 @@ struct Hello {};
 // field, which the program reads at run time.
 consteval bool is_readable_member(std::meta::info member) {
     return std::meta::has_identifier(member)
-           && (std::meta::is_type_alias(member) || std::meta::is_type(member)
-               || (std::meta::is_variable(member) && std::meta::is_static_member(member)));
+        && (std::meta::is_type_alias(member) || std::meta::is_type(member)
+            || (std::meta::is_variable(member) && std::meta::is_static_member(member)));
 }
 
 // True when each readable member of `type` is named by a claim of `read`.
@@ -48,7 +48,8 @@ consteval bool every_member_claimed(t::node_reader read, std::meta::info type) {
     for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::current())) {
         if (!is_readable_member(member)) continue;
         bool is_claimed = false;
-        for (const t::member_claim& claim : view.claims) is_claimed = is_claimed || claim.name == std::meta::identifier_of(member);
+        for (const t::member_claim& claim : view.claims)
+            is_claimed = is_claimed || claim.name == std::meta::identifier_of(member);
         if (!is_claimed) return false;
     }
     return true;
@@ -94,12 +95,14 @@ consteval bool every_session_instance_is_claimed() {
 consteval bool every_registered_combinator_has_an_instance() {
     for (const std::meta::info registration :
          std::meta::members_of(s::detail::protocol_registry, std::meta::access_context::current())) {
-        if (!std::meta::is_variable(registration) || std::meta::remove_const(std::meta::type_of(registration)) != ^^t::combinator) {
+        if (!std::meta::is_variable(registration)
+            || std::meta::remove_const(std::meta::type_of(registration)) != ^^t::combinator) {
             continue;
         }
         const std::meta::info shape = std::meta::extract<t::combinator>(registration).shape;
         bool has_instance = false;
-        for (const std::meta::info instance : session_instances) has_instance = has_instance || t::shape_of(instance) == shape;
+        for (const std::meta::info instance : session_instances)
+            has_instance = has_instance || t::shape_of(instance) == shape;
         if (!has_instance) return false;
     }
     return true;
@@ -146,7 +149,8 @@ static_assert(readable_member_count(^^s::Crash<Alice>) == 1);
 
 // A node that its reader does not know is no node.
 static_assert(!every_member_claimed(&s::detail::session_node_members, ^^int));
-static_assert(agrees(&s::detail::session_node_members, ^^s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<long, s::End>>>));
+static_assert(agrees(&s::detail::session_node_members,
+                     ^^s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<long, s::End>>>));
 
 }  // namespace
 

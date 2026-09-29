@@ -136,8 +136,8 @@ void test_table_minting() {
     assert(!over.has_value());
     assert(over.error() == tcam::TcamError::CapacityExceeded);
 
-    auto wrong = tcam::mint_tcam_table(init_ctx(), nic_identity(cog::CogKind::Gpu), nic_caps(),
-                                       *tcam::admit_tcam_entries(64));
+    auto wrong =
+        tcam::mint_tcam_table(init_ctx(), nic_identity(cog::CogKind::Gpu), nic_caps(), *tcam::admit_tcam_entries(64));
     assert(!wrong.has_value());
     assert(wrong.error() == tcam::TcamError::WrongTargetKind);
 
@@ -254,8 +254,7 @@ void test_backend_boundary() {
     auto declared = tcam::declare_tcam_rule(flow_rule());
     assert(declared.has_value());
 
-    auto ready_plan =
-        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+    auto ready_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
     assert(ready_plan.has_value());
     auto ready = tcam::force_tcam_backend_boundary(*ready_plan, *declared);
     assert(ready.has_value());
@@ -299,8 +298,7 @@ void test_apply_paths_are_stubbed() {
 
     // Success here is a transition inside this process and nothing
     // more.
-    auto ready_plan =
-        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+    auto ready_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
     assert(ready_plan.has_value());
     auto ready_boundary = tcam::force_tcam_backend_boundary(*ready_plan, *declared);
     assert(ready_boundary.has_value());

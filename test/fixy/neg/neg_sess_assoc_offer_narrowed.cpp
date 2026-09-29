@@ -21,8 +21,8 @@ struct Go {};
 struct Left {};
 struct Right {};
 
-using Relay = g::Msg<Alice, Bob, Go, int,
-                     g::Comm<Bob, Carol, g::Branch<Left, int, g::End>, g::Branch<Right, int, g::End>>>;
+using Relay =
+    g::Msg<Alice, Bob, Go, int, g::Comm<Bob, Carol, g::Branch<Left, int, g::End>, g::Branch<Right, int, g::End>>>;
 
 using CarolNarrow = s::Offer<s::Sender<Bob>, s::Recv<s::PeerMsg<Bob, Left, int>, s::End>>;
 

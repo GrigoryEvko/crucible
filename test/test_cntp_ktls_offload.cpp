@@ -134,7 +134,8 @@ void test_socket_request_and_deferred_enable() {
 
     auto other_fd = cntp::admit_socket_fd(8);
     assert(other_fd.has_value());
-    auto other_material = cntp::admit_ktls_crypto_material(std::span{key}.first<32>(), std::span{iv}.first<12>(), {}, {});
+    auto other_material =
+        cntp::admit_ktls_crypto_material(std::span{key}.first<32>(), std::span{iv}.first<12>(), {}, {});
     assert(other_material.has_value());
     auto other_crypto = cntp::mint_ktls_crypto_info(std::move(*other_material));
     assert(other_crypto.has_value());
@@ -145,7 +146,8 @@ void test_socket_request_and_deferred_enable() {
     assert(!wrong_socket.has_value());
     assert(wrong_socket.error() == cntp::KtlsError::KernelTlsUnavailable);
 
-    auto bad_direction = cntp::admit_ktls_crypto_material(std::span{key}.first<32>(), std::span{iv}.first<12>(), {}, {});
+    auto bad_direction =
+        cntp::admit_ktls_crypto_material(std::span{key}.first<32>(), std::span{iv}.first<12>(), {}, {});
     assert(bad_direction.has_value());
     auto bad_direction_crypto = cntp::mint_ktls_crypto_info(std::move(*bad_direction));
     assert(bad_direction_crypto.has_value());

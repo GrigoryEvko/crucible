@@ -93,12 +93,12 @@ struct NicTelemetryDrift {
 };
 
 template <class Ctx>
-concept CtxFitsNicTelemetryMint =
-    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
+concept CtxFitsNicTelemetryMint = ::foundation::effects::IsExecCtx<Ctx>
+                               && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
 template <class Ctx>
-concept CtxFitsNicTelemetryRecord =
-    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
+concept CtxFitsNicTelemetryRecord = ::foundation::effects::IsExecCtx<Ctx>
+                                 && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>;
 
 // A history has no lock and no atomic, so a read is sound only on the
 // side that owns it: startup before the background starts, and the

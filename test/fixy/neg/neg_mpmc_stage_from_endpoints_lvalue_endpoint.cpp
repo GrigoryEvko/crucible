@@ -32,8 +32,8 @@ int main() {
     Left left{};
     Right right{};
     Out out{};
-    auto [left_p, left_c] =
-        perm::mint_permission_split<Left::producer_tag, Left::consumer_tag>(perm::mint_permission_root<Left::whole_tag>());
+    auto [left_p, left_c] = perm::mint_permission_split<Left::producer_tag, Left::consumer_tag>(
+        perm::mint_permission_root<Left::whole_tag>());
     auto [right_p, right_c] = perm::mint_permission_split<Right::producer_tag, Right::consumer_tag>(
         perm::mint_permission_root<Right::whole_tag>());
     auto [out_p, out_c] =

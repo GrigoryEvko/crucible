@@ -149,8 +149,8 @@ inline constexpr unsigned int ptp_clockfd_tag = 3u;
 // it the values that no working clock returns.  Each reader converts
 // each read with it, and so does a caller that reads a hardware timestamp
 // from a socket control message.
-[[nodiscard]] constexpr std::expected<std::uint64_t, std::error_code> nanos_from_timespec(
-    std::timespec const& reading) noexcept {
+[[nodiscard]] constexpr std::expected<std::uint64_t, std::error_code>
+nanos_from_timespec(std::timespec const& reading) noexcept {
     constexpr std::uint64_t nanos_per_second = 1000000000ULL;
     if (reading.tv_sec < 0 || reading.tv_nsec < 0 || reading.tv_nsec >= static_cast<long>(nanos_per_second)) {
         return std::unexpected{std::make_error_code(std::errc::result_out_of_range)};
@@ -173,7 +173,8 @@ namespace detail {
 // off the replay-bound foreground path.
 [[nodiscard]] inline std::expected<std::uint64_t, std::error_code> read_clock_nanos(::clockid_t clock) noexcept {
     std::timespec now{};
-    if (::clock_gettime(clock, &now) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: detail helper of ClockReader::read and PtpClockReader::read, whose builders the CtxFitsClockReaderMint and CtxFitsPtpClockReaderMint gates admit
+    if (::clock_gettime(clock, &now) != 0)
+        [[unlikely]] {  // SYSCALL-CAP-OK: detail helper of ClockReader::read and PtpClockReader::read, whose builders the CtxFitsClockReaderMint and CtxFitsPtpClockReaderMint gates admit
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return nanos_from_timespec(now);
@@ -258,8 +259,7 @@ concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_refere
 // for every clock-backed source, because the replay argument does not
 // depend on which clock diverges.
 template <typename Ctx>
-concept CtxFitsMonotonicClock =
-    eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Init, eff::Effect::Test>;
+concept CtxFitsMonotonicClock = eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Init, eff::Effect::Test>;
 
 template <typename Ctx, ClockSource_v Source>
 concept CtxFitsClockReaderMint = CtxFitsMonotonicClock<Ctx> && ClockBacked<Source>;
@@ -285,8 +285,8 @@ namespace detail {
 struct clock_stamp_access final {
 private:
     template <ClockSource_v Source, typename T>
-    [[nodiscard]] static constexpr sf::ClockSource<Source, T> stamp(T raw) noexcept(
-        std::is_nothrow_move_constructible_v<T>) {
+    [[nodiscard]] static constexpr sf::ClockSource<Source, T>
+    stamp(T raw) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return sf::ClockSource<Source, T>{std::move(raw)};
     }
 
@@ -446,7 +446,8 @@ struct PtpClockReader final {
     static constexpr bool is_clamped = is_non_decreasing(ClockSource_v::PtpHwClock);
     static_assert(!is_clamped, "a clock that can step must not have a floor, because the floor invents an order");
 
-    PtpClockReader(const PtpClockReader&) = delete("the reader owns its device descriptor, and a copy closes it two times");
+    PtpClockReader(const PtpClockReader&) =
+        delete("the reader owns its device descriptor, and a copy closes it two times");
     PtpClockReader& operator=(const PtpClockReader&) = delete("the reader owns its device descriptor");
     PtpClockReader(PtpClockReader&&) noexcept = default;
     PtpClockReader& operator=(PtpClockReader&&) noexcept = default;
@@ -464,7 +465,8 @@ struct PtpClockReader final {
     // query names a device that is still open.
     [[nodiscard]] std::expected<::ptp_clock_caps, std::error_code> caps() const noexcept {
         ::ptp_clock_caps kernel_caps{};
-        if (::ioctl(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps) != 0) {  // SYSCALL-CAP-OK: PtpClockReader::caps, sole builder mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
+        if (::ioctl(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps)
+            != 0) {  // SYSCALL-CAP-OK: PtpClockReader::caps, sole builder mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
             return std::unexpected{std::error_code{errno, std::system_category()}};
         }
         return kernel_caps;
@@ -519,7 +521,10 @@ class PtpDeviceDoor final {
         }
         path[length] = '\0';
 
-        const int fd = ::open(path.data(), O_RDONLY | O_CLOEXEC);  // SYSCALL-CAP-OK: PtpDeviceDoor::open_, sole caller mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
+        const int fd = ::open(
+            path.data(),
+            O_RDONLY
+                | O_CLOEXEC);  // SYSCALL-CAP-OK: PtpDeviceDoor::open_, sole caller mint_ptp_clock_reader ctx-gate (CtxFitsPtpClockReaderMint)
         if (fd < 0) {
             return std::unexpected{errno};
         }
@@ -571,7 +576,8 @@ struct BoundedSleeper final {
         CRUCIBLE_PRE(nanos <= MaxNanos);
         constexpr std::uint64_t nanos_per_second = 1000000000ULL;
         std::timespec deadline{};
-        if (::clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
+        if (::clock_gettime(CLOCK_MONOTONIC, &deadline) != 0)
+            [[unlikely]] {  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
             return std::unexpected{std::error_code{errno, std::system_category()}};
         }
         const std::uint64_t total_nanos = static_cast<std::uint64_t>(deadline.tv_nsec) + nanos;
@@ -579,7 +585,9 @@ struct BoundedSleeper final {
         deadline.tv_nsec = static_cast<long>(total_nanos % nanos_per_second);
         int failure = 0;
         do {
-            failure = ::clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, nullptr);  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
+            failure = ::clock_nanosleep(
+                CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline,
+                nullptr);  // SYSCALL-CAP-OK: BoundedSleeper::sleep_for, sole builder mint_bounded_sleep ctx-gate (CtxFitsBoundedSleepMint)
         } while (failure == EINTR);
         if (failure != 0) [[unlikely]] {
             return std::unexpected{std::error_code{failure, std::system_category()}};
@@ -608,8 +616,8 @@ template <ClockSource_v Source, eff::IsExecCtx Ctx>
 // §XXI carve-out: cx=alloc — the mint reads the pin event of the calling thread.
 template <TscMode Mode, eff::IsExecCtx Ctx, typename PinT>
     requires CtxFitsTscReaderMint<Ctx, Mode, PinT>
-[[nodiscard]] std::expected<TscReader<Mode, std::remove_cvref_t<PinT>>, std::error_code> mint_tsc_reader(
-    Ctx const&, PinT&& pin) noexcept {
+[[nodiscard]] std::expected<TscReader<Mode, std::remove_cvref_t<PinT>>, std::error_code>
+mint_tsc_reader(Ctx const&, PinT&& pin) noexcept {
     if (!pin.is_in_force()) [[unlikely]] {
         return std::unexpected{std::make_error_code(std::errc::operation_not_permitted)};
     }
@@ -629,7 +637,7 @@ template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
 template <eff::IsExecCtx Ctx>
     requires CtxFitsPtpClockReaderMint<Ctx>
 [[nodiscard]] std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&,
-                                                                                  PtpDeviceIndex index) noexcept {
+                                                                                   PtpDeviceIndex index) noexcept {
     auto fd = PtpDeviceDoor::open_(index);
     if (!fd) {
         return std::unexpected{std::error_code{fd.error(), std::system_category()}};

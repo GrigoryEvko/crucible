@@ -18,14 +18,14 @@ namespace {
 namespace fnd = ::foundation;
 
 struct WithDefaults {
-    std::uint32_t id = 0xFFFF'FFFFU;
+    std::uint32_t id = 0xFFFFFFFFU;
     std::uint16_t count;
     std::uint8_t flags;
 };
 
 // A value that refuses a start over bytes, the shape of a provenance tag:
 // only its own default constructor builds it.
-struct [[=::foundation::lifetime::no_start_over_bytes{}]] Stamped {
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] Stamped {
     std::uint64_t origin = 7;
 };
 
@@ -67,7 +67,7 @@ template <typename T, std::size_t Alignment>
     auto buffer = fnd::AlignedBuffer<WithDefaults, 64>::allocate_value_initialized(5);
     if (buffer.size() != 5) return 1;
     for (const WithDefaults& element : buffer.span()) {
-        if (element.id != 0xFFFF'FFFFU || element.count != 0 || element.flags != 0) return 2;
+        if (element.id != 0xFFFFFFFFU || element.count != 0 || element.flags != 0) return 2;
     }
 
     // A class that refuses a start over bytes still builds by value

@@ -12,9 +12,7 @@
 template <typename Provider>
 concept covers_nv_requirement = fixy::satisfies_v<Provider, fixy::VendorBackend_v::NV>;
 
-[[nodiscard]] int consume(covers_nv_requirement auto band) {
-    return band.peek();
-}
+[[nodiscard]] int consume(covers_nv_requirement auto band) { return band.peek(); }
 
 int main() {
     auto amd = fixy::mint_band<fixy::vendor::Amd<int>>(7);

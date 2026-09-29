@@ -148,8 +148,8 @@ struct ReplayEngine {
         // range admits everything. No index into a zero-output operation
         // exists, so this catches a later change that opens the path.
         CRUCIBLE_PRE(current_->num_outputs > 0u);
-        CRUCIBLE_PRE(
-            ::foundation::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(
+            j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
         SlotId const sid = current_->output_slot_ids[j];
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
         // Dropping the validity test would index the table with the sentinel
@@ -162,8 +162,8 @@ struct ReplayEngine {
     [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND pre(current_ != nullptr)
         pre(current_->input_slot_ids != nullptr) {
         CRUCIBLE_PRE(current_->num_inputs > 0u);
-        CRUCIBLE_PRE(
-            ::foundation::decide::in_range<std::uint16_t>(j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(
+            j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
         SlotId const sid = current_->input_slot_ids[j];
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
         CRUCIBLE_POST(result, result == nullptr || sid.is_valid());

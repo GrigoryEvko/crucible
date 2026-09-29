@@ -16,6 +16,4 @@ struct Discard final {};
 template <>
 inline constexpr int fixy::mmap::advice_value_v<Discard> = MADV_DONTNEED;
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

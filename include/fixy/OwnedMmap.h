@@ -185,9 +185,9 @@ template <typename... Modifiers>
 concept ModifiersAreDistinct = !(::fixy::atom_pack::OccursMoreThanOnce<Modifiers, Modifiers...> || ...);
 
 template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
-concept CtxFitsRegionMint = MappedProt<Prot> && PrimaryShare<Share> && (RegionModifier<Modifiers> && ...)
-                         && ModifiersAreDistinct<Modifiers...> && ExecIsLicensed<Prot, Modifiers...>
-                         && CtxAdmitsMapping<Ctx, Prot, Share, Modifiers...>;
+concept CtxFitsRegionMint =
+    MappedProt<Prot> && PrimaryShare<Share> && (RegionModifier<Modifiers> && ...) && ModifiersAreDistinct<Modifiers...>
+    && ExecIsLicensed<Prot, Modifiers...> && CtxAdmitsMapping<Ctx, Prot, Share, Modifiers...>;
 
 }  // namespace mmap
 
@@ -238,7 +238,9 @@ public:
                 std::size_t length, ::off_t offset) noexcept {
         constexpr int protection = mmap::prot_bits_of(^^Prot);
         constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
-        void* const address = ::mmap(nullptr, length, protection, flags, fd, offset);  // SYSCALL-CAP-OK: OwnedMmap::mint_region ctx-gate (CtxFitsRegionMint, IO+Block)
+        void* const address =
+            ::mmap(nullptr, length, protection, flags, fd,
+                   offset);  // SYSCALL-CAP-OK: OwnedMmap::mint_region ctx-gate (CtxFitsRegionMint, IO+Block)
         if (address == MAP_FAILED) {
             return std::unexpected{std::error_code{errno, std::system_category()}};
         }
@@ -361,7 +363,8 @@ static_assert(mmap::prot_bits_of(^^mmap::prot::ReadOnly) == PROT_READ);
 static_assert(mmap::prot_bits_of(^^mmap::prot::WriteCopy) == (PROT_READ | PROT_WRITE));
 static_assert(mmap::prot_bits_of(^^mmap::prot::ReadWrite) == (PROT_READ | PROT_WRITE));
 static_assert(mmap::prot_bits_of(^^mmap::prot::Exec) == (PROT_READ | PROT_EXEC));
-static_assert((mmap::prot_bits_of(^^mmap::prot::Exec) & PROT_WRITE) == 0, "W^X: prot::Exec must NOT include PROT_WRITE");
+static_assert((mmap::prot_bits_of(^^mmap::prot::Exec) & PROT_WRITE) == 0,
+              "W^X: prot::Exec must NOT include PROT_WRITE");
 static_assert(mmap::share_flags_of(^^mmap::share::Private) == MAP_PRIVATE);
 static_assert(mmap::share_flags_of(^^mmap::share::Shared) == MAP_SHARED);
 static_assert(mmap::share_flags_of(^^mmap::share::Anonymous) == (MAP_PRIVATE | MAP_ANONYMOUS),

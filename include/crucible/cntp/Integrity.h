@@ -92,7 +92,8 @@ using IntegrityOwnedPayload = ::fixy::Linear<Payload>;
 // External, the edge whose discharge is the receiver recomputing the hash
 // and matching the one on the wire.
 template <typename Payload>
-using IntegrityVerifiedPayload = ::fixy::Tagged<IntegrityOwnedPayload<Payload>, ::fixy::tags::source::IntegrityVerified>;
+using IntegrityVerifiedPayload =
+    ::fixy::Tagged<IntegrityOwnedPayload<Payload>, ::fixy::tags::source::IntegrityVerified>;
 
 template <typename T>
 concept BytePayloadElement =
@@ -157,7 +158,7 @@ inline constexpr std::size_t xxh_stripe_bytes = 32;
 }
 
 [[nodiscard, gnu::const]] CRUCIBLE_HOT ::foundation::simd::u64x4 rotl64(::foundation::simd::u64x4 value,
-                                                                      int bits) noexcept {
+                                                                        int bits) noexcept {
     return (value << bits) | (value >> (64 - bits));
 }
 

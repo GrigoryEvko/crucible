@@ -284,7 +284,8 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
     int observed = 0;
     {
         std::jthread observer{[&cell, &written_before_publish, &observed] {
-            while (cell.load() != vm::Mode::COMPILED) CRUCIBLE_SPIN_PAUSE;
+            while (cell.load() != vm::Mode::COMPILED)
+                CRUCIBLE_SPIN_PAUSE;
             observed = written_before_publish;
         }};
         written_before_publish = 42;

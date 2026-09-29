@@ -50,7 +50,8 @@ static_assert(!std::is_constructible_v<fixy::Epoch, fixy::Generation>);
     InitCtx const init{fe::testing::init()};
     fixy::VersionSource source = fixy::mint_version_source(init);
     (void)source.advance_epoch();
-    const auto ahead = source.stamp_received(EpochLattice::successor(source.stamp().epoch()), GenerationLattice::bottom());
+    const auto ahead =
+        source.stamp_received(EpochLattice::successor(source.stamp().epoch()), GenerationLattice::bottom());
     const auto reached = source.stamp_received(source.stamp().epoch(), GenerationLattice::bottom());
     return !ahead.has_value() && ahead.error() == fixy::VersionConflict::AheadOfSource && reached.has_value();
 }
@@ -78,7 +79,8 @@ static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
     InitCtx const init{fe::testing::init()};
     fixy::VersionSource real = fixy::mint_version_source(init);
     fixy::VersionSource rogue = fixy::mint_version_source(init);
-    for (int step = 0; step < 5; ++step) (void)rogue.advance_epoch();
+    for (int step = 0; step < 5; ++step)
+        (void)rogue.advance_epoch();
     const EV forged{1, rogue.stamp()};
     return !EpochLattice::leq(forged.epoch(), real.stamp().epoch());
 }

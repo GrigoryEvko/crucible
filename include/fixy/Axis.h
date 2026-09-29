@@ -317,9 +317,10 @@ concept PoleFitsClaim = (C == Claim::Fact) == pole_claims_nothing(^^Pole);
 // The roster keeps the rejection, and an axis on it costs one line
 // instead of the eight lines of a specialisation.
 inline constexpr Axis defaulted_axes[] = {
-    Axis::Size,          Axis::Synchronization, Axis::FpMode,          Axis::SyscallSurface, Axis::ControlFlow,
-    Axis::CallShape,     Axis::StackUse,        Axis::GlobalState,     Axis::Stdio,          Axis::HwInstruction,
-    Axis::BarrierStrength, Axis::SimdIsa,       Axis::MemoryScope,
+    Axis::Size,        Axis::Synchronization, Axis::FpMode,          Axis::SyscallSurface,
+    Axis::ControlFlow, Axis::CallShape,       Axis::StackUse,        Axis::GlobalState,
+    Axis::Stdio,       Axis::HwInstruction,   Axis::BarrierStrength, Axis::SimdIsa,
+    Axis::MemoryScope,
 };
 
 [[nodiscard]] consteval bool axis_is_on_default_roster(Axis axis) noexcept {
@@ -684,10 +685,9 @@ namespace detail {
     std::string message =
         "fixy/Axis.h: the strict pole of each axis must be its weakest claim, and these axes break the rule: ";
     message += axes_whose_pole_is_not_the_weakest_claim_();
-    message +=
-        ".  An axis states its claim in axis_traits<A>::claim.  The pole of a Fact axis must claim nothing: "
-        "pole::Unconstrained<A>, or the point of its vocabulary that states nothing.  The pole of a Right axis "
-        "must grant no right, so it is never a pole that claims nothing.";
+    message += ".  An axis states its claim in axis_traits<A>::claim.  The pole of a Fact axis must claim nothing: "
+               "pole::Unconstrained<A>, or the point of its vocabulary that states nothing.  The pole of a Right axis "
+               "must grant no right, so it is never a pole that claims nothing.";
     return std::define_static_string(message);
 }
 

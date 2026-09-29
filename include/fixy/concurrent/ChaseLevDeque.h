@@ -178,7 +178,7 @@ private:
     //
     // top only ever advances, and compare_exchange_advance is what
     // holds that at the type level.
-    alignas(64) ::fixy::AtomicMonotonic<std::int64_t> top_ = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<std::int64_t> top_ = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
     alignas(64) std::atomic<std::int64_t> bottom_{0};
     alignas(64) std::array<std::atomic<T>, Capacity> buffer_{};
 };

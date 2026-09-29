@@ -150,7 +150,7 @@ enum class AdmittanceError : std::uint8_t {
 // for a handshake from verifying any other message under the same key.
 // Its bytes read "crnfedv1".
 
-inline constexpr std::uint64_t handshake_domain = 0x3176'6465'666e'7263ULL;
+inline constexpr std::uint64_t handshake_domain = 0x31766465666e7263ULL;
 inline constexpr std::size_t handshake_message_bytes = 32;
 
 using HandshakeMessage = std::array<std::byte, handshake_message_bytes>;
@@ -203,10 +203,9 @@ sign_handshake(Secret<siphash::Key>&& key, PeerKeyFingerprint peer_key_fingerpri
     OrgId const org_id = federation_org_id<Org>;
     HandshakeMessage const message = handshake_message(org_id, peer_key_fingerprint, nonce);
     auto [kept, tag] = siphash::sign(std::move(key), message);
-    return {std::move(kept), FederationHandshake{.org_id = org_id,
-                                                 .peer_key_fingerprint = peer_key_fingerprint,
-                                                 .nonce = nonce,
-                                                 .mac = mac_of(tag)}};
+    return {std::move(kept),
+            FederationHandshake{
+                .org_id = org_id, .peer_key_fingerprint = peer_key_fingerprint, .nonce = nonce, .mac = mac_of(tag)}};
 }
 
 // ── The seen-nonce store ─────────────────────────────────────────────
@@ -304,8 +303,8 @@ public:
     // local cipher.  Each admittance takes one and gives it back.
     template <typename Policy, typename Ctx>
         requires ::fixy::federation::CtxFitsFederationAdmission<Ctx, Org, Policy>
-    [[nodiscard]] static constexpr FederationAdmission mint_federation_admission(
-        Ctx const&, ::fixy::Secret<::fixy::siphash::Key>&& key) noexcept {
+    [[nodiscard]] static constexpr FederationAdmission
+    mint_federation_admission(Ctx const&, ::fixy::Secret<::fixy::siphash::Key>&& key) noexcept {
         return FederationAdmission{std::move(key)};
     }
 
@@ -335,8 +334,8 @@ private:
     // they record nothing.  The window records the nonce only after the
     // tag verifies.  The check depends on Org alone, so each brand of a
     // peer token shares one copy of it.
-    [[nodiscard]] constexpr std::expected<void, ::fixy::federation::AdmittanceError> verify_federation_handshake_(
-        ::fixy::federation::FederationHandshake const& handshake) noexcept {
+    [[nodiscard]] constexpr std::expected<void, ::fixy::federation::AdmittanceError>
+    verify_federation_handshake_(::fixy::federation::FederationHandshake const& handshake) noexcept {
         using ::fixy::federation::AdmittanceError;
         using ::fixy::federation::NonceVerdict;
         if (handshake.org_id != ::fixy::federation::federation_org_id<Org>) {
@@ -357,10 +356,10 @@ private:
             default:
                 std::unreachable();
         }
-        ::fixy::federation::HandshakeMessage const message = ::fixy::federation::handshake_message(
-            handshake.org_id, handshake.peer_key_fingerprint, handshake.nonce);
-        auto [kept, verified] = ::fixy::siphash::verify(std::move(admission_key_), message,
-                                                        ::fixy::federation::tag_of(handshake.mac));
+        ::fixy::federation::HandshakeMessage const message =
+            ::fixy::federation::handshake_message(handshake.org_id, handshake.peer_key_fingerprint, handshake.nonce);
+        auto [kept, verified] =
+            ::fixy::siphash::verify(std::move(admission_key_), message, ::fixy::federation::tag_of(handshake.mac));
         admission_key_ = std::move(kept);
         if (!verified) {
             return std::unexpected(AdmittanceError::BadMac);

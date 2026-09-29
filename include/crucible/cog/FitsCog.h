@@ -185,7 +185,8 @@ namespace detail {
 
 template <typename Row, CogKind K>
 [[nodiscard]] consteval bool evaluate_row_fits_cog() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -345,7 +346,8 @@ struct caps_runtime_capacity<CogKind::DramChannel> {
 template <typename Row, CogKind K>
     requires ::foundation::effects::IsConcurrentRow<Row> && HasCogCapacity<K>
 [[nodiscard]] constexpr bool fits_cog_caps_runtime(caps_for_t<K> const& caps) noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^::foundation::effects::ResourceKind));
     bool fits = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -398,9 +400,10 @@ static_assert(HasCaps<CogKind::PsuRail> == HasCogCapacity<CogKind::PsuRail>);
 // somebody first calls the runtime helper on it, far from the
 // omission. These assertions move that failure back to the table.
 template <CogKind K>
-inline constexpr bool has_caps_runtime_capacity_v = requires(caps_for_t<K> const& caps, ::foundation::effects::ResourceKind axis) {
-    { detail::caps_runtime_capacity<K>::for_kind(caps, axis) } -> std::same_as<std::uint64_t>;
-};
+inline constexpr bool has_caps_runtime_capacity_v =
+    requires(caps_for_t<K> const& caps, ::foundation::effects::ResourceKind axis) {
+        { detail::caps_runtime_capacity<K>::for_kind(caps, axis) } -> std::same_as<std::uint64_t>;
+    };
 static_assert(has_caps_runtime_capacity_v<CogKind::Gpu>);
 static_assert(has_caps_runtime_capacity_v<CogKind::NicPort>);
 static_assert(has_caps_runtime_capacity_v<CogKind::NvSwitch>);
@@ -431,17 +434,21 @@ static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(::foundation::effect
 static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(::foundation::effects::ResourceKind::Sm) == 0);
 static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(::foundation::effects::ResourceKind::NicQp) == 0);
 
-using H100ComputeRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<132>, ::foundation::effects::HbmBytes<80000000000ULL>>;
+using H100ComputeRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<132>,
+                                                            ::foundation::effects::HbmBytes<80000000000ULL>>;
 static_assert(FitsCog<H100ComputeRow, CogKind::Gpu>);
 
-using NicAllReduceRow = ::foundation::effects::ConcurrentRow<::foundation::effects::NicQp<4>, ::foundation::effects::NicCq<4>, ::foundation::effects::NicMr<8>>;
+using NicAllReduceRow =
+    ::foundation::effects::ConcurrentRow<::foundation::effects::NicQp<4>, ::foundation::effects::NicCq<4>,
+                                         ::foundation::effects::NicMr<8>>;
 static_assert(FitsCog<NicAllReduceRow, CogKind::NicPort>);
 
-using SwitchRow =
-    ::foundation::effects::ConcurrentRow<::foundation::effects::SwitchEgressBw<400000000000ULL>, ::foundation::effects::SwitchBufferCells<32 * 1024>>;
+using SwitchRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SwitchEgressBw<400000000000ULL>,
+                                                       ::foundation::effects::SwitchBufferCells<32 * 1024>>;
 static_assert(FitsCog<SwitchRow, CogKind::NvSwitch>);
 
-using SocketRow = ::foundation::effects::ConcurrentRow<::foundation::effects::CpuCoreBudget<64>, ::foundation::effects::LlcBytes<128 * 1024 * 1024>>;
+using SocketRow = ::foundation::effects::ConcurrentRow<::foundation::effects::CpuCoreBudget<64>,
+                                                       ::foundation::effects::LlcBytes<128 * 1024 * 1024>>;
 static_assert(FitsCog<SocketRow, CogKind::CpuSocket>);
 
 // A row that asks for nothing satisfies every axis vacuously.
@@ -452,13 +459,17 @@ static_assert(FitsCog<::foundation::effects::ConcurrentRow<>, CogKind::NvSwitch>
 using OversubscribedSmRow = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<999>>;
 static_assert(!FitsCog<OversubscribedSmRow, CogKind::Gpu>);
 
-using OversubscribedHbmRow = ::foundation::effects::ConcurrentRow<::foundation::effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;
+using OversubscribedHbmRow =
+    ::foundation::effects::ConcurrentRow<::foundation::effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;
 static_assert(!FitsCog<OversubscribedHbmRow, CogKind::Gpu>);
 
-using ConcurrentOverSubRow = ::foundation::effects::concurrent_row_sum_t<::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<200>>,
-                                                           ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<200>>>;
+using ConcurrentOverSubRow = ::foundation::effects::concurrent_row_sum_t<
+    ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<200>>,
+    ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<200>>>;
 static_assert(!FitsCog<ConcurrentOverSubRow, CogKind::Gpu>);
-static_assert(::foundation::effects::concurrent_row_value_v<::foundation::effects::ResourceKind::Sm, ConcurrentOverSubRow> == 400);
+static_assert(
+    ::foundation::effects::concurrent_row_value_v<::foundation::effects::ResourceKind::Sm, ConcurrentOverSubRow>
+    == 400);
 
 // A demand on an axis the kind does not expose fails, because that
 // axis has a ceiling of zero.
@@ -485,7 +496,8 @@ static_assert(!FitsCog<::foundation::effects::resource::SmBudget<32>, CogKind::G
 using SaturateGpuSm = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<320>>;
 static_assert(FitsCog<SaturateGpuSm, CogKind::Gpu>);
 
-using SaturateGpuHbm = ::foundation::effects::ConcurrentRow<::foundation::effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
+using SaturateGpuHbm =
+    ::foundation::effects::ConcurrentRow<::foundation::effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
 static_assert(FitsCog<SaturateGpuHbm, CogKind::Gpu>);
 
 using OneOverGpuSm = ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<321>>;

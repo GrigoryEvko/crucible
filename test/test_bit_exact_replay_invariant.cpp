@@ -236,8 +236,7 @@ int main() {
     const Built second = build_once(ctx, 0x2A0000000000ULL);
 
     // Leg 1: address independence.
-    if (first.head_content_hash != second.head_content_hash
-        || first.tail_content_hash != second.tail_content_hash) {
+    if (first.head_content_hash != second.head_content_hash || first.tail_content_hash != second.tail_content_hash) {
         std::fprintf(stderr,
                      "content hash depends on where the tensors live: 0x%016llx vs 0x%016llx.\n"
                      "The two builds describe the same computation and differ only in data_ptr, so a "
@@ -287,35 +286,32 @@ int main() {
     // head's content hash again, the two regions stopped being linked and the
     // merkle pin below silently became a copy of the content pin.
     if (first.merkle_hash == first.head_content_hash) {
-        std::fprintf(stderr,
-                     "the merkle hash equals the head content hash, so the chain fold did nothing and the "
-                     "merkle pin is not an independent pin\n");
+        std::fprintf(stderr, "the merkle hash equals the head content hash, so the chain fold did nothing and the "
+                             "merkle pin is not an independent pin\n");
         return 8;
     }
 
     // Leg 2: the reference pin.
-    if (first.head_content_hash != kReferenceHeadContentHash
-        || first.tail_content_hash != kReferenceTailContentHash || first.merkle_hash != kReferenceMerkleHash
-        || first.pool_bytes != kReferencePoolBytes) {
-        std::fprintf(stderr,
-                     "the pipeline no longer produces the committed bytes.\n"
-                     "  head content  expected 0x%016llx  measured 0x%016llx\n"
-                     "  tail content  expected 0x%016llx  measured 0x%016llx\n"
-                     "  merkle hash   expected 0x%016llx  measured 0x%016llx\n"
-                     "  pool bytes    expected %llu  measured %llu\n"
-                     "Both builds agree with each other, so this is not hidden state: the format changed. "
-                     "If that change was deliberate, update these three constants in the same commit and "
-                     "say in the message what moved, because every federation cache entry keyed on the old "
-                     "value is now stale. If it was not deliberate, this is the DetSafe break §XIII says to "
-                     "stop for.\n",
-                     static_cast<unsigned long long>(kReferenceHeadContentHash),
-                     static_cast<unsigned long long>(first.head_content_hash),
-                     static_cast<unsigned long long>(kReferenceTailContentHash),
-                     static_cast<unsigned long long>(first.tail_content_hash),
-                     static_cast<unsigned long long>(kReferenceMerkleHash),
-                     static_cast<unsigned long long>(first.merkle_hash),
-                     static_cast<unsigned long long>(kReferencePoolBytes),
-                     static_cast<unsigned long long>(first.pool_bytes));
+    if (first.head_content_hash != kReferenceHeadContentHash || first.tail_content_hash != kReferenceTailContentHash
+        || first.merkle_hash != kReferenceMerkleHash || first.pool_bytes != kReferencePoolBytes) {
+        std::fprintf(
+            stderr,
+            "the pipeline no longer produces the committed bytes.\n"
+            "  head content  expected 0x%016llx  measured 0x%016llx\n"
+            "  tail content  expected 0x%016llx  measured 0x%016llx\n"
+            "  merkle hash   expected 0x%016llx  measured 0x%016llx\n"
+            "  pool bytes    expected %llu  measured %llu\n"
+            "Both builds agree with each other, so this is not hidden state: the format changed. "
+            "If that change was deliberate, update these three constants in the same commit and "
+            "say in the message what moved, because every federation cache entry keyed on the old "
+            "value is now stale. If it was not deliberate, this is the DetSafe break §XIII says to "
+            "stop for.\n",
+            static_cast<unsigned long long>(kReferenceHeadContentHash),
+            static_cast<unsigned long long>(first.head_content_hash),
+            static_cast<unsigned long long>(kReferenceTailContentHash),
+            static_cast<unsigned long long>(first.tail_content_hash),
+            static_cast<unsigned long long>(kReferenceMerkleHash), static_cast<unsigned long long>(first.merkle_hash),
+            static_cast<unsigned long long>(kReferencePoolBytes), static_cast<unsigned long long>(first.pool_bytes));
         return 7;
     }
 
@@ -324,7 +320,6 @@ int main() {
                  "bases, and match the committed head content hash 0x%016llx, merkle hash 0x%016llx and pool "
                  "size %llu bytes\n",
                  kNumOps, kNumSlots, static_cast<unsigned long long>(first.head_content_hash),
-                 static_cast<unsigned long long>(first.merkle_hash),
-                 static_cast<unsigned long long>(first.pool_bytes));
+                 static_cast<unsigned long long>(first.merkle_hash), static_cast<unsigned long long>(first.pool_bytes));
     return 0;
 }

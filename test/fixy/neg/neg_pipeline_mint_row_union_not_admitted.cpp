@@ -41,9 +41,8 @@ struct FakeProducer {
 
 inline void pass(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 
-using DrainStage = decltype(fixy::concurrent::mint_stage<&pass>(std::declval<fixy::BgDrainCtx const&>(),
-                                                                std::declval<FakeConsumer<int>&&>(),
-                                                                std::declval<FakeProducer<int>&&>()));
+using DrainStage = decltype(fixy::concurrent::mint_stage<&pass>(
+    std::declval<fixy::BgDrainCtx const&>(), std::declval<FakeConsumer<int>&&>(), std::declval<FakeProducer<int>&&>()));
 using StartupStage = decltype(fixy::concurrent::mint_stage<&pass>(std::declval<fixy::ColdInitCtx const&>(),
                                                                   std::declval<FakeConsumer<int>&&>(),
                                                                   std::declval<FakeProducer<int>&&>()));

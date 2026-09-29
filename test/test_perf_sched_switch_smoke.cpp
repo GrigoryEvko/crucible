@@ -81,14 +81,12 @@ int main() {
         // the structural cap on the backing container.
         const auto attached_refined = hub->attached_programs();
         const auto failures_refined = hub->attach_failures();
-        static_assert(std::is_same_v<decltype(attached_refined),
-                                     const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
-        static_assert(std::is_same_v<decltype(failures_refined),
-                                     const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
         static_assert(
-            std::is_same_v<decltype(attached_refined), const ::fixy::MaxBounded<8, std::size_t>>);
+            std::is_same_v<decltype(attached_refined), const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
         static_assert(
-            std::is_same_v<decltype(failures_refined), const ::fixy::MaxBounded<8, std::size_t>>);
+            std::is_same_v<decltype(failures_refined), const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
+        static_assert(std::is_same_v<decltype(attached_refined), const ::fixy::MaxBounded<8, std::size_t>>);
+        static_assert(std::is_same_v<decltype(failures_refined), const ::fixy::MaxBounded<8, std::size_t>>);
         const std::size_t attached = attached_refined.value();
         const std::size_t failures = failures_refined.value();
         if (attached == 0 && failures == 0) {
@@ -113,8 +111,8 @@ int main() {
         // The view spans the whole ring, not just the written prefix.
         // Readers pick out valid slots from timeline_write_index() and ts_ns.
         const auto timeline = hub->timeline_view();
-        static_assert(std::is_same_v<decltype(timeline),
-                                     const ::fixy::Borrowed<const crucible::perf::TimelineSchedEvent,
+        static_assert(
+            std::is_same_v<decltype(timeline), const ::fixy::Borrowed<const crucible::perf::TimelineSchedEvent,
                                                                       crucible::perf::SchedSwitch>>);
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
             std::fprintf(stderr,

@@ -68,9 +68,9 @@ static void test_register_and_lookup() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground);
     assert(mv.has_value());
-    reg(t, *mv,H(0x100), S("aten::mm"));
-    reg(t, *mv,H(0x200), S("aten::add.Tensor"));
-    reg(t, *mv,H(0x300), S("aten::linear"));
+    reg(t, *mv, H(0x100), S("aten::mm"));
+    reg(t, *mv, H(0x200), S("aten::add.Tensor"));
+    reg(t, *mv, H(0x300), S("aten::linear"));
 
     assert(eq(t.lookup(H(0x100)), "aten::mm"));
     assert(eq(t.lookup(H(0x200)), "aten::add.Tensor"));
@@ -83,9 +83,9 @@ static void test_short_name_strips_aten_prefix() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground);
     assert(mv.has_value());
-    reg(t, *mv,H(0x100), S("aten::mm"));
-    reg(t, *mv,H(0x200), S("aten::scaled_dot_product_attention"));
-    reg(t, *mv,H(0x300), S("prim::TupleConstruct"));  // non-aten
+    reg(t, *mv, H(0x100), S("aten::mm"));
+    reg(t, *mv, H(0x200), S("aten::scaled_dot_product_attention"));
+    reg(t, *mv, H(0x300), S("prim::TupleConstruct"));  // non-aten
 
     assert(eq(t.short_name(H(0x100)), "mm"));
     assert(eq(t.short_name(H(0x200)), "scaled_dot_product_attention"));
@@ -98,9 +98,9 @@ static void test_idempotent_re_register() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground);
     assert(mv.has_value());
-    reg(t, *mv,H(0x42), S("first"));
+    reg(t, *mv, H(0x42), S("first"));
     assert(t.count() == 1);
-    reg(t, *mv,H(0x42), S("updated"));  // same hash, new name
+    reg(t, *mv, H(0x42), S("updated"));  // same hash, new name
     assert(t.count() == 1);  // no duplicate
     assert(eq(t.lookup(H(0x42)), "updated"));
     std::printf("  test_re_register:               PASSED\n");
@@ -116,7 +116,7 @@ static void test_binary_search_across_many() {
         std::snprintf(names[i], sizeof(names[i]), "op_%u", i);
         // Deterministic but shuffled — test sort-on-insert.
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
-        reg(t, *mv,SchemaHash{key}, S(names[i]));
+        reg(t, *mv, SchemaHash{key}, S(names[i]));
     }
     assert(t.count() == N);
     for (uint32_t i = 0; i < N; ++i) {
@@ -146,7 +146,7 @@ static void test_null_name_is_noop() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground);
     assert(mv.has_value());
-    reg(t, *mv,H(0x77), S(nullptr));  // must not crash or corrupt
+    reg(t, *mv, H(0x77), S(nullptr));  // must not crash or corrupt
     assert(t.count() == 0);
     assert(missing(t.lookup(H(0x77))));
     std::printf("  test_null_name:                 PASSED\n");
@@ -177,7 +177,7 @@ static void test_clear_resets_seal() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground);
     assert(mv.has_value());
-    reg(t, *mv,H(0xAB), S("aten::matmul"));
+    reg(t, *mv, H(0xAB), S("aten::matmul"));
     t.seal();
     assert(t.is_sealed());
     assert(t.count() == 1);
@@ -217,7 +217,7 @@ static void test_typed_register_with_mutable_view() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground);
     assert(mv.has_value());
-    reg(t, *mv,H(0xBEEF), S("aten::conv2d"));
+    reg(t, *mv, H(0xBEEF), S("aten::conv2d"));
     assert(eq(t.lookup(H(0xBEEF)), "aten::conv2d"));
     std::printf("  test_typed_register:            PASSED\n");
 }
@@ -240,8 +240,8 @@ static void test_lookup_works_post_seal() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground);
     assert(mv.has_value());
-    reg(t, *mv,H(0x111), S("aten::sum"));
-    reg(t, *mv,H(0x222), S("aten::mean"));
+    reg(t, *mv, H(0x111), S("aten::sum"));
+    reg(t, *mv, H(0x222), S("aten::mean"));
     t.seal();
 
     const auto sv = t.mint_sealed_view();

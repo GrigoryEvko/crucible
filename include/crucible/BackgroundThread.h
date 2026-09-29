@@ -91,10 +91,10 @@ struct BackgroundThread {
     public:
         PublishStage(const PublishStage&) = delete("the publish-stage proof stays on the thread that owns the state");
         PublishStage(PublishStage&&) = delete("the publish-stage proof stays on the thread that owns the state");
-        PublishStage& operator=(const PublishStage&) =
-            delete("the publish-stage proof stays on the thread that owns the state");
-        PublishStage& operator=(PublishStage&&) =
-            delete("the publish-stage proof stays on the thread that owns the state");
+        PublishStage&
+        operator=(const PublishStage&) = delete("the publish-stage proof stays on the thread that owns the state");
+        PublishStage&
+        operator=(PublishStage&&) = delete("the publish-stage proof stays on the thread that owns the state");
         // User-provided, because GCC counts a class whose copy and move are
         // all deleted as trivially copyable.  A destructor that is not
         // trivial takes the class out of trivially copyable and out of
@@ -212,7 +212,7 @@ struct BackgroundThread {
     // Own cache line: the background writes it, the foreground reads it for
     // diagnostics.  Sharing a line with the vectors above would invalidate
     // the foreground's copy on every push_back.
-    alignas(64) ::fixy::Monotonic<uint32_t> iterations_completed = ::fixy::mint_monotonic<uint32_t>(0);
+    alignas(64)::fixy::Monotonic<uint32_t> iterations_completed = ::fixy::mint_monotonic<uint32_t>(0);
     uint32_t last_iteration_length = 0;
 
 private:
@@ -235,7 +235,7 @@ private:
     // The windows it covers are kept to the arena bumps themselves, because
     // every extra statement inside the gate is more time the other stage
     // sleeps.
-    alignas(64) ::fixy::spin::BlockingLock<ArenaAllocGateTag> arena_alloc_gate_;
+    alignas(64)::fixy::spin::BlockingLock<ArenaAllocGateTag> arena_alloc_gate_;
 
 public:
     Arena arena{1 << 20};
@@ -295,7 +295,7 @@ public:
 
     // A one-way signal for a single run() invocation.  start() re-arms it
     // under quiescence before launching the next pipeline.
-    alignas(64) ::fixy::handle::OneShotFlag stop_requested;
+    alignas(64)::fixy::handle::OneShotFlag stop_requested;
     std::jthread pipeline_thread;
 
     // Total entries fully processed.  The write surface is friend-gated to
@@ -318,7 +318,7 @@ public:
     //
     // Own cache line: the foreground writes it while the background reads it
     // each drain cycle, and the neighbouring fields are background-private.
-    alignas(64) ::fixy::handle::OneShotFlag reset_requested;
+    alignas(64)::fixy::handle::OneShotFlag reset_requested;
 
     // Which side of the last reset a piece of pipeline work belongs to.
     //
@@ -338,7 +338,7 @@ public:
     // Commit markers are exempt.  They carry no region, only the count of
     // entries a batch consumed, and total_processed has to advance past a
     // dropped region for flush() to return.
-    alignas(64) ::fixy::AtomicMonotonic<uint32_t> reset_epoch = ::fixy::mint_atomic_monotonic<uint32_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint32_t> reset_epoch = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
     // The mailbox of the publish-stage state.  It holds one of four values:
     //   &mailbox_closed_  no publish stage runs, so a caller may own the state
@@ -1248,8 +1248,9 @@ public:
     }
 
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceGraph*
-    build_trace_from(::foundation::effects::Alloc a, uint32_t count, const TraceRing::Entry* trace_data, const MetaIndex* meta_data,
-                     const ScopeHash* scope_data, const CallsiteHash* callsite_data) CRUCIBLE_NO_THREAD_SAFETY {
+    build_trace_from(::foundation::effects::Alloc a, uint32_t count, const TraceRing::Entry* trace_data,
+                     const MetaIndex* meta_data, const ScopeHash* scope_data, const CallsiteHash* callsite_data)
+        CRUCIBLE_NO_THREAD_SAFETY {
         // Scan for totals and for metadata-log overflow.
         uint32_t max_meta_end = 0;
         uint32_t first_meta = UINT32_MAX;
@@ -1405,9 +1406,9 @@ public:
                 // Each section of the auxiliary block begins its lifetime as
                 // a typed array here, so the later bulk memcpy writes into
                 // live objects rather than raw storage.
-                te.scalar_args =
-                    (n_scalars > 0) ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
-                                    : nullptr;
+                te.scalar_args = (n_scalars > 0)
+                                   ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
+                                   : nullptr;
                 aux_cursor += n_scalars * sizeof(int64_t);
                 te.input_trace_indices = ::foundation::lifetime::start_as_array<OpIndex>(aux_cursor, n_in).data();
                 aux_cursor += n_in * sizeof(OpIndex);
@@ -1584,8 +1585,8 @@ public:
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU
     // needs for coalesced access.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan* compute_memory_plan(::foundation::effects::Alloc a, TensorSlot* slots,
-                                                                               uint32_t num_slots)
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan* compute_memory_plan(::foundation::effects::Alloc a,
+                                                                               TensorSlot* slots, uint32_t num_slots)
         CRUCIBLE_NO_THREAD_SAFETY {
         static constexpr uint32_t ALIGNMENT = 256;
 

@@ -28,8 +28,8 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
         append_raw(seed, kReceiverAtomCount);
         std::vector<std::uint8_t> entry(fed::FEDERATION_HEADER_BYTES + payload.size());
         const auto body = text_bytes(payload);
-        const auto written =
-            fed::serialize_federation_entry(std::span<std::uint8_t>{entry}, KernelCacheKey{ContentHash{0x1234}, RowHash{0x5678}}, body);
+        const auto written = fed::serialize_federation_entry(
+            std::span<std::uint8_t>{entry}, KernelCacheKey{ContentHash{0x1234}, RowHash{0x5678}}, body);
         if (written) entry.resize(*written);
         append_bytes(seed, entry);
         seeds.push_back(std::move(seed));

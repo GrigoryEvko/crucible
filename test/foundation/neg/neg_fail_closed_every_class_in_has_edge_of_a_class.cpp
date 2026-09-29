@@ -24,8 +24,7 @@ struct NotARelation {
 
 namespace vacant {}
 
-[[maybe_unused]] constexpr auto answer =
-    ffc::every_class_in_has_edge<^^NotARelation, ^^vacant, ffc::EdgeEnd::Either>();
+[[maybe_unused]] constexpr auto answer = ffc::every_class_in_has_edge<^^NotARelation, ^^vacant, ffc::EdgeEnd::Either>();
 
 }  // namespace
 

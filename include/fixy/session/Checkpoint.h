@@ -199,7 +199,19 @@ namespace detail::checkpoint {
 
 using info = std::meta::info;
 
-enum class Kind : std::uint8_t { End, Continue, Send, Recv, Select, Offer, Loop, Commit, Roll, Abort, Unknown };
+enum class Kind : std::uint8_t {
+    End,
+    Continue,
+    Send,
+    Recv,
+    Select,
+    Offer,
+    Loop,
+    Commit,
+    Roll,
+    Abort,
+    Unknown
+};
 
 inline constexpr std::size_t configuration_bound = 4096;
 inline constexpr int unfold_bound = 64;
@@ -421,8 +433,8 @@ consteval CheckpointVerdict choose(Exploration& run, const Party& active, const 
     const std::vector<info> accepted = branches_of(passive.position);
     if (labels.size() > accepted.size()) return CheckpointVerdict::LabelOutOfRange;
     for (std::size_t index = 0; index < labels.size(); ++index) {
-        const CheckpointVerdict step = exchange(run, active, passive, labels[index], accepted[index], active_start,
-                                                passive_start, active_is_left);
+        const CheckpointVerdict step =
+            exchange(run, active, passive, labels[index], accepted[index], active_start, passive_start, active_is_left);
         if (step != CheckpointVerdict::Compliant) return step;
     }
     return CheckpointVerdict::Compliant;
@@ -626,9 +638,8 @@ class CheckpointDoor final {
               std::size_t... Is>
     static constexpr auto dispatch_(std::size_t label, Next next, Handler& handler, std::index_sequence<Is...>) {
         using First = std::tuple_element_t<0, Branches>;
-        using Result = std::invoke_result_t<
-            Handler&, decltype(take_branch_<First, HeadLoop, Frame>(
-                          std::declval<inner_branch_t<First, Inner, HeadLoop>>()))>;
+        using Result = std::invoke_result_t<Handler&, decltype(take_branch_<First, HeadLoop, Frame>(
+                                                          std::declval<inner_branch_t<First, Inner, HeadLoop>>()))>;
         bool is_dispatched = false;
         if constexpr (std::is_void_v<Result>) {
             (
@@ -789,8 +800,8 @@ public:
     constexpr CheckpointHandle(CheckpointHandle&&) noexcept = default;
     constexpr CheckpointHandle& operator=(CheckpointHandle&&) noexcept = default;
     CheckpointHandle(const CheckpointHandle&) = delete("a checkpoint handle is linear, like the handle it wraps");
-    CheckpointHandle& operator=(const CheckpointHandle&) =
-        delete("a checkpoint handle is linear, like the handle it wraps");
+    CheckpointHandle&
+    operator=(const CheckpointHandle&) = delete("a checkpoint handle is linear, like the handle it wraps");
     ~CheckpointHandle() = default;
 
     template <typename Transport, typename P = Head>
@@ -801,8 +812,7 @@ public:
     }
 
     template <typename Transport, typename P = Head>
-        requires is_recv_v<P> && (!is_keyed_step_v<P>)
-              && ReadTransport<Transport, resource_t, typename P::message_type>
+        requires is_recv_v<P> && (!is_keyed_step_v<P>) && ReadTransport<Transport, resource_t, typename P::message_type>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
         return CheckpointDoor::recv(std::move(*this), std::move(transport));
     }
@@ -855,8 +865,9 @@ public:
 template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx,
           typename Resource>
     requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource>
-[[nodiscard]] constexpr auto mint_checkpoint_session(Ctx const& ctx, Resource resource,
-                                                     std::source_location loc = std::source_location::current()) noexcept {
+[[nodiscard]] constexpr auto
+mint_checkpoint_session(Ctx const& ctx, Resource resource,
+                        std::source_location loc = std::source_location::current()) noexcept {
     return CheckpointDoor::open<Proto, PeerProto, Policy>(ctx, std::forward<Resource>(resource), loc);
 }
 
@@ -872,8 +883,8 @@ using Swapped = Offer<Roll, Commit<Recv<int, End>>>;
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::is_checkpoint_primitive> {
-    using accepts = witnesses<::fixy::session::Commit<::fixy::session::End>, ::fixy::session::Roll,
-                              ::fixy::session::Abort>;
+    using accepts =
+        witnesses<::fixy::session::Commit<::fixy::session::End>, ::fixy::session::Roll, ::fixy::session::Abort>;
     using refuses = witnesses<::fixy::session::End, ::fixy::session::Select<::fixy::session::Roll>>;
 };
 

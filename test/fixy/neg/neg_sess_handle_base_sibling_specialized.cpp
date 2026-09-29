@@ -15,8 +15,8 @@ struct Wire {
     int words = 0;
 };
 namespace s = ::fixy::session;
-using Live = s::SessionHandle<s::Send<int, s::End>, Wire, void, s::check::Enforced,
-                              ::foundation::permissions::EmptyPermSet>;
+using Live =
+    s::SessionHandle<s::Send<int, s::End>, Wire, void, s::check::Enforced, ::foundation::permissions::EmptyPermSet>;
 using LiveBase = s::SessionHandleBase<s::Send<int, s::End>, Live, s::check::Enforced>;
 }  // namespace neg_sess_handle_base_sibling_specialized_types
 
@@ -24,7 +24,9 @@ namespace fixy::session {
 template <>
 class SessionHandleBase<neg_sess_handle_base_sibling_specialized_types::ForgeTag, void, check::Enforced> {
 public:
-    static void silently_consume(neg_sess_handle_base_sibling_specialized_types::LiveBase& base) { base.mark_consumed_(); }
+    static void silently_consume(neg_sess_handle_base_sibling_specialized_types::LiveBase& base) {
+        base.mark_consumed_();
+    }
 };
 }  // namespace fixy::session
 

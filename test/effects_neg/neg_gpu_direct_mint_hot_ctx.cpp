@@ -23,8 +23,8 @@ int main() {
     nic_caps.features.set(cog::NicFeature::GpuDirectRdma);
 
     const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
-    auto result = gd::mint_gpu_direct_mr_plan(hot, gpu, gpu_caps, nic, nic_caps, gd::PeerPlacement{},
-                                              *gd::admit_gpu_virtual_address(0x1000u),
-                                              *gd::admit_gpu_direct_bytes(4096));
+    auto result =
+        gd::mint_gpu_direct_mr_plan(hot, gpu, gpu_caps, nic, nic_caps, gd::PeerPlacement{},
+                                    *gd::admit_gpu_virtual_address(0x1000u), *gd::admit_gpu_direct_bytes(4096));
     return result.has_value() ? 0 : 1;
 }

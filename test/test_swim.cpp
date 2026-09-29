@@ -36,7 +36,8 @@ int main() {
         admit_swim_peer(peer(3)),
     };
 
-    auto membership = mint_swim_membership<8>(::foundation::effects::testing::init(), std::span<const SwimPeer>{initial});
+    auto membership =
+        mint_swim_membership<8>(::foundation::effects::testing::init(), std::span<const SwimPeer>{initial});
     assert(membership.size().value() == 3);
     assert(membership.config().period_ns.value() == SwimConfig{}.period_ns.value());
 

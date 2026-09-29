@@ -56,9 +56,8 @@ std::string_view p4_program_kind_name(P4ProgramKind kind) noexcept {
     }
 }
 
-std::expected<OwnedP4Deployment, P4Error> force_p4_vendor_boundary(cog::CogIdentity sw,
-                                                                   cog::NvSwitchTargetCaps const& caps,
-                                                                   DeclaredP4Program program) noexcept {
+std::expected<OwnedP4Deployment, P4Error>
+force_p4_vendor_boundary(cog::CogIdentity sw, cog::NvSwitchTargetCaps const& caps, DeclaredP4Program program) noexcept {
     return deploy_p4_program(sw, caps, program);
 }
 

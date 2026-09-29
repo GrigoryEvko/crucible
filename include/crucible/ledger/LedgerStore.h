@@ -470,7 +470,8 @@ template <typename T>
 
         if (field[0] == kLedgerMagic) {
             if (field_count < 2u
-                || store_detail::parse_field<std::uint64_t>(field[1]) != std::optional<std::uint64_t>{kLedgerFormatVersion}) {
+                || store_detail::parse_field<std::uint64_t>(field[1])
+                       != std::optional<std::uint64_t>{kLedgerFormatVersion}) {
                 // A version this build does not know is not partially
                 // readable. Refusing the whole file forces a remeasure,
                 // which is correct and cheap.

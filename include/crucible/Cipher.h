@@ -174,7 +174,8 @@ public:
         if (root.empty() || root.size() > MAX_ROOT_PATH_BYTES) {
             return c;
         }
-        [[maybe_unused]] const bool root_set = c.root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(root));
+        [[maybe_unused]] const bool root_set =
+            c.root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(root));
         [[assume(root_set)]];
         std::filesystem::create_directories(root + "/objects");
 
@@ -229,9 +230,9 @@ public:
     Cipher(const Cipher&) = delete("Cipher holds mutable log state; move instead");
     Cipher& operator=(const Cipher&) = delete("Cipher holds mutable log state; move instead");
     Cipher(Cipher&&) = default;
-    Cipher& operator=(Cipher&&) =
-        delete("Cipher holds a write-once root and an append-only log.  An assignment would drop both; move-construct "
-               "a new Cipher instead");
+    Cipher& operator=(Cipher&&) = delete(
+        "Cipher holds a write-once root and an append-only log.  An assignment would drop both; move-construct "
+        "a new Cipher instead");
 
     [[nodiscard]] constexpr bool is_open() const noexcept { return root_.has_value(); }
 
@@ -312,15 +313,13 @@ public:
         return hash;
     }
 
-    [[nodiscard]] ::fixy::wait::Block<ContentHash> store_pinned(OpenView const& view,
-                                                                ContentAddressedRegionPayload payload,
-                                                                const MetaLog* meta_log) {
+    [[nodiscard]] ::fixy::wait::Block<ContentHash>
+    store_pinned(OpenView const& view, ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
         return ::fixy::mint_band<::fixy::wait::Block<ContentHash>>(store(view, payload, meta_log));
     }
 
-    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> publish_warm(OpenView const& view,
-                                                                      ContentAddressedRegionPayload payload,
-                                                                      const MetaLog* meta_log) {
+    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash>
+    publish_warm(OpenView const& view, ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
         return ::fixy::mint_band<::fixy::cipher_tier::Warm<ContentHash>>(store(view, payload, meta_log));
     }
 
@@ -383,8 +382,10 @@ public:
     // process-local acceleration for the content-addressed quotient, not
     // durable Cipher state.  A hit materializes from bytes already seen
     // under this hash and touches no filesystem.
-    [[nodiscard]] LoadedContentAddressedRegionPayload
-    load_content_addressed(OpenView const&, ::foundation::effects::Alloc a, ContentHash content_hash, Arena& arena) const {
+    [[nodiscard]] LoadedContentAddressedRegionPayload load_content_addressed(OpenView const&,
+                                                                             ::foundation::effects::Alloc a,
+                                                                             ContentHash content_hash,
+                                                                             Arena& arena) const {
         if (!content_hash) return nullptr;
 
         const std::span<const uint8_t> cached = cached_bytes(content_hash);
@@ -501,12 +502,12 @@ public:
     // The asserts below pin the exact row contents.  Narrowing the alias to
     // Row<IO> would still compile and still reject an empty row, so it would
     // silently drop the Block half of the fence without these.
-    static_assert(std::is_same_v<record_event_required_row,
-                                 ::foundation::effects::Row<::foundation::effects::Effect::IO,
-                                                            ::foundation::effects::Effect::Block>>,
-                  "Cipher::record_event_required_row must be exactly Row<IO, Block>.  "
-                  "Adding or removing an atom changes the fence every call site "
-                  "depends on.");
+    static_assert(
+        std::is_same_v<record_event_required_row, ::foundation::effects::Row<::foundation::effects::Effect::IO,
+                                                                             ::foundation::effects::Effect::Block>>,
+        "Cipher::record_event_required_row must be exactly Row<IO, Block>.  "
+        "Adding or removing an atom changes the fence every call site "
+        "depends on.");
     static_assert(::foundation::effects::row_size_v<record_event_required_row> == 2u,
                   "record_event_required_row must be exactly 2 atoms (IO + Block).");
     static_assert(
@@ -533,7 +534,8 @@ public:
 
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    [[nodiscard]] ContentHash persist_session_events(Ctx const&, OpenView const&, std::span<const SessionEvent> events) {
+    [[nodiscard]] ContentHash persist_session_events(Ctx const&, OpenView const&,
+                                                     std::span<const SessionEvent> events) {
         if (events.empty()) return ContentHash{};
 
         if (events.size() > MAX_SESSION_EVENT_BATCH_EVENTS) {
@@ -680,8 +682,7 @@ public:
             if (!batch) continue;
 
             auto view = cipher::federation::deserialize_untrusted_federation_entry(
-                std::span<const std::uint8_t>{bytes},
-                static_cast<std::uint16_t>(::foundation::effects::effect_count));
+                std::span<const std::uint8_t>{bytes}, static_cast<std::uint16_t>(::foundation::effects::effect_count));
             if (!view) continue;
             if (view->header.content_hash != hash) continue;
             if (view->header.row_hash != SESSION_EVENT_FEDERATION_ROW_HASH) {
@@ -816,7 +817,8 @@ private:
 
         ~AnchoredFd() {
             if (fd_ >= 0) {
-                ::close(fd_);  // SYSCALL-CAP-OK: Cipher::AnchoredFd releases the descriptor that open_at_ acquired under the CtxFitsCipherPersistence gate of the open view
+                ::close(
+                    fd_);  // SYSCALL-CAP-OK: Cipher::AnchoredFd releases the descriptor that open_at_ acquired under the CtxFitsCipherPersistence gate of the open view
             }
         }
 
@@ -882,7 +884,8 @@ private:
         return ContentHash{};
     }
 
-    [[nodiscard]] static AnchoredFd open_at_(int parent_dirfd, const char* relpath, int flags, ::mode_t perms) noexcept {
+    [[nodiscard]] static AnchoredFd open_at_(int parent_dirfd, const char* relpath, int flags,
+                                             ::mode_t perms) noexcept {
         return AnchoredFd{::openat(
             parent_dirfd,
             relpath,  // SYSCALL-CAP-OK: Cipher cold-tier anchored open — effects::IO, held by the CtxFitsCipherPersistence gate of the open view that every caller of these static helpers holds on the persistence thread
@@ -912,7 +915,8 @@ private:
         int rc;
         do {
             rc = ::fdatasync(
-                guard.get());  // SYSCALL-CAP-OK: Cipher cold-tier durable flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+                guard
+                    .get());  // SYSCALL-CAP-OK: Cipher cold-tier durable flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
         } while (rc < 0 && errno == EINTR);
         return rc == 0;
     }
@@ -957,7 +961,8 @@ private:
             std::size_t off = 0;
             while (off < bytes.size()) {
                 const ssize_t r = ::write(
-                    write_guard.get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace bytes write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
+                    write_guard
+                        .get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace bytes write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
                     bytes.data() + off, bytes.size() - off);
                 if (r < 0) {
                     if (errno == EINTR) continue;
@@ -970,7 +975,8 @@ private:
             int frc;
             do {
                 frc = ::fdatasync(
-                    write_guard.get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+                    write_guard
+                        .get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-replace flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
             } while (frc < 0 && errno == EINTR);
             if (frc != 0) {
                 ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
@@ -1032,7 +1038,8 @@ private:
             std::size_t off = 0;
             while (off < bytes.size()) {
                 const ssize_t r = ::write(
-                    guard.get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append record write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
+                    guard
+                        .get(),  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append record write — effects::IO, held by the CtxFitsCipherPersistence gate of the open view
                     bytes.data() + off, bytes.size() - off);
                 if (r < 0) {
                     if (errno == EINTR) continue;
@@ -1044,7 +1051,8 @@ private:
             int frc;
             do {
                 frc = ::fdatasync(
-                    guard.get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
+                    guard
+                        .get());  // SYSCALL-CAP-OK: Cipher cold-tier atomic-append flush blocks on disk — effects::IO + effects::Block, held by the CtxFitsCipherPersistence gate of the open view
             } while (frc < 0 && errno == EINTR);
             if (frc != 0) return false;
         }

@@ -110,7 +110,7 @@ inline constexpr std::meta::info row_carrying_payload_families[] = {
 
 inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::foundation::algebra::Graded,  // every band: DetSafe, HotPath, AllocClass, Wait, ...
-    ^^::fixy::Refinement,             // Refined and SealedRefined are one template
+    ^^::fixy::Refinement,  // Refined and SealedRefined are one template
     ^^::fixy::Tagged,
     ^^::fixy::Secret,
     ^^::fixy::Stale,
@@ -298,10 +298,12 @@ struct PayloadRowWalk {
             refuse(type);
             continue;
         }
-        for (const refl::TypeNode& component : refl::argument_components_of(node)) pending.push_back(component);
+        for (const refl::TypeNode& component : refl::argument_components_of(node))
+            pending.push_back(component);
         if (is_class) {
             const refl::TypeNode readable{type, true};
-            for (const refl::TypeNode& component : refl::member_components_of(readable)) pending.push_back(component);
+            for (const refl::TypeNode& component : refl::member_components_of(readable))
+                pending.push_back(component);
         }
     }
     return walked;
@@ -315,9 +317,8 @@ struct PayloadRowWalk {
         const auto effect = std::meta::extract<::foundation::effects::Effect>(enumerator);
         if ((mask & effect_bit(effect)) != 0) effects.push_back(std::meta::reflect_constant(effect));
     }
-    return std::meta::dealias(
-        std::meta::substitute(^^::foundation::effects::canonical_row_t,
-                              {std::meta::substitute(^^::foundation::effects::Row, effects)}));
+    return std::meta::dealias(std::meta::substitute(^^::foundation::effects::canonical_row_t,
+                                                    {std::meta::substitute(^^::foundation::effects::Row, effects)}));
 }
 
 template <std::uint64_t EffectMask>
@@ -328,16 +329,15 @@ using row_of_effect_mask_t = [:row_of_effect_mask(EffectMask):];
 // payload, which the instantiation note for payload_row<T> does not name.
 [[nodiscard]] consteval std::string_view payload_row_refusal(PayloadRowWalk walked) {
     if (!walked.is_refused) return {};
-    std::string text{
-        "payload_row<T>: T is, or holds, a type this extractor cannot classify.  A class template "
-        "specialization whose family is on none of the three payload rosters in "
-        "fixy/concurrent/PayloadRow.h, and on no rule of the layer that asks, is refused, and so is a "
-        "class that is only declared, or that holds state the walk cannot read, such as a lambda with "
-        "captures.  A payload that hides "
-        "another type must say what it hides: add the family to transparent_payload_families if it "
-        "unwraps, to row_carrying_payload_families with its rule if it carries a row of its own, or to "
-        "leaf_payload_families if it holds no row at all.  Answering Row<> for an unclassified type "
-        "would let it satisfy every execution context.  The refused type: "};
+    std::string text{"payload_row<T>: T is, or holds, a type this extractor cannot classify.  A class template "
+                     "specialization whose family is on none of the three payload rosters in "
+                     "fixy/concurrent/PayloadRow.h, and on no rule of the layer that asks, is refused, and so is a "
+                     "class that is only declared, or that holds state the walk cannot read, such as a lambda with "
+                     "captures.  A payload that hides "
+                     "another type must say what it hides: add the family to transparent_payload_families if it "
+                     "unwraps, to row_carrying_payload_families with its rule if it carries a row of its own, or to "
+                     "leaf_payload_families if it holds no row at all.  Answering Row<> for an unclassified type "
+                     "would let it satisfy every execution context.  The refused type: "};
     text += std::meta::display_string_of(walked.refused_type);
     return std::define_static_string(text);
 }
@@ -437,8 +437,8 @@ static_assert(std::is_same_v<payload_row_t<eff::Computation<eff::Row<eff::Effect
                              eff::Row<eff::Effect::Alloc, eff::Effect::IO>>);
 
 // ── a capability conveys the effect ─────────────────────────────────
-static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::Alloc, eff::Bg>>,
-                             eff::Row<eff::Effect::Alloc>>);
+static_assert(
+    std::is_same_v<payload_row_t<eff::Capability<eff::Effect::Alloc, eff::Bg>>, eff::Row<eff::Effect::Alloc>>);
 static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::IO, eff::Init>>, eff::Row<eff::Effect::IO>>);
 
 // ── a transparent wrapper reports what it hides ─────────────────────
@@ -448,10 +448,10 @@ static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::IO, eff:
 using BgComp = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
 
 static_assert(std::is_same_v<payload_row_t<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>, eff::Row<>>);
-static_assert(std::is_same_v<payload_row_t<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, BgComp>>,
-                             eff::Row<eff::Effect::Bg>>,
-              "A band over an engaged computation must report the computation's row.  A band that reported "
-              "the empty row would hide the effect it wraps.");
+static_assert(
+    std::is_same_v<payload_row_t<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, BgComp>>, eff::Row<eff::Effect::Bg>>,
+    "A band over an engaged computation must report the computation's row.  A band that reported "
+    "the empty row would hide the effect it wraps.");
 static_assert(std::is_same_v<payload_row_t<::fixy::Secret<BgComp>>, eff::Row<eff::Effect::Bg>>);
 static_assert(std::is_same_v<payload_row_t<::fixy::Stale<BgComp>>, eff::Row<eff::Effect::Bg>>);
 static_assert(std::is_same_v<payload_row_t<::fixy::Secret<int>>, eff::Row<>>);

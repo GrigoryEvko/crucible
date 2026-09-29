@@ -103,8 +103,7 @@ void test_restore_error_surface() {
     assert(!empty_handle.has_value());
     assert(empty_handle.error() == RestoreError::EmptyColdHandle);
 
-    auto mismatch =
-        mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(ContentHash{0xE005ULL}), hash);
+    auto mismatch = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(ContentHash{0xE005ULL}), hash);
     assert(!mismatch.has_value());
     assert(mismatch.error() == RestoreError::ContentHashMismatch);
 }
@@ -166,11 +165,12 @@ void test_hot_promote_delegate_protocol() {
     assert(slot.delegated_endpoints == 1);
 
     auto hot_endpoint = std::move(received).accept();
-    auto hot_end = std::move(hot_endpoint).send(::fixy::mint_band<tier::Hot<ContentHash>>(payload),
-                                                [](HotWire& wire, tier::Hot<ContentHash>& value) noexcept {
-                                                    wire.sent = value.peek();
-                                                    return true;
-                                                });
+    auto hot_end = std::move(hot_endpoint)
+                       .send(::fixy::mint_band<tier::Hot<ContentHash>>(payload),
+                             [](HotWire& wire, tier::Hot<ContentHash>& value) noexcept {
+                                 wire.sent = value.peek();
+                                 return true;
+                             });
     const HotWire hot_wire = std::move(hot_end).close();
     assert(hot_wire.marker == marker);
     assert(hot_wire.sent == payload);

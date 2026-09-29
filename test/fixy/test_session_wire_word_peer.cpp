@@ -16,9 +16,9 @@ namespace wire_word_probe {
 struct Alice {};
 struct Hello {};
 struct Bye {};
-using Menu = ::fixy::session::Select<
-    ::fixy::session::Send<::fixy::session::PeerMsg<Alice, Hello, int>, ::fixy::session::End>,
-    ::fixy::session::Send<::fixy::session::PeerMsg<Alice, Bye, int>, ::fixy::session::End>>;
+using Menu =
+    ::fixy::session::Select<::fixy::session::Send<::fixy::session::PeerMsg<Alice, Hello, int>, ::fixy::session::End>,
+                            ::fixy::session::Send<::fixy::session::PeerMsg<Alice, Bye, int>, ::fixy::session::End>>;
 
 [[nodiscard]] std::array<std::uint64_t, 2> words_of_the_peer_unit() noexcept;
 }  // namespace wire_word_probe

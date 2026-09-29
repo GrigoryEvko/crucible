@@ -18,6 +18,7 @@ int main() {
     std::span<const std::uint8_t> bytes{};
 
     // MUST fail: deserialize_region returns std::optional<LoadedRegionNode>.
-    crucible::RegionNode* raw = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena);
+    crucible::RegionNode* raw =
+        crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena);
     return raw == nullptr ? 0 : 1;
 }

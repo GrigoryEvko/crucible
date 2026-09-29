@@ -25,7 +25,6 @@ struct arena_capacity_proved final {};
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::regime::hot,
                                 ::fixy::atom::with<::foundation::effects::Effect::Alloc>, ::fixy::atom::cost_constant,
-                                ::fixy::atom::refined_with<fixture::arena_capacity_proved>>
-        refused{};
+                                ::fixy::atom::refined_with<fixture::arena_capacity_proved>> refused{};
     return 0;
 }

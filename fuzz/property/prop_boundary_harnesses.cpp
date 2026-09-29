@@ -33,8 +33,7 @@ struct Harness {
 };
 
 constexpr Harness kHarnesses[] = {
-#define CRUCIBLE_FUZZ_HARNESS(name) \
-    Harness{#name, &CRUCIBLE_FUZZ_ENTRY_RUN(name), &CRUCIBLE_FUZZ_ENTRY_SEEDS(name)},
+#define CRUCIBLE_FUZZ_HARNESS(name) Harness{#name, &CRUCIBLE_FUZZ_ENTRY_RUN(name), &CRUCIBLE_FUZZ_ENTRY_SEEDS(name)},
 #include "boundary_harness_list.h"
 #undef CRUCIBLE_FUZZ_HARNESS
 };

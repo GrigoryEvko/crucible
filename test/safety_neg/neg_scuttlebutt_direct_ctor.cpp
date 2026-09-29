@@ -11,8 +11,7 @@ int main() {
     namespace cc = crucible::canopy;
     crucible::cog::CogIdentity peer{};
     peer.uuid = crucible::cog::Uuid{1, 2};
-    cc::ScuttlebuttSync<4, 4> sync{cc::admit_swim_peer(peer), std::span<const cc::SwimPeer>{},
-                                   cc::ScuttlebuttConfig{}};
+    cc::ScuttlebuttSync<4, 4> sync{cc::admit_swim_peer(peer), std::span<const cc::SwimPeer>{}, cc::ScuttlebuttConfig{}};
     (void)sync;
     return 0;
 }

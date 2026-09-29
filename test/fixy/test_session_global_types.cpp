@@ -83,12 +83,12 @@ static_assert(!g::is_global_well_formed_v<s::Send<int, s::End>>);
 static_assert(g::is_balanced_v<Ring>);
 
 // Example 11: three balanced types.  G'' does not project onto R.
-using Ex11G = g::Comm<P, Q, g::Branch<M0, int, g::Msg<Q, P, M, int, g::End>>,
-                      g::Branch<M1, int, g::Msg<Q, P, M, int, g::End>>>;
-using Ex11G2 = g::Comm<P, Q, g::Branch<M0, int, g::Msg<R, S, M, int, g::End>>,
-                       g::Branch<M1, int, g::Msg<R, S, M, int, g::End>>>;
-using Ex11G3 = g::Comm<P, Q, g::Branch<M0, int, g::Msg<R, S, M, int, g::End>>,
-                       g::Branch<M1, int, g::Msg<R, S, M2, int, g::End>>>;
+using Ex11G =
+    g::Comm<P, Q, g::Branch<M0, int, g::Msg<Q, P, M, int, g::End>>, g::Branch<M1, int, g::Msg<Q, P, M, int, g::End>>>;
+using Ex11G2 =
+    g::Comm<P, Q, g::Branch<M0, int, g::Msg<R, S, M, int, g::End>>, g::Branch<M1, int, g::Msg<R, S, M, int, g::End>>>;
+using Ex11G3 =
+    g::Comm<P, Q, g::Branch<M0, int, g::Msg<R, S, M, int, g::End>>, g::Branch<M1, int, g::Msg<R, S, M2, int, g::End>>>;
 static_assert(g::is_balanced_v<Ex11G>);
 static_assert(g::is_balanced_v<Ex11G2>);
 static_assert(g::is_balanced_v<Ex11G3>);
@@ -154,12 +154,14 @@ static_assert(g::en_route_count_v<P, Q, RingAfterAdd> == 1);
 
 // ── Projection: the ring (Example 3) ─────────────────────────────────
 
-using Tp = s::Loop<s::Send<s::PeerMsg<Q, Add, int>, s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
-                                                                s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
+using Tp =
+    s::Loop<s::Send<s::PeerMsg<Q, Add, int>, s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
+                                                      s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
 using Tq = s::Loop<s::Recv<s::PeerMsg<P, Add, int>, s::Select<s::Send<s::PeerMsg<R, Add, int>, s::Continue>,
                                                               s::Send<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
-using Tr = s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>,
-                            s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>>>;
+using Tr =
+    s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>,
+                     s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>>>;
 
 static_assert(std::is_same_v<s::project_t<Ring, P>, s::Projected<s::OutQueue<>, Tp>>);
 static_assert(std::is_same_v<s::project_t<Ring, Q>, s::Projected<s::OutQueue<>, Tq>>);
@@ -172,9 +174,10 @@ static_assert(std::is_same_v<s::project_t<Ring, S>, s::Projected<s::OutQueue<>, 
 
 // The ring after one send: P's queue holds the message, Q receives it.
 static_assert(std::is_same_v<typename s::project_t<RingAfterAdd, P>::queue, s::OutQueue<s::Queued<Q, Add, int>>>);
-static_assert(std::is_same_v<typename s::project_t<RingAfterAdd, Q>::local,
-                             s::Recv<s::PeerMsg<P, Add, int>, s::Select<s::Send<s::PeerMsg<R, Add, int>, Tq>,
-                                                                        s::Send<s::PeerMsg<R, Sub, int>, Tq>>>>);
+static_assert(
+    std::is_same_v<typename s::project_t<RingAfterAdd, Q>::local,
+                   s::Recv<s::PeerMsg<P, Add, int>,
+                           s::Select<s::Send<s::PeerMsg<R, Add, int>, Tq>, s::Send<s::PeerMsg<R, Sub, int>, Tq>>>>);
 
 // ── Projection: rule P-END for a loop (Tirore et al., ITP 2023) ──────
 
@@ -182,18 +185,21 @@ static_assert(std::is_same_v<typename s::project_t<RingAfterAdd, Q>::local,
 // P takes no part in the loop, so its projection ends after the send.
 using Tirore3 = g::Msg<P, Q, K, U, g::Rec<g::Comm<R, S, g::Branch<L1, int, g::End>, g::Branch<L2, int, g::Var>>>>;
 static_assert(g::is_balanced_plus_v<Tirore3>);
-static_assert(std::is_same_v<s::project_t<Tirore3, P>, s::Projected<s::OutQueue<>, s::Send<s::PeerMsg<Q, K, U>, s::End>>>);
-static_assert(std::is_same_v<s::project_t<Tirore3, Q>, s::Projected<s::OutQueue<>, s::Recv<s::PeerMsg<P, K, U>, s::End>>>);
-static_assert(std::is_same_v<typename s::project_t<Tirore3, R>::local,
-                             s::Loop<s::Select<s::Send<s::PeerMsg<S, L1, int>, s::End>,
-                                               s::Send<s::PeerMsg<S, L2, int>, s::Continue>>>>);
+static_assert(
+    std::is_same_v<s::project_t<Tirore3, P>, s::Projected<s::OutQueue<>, s::Send<s::PeerMsg<Q, K, U>, s::End>>>);
+static_assert(
+    std::is_same_v<s::project_t<Tirore3, Q>, s::Projected<s::OutQueue<>, s::Recv<s::PeerMsg<P, K, U>, s::End>>>);
+static_assert(
+    std::is_same_v<
+        typename s::project_t<Tirore3, R>::local,
+        s::Loop<s::Select<s::Send<s::PeerMsg<S, L1, int>, s::End>, s::Send<s::PeerMsg<S, L2, int>, s::Continue>>>>);
 
 // Equation (5), where the loop-back refers to the outer binder.  With
 // nearest-binder recursion the inner binder, which binds nothing, is
 // left out.  The projection loops the send.
 using Tirore5 = g::Rec<g::Msg<P, Q, K, U, g::Msg<R, S, K, U, g::Var>>>;
-static_assert(std::is_same_v<typename s::project_t<Tirore5, P>::local,
-                             s::Loop<s::Send<s::PeerMsg<Q, K, U>, s::Continue>>>);
+static_assert(
+    std::is_same_v<typename s::project_t<Tirore5, P>::local, s::Loop<s::Send<s::PeerMsg<Q, K, U>, s::Continue>>>);
 
 // A nested loop that the role enters projects as the inner loop.
 static_assert(std::is_same_v<typename s::project_t<Nested, P>::local, s::Send<s::PeerMsg<Q, M, int>, s::End>>);
@@ -214,54 +220,54 @@ static_assert(std::is_same_v<s::project_t<Ex4, R>,
                              s::Projected<s::OutQueue<>, s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M1, U>, s::End>,
                                                                   s::Recv<s::PeerMsg<P, M2, U>, s::End>>>>);
 // Equation (16).
-static_assert(std::is_same_v<
-              s::project_t<Ex4, P>,
-              s::Projected<s::OutQueue<>,
-                           s::Select<s::Send<s::PeerMsg<R, M1, U>, s::Recv<s::PeerMsg<Q, M, U>, L1p>>,
-                                     s::Send<s::PeerMsg<R, M2, U>,
-                                             s::Recv<s::PeerMsg<Q, M, U>, s::Send<s::PeerMsg<Q, M2, U>, L1p>>>>>>);
+static_assert(
+    std::is_same_v<s::project_t<Ex4, P>,
+                   s::Projected<s::OutQueue<>,
+                                s::Select<s::Send<s::PeerMsg<R, M1, U>, s::Recv<s::PeerMsg<Q, M, U>, L1p>>,
+                                          s::Send<s::PeerMsg<R, M2, U>,
+                                                  s::Recv<s::PeerMsg<Q, M, U>, s::Send<s::PeerMsg<Q, M2, U>, L1p>>>>>>);
 // Equations (17) to (19): the merge unfolds the loop once and takes the
 // union of the two external choices.
-static_assert(std::is_same_v<
-              s::project_t<Ex4, Q>,
-              s::Projected<s::OutQueue<s::Queued<P, M, U>>,
-                           s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M1, U>, L1q>, s::Recv<s::PeerMsg<P, M2, U>, L1q>>>>);
+static_assert(
+    std::is_same_v<
+        s::project_t<Ex4, Q>,
+        s::Projected<s::OutQueue<s::Queued<P, M, U>>,
+                     s::Offer<s::Sender<P>, s::Recv<s::PeerMsg<P, M1, U>, L1q>, s::Recv<s::PeerMsg<P, M2, U>, L1q>>>>);
 
 // An internal choice merges only when the label sets agree.
-using SameSends = g::Comm<P, Q, g::Branch<M1, int, g::Msg<R, S, M, int, g::End>>,
-                          g::Branch<M2, int, g::Msg<R, S, M, int, g::End>>>;
+using SameSends =
+    g::Comm<P, Q, g::Branch<M1, int, g::Msg<R, S, M, int, g::End>>, g::Branch<M2, int, g::Msg<R, S, M, int, g::End>>>;
 static_assert(std::is_same_v<typename s::project_t<SameSends, R>::local, s::Send<s::PeerMsg<S, M, int>, s::End>>);
-static_assert(std::is_same_v<s::project_t<Ex11G3, R>,
-                             s::NotProjectable<s::projection_failure::MergeLabelSetMismatch>>);
+static_assert(std::is_same_v<s::project_t<Ex11G3, R>, s::NotProjectable<s::projection_failure::MergeLabelSetMismatch>>);
 
 // Different payloads for one label.
-using PayloadClash = g::Comm<P, Q, g::Branch<M1, int, g::Msg<P, R, M, int, g::End>>,
-                             g::Branch<M2, int, g::Msg<P, R, M, char, g::End>>>;
-static_assert(std::is_same_v<s::project_t<PayloadClash, R>,
-                             s::NotProjectable<s::projection_failure::MergePayloadMismatch>>);
+using PayloadClash =
+    g::Comm<P, Q, g::Branch<M1, int, g::Msg<P, R, M, int, g::End>>, g::Branch<M2, int, g::Msg<P, R, M, char, g::End>>>;
+static_assert(
+    std::is_same_v<s::project_t<PayloadClash, R>, s::NotProjectable<s::projection_failure::MergePayloadMismatch>>);
 
 // ── Projection: a role that appears only after a choice ──────────────
 
-using AfterChoice = g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>,
-                            g::Branch<M2, int, g::Msg<Q, R, M2, int, g::End>>>;
+using AfterChoice =
+    g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>, g::Branch<M2, int, g::Msg<Q, R, M2, int, g::End>>>;
 static_assert(std::is_same_v<typename s::project_t<AfterChoice, R>::local,
                              s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, M1, int>, s::End>,
                                       s::Recv<s::PeerMsg<Q, M2, int>, s::End>>>);
 // In only one branch: R would wait for ever in the other one.
 using OneBranchOnly = g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>, g::Branch<M2, int, g::End>>;
-static_assert(std::is_same_v<s::project_t<OneBranchOnly, R>,
-                             s::NotProjectable<s::projection_failure::MergeShapeMismatch>>);
+static_assert(
+    std::is_same_v<s::project_t<OneBranchOnly, R>, s::NotProjectable<s::projection_failure::MergeShapeMismatch>>);
 
 // ── Projection: the shared-queue counterexample (ECOOP 2025) ─────────
 
 // Equation (1) of Tirore, Bengtson and Carbone: R receives from Q in one
 // branch and from P in the other.  Over one queue per ordered pair of
 // roles R cannot know which queue to read, so the projection refuses.
-using TiroreShared = g::Comm<P, Q, g::Branch<L1, int, g::Msg<Q, R, K, bool, g::End>>,
-                             g::Branch<L2, int, g::Msg<P, R, K, bool, g::End>>>;
+using TiroreShared =
+    g::Comm<P, Q, g::Branch<L1, int, g::Msg<Q, R, K, bool, g::End>>, g::Branch<L2, int, g::Msg<P, R, K, bool, g::End>>>;
 static_assert(g::is_balanced_plus_v<TiroreShared>);
-static_assert(std::is_same_v<s::project_t<TiroreShared, R>,
-                             s::NotProjectable<s::projection_failure::MergeShapeMismatch>>);
+static_assert(
+    std::is_same_v<s::project_t<TiroreShared, R>, s::NotProjectable<s::projection_failure::MergeShapeMismatch>>);
 static_assert(s::projects_v<TiroreShared, P> && s::projects_v<TiroreShared, Q>);
 static_assert(!s::is_live_by_construction_v<TiroreShared>);
 
@@ -284,31 +290,34 @@ static_assert(!s::queues_equivalent_v<s::OutQueue<s::Queued<P, M, U>, s::Queued<
 // ── Association (Definition 21) ──────────────────────────────────────
 
 using RingCtx = s::projected_context_t<Ring>;
-static_assert(std::is_same_v<RingCtx, s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>,
-                                                       s::RoleState<R, s::OutQueue<>, Tr>>>);
+static_assert(
+    std::is_same_v<RingCtx, s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>,
+                                             s::RoleState<R, s::OutQueue<>, Tr>>>);
 static_assert(s::association_holds_v<RingCtx, Ring>);
 // Order of entries does not matter.
-static_assert(s::association_holds_v<s::TypingContext<s::RoleState<R, s::OutQueue<>, Tr>, s::RoleState<P, s::OutQueue<>, Tp>,
-                                                      s::RoleState<Q, s::OutQueue<>, Tq>>,
-                                     Ring>);
+static_assert(
+    s::association_holds_v<s::TypingContext<s::RoleState<R, s::OutQueue<>, Tr>, s::RoleState<P, s::OutQueue<>, Tp>,
+                                            s::RoleState<Q, s::OutQueue<>, Tq>>,
+                           Ring>);
 // A finished extra role is admitted, an active one is not.
-static_assert(s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>,
-                                                      s::RoleState<R, s::OutQueue<>, Tr>,
-                                                      s::RoleState<S, s::OutQueue<>, s::End>>,
-                                     Ring>);
-static_assert(!s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>,
-                                                       s::RoleState<R, s::OutQueue<>, Tr>,
-                                                       s::RoleState<S, s::OutQueue<>, Tq>>,
-                                      Ring>);
-static_assert(!s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>>,
-                                      Ring>);
-static_assert(!s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<P, s::OutQueue<>, Tp>,
-                                                       s::RoleState<Q, s::OutQueue<>, Tq>,
-                                                       s::RoleState<R, s::OutQueue<>, Tr>>,
-                                      Ring>);
-static_assert(!s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tq>, s::RoleState<Q, s::OutQueue<>, Tq>,
-                                                       s::RoleState<R, s::OutQueue<>, Tr>>,
-                                      Ring>);
+static_assert(
+    s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>,
+                                            s::RoleState<R, s::OutQueue<>, Tr>, s::RoleState<S, s::OutQueue<>, s::End>>,
+                           Ring>);
+static_assert(
+    !s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>,
+                                             s::RoleState<R, s::OutQueue<>, Tr>, s::RoleState<S, s::OutQueue<>, Tq>>,
+                            Ring>);
+static_assert(!s::association_holds_v<
+              s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<Q, s::OutQueue<>, Tq>>, Ring>);
+static_assert(
+    !s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tp>, s::RoleState<P, s::OutQueue<>, Tp>,
+                                             s::RoleState<Q, s::OutQueue<>, Tq>, s::RoleState<R, s::OutQueue<>, Tr>>,
+                            Ring>);
+static_assert(
+    !s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, Tq>, s::RoleState<Q, s::OutQueue<>, Tq>,
+                                             s::RoleState<R, s::OutQueue<>, Tr>>,
+                            Ring>);
 static_assert(!s::association_holds_v<int, Ring>);
 
 // Association refines each entry with the synchronous relation of
@@ -323,18 +332,21 @@ using RingWith = s::TypingContext<s::RoleState<P, s::OutQueue<>, LocalP>, s::Rol
 using TqNarrow = s::Loop<s::Recv<s::PeerMsg<P, Add, int>, s::Select<s::Send<s::PeerMsg<R, Add, int>, s::Continue>>>>;
 static_assert(s::association_holds_v<RingWith<Tp, TqNarrow, Tr>, Ring>);
 // Safe: R also accepts a label that Q never sends.
-using TrWide = s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>,
-                                s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>,
-                                s::Recv<s::PeerMsg<Q, Extra, int>, s::End>>>;
+using TrWide =
+    s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>,
+                     s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>,
+                     s::Recv<s::PeerMsg<Q, Extra, int>, s::End>>>;
 static_assert(s::association_holds_v<RingWith<Tp, Tq, TrWide>, Ring>);
 // Safe: one unfolding of P's loop.
-using TpUnfolded = s::Send<s::PeerMsg<Q, Add, int>,
-                           s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, Tp>, s::Recv<s::PeerMsg<R, Sub, int>, Tp>>>;
+using TpUnfolded =
+    s::Send<s::PeerMsg<Q, Add, int>,
+            s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, Tp>, s::Recv<s::PeerMsg<R, Sub, int>, Tp>>>;
 static_assert(s::association_holds_v<RingWith<TpUnfolded, Tq, Tr>, Ring>);
 // Safe: P sends a checked value where the projection sends int.
 using Checked = ::fixy::Tagged<int, ::fixy::tags::source::Sanitized>;
-using TpChecked = s::Loop<s::Send<s::PeerMsg<Q, Add, Checked>, s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
-                                                                         s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
+using TpChecked =
+    s::Loop<s::Send<s::PeerMsg<Q, Add, Checked>, s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
+                                                          s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
 static_assert(s::association_holds_v<RingWith<TpChecked, Tq, Tr>, Ring>);
 
 // Unsafe: Q can send a label that R does not offer.
@@ -343,30 +355,36 @@ using TqWide = s::Loop<s::Recv<s::PeerMsg<P, Add, int>, s::Select<s::Send<s::Pee
                                                                   s::Send<s::PeerMsg<R, Extra, int>, s::End>>>>;
 static_assert(!s::association_holds_v<RingWith<Tp, TqWide, Tr>, Ring>);
 // Unsafe: R drops a label that Q can send.
-using TrNarrow = s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>>>;
+using TrNarrow =
+    s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>>>;
 static_assert(!s::association_holds_v<RingWith<Tp, Tq, TrNarrow>, Ring>);
 // Unsafe: P sends an unchecked user value where the projection sends int.
 using Untrusted = ::fixy::Tagged<int, ::fixy::tags::source::FromUser>;
-using TpUntrusted = s::Loop<s::Send<s::PeerMsg<Q, Add, Untrusted>, s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
-                                                                             s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
+using TpUntrusted =
+    s::Loop<s::Send<s::PeerMsg<Q, Add, Untrusted>, s::Offer<s::Sender<R>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
+                                                            s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
 static_assert(!s::association_holds_v<RingWith<TpUntrusted, Tq, Tr>, Ring>);
 // Unsafe: P waits on the wrong sender.
-using TpWrongSender = s::Loop<s::Send<s::PeerMsg<Q, Add, int>, s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
-                                                                         s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
+using TpWrongSender =
+    s::Loop<s::Send<s::PeerMsg<Q, Add, int>, s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<R, Add, int>, s::Continue>,
+                                                      s::Recv<s::PeerMsg<R, Sub, int>, s::Continue>>>>;
 static_assert(!s::association_holds_v<RingWith<TpWrongSender, Tq, Tr>, Ring>);
 // Safe, and admitted: the same labels in another order.  A PeerMsg names
 // a label key, so branches match by label, and the handle sends the label
 // word that the peer dispatches on.
-using TrSwapped = s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>,
-                                   s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>>>;
+using TrSwapped =
+    s::Loop<s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Sub, int>, s::Send<s::PeerMsg<P, Sub, int>, s::Continue>>,
+                     s::Recv<s::PeerMsg<Q, Add, int>, s::Send<s::PeerMsg<P, Add, int>, s::Continue>>>>;
 static_assert(s::association_holds_v<RingWith<Tp, Tq, TrSwapped>, Ring>);
 // A queue that disagrees with the en-route messages of G.
 static_assert(s::association_holds_v<s::projected_context_t<Ex4>, Ex4>);
-static_assert(!s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, typename s::project_t<Ex4, P>::local>,
-                                                       s::RoleState<Q, s::OutQueue<>, typename s::project_t<Ex4, Q>::local>,
-                                                       s::RoleState<R, s::OutQueue<>, typename s::project_t<Ex4, R>::local>>,
-                                      Ex4>);
-static_assert(std::is_same_v<s::projected_context_t<Ex11G3>, s::NotProjectable<s::projection_failure::MergeLabelSetMismatch>>);
+static_assert(
+    !s::association_holds_v<s::TypingContext<s::RoleState<P, s::OutQueue<>, typename s::project_t<Ex4, P>::local>,
+                                             s::RoleState<Q, s::OutQueue<>, typename s::project_t<Ex4, Q>::local>,
+                                             s::RoleState<R, s::OutQueue<>, typename s::project_t<Ex4, R>::local>>,
+                            Ex4>);
+static_assert(
+    std::is_same_v<s::projected_context_t<Ex11G3>, s::NotProjectable<s::projection_failure::MergeLabelSetMismatch>>);
 // Equation (49) projects, but it is not balanced+, and its projected
 // context is unsafe.  Association refuses it.
 static_assert(s::projects_v<Ex49, P> && s::projects_v<Ex49, Q>);

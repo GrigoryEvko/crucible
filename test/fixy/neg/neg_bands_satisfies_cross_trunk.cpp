@@ -14,9 +14,7 @@
 template <typename Provider>
 concept covers_cta_requirement = fixy::satisfies_v<Provider, fixy::MemoryScope_v::Cta>;
 
-[[nodiscard]] int consume(covers_cta_requirement auto band) {
-    return band.peek();
-}
+[[nodiscard]] int consume(covers_cta_requirement auto band) { return band.peek(); }
 
 int main() {
     auto inner = fixy::mint_band<fixy::scoped_fence::Inner<int>>(7);

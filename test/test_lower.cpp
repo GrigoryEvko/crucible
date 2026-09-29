@@ -231,9 +231,8 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
     static_assert(!eff::Subrow<crucible::lower_trace_required_row, eff::Row<eff::Effect::Alloc>>);
     static_assert(!eff::Subrow<crucible::lower_trace_required_row, eff::Row<eff::Effect::Bg>>);
 
-    RecordedGraph lowered =
-        crucible::lower_trace_to_graph<LowerBgAllocRow>(
-            test.alloc, ::fixy::mint_tagged<Recorded, const crucible::TraceGraph*>(graph_tg), pool, graph);
+    RecordedGraph lowered = crucible::lower_trace_to_graph<LowerBgAllocRow>(
+        test.alloc, ::fixy::mint_tagged<Recorded, const crucible::TraceGraph*>(graph_tg), pool, graph);
     assert(lowered.value() == &graph);
 
     // 3 INPUT nodes for slots 0, 1 and 4, plus 3 compute nodes.
@@ -389,9 +388,8 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
     crucible::build_csr(test.alloc, arena2, tg2, nullptr, 0, 1);
 
     crucible::Graph graph2(test.alloc, &pool);
-    RecordedGraph lowered2 =
-        crucible::lower_trace_to_graph<LowerBgAllocRow>(
-            test.alloc, ::fixy::mint_tagged<Recorded, const crucible::TraceGraph*>(tg2), pool, graph2);
+    RecordedGraph lowered2 = crucible::lower_trace_to_graph<LowerBgAllocRow>(
+        test.alloc, ::fixy::mint_tagged<Recorded, const crucible::TraceGraph*>(tg2), pool, graph2);
     assert(lowered2.value() == &graph2);
 
     // 2 INPUT nodes for slots 0 and 1, plus 1 compute node.  The null

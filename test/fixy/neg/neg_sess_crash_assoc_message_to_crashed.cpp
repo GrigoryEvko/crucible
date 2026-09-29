@@ -19,9 +19,9 @@ struct M {};
 
 using Guarded = g::Comm<P, Q, g::Branch<M, int, g::End>, g::Branch<g::CrashLabel, void, g::End>>;
 using QCrashed = g::state_step_t<g::State<g::Roles<>, Guarded>, g::CrashAction<Q>, s::NoReliableRoles>;
-using ToCrashed = s::TypingContext<
-    s::RoleState<P, s::OutQueue<s::Queued<Q, M, int>>, s::Send<s::PeerMsg<Q, M, int>, s::End>>,
-    s::RoleState<Q, s::OutQueue<>, s::Stop>>;
+using ToCrashed =
+    s::TypingContext<s::RoleState<P, s::OutQueue<s::Queued<Q, M, int>>, s::Send<s::PeerMsg<Q, M, int>, s::End>>,
+                     s::RoleState<Q, s::OutQueue<>, s::Stop>>;
 
 constexpr int check_context() noexcept {
     c::ensure_crash_associated<ToCrashed, QCrashed, s::NoReliableRoles>();

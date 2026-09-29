@@ -105,16 +105,16 @@ struct insight_provider {
 // severity means removing the first invocation, which puts the change in
 // front of a reviewer.
 #define CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating) \
-    namespace foundation::diag {                                                 \
-    template <>                                                                  \
-    struct insight_provider<TagType> {                                           \
-        static constexpr Severity severity = (Sev);                              \
-        static constexpr std::string_view why_this_matters = (Why);              \
-        static constexpr std::string_view symptom_pattern = (Symptom);           \
-        static constexpr std::string_view correct_example = (Correct);           \
-        static constexpr std::string_view violating_example = (Violating);       \
-    };                                                                           \
-    }                                                                            \
+    namespace foundation::diag {                                               \
+    template <>                                                                \
+    struct insight_provider<TagType> {                                         \
+        static constexpr Severity severity = (Sev);                            \
+        static constexpr std::string_view why_this_matters = (Why);            \
+        static constexpr std::string_view symptom_pattern = (Symptom);         \
+        static constexpr std::string_view correct_example = (Correct);         \
+        static constexpr std::string_view violating_example = (Violating);     \
+    };                                                                         \
+    }                                                                          \
     static_assert(true, "force trailing semicolon at call site")
 
 // This pins a severity while the prose is still missing. The result is a
@@ -123,14 +123,14 @@ struct insight_provider {
 // field empty.
 #define CRUCIBLE_DIAG_INSIGHTS_SEVERITY(TagType, Sev)                                                      \
     CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, ::std::string_view{}, ::std::string_view{}, ::std::string_view{}, \
-                             ::std::string_view{})
+                           ::std::string_view{})
 
 // The same registration with a floor under each field, so a placeholder
 // left in one of them fails the build instead of reaching a reader.
 // The floors are the ones has_substantive_insights_v reads, stated one
 // field at a time so the failing field is named.
-#define CRUCIBLE_DIAG_INSIGHTS_QV(TagType, Sev, Why, Symptom, Correct, Violating)                     \
-    CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating);                           \
+#define CRUCIBLE_DIAG_INSIGHTS_QV(TagType, Sev, Why, Symptom, Correct, Violating)                       \
+    CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating);                             \
     static_assert(::foundation::diag::insight_provider<TagType>::why_this_matters.size()                \
                       >= ::foundation::diag::insights_quality_thresholds<TagType>::min_why_chars,       \
                   "Insight 'why_this_matters' is too short — be substantive. "                          \
@@ -302,8 +302,8 @@ struct macro_target_tag : ::foundation::diag::tag_base {
 
 // Invoking the macro at namespace scope is the shape a consumer uses.
 CRUCIBLE_DIAG_INSIGHTS(::foundation::diag::detail::insights_macro_test::macro_target_tag,
-                         ::foundation::diag::Severity::Warning, "WHY-MACRO-TEST", "SYMPTOM-MACRO-TEST",
-                         "CORRECT-MACRO-TEST", "VIOLATING-MACRO-TEST");
+                       ::foundation::diag::Severity::Warning, "WHY-MACRO-TEST", "SYMPTOM-MACRO-TEST",
+                       "CORRECT-MACRO-TEST", "VIOLATING-MACRO-TEST");
 
 namespace foundation::diag::detail::insights_macro_test {
 
@@ -333,15 +333,15 @@ struct qv_target_tag : ::foundation::diag::tag_base {
 }  // namespace foundation::diag::detail::insights_macro_test
 
 CRUCIBLE_DIAG_INSIGHTS_SEVERITY(::foundation::diag::detail::insights_macro_test::severity_only_tag,
-                                  ::foundation::diag::Severity::Fatal);
+                                ::foundation::diag::Severity::Fatal);
 
 // Each field here clears its default threshold.
 CRUCIBLE_DIAG_INSIGHTS_QV(::foundation::diag::detail::insights_macro_test::qv_target_tag,
-                            ::foundation::diag::Severity::Error,
-                            "QV why field — substantive prose clearing the 30-char min.",
-                            "QV symptom — clears 20-char min.",
-                            "fn(GoodFoo);",  // 12 chars — clears 10-char min
-                            "fn(BadBar);   // VIOLATES the contract");
+                          ::foundation::diag::Severity::Error,
+                          "QV why field — substantive prose clearing the 30-char min.",
+                          "QV symptom — clears 20-char min.",
+                          "fn(GoodFoo);",  // 12 chars — clears 10-char min
+                          "fn(BadBar);   // VIOLATES the contract");
 
 namespace foundation::diag::detail::insights_macro_test {
 

@@ -66,8 +66,9 @@ concept SwmrSessionSurface =
         typename S::WriterHandle;
         typename S::ReaderHandle;
         {
-            std::declval<S&>().writer(std::declval<::foundation::permissions::Permission<
-                                          typename S::writer_tag, typename S::writer_brand>&&>())
+            std::declval<S&>().writer(
+                std::declval<
+                    ::foundation::permissions::Permission<typename S::writer_tag, typename S::writer_brand>&&>())
         } -> std::same_as<typename S::WriterHandle>;
         { std::declval<S&>().reader() } -> std::same_as<std::optional<typename S::ReaderHandle>>;
     } && ::fixy::concurrent::IsSwmrWriter<typename S::WriterHandle>
@@ -149,8 +150,9 @@ public:
         ::foundation::ChannelBinding<SwmrSession> session_;
         ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand> guard_;
 
-        constexpr ReaderHandle(SwmrSession& session,
-                               ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand>&& guard) noexcept
+        constexpr ReaderHandle(
+            SwmrSession& session,
+            ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand>&& guard) noexcept
             : session_{session}, guard_{std::move(guard)} {}
 
         friend class SwmrSession;
@@ -249,14 +251,14 @@ template <typename Swmr, typename Ctx, typename Handle>
     requires CtxFitsSwmrWriterSession<Ctx, Swmr, Handle>
 [[nodiscard]] constexpr auto mint_writer_runtime_session(Ctx const& ctx, Handle&& handle) noexcept {
     return ::fixy::session::mint_session<WriterRuntimeProto<typename Swmr::value_type>>(ctx,
-                                                                                         std::forward<Handle>(handle));
+                                                                                        std::forward<Handle>(handle));
 }
 
 template <typename Swmr, typename Ctx, typename Handle>
     requires CtxFitsSwmrReaderSession<Ctx, Swmr, Handle>
 [[nodiscard]] constexpr auto mint_reader_runtime_session(Ctx const& ctx, Handle&& handle) noexcept {
     return ::fixy::session::mint_session<ReaderRuntimeProto<typename Swmr::value_type>>(ctx,
-                                                                                         std::forward<Handle>(handle));
+                                                                                        std::forward<Handle>(handle));
 }
 
 // The write of the writer session: a publish never lacks room, so the
@@ -306,7 +308,8 @@ static_assert(!NamesSessionOverWriterBrand<::foundation::brand::DefaultBrand>);
 static_assert(sizeof(WriterHandle) == sizeof(SmallSession*),
               "SwmrSession::WriterHandle must EBO-collapse the writer Permission.");
 static_assert(sizeof(ReaderHandle)
-                  == sizeof(SmallSession*) + sizeof(::foundation::permissions::SharedPermissionGuard<ReaderTag, ReaderBrand>),
+                  == sizeof(SmallSession*)
+                         + sizeof(::foundation::permissions::SharedPermissionGuard<ReaderTag, ReaderBrand>),
               "SwmrSession::ReaderHandle must only store a session pointer plus guard.");
 static_assert(!std::is_copy_constructible_v<WriterHandle>);
 static_assert(!std::is_copy_constructible_v<ReaderHandle>);

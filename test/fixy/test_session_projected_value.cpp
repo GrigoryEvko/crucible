@@ -55,9 +55,9 @@ using LocalQ = typename s::project_t<G, Q>::local;
 static_assert(std::is_same_v<LocalP, s::Send<s::PeerMsg<Q, Hello, int>,
                                              s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Accept, int>, s::End>,
                                                       s::Recv<s::PeerMsg<Q, Refuse, int>, s::End>>>>);
-static_assert(std::is_same_v<LocalQ, s::Recv<s::PeerMsg<P, Hello, int>,
-                                             s::Select<s::Send<s::PeerMsg<P, Accept, int>, s::End>,
-                                                       s::Send<s::PeerMsg<P, Refuse, int>, s::End>>>>);
+static_assert(
+    std::is_same_v<LocalQ, s::Recv<s::PeerMsg<P, Hello, int>, s::Select<s::Send<s::PeerMsg<P, Accept, int>, s::End>,
+                                                                        s::Send<s::PeerMsg<P, Refuse, int>, s::End>>>>);
 
 // The step after a label word is the value step of the message.
 static_assert(std::is_same_v<s::keyed_landing_t<s::Send<s::PeerMsg<Q, Hello, int>, s::End>>, s::Send<int, s::End>>);

@@ -17,7 +17,8 @@ int main() {
     s::PeerCrashCell watched;
     s::PeerCrashCell own;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
-    auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Alice>>(ctx, Wire{}, watched, s::mint_crash_writer(own));
+    auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Alice>>(ctx, Wire{}, watched,
+                                                                                  s::mint_crash_writer(own));
     auto resource = std::move(handle).crash(s::CrashCause::Abort);
     (void)resource;
     return 0;

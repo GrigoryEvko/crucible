@@ -16,11 +16,15 @@ namespace perm = ::foundation::permissions;
 
 // One call site mints every reader root of the channel type, so every
 // channel of the type carries the brand of that one site.
-[[nodiscard]] auto metrics_reader_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>(); }
+[[nodiscard]] auto metrics_reader_root() noexcept {
+    return perm::mint_permission_root<observe::RuntimeMetricsReaderTag>();
+}
 
 // The writer root has one call site too, and the channel type names its
 // brand, so the channel takes a writer of that site and no other.
-[[nodiscard]] auto metrics_writer_root() noexcept { return perm::mint_permission_root<observe::RuntimeMetricsWriterTag>(); }
+[[nodiscard]] auto metrics_writer_root() noexcept {
+    return perm::mint_permission_root<observe::RuntimeMetricsWriterTag>();
+}
 
 using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(metrics_reader_root())>,
                                                ::foundation::brand::brand_of_t<decltype(metrics_writer_root())>>;

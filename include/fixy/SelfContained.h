@@ -91,9 +91,9 @@ inline constexpr bool writes_through_const =
 
 // True when U is a container in the sense of the header comment.
 template <typename U>
-inline constexpr bool is_standard_container = std::ranges::range<U const> && !std::ranges::view<U>
-                                              && !std::is_trivially_copyable_v<U>
-                                              && declared_by_the_standard(std::meta::dealias(^^U));
+inline constexpr bool is_standard_container =
+    std::ranges::range<U const> && !std::ranges::view<U> && !std::is_trivially_copyable_v<U>
+    && declared_by_the_standard(std::meta::dealias(^^U));
 
 // The type arguments of a class template specialization.  A value
 // argument, such as the capacity of an inplace_vector, is not state.
@@ -328,8 +328,7 @@ template <typename T>
                     if (found != std::meta::info{}) return found;
                 }
                 template for (constexpr std::meta::info member : members) {
-                    std::meta::info const found =
-                        first_uncomparable<typename[:std::meta::type_of(member):]>(visiting);
+                    std::meta::info const found = first_uncomparable<typename[:std::meta::type_of(member):]>(visiting);
                     if (found != std::meta::info{}) return found;
                 }
                 return std::meta::info{};

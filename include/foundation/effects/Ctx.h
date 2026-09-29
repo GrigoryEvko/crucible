@@ -110,7 +110,7 @@ namespace ctx_cap {
 // std::bit_cast refuses it, and the annotation refuses the checked
 // lifetime start.
 template <class Brand>
-class [[=::foundation::lifetime::no_start_over_bytes{}]] BrandedFg {
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] BrandedFg {
 public:
     using brand_type = Brand;
 
@@ -119,7 +119,8 @@ public:
 
     BrandedFg(const BrandedFg&) = delete("a copy of a branded source can go to a thread that holds no claim");
     BrandedFg(BrandedFg&&) = delete("a moved branded source can go to a thread that holds no claim");
-    BrandedFg& operator=(const BrandedFg&) = delete("a copy of a branded source can go to a thread that holds no claim");
+    BrandedFg&
+    operator=(const BrandedFg&) = delete("a copy of a branded source can go to a thread that holds no claim");
     BrandedFg& operator=(BrandedFg&&) = delete("a moved branded source can go to a thread that holds no claim");
 
     // User-provided, so the source is not trivially copyable.  GCC counts a
@@ -135,7 +136,7 @@ private:
     friend class ::foundation::effects::ExecCtx<BrandedFg, ::foundation::effects::Row<>>;
 };
 
-class [[=::foundation::lifetime::no_start_over_bytes{}]] Fg {
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] Fg {
 public:
     template <template <Effect...> class R>
     using permitted_as = R<>;
@@ -260,7 +261,6 @@ private:
     friend struct testing::ForegroundWitness;
 
 public:
-
     // The only way to reach the capability, and it borrows rather than
     // copies.  The source authorizes every atom it permits, and a holder
     // of it mints any of them and builds a context of any row it permits.
@@ -359,7 +359,9 @@ namespace host {
 // private, and the producer claims below are its only friends.
 struct ForegroundOwner final {
 private:
-    [[nodiscard]] static constexpr auto key() noexcept -> detail::ctx_mint::fg_key { return detail::ctx_mint::fg_key{}; }
+    [[nodiscard]] static constexpr auto key() noexcept -> detail::ctx_mint::fg_key {
+        return detail::ctx_mint::fg_key{};
+    }
 
     template <class Brand>
     friend class ProducerClaim;
@@ -519,7 +521,8 @@ private:
     }
 
     static void lock_registry_(BrandRegistry& registry) noexcept {
-        while (registry.lock.test_and_set(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
+        while (registry.lock.test_and_set(std::memory_order_acquire))
+            CRUCIBLE_SPIN_PAUSE;
     }
 
     static void unlock_registry_(BrandRegistry& registry) noexcept { registry.lock.clear(std::memory_order_release); }
@@ -616,8 +619,8 @@ template <class Cap, class R>
     } else if constexpr (!std::is_same_v<typename Ctx::cap_type, Cap> || !std::is_same_v<typename Ctx::row_type, R>) {
         return false;
     } else {
-        static constexpr auto members =
-            std::define_static_array(std::meta::nonstatic_data_members_of(^^Ctx, std::meta::access_context::unchecked()));
+        static constexpr auto members = std::define_static_array(
+            std::meta::nonstatic_data_members_of(^^Ctx, std::meta::access_context::unchecked()));
         constexpr std::meta::info expected_types[] = {std::meta::dealias(^^Cap), std::meta::dealias(^^R)};
         if (members.size() != std::size(expected_types)) return false;
         for (std::size_t index = 0; index < members.size(); ++index) {

@@ -52,10 +52,9 @@ public:
 
     explicit constexpr ChannelBinding(Channel& channel) noexcept : channel_{&channel} {}
 
-    ChannelBinding(const ChannelBinding&) =
-        delete("a copy would bind a second handle to the channel of the first one");
-    ChannelBinding& operator=(const ChannelBinding&) =
-        delete("a copy would bind a second handle to the channel of the first one");
+    ChannelBinding(const ChannelBinding&) = delete("a copy would bind a second handle to the channel of the first one");
+    ChannelBinding&
+    operator=(const ChannelBinding&) = delete("a copy would bind a second handle to the channel of the first one");
 
     constexpr ChannelBinding(ChannelBinding&& other) noexcept : channel_{std::exchange(other.channel_, nullptr)} {}
 

@@ -14,6 +14,6 @@ inline constexpr auto odd = [](int value) { return value % 2 != 0; };
 }  // namespace closure_predicate
 
 int main() {
-    return static_cast<int>(
-        ::foundation::diag::row_hash_contribution_v<::fixy::Refined<closure_predicate::odd, int>> & 1U);
+    return static_cast<int>(::foundation::diag::row_hash_contribution_v<::fixy::Refined<closure_predicate::odd, int>>
+                            & 1U);
 }

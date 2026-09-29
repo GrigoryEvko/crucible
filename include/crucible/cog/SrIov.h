@@ -141,7 +141,8 @@ class VfHandle;
 [[nodiscard]] constexpr std::expected<std::span<VfHandle>, SrIovError>
 materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
 
-[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept;
+[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
+                                                                         VfIndex index) noexcept;
 
 // A handle names one virtual function of a declared plan. Only the two
 // functions above build one, from the plan, so a handle cannot name a
@@ -160,8 +161,8 @@ private:
     constexpr VfHandle(CogIdentity physical, VfIndex index) noexcept
         : index_{index}, parent_uuid_{physical.uuid}, identity_{derive_vf_identity(physical, index)} {}
 
-    friend constexpr std::expected<std::span<VfHandle>, SrIovError> materialize_vf_handles(DeclaredSrIovPlan plan,
-                                                                                            std::span<VfHandle> out) noexcept;
+    friend constexpr std::expected<std::span<VfHandle>, SrIovError>
+    materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
     friend constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept;
 
     VfIndex index_ = first_vf_index;
@@ -267,7 +268,8 @@ materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept
     return out.first(count);
 }
 
-[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept {
+[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
+                                                                         VfIndex index) noexcept {
     if (index.value() >= plan.value().num_vfs.value()) {
         return std::unexpected(SrIovError::VfIndexOutOfRange);
     }

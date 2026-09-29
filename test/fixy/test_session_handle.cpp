@@ -70,7 +70,7 @@ struct foundation::permissions::can_split_into_pack<channel_tags::Whole, channel
     : std::true_type {};
 template <>
 struct foundation::permissions::has_split_pack_authoring_witness<channel_tags::Whole, channel_tags::Self,
-                                                                  channel_tags::Peer> : std::true_type {};
+                                                                 channel_tags::Peer> : std::true_type {};
 
 namespace {
 
@@ -224,9 +224,8 @@ static_assert(std::is_same_v<s::detail::loop_frame_t<s::Loop<s::Send<Ping, s::Co
                              s::Loop<s::Send<Ping, s::Continue>>>);
 static_assert(std::is_same_v<s::detail::loop_frame_t<s::Loop<s::Send<Ping, s::Continue>>, HoldsRegion>,
                              s::detail::PermLoopFrame<s::Loop<s::Send<Ping, s::Continue>>, HoldsRegion>>);
-static_assert(
-    std::is_same_v<s::detail::loop_entry_perm_set_t<s::detail::PermLoopFrame<s::Loop<s::End>, HoldsRegion>>,
-                   HoldsRegion>);
+static_assert(std::is_same_v<s::detail::loop_entry_perm_set_t<s::detail::PermLoopFrame<s::Loop<s::End>, HoldsRegion>>,
+                             HoldsRegion>);
 
 // A loop context is void, a Loop, a frame or a brand around one of these,
 // and the body comes from the template argument of the Loop.  A brand
@@ -235,12 +234,15 @@ using ReceivesForever = s::Loop<s::Recv<Pong, s::Continue>>;
 static_assert(std::is_same_v<s::detail::loop_body_t<ReceivesForever>, s::Recv<Pong, s::Continue>>);
 static_assert(std::is_same_v<s::detail::loop_body_t<s::detail::PermLoopFrame<ReceivesForever, HoldsRegion>>,
                              s::Recv<Pong, s::Continue>>);
-static_assert(std::is_same_v<s::session_loop_ctx_inner_t<s::detail::session_brand<Region, ReceivesForever>>, ReceivesForever>);
+static_assert(
+    std::is_same_v<s::session_loop_ctx_inner_t<s::detail::session_brand<Region, ReceivesForever>>, ReceivesForever>);
 static_assert(std::is_same_v<s::session_loop_ctx_inner_t<void>, void>);
-static_assert(std::is_same_v<s::session_loop_ctx_rebind_inner_t<s::detail::session_brand<Region, void>, ReceivesForever>,
-                             s::detail::session_brand<Region, ReceivesForever>>);
+static_assert(
+    std::is_same_v<s::session_loop_ctx_rebind_inner_t<s::detail::session_brand<Region, void>, ReceivesForever>,
+                   s::detail::session_brand<Region, ReceivesForever>>);
 static_assert(std::is_same_v<s::session_loop_ctx_rebind_inner_t<void, ReceivesForever>, ReceivesForever>);
-static_assert(std::is_same_v<s::detail::loop_entry_perm_set_t<s::detail::session_brand<Region, ReceivesForever>>, NoPerms>);
+static_assert(
+    std::is_same_v<s::detail::loop_entry_perm_set_t<s::detail::session_brand<Region, ReceivesForever>>, NoPerms>);
 
 // The delta of one message comes from fixy/session/Payload.h.  A send of
 // a token takes its region from the set, and the matching receive adds
@@ -304,11 +306,11 @@ static_assert(moves_the_region<s::Returned<int, Region>>());
 using PinnedSend = s::VendorPinned<::fixy::session::VendorBackend::NV, s::Send<Ping, s::End>>;
 static_assert(std::is_same_v<s::detail::first_handle_t<PinnedSend, ValueWire, s::check::Enforced>,
                              s::Handle<s::Send<Ping, s::End>, NoPerms, ValueWire, void, s::check::Enforced>>);
-static_assert(std::is_same_v<
-              s::detail::first_handle_t<s::Send<Ping, s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>>,
-                                        ValueWire, s::check::Enforced>,
-              s::Handle<s::Send<Ping, s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>>, NoPerms,
-                        ValueWire, void, s::check::Enforced>>);
+static_assert(
+    std::is_same_v<s::detail::first_handle_t<s::Send<Ping, s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>>,
+                                             ValueWire, s::check::Enforced>,
+                   s::Handle<s::Send<Ping, s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>>, NoPerms,
+                             ValueWire, void, s::check::Enforced>>);
 
 // ── Where a step lands ───────────────────────────────────────────────
 
@@ -363,7 +365,8 @@ static_assert(!s::DetachReason<int>);
     });
     static_assert(std::is_same_v<typename decltype(after_send)::protocol, s::Recv<Pong, s::End>>);
 
-    auto [pong, at_end] = std::move(after_send).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+    auto [pong, at_end] =
+        std::move(after_send).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
     if (pong.value != 3) {
         std::fprintf(stderr, "the value the transport wrote did not travel with the resource\n");
         return 1;
@@ -420,11 +423,10 @@ static_assert(!s::DetachReason<int>);
     // deliberately does not, and the two names are what keep that
     // difference visible at the call site.
     std::size_t signalled = 99;
-    auto chosen =
-        std::move(handle).select<1>([&signalled](ValueWire&, std::size_t label) noexcept {
-            signalled = label;
-            return true;
-        });
+    auto chosen = std::move(handle).select<1>([&signalled](ValueWire&, std::size_t label) noexcept {
+        signalled = label;
+        return true;
+    });
     if (signalled != 1) {
         std::fprintf(stderr, "select did not signal the branch index\n");
         return 1;
@@ -441,16 +443,17 @@ static_assert(!s::DetachReason<int>);
     auto handle = s::mint_session_handle<Served, ValueWire>(ValueWire{});
 
     // The handler runs once, for the branch the peer's label names.
-    const int taken = std::move(handle).branch([](ValueWire&) noexcept -> std::optional<std::size_t> { return 0; },
-                                               [](auto branch_handle) {
-                                                   using B = typename decltype(branch_handle)::protocol;
-                                                   using Message = typename decltype(branch_handle)::message_type;
-                                                   auto [msg, at_end] = std::move(branch_handle).recv(
-                                                       [](ValueWire&) noexcept { return std::optional{Message{}}; });
-                                                   (void)msg;
-                                                   (void)std::move(at_end).close();
-                                                   return std::is_same_v<B, s::Recv<Ping, s::End>> ? 0 : 1;
-                                               });
+    const int taken = std::move(handle).branch(
+        [](ValueWire&) noexcept -> std::optional<std::size_t> { return 0; },
+        [](auto branch_handle) {
+            using B = typename decltype(branch_handle)::protocol;
+            using Message = typename decltype(branch_handle)::message_type;
+            auto [msg, at_end] =
+                std::move(branch_handle).recv([](ValueWire&) noexcept { return std::optional{Message{}}; });
+            (void)msg;
+            (void)std::move(at_end).close();
+            return std::is_same_v<B, s::Recv<Ping, s::End>> ? 0 : 1;
+        });
     if (taken != 0) {
         std::fprintf(stderr, "branch entered the wrong arm\n");
         return 1;
@@ -483,10 +486,10 @@ using test_session_handle_labels::Hello;
 
 // Hello continues with a reply, so the branch that a handle enters shows
 // in its type.
-using KeyedSelect = s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::Recv<int, s::End>>,
-                              s::Send<s::PeerMsg<Bob, Bye, int>, s::End>>;
-using KeyedOfferSwapped = s::Offer<s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>,
-                                   s::Recv<s::PeerMsg<Bob, Hello, int>, s::Send<int, s::End>>>;
+using KeyedSelect =
+    s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::Recv<int, s::End>>, s::Send<s::PeerMsg<Bob, Bye, int>, s::End>>;
+using KeyedOfferSwapped =
+    s::Offer<s::Recv<s::PeerMsg<Bob, Bye, int>, s::End>, s::Recv<s::PeerMsg<Bob, Hello, int>, s::Send<int, s::End>>>;
 using PlainOffer = s::Offer<s::Recv<Ping, s::End>, s::Recv<Stop, s::End>>;
 
 static_assert(s::is_keyed_choice_v<KeyedSelect> && s::is_keyed_choice_v<KeyedOfferSwapped>);
@@ -495,8 +498,8 @@ static_assert(s::branch_wire_word_v<KeyedSelect, 0> == s::branch_wire_word_v<Key
               "a label keeps its word in another position");
 static_assert(s::branch_of_wire_word<KeyedOfferSwapped>(s::branch_wire_word_v<KeyedSelect, 0>) == 1);
 static_assert(s::branch_of_wire_word<KeyedOfferSwapped>(s::branch_wire_word_v<KeyedSelect, 1>) == 0);
-static_assert(s::branch_of_wire_word<KeyedOfferSwapped>(0) == s::no_branch && s::branch_of_wire_word<KeyedOfferSwapped>(1)
-                                                                                == s::no_branch,
+static_assert(s::branch_of_wire_word<KeyedOfferSwapped>(0) == s::no_branch
+                  && s::branch_of_wire_word<KeyedOfferSwapped>(1) == s::no_branch,
               "a position is no word of a keyed choice");
 static_assert(s::branch_wire_word_v<PlainOffer, 1> == 1 && s::branch_of_wire_word<PlainOffer>(1) == 1);
 static_assert(s::branch_of_wire_word<PlainOffer>(s::branch_wire_word_v<KeyedSelect, 0>) == s::no_branch,
@@ -614,10 +617,11 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
         static_assert(!s::detail::carries_brand<typename decltype(head)::loop_ctx, void>,
                       "a handle of an owned session carries the brand of its body");
         auto after = std::move(head).send(Ping{5}, [](ValueWire& w, Ping& p) noexcept {
-        w.last_sent = p.value;
-        return true;
-    });
-        auto [pong, at_end] = std::move(after).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+            w.last_sent = p.value;
+            return true;
+        });
+        auto [pong, at_end] =
+            std::move(after).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
         (void)pong;
         return std::move(at_end);
     });
@@ -636,7 +640,8 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     auto head = s::mint_session_handle<ReceivesForever>(ValueWire{7});
     int received = 0;
     for (int round = 0; round < 3; ++round) {
-        auto [pong, next] = std::move(head).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+        auto [pong, next] =
+            std::move(head).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
         static_assert(std::is_same_v<decltype(next), decltype(head)>, "a Continue lands on the reception again");
         received += pong.value;
         head = std::move(next);
@@ -665,9 +670,9 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     static_assert(std::is_same_v<typename decltype(head)::loop_ctx, s::detail::PermLoopFrame<Forever, HoldsRegion>>);
     for (int round = 0; round < 3; ++round) {
         auto next = std::move(head).send(Ping{round}, [](ValueWire& w, Ping& p) noexcept {
-        w.last_sent = p.value;
-        return true;
-    });
+            w.last_sent = p.value;
+            return true;
+        });
         static_assert(std::is_same_v<decltype(next), decltype(head)>, "a Continue lands on the loop head again");
         head = std::move(next);
     }
@@ -827,8 +832,9 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
         std::move(self_head).send(Ping{7}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
     auto [ping, peer_sends] =
         std::move(peer_head).recv([](PeerEnd& e) noexcept { return try_take_as<Ping>(e.pipe->to_peer); });
-    auto peer_done = std::move(peer_sends).send(
-        Pong{ping.value + 1}, [](PeerEnd& e, Pong& p) noexcept { return put(e.pipe->to_self, p.value); });
+    auto peer_done = std::move(peer_sends).send(Pong{ping.value + 1}, [](PeerEnd& e, Pong& p) noexcept {
+        return put(e.pipe->to_self, p.value);
+    });
     auto [pong, self_done] =
         std::move(self_waits).recv([](SelfEnd& e) noexcept { return try_take_as<Pong>(e.pipe->to_self); });
     (void)std::move(peer_done).close();
@@ -852,8 +858,8 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
     auto back = s::mint_forked_channel<Once, channel_tags::Self, channel_tags::Peer>(
         ctx, std::move(whole), SelfEnd{&pipe}, PeerEnd{&pipe},
         [&seen_pong](auto head, auto const& /*self_view*/, BgCtx const&) noexcept {
-            auto waits =
-                std::move(head).send(Ping{20}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
+            auto waits = std::move(head).send(
+                Ping{20}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
             auto [pong, done] =
                 std::move(waits).recv([](SelfEnd& e) noexcept { return try_take_as<Pong>(e.pipe->to_self); });
             seen_pong.store(pong.value, std::memory_order_release);
@@ -1040,7 +1046,8 @@ template <typename Body>
         std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 1 ? 0 : 3);
     });
     if (cancel_on_drop != 0) {
-        std::fprintf(stderr, "check::Cancel did not send exactly one cancellation on a drop (exit %d)\n", cancel_on_drop);
+        std::fprintf(stderr, "check::Cancel did not send exactly one cancellation on a drop (exit %d)\n",
+                     cancel_on_drop);
         return 1;
     }
 
@@ -1065,7 +1072,8 @@ template <typename Body>
             w.last_sent = p.value;
             return true;
         });
-        auto [pong, at_end] = std::move(after).recv([](CancelWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+        auto [pong, at_end] =
+            std::move(after).recv([](CancelWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
         (void)pong;
         (void)std::move(at_end).close();
         std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 0 ? 0 : 3);
@@ -1217,9 +1225,10 @@ struct SlowWire {
         wait.poll();
         return w.value;
     });
-    auto second_read = std::move(second_write).send(first + 1, [](SlowWire& w, int&& v, s::watch::wait_scope&) noexcept {
-        w.value = v;
-    });
+    auto second_read =
+        std::move(second_write).send(first + 1, [](SlowWire& w, int&& v, s::watch::wait_scope&) noexcept {
+            w.value = v;
+        });
     auto [second, done] = std::move(second_read).recv([](SlowWire& w) noexcept { return std::optional{w.value}; });
     (void)std::move(done).close();
     if (tries != 3 || first != 5 || second != 6) {
@@ -1255,10 +1264,10 @@ struct LateRead {
 [[nodiscard]] int channel_claim_names_no_holder() {
     namespace watch = s::watch;
     const std::source_location loc = std::source_location::current();
-    const watch::endpoint_id first = watch::claim("first end", loc, watch::priority::lowest,
-                                                  watch::holder_on_claim::none_yet);
-    const watch::endpoint_id second = watch::claim("second end", loc, watch::priority::lowest,
-                                                   watch::holder_on_claim::none_yet);
+    const watch::endpoint_id first =
+        watch::claim("first end", loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
+    const watch::endpoint_id second =
+        watch::claim("second end", loc, watch::priority::lowest, watch::holder_on_claim::none_yet);
     watch::link(first, second);
     const auto owner_of = [](watch::endpoint_id endpoint) noexcept {
         return watch::detail::record_at_(static_cast<std::uint32_t>(endpoint)).owner.load(std::memory_order_acquire);

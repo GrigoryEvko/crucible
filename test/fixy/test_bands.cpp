@@ -132,7 +132,8 @@ static_assert(std::is_same_v<fixy::numerical_tier::Bitexact<int>, fixy::Numerica
 static_assert(
     std::is_same_v<fixy::opaque_lifetime::PerFleet<int>, fixy::OpaqueLifetime<fixy::Lifetime_v::PER_FLEET, int>>);
 static_assert(std::is_same_v<fixy::vendor::Nv<int>, fixy::Vendor<fixy::VendorBackend_v::NV, int>>);
-static_assert(std::is_same_v<fixy::residency_heat::Warm<int>, fixy::ResidencyHeat<fixy::ResidencyHeatTag_v::Warm, int>>);
+static_assert(
+    std::is_same_v<fixy::residency_heat::Warm<int>, fixy::ResidencyHeat<fixy::ResidencyHeatTag_v::Warm, int>>);
 
 // Two bands over one payload at different tiers, or over different
 // lattices at the same ordinal, are different types.

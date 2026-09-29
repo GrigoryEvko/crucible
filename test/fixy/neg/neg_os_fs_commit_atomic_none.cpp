@@ -22,7 +22,7 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
 
 int main() {
     IoBlockCtx const ctx{eff::testing::test()};
-    [[maybe_unused]] auto refused =
-        fs::commit_atomic<fs::atomicity::None>(ctx, sanitized("/tmp/fixy-neg-none.tmp"), sanitized("/tmp/fixy-neg-none"));
+    [[maybe_unused]] auto refused = fs::commit_atomic<fs::atomicity::None>(ctx, sanitized("/tmp/fixy-neg-none.tmp"),
+                                                                           sanitized("/tmp/fixy-neg-none"));
     return 0;
 }

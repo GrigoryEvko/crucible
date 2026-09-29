@@ -31,15 +31,13 @@ inline constexpr std::size_t swiss_table_group_width = 16;
 inline constexpr std::size_t swiss_table_max_capacity = std::size_t{1} << 30;
 
 template <typename SlotPtr>
-concept SwissTableSlot =
-    alignof(SlotPtr) <= swiss_table_group_width && lifetime::ImplicitLifetimeThroughout<SlotPtr>;
+concept SwissTableSlot = alignof(SlotPtr) <= swiss_table_group_width && lifetime::ImplicitLifetimeThroughout<SlotPtr>;
 
 // True for zero, which is the empty table, and for a power of two in
 // [group width, max capacity].
 [[nodiscard]] constexpr bool is_swiss_table_capacity(std::size_t capacity) noexcept {
     if (capacity == 0) return true;
-    return std::has_single_bit(capacity) && capacity >= swiss_table_group_width
-           && capacity <= swiss_table_max_capacity;
+    return std::has_single_bit(capacity) && capacity >= swiss_table_group_width && capacity <= swiss_table_max_capacity;
 }
 
 template <SwissTableSlot SlotPtr>
@@ -157,8 +155,8 @@ static_assert(SwissTableSlot<const int*> && SwissTableSlot<std::uint64_t>);
 static_assert(!SwissTableSlot<HoldsProof>, "a slot type whose subobject cannot start its lifetime is refused");
 static_assert(!SwissTableSlot<int&>, "no lifetime start binds a reference slot");
 static_assert(is_swiss_table_capacity(0) && is_swiss_table_capacity(16) && is_swiss_table_capacity(1024));
-static_assert(!is_swiss_table_capacity(8) && !is_swiss_table_capacity(24) && !is_swiss_table_capacity(1) &&
-              !is_swiss_table_capacity(swiss_table_max_capacity * 2));
+static_assert(!is_swiss_table_capacity(8) && !is_swiss_table_capacity(24) && !is_swiss_table_capacity(1)
+              && !is_swiss_table_capacity(swiss_table_max_capacity * 2));
 
 }  // namespace detail::swiss_table_buffer_self_test
 

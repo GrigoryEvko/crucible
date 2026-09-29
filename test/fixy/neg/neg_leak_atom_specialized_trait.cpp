@@ -16,6 +16,4 @@ struct Fake final {};
 template <>
 inline constexpr bool fixy::atom::is_leak_atom_v<Fake> = true;
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

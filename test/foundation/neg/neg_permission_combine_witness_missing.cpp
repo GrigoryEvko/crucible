@@ -41,6 +41,7 @@ int main() {
     namespace perm = ::foundation::permissions;
     auto whole = perm::mint_permission_root<Whole>();
     auto halves = perm::mint_permission_split<Left, Right>(std::move(whole));
-    [[maybe_unused]] auto rebuilt = perm::mint_permission_combine<Other>(std::move(halves.first), std::move(halves.second));
+    [[maybe_unused]] auto rebuilt =
+        perm::mint_permission_combine<Other>(std::move(halves.first), std::move(halves.second));
     return 0;
 }

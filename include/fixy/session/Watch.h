@@ -140,12 +140,16 @@ namespace fixy::session::watch {
 
 // The index of an endpoint record, plus one.  Zero is no record, so a
 // handle that no mint tracks carries the zero value.
-enum class endpoint_id : std::uint32_t { none = 0 };
+enum class endpoint_id : std::uint32_t {
+    none = 0
+};
 
 // The priority of a session in the order that the watch keeps.  A
 // Resource states it as a static constexpr member session_priority of
 // this type.  lowest is the priority of a Resource that states none.
-enum class priority : std::uint32_t { lowest = 0 };
+enum class priority : std::uint32_t {
+    lowest = 0
+};
 
 inline constexpr std::uint32_t endpoint_capacity = 4096;
 inline constexpr std::uint32_t thread_capacity = 1024;
@@ -161,7 +165,7 @@ inline constexpr std::size_t max_chain = 64;
 
 namespace detail {
 
-inline constexpr std::uint64_t low_half = 0xFFFF'FFFFu;
+inline constexpr std::uint64_t low_half = 0xFFFFFFFFu;
 
 // A thread that found no free slot records this owner token.  The
 // detector reads it as an unknown holder.
@@ -415,7 +419,9 @@ inline void write_raw(std::string_view text) noexcept {
     const char* cursor = text.data();
     std::size_t remaining = text.size();
     while (remaining > 0) {
-        const ::ssize_t written = ::write(STDERR_FILENO, cursor, remaining);  // SYSCALL-CAP-OK: the report at a fatal signal writes with write(2), which is async-signal-safe
+        const ::ssize_t written = ::write(
+            STDERR_FILENO, cursor,
+            remaining);  // SYSCALL-CAP-OK: the report at a fatal signal writes with write(2), which is async-signal-safe
         if (written <= 0) return;
         cursor += written;
         remaining -= static_cast<std::size_t>(written);
@@ -479,7 +485,8 @@ inline void on_fatal_signal(int signal_number, ::siginfo_t* info, void* /*contex
     report_live_on_signal(signal_number);
     for (std::size_t index = 0; index < std::size(fatal_signals); ++index) {
         if (fatal_signals[index] != signal_number) continue;
-        static_cast<void>(::sigaction(signal_number, &g_signal_chain.previous[index], nullptr));  // SYSCALL-CAP-OK: puts back the action that the watch replaced
+        static_cast<void>(::sigaction(signal_number, &g_signal_chain.previous[index],
+                                      nullptr));  // SYSCALL-CAP-OK: puts back the action that the watch replaced
     }
     if (info == nullptr || info->si_code <= 0) static_cast<void>(::raise(signal_number));
 }
@@ -493,9 +500,11 @@ inline void install_signal_handlers() noexcept {
         action.sa_flags = SA_SIGINFO | SA_ONSTACK;
         ::sigemptyset(&action.sa_mask);
         struct sigaction& previous = g_signal_chain.previous[index];
-        if (::sigaction(fatal_signals[index], &action, &previous) != 0) continue;  // SYSCALL-CAP-OK: installs the report at a fatal signal, once, from the first claim
+        if (::sigaction(fatal_signals[index], &action, &previous) != 0)
+            continue;  // SYSCALL-CAP-OK: installs the report at a fatal signal, once, from the first claim
         if (!(previous.sa_flags & SA_SIGINFO) && previous.sa_handler == SIG_IGN) {
-            static_cast<void>(::sigaction(fatal_signals[index], &previous, nullptr));  // SYSCALL-CAP-OK: a signal that the process ignored stays ignored
+            static_cast<void>(::sigaction(fatal_signals[index], &previous,
+                                          nullptr));  // SYSCALL-CAP-OK: a signal that the process ignored stays ignored
         }
     }
 }
@@ -597,7 +606,8 @@ struct wait_chain {
                                                                    std::uint64_t self) noexcept {
     if (g_registry.is_reporting.exchange(1, std::memory_order_acq_rel) != 0) {
         // Another thread on the cycle reports it and aborts the process.
-        for (;;) CRUCIBLE_SPIN_PAUSE;
+        for (;;)
+            CRUCIBLE_SPIN_PAUSE;
     }
     std::fprintf(stderr,
                  "\n"
@@ -663,8 +673,7 @@ inline void remember_held(std::uint64_t self, std::uint32_t index) noexcept {
                  what);
     std::fprintf(stderr, "  the thread waits on:\n");
     print_endpoint("waited", waited);
-    std::fprintf(stderr, "  priority %u\n  and holds:\n",
-                 record_at_(waited).priority.load(std::memory_order_acquire));
+    std::fprintf(stderr, "  priority %u\n  and holds:\n", record_at_(waited).priority.load(std::memory_order_acquire));
     print_endpoint("held", held);
     std::fprintf(stderr, "  priority %u\n", record_at_(held).priority.load(std::memory_order_acquire));
     std::abort();
@@ -711,7 +720,10 @@ inline void check_wait_order(std::uint64_t self, std::uint32_t waited) noexcept 
 // opens the session on the calling thread names it.  A channel mint
 // claims on the thread that forks, and each end's own thread becomes the
 // holder when it opens its end.
-enum class holder_on_claim : std::uint8_t { calling_thread, none_yet };
+enum class holder_on_claim : std::uint8_t {
+    calling_thread,
+    none_yet
+};
 
 /// Claims a record for a session that starts at `protocol`, minted at
 /// `site`, with the priority of its Resource.  A full table gives
@@ -755,13 +767,13 @@ inline void link(endpoint_id first, endpoint_id second) noexcept {
     const auto first_index = static_cast<std::uint32_t>(first);
     const auto second_index = static_cast<std::uint32_t>(second);
     detail::record_at_(first_index)
-        .peer.store(detail::pack(second_index,
-                                 detail::record_at_(second_index).generation.load(std::memory_order_acquire)),
-                    std::memory_order_release);
+        .peer.store(
+            detail::pack(second_index, detail::record_at_(second_index).generation.load(std::memory_order_acquire)),
+            std::memory_order_release);
     detail::record_at_(second_index)
-        .peer.store(detail::pack(first_index,
-                                 detail::record_at_(first_index).generation.load(std::memory_order_acquire)),
-                    std::memory_order_release);
+        .peer.store(
+            detail::pack(first_index, detail::record_at_(first_index).generation.load(std::memory_order_acquire)),
+            std::memory_order_release);
 }
 
 /// Ends the session of `endpoint`: it reached End, detached or cancelled.
@@ -782,7 +794,9 @@ inline void release(endpoint_id endpoint) noexcept {
 // unless the handle crossed threads.  The generation bits tell a thread
 // from an earlier thread that had the same slot, until the slot has 32
 // more owners.
-enum class thread_slot : std::uint16_t { none = 0 };
+enum class thread_slot : std::uint16_t {
+    none = 0
+};
 
 /// The slot of the calling thread, or none before the thread first
 /// touches the watch.  It reads one thread-local value.

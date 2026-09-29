@@ -39,8 +39,8 @@ class ConnectionPool;
 
 template <TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote, class Ctx>
     requires PoolTransportClass<T> && CtxFitsConnectionPoolMint<Ctx>
-[[nodiscard]] constexpr ConnectionPool<T, MaxRemotes, MaxPerRemote> mint_connection_pool(Ctx const& ctx,
-                                                                                      PoolConfig config = {}) noexcept;
+[[nodiscard]] constexpr ConnectionPool<T, MaxRemotes, MaxPerRemote>
+mint_connection_pool(Ctx const& ctx, PoolConfig config = {}) noexcept;
 
 template <TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote, std::size_t MaxEvents>
     requires PoolTransportClass<T>
@@ -194,8 +194,8 @@ public:
 
     public:
         LeaseGuard(LeaseGuard const&) = delete("a lease names one holder of a slot; a copy would return it twice");
-        LeaseGuard& operator=(LeaseGuard const&) =
-            delete("a lease names one holder of a slot; a copy would return it twice");
+        LeaseGuard&
+        operator=(LeaseGuard const&) = delete("a lease names one holder of a slot; a copy would return it twice");
 
         constexpr LeaseGuard(LeaseGuard&& other) noexcept
             : pool_{other.pool_}, slot_index_{other.slot_index_}, ctx_{other.ctx_} {
@@ -416,7 +416,8 @@ public:
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
-    [[nodiscard]] std::expected<DeclaredPoolEvent, PoolError> event_at(Ctx const& ctx, std::size_t index) const noexcept {
+    [[nodiscard]] std::expected<DeclaredPoolEvent, PoolError> event_at(Ctx const& ctx,
+                                                                       std::size_t index) const noexcept {
         auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
         ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         if (index >= event_count_) {
@@ -437,7 +438,7 @@ public:
 template <TransportClass T, std::size_t MaxRemotes, std::size_t MaxPerRemote, class Ctx>
     requires PoolTransportClass<T> && CtxFitsConnectionPoolMint<Ctx>
 [[nodiscard]] constexpr ConnectionPool<T, MaxRemotes, MaxPerRemote> mint_connection_pool(Ctx const&,
-                                                                                      PoolConfig config) noexcept {
+                                                                                         PoolConfig config) noexcept {
     return ConnectionPool<T, MaxRemotes, MaxPerRemote>{config};
 }
 

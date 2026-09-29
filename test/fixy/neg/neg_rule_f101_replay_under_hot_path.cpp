@@ -12,7 +12,6 @@
 int main() {
     [[maybe_unused]] ::fixy::fn<
         ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>,
-        ::fixy::atom::fp::mode<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite>>
-        refused{};
+        ::fixy::atom::fp::mode<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite>> refused{};
     return 0;
 }

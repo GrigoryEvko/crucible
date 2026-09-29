@@ -21,8 +21,8 @@ int main() {
     nvme.kind = cog::CogKind::NvmeNamespace;
 
     ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
-    auto result = gd::mint_gpu_direct_storage_plan(bg, gpu, gpu_caps, nvme, gd::PeerPlacement{},
-                                                   *gd::admit_gpu_virtual_address(0x1000u),
-                                                   *gd::admit_gpu_direct_bytes(4096));
+    auto result =
+        gd::mint_gpu_direct_storage_plan(bg, gpu, gpu_caps, nvme, gd::PeerPlacement{},
+                                         *gd::admit_gpu_virtual_address(0x1000u), *gd::admit_gpu_direct_bytes(4096));
     return result.has_value() ? 0 : 1;
 }

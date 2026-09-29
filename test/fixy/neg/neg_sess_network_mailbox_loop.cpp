@@ -22,8 +22,7 @@ struct Mailbox {
 
 using namespace neg_sess_network_mailbox_loop_types;
 
-using LoopTwoSenders =
-    g::Rec<g::Msg<R1, R2, Val, int, g::Msg<R1, R0, Val, int, g::Msg<R2, R0, Val, int, g::Var>>>>;
+using LoopTwoSenders = g::Rec<g::Msg<R1, R2, Val, int, g::Msg<R1, R0, Val, int, g::Msg<R2, R0, Val, int, g::Var>>>>;
 
 int main() {
     s::ensure_carrier_implements<LoopTwoSenders, Mailbox>();

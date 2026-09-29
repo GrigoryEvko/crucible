@@ -74,8 +74,8 @@ public:
     DeclassifyOnSend& operator=(const DeclassifyOnSend&) =
         delete("DeclassifyOnSend holds a classified value. A copy is a second copy of the secret");
     constexpr DeclassifyOnSend(DeclassifyOnSend&&) noexcept(std::is_nothrow_move_constructible_v<Secret<T>>) = default;
-    constexpr DeclassifyOnSend& operator=(DeclassifyOnSend&&) noexcept(
-        std::is_nothrow_move_assignable_v<Secret<T>>) = default;
+    constexpr DeclassifyOnSend&
+    operator=(DeclassifyOnSend&&) noexcept(std::is_nothrow_move_assignable_v<Secret<T>>) = default;
     ~DeclassifyOnSend() = default;
 
     [[nodiscard]] constexpr T declassify_for_wire() && noexcept(std::is_nothrow_move_constructible_v<T>) {
@@ -99,8 +99,8 @@ public:
     constexpr explicit CTPayload(T value) noexcept : value_{value} {}
 
     CTPayload(const CTPayload&) = delete("CTPayload holds a constant-time value. A copy is a second copy of it");
-    CTPayload& operator=(const CTPayload&) =
-        delete("CTPayload holds a constant-time value. A copy is a second copy of it");
+    CTPayload&
+    operator=(const CTPayload&) = delete("CTPayload holds a constant-time value. A copy is a second copy of it");
     constexpr CTPayload(CTPayload&&) noexcept = default;
     constexpr CTPayload& operator=(CTPayload&&) noexcept = default;
     ~CTPayload() = default;

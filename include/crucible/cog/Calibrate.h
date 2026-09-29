@@ -140,7 +140,8 @@ struct CalibrationSample {
     TransposeMode transpose_mode = TransposeMode::Nn;
     MessageSizeBucket message_size_bucket = MessageSizeBucket::None;
     std::uint32_t latency_cycles = 0;
-    CalibrationLatencyQuantiles latency = ::fixy::mint_refined<calibration_quantiles_valid>(LatencyQuantiles{1u, 1u, 1u});
+    CalibrationLatencyQuantiles latency =
+        ::fixy::mint_refined<calibration_quantiles_valid>(LatencyQuantiles{1u, 1u, 1u});
     CalibratedThroughput throughput_per_sec = ::fixy::mint_refined<finite_positive_throughput>(1.0);
     CalibrationSampleCount sample_count = ::fixy::mint_refined<measured_sample_count>(std::uint16_t{1});
 };
@@ -293,7 +294,8 @@ build_calibration_result(CogIdentity identity, caps_for_t<K> caps, std::span<con
                 .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0),
             },
         .plan = plan,
-        .entry_count = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(static_cast<std::uint16_t>(entries.size())),
+        .entry_count =
+            ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(static_cast<std::uint16_t>(entries.size())),
     };
 }
 
@@ -352,7 +354,8 @@ static_assert(!CtxFitsCalibration<::fixy::TestRunnerCtx>);
 // A refined member keeps the class from being trivially copyable, by
 // design: no byte copy builds a refined value. A plan and a drift signal
 // still copy and destroy as plain data.
-static_assert(std::is_trivially_copy_constructible_v<CalibrationPlan> && std::is_trivially_destructible_v<CalibrationPlan>);
+static_assert(std::is_trivially_copy_constructible_v<CalibrationPlan>
+              && std::is_trivially_destructible_v<CalibrationPlan>);
 static_assert(std::is_trivially_copy_constructible_v<DriftSignal> && std::is_trivially_destructible_v<DriftSignal>);
 
 }  // namespace crucible::cog

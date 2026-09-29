@@ -11,7 +11,9 @@
 
 namespace cog = crucible::cog;
 
-static cog::PositiveAffinityCount count_of(std::uint16_t count) { return ::fixy::mint_refined<::fixy::positive>(count); }
+static cog::PositiveAffinityCount count_of(std::uint16_t count) {
+    return ::fixy::mint_refined<::fixy::positive>(count);
+}
 
 static cog::CogIdentity nic_identity() {
     cog::CogIdentity id{};

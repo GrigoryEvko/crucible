@@ -21,11 +21,11 @@ struct Region {
 
 int main() {
     using read_view_untyped_pointer_fixture::Region;
-    auto lent = ::foundation::permissions::with_read_view(
-        ::foundation::permissions::mint_permission_root<Region>(),
-        [](::foundation::permissions::ReadView<Region> const& view) noexcept {
-            return static_cast<void const*>(&view);
-        });
+    auto lent =
+        ::foundation::permissions::with_read_view(::foundation::permissions::mint_permission_root<Region>(),
+                                                  [](::foundation::permissions::ReadView<Region> const& view) noexcept {
+                                                      return static_cast<void const*>(&view);
+                                                  });
     (void)lent;
     return 0;
 }

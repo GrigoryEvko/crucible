@@ -10,7 +10,8 @@ namespace eff = ::fixy;
 namespace observe = crucible::observe;
 
 int main() {
-    auto detector = observe::mint_sdc_detector<eff::BgDrainCtx, 2, 4>(eff::BgDrainCtx{::foundation::effects::testing::bg()});
+    auto detector =
+        observe::mint_sdc_detector<eff::BgDrainCtx, 2, 4>(eff::BgDrainCtx{::foundation::effects::testing::bg()});
     (void)detector;
     return 0;
 }

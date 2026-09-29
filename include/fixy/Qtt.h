@@ -185,7 +185,8 @@ protected:
     }
 
     constexpr void require_live(const char* what, const char* site, int line) const noexcept {
-        if (!live_) [[unlikely]] fail_consume(what, site, line);
+        if (!live_) [[unlikely]]
+            fail_consume(what, site, line);
     }
 
     constexpr void swap_consume_state(ConsumeTrackerImpl& other) noexcept {
@@ -200,7 +201,8 @@ private:
     // the grade's and not the tracker's.
     constexpr void report_open_obligation_(const char* site, int line) const noexcept {
         if constexpr (Grade == ::foundation::algebra::lattices::QttGrade::One) {
-            if (live_) [[unlikely]] fail_consume("linear obligation never discharged", site, line);
+            if (live_) [[unlikely]]
+                fail_consume("linear obligation never discharged", site, line);
         } else {
             (void)site;
             (void)line;
@@ -261,15 +263,13 @@ concept IsQttInstance = ::foundation::reflect::IsInstanceOf<T, ^^Qtt>;
 // read off the wrapper's own member rather than from a second table.
 template <typename T>
 concept IsExactlyOnceQtt =
-    IsQttInstance<T>
-    && (std::remove_cvref_t<T>::usage_grade == ::foundation::algebra::lattices::QttGrade::One);
+    IsQttInstance<T> && (std::remove_cvref_t<T>::usage_grade == ::foundation::algebra::lattices::QttGrade::One);
 
 // The permission tokens: empty, move-only, and consumed exactly once by
 // the operation they authorize.
 template <typename T>
-concept IsPermissionToken =
-    ::foundation::reflect::IsInstanceOfAny<T, ^^::foundation::permissions::Permission,
-                                           ^^::foundation::permissions::SharedPermission>;
+concept IsPermissionToken = ::foundation::reflect::IsInstanceOfAny<T, ^^::foundation::permissions::Permission,
+                                                                   ^^::foundation::permissions::SharedPermission>;
 
 }  // namespace detail
 
@@ -280,8 +280,7 @@ template <typename T>
 inline constexpr bool is_already_linear_v = is_already_linear<T>::value;
 
 template <typename T>
-struct is_already_consume_disciplined
-    : std::bool_constant<detail::IsQttInstance<T> || detail::IsPermissionToken<T>> {};
+struct is_already_consume_disciplined : std::bool_constant<detail::IsQttInstance<T> || detail::IsPermissionToken<T>> {};
 
 template <typename T>
 inline constexpr bool is_already_consume_disciplined_v = is_already_consume_disciplined<T>::value;
@@ -491,14 +490,14 @@ using SharedToken = ::foundation::permissions::SharedPermission<tag>;
 static_assert(::foundation::contracts::predicate_accepts<
               is_already_linear, Linear<int>, Linear<int> const&, Linear<int>&&, Linear<void*>,
               detail::qtt_witness::ExclusiveToken, detail::qtt_witness::SharedToken const&>());
-static_assert(::foundation::contracts::predicate_refuses<is_already_linear, int, void*, Affine<int>,
-                                                         std::unique_ptr<int>>());
+static_assert(
+    ::foundation::contracts::predicate_refuses<is_already_linear, int, void*, Affine<int>, std::unique_ptr<int>>());
 
 static_assert(::foundation::contracts::predicate_accepts<
               is_already_consume_disciplined, Linear<int>, Affine<int>, Affine<int> const&, Affine<void*>&&,
               detail::qtt_witness::ExclusiveToken, detail::qtt_witness::SharedToken>());
-static_assert(::foundation::contracts::predicate_refuses<is_already_consume_disciplined, int, void*,
-                                                         std::unique_ptr<int>>());
+static_assert(
+    ::foundation::contracts::predicate_refuses<is_already_consume_disciplined, int, void*, std::unique_ptr<int>>());
 
 // The two rejections the gates exist for, stated as the facts they
 // rest on.  The refusals themselves are compile errors, so they are

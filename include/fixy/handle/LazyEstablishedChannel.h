@@ -104,8 +104,8 @@ public:
         requires ::fixy::session::CtxFitsSession<Ctx, Proto, Resource&>
     [[nodiscard]] auto mint_established_session(  // MINT-PATTERN-OK: reads the atomic slot and claim flag
         Ctx const& ctx, std::source_location loc = std::source_location::current()) noexcept
-        -> std::expected<decltype(::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy,
-                                                                  Ctx, Resource&>(ctx, std::declval<Resource&>())),
+        -> std::expected<decltype(::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx,
+                                                                Resource&>(ctx, std::declval<Resource&>())),
                          LazyChannelRefusal> {
         Resource* const published = resource_.observe();
         if (published == nullptr) return std::unexpected(LazyChannelRefusal::NotEstablished);

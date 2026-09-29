@@ -488,7 +488,8 @@ static_assert(NamesItsChannel<producer_on_a> && NamesItsChannel<consumer_on_b co
 static_assert(!NamesItsChannel<synthetic_producer>);
 static_assert(HandlesShareChannel<producer_on_a, consumer_on_a>);
 static_assert(!HandlesShareChannel<producer_on_a, consumer_on_b>, "one payload, two channels");
-static_assert(!HandlesShareChannel<synthetic_producer, synthetic_consumer>, "a handle that names no channel meets none");
+static_assert(!HandlesShareChannel<synthetic_producer, synthetic_consumer>,
+              "a handle that names no channel meets none");
 
 }  // namespace detail::handle_traits_self_test
 

@@ -40,10 +40,10 @@ namespace crucible::fuzz::boundary {
     std::abort();
 }
 
-#define CRUCIBLE_FUZZ_CLAIM(harness, cond)                                        \
-    do {                                                                         \
-        if (!(cond)) [[unlikely]]                                                \
-            ::crucible::fuzz::boundary::claim_broken(harness, #cond);            \
+#define CRUCIBLE_FUZZ_CLAIM(harness, cond)                            \
+    do {                                                              \
+        if (!(cond)) [[unlikely]]                                     \
+            ::crucible::fuzz::boundary::claim_broken(harness, #cond); \
     } while (0)
 
 // Splits one fuzz input into fields.  A read past the end yields zero bytes

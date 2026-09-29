@@ -576,7 +576,8 @@ template <class Proof>
     Proof* const from_void = static_cast<Proof*>(static_cast<void*>(storage));
     const Proof* const routes[] = {from_union, from_void};
     std::size_t open = 0;
-    for (const Proof* const route : routes) open += route != nullptr ? 1u : 0u;
+    for (const Proof* const route : routes)
+        open += route != nullptr ? 1u : 0u;
     return open;
 }
 
@@ -591,14 +592,13 @@ concept bit_cast_route_compiles = requires(unsigned char byte) { std::bit_cast<P
 template <class Proof>
 concept construct_at_route_compiles = requires(Proof* storage) { std::construct_at(storage); };
 template <class Proof>
-concept aggregate_bit_cast_route_compiles = requires(unsigned char byte) {
-    std::bit_cast<HoldsProof<Proof>>(byte).proof;
-};
+concept aggregate_bit_cast_route_compiles =
+    requires(unsigned char byte) { std::bit_cast<HoldsProof<Proof>>(byte).proof; };
 
 template <class Proof>
-inline constexpr bool every_closed_route_refused = !bit_cast_route_compiles<Proof> && !std::is_implicit_lifetime_v<Proof>
-                                                   && !construct_at_route_compiles<Proof>
-                                                   && !aggregate_bit_cast_route_compiles<Proof>;
+inline constexpr bool every_closed_route_refused =
+    !bit_cast_route_compiles<Proof> && !std::is_implicit_lifetime_v<Proof> && !construct_at_route_compiles<Proof>
+    && !aggregate_bit_cast_route_compiles<Proof>;
 
 static_assert(every_closed_route_refused<fe::Bg> && every_closed_route_refused<fe::Init>
                   && every_closed_route_refused<fe::Test>,
@@ -707,18 +707,18 @@ inline constexpr std::size_t unions_walked = unions.unions_walked;
 int main(int argc, char** argv) {
     namespace fps = forgeable_proofs;
     if (argc > 1 && std::string_view{argv[1]} == "--proof-names") {
-        for (const char* name : fps::proof_name_list) std::printf("%s\n", name);
+        for (const char* name : fps::proof_name_list)
+            std::printf("%s\n", name);
         return 0;
     }
     // Two routes for each of the five pinned proof types.  A route that no
     // longer gives a pointer lowers the count, and the entry must leave
     // the ledger.
     constexpr std::size_t expected_open_routes = 2u * 5u;
-    const std::size_t open_routes = fps::count_open_routes<fe::Bg>()
-                                    + fps::count_open_routes<fe::detail::ctx_mint::bg_key>()
-                                    + fps::count_open_routes<fe::cap_mint_key>()
-                                    + fps::count_open_routes<fp::perm_mint_key>()
-                                    + fps::count_open_routes<fp::Permission<fps::Region>>();
+    const std::size_t open_routes =
+        fps::count_open_routes<fe::Bg>() + fps::count_open_routes<fe::detail::ctx_mint::bg_key>()
+        + fps::count_open_routes<fe::cap_mint_key>() + fps::count_open_routes<fp::perm_mint_key>()
+        + fps::count_open_routes<fp::Permission<fps::Region>>();
     if (open_routes != expected_open_routes) {
         std::fprintf(stderr,
                      "test_forgeable_proofs: %zu routes of the ledger still give a pointer, not %zu.  Delete each "

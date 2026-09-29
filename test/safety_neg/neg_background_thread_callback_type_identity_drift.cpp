@@ -16,8 +16,8 @@ namespace c = crucible;
 
 // The whole parameter list of Fn, so the one difference the assertion can
 // see is the noexcept.
-using non_noexcept_fn =
-    void (*)(void*, ::foundation::effects::Bg const&, c::BackgroundThread::PublishStage, c::RegionNode*);
+using non_noexcept_fn = void (*)(void*, ::foundation::effects::Bg const&, c::BackgroundThread::PublishStage,
+                                 c::RegionNode*);
 static_assert(std::is_same_v<c::BackgroundThread::RegionReadyCallback::Fn,
                              void (*)(void*, ::foundation::effects::Bg const&, c::BackgroundThread::PublishStage,
                                       c::RegionNode*) noexcept>,

@@ -21,6 +21,4 @@ Carried forge(Handle&& handle, s::PermHold<fp::EmptyPermSet>&& hold) {
 }
 }  // namespace neg_sess_delegated_session_forged_types
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

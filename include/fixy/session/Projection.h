@@ -249,8 +249,8 @@ template <typename Q, typename D>
 struct queue_for;
 template <typename... Ms, typename D>
 struct queue_for<OutQueue<Ms...>, D> {
-    using type =
-        typename queue_concat<std::conditional_t<std::is_same_v<typename Ms::to, D>, OutQueue<Ms>, OutQueue<>>...>::type;
+    using type = typename queue_concat<
+        std::conditional_t<std::is_same_v<typename Ms::to, D>, OutQueue<Ms>, OutQueue<>>...>::type;
 };
 
 template <typename Q>
@@ -264,18 +264,18 @@ template <typename Q1, typename Q2, typename Receivers>
 struct queue_match;
 template <typename Q1, typename Q2, typename... Ds>
 struct queue_match<Q1, Q2, g::Roles<Ds...>>
-    : std::bool_constant<(std::is_same_v<typename queue_for<Q1, Ds>::type, typename queue_for<Q2, Ds>::type> && ...)> {};
+    : std::bool_constant<(std::is_same_v<typename queue_for<Q1, Ds>::type, typename queue_for<Q2, Ds>::type> && ...)> {
+};
 
 }  // namespace detail::proj
 
 // True when Q1 and Q2 hold, for each receiver, the same messages in the
 // same order (Definition 1).
 template <typename Q1, typename Q2>
-inline constexpr bool queues_equivalent_v =
-    detail::proj::queue_match<Q1, Q2,
-                              typename detail::proj::g::detail::role_union<
-                                  typename detail::proj::queue_receivers<Q1>::type,
-                                  typename detail::proj::queue_receivers<Q2>::type>::type>::value;
+inline constexpr bool queues_equivalent_v = detail::proj::queue_match<
+    Q1, Q2,
+    typename detail::proj::g::detail::role_union<typename detail::proj::queue_receivers<Q1>::type,
+                                                 typename detail::proj::queue_receivers<Q2>::type>::type>::value;
 
 namespace detail::proj {
 
@@ -390,7 +390,8 @@ template <typename Peer, typename List>
 struct rebuild_offer;
 template <typename Peer, typename... Brs>
 struct rebuild_offer<Peer, BL<Brs...>> {
-    using type = Offer<Sender<Peer>, Recv<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
+    using type =
+        Offer<Sender<Peer>, Recv<PeerMsg<Peer, typename Brs::label, typename Brs::payload>, typename Brs::next>...>;
 };
 
 // A crash branch comes last, so the message branches keep their indices
@@ -405,8 +406,8 @@ struct find_label {
 };
 template <typename L, typename First, typename... Rest>
 struct find_label<L, BL<First, Rest...>> {
-    using type = std::conditional_t<std::is_same_v<L, typename First::label>, First,
-                                    typename find_label<L, BL<Rest...>>::type>;
+    using type =
+        std::conditional_t<std::is_same_v<L, typename First::label>, First, typename find_label<L, BL<Rest...>>::type>;
 };
 
 template <typename... Ts>
@@ -527,8 +528,9 @@ consteval auto merge_internal(BL<As...>, BL<Bs...>) {
         if constexpr (!std::is_void_v<failure>) {
             return std::type_identity<failure>{};
         } else {
-            return std::type_identity<typename rebuild<
-                Side::Internal, Peer, BL<typename decltype(merge_internal_branch<As, BL<Bs...>, Fuel>())::type...>>::type>{};
+            return std::type_identity<
+                typename rebuild<Side::Internal, Peer,
+                                 BL<typename decltype(merge_internal_branch<As, BL<Bs...>, Fuel>())::type...>>::type>{};
         }
     }
 }
@@ -543,9 +545,10 @@ consteval auto merge_external(BL<As...>, BL<Bs...>) {
         return std::type_identity<failure>{};
     } else {
         using merged = BL<typename decltype(merge_external_branch<As, BL<Bs...>, Fuel>())::type...>;
-        using extra = typename bl_concat<std::conditional_t<std::is_void_v<typename find_label<typename Bs::label, BL<As...>>::type>,
-                                                            BL<Bs>, BL<>>...>::type;
-        return std::type_identity<typename rebuild<Side::External, Peer, typename bl_concat<merged, extra>::type>::type>{};
+        using extra = typename bl_concat<std::conditional_t<
+            std::is_void_v<typename find_label<typename Bs::label, BL<As...>>::type>, BL<Bs>, BL<>>...>::type;
+        return std::type_identity<
+            typename rebuild<Side::External, Peer, typename bl_concat<merged, extra>::type>::type>{};
     }
 }
 
@@ -561,7 +564,8 @@ consteval auto merge_select() {
         if constexpr (Fuel <= 0) {
             return std::type_identity<NotProjectable<projection_failure::MergeUnfoldLimit>>{};
         } else {
-            return std::type_identity<typename merge2<typename unfold<A>::type, typename unfold<B>::type, Fuel - 1>::type>{};
+            return std::type_identity<
+                typename merge2<typename unfold<A>::type, typename unfold<B>::type, Fuel - 1>::type>{};
         }
     } else if constexpr (view<A>::side == Side::Internal && view<B>::side == Side::Internal
                          && std::is_same_v<typename view<A>::peer, typename view<B>::peer>) {
@@ -650,8 +654,9 @@ consteval auto proj_comm(BL<Br<Ls, Ps, Cs>...>) {
             // No role sends the crash label.  One message branch is a keyed
             // Send, which puts its label word on the wire as a Select does,
             // so the receiver still tells the message from the crash.
-            return std::type_identity<Projected<
-                typename first::queue, typename rebuild<Side::Internal, To, typename without_crash<projected>::type>::type>>{};
+            return std::type_identity<
+                Projected<typename first::queue,
+                          typename rebuild<Side::Internal, To, typename without_crash<projected>::type>::type>>{};
         } else if constexpr (std::is_same_v<R, To>) {
             if constexpr (!is_reliable_role_v<Reliable, From> && !has_crash_branch) {
                 return std::type_identity<NotProjectable<projection_failure::MissingCrashBranch>>{};
@@ -710,8 +715,9 @@ consteval auto proj_en_route(BL<Br<Ls, Ps, Cs>...>) {
         return std::type_identity<chosen>{};
     } else if constexpr (std::is_same_v<R, From>) {
         using payload = typename g::detail::payload_of<Chosen, g::Branch<Ls, Ps, Cs>...>::type;
-        return std::type_identity<Projected<typename queue_prepend<typename chosen::queue, Queued<To, Chosen, payload>>::type,
-                                            typename chosen::local>>{};
+        return std::type_identity<
+            Projected<typename queue_prepend<typename chosen::queue, Queued<To, Chosen, payload>>::type,
+                      typename chosen::local>>{};
     } else {
         return std::type_identity<chosen>{};
     }
@@ -738,8 +744,7 @@ template <typename From, typename To, typename Chosen, typename... Ls, typename.
           typename Reliable>
     requires(!g::detail::is_crashed_v<From>)
 struct proj_walk<g::EnRouteChoice<From, To, Chosen, g::Branch<Ls, Ps, Cs>...>, R, Reliable> {
-    using type =
-        typename decltype(proj_en_route<From, To, false, Chosen, R, Reliable>(BL<Br<Ls, Ps, Cs>...>{}))::type;
+    using type = typename decltype(proj_en_route<From, To, false, Chosen, R, Reliable>(BL<Br<Ls, Ps, Cs>...>{}))::type;
 };
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename R, typename Reliable>
 struct proj_walk<g::Comm<From, g::Crashed<To>, g::Branch<Ls, Ps, Cs>...>, R, Reliable> {
@@ -748,8 +753,7 @@ struct proj_walk<g::Comm<From, g::Crashed<To>, g::Branch<Ls, Ps, Cs>...>, R, Rel
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs, typename R,
           typename Reliable>
 struct proj_walk<g::EnRouteChoice<g::Crashed<From>, To, Chosen, g::Branch<Ls, Ps, Cs>...>, R, Reliable> {
-    using type =
-        typename decltype(proj_en_route<From, To, true, Chosen, R, Reliable>(BL<Br<Ls, Ps, Cs>...>{}))::type;
+    using type = typename decltype(proj_en_route<From, To, true, Chosen, R, Reliable>(BL<Br<Ls, Ps, Cs>...>{}))::type;
 };
 
 template <typename G, typename R, typename Reliable>
@@ -1203,7 +1207,8 @@ template <typename G, typename Reliable, typename RL>
 struct each_role_crash_projects;
 template <typename G, typename Reliable, typename... Rs>
 struct each_role_crash_projects<G, Reliable, g::Roles<Rs...>>
-    : std::bool_constant<(!is_projection_failure_v<typename decltype(project_under<G, Rs, Reliable>())::type> && ...)> {};
+    : std::bool_constant<(!is_projection_failure_v<typename decltype(project_under<G, Rs, Reliable>())::type> && ...)> {
+};
 
 template <typename G, typename Reliable, typename RL>
 struct first_crash_unprojectable {
@@ -1211,8 +1216,8 @@ struct first_crash_unprojectable {
 };
 template <typename G, typename Reliable, typename R, typename... Rest>
 struct first_crash_unprojectable<G, Reliable, g::Roles<R, Rest...>> {
-    using type = std::conditional_t<is_projection_failure_v<typename decltype(project_under<G, R, Reliable>())::type>, R,
-                                    typename first_crash_unprojectable<G, Reliable, g::Roles<Rest...>>::type>;
+    using type = std::conditional_t<is_projection_failure_v<typename decltype(project_under<G, R, Reliable>())::type>,
+                                    R, typename first_crash_unprojectable<G, Reliable, g::Roles<Rest...>>::type>;
 };
 
 template <typename G>

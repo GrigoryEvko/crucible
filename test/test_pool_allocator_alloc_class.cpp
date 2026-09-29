@@ -104,9 +104,8 @@ static void test_slot_ptr_pinned_type_identity() {
 // allocation class and no substitute.
 template <typename W>
 concept admissible_at_pool_fence = band_tier_v<W> == AllocClassTag_v::Pool || band_tier_v<W> == AllocClassTag_v::Arena
-                                   || band_tier_v<W> == AllocClassTag_v::Heap
-                                   || band_tier_v<W> == AllocClassTag_v::Mmap
-                                   || band_tier_v<W> == AllocClassTag_v::HugePage;
+                                || band_tier_v<W> == AllocClassTag_v::Heap || band_tier_v<W> == AllocClassTag_v::Mmap
+                                || band_tier_v<W> == AllocClassTag_v::HugePage;
 
 template <typename W>
 concept admissible_at_huge_fence = band_tier_v<W> == AllocClassTag_v::HugePage;

@@ -12,6 +12,4 @@ using TiledDecision = ::fixy::Tagged<phase::FusedCommDecision, ::fixy::tags::sou
 
 inline void consume_tiled(TiledDecision) {}
 
-inline void pass_fused(phase::DeclaredFusedCommDecision fused) {
-    consume_tiled(fused);
-}
+inline void pass_fused(phase::DeclaredFusedCommDecision fused) { consume_tiled(fused); }

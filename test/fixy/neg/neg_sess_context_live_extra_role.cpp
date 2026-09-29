@@ -22,10 +22,10 @@ struct Ask {};
 
 using Question = g::Msg<Alice, Bob, Ask, int, g::End>;
 
-using WithStranger = s::TypingContext<
-    s::RoleState<Alice, s::OutQueue<>, typename s::project_t<Question, Alice>::local>,
-    s::RoleState<Bob, s::OutQueue<>, typename s::project_t<Question, Bob>::local>,
-    s::RoleState<Stranger, s::OutQueue<>, s::Recv<s::PeerMsg<Alice, Ask, int>, s::End>>>;
+using WithStranger =
+    s::TypingContext<s::RoleState<Alice, s::OutQueue<>, typename s::project_t<Question, Alice>::local>,
+                     s::RoleState<Bob, s::OutQueue<>, typename s::project_t<Question, Bob>::local>,
+                     s::RoleState<Stranger, s::OutQueue<>, s::Recv<s::PeerMsg<Alice, Ask, int>, s::End>>>;
 
 constexpr int require_live() noexcept {
     s::ensure_context_live<WithStranger, Question>();

@@ -27,7 +27,8 @@ template <class T>
 namespace {
 namespace fe = ::foundation::effects;
 
-struct Lookalike final : fe::detail::ContextBase<Lookalike, fe::detail::ctx_mint::bg_key, fe::Effect::Bg, fe::Effect::Alloc> {
+struct Lookalike final
+    : fe::detail::ContextBase<Lookalike, fe::detail::ctx_mint::bg_key, fe::Effect::Bg, fe::Effect::Alloc> {
     constexpr Lookalike() noexcept = default;
 };
 }  // namespace

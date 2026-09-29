@@ -40,11 +40,13 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     }
     for (std::uint32_t i = 0; i < region.num_ops; ++i) {
         const TraceEntry& op = region.ops[i];
-        for (std::uint16_t j = 0; j < op.num_inputs; ++j) claim_meta_in_range(harness, op.input_metas[j]);
-        for (std::uint16_t j = 0; j < op.num_outputs; ++j) claim_meta_in_range(harness, op.output_metas[j]);
+        for (std::uint16_t j = 0; j < op.num_inputs; ++j)
+            claim_meta_in_range(harness, op.input_metas[j]);
+        for (std::uint16_t j = 0; j < op.num_outputs; ++j)
+            claim_meta_in_range(harness, op.output_metas[j]);
     }
-    CRUCIBLE_FUZZ_CLAIM(harness,
-                        region.content_hash == compute_content_hash(std::span<const TraceEntry>{region.ops, region.num_ops}));
+    CRUCIBLE_FUZZ_CLAIM(harness, region.content_hash
+                                     == compute_content_hash(std::span<const TraceEntry>{region.ops, region.num_ops}));
 }
 
 // A region the way the recorder builds one: two operations with one input
@@ -135,7 +137,8 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 [[nodiscard]] inline Seeds seeds_region() {
     Arena arena;
     Seeds seeds{region_image(build_seed_region(arena, false)), region_image(build_seed_region(arena, true))};
-    for (auto& regression : region_regressions()) seeds.push_back(std::move(regression));
+    for (auto& regression : region_regressions())
+        seeds.push_back(std::move(regression));
     return seeds;
 }
 

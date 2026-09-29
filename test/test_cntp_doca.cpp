@@ -83,7 +83,8 @@ void test_plan_minting() {
     assert(plan.has_value());
     assert(plan->value().spec.program_id.value() == 0xd0ca);
 
-    auto switch_plan = doca::mint_doca_deploy_plan(init, dpu_identity(cog::CogKind::NvSwitch), doca_caps(), offload_spec());
+    auto switch_plan =
+        doca::mint_doca_deploy_plan(init, dpu_identity(cog::CogKind::NvSwitch), doca_caps(), offload_spec());
     assert(switch_plan.has_value());
 
     auto no_cap = doca_caps();

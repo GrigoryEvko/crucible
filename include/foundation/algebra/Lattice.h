@@ -152,10 +152,10 @@ template <LatticeShape L>
 // the pair.
 template <LatticeShape L>
 [[nodiscard]] consteval bool order_agrees(LatticeElement<L> a, LatticeElement<L> b) noexcept {
-    const bool by_join = L::leq(a, b) == equivalent_<L>(L::join(a, b), b)
-                      && L::leq(b, a) == equivalent_<L>(L::join(b, a), a);
-    const bool by_meet = L::leq(a, b) == equivalent_<L>(L::meet(a, b), a)
-                      && L::leq(b, a) == equivalent_<L>(L::meet(b, a), b);
+    const bool by_join =
+        L::leq(a, b) == equivalent_<L>(L::join(a, b), b) && L::leq(b, a) == equivalent_<L>(L::join(b, a), a);
+    const bool by_meet =
+        L::leq(a, b) == equivalent_<L>(L::meet(a, b), a) && L::leq(b, a) == equivalent_<L>(L::meet(b, a), b);
     return by_join && by_meet;
 }
 

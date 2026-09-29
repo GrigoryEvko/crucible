@@ -140,7 +140,8 @@ constexpr void absorb(SipState& state, std::uint64_t block) noexcept {
 }  // namespace detail::siphash
 
 // Computes the tag of the message and gives the key back beside it.
-[[nodiscard]] constexpr std::pair<Secret<Key>, Tag> sign(Secret<Key>&& key, std::span<const std::byte> message) noexcept {
+[[nodiscard]] constexpr std::pair<Secret<Key>, Tag> sign(Secret<Key>&& key,
+                                                         std::span<const std::byte> message) noexcept {
     Secret<Tag> tag = mint_secret<Tag>();
     Secret<Key> kept = std::move(key).transform([&](Key raw) noexcept {
         tag = mint_secret<Tag>(detail::siphash::compute(raw, message));
@@ -152,12 +153,12 @@ constexpr void absorb(SipState& state, std::uint64_t block) noexcept {
 // Gives the key back beside the answer to one question: does the tag
 // authenticate the message under this key?
 [[nodiscard]] constexpr std::pair<Secret<Key>, bool> verify(Secret<Key>&& key, std::span<const std::byte> message,
-                                                           Tag const& tag) noexcept {
+                                                            Tag const& tag) noexcept {
     Secret<bool> matches = mint_secret<bool>(false);
     Secret<Key> kept = std::move(key).transform([&](Key raw) noexcept {
         Tag const computed = detail::siphash::compute(raw, message);
-        matches = mint_secret<bool>(ct::eq(std::span<const std::byte, tag_bytes>{computed},
-                                           std::span<const std::byte, tag_bytes>{tag}));
+        matches = mint_secret<bool>(
+            ct::eq(std::span<const std::byte, tag_bytes>{computed}, std::span<const std::byte, tag_bytes>{tag}));
         return raw;
     });
     return {std::move(kept), std::move(matches).declassify<tags::secret_policy::HashForCompare>()};

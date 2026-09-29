@@ -14,8 +14,7 @@ namespace {
 struct GateTag {
     using permission_row = ::foundation::effects::Row<>;
 };
-using BgCtx =
-    eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 }  // namespace
 
 int main() {

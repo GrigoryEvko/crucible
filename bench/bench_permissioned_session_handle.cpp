@@ -65,9 +65,8 @@ constexpr auto send_item = [](FakeChannel& channel, Item& value) noexcept {
 using SendLoop = s::Loop<s::Send<Item, s::Continue>>;
 
 using EmptySetLoopHandle = decltype(s::mint_session_handle<SendLoop>(std::declval<FakeChannel>()));
-using PermittedLoopHandle = decltype(s::mint_permissioned_session<SendLoop>(
-                                         kForeground, std::declval<FakeChannel>(),
-                                         perm::mint_permission_root<BenchRegion>())
+using PermittedLoopHandle = decltype(s::mint_permissioned_session<SendLoop>(kForeground, std::declval<FakeChannel>(),
+                                                                            perm::mint_permission_root<BenchRegion>())
                                          .first);
 using BareEndHandle = decltype(s::mint_session_handle<s::End>(std::declval<FakeChannel>()));
 using CtxEndHandle = decltype(s::mint_session<s::End>(kForeground, std::declval<FakeChannel>()));

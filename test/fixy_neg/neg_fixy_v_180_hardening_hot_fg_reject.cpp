@@ -17,8 +17,8 @@
 
 namespace neg_fixy_v_180_hardening_hot_fg {
 
-[[maybe_unused]] constexpr auto bad_dispatch = ::crucible::warden::mint_hardening(
-    ::foundation::effects::testing::foreground(), ::crucible::warden::Policy{});
+[[maybe_unused]] constexpr auto bad_dispatch =
+    ::crucible::warden::mint_hardening(::foundation::effects::testing::foreground(), ::crucible::warden::Policy{});
 
 }  // namespace neg_fixy_v_180_hardening_hot_fg
 

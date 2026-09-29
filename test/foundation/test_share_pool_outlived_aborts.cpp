@@ -67,7 +67,8 @@ void end_pool_while_shared() {
 }  // namespace
 
 int main() {
-    const bool refused = attack_aborts_with(end_pool_while_shared, "a SharedPermissionPool ended while shares were out");
+    const bool refused =
+        attack_aborts_with(end_pool_while_shared, "a SharedPermissionPool ended while shares were out");
     std::printf("test_share_pool_outlived_aborts: %s\n", refused ? "refused" : "NOT REFUSED");
     return refused ? 0 : 1;
 }

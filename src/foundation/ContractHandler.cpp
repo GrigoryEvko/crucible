@@ -48,8 +48,8 @@ namespace foundation::detail {
 // can allocate the TLS block of a dynamically loaded module.  The flag takes
 // a few bytes of the static TLS surplus of a library that the process loads
 // later.
-CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread_local volatile std::sig_atomic_t
-    contract_report_in_progress = 0;
+CRUCIBLE_PROCESS_WIDE [[gnu::tls_model(
+    "initial-exec")]] inline constinit thread_local volatile std::sig_atomic_t contract_report_in_progress = 0;
 
 }  // namespace foundation::detail
 
@@ -97,7 +97,8 @@ private:
     void flush_() noexcept {
         std::size_t written = 0;
         while (written < length_) {
-            const ::ssize_t taken =  // SYSCALL-CAP-OK: an async-signal-safe report from any context, a signal handler too
+            const ::ssize_t
+                taken =  // SYSCALL-CAP-OK: an async-signal-safe report from any context, a signal handler too
                 ::write(STDERR_FILENO, bytes_.data() + written, length_ - written);
             if (taken > 0) {
                 written += static_cast<std::size_t>(taken);

@@ -99,8 +99,10 @@ void fill(Input& input, std::size_t cls, Xorshift& rng) noexcept {
     input.a = rng.next();
     input.b = rng.next();
     input.bit = rng.next() & 1u;
-    for (std::size_t i = 0; i < kBytes; ++i) input.left[i] = std::byte{0};
-    for (std::size_t i = 0; i < kBytes; ++i) input.right[i] = static_cast<std::byte>(rng.next());
+    for (std::size_t i = 0; i < kBytes; ++i)
+        input.left[i] = std::byte{0};
+    for (std::size_t i = 0; i < kBytes; ++i)
+        input.right[i] = static_cast<std::byte>(rng.next());
 }
 
 // The wrappers under test.  Each is out of line and reads its operands
@@ -136,8 +138,8 @@ template <typename Ct>
 }
 [[gnu::noinline]] std::uint64_t probe_fixy_eq_static(Input const& in) noexcept {
     return ::fixy::ct::eq(std::span<const std::byte, kBytes>{in.left}, std::span<const std::byte, kBytes>{in.right})
-               ? 1u
-               : 0u;
+             ? 1u
+             : 0u;
 }
 
 // The leaking control: a byte comparison that stops at the first
@@ -259,8 +261,8 @@ std::string_view verdict(double max_abs_t) noexcept {
 // Print one line of the report.
 void report(std::string_view name, Result const& result) noexcept {
     std::printf("%-28.*s max |t| = %8.2f  crop %3zu  samples %10.0f  %.*s\n", static_cast<int>(name.size()),
-                name.data(), result.max_abs_t, result.crop, result.samples, static_cast<int>(verdict(result.max_abs_t).size()),
-                verdict(result.max_abs_t).data());
+                name.data(), result.max_abs_t, result.crop, result.samples,
+                static_cast<int>(verdict(result.max_abs_t).size()), verdict(result.max_abs_t).data());
 }
 
 }  // namespace

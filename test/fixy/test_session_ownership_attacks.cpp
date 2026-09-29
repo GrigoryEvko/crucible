@@ -223,10 +223,11 @@ static_assert(refusal_of<std::pair<TX, sess::Transferable<int, XAlias>>> == Refu
               "an alias of a tag is the same tag");
 static_assert(refusal_of<std::pair<fp::Permission<X>, TX>> == Refusal::DuplicateTag);
 struct DelegatedWire {};
-static_assert(refusal_of<std::pair<TX, sess::DelegatedSession<sess::End, DelegatedWire, sess::DefaultAbandonmentPolicy,
-                                                              fp::PermSet<X>>>>
-                  == Refusal::DuplicateTag,
-              "a delegated endpoint carries its tags");
+static_assert(
+    refusal_of<
+        std::pair<TX, sess::DelegatedSession<sess::End, DelegatedWire, sess::DefaultAbandonmentPolicy, fp::PermSet<X>>>>
+        == Refusal::DuplicateTag,
+    "a delegated endpoint carries its tags");
 
 // Refused as a read proof or a share outside its marker.
 static_assert(refusal_of<fp::ReadView<X>> == Refusal::BareBorrowOrShare);
@@ -256,9 +257,9 @@ static_assert(sess::is_plain_payload_v<int*>);
 struct EndpointWire {
     [[no_unique_address]] sess::MoveOnlyResource one_holder{};
 };
-using LoopedEndpoint = sess::SessionHandle<sess::Send<int, sess::Continue>, EndpointWire,
-                                           sess::Loop<sess::Send<int, sess::Continue>>, sess::check::Enforced,
-                                           fp::PermSet<X>>;
+using LoopedEndpoint =
+    sess::SessionHandle<sess::Send<int, sess::Continue>, EndpointWire, sess::Loop<sess::Send<int, sess::Continue>>,
+                        sess::check::Enforced, fp::PermSet<X>>;
 using PlainEndpoint = sess::SessionHandle<sess::Recv<int, sess::End>, EndpointWire>;
 struct HoldsEndpoint {
     int sequence = 0;
@@ -275,8 +276,10 @@ static_assert(refusal_of<LoopedEndpoint> == Refusal::BareEndpoint);
 static_assert(refusal_of<HoldsEndpoint> == Refusal::BareEndpoint);
 static_assert(refusal_of<PlainEndpoint*> == Refusal::BareEndpoint, "a pointer to an endpoint is a second name for it");
 static_assert(refusal_of<std::unique_ptr<PlainEndpoint>> == Refusal::BareEndpoint);
-static_assert(refusal_of<Mentions<PlainEndpoint>> == Refusal::BareEndpoint, "a type that names an endpoint can hold one");
-static_assert(refusal_of<std::pair<TX, PlainEndpoint>> == Refusal::BareEndpoint, "a token beside an endpoint does not hide it");
+static_assert(refusal_of<Mentions<PlainEndpoint>> == Refusal::BareEndpoint,
+              "a type that names an endpoint can hold one");
+static_assert(refusal_of<std::pair<TX, PlainEndpoint>> == Refusal::BareEndpoint,
+              "a token beside an endpoint does not hide it");
 // A pointer to void and a pointer to a function name no endpoint type, as
 // an integer that holds an address names none.  A plain session admits
 // them as data, and a crash or a checkpoint session refuses them.
@@ -333,10 +336,10 @@ static_assert(refusal_of<TokenTree<0>> == Refusal::None);
 // named policy.  A constant-time value that travels bare offers == and
 // element access, which can branch on the content.
 
-struct [[=sess::constant_time_value{}]] AuthTag {
+struct[[= sess::constant_time_value{}]] AuthTag {
     std::byte bytes[16]{};
 };
-struct [[=sess::constant_time_value{}]] SignedAuth {
+struct[[= sess::constant_time_value{}]] SignedAuth {
     AuthTag tag;
     std::byte nonce[8]{};
 };
@@ -532,9 +535,7 @@ namespace {
 class Watchdog {
 public:
     Watchdog(const char* what, std::chrono::seconds limit)
-        : what_{what},
-          limit_{limit},
-          thread_{[this](std::stop_token stop) {
+        : what_{what}, limit_{limit}, thread_{[this](std::stop_token stop) {
               const auto deadline = std::chrono::steady_clock::now() + limit_;
               while (!stop.stop_requested()) {
                   if (std::chrono::steady_clock::now() > deadline) {
@@ -579,10 +580,12 @@ void readers_hold_past_an_upgrade_attempt() {
                 auto guard = pool.lend();
                 require(guard.has_value(), "a reader gets a share while no writer holds the region");
                 holding.fetch_add(1, std::memory_order_acq_rel);
-                while (!release.load(std::memory_order_acquire)) std::this_thread::yield();
+                while (!release.load(std::memory_order_acquire))
+                    std::this_thread::yield();
             });
         }
-        while (holding.load(std::memory_order_acquire) != kReaders) std::this_thread::yield();
+        while (holding.load(std::memory_order_acquire) != kReaders)
+            std::this_thread::yield();
         for (int attempt = 0; attempt < 1000; ++attempt) {
             require(!pool.try_upgrade().has_value(), "an upgrade succeeds while shares are out");
         }
@@ -650,7 +653,8 @@ public:
         full_.store(true, std::memory_order_release);
     }
     [[nodiscard]] T take() {
-        while (!full_.load(std::memory_order_acquire)) std::this_thread::yield();
+        while (!full_.load(std::memory_order_acquire))
+            std::this_thread::yield();
         T value = std::move(*value_);
         value_.reset();
         full_.store(false, std::memory_order_release);
@@ -704,8 +708,8 @@ void borrowed_prefix_on_another_thread() {
     require(answer == 11, "the borrower read the value written before the loan");
     auto [token, empty] = std::move(closed).template take<X>();
     write_region(token, 20);
-    auto [after, token_back] = fp::with_read_view(
-        std::move(token), [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+    auto [after, token_back] =
+        fp::with_read_view(std::move(token), [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
     require(after == 20, "the lender writes after the loan closes");
     fp::permission_drop(std::move(token_back));
     auto ended = std::move(empty).into_permissions();
@@ -741,10 +745,12 @@ concept LoanCopies = std::is_copy_constructible_v<fp::ReadLoan<Tag>>;
 template <class H, class Tag>
 concept CanReadThrough =
     requires(H hold) { std::move(hold).template read<Tag>([](fp::ReadView<Tag> const&) noexcept {}); };
+// clang-format off: 22.1.8 and 23.1.0 disagree on the & of a lambda parameter in a requires body.
 template <class Tag>
 concept ProofLeavesAsResult = requires(fp::Permission<Tag>&& token) {
     fp::with_read_view(std::move(token), [](fp::ReadView<Tag> const& view) noexcept { return &view; });
 };
+// clang-format on
 
 static_assert(!ProofCopiesOrMoves<X>, "a read proof does not leave the frame of its door by value");
 static_assert(!ProofStoresPastItsFrame<X>, "a read proof is not built in place in a longer-lived object");
@@ -763,8 +769,8 @@ void read_proof_ends_with_the_loan() {
     auto lender = sess::mint_permission_hold(fp::mint_permission_root<X>());
     auto [loan, lent] = std::move(lender).template lend<X>(0);
     auto [value, borrowing] = sess::mint_permission_hold().accept_loan(std::move(loan));
-    auto [seen, reading] = std::move(borrowing).template read<X>(
-        [](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
+    auto [seen, reading] =
+        std::move(borrowing).template read<X>([](fp::ReadView<X> const& proof) noexcept { return read_region(proof); });
     auto [release, done] = std::move(reading).template release<X>(value + seen);
     static_assert(!CanReadThrough<decltype(done), X>, "the release ends every read of the borrower");
     auto [back, closed] = std::move(lent).end_loan(std::move(release));

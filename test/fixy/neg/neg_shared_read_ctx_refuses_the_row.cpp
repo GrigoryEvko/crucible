@@ -25,8 +25,8 @@ int main() {
     IoCtx io{::foundation::effects::testing::bg()};
     FgCtx fg = ::foundation::effects::testing::foreground();
 
-    auto region =
-        ::fixy::mint_owned_region(storage, std::size_t{2}, ::foundation::permissions::mint_permission_root<Spilled>(io));
+    auto region = ::fixy::mint_owned_region(storage, std::size_t{2},
+                                            ::foundation::permissions::mint_permission_root<Spilled>(io));
     ::fixy::SharedRegion shared{std::move(region)};
     auto guard = shared.lend(io);
 

@@ -2654,7 +2654,7 @@ crucible_neg_compile_multi_test(neg_cdag_version_external_cross_tag
 #     pass as source::External.
 crucible_neg_compile_multi_test(neg_deserialize_region_raw_region_ptr
   "cannot convert .std::optional<fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Loaded> >. to .crucible::RegionNode\\*. in initialization"
-  "neg_deserialize_region_raw_region_ptr.cpp:21")
+  "neg_deserialize_region_raw_region_ptr.cpp:22")
 crucible_neg_compile_multi_test(neg_deserialize_region_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Loaded>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
   "neg_deserialize_region_cross_tag.cpp:25")
@@ -5064,7 +5064,7 @@ crucible_neg_compile_multi_test(neg_trace_loader_names_unbranded_ctx
 crucible_neg_compile_multi_test(neg_trace_loader_names_other_brand
   "no matching function for call to .load_trace.const fixy::TestRunnerCtx&, foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >"
   "to type .const crucible::VigilFgCtx&."
-  "neg_trace_loader_names_other_brand.cpp:17")
+  "neg_trace_loader_names_other_brand.cpp:16")
 # A trace load reads a file, so it asks for a context that owns IO and
 # Block.  The foreground context of a Vigil owns neither.
 crucible_neg_compile_multi_test(neg_trace_loader_refuses_foreground_io

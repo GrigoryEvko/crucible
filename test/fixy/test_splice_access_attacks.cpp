@@ -29,11 +29,9 @@ using fixy::EpochLattice;
 // ── The door that is closed ──────────────────────────────────────────
 
 // access_context::current() lists no private member of a proof.
-static_assert(std::meta::nonstatic_data_members_of(^^EpochLattice::element_type,
-                                                   std::meta::access_context::current())
-                  .empty());
-static_assert(std::meta::nonstatic_data_members_of(^^fixy::VersionStamp, std::meta::access_context::current())
-                  .empty());
+static_assert(
+    std::meta::nonstatic_data_members_of(^^EpochLattice::element_type, std::meta::access_context::current()).empty());
+static_assert(std::meta::nonstatic_data_members_of(^^fixy::VersionStamp, std::meta::access_context::current()).empty());
 
 // ── The ledger ───────────────────────────────────────────────────────
 

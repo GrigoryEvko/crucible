@@ -55,4 +55,6 @@ void* process_wide_claim_brand() noexcept {
     return brand;
 }
 
-void process_wide_release_brand(void* brand) noexcept { delete static_cast<process_wide_libraries::SharedBrand*>(brand); }
+void process_wide_release_brand(void* brand) noexcept {
+    delete static_cast<process_wide_libraries::SharedBrand*>(brand);
+}

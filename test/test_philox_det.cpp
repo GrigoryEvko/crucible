@@ -75,7 +75,8 @@ static void test_to_uniform_det_bit_equal() {
         // Compare the bytes, not the values.  A determinism claim is a
         // claim about bits, and two floats can compare equal without
         // carrying the same bit pattern.
-        assert(std::bit_cast<uint32_t>(Philox::to_uniform(x)) == std::bit_cast<uint32_t>(Philox::to_uniform_det(x).peek()));
+        assert(std::bit_cast<uint32_t>(Philox::to_uniform(x))
+               == std::bit_cast<uint32_t>(Philox::to_uniform_det(x).peek()));
         assert(std::bit_cast<uint64_t>(Philox::to_uniform_d(x))
                == std::bit_cast<uint64_t>(Philox::to_uniform_d_det(x).peek()));
     }
@@ -384,12 +385,11 @@ static_assert(
     "DetSafePhiloxCtr.  The Pure key satisfies the PhiloxRng-or-stronger "
     "requires-clause.");
 
-static_assert(
-    std::is_same_v<decltype(Philox::generate_det(uint64_t{0},
-                                                 mint_band<DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>(0ull))),
-                   Philox::DetSafePhiloxCtr>,
-    "generate_det(uint64, DetSafe<PhiloxRng, uint64>) MUST return "
-    "DetSafePhiloxCtr.  PhiloxRng key satisfies the gate at the boundary.");
+static_assert(std::is_same_v<decltype(Philox::generate_det(
+                                 uint64_t{0}, mint_band<DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>(0ull))),
+                             Philox::DetSafePhiloxCtr>,
+              "generate_det(uint64, DetSafe<PhiloxRng, uint64>) MUST return "
+              "DetSafePhiloxCtr.  PhiloxRng key satisfies the gate at the boundary.");
 
 // A requires-clause that admits everything compiles just as happily
 // as one that admits the right things, so the rejections need their
@@ -426,7 +426,8 @@ static void test_typed_chain_bit_equal_to_peek_chain() {
     const auto key_form1 = mint_band<DetSafe<DetSafeTier_v::Pure, uint64_t>>(key_raw);
     const auto rng_form1 = Philox::generate_det(offset, key_form1.peek());
     const auto rng_form2 = Philox::generate_det(offset, mint_band<DetSafe<DetSafeTier_v::Pure, uint64_t>>(key_raw));
-    const auto rng_form3 = Philox::generate_det(offset, mint_band<DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>(key_raw));
+    const auto rng_form3 =
+        Philox::generate_det(offset, mint_band<DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>(key_raw));
 
     assert(rng_form1.peek() == rng_form2.peek());
     assert(rng_form1.peek() == rng_form3.peek());

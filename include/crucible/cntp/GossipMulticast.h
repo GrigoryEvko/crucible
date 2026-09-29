@@ -127,9 +127,9 @@ struct GossipNeighborList {
 // The plan stores each topic's neighbor list in a BPF map, so the shape is
 // exactly what a map admits: the topic key and the list are map elements.
 template <std::uint32_t MaxTopics, std::uint16_t MaxNeighbors>
-concept GossipMulticastShape = MaxTopics > 0 && GossipNeighborShape<MaxNeighbors>
-                            && dataplane::BpfMapElement<GossipTopicKey>
-                            && dataplane::BpfMapElement<GossipNeighborList<MaxNeighbors>>;
+concept GossipMulticastShape = MaxTopics > 0
+                            && GossipNeighborShape<MaxNeighbors>&& dataplane::BpfMapElement<GossipTopicKey>&&
+                                   dataplane::BpfMapElement<GossipNeighborList<MaxNeighbors>>;
 
 struct GossipMulticastConfig {
     GossipDedupWindowNs dedup_window_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{30000000000ULL});

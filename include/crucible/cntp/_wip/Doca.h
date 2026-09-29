@@ -109,7 +109,8 @@ private:
                                 DocaQueueDepth queue_depth) noexcept
         : dpu_uuid_{dpu_uuid}, program_id_{program_id}, kind_{kind}, queue_depth_{queue_depth} {}
 
-    friend constexpr std::expected<OwnedDocaOffload, DocaError> deploy_doca_offload(DeclaredDocaDeployPlan plan) noexcept;
+    friend constexpr std::expected<OwnedDocaOffload, DocaError>
+    deploy_doca_offload(DeclaredDocaDeployPlan plan) noexcept;
 
     cog::Uuid dpu_uuid_{};
     DocaProgramId program_id_;
@@ -292,7 +293,8 @@ static_assert(!CtxFitsDocaComm<::fixy::ColdInitCtx>);
 // bytes costs.
 static_assert(std::is_trivially_copy_constructible_v<DocaOffloadSpec>
               && std::is_trivially_destructible_v<DocaOffloadSpec>);
-static_assert(std::is_trivially_copy_constructible_v<DocaDeployPlan> && std::is_trivially_destructible_v<DocaDeployPlan>);
+static_assert(std::is_trivially_copy_constructible_v<DocaDeployPlan>
+              && std::is_trivially_destructible_v<DocaDeployPlan>);
 // No declared plan exists before its refined values, and no handle exists
 // outside deploy_doca_offload or beside the one it names.
 static_assert(!std::is_default_constructible_v<DocaOffloadSpec>);

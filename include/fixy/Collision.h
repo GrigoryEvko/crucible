@@ -195,22 +195,16 @@ struct grades {
 // its roster covers its namespace (every_atom_in_is_rostered_), so the
 // join below is the complete picture.
 
-using all_atom_roster =
-    ::fixy::atom::detail::roster_cat_t<::fixy::atom::detail::core_atom_roster,
-                                       ::fixy::atom::detail::barrier_atom_roster, ::fixy::atom::detail::ctrl_atom_roster,
-                                       ::fixy::atom::detail::dispatch_atom_roster,
-                                       ::fixy::atom::detail::fp_atom_roster,
-                                       ::fixy::atom::detail::global_atom_roster, ::fixy::atom::detail::hw_atom_roster,
-                                       ::fixy::atom::detail::observe_atom_roster,
-                                       ::fixy::atom::detail::os_atom_roster,
-                                       ::fixy::atom::detail::regime_atom_roster,
-                                       ::fixy::atom::detail::scope_atom_roster,
-                                       ::fixy::atom::detail::session_atom_roster,
-                                       ::fixy::atom::detail::simd_atom_roster,
-                                       ::fixy::atom::detail::stack_atom_roster,
-                                       ::fixy::atom::detail::stdio_atom_roster,
-                                       ::fixy::atom::detail::sync_atom_roster,
-                                       ::fixy::atom::detail::syscall_atom_roster>;
+using all_atom_roster = ::fixy::atom::detail::roster_cat_t<
+    ::fixy::atom::detail::core_atom_roster, ::fixy::atom::detail::barrier_atom_roster,
+    ::fixy::atom::detail::ctrl_atom_roster, ::fixy::atom::detail::dispatch_atom_roster,
+    ::fixy::atom::detail::fp_atom_roster, ::fixy::atom::detail::global_atom_roster,
+    ::fixy::atom::detail::hw_atom_roster, ::fixy::atom::detail::observe_atom_roster,
+    ::fixy::atom::detail::os_atom_roster, ::fixy::atom::detail::regime_atom_roster,
+    ::fixy::atom::detail::scope_atom_roster, ::fixy::atom::detail::session_atom_roster,
+    ::fixy::atom::detail::simd_atom_roster, ::fixy::atom::detail::stack_atom_roster,
+    ::fixy::atom::detail::stdio_atom_roster, ::fixy::atom::detail::sync_atom_roster,
+    ::fixy::atom::detail::syscall_atom_roster>;
 
 namespace detail {
 
@@ -381,9 +375,9 @@ inline constexpr std::size_t pending_rule_count = pending_rules.size();
 // The specification names 54 codes, and this file adds three.
 
 enum class Disposition : std::uint8_t {
-    Live,     // implemented in live_rules below, and able to fire today
+    Live,  // implemented in live_rules below, and able to fire today
     Pending,  // kept as a theorem, waiting on an axis that has no atom
-    Absent,   // not implemented; the note names what is missing
+    Absent,  // not implemented; the note names what is missing
     Retired,  // needs no rule, and the note says why
 };
 
@@ -564,7 +558,8 @@ namespace detail {
 
 [[nodiscard]] consteval bool corpus_ships_(std::string_view code) noexcept {
     for (const corpus_entry& entry : rule_corpus) {
-        if (entry.code == code) return entry.disposition == Disposition::Live || entry.disposition == Disposition::Pending;
+        if (entry.code == code)
+            return entry.disposition == Disposition::Live || entry.disposition == Disposition::Pending;
     }
     return false;
 }
@@ -764,10 +759,9 @@ template <class Site>
         "fixy::collision::all_atom_roster, so their atoms sit outside the population that every axis-coverage "
         "and collision-rule check reads: ";
     message += offenders;
-    message +=
-        ".  Join each at the all_atom_roster alias in include/fixy/Collision.h.  If one is representative "
-        "instantiations for a local self-test rather than a family population, rename it to end in "
-        "_atom_samples instead — that spelling says so, and sample_set_wrongly_joined() holds it to it.";
+    message += ".  Join each at the all_atom_roster alias in include/fixy/Collision.h.  If one is representative "
+               "instantiations for a local self-test rather than a family population, rename it to end in "
+               "_atom_samples instead — that spelling says so, and sample_set_wrongly_joined() holds it to it.";
     return std::string_view{std::define_static_string(message)};
 }
 
@@ -775,19 +769,17 @@ template <class Site>
 [[nodiscard]] consteval std::string_view sample_set_diagnostic() {
     const std::string_view offenders = sample_set_wrongly_joined<Site>();
     if (offenders.empty()) return {};
-    std::string message =
-        "fixy/Collision.h: the atom-population relation: these sample sets ARE joined into "
-        "fixy::collision::all_atom_roster: ";
+    std::string message = "fixy/Collision.h: the atom-population relation: these sample sets ARE joined into "
+                          "fixy::collision::all_atom_roster: ";
     message += offenders;
-    message +=
-        ".  A sample set is a set of INSTANTIATIONS of a parametric family, kept outside the population "
-        "because the family has no finite membership and no list can enumerate it; the instantiations are "
-        "placeholders chosen to instantiate a local self-test, not grades anybody writes.  A family whose "
-        "members are distinct grades is finite and belongs in the joined population instead, under a name "
-        "ending in _atom_roster.  Joining a sample set blurs the two categories, and a blurred boundary is "
-        "what would let a real family be renamed out of roster_declared_but_not_joined() rather than joined "
-        "into the population.  So: drop each from the all_atom_roster alias in include/fixy/Collision.h, or, "
-        "if its members really are distinct grades, rename it to end in _atom_roster and leave it joined.";
+    message += ".  A sample set is a set of INSTANTIATIONS of a parametric family, kept outside the population "
+               "because the family has no finite membership and no list can enumerate it; the instantiations are "
+               "placeholders chosen to instantiate a local self-test, not grades anybody writes.  A family whose "
+               "members are distinct grades is finite and belongs in the joined population instead, under a name "
+               "ending in _atom_roster.  Joining a sample set blurs the two categories, and a blurred boundary is "
+               "what would let a real family be renamed out of roster_declared_but_not_joined() rather than joined "
+               "into the population.  So: drop each from the all_atom_roster alias in include/fixy/Collision.h, or, "
+               "if its members really are distinct grades, rename it to end in _atom_roster and leave it joined.";
     return std::string_view{std::define_static_string(message)};
 }
 
@@ -798,10 +790,8 @@ template <class Site>
 // it is an identity for the instantiation point, not a type anyone uses.
 struct collision_header_site;
 
-static_assert(roster_join_diagnostic<collision_header_site>().empty(),
-              roster_join_diagnostic<collision_header_site>());
-static_assert(sample_set_diagnostic<collision_header_site>().empty(),
-              sample_set_diagnostic<collision_header_site>());
+static_assert(roster_join_diagnostic<collision_header_site>().empty(), roster_join_diagnostic<collision_header_site>());
+static_assert(sample_set_diagnostic<collision_header_site>().empty(), sample_set_diagnostic<collision_header_site>());
 
 static_assert(every_pending_axis_is_still_empty(),
               "fixy/Collision.h: the pending-rule roster is out of date.  Either an axis listed in "
@@ -929,7 +919,8 @@ namespace detail {
     for (const corpus_entry& entry : rule_corpus) {
         if (entry.disposition != Disposition::Absent || absent_list_names_(entry.code)) continue;
         if (!offenders.empty()) offenders += ", ";
-        for (const char letter : entry.code) offenders += letter;
+        for (const char letter : entry.code)
+            offenders += letter;
     }
     return offenders;
 }
@@ -939,7 +930,8 @@ namespace detail {
     for (const std::string_view listed : absent_rule_codes) {
         if (corpus_marks_absent_(listed)) continue;
         if (!offenders.empty()) offenders += ", ";
-        for (const char letter : listed) offenders += letter;
+        for (const char letter : listed)
+            offenders += letter;
     }
     return offenders;
 }
@@ -956,7 +948,8 @@ namespace detail {
 
 [[nodiscard]] consteval std::string_view absent_pin_message_(std::string_view lead, const std::string& offenders) {
     std::string message;
-    for (const char letter : lead) message += letter;
+    for (const char letter : lead)
+        message += letter;
     message += offenders;
     return std::define_static_string(message);
 }
@@ -1047,7 +1040,7 @@ struct is_replay_deterministic_<Payload>
           ::foundation::algebra::lattices::DetSafeTier::PhiloxRng, Payload::lattice_type::tier)> {};
 template <class Payload>
     requires ::fixy::IsBand<Payload>
-             && (!::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>)
+          && (!::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>)
 struct is_replay_deterministic_<Payload> : is_replay_deterministic_<::fixy::band_value_t<Payload>> {};
 
 // The Observability row, extracted from its grade.
@@ -1085,8 +1078,8 @@ struct observability_row_of_<::fixy::atom::observe::surface<Es...>> {
 template <::fixy::atom::hw::HwInstruction Floor, class G>
 struct is_hw_at_or_above_ : std::false_type {};
 template <::fixy::atom::hw::HwInstruction Floor, class G>
-    requires requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>,
-                                                     ::fixy::atom::hw::HwInstruction>
+    requires requires { G::tier; }
+          && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>, ::fixy::atom::hw::HwInstruction>
 struct is_hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or_above(G::tier, Floor)> {};
 
 // The provided fence strength, read against a floor.  The primary is
@@ -1102,8 +1095,8 @@ struct is_hw_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::hw::at_or
 template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
 struct is_barrier_at_or_above_ : std::false_type {};
 template <::foundation::algebra::lattices::BarrierStrength Floor, class G>
-    requires requires { G::tier; } && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>,
-                                                     ::foundation::algebra::lattices::BarrierStrength>
+    requires requires { G::tier; }
+          && std::is_same_v<std::remove_cvref_t<decltype(G::tier)>, ::foundation::algebra::lattices::BarrierStrength>
 struct is_barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barrier::at_or_above(G::tier, Floor)> {};
 
 // The reached scope, read against a floor.  The primary is false: a
@@ -1116,8 +1109,8 @@ struct is_barrier_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::barr
 template <::foundation::algebra::lattices::MemoryScope Floor, class G>
 struct is_scope_at_or_above_ : std::false_type {};
 template <::foundation::algebra::lattices::MemoryScope Floor, class G>
-    requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
-                                                      ::foundation::algebra::lattices::MemoryScope>
+    requires requires { G::scope; }
+          && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>, ::foundation::algebra::lattices::MemoryScope>
 struct is_scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope::at_or_above(G::scope, Floor)> {};
 
 // The two trunk readings V402 composes, and the ISA pin V101 reads.
@@ -1128,15 +1121,15 @@ struct is_scope_at_or_above_<Floor, G> : std::bool_constant<::fixy::atom::scope:
 template <class G>
 struct is_scope_trunk_pinned_ : std::false_type {};
 template <class G>
-    requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
-                                                      ::foundation::algebra::lattices::MemoryScope>
+    requires requires { G::scope; }
+          && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>, ::foundation::algebra::lattices::MemoryScope>
 struct is_scope_trunk_pinned_<G> : std::bool_constant<::fixy::atom::scope::is_trunk_pinned(G::scope)> {};
 
 template <class G>
 struct is_scope_on_host_trunk_ : std::false_type {};
 template <class G>
-    requires requires { G::scope; } && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>,
-                                                      ::foundation::algebra::lattices::MemoryScope>
+    requires requires { G::scope; }
+          && std::is_same_v<std::remove_cvref_t<decltype(G::scope)>, ::foundation::algebra::lattices::MemoryScope>
 struct is_scope_on_host_trunk_<G> : std::bool_constant<::fixy::atom::scope::on_host_trunk(G::scope)> {};
 
 template <class G>
@@ -1244,7 +1237,7 @@ struct named_signature_<Function Owner::*> {
 };
 template <class Family>
     requires std::is_class_v<Family> && requires { typename Family::signature; }
-             && (!std::is_class_v<std::remove_cvref_t<typename Family::signature>>)
+          && (!std::is_class_v<std::remove_cvref_t<typename Family::signature>>)
 struct named_signature_<Family> : named_signature_<typename Family::signature> {};
 
 // Whether a family names a signature that is noexcept.  Reflection reads
@@ -1391,10 +1384,14 @@ struct is_live_handle_grade_<::fixy::atom::session::live_handle<Proto>> : std::t
 // and a binding that holds one states session::live_handle instead.
 template <class Payload>
 [[nodiscard]] consteval bool payload_owes_a_protocol_() noexcept {
-    if constexpr (requires { requires std::same_as<std::remove_cvref_t<decltype(Payload::modality)>,
-                                                   ::foundation::algebra::ModalityKind>; }) {
+    if constexpr (requires {
+                      requires std::same_as<std::remove_cvref_t<decltype(Payload::modality)>,
+                                            ::foundation::algebra::ModalityKind>;
+                  }) {
         if constexpr (Payload::modality == ::foundation::algebra::ModalityKind::Stepping) {
-            if constexpr (requires { { Payload::is_terminal() } -> std::same_as<bool>; }) {
+            if constexpr (requires {
+                              { Payload::is_terminal() } -> std::same_as<bool>;
+                          }) {
                 return !Payload::is_terminal();
             } else {
                 return true;
@@ -1518,7 +1515,8 @@ struct rules_of {
     using lifted_row = ::fixy::atom::lifted_row_of_t<Atoms...>;
     using binding_row = ::fixy::atom::binding_row_of_t<typename G::template on<Axis::Effect>, Atoms...>;
 
-    static constexpr bool row_bg = ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Bg>;
+    static constexpr bool row_bg =
+        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Bg>;
     static constexpr bool row_observable = detail::row_admits_observable_<binding_row>::value;
     static constexpr bool atomic_repr = detail::repr_is_atomic_<typename G::template on<Axis::Representation>>::value;
     static constexpr bool thread_local_state =
@@ -1654,8 +1652,8 @@ struct rules_of {
     // B001 is the back-pressure trap.  A rule code is stable API here, so
     // B002 above is a code of its own rather than a reinterpretation of
     // this one.
-    using observability_row = typename detail::observability_row_of_<
-        typename G::template on<Axis::Observability>>::type;
+    using observability_row =
+        typename detail::observability_row_of_<typename G::template on<Axis::Observability>>::type;
 
     static constexpr bool observes_something = G::template mentions<Axis::Observability>;
     static constexpr bool B002_ok = ::foundation::effects::Subrow<observability_row, binding_row>;
@@ -1680,10 +1678,12 @@ struct rules_of {
     // claim: the same tier that is too slow for the hot path is also
     // non-deterministic by construction, and a payload claiming
     // replay-determinism cannot survive it.
-    static constexpr bool hw_nondeterministic = detail::is_hw_at_or_above_<
-        ::fixy::atom::hw::HwInstruction::NonDeterministicTsc, typename G::template on<Axis::HwInstruction>>::value;
-    static constexpr bool hw_privileged = detail::is_hw_at_or_above_<
-        ::fixy::atom::hw::HwInstruction::PrivilegedMsr, typename G::template on<Axis::HwInstruction>>::value;
+    static constexpr bool hw_nondeterministic =
+        detail::is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::NonDeterministicTsc,
+                                   typename G::template on<Axis::HwInstruction>>::value;
+    static constexpr bool hw_privileged =
+        detail::is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::PrivilegedMsr,
+                                   typename G::template on<Axis::HwInstruction>>::value;
     static constexpr bool row_init =
         ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Init>;
 
@@ -1699,8 +1699,9 @@ struct rules_of {
     // drain.  A release store and an acquire load are one MOV each on
     // x86 and are what the SPSC ring is made of, so the floor sits above
     // them and above acq_rel.
-    static constexpr bool barrier_seq_cst_or_above = detail::is_barrier_at_or_above_<
-        ::foundation::algebra::lattices::BarrierStrength::SeqCst, typename G::template on<Axis::BarrierStrength>>::value;
+    static constexpr bool barrier_seq_cst_or_above =
+        detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::SeqCst,
+                                        typename G::template on<Axis::BarrierStrength>>::value;
 
     static constexpr bool V301_ok = !(hot && barrier_seq_cst_or_above);
 
@@ -1715,10 +1716,12 @@ struct rules_of {
     // same trap with nothing named, so the rule fires on it too.  The
     // floor is read through the lattice's leq, so the host trunk is
     // incomparable with Cluster and the rule stands down for it.
-    static constexpr bool scope_cluster_or_above = detail::is_scope_at_or_above_<
-        ::foundation::algebra::lattices::MemoryScope::Cluster, typename G::template on<Axis::MemoryScope>>::value;
-    static constexpr bool barrier_acq_rel_or_above = detail::is_barrier_at_or_above_<
-        ::foundation::algebra::lattices::BarrierStrength::AcqRel, typename G::template on<Axis::BarrierStrength>>::value;
+    static constexpr bool scope_cluster_or_above =
+        detail::is_scope_at_or_above_<::foundation::algebra::lattices::MemoryScope::Cluster,
+                                      typename G::template on<Axis::MemoryScope>>::value;
+    static constexpr bool barrier_acq_rel_or_above =
+        detail::is_barrier_at_or_above_<::foundation::algebra::lattices::BarrierStrength::AcqRel,
+                                        typename G::template on<Axis::BarrierStrength>>::value;
 
     static constexpr bool V401_ok = !(scope_cluster_or_above && !barrier_acq_rel_or_above);
 
@@ -1811,8 +1814,8 @@ struct rules_of {
     // surface.  So P002 reads the two axes that such atoms engage.  A
     // ghost binding that engages either is the same contradiction through
     // a different door.
-    static constexpr bool emits_outside_the_row = G::template mentions<Axis::Stdio>
-                                               || G::template mentions<Axis::SyscallSurface>;
+    static constexpr bool emits_outside_the_row =
+        G::template mentions<Axis::Stdio> || G::template mentions<Axis::SyscallSurface>;
     static constexpr bool P002_ok = !(ghost && emits_outside_the_row);
 
     // ── The constant-time family and the failure family ─────────────
@@ -2017,9 +2020,10 @@ struct rules_of {
                                "stdio write or a syscall is emitted code by definition. P010 catches the atoms "
                                "that lift an effect through the row of the binding. A call through the vDSO lifts "
                                "the empty row, and these two axes are the door that catches it.");
-        static_assert(H001_ok, "H001: hot x an unstated or unbounded cost. The hot path must justify its compute "
-                               "envelope, so declare atom::cost_constant or atom::cost_linear<N>. An unstated cost "
-                               "is the Complexity strict pole, which states no cost, and a hot binding must state one.");
+        static_assert(H001_ok,
+                      "H001: hot x an unstated or unbounded cost. The hot path must justify its compute "
+                      "envelope, so declare atom::cost_constant or atom::cost_linear<N>. An unstated cost "
+                      "is the Complexity strict pole, which states no cost, and a hot binding must state one.");
         static_assert(H002_ok, "H002: hot x no refinement witness. A hot body buys its nanoseconds by assuming an "
                                "invariant instead of checking it, so something upstream must have proved it. Attach "
                                "a Refined input that carries the proof.");
@@ -2490,8 +2494,8 @@ static_assert(live_rules<Suspends, at::affine>::R004_ok, "the payload half stand
 // kernel wait and admits a spin.
 struct hot_invariant final {};
 template <class... Extra>
-using hot_rules = live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public,
-                             Extra...>;
+using hot_rules =
+    live_rules<at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public, Extra...>;
 static_assert(!hot_rules<Live>::W003_ok, "a hot handle with no stated wait");
 static_assert(hot_rules<Live, at::sync::spin_pause>::valid, "a stated spin is the hot-path wait");
 static_assert(hot_rules<Live, at::sync::bounded_spin>::valid);
@@ -2508,12 +2512,12 @@ template <class G>
 concept grade_lookup_forms = requires { typename grades<G>; };
 static_assert(grade_lookup_forms<at::sync::park>);
 static_assert(!grade_lookup_forms<names_no_strategy>, "a grade lookup over a type that is not an atom must not form");
-static_assert(!rules_of<owes_a_step, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
-                        at::as_public>::W003_ok,
-              "a payload that is a live handle waits as the atom does");
-static_assert(rules_of<at_the_end, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>,
-                       at::as_public>::W003_ok,
-              "a handle at End takes no step");
+static_assert(
+    !rules_of<owes_a_step, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public>::W003_ok,
+    "a payload that is a live handle waits as the atom does");
+static_assert(
+    rules_of<at_the_end, at::regime::hot, at::cost_constant, at::refined_with<hot_invariant>, at::as_public>::W003_ok,
+    "a handle at End takes no step");
 }  // namespace session_cells
 
 }  // namespace detail::collision_self_test

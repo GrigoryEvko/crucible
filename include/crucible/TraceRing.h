@@ -181,9 +181,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // acquire, which is the edge that makes the slot writes visible across
     // the pair. A thread reading its own counter uses peek_relaxed and needs
     // no ordering.
-    alignas(64) ::fixy::AtomicMonotonic<uint64_t> head = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t> head = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
-    alignas(64) ::fixy::AtomicMonotonic<uint64_t> tail = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t> tail = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
     // The consumer is the only party that reads or writes this, so drains
     // track their position here and publish to tail only once the copies are
@@ -207,7 +207,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // which costs a real reload of tail and never an overwrite of a slot the
     // consumer has not read. Monotonic enforces the direction: tail only ever
     // advances, so an observation that moved backwards is a lost acquire.
-    alignas(64) ::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
+    alignas(64)::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
 
     alignas(64) std::array<Entry, CAPACITY> entries{};
     std::array<MetaIndex, CAPACITY> meta_starts{};
@@ -292,7 +292,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     drain(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr, ScopeHash* out_scope_hashes = nullptr,
           CallsiteHash* out_callsite_hashes = nullptr) noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                  CAPACITY))
+                                                                                    CAPACITY))
             pre(::foundation::decide::valid_span(max_count, out)) {
         if (max_count == 0) [[unlikely]]
             return 0;
@@ -342,7 +342,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     drain_pinned(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
                  ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                  CAPACITY))
+                                                                                    CAPACITY))
             pre(::foundation::decide::valid_span(max_count, out)) {
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>>(
             drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes));
@@ -357,7 +357,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     drain_pure(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
                ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                  CAPACITY))
+                                                                                    CAPACITY))
             pre(::foundation::decide::valid_span(max_count, out)) {
         return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
     }
@@ -370,7 +370,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     try_pop_batch(Entry* out_entries, MetaIndex* out_meta_starts, ScopeHash* out_scope_hashes,
                   CallsiteHash* out_callsite_hashes, uint32_t max_count) noexcept
         CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                  CAPACITY))
+                                                                                    CAPACITY))
             pre(max_count == 0
                 || (out_entries != nullptr && out_meta_starts != nullptr && out_scope_hashes != nullptr
                     && out_callsite_hashes != nullptr)) {

@@ -9,6 +9,4 @@
 
 #include <foundation/permissions/ReadView.h>
 
-int main() {
-    return static_cast<int>(sizeof(::foundation::permissions::ReadLoan<int>));
-}
+int main() { return static_cast<int>(sizeof(::foundation::permissions::ReadLoan<int>)); }

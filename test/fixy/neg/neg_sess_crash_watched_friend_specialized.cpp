@@ -20,7 +20,8 @@ struct Wire {
 
 namespace fixy::session {
 template <>
-class CrashWatched<neg_sess_crash_watched_friend_specialized_types::Tag, neg_sess_crash_watched_friend_specialized_types::Tag,
+class CrashWatched<neg_sess_crash_watched_friend_specialized_types::Tag,
+                   neg_sess_crash_watched_friend_specialized_types::Tag,
                    neg_sess_crash_watched_friend_specialized_types::Tag, ReliableSet<>,
                    neg_sess_crash_watched_friend_specialized_types::Tag, detail::crash_transport::between_messages> {
 public:

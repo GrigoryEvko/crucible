@@ -290,31 +290,31 @@ struct CrossTenantLeak : ::foundation::diag::tag_base {
 
 // Every field populated, which is the ordinary registration shape.
 CRUCIBLE_DIAG_INSIGHTS(::user_proj::diag_tags::PaymentRefundLeak, ::foundation::diag::Severity::Error,
-                         "Refunds without parent-order rollback corrupt revenue reporting "
-                         "and cause month-end reconciliation drift.  The accounting layer's "
-                         "TwoPhaseRefund<...> primitive is the correct vehicle.",
-                         "Surfaces as month-end revenue mismatch; the refund line items "
-                         "exist in the refund ledger but the parent revenue accrual still "
-                         "shows as recognized.",
-                         "TwoPhaseRefund<TxId>(parent_id).commit_with_revenue_rollback();",
-                         "RefundService::refund(parent_id);  // VIOLATES — no rollback");
+                       "Refunds without parent-order rollback corrupt revenue reporting "
+                       "and cause month-end reconciliation drift.  The accounting layer's "
+                       "TwoPhaseRefund<...> primitive is the correct vehicle.",
+                       "Surfaces as month-end revenue mismatch; the refund line items "
+                       "exist in the refund ledger but the parent revenue accrual still "
+                       "shows as recognized.",
+                       "TwoPhaseRefund<TxId>(parent_id).commit_with_revenue_rollback();",
+                       "RefundService::refund(parent_id);  // VIOLATES — no rollback");
 
 // Severity without prose.  Adding the prose later means replacing this
 // specialization rather than writing a second one alongside it.
 CRUCIBLE_DIAG_INSIGHTS_SEVERITY(::user_proj::diag_tags::ScheduleDoubleAcceleration,
-                                  ::foundation::diag::Severity::Fatal);
+                                ::foundation::diag::Severity::Fatal);
 
 // The quality-validated form holds each prose field to a minimum length: 30
 // characters for the reason, 20 for the symptom, 10 for each example.  A
 // placeholder left in by accident fails to compile.
 CRUCIBLE_DIAG_INSIGHTS_QV(::user_proj::diag_tags::CrossTenantLeak, ::foundation::diag::Severity::Fatal,
-                            "A multi-tenant isolation breach is a security incident.  Fixing "
-                            "after the fact requires customer notification, audit-trail "
-                            "review, and (depending on jurisdiction) regulatory disclosure.",
-                            "Surfaces as a query result that includes rows from a different "
-                            "tenant_id than the requestor's session.",
-                            "TenantScoped<TenantId, Result> r = query(scope, ...);",
-                            "Result r = raw_query(...);  // VIOLATES — bypasses TenantScoped");
+                          "A multi-tenant isolation breach is a security incident.  Fixing "
+                          "after the fact requires customer notification, audit-trail "
+                          "review, and (depending on jurisdiction) regulatory disclosure.",
+                          "Surfaces as a query result that includes rows from a different "
+                          "tenant_id than the requestor's session.",
+                          "TenantScoped<TenantId, Result> r = query(scope, ...);",
+                          "Result r = raw_query(...);  // VIOLATES — bypasses TenantScoped");
 
 namespace user_proj::diag_tags::self_test {
 
@@ -557,7 +557,8 @@ void test_abort_emitters_reach_sink_then_abort() {
     EXPECT(std::string_view{g_captured.last_fn}.find('@') != std::string_view::npos);
 
     reset_capture();
-    EXPECT(aborts([] { CRUCIBLE_DIAG_RUNTIME_VIOLATION_AND_ABORT(diag::Category::WaitStrategyViolation, "macro abort"); }));
+    EXPECT(aborts(
+        [] { CRUCIBLE_DIAG_RUNTIME_VIOLATION_AND_ABORT(diag::Category::WaitStrategyViolation, "macro abort"); }));
     EXPECT(g_captured.count.load() == 1);
     EXPECT(g_captured.last_cat == diag::Category::WaitStrategyViolation);
     EXPECT(std::string_view{g_captured.last_detail} == "macro abort");

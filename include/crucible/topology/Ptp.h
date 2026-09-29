@@ -199,7 +199,8 @@ template <::foundation::effects::IsExecCtx Ctx>
     return PtpDegradationReason::None;
 }
 
-[[nodiscard]] constexpr DeclaredPtpStatus ptp_status_from_daemon_report(DeclaredPtpDaemonReport const& report) noexcept {
+[[nodiscard]] constexpr DeclaredPtpStatus
+ptp_status_from_daemon_report(DeclaredPtpDaemonReport const& report) noexcept {
     auto const& raw = report.value();
     const auto reason = ptp_degradation_reason(raw);
     return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(PtpStatus{

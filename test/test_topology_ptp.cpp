@@ -119,7 +119,8 @@ static void test_handle_status_and_timestamp() {
         .skew_bound_ns = skew_bound(90),
         .sequence = 4,
     };
-    auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(3), *fd, status);
+    auto handle =
+        topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(3), *fd, status);
     assert(handle.status().synchronized());
     assert(handle.latest_timestamp().error() == topology::PtpError::NoTimestamp);
 
@@ -173,8 +174,8 @@ static bool status_is_self_consistent(topology::PtpStatus const& observed) noexc
 static void test_status_seqlock_never_tears() {
     auto fd = topology::admit_ptp_clock_fd(11);
     assert(fd.has_value());
-    auto handle =
-        topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(4), *fd, status_at_tick(0));
+    auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(4), *fd,
+                                            status_at_tick(0));
 
     constexpr std::uint64_t ticks = 200000;
     std::atomic<bool> writer_done{false};

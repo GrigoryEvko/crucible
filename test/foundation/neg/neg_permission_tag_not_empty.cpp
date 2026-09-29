@@ -17,6 +17,4 @@ struct Stateful {
 };
 }  // namespace
 
-int main() {
-    return static_cast<int>(sizeof(::foundation::permissions::Permission<Stateful>));
-}
+int main() { return static_cast<int>(sizeof(::foundation::permissions::Permission<Stateful>)); }

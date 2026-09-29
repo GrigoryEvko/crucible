@@ -21,8 +21,8 @@ int main() {
     static int storage[2] = {};
     BgCtx ctx{::foundation::effects::testing::bg()};
 
-    auto branded = ::fixy::mint_owned_region(storage, std::size_t{2},
-                                             ::foundation::permissions::mint_permission_root<Cache>());
+    auto branded =
+        ::fixy::mint_owned_region(storage, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>());
     ::fixy::OwnedRegion<int, Cache> erased = std::move(branded);
     ::fixy::SharedRegion shared{std::move(erased)};
     auto guard = shared.lend(ctx);

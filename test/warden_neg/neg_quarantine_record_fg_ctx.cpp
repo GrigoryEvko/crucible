@@ -7,7 +7,8 @@
 #include <fixy/Ctx.h>
 
 int main() {
-    auto policy = crucible::warden::mint_quarantine_policy<2>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    auto policy =
+        crucible::warden::mint_quarantine_policy<2>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     crucible::cog::CogIdentity cog{};
     cog.uuid = crucible::cog::Uuid{0x118, 0x1};
     crucible::topology::HealthSnapshot health{};

@@ -86,9 +86,8 @@ struct refuses_every<Pred, witnesses<Types...>> : std::bool_constant<predicate_r
 // True when the cell for Pred holds in both directions.  Each list must
 // be non-empty, for the reason predicate_accepts states.
 template <template <class> class Pred>
-inline constexpr bool armed_cell_holds_v =
-    detail::accepts_every<Pred, typename armed_cell<Pred>::accepts>::value
-    && detail::refuses_every<Pred, typename armed_cell<Pred>::refuses>::value;
+inline constexpr bool armed_cell_holds_v = detail::accepts_every<Pred, typename armed_cell<Pred>::accepts>::value
+                                        && detail::refuses_every<Pred, typename armed_cell<Pred>::refuses>::value;
 
 // The instance cell.
 //
@@ -162,8 +161,8 @@ inline constexpr bool armed_instances_hold_v =
 // header's own checks, not gates, and the walk skips them.
 
 [[nodiscard]] consteval bool names_a_predicate(std::string_view name) noexcept {
-    constexpr std::string_view leading[] = {"is_", "has_", "can_", "should_", "must_", "will_", "was_", "needs_",
-                                            "admits_", "conveys_"};
+    constexpr std::string_view leading[] = {"is_",   "has_", "can_",   "should_", "must_",
+                                            "will_", "was_", "needs_", "admits_", "conveys_"};
     constexpr std::string_view inner[] = {"_is_", "_has_", "_can_", "_needs_", "_admits", "_conveys"};
     for (const std::string_view prefix : leading) {
         if (name.starts_with(prefix)) return true;
@@ -197,7 +196,8 @@ consteval void collect_predicates(std::meta::info scope, std::vector<std::meta::
 // Complexity: linear in the number of declarations under them.
 [[nodiscard]] consteval std::vector<std::meta::info> predicate_roster(std::span<const std::meta::info> scopes) {
     std::vector<std::meta::info> found;
-    for (const std::meta::info scope : scopes) detail::collect_predicates(scope, found);
+    for (const std::meta::info scope : scopes)
+        detail::collect_predicates(scope, found);
     return found;
 }
 
@@ -370,8 +370,10 @@ struct armed_cell<detail::armed_roster_self_test_stand_in::is_short> {
 
 namespace detail::armed_roster_self_test {
 
-inline constexpr std::meta::info stand_in_scope[] = {^^::foundation::contracts::detail::armed_roster_self_test_stand_in};
-inline constexpr std::meta::info no_ledger[] = {^^::foundation::contracts::detail::armed_roster_self_test_stand_in::is_long};
+inline constexpr std::meta::info stand_in_scope[] = {
+    ^^::foundation::contracts::detail::armed_roster_self_test_stand_in};
+inline constexpr std::meta::info no_ledger[] = {
+    ^^::foundation::contracts::detail::armed_roster_self_test_stand_in::is_long};
 
 static_assert(names_a_predicate("is_char") && names_a_predicate("row_admits_bg_") && !names_a_predicate("width_of"));
 static_assert(armed_cell_holds_v<::foundation::contracts::detail::armed_roster_self_test_stand_in::is_char>);

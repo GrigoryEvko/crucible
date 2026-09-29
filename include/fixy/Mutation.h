@@ -467,8 +467,8 @@ public:
     constexpr BoundedMonotonic(BoundedMonotonic&&) = default;
     BoundedMonotonic& operator=(BoundedMonotonic const&) =
         delete("BoundedMonotonic only advances. An assignment would move it backward.");
-    BoundedMonotonic& operator=(BoundedMonotonic&&) =
-        delete("BoundedMonotonic only advances. An assignment would move it backward.");
+    BoundedMonotonic&
+    operator=(BoundedMonotonic&&) = delete("BoundedMonotonic only advances. An assignment would move it backward.");
 
     [[nodiscard]] constexpr const T& get() const noexcept { return inner_.get(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return inner_.current(); }

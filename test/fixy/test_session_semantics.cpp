@@ -84,8 +84,9 @@ static_assert(std::is_same_v<g::state_step_t<Start<g::End>, g::SendAction<P, Q, 
 using Choice = g::Comm<P, Q, g::Branch<M1, int, g::End>, g::Branch<M2, char, g::End>>;
 static_assert(same_labels_v<g::state_enabled_t<Start<Choice>, Reliable>,
                             g::Actions<g::SendAction<P, Q, M1, int>, g::SendAction<P, Q, M2, char>>>);
-static_assert(std::is_same_v<g::state_step_t<Start<Choice>, g::SendAction<P, Q, M2, char>, Reliable>,
-                             Start<g::EnRouteChoice<P, Q, M2, g::Branch<M1, int, g::End>, g::Branch<M2, char, g::End>>>>);
+static_assert(
+    std::is_same_v<g::state_step_t<Start<Choice>, g::SendAction<P, Q, M2, char>, Reliable>,
+                   Start<g::EnRouteChoice<P, Q, M2, g::Branch<M1, int, g::End>, g::Branch<M2, char, g::End>>>>);
 
 // [GR-µ]: a Rec reduces as its unfolding, and the Var becomes the Rec.
 using Forever = g::Rec<g::Msg<P, Q, M, int, g::Var>>;
@@ -129,13 +130,15 @@ using Guarded = g::Comm<P, Q, g::Branch<M, int, g::End>, g::Branch<Crash, void, 
 using OnlyQ = s::ReliableSet<Q>;
 static_assert(same_labels_v<g::state_enabled_t<Start<Guarded>, OnlyQ>,
                             g::Actions<g::SendAction<P, Q, M, int>, g::CrashAction<P>>>);
-using PCrashed = g::State<g::Roles<P>, g::EnRouteChoice<g::Crashed<P>, Q, Crash, g::Branch<M, int, g::End>,
-                                                        g::Branch<Crash, void, g::End>>>;
+using PCrashed =
+    g::State<g::Roles<P>,
+             g::EnRouteChoice<g::Crashed<P>, Q, Crash, g::Branch<M, int, g::End>, g::Branch<Crash, void, g::End>>>;
 static_assert(std::is_same_v<g::state_step_t<Start<Guarded>, g::CrashAction<P>, OnlyQ>, PCrashed>);
 static_assert(std::is_same_v<g::state_enabled_t<PCrashed, OnlyQ>, g::Actions<g::DetectAction<Q, P>>>);
 static_assert(std::is_same_v<g::state_step_t<PCrashed, g::DetectAction<Q, P>, OnlyQ>, g::State<g::Roles<P>, g::End>>);
 // No role sends the crash label, and a reliable role never crashes.
-static_assert(std::is_same_v<g::state_step_t<Start<Guarded>, g::SendAction<P, Q, Crash, void>, OnlyQ>, g::NoTransition>);
+static_assert(
+    std::is_same_v<g::state_step_t<Start<Guarded>, g::SendAction<P, Q, Crash, void>, OnlyQ>, g::NoTransition>);
 static_assert(std::is_same_v<g::state_step_t<Start<Guarded>, g::CrashAction<Q>, OnlyQ>, g::NoTransition>);
 static_assert(std::is_same_v<g::state_step_t<Start<Guarded>, g::CrashAction<P>, Reliable>, g::NoTransition>);
 // A role that is no live role of G does not crash.
@@ -147,22 +150,24 @@ static_assert(std::is_same_v<g::state_step_t<Start<OnceSent>, g::CrashAction<P>,
 using Twice = g::Comm<P, Q, g::Branch<M1, int, g::End>, g::Branch<Crash, void, g::End>>;
 using FirstSent = g::EnRouteChoice<P, Q, M, g::Branch<M, int, Twice>, g::Branch<Crash, void, g::End>>;
 using FirstSentPCrashed =
-    g::State<g::Roles<P>, g::EnRouteChoice<g::Crashed<P>, Q, M,
-                                           g::Branch<M, int,
-                                                     g::EnRouteChoice<g::Crashed<P>, Q, Crash, g::Branch<M1, int, g::End>,
-                                                                      g::Branch<Crash, void, g::End>>>,
-                                           g::Branch<Crash, void, g::End>>>;
+    g::State<g::Roles<P>,
+             g::EnRouteChoice<g::Crashed<P>, Q, M,
+                              g::Branch<M, int,
+                                        g::EnRouteChoice<g::Crashed<P>, Q, Crash, g::Branch<M1, int, g::End>,
+                                                         g::Branch<Crash, void, g::End>>>,
+                              g::Branch<Crash, void, g::End>>>;
 static_assert(std::is_same_v<g::state_step_t<Start<FirstSent>, g::CrashAction<P>, OnlyQ>, FirstSentPCrashed>);
 static_assert(std::is_same_v<g::state_enabled_t<FirstSentPCrashed, OnlyQ>, g::Actions<g::RecvAction<Q, P, M, int>>>);
-static_assert(std::is_same_v<
-              g::state_enabled_t<g::state_step_t<FirstSentPCrashed, g::RecvAction<Q, P, M, int>, OnlyQ>, OnlyQ>,
-              g::Actions<g::DetectAction<Q, P>>>);
+static_assert(
+    std::is_same_v<g::state_enabled_t<g::state_step_t<FirstSentPCrashed, g::RecvAction<Q, P, M, int>, OnlyQ>, OnlyQ>,
+                   g::Actions<g::DetectAction<Q, P>>>);
 
 // [GR-↯m] and Remark 4.13: the crash of q leaves an annotation, and the
 // message of p to the crashed q is lost.  The final state is end, so only
 // the set C still says that q crashed.
 using Remark413 = g::Comm<P, Q, g::Branch<M, int, g::End>, g::Branch<Crash, void, g::End>>;
-using QCrashed = g::State<g::Roles<Q>, g::Comm<P, g::Crashed<Q>, g::Branch<M, int, g::End>, g::Branch<Crash, void, g::End>>>;
+using QCrashed =
+    g::State<g::Roles<Q>, g::Comm<P, g::Crashed<Q>, g::Branch<M, int, g::End>, g::Branch<Crash, void, g::End>>>;
 static_assert(std::is_same_v<g::state_step_t<Start<Remark413>, g::CrashAction<Q>, s::ReliableSet<>>, QCrashed>);
 static_assert(std::is_same_v<g::state_step_t<QCrashed, g::SendAction<P, Q, M, int>, s::ReliableSet<>>,
                              g::State<g::Roles<Q>, g::End>>);
@@ -183,10 +188,12 @@ using Pending = PQ<s::OutQueue<s::Queued<Q, M, int>>, s::End, RecvM>;
 static_assert(std::is_same_v<c::enabled_t<Fresh, Reliable>, g::Actions<g::SendAction<P, Q, M, int>>>);
 static_assert(std::is_same_v<c::step_t<Fresh, g::SendAction<P, Q, M, int>, Reliable>, Pending>);
 static_assert(std::is_same_v<c::enabled_t<Pending, Reliable>, g::Actions<g::RecvAction<Q, P, M, int>>>);
-static_assert(std::is_same_v<c::step_t<Pending, g::RecvAction<Q, P, M, int>, Reliable>, PQ<s::OutQueue<>, s::End, s::End>>);
+static_assert(
+    std::is_same_v<c::step_t<Pending, g::RecvAction<Q, P, M, int>, Reliable>, PQ<s::OutQueue<>, s::End, s::End>>);
 static_assert(std::is_same_v<c::step_t<Fresh, g::RecvAction<Q, P, M, int>, Reliable>, g::NoTransition>);
 // A message whose label no branch has stays in the queue.
-static_assert(std::is_same_v<c::enabled_t<PQ<s::OutQueue<s::Queued<Q, M1, int>>, s::End, RecvM>, Reliable>, g::Actions<>>);
+static_assert(
+    std::is_same_v<c::enabled_t<PQ<s::OutQueue<s::Queued<Q, M1, int>>, s::End, RecvM>, Reliable>, g::Actions<>>);
 
 // [Γ-↯] stops the role and drops each message to it.  A message to a
 // stopped role is dropped too.  End and Stop never crash, and a reliable
@@ -224,10 +231,10 @@ static_assert(std::is_same_v<c::step_t<PQ<s::OutQueue<>, Pinger, Ponger>, g::Sen
 
 // A received payload can be below the payload of its branch.
 using Narrow = ::fixy::Tagged<int, ::fixy::tags::source::Sanitized>;
-static_assert(std::is_same_v<c::enabled_t<PQ<s::OutQueue<s::Queued<Q, M, Narrow>>, s::End,
-                                             s::Recv<s::PeerMsg<P, M, int>, s::End>>,
-                                          Reliable>,
-                             g::Actions<g::RecvAction<Q, P, M, Narrow>>>);
+static_assert(std::is_same_v<
+              c::enabled_t<PQ<s::OutQueue<s::Queued<Q, M, Narrow>>, s::End, s::Recv<s::PeerMsg<P, M, int>, s::End>>,
+                           Reliable>,
+              g::Actions<g::RecvAction<Q, P, M, Narrow>>>);
 
 // ── Operational correspondence ───────────────────────────────────────
 
@@ -297,10 +304,10 @@ using Ex4 = g::Comm<P, R, g::Branch<M1, int, g::EnRoute<Q, P, M, int, Loop1>>,
                     g::Branch<M2, int, g::EnRoute<Q, P, M, int, g::Msg<P, Q, M2, int, Loop1>>>>;
 using Tirore3 = g::Msg<P, Q, K, int, g::Rec<g::Comm<R, S, g::Branch<L1, int, g::End>, g::Branch<L2, int, g::Var>>>>;
 using PingPong = g::Rec<g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, P, M2, int, g::Var>>, g::Branch<M2, int, g::End>>>;
-using AfterChoice = g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>,
-                            g::Branch<M2, int, g::Msg<Q, R, M2, int, g::End>>>;
-using SameSends = g::Comm<P, Q, g::Branch<M1, int, g::Msg<R, S, M, int, g::End>>,
-                          g::Branch<M2, int, g::Msg<R, S, M, int, g::End>>>;
+using AfterChoice =
+    g::Comm<P, Q, g::Branch<M1, int, g::Msg<Q, R, M1, int, g::End>>, g::Branch<M2, int, g::Msg<Q, R, M2, int, g::End>>>;
+using SameSends =
+    g::Comm<P, Q, g::Branch<M1, int, g::Msg<R, S, M, int, g::End>>, g::Branch<M2, int, g::Msg<R, S, M, int, g::End>>>;
 using Nested = g::Rec<g::Msg<P, Q, M, int, g::Rec<g::Msg<Q, R, M, int, g::Var>>>>;
 
 inline constexpr Tally kOnce = explore_projected<Once, 4>();
@@ -329,8 +336,8 @@ static_assert(is_clean(kIndependent));
 // the chosen branch as the only live one, the three types that show the
 // gap correspond, and the minimal one sends a after m1.
 
-using SenderGoesOn = g::Comm<P, Q, g::Branch<M1, int, g::Msg<P, R, L1, int, g::End>>,
-                             g::Branch<M2, int, g::Msg<P, R, L2, int, g::End>>>;
+using SenderGoesOn =
+    g::Comm<P, Q, g::Branch<M1, int, g::Msg<P, R, L1, int, g::End>>, g::Branch<M2, int, g::Msg<P, R, L2, int, g::End>>>;
 inline constexpr Tally kSenderGoesOn = explore_projected<SenderGoesOn, 4>();
 inline constexpr Tally kEx4 = explore_projected<Ex4, 6>();
 inline constexpr Tally kTirore3 = explore_projected<Tirore3, 6>();
@@ -339,13 +346,13 @@ static_assert(is_clean(kSenderGoesOn));
 static_assert(is_clean(kEx4));
 static_assert(is_clean(kTirore3));
 
-static_assert(holds_v<g::state_enabled_t<g::state_step_t<Start<SenderGoesOn>, g::SendAction<P, Q, M1, int>, Reliable>,
-                                         Reliable>,
-                      g::SendAction<P, R, L1, int>>);
-static_assert(holds_v<c::enabled_t<c::step_t<s::projected_context_t<SenderGoesOn>, g::SendAction<P, Q, M1, int>,
-                                             Reliable>,
-                                   Reliable>,
-                      g::SendAction<P, R, L1, int>>);
+static_assert(
+    holds_v<g::state_enabled_t<g::state_step_t<Start<SenderGoesOn>, g::SendAction<P, Q, M1, int>, Reliable>, Reliable>,
+            g::SendAction<P, R, L1, int>>);
+static_assert(
+    holds_v<
+        c::enabled_t<c::step_t<s::projected_context_t<SenderGoesOn>, g::SendAction<P, Q, M1, int>, Reliable>, Reliable>,
+        g::SendAction<P, R, L1, int>>);
 
 // ── Self-attack: the walk must see a context that is not associated ──
 
@@ -356,8 +363,8 @@ inline constexpr Tally kWrongLabel = explore<WrongLabel, Once, 2>();
 static_assert(kWrongLabel.enabled_mismatches > 0 && kWrongLabel.unassociated > 0);
 
 // A message waits that G never sent, so Q can receive it at once.
-using ExtraMessage = s::TypingContext<s::RoleState<P, s::OutQueue<s::Queued<Q, M, int>>, SendM>,
-                                      s::RoleState<Q, s::OutQueue<>, RecvM>>;
+using ExtraMessage =
+    s::TypingContext<s::RoleState<P, s::OutQueue<s::Queued<Q, M, int>>, SendM>, s::RoleState<Q, s::OutQueue<>, RecvM>>;
 inline constexpr Tally kExtraMessage = explore<ExtraMessage, Once, 2>();
 static_assert(kExtraMessage.enabled_mismatches > 0);
 
@@ -374,8 +381,8 @@ using Walk = t::Tally (*)() noexcept;
 int check(char const* name, Walk walk, t::Tally expected, bool expect_clean) {
     const t::Tally got = walk();
     const bool agrees = got.states == expected.states && got.labels == expected.labels
-                        && got.enabled_mismatches == expected.enabled_mismatches
-                        && got.unassociated == expected.unassociated && t::is_clean(got) == expect_clean;
+                     && got.enabled_mismatches == expected.enabled_mismatches
+                     && got.unassociated == expected.unassociated && t::is_clean(got) == expect_clean;
     if (!agrees) std::fprintf(stderr, "test_session_semantics: %s: the runtime walk disagrees\n", name);
     return agrees ? 0 : 1;
 }

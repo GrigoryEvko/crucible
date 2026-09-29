@@ -12,8 +12,7 @@ int main() {
     crucible::cog::CogIdentity local{};
     local.uuid = crucible::cog::Uuid{1, 2};
     cc::LifeguardSwim<4, 8, 4, 8> lifeguard{::foundation::effects::testing::init(), cc::admit_swim_peer(local),
-                                            std::span<const cc::SwimPeer>{}, cc::LifeguardConfig{},
-                                            cc::SwimConfig{}};
+                                            std::span<const cc::SwimPeer>{}, cc::LifeguardConfig{}, cc::SwimConfig{}};
     (void)lifeguard;
     return 0;
 }

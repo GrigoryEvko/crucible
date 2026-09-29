@@ -98,8 +98,9 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
         if (written) {
             entry.resize(*written);
             write_file(session_dir / (hex16(batch_hash.raw()) + ".cfed"), entry);
-            const std::string line = std::to_string(first_step) + "," + std::to_string(std::uint64_t{first_step} + event_count - 1)
-                                   + "," + std::to_string(event_count) + "," + hex16(batch_hash.raw()) + "\n";
+            const std::string line = std::to_string(first_step) + ","
+                                   + std::to_string(std::uint64_t{first_step} + event_count - 1) + ","
+                                   + std::to_string(event_count) + "," + hex16(batch_hash.raw()) + "\n";
             std::ofstream index(session_dir / "index", std::ios::binary | std::ios::app);
             index.write(line.data(), static_cast<std::streamsize>(line.size()));
         }
@@ -118,7 +119,7 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
     Arena arena;
     if (object_hash != 0) {
-        auto loaded = cipher.load_content_addressed(view, test_alloc(),ContentHash{object_hash}, arena);
+        auto loaded = cipher.load_content_addressed(view, test_alloc(), ContentHash{object_hash}, arena);
         if (const RegionNode* region = loaded.get(); region != nullptr) {
             CRUCIBLE_FUZZ_CLAIM("cipher_store", region->content_hash == ContentHash{object_hash});
             claim_region_trusted("cipher_store", *region);
@@ -138,8 +139,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 // the first event record, so a regression seed can hold a record that no
 // session step wrote.
 [[nodiscard]] inline std::vector<std::uint8_t> cipher_store_seed(std::size_t patch_offset, std::uint8_t patch_byte,
-                                                                std::uint64_t object_name_xor = 0,
-                                                                std::string_view log_tail = {}) {
+                                                                 std::uint64_t object_name_xor = 0,
+                                                                 std::string_view log_tail = {}) {
     Arena arena;
     const RegionNode* region = build_seed_region(arena, true);
     const auto image = region_image(region);
@@ -164,10 +165,11 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     append_raw(seed, std::uint8_t{2});
     const std::size_t first_record = seed.size();
     for (std::uint64_t role = 1; role <= 2; ++role) {
-        const auto record = ::fixy::session::SessionEvent::close(::fixy::session::RoleTagId{role},
-                                                                 ::fixy::session::RoleTagId{role + 1})
-                                .encode();
-        for (const std::byte b : record) seed.push_back(static_cast<std::uint8_t>(b));
+        const auto record =
+            ::fixy::session::SessionEvent::close(::fixy::session::RoleTagId{role}, ::fixy::session::RoleTagId{role + 1})
+                .encode();
+        for (const std::byte b : record)
+            seed.push_back(static_cast<std::uint8_t>(b));
     }
     seed[first_record + patch_offset] = patch_byte;
     chunk({});

@@ -497,9 +497,9 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
 // matches more than one entry reports the first.  Its size is the
 // tuple's size and nothing else: there is no literal to keep in step.
 
-using Entries = std::tuple<classified_io_without_declassify, classified_bg_without_declassify,
-                           staleness_secret_without_declassify, ghost_runtime_observable,
-                           internal_io_without_declassify, internal_bg_without_declassify>;
+using Entries =
+    std::tuple<classified_io_without_declassify, classified_bg_without_declassify, staleness_secret_without_declassify,
+               ghost_runtime_observable, internal_io_without_declassify, internal_bg_without_declassify>;
 
 inline constexpr std::size_t corpus_size = std::tuple_size_v<Entries>;
 
@@ -593,7 +593,7 @@ template <class Type, class... Atoms>
         using Entry = [:entry:];
         // The comparison is parenthesised because `^^void && x` lexes as
         // the reflection of the type void&&.
-        if ((found == ^^void) && Entry::template matches<Type, Atoms...>()) {
+        if ((found == ^^void)&&Entry::template matches<Type, Atoms...>()) {
             found = entry;
         }
     }
@@ -697,14 +697,16 @@ static_assert(!is_in_corpus_v<int, ::fixy::atom::with_io, ::fixy::atom::as_publi
 // A declassification licenses the channels its policy names, and no
 // other.  The wire policy licenses IO.  The replay policy does not, so
 // the same IO row under it is classified IO.  No policy licenses Bg.
-static_assert(!is_in_corpus_v<int, ::fixy::atom::with_io,
-                              ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
-static_assert(std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_io,
-                                                     ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
-                             classified_io_without_declassify>);
-static_assert(std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_bg,
-                                                     ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>,
-                             classified_bg_without_declassify>);
+static_assert(
+    !is_in_corpus_v<int, ::fixy::atom::with_io, ::fixy::atom::declassify<::fixy::tags::secret_policy::WireSerialize>>);
+static_assert(
+    std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_io,
+                                           ::fixy::atom::declassify<::fixy::tags::secret_policy::AuthorizedReplay>>,
+                   classified_io_without_declassify>);
+static_assert(
+    std::is_same_v<matched_entry_or_void_t<int, ::fixy::atom::with_bg,
+                                           ::fixy::atom::declassify<::fixy::tags::secret_policy::AuditedLogging>>,
+                   classified_bg_without_declassify>);
 
 // An export policy leaves the value a secret where replay is concerned,
 // and only the replay policy discharges the axis.

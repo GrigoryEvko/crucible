@@ -40,7 +40,8 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 }  // namespace foundation::permissions
 
 int main() {
-    auto whole = ::foundation::permissions::mint_permission_root<Whole>(TestCtx{::foundation::effects::testing::test()});
+    auto whole =
+        ::foundation::permissions::mint_permission_root<Whole>(TestCtx{::foundation::effects::testing::test()});
     [[maybe_unused]] auto rebuilt = ::foundation::permissions::mint_permission_fork_inline<Left, Right>(
         ::foundation::effects::testing::foreground(), std::move(whole),
         [](auto const& /*left_view*/, FgCtx const&) noexcept {},

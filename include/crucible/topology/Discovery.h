@@ -329,7 +329,8 @@ public:
             .id = EdgeId{idx},
             .kind = fact.kind,
             .peer = &nodes_[fact.to_node],
-            .bandwidth_bytes_per_sec = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.bandwidth_bytes_per_sec),
+            .bandwidth_bytes_per_sec =
+                ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.bandwidth_bytes_per_sec),
             .rtt_ns_p50 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p50),
             .rtt_ns_p99 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p99),
             .drop_rate = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.drop_rate),
@@ -348,7 +349,8 @@ public:
 
 private:
     // The firmware string is opaque, so the identity carries its hash.
-    [[nodiscard]] static constexpr cog::VendorClaim<std::uint64_t> firmware_claim(DiscoveryNodeFact const& fact) noexcept {
+    [[nodiscard]] static constexpr cog::VendorClaim<std::uint64_t>
+    firmware_claim(DiscoveryNodeFact const& fact) noexcept {
         return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(stable_discovery_hash(fact.firmware.value()));
     }
 

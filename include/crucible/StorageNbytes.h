@@ -186,7 +186,7 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     auto extents = sizes_minus_one * ::foundation::simd::select(valid_mask, strides, i64x8(0));
 
     // The store below is the aligned form, hence the explicit alignment.
-    alignas(64) ::fixy::FixedArray<int64_t, 8> extents_buf{};
+    alignas(64)::fixy::FixedArray<int64_t, 8> extents_buf{};
     ::foundation::simd::store_aligned(extents, extents_buf.data());
 
     int64_t max_offset = 0;

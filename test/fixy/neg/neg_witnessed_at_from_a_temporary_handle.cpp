@@ -37,7 +37,6 @@ std::uint64_t storage[3] = {1, 2, 3};
 
 int main() {
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
-    [[maybe_unused]] auto witnessed =
-        ::fixy::mint_witnessed_at(s::mint_session_handle<Sending, Wire>(Wire{}), borrow);
+    [[maybe_unused]] auto witnessed = ::fixy::mint_witnessed_at(s::mint_session_handle<Sending, Wire>(Wire{}), borrow);
     return 0;
 }

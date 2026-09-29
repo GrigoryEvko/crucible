@@ -48,10 +48,14 @@ namespace fs = ::fixy::session;
 // The word that a Send of a value writes.  A label word always has its
 // top bit set (foundation/algebra/Transition.h), and a position is small,
 // so this word is neither.
-inline constexpr std::uint64_t value_word = 0x0076'616c'7565ULL;
+inline constexpr std::uint64_t value_word = 0x0076616c7565ULL;
 inline constexpr int fuel_per_endpoint = 12;
 
-enum class exit_code : int { ok = 0, desync = 3, stuck = 4 };
+enum class exit_code : int {
+    ok = 0,
+    desync = 3,
+    stuck = 4
+};
 
 struct Wire {};
 
@@ -162,10 +166,11 @@ void walk(H handle, Endpoint& self) {
                 }),
                      self);
             } else {
-                walk(std::move(handle).send(T{}, [&](Wire&, T&) noexcept {
-                    self.out->push(value_word);
-                    return true;
-                }),
+                walk(std::move(handle).send(T{},
+                                            [&](Wire&, T&) noexcept {
+                                                self.out->push(value_word);
+                                                return true;
+                                            }),
                      self);
             }
         } else if constexpr (kind == 2) {
@@ -176,9 +181,8 @@ void walk(H handle, Endpoint& self) {
                 return;
             }
             if constexpr (H::is_keyed) {
-                walk(std::move(handle).recv([&](Wire&) noexcept -> std::optional<std::size_t> {
-                    return static_cast<std::size_t>(word);
-                }),
+                walk(std::move(handle).recv(
+                         [&](Wire&) noexcept -> std::optional<std::size_t> { return static_cast<std::size_t>(word); }),
                      self);
             } else {
                 if (word != value_word) std::_Exit(static_cast<int>(exit_code::desync));
@@ -226,14 +230,17 @@ template <typename A, typename B, unsigned Seed>
         std::_Exit(static_cast<int>(exit_code::ok));
     }
     int status = 0;
-    while (::waitpid(child, &status, 0) < 0) {
-    }
+    while (::waitpid(child, &status, 0) < 0) {}
     if (WIFSIGNALED(status)) return WTERMSIG(status) == SIGALRM ? "stuck" : "abort";
     switch (WEXITSTATUS(status)) {
-        case static_cast<int>(exit_code::ok): return "ok";
-        case static_cast<int>(exit_code::desync): return "desync";
-        case static_cast<int>(exit_code::stuck): return "stuck";
-        default: return "abort";
+        case static_cast<int>(exit_code::ok):
+            return "ok";
+        case static_cast<int>(exit_code::desync):
+            return "desync";
+        case static_cast<int>(exit_code::stuck):
+            return "stuck";
+        default:
+            return "abort";
     }
 }
 

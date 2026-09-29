@@ -357,8 +357,8 @@ struct row_hash_contribution<::foundation::effects::Row<Es...>> {
         if constexpr (N == 0) {
             return detail::cardinality_seed(0);
         } else {
-            std::array<std::uint64_t, N> const raw_vals{static_cast<std::uint64_t>(
-                static_cast<std::underlying_type_t<::foundation::effects::Effect>>(Es))...};
+            std::array<std::uint64_t, N> const raw_vals{
+                static_cast<std::uint64_t>(static_cast<std::underlying_type_t<::foundation::effects::Effect>>(Es))...};
             auto const sorted = detail::sorted_uints(raw_vals);
             // The seed takes the number of distinct atoms, never the
             // pack size, and it is mixed before any atom. That also
@@ -392,8 +392,7 @@ struct row_hash_contribution<::foundation::effects::Row<Es...>> {
 
 template <typename R, typename T>
 struct row_hash_contribution<::foundation::effects::Computation<R, T>> {
-    static constexpr std::uint64_t value =
-        detail::combine_ids(row_hash_contribution_v<R>, row_hash_contribution_v<T>);
+    static constexpr std::uint64_t value = detail::combine_ids(row_hash_contribution_v<R>, row_hash_contribution_v<T>);
 };
 
 // The shape the fold reads. A wrapper reaches the fold by publishing a
@@ -459,9 +458,8 @@ template <GradedShaped W>
 struct row_hash_contribution<W> {
     static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
         if constexpr (requires { typename W::row_discipline; }) {
-            std::uint64_t h =
-                detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
-                                    lattice_canonical_id_v<typename W::lattice_type>);
+            std::uint64_t h = detail::combine_ids(detail::WRAPPER_GRADED_TAG | static_cast<std::uint64_t>(W::modality),
+                                                  lattice_canonical_id_v<typename W::lattice_type>);
             h = detail::combine_ids(h, lattice_canonical_id_v<typename W::row_discipline>);
             return detail::combine_ids(h, row_hash_contribution_v<typename W::value_type>);
         } else {
@@ -540,8 +538,7 @@ concept DisciplineShaped = !GradedShaped<W> && requires {
 
 template <DisciplineShaped W>
 struct row_hash_contribution<W> {
-    static constexpr std::uint64_t value =
-        discipline_row_hash_v<typename W::row_discipline, typename W::row_payload>;
+    static constexpr std::uint64_t value = discipline_row_hash_v<typename W::row_discipline, typename W::row_payload>;
 };
 
 // A session handle does not instantiate Graded, and
@@ -566,10 +563,10 @@ concept SteppingShaped = !GradedShaped<W> && requires {
 
 template <SteppingShaped W>
 struct row_hash_contribution<W> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(detail::WRAPPER_STEPPING_TAG | static_cast<std::uint64_t>(W::modality),
-                            lattice_canonical_id_v<typename W::protocol_type>),
-        row_hash_contribution_v<typename W::resource_type>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::combine_ids(detail::WRAPPER_STEPPING_TAG | static_cast<std::uint64_t>(W::modality),
+                                                lattice_canonical_id_v<typename W::protocol_type>),
+                            row_hash_contribution_v<typename W::resource_type>);
 };
 
 // ── The effect layer's own carriers ─────────────────────────────────
