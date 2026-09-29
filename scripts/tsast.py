@@ -3570,10 +3570,10 @@ def _self_test_macros(check: Callable[..., None], parse_text: Callable[[str, str
         and [token.text for token in pp_tokens(rows["TAIL"].text)] == ["value_end"],
     )
 
-    names = token_qualified_names(pp_tokens("::crucible::safety::X y = a::template b<int>::c; A<T>::z", 3))
+    names = token_qualified_names(pp_tokens("::foundation::effects::X y = a::template b<int>::c; A<T>::z", 3))
     check(
         "token_qualified_names reads a global name, skips `template` and stops at a template argument list",
-        (True, ("crucible", "safety", "X"), 3) in names and (False, ("a", "b"), 3) in names,
+        (True, ("foundation", "effects", "X"), 3) in names and (False, ("a", "b"), 3) in names,
     )
     check(
         "token_qualified_names does not call `::` after `>` global",

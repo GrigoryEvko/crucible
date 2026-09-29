@@ -297,17 +297,17 @@ FIXTURE_TAIL = "}\n}  // namespace crucible::planted\n"
 # namespace also holds braces inside a character, a string, a raw string
 # and a digit separator.
 ALIAS_FIXTURE = """#pragma once
-namespace crucible::fixy::decide {
-using ::crucible::decide::coprime;
-using ::crucible::decide::
+namespace fixy::decide {
+using ::foundation::decide::coprime;
+using ::foundation::decide::
     Interval;
-namespace catalog_alias = ::crucible::decide;
-}  // namespace crucible::fixy::decide
-namespace crucible::decide::oracle {
-}  // namespace crucible::decide::oracle
-namespace crucible::fixy::decide::self_test {
-static_assert(std::is_same_v<decltype(&::crucible::fixy::decide::coprime<int>),
-                             decltype(&::crucible::decide::coprime<int>)>);
+namespace catalog_alias = ::foundation::decide;
+}  // namespace fixy::decide
+namespace foundation::decide::oracle {
+}  // namespace foundation::decide::oracle
+namespace fixy::decide::self_test {
+static_assert(std::is_same_v<decltype(&::fixy::decide::coprime<int>),
+                             decltype(&::foundation::decide::coprime<int>)>);
 inline constexpr char close_brace = '}';
 inline constexpr const char* closers = "}}";
 inline constexpr const char* raw_closers = R"(}})";
@@ -316,7 +316,7 @@ inline void runtime_smoke_test(int n) {
     if (n > 0) { CRUCIBLE_PRE(decide::coprime(n, 3)); }
     contract_assert(decide::coprime(n, 3));
 }
-}  // namespace crucible::fixy::decide::self_test
+}  // namespace fixy::decide::self_test
 namespace crucible::detail::coprime_self_test {
 inline bool probe(int n) { return decide::coprime(n, 9); }
 }  // namespace crucible::detail::coprime_self_test

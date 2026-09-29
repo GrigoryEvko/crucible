@@ -75,7 +75,7 @@ WHAT READS THE SITES
     appear under the tree while the guard runs.  A name is compared as the
     lexer spells it, after the line splices of phase 2.  A specialization is
     a template declaration whose class names a template-id of the relation,
-    written plain or qualified (`struct ::crucible::safety::retag_policy<...>`).
+    written plain or qualified (`struct ::fixy::retag_policy<...>`).
     A reopening is a namespace definition whose last name is the relation
     namespace.  A comment, a string, a raw string and a prose ledger hold no
     node.  A macro body is parsed on its own (tsast.macro_bodies), with every
@@ -590,7 +590,7 @@ def self_test() -> int:
             "struct is_graded_specialization<planted::Probe<int>> { static constexpr bool is_specialized = true; };\n"
             "}\n"),
         "src/planted/retag.cpp": (
-            "namespace crucible::safety {\n"
+            "namespace fixy {\n"
             "template <>\n"
             "struct retag_policy<source::FromDb, trust::Verified> { static constexpr bool allowed = true; };\n"
             "}\n"
@@ -600,17 +600,17 @@ def self_test() -> int:
             "const char* text = R\"(template <> struct retag_policy<E, F> {};)\";\n"),
         "src/planted/qualified.cpp": (
             "template <>\n"
-            "struct ::crucible::safety::retag_policy<source::FromDb, trust::Verified> : std::true_type {};\n"
+            "struct ::fixy::retag_policy<source::FromDb, trust::Verified> : std::true_type {};\n"
             "template <>\n"
-            "struct [[deprecated]] crucible::safety::machine_transition<A, B> : std::true_type {};\n"),
+            "struct [[deprecated]] fixy::machine_transition<A, B> : std::true_type {};\n"),
         "src/planted/machine.cpp": (
             "CRUCIBLE_ALLOW_MACHINE_TRANSITION(Authenticated, Disconnected)\n"
-            "namespace crucible::safety {\n"
+            "namespace fixy {\n"
             "template <>\n"
             "struct machine_transition<Authenticated, Disconnected> : std::true_type {};\n"
             "}\n"),
         "src/planted/partial.cpp": (
-            "namespace crucible::safety {\n"
+            "namespace fixy {\n"
             "template <class T>\n"
             "struct retag_policy<T, PlantedNarrow> : std::true_type {};\n"
             "}\n"),
@@ -633,7 +633,7 @@ def self_test() -> int:
             "#define FORGE2(T) template <> /* why */ \\\n"
             "  struct retag_policy<T, trust::Verified> : std::true_type {};\n"),
         "src/planted/spliced.cpp": (
-            "namespace crucible::safety {\n"
+            "namespace fixy {\n"
             "template <>\n"
             "struct retag_\\\n"
             "policy<A, B> : std::true_type {};\n"
@@ -662,7 +662,7 @@ def self_test() -> int:
             "#define USE_TOKENS(T) static_assert(is_exec_ctx_v<T>, #T)\n"
             "#define USE_PARSED(T) static_assert(foundation::effects::is_exec_ctx_v<T>)\n"),
         "src/planted/other_tree.cpp": (
-            "namespace crucible::effects {\n"
+            "namespace crucible::planted {\n"
             "template <class T> inline constexpr bool is_exec_ctx_v = false;\n"
             "template <> inline constexpr bool is_exec_ctx_v<Fake> = true;\n"
             "}\n"
@@ -732,10 +732,10 @@ def self_test() -> int:
             "CRUCIBLE_ALLOW_MACHINE_TRANSITION(PlantedFrom, PlantedTo)\n"
             "namespace fixy::machine { template <> struct machine_transition<From, To> : std::true_type {}; }\n"),
         "include/fixy/Refined.h": "namespace fixy::refined::admitted_implications {\n}\n",
-        "test/planted_test.cpp": "namespace crucible::safety { template <> struct retag_policy<X, Y> {}; }\n",
+        "test/planted_test.cpp": "namespace fixy { template <> struct retag_policy<X, Y> {}; }\n",
     }
-    ledger = ("crucible/safety/_Tagged.h:kCatalogRosterTuple  — The retag catalog became the namespace admitted_retags; "
-              "struct retag_policy<From, To> went with it, and struct is_graded_specialization<W> too.\n")
+    ledger = ("fixy/Tagged.h:admitted_retags  — The prose names template <> struct retag_policy<From, To> and "
+              "struct is_graded_specialization<W>, and it specializes nothing.\n")
 
     def captured(action) -> tuple[int, str]:
         """Run an action and return its code and its stderr."""

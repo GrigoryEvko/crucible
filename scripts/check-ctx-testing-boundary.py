@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """check-ctx-testing-boundary — the testing door stays out of the code that ships.
 
-The testing door hands out a context with no key.  Both trees have one:
-foundation::effects::testing in the new tree and crucible::effects::testing in
-the old tree.  bg(), init(), test() and foreground() each mint a context, and
+The testing door, foundation::effects::testing, hands out a context with no
+key.  bg(), init(), test() and foreground() each mint a context, and
 TestWitness and ForegroundWitness are the friends that reach the keys.  A
 context is what every ctx-bound mint checks for, so a use of the door in code
 that ships hands out authority that no mint gave.
@@ -318,7 +317,7 @@ def check(root: Path) -> int:
 
 
 def self_test() -> int:
-    """Plant uses in both trees and through aliases, and each shape that is not a use, then check the verdicts.
+    """Plant uses, direct and through aliases, and each shape that is not a use, then check the verdicts.
 
     Returns:
         0 when every case holds, 2 otherwise
@@ -336,43 +335,43 @@ def self_test() -> int:
             "#pragma once\ninline auto forged() noexcept { return ::foundation::effects::testing::init(); }\n"
             "inline auto forged_foreground() noexcept { return ::foundation::effects::testing::foreground(); }\n",
         "src/planted.cpp":
-            "inline int old_tree() { using namespace crucible::effects; return testing::bg(); }\n"
-            "namespace eff = ::crucible::effects;\n"
+            "inline int relative() { using namespace foundation::effects; return testing::bg(); }\n"
+            "namespace eff = ::foundation::effects;\n"
             "inline int through_alias() { return eff::testing::init(); }\n"
-            "inline int in_scope() { using namespace crucible::effects::testing; return bg(); }\n",
-        "include/crucible/effects/Door.h": "#pragma once\nnamespace door = ::crucible::effects::testing;\n",
-        "src/cross.cpp": "#include <crucible/effects/Door.h>\nnamespace d2 = door;\n"
+            "inline int in_scope() { using namespace foundation::effects::testing; return bg(); }\n",
+        "include/crucible/Door.h": "#pragma once\nnamespace door = ::foundation::effects::testing;\n",
+        "src/cross.cpp": "#include <crucible/Door.h>\nnamespace d2 = door;\n"
                          "inline int far() { return d2::bg(); }\n",
-        "src/directive.cpp": "#include <crucible/effects/Door.h>\n"
+        "src/directive.cpp": "#include <crucible/Door.h>\n"
                              "inline int near() { using namespace door; return 0; }\n",
-        "src/commented.cpp": "namespace t = ::crucible::effects:: /* c */ testing;\n"
+        "src/commented.cpp": "namespace t = ::foundation::effects:: /* c */ testing;\n"
                              "inline int g() { return t::init(); }\n"
-                             "inline int h() { return ::crucible::effects:: /* c */ testing::test(); }\n",
+                             "inline int h() { return ::foundation::effects:: /* c */ testing::test(); }\n",
         "src/witness.cpp": "struct Key { friend struct ::foundation::effects::testing::TestWitness; };\n"
                            "struct Other { friend struct ForegroundWitness; };\n",
-        "src/macro.cpp": "#define TAKE ::crucible::effects::testing::bg()\n"
-                         "#define ALIAS namespace mt = crucible::effects::testing;\n"
+        "src/macro.cpp": "#define TAKE ::foundation::effects::testing::bg()\n"
+                         "#define ALIAS namespace mt = foundation::effects::testing;\n"
                          "#define FRIEND friend struct TestWitness;\n",
         "src/macro_alias_use.cpp": "inline int m() { return mt::test(); }\n",
-        "src/macro_split.cpp": "#define SPLIT ::crucible::effects::testing:: /* c */ bg()\n"
-                               "#define SPLICE ::crucible::effects::test\\\ning::init()\n",
+        "src/macro_split.cpp": "#define SPLIT ::foundation::effects::testing:: /* c */ bg()\n"
+                               "#define SPLICE ::foundation::effects::test\\\ning::init()\n",
         "src/spliced.cpp": "inline int f() { return ::foundation::effects::test\\\ning::init(); }\n"
-                           "namespace st = ::crucible::effects::test\\\ning;\n"
+                           "namespace st = ::foundation::effects::test\\\ning;\n"
                            "struct Key { friend struct Test\\\nWitness; };\n",
-        "include/crucible/effects/Clean.h":
+        "include/crucible/Clean.h":
             "#pragma once\n// effects::testing::bg() hands out a context, so this header never calls it.\n"
             "inline const char* note = \"testing::bg() and TestWitness\";\n"
-            "#include <crucible/effects/TestWitness.h>\n"
+            "#include <foundation/effects/TestWitness.h>\n"
             "#define NOTE \"testing::bg()\"\n"
-            "namespace quiet = ::crucible::effects;\ninline int unrelated() { return quiet::other(); }\n"
+            "namespace quiet = ::foundation::effects;\ninline int unrelated() { return quiet::other(); }\n"
             "namespace other::testing { int bg_like(); }\ninline int fine() { return other::testing::bg_like(); }\n",
-        "include/crucible/effects/Listed.h":
-            "#pragma once\ninline void self_test() { (void)::crucible::effects::testing::bg(); "
-            "(void)::crucible::effects::testing::test(); }\n",
+        "include/crucible/Listed.h":
+            "#pragma once\ninline void self_test() { (void)::foundation::effects::testing::bg(); "
+            "(void)::foundation::effects::testing::test(); }\n",
         "test/t.cpp": "inline auto t() { return effects::testing::test(); }\n",
         "bench/b.cpp": "inline auto b() { return effects::testing::bg(); }\n",
-        ALLOWLIST: "include/crucible/effects/Listed.h x2  — a planted self-test\n"
-                   "include/crucible/effects/Door.h x1  — the planted door alias\n",
+        ALLOWLIST: "include/crucible/Listed.h x2  — a planted self-test\n"
+                   "include/crucible/Door.h x1  — the planted door alias\n",
     }
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -381,10 +380,10 @@ def self_test() -> int:
             (root / rel).write_text(text, encoding="utf-8")
         found, problems = scan(root)
         expect("every planted file parses", not problems)
-        expect("caught: two uses in the new tree", len(found.get("include/foundation/effects/Planted.h", [])) == 2)
-        expect("caught: three uses in the old tree, through a namespace alias and a using-directive",
+        expect("caught: two qualified uses", len(found.get("include/foundation/effects/Planted.h", [])) == 2)
+        expect("caught: three uses, after a using-directive, through a namespace alias and by a using-directive",
                len(found.get("src/planted.cpp", [])) == 3)
-        expect("caught: an alias of a testing namespace", len(found.get("include/crucible/effects/Door.h", [])) == 1)
+        expect("caught: an alias of a testing namespace", len(found.get("include/crucible/Door.h", [])) == 1)
         expect("caught: a use through an alias of another file, by a chain of aliases",
                len(found.get("src/cross.cpp", [])) == 2)
         expect("caught: a using-directive of an alias of another file", len(found.get("src/directive.cpp", [])) == 1)
@@ -401,7 +400,7 @@ def self_test() -> int:
                len(found.get("src/spliced.cpp", [])) == 3)
         expect("not caught: a comment, a literal, an include path, a macro string, an alias of another namespace "
                "and another namespace called testing that holds no door member",
-               "include/crucible/effects/Clean.h" not in found)
+               "include/crucible/Clean.h" not in found)
         expect("not caught: test and bench code", not any(rel.startswith(("test/", "bench/")) for rel in found))
 
         def captured(cwd: Path) -> tuple[int, str]:
@@ -424,24 +423,24 @@ def self_test() -> int:
                     "src/commented.cpp", "src/witness.cpp", "src/macro.cpp", "src/macro_alias_use.cpp",
                     "src/macro_split.cpp", "src/spliced.cpp"):
             (root / rel).unlink()
-        with (root / "include/crucible/effects/Listed.h").open("a", encoding="utf-8") as listed:
-            listed.write("inline void more() { (void)::crucible::effects::testing::init(); }\n")
+        with (root / "include/crucible/Listed.h").open("a", encoding="utf-8") as listed:
+            listed.write("inline void more() { (void)::foundation::effects::testing::init(); }\n")
         code, report = captured(root)
         expect("a new use in a listed file fails", code == 1 and "Listed.h uses the testing door 3 time(s)" in report)
-        (root / ALLOWLIST).write_text("include/crucible/effects/Listed.h x4  — a planted self-test\n"
-                                      "include/crucible/effects/Door.h x1  — the planted door alias\n"
-                                      "include/crucible/effects/Absent.h  — never existed\n", encoding="utf-8")
+        (root / ALLOWLIST).write_text("include/crucible/Listed.h x4  — a planted self-test\n"
+                                      "include/crucible/Door.h x1  — the planted door alias\n"
+                                      "include/crucible/Absent.h  — never existed\n", encoding="utf-8")
         code, report = captured(root)
         expect("an entry above the count of its file, and an entry for a file with no use, are stale",
-               code == 1 and "admits 4 use(s) in include/crucible/effects/Listed.h, and the file has 3" in report
-               and "admits 1 use(s) in include/crucible/effects/Absent.h, and the file has 0" in report)
-        (root / ALLOWLIST).write_text("include/crucible/effects/Listed.h x3  — a planted self-test\n"
-                                      "include/crucible/effects/Door.h x1  — the planted door alias\n"
-                                      "include/crucible/effects/Door.h x1  — twice\n", encoding="utf-8")
+               code == 1 and "admits 4 use(s) in include/crucible/Listed.h, and the file has 3" in report
+               and "admits 1 use(s) in include/crucible/Absent.h, and the file has 0" in report)
+        (root / ALLOWLIST).write_text("include/crucible/Listed.h x3  — a planted self-test\n"
+                                      "include/crucible/Door.h x1  — the planted door alias\n"
+                                      "include/crucible/Door.h x1  — twice\n", encoding="utf-8")
         code, report = captured(root)
         expect("a path listed twice fails", code == 1 and "a second time" in report)
-        (root / ALLOWLIST).write_text("include/crucible/effects/Listed.h x3  — a planted self-test\n"
-                                      "include/crucible/effects/Door.h x1  — the planted door alias\n",
+        (root / ALLOWLIST).write_text("include/crucible/Listed.h x3  — a planted self-test\n"
+                                      "include/crucible/Door.h x1  — the planted door alias\n",
                                       encoding="utf-8")
         expect("a satisfied list passes", captured(root)[0] == 0)
         (root / "src/broken.cpp").write_text("void f() { g(1) { } }\n", encoding="utf-8")

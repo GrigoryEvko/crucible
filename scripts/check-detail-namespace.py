@@ -576,8 +576,8 @@ def self_test() -> int:
               "// ::foundation::effects::detail::Key is refused outside the layers.\n"
               'const char* s = "::foundation::effects::detail::Key";\n'
               'const char* r = R"(fixy::session::detail::Core)";\n'
-              "namespace crucible::fixy::sched::detail { struct Pin {}; }\n"
-              "auto pin = ::crucible::fixy::sched::detail::Pin{};\n"
+              "namespace crucible::cntp::fixy::detail { struct Pin {}; }\n"
+              "auto pin = ::crucible::cntp::fixy::detail::Pin{};\n"
               "namespace crucible { namespace detail { int own; } int n = detail::own; }\n"
               "void call() { foundation::effects::frob({}); }\n"
               "using namespace foundation::effects;\nauto other = crucible::detail::own;\n"
@@ -592,9 +592,9 @@ def self_test() -> int:
         write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n"
                                "test/fixy/test_directive.cpp ::foundation::effects::detail x1 — one directive\n")
         expect(root, 0, "3 use(s) of a detail namespace", "a use inside the layers, reviewed tests, a fixture, a "
-                                                            "comment, a string, the old tree, a public door, a "
-                                                            "macro string and a crucible detail after a layer "
-                                                            "directive pass", True)
+                                                            "comment, a string, a fixy namespace under crucible, a "
+                                                            "public door, a macro string and a crucible detail "
+                                                            "after a layer directive pass", True)
         (root / "test/fixy/test_directive.cpp").unlink()
         write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n")
 
@@ -657,7 +657,7 @@ def self_test() -> int:
         # An alias counts only where C++ can see it: in a file that includes
         # its header, unless the file defines an alias of the same name.
         write(root, "src/Unincluded.cpp", "auto k = fe2::detail::Key{};\n")
-        write(root, "src/Shadowed.cpp", "#include <crucible/Alias.h>\nnamespace fe2 = ::crucible::effects;\n"
+        write(root, "src/Shadowed.cpp", "#include <crucible/Alias.h>\nnamespace fe2 = ::crucible::cipher;\n"
                                         "auto k = fe2::detail::Key{};\n")
         write(root, "src/OtherScope.cpp", "#include <crucible/Scoped.h>\nauto k = fs::detail::Key{};\n")
         write(root, "include/crucible/Scoped.h", "#pragma once\nnamespace crucible { namespace fs = "

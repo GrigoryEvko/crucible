@@ -1,7 +1,6 @@
 # ctx-testing-boundary allowlist — the files that ship and may use the
-# testing door of either tree: foundation::effects::testing or
-# crucible::effects::testing.  scripts/check-ctx-testing-boundary.py reads
-# this file.
+# testing door, foundation::effects::testing.
+# scripts/check-ctx-testing-boundary.py reads this file.
 #
 # The door mints a context with no key, and a context is what every
 # ctx-bound mint checks for, so a use in code that ships hands out
@@ -16,5 +15,5 @@
 # test/, bench/ and fuzz/ are not scanned.  Taking the test path is what
 # they are for.
 
-include/foundation/effects/Effect.h x14  — declares the new-tree door, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.
+include/foundation/effects/Effect.h x14  — declares the door, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.
 include/foundation/effects/Ctx.h x6  — declares the foreground door and ForegroundWitness, friends the witness from the key of the foreground context and from the branded source, and gives the branded door.  This is the definition site.

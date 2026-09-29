@@ -16,12 +16,10 @@ WHAT COUNTS AS A SPECIALIZATION
         the trait variables, such as can_split_into_v<P, L, R>.  Only an
         explicit or partial specialization can declare that name, and the
         mints read those variables, so this is the same forgery.
-    The traits are the four of the new tree (can_split_into,
-    can_split_into_pack, has_split_authoring_witness,
-    has_split_pack_authoring_witness), the four of the old tree
-    (splits_into, splits_into_pack, splits_into_authoring_witness,
-    splits_into_pack_authoring_witness), the _v variable of each, and
-    well_authored_split_v and well_authored_split_pack_v.
+    The traits are can_split_into, can_split_into_pack,
+    has_split_authoring_witness and has_split_pack_authoring_witness, the _v
+    variable of each, and well_authored_split_v and
+    well_authored_split_pack_v.
 
 MACRO BODIES
     A macro body is parsed on its own (tsast.macro_bodies), with every
@@ -88,7 +86,6 @@ import tsast  # noqa: E402
 
 TRAITS = frozenset({
     "can_split_into", "can_split_into_pack", "has_split_authoring_witness", "has_split_pack_authoring_witness",
-    "splits_into", "splits_into_pack", "splits_into_authoring_witness", "splits_into_pack_authoring_witness",
 })
 VARIABLES = frozenset({name + "_v" for name in TRAITS} | {"well_authored_split_v", "well_authored_split_pack_v"})
 NEEDLES = re.compile(b"|".join(re.escape(name.encode()) for name in sorted(TRAITS | {"well_authored_split"})))
@@ -490,16 +487,16 @@ def check(root: Path) -> int:
     """
     result = scan(root)
     for rel, line, text in result.orphans:
-        print(f"splits_into_orphan: forbidden specialization at {rel}:{line}\n  {text}", file=sys.stderr)
+        print(f"check-splits-orphan: forbidden specialization at {rel}:{line}\n  {text}", file=sys.stderr)
     for failure in result.failures:
-        print(f"splits_into_orphan: parse failure: {failure}", file=sys.stderr)
+        print(f"check-splits-orphan: parse failure: {failure}", file=sys.stderr)
     if result.orphans or result.failures:
-        print("splits_into_orphan: a split trait is specialized only in the file that defines every tag it "
+        print("check-splits-orphan: a split trait is specialized only in the file that defines every tag it "
               "names, or in an authoring location of AUTHORING in this script (CLAUDE.md §IX).", file=sys.stderr)
         return 1
     stale = sorted(entry for entry, sites in result.needed.items() if not sites)
     for entry in stale:
-        print(f"splits_into_orphan: stale authoring location {entry}: every specialization there sits beside "
+        print(f"check-splits-orphan: stale authoring location {entry}: every specialization there sits beside "
               "its tags, so remove it from AUTHORING.", file=sys.stderr)
     if stale:
         return 2
@@ -529,7 +526,7 @@ def self_test() -> int:
         "namespace crucible { struct P; struct L; struct R; }\n"                    # 1
         "namespace crucible {\n"                                                    # 2
         "template <>\n"                                                             # 3
-        "struct splits_into<P, L, R> : std::true_type {};\n"                        # 4
+        "struct can_split_into<P, L, R> : std::true_type {};\n"                     # 4
         "}\n"                                                                       # 5
         "template <>\n"                                                             # 6
         "struct\n"                                                                  # 7
@@ -544,10 +541,10 @@ def self_test() -> int:
         "crucible::L, crucible::R> = true;\n"                                       # 13
         "#define FORGE(P, L, R) template <> struct ::foundation::permissions::can_split_into<P, L, R> "
         ": std::true_type {};\n"                                                    # 14
-        "// template <> struct splits_into<P, L, R> {};\n"                          # 15
-        "/* template <> struct splits_into<P, L, R> {}; */\n"                       # 16
-        'inline const char* text = "template <> struct splits_into<P, L, R> {};";\n'  # 17
-        "template <class P, class L, class R> struct splits_into_like {};\n"        # 18
+        "// template <> struct can_split_into<P, L, R> {};\n"                       # 15
+        "/* template <> struct can_split_into<P, L, R> {}; */\n"                    # 16
+        'inline const char* text = "template <> struct can_split_into<P, L, R> {};";\n'  # 17
+        "template <class P, class L, class R> struct can_split_into_like {};\n"     # 18
         "struct can_split_into_record { int can_split_into = 0; };\n"              # 19
         "#define FORGE2(P, L, R) template <> struct /* x */ \\\n"                  # 20
         "    can_split_into<P, L, R> {};\n"                                         # 21
@@ -617,7 +614,7 @@ def self_test() -> int:
              "}\n"),
             ("include/fixy/OwnedRegion.h", "template <class P, class... S> struct can_split_into_pack<P, S...> {};\n"),
             ("include/fixy/Other.h", "template <class P, class... S> struct can_split_into_pack<P, S...> {};\n"),
-            ("test/fixy/Local.cpp", "template <> struct splits_into<P, L, R> {};\n"),
+            ("test/fixy/Local.cpp", "template <> struct can_split_into<P, L, R> {};\n"),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")

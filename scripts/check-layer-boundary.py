@@ -5,7 +5,7 @@ The tree has three layers, and each layer may name only the project roots at
 or below it:
 
     include/foundation/  src/foundation/  names  foundation
-    include/fixy/        src/fixy/os/     names  foundation, fixy
+    include/fixy/        src/fixy/        names  foundation, fixy
     include/crucible/    the rest of src/ names  every project root
 
 A project root is a directory directly under include/, so a fourth root is a
@@ -65,7 +65,7 @@ import tsast  # noqa: E402
 # The layer of each lower-layer directory, and the roots that layer may name.
 LAYERS: tuple[tuple[str, str], ...] = (
     ("include/foundation/", "foundation"), ("src/foundation/", "foundation"),
-    ("include/fixy/", "fixy"), ("src/fixy/os/", "fixy"),
+    ("include/fixy/", "fixy"), ("src/fixy/", "fixy"),
 )
 ALLOWED: dict[str, frozenset[str]] = {
     "foundation": frozenset({"foundation"}),
@@ -145,7 +145,7 @@ def chain_head(node: tsast.Node) -> str | None:
     """Return the first segment of a qualified name, through a leading `::`.
 
     The walk follows the leftmost scope, so `::crucible` gives `crucible`
-    and `crucible::safety::Linear<int>::type` gives `crucible` too.
+    and `crucible::cipher::Tier<int>::type` gives `crucible` too.
 
     Args:
         node: A qualified_identifier that no other qualified_identifier holds as its name
@@ -368,16 +368,16 @@ def self_test() -> int:
         ("#include <foundation/Platform.h>", False, "an include of the own layer"),
         ("#include <vector>", False, "a system header"),
         ('#include "Sibling.h"', False, "a quoted include of a sibling"),
-        ("// Prose may cite crucible::algebra and <crucible/Arena.h> freely.", False, "a line comment"),
+        ("// Prose may cite crucible::cipher and <crucible/Arena.h> freely.", False, "a line comment"),
         ("/* a block comment", None, ""),
         ("   that names crucible::Arena */", False, "a block comment"),
         ("namespace foundation::algebra {", None, ""),
         ("using Bad = ::crucible::Arena;", True, "a name qualified from ::"),
         ("using Relative = crucible::Arena;", True, "a relative qualified name"),
-        ("using Nested = crucible::safety::Linear<int>::value_type;", True, "a long qualified name"),
+        ("using Nested = crucible::cipher::Tier<int>::value_type;", True, "a long qualified name"),
         ("using ::fixy::Linear;", True, "a using-declaration"),
         ("using namespace crucible;", True, "a using-directive"),
-        ("namespace up = ::crucible::safety;", True, "a namespace alias"),
+        ("namespace up = ::crucible::cipher;", True, "a namespace alias"),
         ("struct Derived : crucible::Base {};", True, "a base class"),
         ("inline int argument = sizeof(Holder<fixy::Tag>);", True, "a template argument"),
         ('inline const char* text = "crucible::Arena";', False, "a string literal"),
@@ -389,8 +389,8 @@ def self_test() -> int:
         ("using namespace ::crucible;", True, "a using-directive from ::"),
         ("}", None, ""),
         ("namespace crucible { struct Opened {}; }", True, "a namespace definition at global scope"),
-        ("namespace crucible::safety { struct Deeper {}; }", True, "a nested namespace definition at global scope"),
-        ("namespace crucible /*x*/ ::safety { struct Commented {}; }", True,
+        ("namespace crucible::cipher { struct Deeper {}; }", True, "a nested namespace definition at global scope"),
+        ("namespace crucible /*x*/ ::cipher { struct Commented {}; }", True,
          "a namespace definition with a comment inside its name"),
         ("#define WRAP(fixy) (fixy + 1)", False, "a macro parameter named like a root"),
     ]
@@ -407,9 +407,8 @@ def self_test() -> int:
             ("include/crucible/Top.h", "#pragma once\n#include <fixy/Good.h>\n"
                                        "namespace crucible { using A = ::fixy::Ok; }\n"),
             ("src/foundation/Planted.cpp", "static int planted_bad = fixy::value;\n"),
-            ("src/foundation/Alias.cpp", "namespace up = crucible /* a comment */ ::safety;\n"),
+            ("src/foundation/Alias.cpp", "namespace up = crucible /* a comment */ ::cipher;\n"),
             ("src/fixy/os/Os.cpp", "#include <crucible/Arena.h>\n"),
-            ("src/fixy/Old.cpp", "#include <crucible/Arena.h>\n"),
             ("include/newroot/Thing.h", "#pragma once\n"),
             ("include/fixy/Fourth.h", "#pragma once\n#include <newroot/Thing.h>\n"),
         ):
@@ -429,11 +428,10 @@ def self_test() -> int:
         expect("caught: a fixy file that names crucible", "include/fixy/Up.h" in reported)
         expect("caught: a foundation source that names fixy", "src/foundation/Planted.cpp" in reported)
         expect("caught: a namespace alias with a comment inside its target", "src/foundation/Alias.cpp" in reported)
-        expect("caught: an include of a higher root in src/fixy/os", "src/fixy/os/Os.cpp" in reported)
+        expect("caught: an include of a higher root in src/fixy", "src/fixy/os/Os.cpp" in reported)
         expect("caught: a fourth root that the table does not admit", "include/fixy/Fourth.h" in reported)
         expect("not caught: a fixy file that names foundation", "include/fixy/Good.h" not in reported, True)
         expect("not caught: a file of the crucible layer", "include/crucible/Top.h" not in reported, True)
-        expect("not caught: src/fixy outside os/ is the crucible layer", "src/fixy/Old.cpp" not in reported, True)
         expect("the planted tree has no file of an unknown kind", not unknown, True)
 
         def captured(cwd: Path) -> tuple[int, str]:
