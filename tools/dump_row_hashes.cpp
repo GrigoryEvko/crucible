@@ -1,8 +1,8 @@
-// Cross-build row-hash witness for the foundation fold.
+// Cross-build witness for the row-hash fold of foundation/diag/RowHash.h.
 //
 // Prints one `<label> 0x%016lx` line per entry of the matrix below. CI
 // runs the binary and diffs stdout against
-// tools/row_hash_foundation_golden.txt. A mismatch means either a
+// tools/row_hash_golden.txt. A mismatch means either a
 // specialisation moved on purpose, and then the golden is recaptured in
 // the same commit, or a reflected name moved underneath the fold, and
 // then the cache is silently broken.
@@ -38,13 +38,13 @@
 // When an entry is added, removed or reordered:
 //   1. Extend kEntries.
 //   2. Re-roll kFoldAnchor to the new fold_anchor() value.
-//   3. Re-run the binary and replace tools/row_hash_foundation_golden.txt
+//   3. Re-run the binary and replace tools/row_hash_golden.txt
 //      with its stdout.
 //   4. Commit the tool and the golden together.
 //
 // A partial migration reddens the build twice. The anchor static_assert
 // below fires at compile time when the matrix and the anchor disagree.
-// The CTest entry row_hash_foundation_golden_diff fires when the matrix
+// The CTest entry row_hash_golden_diff fires when the matrix
 // and the golden disagree.
 //
 // ── Reading a diff ─────────────────────────────────────────────────
@@ -364,7 +364,7 @@ inline constexpr std::uint64_t kFoldAnchor = 0x9519eba651644517ULL;
 static_assert(fold_anchor() == kFoldAnchor, "the matrix and the anchor disagree. An entry was added, removed or "
                                             "reordered, or a row_hash_contribution specialisation moved. Re-roll "
                                             "kFoldAnchor to the new fold_anchor() value, recapture "
-                                            "tools/row_hash_foundation_golden.txt from this binary, and commit both "
+                                            "tools/row_hash_golden.txt from this binary, and commit both "
                                             "together. The ceremony is at the top of this file.");
 
 // ── The properties a reader of the golden should not have to re-derive ──
@@ -508,7 +508,7 @@ int main() {
     // printed because it is the discriminator a cross-toolchain
     // federation keys through, and a reader comparing two goldens needs
     // to know whether the two builds shared a toolchain.
-    std::printf("# foundation row_hash cross-build witness\n");
+    std::printf("# row_hash cross-build witness\n");
     std::printf("# format-version:  1\n");
     std::printf("# matrix-size:     %zu\n", kEntryCount);
     std::printf("# fold-seed:       0x%016" PRIx64 "\n", kFoldSeed);

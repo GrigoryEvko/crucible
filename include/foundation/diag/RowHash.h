@@ -76,11 +76,10 @@
 // in unconditionally would make the one portable half non-portable, in
 // exchange for a guarantee the caller already takes per key.
 //
-// A cross-build witness covers the rest.
-// tools/dump_row_hashes_foundation.cpp prints this fold from a separate
-// binary and CI diffs the output
-// against a committed golden, because a self-test in one translation
-// unit cannot see a reflected name move underneath it.
+// A cross-build witness covers the rest. tools/dump_row_hashes.cpp prints
+// this fold from a separate binary and CI diffs the output against a
+// committed golden, because a self-test in one translation unit cannot
+// see a reflected name move underneath it.
 
 #include <foundation/algebra/Modality.h>
 #include <foundation/effects/Effect.h>

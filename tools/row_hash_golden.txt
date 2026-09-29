@@ -1,4 +1,4 @@
-# foundation row_hash cross-build witness
+# row_hash cross-build witness
 # format-version:  1
 # matrix-size:     56
 # fold-seed:       0xf0117a11eda11a5e

@@ -180,7 +180,7 @@ jobs:
       # -j3: 4 vCPU / 16 GB runner; the C++26 reflection+contracts TUs are
       # memory-heavy, so cap parallelism (warm ccache makes most calls hits anyway).
       - name: Build tools
-        run: ninja -C build -j3 dump_row_hashes_foundation crucible_diag_lsp
+        run: ninja -C build -j3 dump_row_hashes crucible_diag_lsp
 
       - name: ccache stats
         run: ccache -s
@@ -190,7 +190,7 @@ jobs:
       - name: Stage + checksum + verify static
         run: |
           mkdir -p dist
-          for b in dump_row_hashes_foundation crucible_diag_lsp; do
+          for b in dump_row_hashes crucible_diag_lsp; do
             install -m 0755 "build/$b" "dist/${b}-${{ matrix.arch }}-linux"
           done
           for b in dist/*-${{ matrix.arch }}-linux; do
@@ -209,7 +209,7 @@ jobs:
       - name: Upload assets to release
         run: >
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber
-          dist/dump_row_hashes_foundation-${{ matrix.arch }}-linux
+          dist/dump_row_hashes-${{ matrix.arch }}-linux
           dist/crucible_diag_lsp-${{ matrix.arch }}-linux
           dist/SHA256SUMS-${{ matrix.arch }}.txt
 

@@ -2328,7 +2328,7 @@ shares, and pool borrows whose `ExecCtx::row_type` admits the tag row.
 
 Other carriers have folds of their own in the same header. The effect row, `Computation<R, T>`, a capability context, `ExecCtx` and `Capability` each have a specialization. A carrier that publishes `row_discipline` and `row_payload` goes to the discipline fold. A session handle publishes the Stepping modality and goes to the stepping fold. The multi-axis binding in `fixy/Fn.h` has its own specialization.
 
-The lattice identity is a reflected name, so the graded fold is not portable across toolchains. Peers that can have different toolchains use `federation_key_with_toolchain<T>()` for their keys. `test/fixy/test_row_hash_wrappers.cpp` reads the carrier roster by reflection. It gives an error for each wrapper that folds to zero with no stated reason. `test/foundation/test_row_hash.cpp` holds the algebra of the fold. `tools/dump_row_hashes_foundation.cpp` with its committed golden is the cross-build witness.
+The lattice identity is a reflected name, so the graded fold is not portable across toolchains. Peers that can have different toolchains use `federation_key_with_toolchain<T>()` for their keys. `test/fixy/test_row_hash_wrappers.cpp` reads the carrier roster by reflection. It gives an error for each wrapper that folds to zero with no stated reason. `test/foundation/test_row_hash.cpp` holds the algebra of the fold. `tools/dump_row_hashes.cpp` with its committed golden is the cross-build witness.
 
 ### GCC 16 contracts — implementation gotchas
 

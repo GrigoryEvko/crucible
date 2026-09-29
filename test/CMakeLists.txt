@@ -900,16 +900,16 @@ add_test(NAME ci_guard_labels
 set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
     LABELS "ci_guard")
 # The cross-build row_hash determinism witness.  The test runs
-# dump_row_hashes_foundation and diffs its output against the committed
-# golden.  A mismatch says either that the fold changed on purpose, and
-# the golden moves in the same commit, or that a TU-context-fragility
-# regression in display_string_of moved stable_type_id<T> for some
-# wrapper, which is a latent federation-cache bug.
+# dump_row_hashes and diffs its output against the committed golden.  A
+# mismatch says either that the fold changed on purpose, and the golden
+# moves in the same commit, or that a TU-context-fragility regression in
+# display_string_of moved stable_type_id<T> for some wrapper, which is a
+# latent federation-cache bug.
 #
-# The fold replaced fifty-two per-wrapper salts with one fold over the
-# graded shape, and the lattice identity is one of its three inputs, so
-# every graded wrapper folds a reflected name. The multi-axis binding in
-# fixy/Fn.h folds such an identity for every axis but two.
+# The fold is one fold over the graded shape, and the lattice identity is
+# one of its three inputs, so every graded wrapper folds a reflected name.
+# The multi-axis binding in fixy/Fn.h folds such an identity for every
+# axis but two.
 #
 # Gated on x86_64: the payload lines fold display_string_of, so the
 # absolute matrix is bit-stable only within one (arch, compiler, stdlib)
@@ -917,11 +917,11 @@ set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
 # which of the two it was. The arch-independent invariants (distinctness
 # and nesting-order sensitivity) run on every arch in their own tests.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
-  add_test(NAME row_hash_foundation_golden_diff
+  add_test(NAME row_hash_golden_diff
     COMMAND bash -c
-      "set -e; \"$<TARGET_FILE:dump_row_hashes_foundation>\" > \"${CMAKE_BINARY_DIR}/row_hash_foundation_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_foundation_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_foundation_dump_current.txt\""
+      "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-  set_tests_properties(row_hash_foundation_golden_diff PROPERTIES
+  set_tests_properties(row_hash_golden_diff PROPERTIES
       LABELS "ci_guard")
 endif()
 crucible_test(test_calibrate)

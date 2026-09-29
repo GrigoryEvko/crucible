@@ -545,20 +545,20 @@ add_executable(crucible_diag_lsp
 )
 target_link_libraries(crucible_diag_lsp PRIVATE crucible)
 
-# The cross-build row_hash determinism witness for the foundation fold,
-# which replaced the fifty-two per-wrapper salts with one fold over the
-# graded shape.  It prints each row hash as a labeled hex line, and a test
-# diffs the output against tools/row_hash_foundation_golden.txt, so a
-# TU-context-fragility regression in display_string_of (the upstream of
-# stable_type_id) cannot move a hash unseen.  Every graded wrapper folds a
-# reflected lattice name, so every wrapper is exposed.
+# The cross-build witness for the row-hash fold of foundation/diag/RowHash.h.
+# The fold is one fold over the graded shape.  The tool prints each row hash
+# as a labeled hex line, and a test diffs the output against
+# tools/row_hash_golden.txt.  A regression in display_string_of (the
+# upstream of stable_type_id) that depends on the TU context cannot move a
+# hash unseen.  Every graded wrapper folds a reflected lattice name, so
+# every wrapper is exposed.
 #
 # It links fixy rather than crucible.  A witness against TU-context
 # fragility must not carry a TU context that no production build runs.
-add_executable(dump_row_hashes_foundation
-  tools/dump_row_hashes_foundation.cpp
+add_executable(dump_row_hashes
+  tools/dump_row_hashes.cpp
 )
-target_link_libraries(dump_row_hashes_foundation PRIVATE fixy)
+target_link_libraries(dump_row_hashes PRIVATE fixy)
 
 # The one-shot writer for the hardware-capability ledger.
 #
