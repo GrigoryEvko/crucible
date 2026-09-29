@@ -18,8 +18,6 @@ include/crucible/ledger/probes/CacheTier.h | crucible::ledger::probes::cache_tie
 include/crucible/ledger/probes/HugePage.h | crucible::ledger::probes::huge_page_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
 include/crucible/ledger/probes/VectorWidth.h | crucible::ledger::probes::vector_width_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
 
-include/crucible/safety/_ThreadLocalRef.h | crucible::safety::ThreadLocalRef::storage_()::storage | a marked old-tree header, which is frozen. Its twin include/foundation/ThreadLocalRef.h has a row
-
 include/foundation/ThreadLocalRef.h | foundation::ThreadLocalRef::storage_()::storage | a template, so the marker cannot reach it. Its one user, observe/HdrHistogram.h, keeps a shard choice for each thread, and a second library can only pick a second shard for the thread, which changes how the writes spread and nothing else
 include/foundation/reflect/Hash.h | foundation::reflect::detail::stable_name_self_test::identity_test::internal_variable | a fixture of the stable-identity self-test: only its address is used, in a static_assert
 include/foundation/reflect/Hash.h | foundation::reflect::detail::stable_name_self_test::identity_test::external_variable | a fixture of the stable-identity self-test: only its address is used, in a static_assert

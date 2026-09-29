@@ -98,8 +98,6 @@ LINE_SPLICE = re.compile(rb"\\\r?\n")
 # one file.  A location that no specialization needs is stale, and the check
 # fails until the key is removed, so the table can only shrink.
 AUTHORING: dict[str, str] = {
-    "include/crucible/safety/_PermissionTreeGenerator.h": "the generator splits every parent into its slices",
-    "include/crucible/safety/_PermissionGridGenerator.h": "the generator splits every parent into its grid cells",
     "include/fixy/OwnedRegion.h": "the region splits every parent into its slices",
     "test/": "the tests specialize for local tags on purpose, and a negative fixture forges a split to prove "
              "that the mint refuses it",

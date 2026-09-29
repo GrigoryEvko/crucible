@@ -105,9 +105,3 @@ test/foundation/test_swiss_table_buffer.cpp:move_hands_the_block_on:second
 # Probe: a budget stamp moved into a second value claims nothing the second
 # time, so one grant grades one value.
 test/fixy/test_versioned_budgeted_attacks.cpp:attack_one_grant_on_two_values:stamp
-
-# Frozen, not a probe: a macro of the old tree forwards its pack into a
-# constructor.  The guard refuses a move inside a macro, because each use of
-# the macro hides the move.  The old tree is deleted, not edited, so the
-# entry goes with the file.
-include/crucible/safety/_FpMode.h:CRUCIBLE_FP_AXIS_MINT:forward

@@ -19,15 +19,6 @@
 # an implicit-lifetime type.
 include/foundation/Lifetime.h:start_lifetime_as_array<std::remove_cv_t<T>>
 
-# A KNOWN OPEN SITE in the superseded copy of the frozen tree.
-# slot_type is the template parameter SlotPtr, and nothing constrains
-# it, so SwissTableBuffer<P> over a proof type P gives slots whose
-# lifetime never started.  Its one user, ExprPool, passes a pointer
-# type.  foundation::SwissTableBuffer closes the site: it requires
-# ImplicitLifetimeThroughout<SlotPtr> and starts the slots through the
-# checked start.  The entry goes when the superseded copy is deleted.
-include/crucible/safety/_SwissTableBuffer.h:start_lifetime_as_array<slot_type>
-
 # Negative-compile fixtures.  Each one applies std::start_lifetime_as to
 # one proof type and must fail to compile, which proves that the proof
 # type is not an implicit-lifetime type.  The fixture that compiled would

@@ -1,4 +1,5 @@
-# frozen-paths — the prefixes of the old substrate, until it is deleted.
+# frozen-paths — the prefixes of the old substrate.  The old substrate is
+# deleted, so the list has no rows.
 #
 # One repo-relative prefix per line.  A directory ends in '/', and a single
 # file does not.  A '#' line is a comment, and a blank line is skipped.
@@ -6,8 +7,5 @@
 # scripts/check-start-lifetime.py reads these prefixes to admit a file of the
 # old substrate.  scripts/check-derived-pins.py, check-mint-pattern.py,
 # check-no-unchecked-access.py and check-row-contains-discipline.py read them
-# to exempt such a file from some of their rules.
-include/crucible/safety/
-include/crucible/algebra/
-include/crucible/effects/
-include/crucible/_Saturate.h
+# to exempt such a file from some of their rules.  Each of the five reads a
+# list with no rows as a list that exempts nothing.

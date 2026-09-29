@@ -40,8 +40,6 @@ include/foundation/reflect/TypeComponents.h — walks every base and member to l
 
 # The frozen old tree.  It is deleted, not edited, and each row goes with its file.
 include/crucible/Reflect.h — frozen: the old member walk of reflect_hash and reflect_print
-include/crucible/safety/_ScopedView.h — frozen: the old escape audit through private members
-include/crucible/safety/_Secret.h — frozen: the old member walk of the Secret layout check
 
 # Tests: a roster or structure walk that a test compares with the production
 # walk, and the ledger reproducer that proves the splice still writes.

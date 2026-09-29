@@ -31,8 +31,7 @@ SCOPE
     test removes each line splice first, so a splice cannot hide the name,
     and a name is compared as the lexer spells it, after the splices.  These
     files are out of scope:
-      * The definitions of the lifts, in include/foundation/effects/ and
-        include/crucible/effects/
+      * The definitions of the lifts, in include/foundation/effects/
       * The frozen paths of scripts/frozen-paths.txt, which cannot change
       * The files of tsast.UNPARSEABLE, which are not C++.
 
@@ -61,7 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
 ROOTS = ("include", "src")
-EXCLUDED_PREFIXES = ("include/foundation/effects/", "include/crucible/effects/")
+EXCLUDED_PREFIXES = ("include/foundation/effects/",)
 EXCLUDED_COMPONENTS = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
 FROZEN = "scripts/frozen-paths.txt"
 NAME = "row_contains_v"
