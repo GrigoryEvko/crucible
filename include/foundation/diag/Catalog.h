@@ -94,11 +94,10 @@ struct UnknownParameterShape : tag_base {
                                                     "shape: a void function that takes one or more consumer "
                                                     "handles, then one or more producer handles, each by non-const "
                                                     "rvalue reference.";
-    static constexpr std::string_view remediation =
-        "Either reshape the signature to the stage shape: return void, "
-        "and take each consumer handle and then each producer handle by "
-        "non-const rvalue reference.  Or drive the channel handles "
-        "directly, without mint_stage.";
+    static constexpr std::string_view remediation = "Either reshape the signature to the stage shape: return void, "
+                                                    "and take each consumer handle and then each producer handle by "
+                                                    "non-const rvalue reference.  Or drive the channel handles "
+                                                    "directly, without mint_stage.";
 
     static constexpr Severity severity = Severity::Warning;
     static constexpr std::string_view why_this_matters = "mint_stage builds a stage only from a function whose "
@@ -172,13 +171,14 @@ struct LinearityViolation : tag_base {
                                                     "consumed once); used after move (the moved-from state is "
                                                     "linear-zero, not linear-one).  CSL frame rule violation if "
                                                     "the value is a Permission token.";
-    static constexpr std::string_view remediation = "Trace the value's flow.  Each linear value has exactly ONE "
-                                                    "consumer; any sharing requires either explicit duplication "
-                                                    "(if the substrate permits — most don't) or fractional "
-                                                    "permissions via SharedPermissionPool<Tag>.  Use std::move at "
-                                                    "the consumption point; capture by value not reference into a "
-                                                    "lambda that takes ownership.  See foundation/permissions/Permission.h for "
-                                                    "the CSL primitive surface.";
+    static constexpr std::string_view remediation =
+        "Trace the value's flow.  Each linear value has exactly ONE "
+        "consumer; any sharing requires either explicit duplication "
+        "(if the substrate permits — most don't) or fractional "
+        "permissions via SharedPermissionPool<Tag>.  Use std::move at "
+        "the consumption point; capture by value not reference into a "
+        "lambda that takes ownership.  See foundation/permissions/Permission.h for "
+        "the CSL primitive surface.";
 
     static constexpr Severity severity = Severity::Error;
     static constexpr std::string_view why_this_matters = "Quantitative type theory (Atkey FLoC 2018) and Concurrent "
@@ -1035,13 +1035,12 @@ struct InsufficientWitness : tag_base {
         "numerics CI (MIMIC.md §41) is the evidence for that claim.  "
         "Without the floor, a kernel that no test covers can reach the "
         "hot tier and corrupt the replay logs.";
-    static constexpr std::string_view symptom_pattern =
-        "Surfaces when a refactor moves a value that only a developer "
-        "vouched for into a consumer that takes a higher trust tag, "
-        "with no validator run and no retag.  The compiler names the "
-        "parameter type that holds the floor and the tag that the "
-        "value carries.  Remediation: retag along the edge whose "
-        "validator ran, or lower the tag that the consumer takes.";
+    static constexpr std::string_view symptom_pattern = "Surfaces when a refactor moves a value that only a developer "
+                                                        "vouched for into a consumer that takes a higher trust tag, "
+                                                        "with no validator run and no retag.  The compiler names the "
+                                                        "parameter type that holds the floor and the tag that the "
+                                                        "value carries.  Remediation: retag along the edge whose "
+                                                        "validator ran, or lower the tag that the consumer takes.";
     static constexpr std::string_view correct_example =
         "auto tested = ::fixy::retag<trust::Tested>(std::move(claim));  // after the suite passes";
     static constexpr std::string_view violating_example =
@@ -1417,9 +1416,9 @@ inline constexpr bool is_diagnostic_class_v = std::is_base_of_v<tag_base, T> && 
 namespace detail {
 
 // One selector per text field.  Each reads its member directly, so a tag
-// that declares no such member is a compile error at the read.  These
-// three are the whole of what the accessors below and the catalog arrays
-// further down vary over, and each of those walks is written once.
+// that declares no such member is a compile error at the read.  The
+// catalog arrays further down vary over these three, and their walk is
+// written once.
 inline constexpr auto select_name = []<typename Tag>() consteval { return std::string_view{Tag::name}; };
 inline constexpr auto select_description = []<typename Tag>() consteval { return std::string_view{Tag::description}; };
 inline constexpr auto select_remediation = []<typename Tag>() consteval { return std::string_view{Tag::remediation}; };
@@ -1428,18 +1427,16 @@ inline constexpr auto select_remediation = []<typename Tag>() consteval { return
 // `requires is_diagnostic_class_v<T>`. A requires-clause failure on a variable
 // template reports in compiler-chosen wording, which drifts between releases.
 // Routing through this function puts the wording under our control.  The
-// if constexpr keeps the read away from a type that declares no such
-// member, which is the work the false arm of the two-arm struct did.
-template <typename T, auto Select>
-[[nodiscard]] consteval std::string_view accessor_field_() noexcept {
+// if constexpr keeps the read away from a type that declares no name.
+template <typename T>
+[[nodiscard]] consteval std::string_view tag_name_() noexcept {
     static_assert(is_diagnostic_class_v<T>, "foundation::diag [DiagnosticAccessor_NonTag]: "
-                                            "diagnostic_name_v / diagnostic_description_v / "
-                                            "diagnostic_remediation_v requires T to be derived from "
+                                            "diagnostic_name_v requires T to be derived from "
                                             "foundation::diag::tag_base.  See foundation/diag/Catalog.h's catalog "
                                             "for the shipped tag classes; user-extensions inherit "
                                             "tag_base and provide constexpr name/description/remediation.");
     if constexpr (is_diagnostic_class_v<T>) {
-        return Select.template operator()<T>();
+        return select_name.template operator()<T>();
     } else {
         return {};
     }
@@ -1448,13 +1445,7 @@ template <typename T, auto Select>
 }  // namespace detail
 
 template <typename T>
-inline constexpr std::string_view diagnostic_name_v = detail::accessor_field_<T, detail::select_name>();
-
-template <typename T>
-inline constexpr std::string_view diagnostic_description_v = detail::accessor_field_<T, detail::select_description>();
-
-template <typename T>
-inline constexpr std::string_view diagnostic_remediation_v = detail::accessor_field_<T, detail::select_remediation>();
+inline constexpr std::string_view diagnostic_name_v = detail::tag_name_<T>();
 
 template <typename DiagnosticClass, typename... Context>
     requires is_diagnostic_class_v<DiagnosticClass>
@@ -1638,9 +1629,9 @@ template <typename Tag>
 template <typename Tag>
 struct category_of_impl {
     static_assert(is_diagnostic_class_v<Tag>, "category_of_v<Tag>: Tag must be derived from "
-                                              "foundation::diag::tag_base.  Use diagnostic_name_v / diagnostic_"
-                                              "description_v / diagnostic_remediation_v to access tag "
-                                              "fields directly without the Category indirection.");
+                                              "foundation::diag::tag_base.  Read Tag::name, Tag::description "
+                                              "and Tag::remediation directly to access the fields of a tag "
+                                              "without the Category indirection.");
     static constexpr std::size_t index = category_index_of<Tag>();
     static_assert(index < catalog_size, "category_of_v<Tag>: Tag is not registered in the foundation "
                                         "Catalog.  The Category enum is CLOSED to the tags of the "
