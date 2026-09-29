@@ -807,7 +807,7 @@ target_link_libraries(crucible_dialect INTERFACE stdc++exp)
 # ║  CRUCIBLE HARDENING — 300+ compiler/linker/sanitizer flags       ║
 # ║                                                                   ║
 # ║  GCC 16:   200+ individual warnings + contracts + reflection     ║
-# ║            (only supported compiler — see code_guide.md §I)       ║
+# ║            (only supported compiler — see CLAUDE.md, §I)          ║
 # ║  +         sanitizers, linker hardening, FORTIFY, library checks ║
 # ║                                                                   ║
 # ║  "Every nanosecond matters. Every byte is accounted for.         ║
