@@ -14,7 +14,7 @@
 #include <foundation/algebra/lattices/PinningRequirementLattice.h>
 #include <foundation/algebra/lattices/ProductLattice.h>
 #include <foundation/algebra/lattices/SuspendBehaviorLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -40,14 +40,6 @@ enum class ClockSource : std::uint8_t {
     PmuCounter = 8,  // perf_event cycles
     PtpHwClock = 9,  // the /dev/ptpN hardware clock on a NIC
 };
-
-inline constexpr std::size_t clock_source_count = ::foundation::reflect::enum_count<ClockSource>;
-
-// The identifier of s, or "<unknown ClockSource>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view clock_source_name(ClockSource s) noexcept {
-    return ::foundation::reflect::enum_name(s);
-}
 
 struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattice, PinningRequirementLattice> {
     using det_safe_axis = DetSafeLattice;
@@ -118,11 +110,9 @@ struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattic
 
 namespace detail::clock_source_lattice_self_test {
 
-static_assert(clock_source_count == 10, "The ClockSource catalog changed size.  A new source needs an arm in "
-                                        "clock_source_project() and this count bumped; existing ordinals "
-                                        "never renumber.");
-
-static_assert(clock_source_name(static_cast<ClockSource>(200)) == "<unknown ClockSource>");
+static_assert(::foundation::reflect::enum_count<ClockSource> == 10,
+              "The ClockSource catalog changed size.  A new source needs an arm in clock_source_project() and "
+              "this count bumped; existing ordinals never renumber.");
 
 static_assert(Lattice<ClockSourceLattice>, "ClockSourceLattice must satisfy the Lattice concept "
                                            "(element_type + leq + join + meet) — inherited from the 3-ary "
@@ -251,9 +241,6 @@ static_assert(equivalent<ClockSourceLattice>(clock_source_project(ClockSource::M
 static_assert(ClockSourceLattice::name() == std::string_view{"ClockSourceLattice"},
               "name() must return this composite's own name, not the generic one "
               "inherited from the product.");
-static_assert(clock_source_name(ClockSource::TscRaw) == std::string_view{"TscRaw"});
-static_assert(clock_source_name(ClockSource::Boot) == std::string_view{"Boot"});
-static_assert(clock_source_name(ClockSource::TscSerialized) == std::string_view{"TscSerialized"});
 
 // Each axis puts the stronger guarantee higher, and the product puts the
 // stronger claim higher too.  A point stored beside a value goes through

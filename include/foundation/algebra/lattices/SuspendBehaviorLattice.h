@@ -16,7 +16,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -31,14 +31,6 @@ enum class SuspendBehavior : std::uint8_t {
     PausesOnSuspend = 1,  // CLOCK_MONOTONIC — stops while the system is suspended
     KeepsTicking = 2,  // CLOCK_BOOTTIME — advances through suspend
 };
-
-inline constexpr std::size_t suspend_behavior_count = ::foundation::reflect::enum_count<SuspendBehavior>;
-
-// The identifier of b, or "<unknown SuspendBehavior>" for a value
-// outside the enum.
-[[nodiscard]] consteval std::string_view suspend_behavior_name(SuspendBehavior b) noexcept {
-    return ::foundation::reflect::enum_name(b);
-}
 
 // A clock that does not stop across a suspend is the stronger claim.
 struct SuspendBehaviorLattice
@@ -57,9 +49,9 @@ using KeepsTickingClock = SuspendBehaviorLattice::At<SuspendBehavior::KeepsTicki
 
 namespace detail::suspend_behavior_lattice_self_test {
 
-static_assert(suspend_behavior_count == 3, "SuspendBehavior catalog diverged from {Unknown, PausesOnSuspend, "
-                                           "KeepsTicking}.  A new behavior needs every composite that names "
-                                           "a behavior rechecked.");
+static_assert(::foundation::reflect::enum_count<SuspendBehavior> == 3,
+              "SuspendBehavior catalog diverged from {Unknown, PausesOnSuspend, KeepsTicking}.  A new behavior "
+              "needs every composite that names a behavior rechecked.");
 
 static_assert(verify_chain_lattice<SuspendBehaviorLattice>(),
               "SuspendBehaviorLattice: the chain order, the pinned grades or the "
@@ -82,9 +74,6 @@ static_assert(SuspendBehaviorLattice::name() == "SuspendBehaviorLattice");
 static_assert(suspend_behavior::UnknownBehavior::name() == "SuspendBehaviorLattice::At<Unknown>");
 static_assert(suspend_behavior::KeepsTickingClock::name() == "SuspendBehaviorLattice::At<KeepsTicking>");
 static_assert(SuspendBehaviorLattice::At<static_cast<SuspendBehavior>(255)>::name() == "SuspendBehaviorLattice::At<?>");
-
-static_assert(suspend_behavior_name(SuspendBehavior::PausesOnSuspend) == "PausesOnSuspend");
-static_assert(suspend_behavior_name(static_cast<SuspendBehavior>(255)) == "<unknown SuspendBehavior>");
 
 static_assert(suspend_behavior::UnknownBehavior::behavior == SuspendBehavior::Unknown);
 static_assert(suspend_behavior::KeepsTickingClock::behavior == SuspendBehavior::KeepsTicking);

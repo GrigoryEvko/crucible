@@ -31,7 +31,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -51,12 +51,6 @@ enum class BarrierStrength : std::uint8_t {
     SeqCst = 5,  // sequentially consistent, one total order
     FullFence = 6,  // standalone mfence or DMB ISH
 };
-
-// The identifier of k, or "<unknown BarrierStrength>" for a value
-// outside the enum.
-[[nodiscard]] consteval std::string_view barrier_strength_name(BarrierStrength k) noexcept {
-    return ::foundation::reflect::enum_name(k);
-}
 
 // The height of a strength in the order: its underlying value, with the
 // two incomparable tags at one height.  The enumerator values are pinned
@@ -108,11 +102,9 @@ struct BarrierStrengthLattice {
 
 namespace detail::barrier_strength_lattice_self_test {
 
-inline constexpr std::size_t barrier_strength_count = ::foundation::reflect::enum_count<BarrierStrength>;
-
-static_assert(barrier_strength_count == 7, "BarrierStrength diverged from {None, CompilerBarrier, AcquireLoad, "
-                                           "ReleaseStore, AcqRel, SeqCst, FullFence}.  A new tier appends at "
-                                           "the next free ordinal.");
+static_assert(::foundation::reflect::enum_count<BarrierStrength> == 7,
+              "BarrierStrength diverged from {None, CompilerBarrier, AcquireLoad, ReleaseStore, AcqRel, SeqCst, "
+              "FullFence}.  A new tier appends at the next free ordinal.");
 
 static_assert(std::to_underlying(BarrierStrength::None) == 0);
 
@@ -172,7 +164,7 @@ static_assert(BarrierStrengthLattice::join(BarrierStrength::AcquireLoad, Barrier
                   == BarrierStrength::AcqRel,
               "acq_rel is both an acquire and a release, so it is the least strength that satisfies both.");
 static_assert(BarrierStrengthLattice::meet(BarrierStrength::AcquireLoad, BarrierStrength::ReleaseStore)
-                  == BarrierStrength::CompilerBarrier);
+              == BarrierStrength::CompilerBarrier);
 
 static_assert(!::foundation::algebra::Semiring<BarrierStrengthLattice>);
 
@@ -200,9 +192,6 @@ static_assert(BarrierStrengthLattice::meet(BarrierStrength::None, BarrierStrengt
 static_assert(BarrierStrengthLattice::At<BarrierStrength::SeqCst>::tier == BarrierStrength::SeqCst);
 static_assert(BarrierStrengthLattice::At<BarrierStrength::SeqCst>::name() == "BarrierStrengthLattice::At<SeqCst>");
 static_assert(BarrierStrengthLattice::At<static_cast<BarrierStrength>(255)>::name() == "BarrierStrengthLattice::At<?>");
-
-static_assert(barrier_strength_name(BarrierStrength::CompilerBarrier) == "CompilerBarrier");
-static_assert(barrier_strength_name(static_cast<BarrierStrength>(255)) == "<unknown BarrierStrength>");
 
 }  // namespace detail::barrier_strength_lattice_self_test
 

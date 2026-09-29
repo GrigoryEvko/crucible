@@ -38,14 +38,6 @@ enum class SchedulerPolicy : std::uint8_t {
     Deadline = 5,  // SCHED_DEADLINE — admitted earliest-deadline-first
 };
 
-inline constexpr std::size_t scheduler_policy_count = ::foundation::reflect::enum_count<SchedulerPolicy>;
-
-// The identifier of p, or "<unknown SchedulerPolicy>" for a value
-// outside the enum.
-[[nodiscard]] consteval std::string_view scheduler_policy_name(SchedulerPolicy p) noexcept {
-    return ::foundation::reflect::enum_name(p);
-}
-
 // A class that preempts more is the stronger claim.
 struct SchedulerPolicyLattice
     : EnumChainLattice<SchedulerPolicyLattice, SchedulerPolicy, ClaimOrientation::stronger_is_higher> {
@@ -66,9 +58,9 @@ using DeadlineClass = SchedulerPolicyLattice::At<SchedulerPolicy::Deadline>;
 
 namespace detail::scheduler_policy_lattice_self_test {
 
-static_assert(scheduler_policy_count == 6, "SchedulerPolicy catalog diverged from {Idle, Batch, Other, "
-                                           "RoundRobin, Fifo, Deadline}.  A new class needs the admission "
-                                           "thresholds that name a class rechecked.");
+static_assert(::foundation::reflect::enum_count<SchedulerPolicy> == 6,
+              "SchedulerPolicy catalog diverged from {Idle, Batch, Other, RoundRobin, Fifo, Deadline}.  A new class "
+              "needs the admission thresholds that name a class rechecked.");
 
 // The generic walk covers the declaration order, the exhaustive axioms,
 // the reflected names and the shape of every At<policy>.
@@ -95,11 +87,6 @@ static_assert(!SchedulerPolicyLattice::leq(SchedulerPolicy::Other, SchedulerPoli
 static_assert(SchedulerPolicyLattice::name() == "SchedulerPolicyLattice");
 static_assert(scheduler_policy::FifoClass::name() == "SchedulerPolicyLattice::At<Fifo>");
 static_assert(SchedulerPolicyLattice::At<static_cast<SchedulerPolicy>(200)>::name() == "SchedulerPolicyLattice::At<?>");
-
-static_assert(scheduler_policy_name(SchedulerPolicy::RoundRobin) == "RoundRobin");
-static_assert(scheduler_policy_name(static_cast<SchedulerPolicy>(200)) == "<unknown SchedulerPolicy>",
-              "A value outside the enum must reach the unknown-class sentinel, so a corrupt byte prints as "
-              "one rather than as an empty name.");
 
 static_assert(scheduler_policy::IdleClass::policy == SchedulerPolicy::Idle);
 static_assert(scheduler_policy::DeadlineClass::policy == SchedulerPolicy::Deadline);

@@ -16,7 +16,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -44,14 +44,6 @@ enum class MemoryScope : std::uint8_t {
     Outer = 0x21,  // outer-shareable domain, DMB OSH
     System = 0xFF,  // everything on the machine: `.sys`, or DMB SY
 };
-
-inline constexpr std::size_t memory_scope_count = ::foundation::reflect::enum_count<MemoryScope>;
-
-// The identifier of x, or "<unknown MemoryScope>" for a value outside
-// the enum.
-[[nodiscard]] consteval std::string_view memory_scope_name(MemoryScope x) noexcept {
-    return ::foundation::reflect::enum_name(x);
-}
 
 namespace detail {
 
@@ -154,9 +146,9 @@ using SystemScope = MemoryScopeLattice::At<MemoryScope::System>;
 
 namespace detail::memory_scope_lattice_self_test {
 
-static_assert(memory_scope_count == 8, "The MemoryScope catalog changed size.  Confirm the intent: a new scope takes "
-                                       "the next free value inside the high nibble of its chain, and the chain "
-                                       "predicates read that nibble.");
+static_assert(::foundation::reflect::enum_count<MemoryScope> == 8,
+              "The MemoryScope catalog changed size.  Confirm the intent: a new scope takes the next free value "
+              "inside the high nibble of its chain, and the chain predicates read that nibble.");
 
 static_assert(Lattice<MemoryScopeLattice>);
 static_assert(BoundedLattice<MemoryScopeLattice>);
@@ -258,9 +250,6 @@ static_assert(MemoryScopeLattice::name() == "MemoryScopeLattice");
 static_assert(memory_scope::ThreadScope::name() == "MemoryScopeLattice::At<Thread>");
 static_assert(memory_scope::SystemScope::name() == "MemoryScopeLattice::At<System>");
 static_assert(MemoryScopeLattice::At<static_cast<MemoryScope>(0x30)>::name() == "MemoryScopeLattice::At<?>");
-
-static_assert(memory_scope_name(MemoryScope::Cluster) == "Cluster");
-static_assert(memory_scope_name(static_cast<MemoryScope>(0x30)) == "<unknown MemoryScope>");
 
 static_assert(memory_scope::CtaScope::scope == MemoryScope::Cta);
 static_assert(memory_scope::SystemScope::scope == MemoryScope::System);

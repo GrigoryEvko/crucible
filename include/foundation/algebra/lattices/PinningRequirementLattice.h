@@ -17,7 +17,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
-#include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
 #include <meta>
@@ -33,14 +33,6 @@ enum class PinningRequirement : std::uint8_t {
     PerSocket = 2,  // coherent within one socket
     CrossSocketSafe = 3,  // coherent across every socket
 };
-
-inline constexpr std::size_t pinning_requirement_count = ::foundation::reflect::enum_count<PinningRequirement>;
-
-// The identifier of p, or "<unknown PinningRequirement>" for a value
-// outside the enum.
-[[nodiscard]] consteval std::string_view pinning_requirement_name(PinningRequirement p) noexcept {
-    return ::foundation::reflect::enum_name(p);
-}
 
 // A broader coherence domain is the stronger claim.
 struct PinningRequirementLattice
@@ -60,9 +52,9 @@ using CrossSocketSafePin = PinningRequirementLattice::At<PinningRequirement::Cro
 
 namespace detail::pinning_requirement_lattice_self_test {
 
-static_assert(pinning_requirement_count == 4, "PinningRequirement catalog diverged from {NotRequired, PerCore, "
-                                              "PerSocket, CrossSocketSafe}.  A new level needs every composite "
-                                              "that names a level rechecked.");
+static_assert(::foundation::reflect::enum_count<PinningRequirement> == 4,
+              "PinningRequirement catalog diverged from {NotRequired, PerCore, PerSocket, CrossSocketSafe}.  A new "
+              "level needs every composite that names a level rechecked.");
 
 static_assert(verify_chain_lattice<PinningRequirementLattice>(),
               "PinningRequirementLattice: the chain order, the pinned grades or "
@@ -88,9 +80,6 @@ static_assert(pinning_requirement::NotRequiredPin::name() == "PinningRequirement
 static_assert(pinning_requirement::CrossSocketSafePin::name() == "PinningRequirementLattice::At<CrossSocketSafe>");
 static_assert(PinningRequirementLattice::At<static_cast<PinningRequirement>(255)>::name()
               == "PinningRequirementLattice::At<?>");
-
-static_assert(pinning_requirement_name(PinningRequirement::PerSocket) == "PerSocket");
-static_assert(pinning_requirement_name(static_cast<PinningRequirement>(255)) == "<unknown PinningRequirement>");
 
 static_assert(pinning_requirement::NotRequiredPin::requirement == PinningRequirement::NotRequired);
 static_assert(pinning_requirement::CrossSocketSafePin::requirement == PinningRequirement::CrossSocketSafe);
