@@ -5,7 +5,7 @@
 // std::, so every foundation header can include it.
 //
 // The macro prefix stays CRUCIBLE_ on purpose.  Macros have no namespace, the
-// repository is crucible, and the layer rule (scripts/check-layer-boundary.py)
+// repository is crucible, and the layer rule (utils/scripts/check-layer-boundary.py)
 // is stated over namespace roots and include roots, not over macro names.  A
 // crucible/ consumer that flips to this header keeps every spelling it has.
 
@@ -63,7 +63,7 @@ static_assert(__GNUC__ >= 16, "foundation requires GCC 16 for -fcontracts and -f
 // instantiation takes the smallest visibility of the template and of its
 // arguments, and each type of this tree is hidden.  A templated object that
 // must be one per process goes through a non-template object with a key.
-// scripts/check-process-wide-state.py reads every object with static storage
+// utils/scripts/check-process-wide-state.py reads every object with static storage
 // duration, and holds each one to this marker or to its roster.
 #define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default")]]
 
@@ -127,7 +127,7 @@ static_assert(__GNUC__ >= 16, "foundation requires GCC 16 for -fcontracts and -f
 // CRUCIBLE_LIFETIMEBOUND is therefore a CLAIM, not a mechanism.  What
 // enforces it is ordinary C++ that GCC does honour: a deleted overload
 // taking an rvalue reference in the annotated position, which refuses a
-// temporary at the call site.  scripts/check-lifetime-twin.sh reads the
+// temporary at the call site.  utils/scripts/check-lifetime-twin.py reads the
 // token and requires that overload, so the claim is checked even though
 // no compiler understands it.  Where no overload can refuse the
 // argument, as with a raw pointer whose pointee's lifetime no overload

@@ -28,7 +28,7 @@ Python loads the two libraries from `build-release/lib`, or from the directory t
 
 C++26. **The patched GCC 16.2.1 is the only supported compiler** — Crucible's safety axioms structurally depend on contracts (P2900R14), reflection (P2996R13), erroneous behavior for uninit reads (P2795R5), and partial program correctness (P1494R5). All four are GCC 16 exclusive. Clang 22 cannot compile the codebase; no fallback is pursued.
 
-The patched compiler is GCC 16.2.1 plus the fixes in `toolchain/gcc/patches`. To build it, run `toolchain/gcc/build.sh ~/.local/gcc16-patched`. The presets use that prefix when `CRUCIBLE_GCC16_PREFIX` and `CRUCIBLE_CXX` are not set. The configure step refuses a compiler that does not have each fix, and it tells you how to build one. CI builds the same compiler with the same script and caches it.
+The patched compiler is GCC 16.2.1 plus the fixes in `utils/toolchain/gcc/patches`. To build it, run `utils/toolchain/gcc/build.sh ~/.local/gcc16-patched`. The presets use that prefix when `CRUCIBLE_GCC16_PREFIX` and `CRUCIBLE_CXX` are not set. The configure step refuses a compiler that does not have each fix, and it tells you how to build one. CI builds the same compiler with the same script and caches it.
 
 ```bash
 cmake --preset default && cmake --build --preset default -j8
@@ -104,6 +104,9 @@ vessel/torch/
 patches/                 PyTorch fork patch
 test/                    Positive tests + negative-compile fixtures
 bench/                   Micro-benchmarks
+utils/scripts/           CI guards, their allowlists and rosters, and the generators
+utils/tools/             Hardware probe, row-hash witness, mutation runner, session oracle
+utils/toolchain/         Build script and patches of the patched GCC
 misc/                    Current design specs: CRUCIBLE.md (runtime),
                          FORGE.md (vendor-agnostic optimizer), MIMIC.md (per-vendor backends)
 papers/                  Whitepaper + yellowpaper (legacy artifacts, pending update)

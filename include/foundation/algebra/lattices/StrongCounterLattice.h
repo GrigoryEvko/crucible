@@ -51,7 +51,7 @@
 // passes its argument.  That trivial constructor also makes a count an
 // implicit-lifetime type, so the class carries the annotation that
 // foundation::lifetime::start_as_array refuses, and a direct
-// std::start_lifetime_as is refused by scripts/check-start-lifetime.py.
+// std::start_lifetime_as is refused by utils/scripts/check-start-lifetime.py.
 //
 // The order knows nothing about which events happened.  A count is the
 // number of successor steps in its own derivation.  Whether each step

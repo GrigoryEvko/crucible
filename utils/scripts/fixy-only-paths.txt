@@ -1,0 +1,14 @@
+# utils/scripts/fixy-only-paths.txt — the band-3 runtime directories.
+#
+# The file-stream ban of utils/scripts/check-banned-calls.py reads each
+# include/crucible directory on this list, and the src/ directory of the
+# same name.  One repository-relative directory per line.  A `#` starts a
+# comment, and blank lines are ignored.
+include/crucible/cntp
+include/crucible/canopy
+include/crucible/cog
+include/crucible/topology
+include/crucible/forge
+include/crucible/mimic
+include/crucible/observe
+include/crucible/warden

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The named predicates that a production precondition cites.  A predicate
-// earns its place here through its cites: scripts/audit-decide-cite-ratio.py
+// earns its place here through its cites: utils/scripts/audit-decide-cite-ratio.py
 // fails the build when a predicate has fewer than two production cites a
 // fixed time after it entered this header.  A predicate that no
 // precondition needs does not belong here.

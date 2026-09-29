@@ -1,0 +1,184 @@
+# utils/scripts/mint-pattern-allowlist.txt — the reviewed exemptions of
+# utils/scripts/check-mint-pattern.py from the five §XXI axes.
+#
+# A row is `path:mint_name:axis-ok`, with no space, where the axis is one
+# of nodiscard, noexcept, constexpr, requires and ctxfit.  A line that
+# starts with '#' is a comment, and the comment run above a group of rows
+# states the reason of each row in the group.
+#
+# A row names the mint, never a line, so an edit above the mint cannot
+# drift it.  `path` is the file of the mint exactly.  One row covers every
+# overload of that name in that file, because an overload set is one §XXI
+# factory with one reason.
+#
+# The guard refuses a row that exempts nothing, and a row it cannot read:
+#   * a row whose mint meets the axis, or names no live mint, is stale
+#   * a row whose every site carries its own marker for the axis is
+#     redundant, because the marker already exempts it
+#   * a row with no axis, an unknown axis, a line in place of a name, a
+#     name that is no mint, or a copy of an earlier row is malformed
+# So this file can only shrink while the tree stays the same.
+#
+# An in-source marker is the other way to exempt: a `§XXI carve-out:
+# cx=alloc` or `rq=pre` comment directly above the declaration, or a
+# `MINT-PATTERN-OK: <reason>` comment on the line that names the mint.
+# A marker exempts constexpr (cx=alloc, MINT-PATTERN-OK) or requires
+# (rq=pre), and no other axis.  One exemption lives in one place.
+#
+# ── Trim discipline ──────────────────────────────────────────────────
+#
+# Every entry is either a STRUCTURAL exemption (allocating / syscall /
+# token / passkey ctor) OR a tracked migration TODO.  When a site migrates
+# to canonical §XXI shape (or the scanner learns to recognize a new
+# structural false-positive), the entry MUST be removed; the stale-entry
+# gate fails CI if a dead entry lingers.  The goal is for this file to
+# trend toward the structural-exempt minimum.
+#
+# The scanner learning something is worth as much trimming as a source
+# fix, and on 2026-09-21 it was worth more: teaching it to read a
+# concept-constrained template parameter retired 50 entries in one change,
+# against the 9 that a day of source edits retired.  An entry that
+# describes a scanner limitation was never an exemption, and
+# "concept-constrained-param" is gone from the list above for that reason.
+# Before adding an entry, ask which of the two it is.
+#
+# ── Carve-out categories ─────────────────────────────────────────────
+#
+#   `constexpr-ok` — allocating / syscall / resource-synthesizing mint
+#     (or a class-method mint reading runtime state).  §XXI rule (3)
+#     explicitly permits dropping `constexpr` "in favour of plain
+#     [[nodiscard]] noexcept" for genuinely-allocating mints.  Examples:
+#     fixy/Mmap.h `mmap(2)`, fixy/Io.h `io_uring_setup(2)`, the eBPF /
+#     perf-event `perf/*` mints, the
+#     class-method view mints (`mint_open_view`, `mint_compiled_view`).
+#
+#   `requires-ok` — a templated mint that carries no type-level constraint
+#     at all.  This category used to be much larger, and 50 of its
+#     entries were not exemptions: they named a mint whose gate is a
+#     concept-CONSTRAINED template parameter (`template <SomeConcept T>`),
+#     which the scanner could not see because it read only the literal
+#     `requires` keyword.  The two spellings mean one thing to the
+#     compiler, the scanner now reads both, and those 50 entries are gone.
+#     A non-type parameter (`template <std::size_t N>`) parses exactly
+#     like a constrained one, so the scanner settles the difference
+#     against the tree's own roster of `concept` declarations rather than
+#     against the node shape.
+#
+#   `ctxfit-ok` — a CTX-BOUND mint that takes a context no constraint
+#     gates, so it accepts every context in the tree.  This is the
+#     question §XXI actually asks of a ctx-bound mint, and it was
+#     previously invisible: `requires-ok` conflated "carries no
+#     constraint" with "carries no gate on its CONTEXT", and a mint that
+#     constrained some other parameter satisfied the axis while admitting
+#     any context at all.  Note that `IsExecCtx Ctx` does NOT gate the
+#     context — it states that the parameter IS one.  A token mint has no
+#     entry in this category, because §XXI derives its authority from a
+#     parent token rather than from a context.
+#
+#   `noexcept-ok` — §XXI admits NO noexcept exemption: "Every mint MUST
+#     be [[nodiscard]] constexpr noexcept", and only the constexpr half
+#     has an escape for allocating factories.  So an entry in this
+#     category is a DEFECT, not an exemption.  The category is empty, and
+#     a new entry in it belongs under DEFECTS below with its remediation.
+#
+#   `nodiscard-ok` — a mint whose return value can legitimately be
+#     discarded.  A passkey constructor is NOT in this category: the
+#     guard skips `= default` declarations outright, because a
+#     constructor cannot carry [[nodiscard]] and an entry describing a
+#     rule the site is structurally unable to obey is not an exemption.
+#
+# ── DEFECTS, not exemptions ──────────────────────────────────────────
+#
+# An entry that reads like a category and is actually an open defect is
+# the failure this whole file exists to prevent, so the open ones are
+# named here rather than buried in the list.
+#
+# No `noexcept-ok` entry remains.  The one that stood here named
+# mint_af_xdp_socket, and 2b65b669 put the keyword on the signature and
+# deleted the entry.  §XXI admits no noexcept exemption, so this category
+# is expected to stay empty.
+#
+# No `ctxfit-ok` entry remains.  The 26 endpoint session mints that
+# stood here each state the gate of mint_permissioned_session in their
+# own clause, so a caller can probe it and a refusal names the mint.
+# A new entry in this category is a defect, not an exemption.
+#
+# An earlier revision of this file attributed the `mint_pipeline` entry,
+# and a further
+# eleven entries under canopy/ and cntp/, to those trees being
+# "edit-banned".  No such ban is declared in CLAUDE.md, in AGENTS.md, in
+# any guard script, or in any commit message — this file was the only
+# document asserting it, and the only document relying on it.  A
+# justification that cites nothing but itself is not a justification, so
+# the claim is withdrawn.  The cntp/ entries stand or fall on their own
+# category, like every other entry here.  The section headers below do
+# not label the tree as banned.
+#
+# ── Known over-breadth in `constexpr-ok` ─────────────────────────────
+#
+# §XXI's constexpr escape is conditioned on the factory "genuinely
+# allocating".  Several `constexpr-ok` entries name a mint that builds a
+# fixed-capacity aggregate in place and allocates nothing.  Those entries
+# are carrying
+# a rationale that does not apply to them.  Nothing here fails on it
+# today, which is precisely why it is written down: an over-broad
+# category is how a real drift gets absorbed without anyone noticing.
+
+# ── Class-method / allocating view mints ─────────────────────────────
+# Vigil.h: the producer-context mint reads the thread id and the atomic
+# claim word.  The body reads runtime state and -Winvalid-constexpr refuses
+# constexpr.
+include/crucible/Vigil.h:mint_producer_context:constexpr-ok
+# The mutable view mints of the two registration tables read the atomic
+# seal word of the table.  No constant evaluation can read an atomic, and
+# -Winvalid-constexpr refuses a constexpr function that always calls a
+# function that is not constexpr.
+include/crucible/CKernel.h:mint_mutable_view:constexpr-ok
+include/crucible/SchemaTable.h:mint_mutable_view:constexpr-ok
+
+# ── cntp/ transport mints ────────────────────────────────────────────
+include/crucible/cntp/AfXdp.h:mint_af_xdp_socket:constexpr-ok
+# DEFECT — see the DEFECTS block in the header.  Not an exemption.
+include/crucible/cntp/OverlayMulticast.h:mint_overlay_multicast:constexpr-ok
+
+# ── fixy/ syscall / resource mints ───────────────────────────────────
+# The scheduling, mmap, io, file and durable-writer mints of fixy/os each
+# carry a `§XXI carve-out: cx=alloc` marker above the declaration, so no
+# row names them.
+#
+# fixy/os/Spawn.h: neither mint of the pair can be constexpr and mean it:
+# mint_spawn reads the probed cache sizes and starts one jthread per child
+# for a set past L2, and mint_parallel_for starts one for every shard but
+# the single-shard case.  A constexpr on either would claim a compile-time
+# cost for a call that schedules threads.
+include/fixy/os/Spawn.h:mint_parallel_for:constexpr-ok
+include/fixy/os/Spawn.h:mint_spawn:constexpr-ok
+# fixy/session/CrashTransport.h: the reporter mint claims its cell with an
+# atomic exchange, and a second mint for one cell ends the process.  It
+# reads and writes runtime state, so it cannot be constexpr.  The class
+# names the mint as the friend of its only constructor, so the guard sees
+# the signature two times, and one entry covers the two sites.
+include/fixy/session/CrashTransport.h:mint_crash_reporter:constexpr-ok
+# The writer mint claims its cell with an atomic exchange, and
+# mint_crash_session reads at run time the writer that it takes, so
+# neither can be constexpr.
+include/fixy/session/CrashTransport.h:mint_crash_writer:constexpr-ok
+include/fixy/session/CrashTransport.h:mint_crash_session:constexpr-ok
+# fixy/concurrent/SwmrSession.h: the reader mint takes a share from an
+# atomic reference count, so it reads runtime state and cannot be constexpr.
+include/fixy/concurrent/SwmrSession.h:mint_swmr_reader:constexpr-ok
+
+# ── observe/ + perf/ eBPF / perf-event allocating mints ──────────────
+include/crucible/observe/Metrics.h:mint_canopy_metrics_reader:constexpr-ok
+include/crucible/observe/Metrics.h:mint_keeper_metrics_reader:constexpr-ok
+include/crucible/observe/SyntheticProbe.h:mint_synthetic_probes:constexpr-ok
+
+# ── foundation/permissions/ ──────────────────────────────────────────
+# The spawning fork arm starts threads, so it is not constexpr.  The
+# inline arm is constexpr.
+include/foundation/permissions/PermissionFork.h:mint_permission_fork:constexpr-ok
+
+# ── topology/ + warden/ allocating mints ─────────────────────────────
+include/crucible/topology/Pingmesh.h:mint_pingmesh:constexpr-ok
+include/crucible/topology/Ptp.h:mint_ptp_handle:constexpr-ok
+include/crucible/warden/Hardening.h:mint_hardening:constexpr-ok

@@ -654,7 +654,7 @@ concept carries_brand = brand_of(^^LoopCtx) == std::meta::dealias(^^Brand);
 //
 // The language leaves one route that this shape does not close: an
 // explicit specialization of a member template of the door is a member
-// of the door.  scripts/check-proof-routes.py refuses an explicit
+// of the door.  utils/scripts/check-proof-routes.py refuses an explicit
 // specialization of a function in the source (function-specialization).
 
 namespace detail {

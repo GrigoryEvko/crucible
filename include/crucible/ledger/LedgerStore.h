@@ -31,7 +31,7 @@
 //
 // DetSafe (axiom 8): a store path, a TTL and a confidence grade can change
 // how fast the runtime goes and must never change what it computes.
-// scripts/check-detsafe-ledger.py asserts no ledger symbol is reachable
+// utils/scripts/check-detsafe-ledger.py asserts no ledger symbol is reachable
 // from content_hash, merkle_hash or the memory plan.
 
 #include <crucible/ledger/Competence.h>
@@ -78,7 +78,7 @@ namespace crucible::ledger {
 
 // The background load row: Bg, Alloc, IO and Block.  A tool builds one from
 // the background door, foundation::effects::host::BackgroundOwner, and the
-// door's call sites are listed in scripts/ctx-bg-door-allowlist.txt.
+// door's call sites are listed in utils/scripts/ctx-bg-door-allowlist.txt.
 using LedgerIoCtx = ::fixy::BgLoadCtx;
 
 static_assert(sizeof(LedgerIoCtx) == 1, "an execution context must stay a tag");

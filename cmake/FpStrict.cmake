@@ -101,7 +101,7 @@
 # uses no fp-strict math).  We add to a target, not CMAKE_CXX_FLAGS,
 # precisely to localize the effect.
 #
-# Verification: `scripts/check-no-ffast-math.py` reads the flags of each
+# Verification: `utils/scripts/check-no-ffast-math.py` reads the flags of each
 # TU from the compile database and each optimize attribute or pragma
 # from the parse tree. It rejects an override that punches through the
 # floor.

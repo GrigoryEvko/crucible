@@ -1,8 +1,9 @@
 # Toolchain-gcc16.cmake: find the patched GCC 16.2.1 and its libstdc++ 16.
 #
-# Crucible needs GCC 16.2.1 with the fixes in toolchain/gcc/patches.
-# toolchain/gcc/build.sh builds that compiler from toolchain/gcc/BASE and the
-# patches.  The location of the compiler is different on each machine, so this
+# Crucible needs GCC 16.2.1 with the fixes in utils/toolchain/gcc/patches.
+# utils/toolchain/gcc/build.sh builds that compiler from
+# utils/toolchain/gcc/BASE and the patches.  The location of the compiler is
+# different on each machine, so this
 # file finds it in the order below, and the preset gives no path.  Then the
 # probes in cmake/PatchedGccProbe.cmake identify the compiler by what it does.
 # A compiler that fails a probe stops the configure step.

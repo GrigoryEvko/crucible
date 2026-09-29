@@ -79,7 +79,7 @@ struct Wire {
 using Sending = s::Send<Ping, s::End>;
 
 // A named brand for the type-level cells.  A borrow that names no brand
-// is DefaultBrand, which scripts/check-brand-drain.py counts and
+// is DefaultBrand, which utils/scripts/check-brand-drain.py counts and
 // does not let a new file add; every claim below reads the same at
 // either brand.  The runtime cells mint their borrows, so they carry a
 // fresh brand and never spell this one.

@@ -1,5 +1,5 @@
 {
-  "generator": "scripts/check-witness-roster.py --gen",
+  "generator": "utils/scripts/check-witness-roster.py --gen",
   "fixtures": [
     {
       "name": "neg_witness_algebra_grade_key_direct_construction",

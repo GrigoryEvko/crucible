@@ -111,7 +111,7 @@ constexpr uint64_t fmix64(uint64_t k) {
 // A second copy of this body under any other name is a drift surface:
 // changing the salt, the mix or the finalizer would leave that copy stale
 // and change the shared key while every assertion against it still passed.
-// scripts/check-no-combine-ids-duplicate.py is the gate on that.
+// utils/scripts/check-no-combine-ids-duplicate.py is the gate on that.
 [[nodiscard]] constexpr uint64_t combine_ids(uint64_t a, uint64_t b) noexcept {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
     return fmix64(a);

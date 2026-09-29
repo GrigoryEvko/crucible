@@ -28,12 +28,12 @@ endif()
 
 project(crucible LANGUAGES CXX)
 
-# scripts/check-no-ffast-math.py reads the link line of each target from the
+# utils/scripts/check-no-ffast-math.py reads the link line of each target from the
 # codemodel reply of the CMake file API, because the compile database holds
 # no link flag.  The command is the reason for the CMake 3.27 minimum.
 cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2)
 
-# The compiler must have each fix in toolchain/gcc/patches.  A configure
+# The compiler must have each fix in utils/toolchain/gcc/patches.  A configure
 # without cmake/Toolchain-gcc16.cmake takes the compiler that CMake finds,
 # for example the stock Fedora GCC 16.2.1 behind /usr/lib64/ccache/c++,
 # which lacks the fixes.  So every configure probes the compiler here, and a
@@ -49,7 +49,7 @@ endif()
 if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
   # ccache with compiler_check=content hashes the driver binary only.
   # A compiler fix that changes cc1plus and not the driver, as the
-  # fixes in toolchain/gcc do, then returns objects that the unfixed
+  # fixes in utils/toolchain/gcc do, then returns objects that the unfixed
   # cc1plus made.  So the launcher passes ccache a compiler identity:
   # the SHA-256 of the driver and of the cc1plus that it runs.  The
   # two binaries are configure dependencies.  A reinstall of the
@@ -96,7 +96,7 @@ endif()
 #
 # generate  Instruments every target that links crucible_dialect.  A
 #           bench writes its counters into the profile directory when
-#           it exits.  scripts/pgo-bootstrap.sh drives this mode from
+#           it exits.  utils/scripts/pgo-bootstrap.sh drives this mode from
 #           configure to the COLLECTION record.
 #
 # use       Reads the counters.  The profile must exist for this tier,
@@ -239,21 +239,21 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
   else()
     if(NOT EXISTS "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET")
       message(FATAL_ERROR "PGO: no profile for tier ${_crucible_pgo_tier} at ${CRUCIBLE_PGO_PROFILE_DIR}. "
-        "Run scripts/pgo-bootstrap.sh on a host of this tier, or set CRUCIBLE_PGO=off.")
+        "Run utils/scripts/pgo-bootstrap.sh on a host of this tier, or set CRUCIBLE_PGO=off.")
     endif()
     file(READ "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET" _crucible_pgo_recorded_target)
     if(NOT _crucible_pgo_recorded_target STREQUAL _crucible_pgo_target_record)
       message(FATAL_ERROR "PGO: the profile at ${CRUCIBLE_PGO_PROFILE_DIR} was collected for a different "
         "target. Recorded:\n${_crucible_pgo_recorded_target}\nThis configuration:\n${_crucible_pgo_target_record}"
-        "Run scripts/pgo-bootstrap.sh again with the flags you build with.")
+        "Run utils/scripts/pgo-bootstrap.sh again with the flags you build with.")
     endif()
     file(GLOB _crucible_pgo_counter_files "${CRUCIBLE_PGO_PROFILE_DIR}/*.gcda")
     list(LENGTH _crucible_pgo_counter_files _crucible_pgo_counter_count)
     if(_crucible_pgo_counter_count EQUAL 0)
       message(FATAL_ERROR "PGO: ${CRUCIBLE_PGO_PROFILE_DIR} has a TARGET record and no counter files. "
-        "The instrumented benches were configured and not run. Run scripts/pgo-bootstrap.sh.")
+        "The instrumented benches were configured and not run. Run utils/scripts/pgo-bootstrap.sh.")
     endif()
-    # scripts/pgo-bootstrap.sh rewrites COLLECTION on every run, so a
+    # utils/scripts/pgo-bootstrap.sh rewrites COLLECTION on every run, so a
     # build after a collection reconfigures and the stamp below changes.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
       "${CRUCIBLE_PGO_PROFILE_DIR}/TARGET"
@@ -282,18 +282,18 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
       if(NOT _crucible_pgo_commit STREQUAL _crucible_pgo_head)
         message(FATAL_ERROR "PGO strict: the profile was collected at ${_crucible_pgo_commit} and HEAD "
           "is ${_crucible_pgo_head}. A release profile is collected at the commit it ships with. "
-          "Run scripts/pgo-bootstrap.sh at HEAD, or configure without CRUCIBLE_PGO_STRICT.")
+          "Run utils/scripts/pgo-bootstrap.sh at HEAD, or configure without CRUCIBLE_PGO_STRICT.")
       endif()
       if(NOT _crucible_pgo_tree STREQUAL "clean")
         message(FATAL_ERROR "PGO strict: the profile was collected from a tree recorded as "
           "'${_crucible_pgo_tree}'. A release profile is collected from a clean tree, so that the "
           "counters describe the commit and nothing else. Commit or discard the changes, then run "
-          "scripts/pgo-bootstrap.sh again.")
+          "utils/scripts/pgo-bootstrap.sh again.")
       endif()
     elseif(NOT _crucible_pgo_commit STREQUAL _crucible_pgo_head)
       message(WARNING "PGO: the profile was collected at ${_crucible_pgo_commit} and HEAD is "
         "${_crucible_pgo_head}. A function whose control flow changed between the two stops the "
-        "build with -Wcoverage-mismatch. Run scripts/pgo-bootstrap.sh again to collect at HEAD.")
+        "build with -Wcoverage-mismatch. Run utils/scripts/pgo-bootstrap.sh again to collect at HEAD.")
     endif()
     set(_CRUCIBLE_PGO_COMPILE_FLAGS
       -fprofile-use=${CRUCIBLE_PGO_PROFILE_DIR}
@@ -373,7 +373,7 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # include/foundation/ (namespace ::foundation) is the algebra and the
 # discharge mechanisms; include/fixy/ (namespace ::fixy) is the axis table,
 # the atoms, the gate and the OS leaves.  Neither names crucible:: —
-# scripts/check-layer-boundary.py enforces the order foundation < fixy <
+# utils/scripts/check-layer-boundary.py enforces the order foundation < fixy <
 # crucible.
 #
 # `foundation` is a static library for one reason: it owns the weak contract
@@ -411,7 +411,7 @@ target_link_libraries(fixy INTERFACE foundation)
 # it.  Which TU inlines a library helper is an optimizer decision, so the
 # list was keyed on the optimizer: -O level, -march, and now the profile.
 # Building with -fprofile-use added two entries it did not have
-# (tools/crucible_hwprobe.cpp and vessel/torch/vessel_api.cpp, through
+# (utils/tools/crucible_hwprobe.cpp and vessel/torch/vessel_api.cpp, through
 # read_small_file, read_trimmed_ and select_hot_cpu), and the next
 # collection would move them again.  A list that has to be re-derived
 # whenever the optimizer changes its mind is not a list, so it is gone.
@@ -541,14 +541,14 @@ include(cmake/FpStrict.cmake)
 target_link_libraries(crucible_dialect INTERFACE crucible_fp_strict)
 
 add_executable(crucible_diag_lsp
-  tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
+  utils/tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
 )
 target_link_libraries(crucible_diag_lsp PRIVATE crucible)
 
 # The cross-build witness for the row-hash fold of foundation/diag/RowHash.h.
 # The fold is one fold over the graded shape.  The tool prints each row hash
 # as a labeled hex line, and a test diffs the output against
-# tools/row_hash_golden.txt.  A regression in display_string_of (the
+# utils/tools/row_hash_golden.txt.  A regression in display_string_of (the
 # upstream of stable_type_id) that depends on the TU context cannot move a
 # hash unseen.  Every graded wrapper folds a reflected lattice name, so
 # every wrapper is exposed.
@@ -556,7 +556,7 @@ target_link_libraries(crucible_diag_lsp PRIVATE crucible)
 # It links fixy rather than crucible.  A witness against TU-context
 # fragility must not carry a TU context that no production build runs.
 add_executable(dump_row_hashes
-  tools/dump_row_hashes.cpp
+  utils/tools/dump_row_hashes.cpp
 )
 target_link_libraries(dump_row_hashes PRIVATE fixy)
 
@@ -575,7 +575,7 @@ target_link_libraries(dump_row_hashes PRIVATE fixy)
 # a bench target, is built in every configuration, and does not take the
 # bench tree's -O3 -march=native.
 add_executable(crucible_hwprobe
-  tools/crucible_hwprobe.cpp
+  utils/tools/crucible_hwprobe.cpp
 )
 target_link_libraries(crucible_hwprobe PRIVATE crucible)
 target_include_directories(crucible_hwprobe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/bench)

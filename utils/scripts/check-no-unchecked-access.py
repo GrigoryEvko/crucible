@@ -1,0 +1,1189 @@
+#!/usr/bin/env python3
+"""check-no-unchecked-access — access_context::unchecked() only in reviewed reflection walks.
+
+A splice of a nonstatic data member has no access check in GCC 16: given the
+reflection of a private member m, `obj.[:m:] = v` writes it.  The reflection
+of a private member comes only from a walk under
+std::meta::access_context::unchecked(), so that call is the one door to the
+private state of every proof type: a count, a stamp, a grade, a Refined value
+or a Secret payload.  utils/scripts/unchecked-access-allowlist.txt names each file
+that may open the door, with the reason, and the guard refuses the door
+anywhere else.
+
+HOW THE GUARD READS A FILE
+    The guard reads each C++ file that git tracks under the scan roots.  An
+    untracked file is out of scope, because the export of a guard run or the
+    scratch file of another tool can appear under the tree while it runs.
+    The guard reads the parse tree of utils/scripts/tsast.py, so white space, a
+    line break or a comment between two tokens changes nothing, and a mention
+    in a comment or a string is not a use.  The body of each #define is
+    parsed on its own by tsast.macro_bodies.  A body that is not C++ on its
+    own, because it uses # or ##, is read from its preprocessing tokens.
+
+WHAT COUNTS AS THE DOOR
+      1. A member named unchecked: the name of a qualified name, or the field
+         of a member access.  Every qualifier counts, so a namespace alias, a
+         using-directive, a spliced class and a call through an object reach
+         the same member.  A plain variable named unchecked is not a door.
+      2. A using-declaration, an alias declaration or a typedef that names
+         access_context.
+      3. A reflection of access_context, of std::meta or of std.  A walk of
+         the members of one of them reaches unchecked by reflection, with no
+         name to read.
+      4. A splice that names a member of an object: the field of a member
+         access, `obj.[:m:]` and `p->[:m:]`, or the operand of a unary `&`.
+         This is the write itself, so it closes every route to the
+         reflection, such as a walk of ^^decltype(access_context::current())
+         that finds unchecked by a string compare.  A walk with
+         access_context::current() does not clear the refusal, because the
+         guard cannot tell which walk gave the reflection, and the report
+         says so.  A binary `&` before a splice, as in `mask & [:field:]`, is
+         not a door.
+      5. A use of a macro whose body opens the door, directly or through
+         another macro.  The use opens the door where it expands.
+
+WHAT COUNTS AS AN OPEN TARGET
+    A bare splice of a static data member, `[:m:] = v`, has no access check
+    either, and no token before the `[:` marks it.  The tree holds many value
+    splices, and the parse cannot tell an enumerator from a static data
+    member.  So the guard refuses the target, not the spelling:
+      6. A writable static data member that is private or protected, in a
+         class in include/foundation, include/fixy or include/crucible.
+         Writable means that the member itself is not const and not
+         constexpr: a pointer to const is writable, a const pointer is not,
+         and a reference is writable when its referent is.  The access of
+         each #if arm is joined, so an access label inside one arm does not
+         open the members after the block.  No allowlist admits a member:
+         make it const or constexpr, or move it into the object.
+
+THE EXPANDED RUN
+    With --compile-db the guard also reads the macro-expanded text of each
+    file from the preprocessor store of utils/scripts/preprocessed.py, one parse
+    for each distinct expansion.  That run sees a door that ## builds from
+    pieces, and a static data member that a macro declares, with the access
+    of the class where the macro expands.  ctest runs the guard this way in
+    the build legs.  A door that only an expansion shows needs a row that the
+    run without the database calls stale, so spell the door, or do not open
+    it.  A unit that the preprocessor rejects, and an expansion that the
+    parser cannot read, fail the run.
+
+WHAT A FUNCTION THAT OPENS THE DOOR MAY GIVE ITS CALLER
+    A walk under unchecked() can give the reflection of a private member.
+    A caller that receives it can splice the member, or extract a pointer
+    to it, with no door of its own.  So:
+      7. A function or a lambda whose body uses unchecked may not return a
+         member of a class that a walk found.  A walk is a call to
+         members_of, nonstatic_data_members_of, static_data_members_of,
+         bases_of or subobjects_of.  The guard refuses a return statement
+         that gives one of these:
+           - The result of a walk, or of define_static_array over one
+           - An element of one: a subscript, front, back or at
+           - The variable of a range for or an expansion statement over one
+           - A local variable that one of these initializes.
+         Two walks pass: a walk of a namespace that a scanned file declares
+         or of std, and a walk with access_context::current() or
+         unprivileged().  The guard reads the returned expression and not
+         the declared return type, so a function that returns the
+         reflection of a type passes.  A function that does not use
+         unchecked also passes.
+
+REVIEW RULE FOR THE ALLOWED FILES
+    An allowed file may not publish a reflection of a nonstatic data member
+    in any other way.  A public constexpr verdict whose field names a private
+    member reopens the door, because `obj.[:verdict.field:]` needs no
+    unchecked().  The guard does not check this form.  The reviewer of each
+    row does.
+
+WHAT IT DOES NOT SEE, STATED RATHER THAN IMPLIED
+    - A reflection of an access context that the guard does not name, such
+      as parent_of of a std::meta type, or ^^T in a template that deduces T
+      from a call to access_context::current().  Such a file walks private
+      members with no door token.  Rules 4 and 6 still refuse the write to a
+      nonstatic member and the target of a static one.
+    - A const static member whose class type holds a mutable member, and the
+      object that a const pointer member points to.
+    - A door that ## builds, and a static data member that a macro
+      declares, in a file that no unit of the compile database reads.
+      Without --compile-db, the guard sees neither in any file.
+    - A member that rule 7 cannot trace: one that a function gives through
+      a call to another function, an output parameter, a member, or a local
+      variable that it sets after the declaration, and a function that a
+      macro builds.
+    - A walk of a class whose qualified name ends as the name of a
+      namespace does.  Rule 7 reads that walk as a walk of the namespace.
+    - A file that utils/scripts/tsast.py lists as not C++.
+
+A stale row, one whose file does not exist or does not open the door, fails
+the guard, so the allowlist only shrinks.
+
+Exit 0 clean, 1 on a door outside the allowlist, a stale row, an open target
+or an input the guard cannot read, 2 on a usage error, a bad allowlist or a
+failed self-test, 3 when the parser kit is missing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import bisect
+import contextlib
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import throwaway_repo  # noqa: E402
+import tsast  # noqa: E402
+from preprocessed import Store, files_of  # noqa: E402
+from repo_root import REPO_ROOT  # noqa: E402
+
+ALLOWLIST = "utils/scripts/unchecked-access-allowlist.txt"
+SCAN_ROOTS = ("include", "src", "test", "vessel", "utils/tools", "bench", "examples")
+MEMBER_ROOTS = ("include/foundation/", "include/fixy/", "include/crucible/")
+# Bumped when the rules change, so the expanded run does not reuse an old result.
+SCAN_VERSION = 1
+# The leaves that spell one part of a name.
+NAME_LEAVES = ("identifier", "field_identifier", "type_identifier", "namespace_identifier")
+# The declarations that give access_context a second name.
+ALIASES = ("using_declaration", "alias_declaration", "type_definition")
+# The directives whose name node mentions a macro without a use of it.
+MACRO_MENTIONS = frozenset({"preproc_def", "preproc_function_def", "preproc_ifdef", "preproc_defined"})
+# The tokens that end a statement of a macro body that does not parse.
+STATEMENT_END = frozenset({";", "{", "}"})
+CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
+CONDITIONALS = frozenset({"preproc_if", "preproc_ifdef", "preproc_elif", "preproc_elifdef"})
+DECLARATIONS = frozenset({"field_declaration", "declaration", "template_declaration"})
+NAMES = frozenset({"field_identifier", "identifier", "qualified_identifier", "operator_name", "destructor_name",
+                   "template_function"})
+# Declarators that change neither the object that a name declares nor its
+# constness: an array has the constness of its element.
+TRANSPARENT = frozenset({"init_declarator", "parenthesized_declarator", "array_declarator", "attributed_declarator"})
+# The shape of rule 4, which the advice of a report reads.
+SPLICE_DOOR = "a splice that names a member of an object"
+# The nodes that rule 7 reads as a function.
+FUNCTIONS = ("function_definition", "lambda_expression")
+# The reflection queries that walk the members or the bases of a class.
+MEMBER_WALKS = frozenset({"members_of", "nonstatic_data_members_of", "static_data_members_of", "bases_of",
+                          "subobjects_of"})
+# The access contexts under which a walk gives only what its caller can name.
+CHECKED_CONTEXTS = frozenset({"current", "unprivileged"})
+# The members of a range that give one of its elements.
+ELEMENT_ACCESSORS = frozenset({"front", "back", "at"})
+# The statements that bind a variable to each element of a range.
+RANGE_LOOPS = ("for_range_loop", "expansion_statement")
+# How many local variables rule 7 follows back from a return statement.
+TRACE_DEPTH = 8
+
+Door = tuple[int, str]
+Target = tuple[str, int, str, str]
+Publisher = tuple[str, int, str]
+
+
+class Refused(Exception):
+    """The allowlist is missing or malformed (exit 2)."""
+
+
+def read_allowlist(root: Path) -> list[tuple[int, str]]:
+    """Return (line, path) for each row of the allowlist.
+
+    Raises:
+        Refused: If the allowlist is missing or a row has no reason
+    """
+    listing = root / ALLOWLIST
+    if not listing.is_file():
+        raise Refused(f"{ALLOWLIST} is missing, so no file may open the door.")
+    rows = []
+    for number, line in enumerate(listing.read_text().splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        path, separator, reason = line.partition(" — ")
+        if not separator or not path.strip() or not reason.strip():
+            raise Refused(f"{ALLOWLIST}:{number} is not PATH — REASON.")
+        rows.append((number, path.strip()))
+    return rows
+
+
+def scope_files(root: Path) -> list[str]:
+    """Return the tracked C++ files under the scan roots (tsast.tracked_files).
+
+    An untracked file is out of scope, because a guard run or another tool
+    can write one under the tree while this guard reads it.
+    """
+    return sorted(p for p in tsast.tracked_files(root)
+                  if p.startswith(tuple(f"{r}/" for r in SCAN_ROOTS)) and tsast.is_in_cpp_scope(p)
+                  and (root / p).is_file())
+
+
+def name_parts(node: tsast.Node) -> tuple[str, ...] | None:
+    """Return the parts of a name or of a type descriptor that is a name, or None for any other shape.
+
+    A leading `::` adds no part.  A scope that is not a name, such as a
+    splice or a decltype, gives None.
+    """
+    if node.type == "type_descriptor":
+        inner = node.child_by_field("type")
+        return None if inner is None else name_parts(inner)
+    found = tsast.qualified_parts(node)
+    return None if found is None else found[1]
+
+
+def names_member(leaf: tsast.Node) -> bool:
+    """Return whether a name leaf is the member that a qualified name or a member access names.
+
+    `A::unchecked`, `a.unchecked`, `p->unchecked` and their template forms,
+    with or without the `template` keyword, qualify.  A bare `unchecked` is a
+    plain variable, and does not.
+    """
+    node = leaf
+    if node.parent is not None and node.parent.type in ("template_function", "template_method") \
+            and node.field == "name":
+        node = node.parent
+    if node.parent is not None and node.parent.type == "dependent_name":
+        node = node.parent
+    parent = node.parent
+    if parent is None:
+        return False
+    return ((parent.type == "qualified_identifier" and node.field == "name")
+            or (parent.type == "field_expression" and node.field == "field"))
+
+
+def leading_operator(node: tsast.Node) -> str:
+    """Return the operator token of a unary pointer expression: `&` or `*`."""
+    tokens = node.gap_tokens()
+    return tokens[0] if tokens else ""
+
+
+def is_macro_use(leaf: tsast.Node) -> bool:
+    """Return whether a name leaf can be the use of a macro: not the name that a directive defines or tests."""
+    parent = leaf.parent
+    return parent is None or parent.type not in MACRO_MENTIONS
+
+
+def node_doors(root: tsast.Node, line_of: Callable[[tsast.Node], int],
+               door_macros: frozenset[str] = frozenset()) -> list[Door]:
+    """Return (line, shape) for each way the nodes below root open the unchecked access context.
+
+    Args:
+        root: The root of the walk
+        line_of: The one-based line in the file of a node
+        door_macros: The macros whose body opens the door
+
+    Complexity: linear in the number of nodes.
+    """
+    found: list[Door] = []
+    for leaf in root.descendants(*NAME_LEAVES):
+        if leaf.text == "unchecked" and names_member(leaf):
+            found.append((line_of(leaf), "a use of unchecked"))
+        elif leaf.text == "access_context" and leaf.ancestor_of_type(*ALIASES) is not None:
+            found.append((line_of(leaf), "a using-declaration or an alias of access_context"))
+        elif leaf.text in door_macros and is_macro_use(leaf):
+            found.append((line_of(leaf), f"a use of the macro {leaf.text}, which opens the door"))
+    for node in root.descendants("reflect_expression"):
+        operand = next((c for c in node.children if c.type != "comment"), None)
+        parts = None if operand is None else name_parts(operand)
+        if parts and (parts in (("std",), ("std", "meta")) or parts[-1] == "access_context"):
+            found.append((line_of(node), f"a reflection of {'::'.join(parts)}"))
+    for node in root.descendants("splice_expression"):
+        parent = node.parent
+        if parent is None:
+            continue
+        if parent.type == "field_expression" and node.field == "field":
+            found.append((line_of(node), SPLICE_DOOR))
+        elif parent.type == "pointer_expression" and node.field == "argument" and leading_operator(parent) == "&":
+            found.append((line_of(node), SPLICE_DOOR))
+    return found
+
+
+def name_after(tokens: Sequence[tsast.Token], index: int) -> tuple[str, ...]:
+    """Return the parts of the qualified name that starts at tokens[index], or () when none starts there."""
+    if index < len(tokens) and tokens[index].text == "::":
+        index += 1
+    parts: list[str] = []
+    while index < len(tokens) and tokens[index].kind == "identifier":
+        parts.append(tokens[index].text)
+        if index + 2 < len(tokens) and tokens[index + 1].text == "::" and tokens[index + 2].kind == "identifier":
+            index += 2
+        else:
+            break
+    return tuple(parts)
+
+
+def token_doors(tokens: Sequence[tsast.Token], door_macros: frozenset[str] = frozenset()) -> list[Door]:
+    """Return (line, shape) for each door in the tokens of a macro body that does not parse as C++.
+
+    The tokens cannot tell a unary `&` from a binary one, so `&` before a
+    splice counts, and the rule fails closed.
+
+    Complexity: linear in the number of tokens.
+    """
+    found: list[Door] = []
+    statement: list[tsast.Token] = []
+    for index, token in enumerate(tokens):
+        before = index - 1
+        if before > 0 and tokens[before].text == "template":
+            before -= 1
+        previous = tokens[before].text if before >= 0 else ""
+        if token.kind == "identifier" and token.text == "unchecked" and previous in ("::", ".", "->"):
+            found.append((token.row + 1, "a use of unchecked"))
+        elif token.kind == "identifier" and token.text in door_macros:
+            found.append((token.row + 1, f"a use of the macro {token.text}, which opens the door"))
+        elif token.text == "[:" and previous in (".", "->", "&"):
+            found.append((token.row + 1, SPLICE_DOOR))
+        elif token.text == "^^":
+            parts = name_after(tokens, index + 1)
+            if parts and (parts in (("std",), ("std", "meta")) or parts[-1] == "access_context"):
+                found.append((token.row + 1, f"a reflection of {'::'.join(parts)}"))
+        if token.text in STATEMENT_END:
+            statement = []
+            continue
+        statement.append(token)
+        if token.text == "access_context" and any(t.text in ("using", "typedef") for t in statement):
+            found.append((token.row + 1, "a using-declaration or an alias of access_context"))
+    return found
+
+
+def body_names(body: tsast.MacroBody) -> set[str]:
+    """Return the identifiers that a macro body names, from its parse or from its tokens."""
+    if body.is_parsed:
+        return {leaf.text for leaf in body.root.descendants(*NAME_LEAVES)}
+    return {token.text for token in tsast.pp_tokens(body.text) if token.kind == "identifier"}
+
+
+def body_doors(body: tsast.MacroBody, door_macros: frozenset[str] = frozenset()) -> list[Door]:
+    """Return (line, shape) for each door of one macro body, with lines of the file that defines it."""
+    if body.is_parsed:
+        return node_doors(body.root, lambda node: body.origin(node)[0] + 1, door_macros)
+    return token_doors(tsast.pp_tokens(body.text, body.first_row), door_macros)
+
+
+def door_macro_names(bodies: Sequence[tsast.MacroBody]) -> frozenset[str]:
+    """Return the names of the macros whose body opens the door, directly or through another macro.
+
+    A macro that names a door macro opens the door when it expands, so the
+    set grows until no body adds a name.
+
+    Complexity: O(B * R) for B bodies and R rounds, and R is at most the
+    depth of the deepest chain of macros.
+    """
+    names = {body.name for body in bodies if body_doors(body)}
+    mentions = [(body.name, body_names(body)) for body in bodies]
+    grown = True
+    while grown:
+        grown = False
+        for name, mentioned in mentions:
+            if name not in names and mentioned & names:
+                names.add(name)
+                grown = True
+    return frozenset(names)
+
+
+def uses_unchecked(node: tsast.Node) -> bool:
+    """Return whether a use of the member unchecked occurs below node, in the sense of rule 1."""
+    return any(leaf.text == "unchecked" and names_member(leaf) for leaf in node.descendants(*NAME_LEAVES))
+
+
+def namespace_names(trees: Iterable[tsast.Tree]) -> frozenset[tuple[str, ...]]:
+    """Return each qualified name of a namespace that the parses declare, with each of its suffixes.
+
+    A walk can name a namespace from inside an enclosing namespace, so
+    each suffix of a full name counts.  An alias counts in the namespace
+    that declares it.  std and std::meta count, because a walk can name
+    them and no scanned file declares them.
+
+    Complexity: linear in the nodes of the parses, times the depth of the
+    deepest namespace.
+    """
+    names: set[tuple[str, ...]] = {("std",), ("std", "meta")}
+    for tree in trees:
+        for node in tree.find("namespace_definition", "namespace_alias_definition"):
+            path: list[str] = []
+            scope = node.parent
+            while scope is not None:
+                if scope.type == "namespace_definition":
+                    outer = scope.child_by_field("name")
+                    if outer is not None:
+                        path[:0] = namespace_parts(outer)
+                scope = scope.parent
+            name = node.child_by_field("name")
+            if name is None:
+                continue
+            path += namespace_parts(name)
+            names.update(tuple(path[start:]) for start in range(len(path)))
+    return frozenset(names)
+
+
+def namespace_parts(name: tsast.Node) -> list[str]:
+    """Return the parts of the name of a namespace: one identifier, or each identifier of a nested specifier."""
+    if name.type == "nested_namespace_specifier":
+        return [leaf.text for leaf in name.descendants("namespace_identifier")]
+    return [name.text]
+
+
+def unwrapped(expression: tsast.Node) -> tsast.Node | None:
+    """Return the expression inside any parentheses, or None when the parentheses hold nothing."""
+    while expression.type == "parenthesized_expression":
+        inner = next((c for c in expression.children if c.type != "comment"), None)
+        if inner is None:
+            return None
+        expression = inner
+    return expression
+
+
+def arguments_of(call: tsast.Node) -> list[tsast.Node]:
+    """Return the arguments of a call expression, comments left out."""
+    listing = call.child_by_field("arguments")
+    return [] if listing is None else [c for c in listing.children if c.type != "comment"]
+
+
+def bindings(name: str, function: tsast.Node) -> list[tuple[str, tsast.Node]]:
+    """Return ("value", node) for each local variable of the function that `name` declares, and ("range", node)
+    for each range for or expansion statement that binds `name`.
+
+    A declaration inside a lambda or a local class inside the function
+    belongs to that function, and does not count here.
+    """
+    body = function.child_by_field("body")
+    if body is None:
+        return []
+    found: list[tuple[str, tsast.Node]] = []
+    for declarator in body.descendants("init_declarator"):
+        declared = declarator.child_by_field("declarator")
+        value = declarator.child_by_field("value")
+        if (declared is not None and value is not None and declared.type == "identifier" and declared.text == name
+                and declarator.ancestor_of_type(*FUNCTIONS) == function):
+            found.append(("value", value))
+    for loop in body.descendants(*RANGE_LOOPS):
+        declared = loop.child_by_field("declarator")
+        right = loop.child_by_field("right")
+        leaves = [] if declared is None else [declared, *declared.descendants("identifier")]
+        if (right is not None and any(leaf.type == "identifier" and leaf.text == name for leaf in leaves)
+                and loop.ancestor_of_type(*FUNCTIONS) == function):
+            found.append(("range", right))
+    return found
+
+
+def is_checked_context(argument: tsast.Node, function: tsast.Node, depth: int = 0) -> bool:
+    """Return whether an access context is access_context::current() or unprivileged(), or a local set to one.
+
+    A parameter, and a context that the function does not show, count as
+    unchecked, so the rule fails closed.
+    """
+    argument = unwrapped(argument)
+    if argument is None:
+        return False
+    if argument.type == "call_expression":
+        callee = argument.child_by_field("function")
+        parts = None if callee is None else name_parts(callee)
+        return bool(parts) and parts[-1] in CHECKED_CONTEXTS and "access_context" in parts[:-1]
+    if argument.type == "identifier" and depth < TRACE_DEPTH:
+        values = [node for kind, node in bindings(argument.text, function) if kind == "value"]
+        return bool(values) and all(is_checked_context(value, function, depth + 1) for value in values)
+    return False
+
+
+def is_open_walk(call: tsast.Node, function: tsast.Node, namespaces: frozenset[tuple[str, ...]]) -> bool:
+    """Return whether a call walks the members or the bases of a class under a context that sees private ones.
+
+    A walk of a namespace gives no member of a class.  A walk under a
+    checked context gives only what its caller can name.
+    """
+    callee = call.child_by_field("function")
+    parts = None if callee is None else name_parts(callee)
+    if not parts or parts[-1] not in MEMBER_WALKS:
+        return False
+    arguments = arguments_of(call)
+    walked = unwrapped(arguments[0]) if arguments else None
+    if walked is not None and walked.type == "reflect_expression":
+        operand = next((c for c in walked.children if c.type != "comment"), None)
+        if operand is not None and name_parts(operand) in namespaces:
+            return False
+    return len(arguments) < 2 or not is_checked_context(arguments[1], function)
+
+
+def walk_derived(expression: tsast.Node, function: tsast.Node, namespaces: frozenset[tuple[str, ...]],
+                 depth: int = 0) -> bool:
+    """Return whether an expression gives a member of a class that an open walk found, as rule 7 traces it.
+
+    The result of an open walk, define_static_array over one, an element
+    of one, the variable of a range loop over one, and a local variable
+    that one of these initializes each count.
+
+    Complexity: linear in the nodes of the function for each variable
+    followed, at most TRACE_DEPTH of them.
+    """
+    node = unwrapped(expression)
+    if node is None:
+        return False
+    if node.type == "subscript_expression":
+        argument = node.child_by_field("argument")
+        return argument is not None and walk_derived(argument, function, namespaces, depth)
+    if node.type == "call_expression":
+        callee = node.child_by_field("function")
+        if callee is not None and callee.type == "field_expression":
+            field = callee.child_by_field("field")
+            owner = callee.child_by_field("argument")
+            return (field is not None and field.text in ELEMENT_ACCESSORS and owner is not None
+                    and walk_derived(owner, function, namespaces, depth))
+        parts = None if callee is None else name_parts(callee)
+        if parts and parts[-1] == "define_static_array":
+            return any(walk_derived(argument, function, namespaces, depth) for argument in arguments_of(node))
+        return is_open_walk(node, function, namespaces)
+    if node.type == "identifier" and depth < TRACE_DEPTH:
+        return any(walk_derived(bound, function, namespaces, depth + 1) for _, bound in bindings(node.text, function))
+    return False
+
+
+def own_returns(function: tsast.Node) -> list[tsast.Node]:
+    """Return the returned expression of each return statement of one function.
+
+    A return statement inside a lambda or a local class inside the
+    function belongs to that function, and does not count here.
+    """
+    body = function.child_by_field("body")
+    if body is None:
+        return []
+    statements = [node for node in body.descendants("return_statement")
+                  if node.ancestor_of_type(*FUNCTIONS) == function]
+    expressions = (next((c for c in statement.children if c.type != "comment"), None) for statement in statements)
+    return [expression for expression in expressions if expression is not None]
+
+
+def publishers(tree: tsast.Tree, rel: str, namespaces: frozenset[tuple[str, ...]]) -> list[Publisher]:
+    """Return (file, line, name) for each function of one parse that rule 7 refuses.
+
+    Complexity: linear in the nodes of each function that uses unchecked,
+    times the variables that a return statement follows.
+    """
+    found: list[Publisher] = []
+    for function in tree.find(*FUNCTIONS):
+        body = function.child_by_field("body")
+        if body is None or not uses_unchecked(body):
+            continue
+        if any(walk_derived(expression, function, namespaces) for expression in own_returns(function)):
+            found.append((rel, function.line, function_name(function)))
+    return found
+
+
+def function_name(function: tsast.Node) -> str:
+    """Return the name that a report shows for a function, or "a lambda"."""
+    if function.type == "lambda_expression":
+        return "a lambda"
+    node = function.child_by_field("declarator")
+    while node is not None and node.type not in NAMES:
+        node = node.child_by_field("declarator")
+    return "a function" if node is None else display(node)
+
+
+def display(node: tsast.Node) -> str:
+    """Return the name that a report shows for a declarator: its parts joined by ::, comments left out."""
+    parts = name_parts(node)
+    return "::".join(parts) if parts else tsast.spelled(node)
+
+
+def is_const_qualified(node: tsast.Node) -> bool:
+    """Return whether a pointer declarator carries const on the pointer itself."""
+    return any(child.type == "type_qualifier" and child.text == "const" for child in node.children)
+
+
+def declarator_verdict(declarator: tsast.Node, const_specifier: bool) -> tuple[str, bool] | None:
+    """Return (name, writable) for the data member that a declarator declares, or None for a member function.
+
+    The declarator nearest the name decides what the name is.  A shape the
+    function does not know counts as writable, so an unknown shape fails
+    closed.
+    """
+    chain: list[tsast.Node] = []
+    node = declarator
+    while node.type not in NAMES:
+        chain.append(node)
+        if node.type == "attributed_declarator":
+            inner = next((c for c in node.children if c.type != "attribute_declaration"), None)
+        else:
+            inner = node.child_by_field("declarator")
+        if inner is None:
+            return display(declarator), True
+        node = inner
+    name = display(node)
+    shaped = [n for n in chain if n.type not in TRANSPARENT]
+    if not shaped:
+        return name, not const_specifier
+    nearest = shaped[-1]
+    if nearest.type == "function_declarator":
+        return None
+    if nearest.type == "pointer_declarator":
+        return name, not is_const_qualified(nearest)
+    if nearest.type == "reference_declarator":
+        referent = shaped[-2] if len(shaped) > 1 else None
+        if referent is None:
+            return name, not const_specifier
+        if referent.type == "pointer_declarator":
+            return name, not is_const_qualified(referent)
+        return name, referent.type != "function_declarator"
+    return name, True
+
+
+def open_members(declaration: tsast.Node) -> list[tuple[tsast.Node, str]]:
+    """Return (declarator, name) for each writable static data member that one member declaration declares."""
+    while declaration.type == "template_declaration":
+        inner = [c for c in declaration.children if c.type in DECLARATIONS]
+        if not inner:
+            return []
+        declaration = inner[-1]
+    words = {c.text for c in declaration.children if c.type in ("storage_class_specifier", "type_qualifier")}
+    if "static" not in words or "constexpr" in words:
+        return []
+    found = []
+    for child in declaration.children:
+        if child.field != "declarator":
+            continue
+        verdict = declarator_verdict(child, "const" in words)
+        if verdict is not None and verdict[1]:
+            found.append((child, verdict[0]))
+    return found
+
+
+def walk_members(nodes: list[tsast.Node], accesses: frozenset[str],
+                 found: list[tuple[tsast.Node, str, str]]) -> frozenset[str]:
+    """Walk the members of one class body in order, and return the accesses that hold after them.
+
+    An #if block joins the access at the end of each arm, and the access
+    before it when no arm must be taken, so a label inside one arm does not
+    open the members after the block.
+    """
+    for node in nodes:
+        if node.type == "access_specifier":
+            accesses = frozenset({tsast.lexeme(node)})
+        elif node.type in CONDITIONALS:
+            accesses = walk_conditional(node, accesses, found)
+        elif node.type in DECLARATIONS and accesses - {"public"}:
+            access = "private" if "private" in accesses else "protected"
+            found += [(declarator, access, name) for declarator, name in open_members(node)]
+    return accesses
+
+
+def walk_conditional(node: tsast.Node, accesses: frozenset[str],
+                     found: list[tuple[tsast.Node, str, str]]) -> frozenset[str]:
+    """Walk one #if, #ifdef or #elif block, and return the join of the accesses at the end of its arms."""
+    body = [c for c in node.children if c.field not in ("condition", "name", "alternative")]
+    after = walk_members(body, accesses, found)
+    alternative = node.child_by_field("alternative")
+    if alternative is None:
+        return after | accesses
+    if alternative.type in CONDITIONALS:
+        return after | walk_conditional(alternative, accesses, found)
+    return after | walk_members(alternative.children, accesses, found)
+
+
+def class_members(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
+    """Return (declarator, access, name) for each writable private or protected static data member of one parse."""
+    members: list[tuple[tsast.Node, str, str]] = []
+    for node in tree.find(*CLASSES):
+        body = node.child_by_field("body")
+        if body is not None:
+            default = "private" if node.type == "class_specifier" else "public"
+            walk_members(body.children, frozenset({default}), members)
+    return members
+
+
+def reads_members(rel: str) -> bool:
+    """Return whether the guard reads the static data members of a file."""
+    return rel.startswith(MEMBER_ROOTS)
+
+
+def with_defines(trees: Iterable[tsast.Tree]) -> Iterable[tsast.Tree]:
+    """Yield the trees that hold a #define, the only trees whose macro bodies there are to parse."""
+    for tree in trees:
+        if any(True for _ in tree.find("preproc_def", "preproc_function_def")):
+            yield tree
+
+
+def lexical(root: Path,
+            files: list[str]) -> tuple[dict[str, list[Door]], list[Target], list[Publisher], list[str], int]:
+    """Parse each file once, and return what the guard reads from the parses.
+
+    The result holds the doors of each file, the open targets, the functions
+    that rule 7 refuses, the problems and the number of member files read.
+    Every file gives its doors and the functions that rule 7 refuses.  A file
+    of the member roots also gives its open static data members.  A file
+    that the parser cannot read fails.
+
+    Complexity: one parse of each file and of each macro body, linear in
+    their nodes, plus the closure of door_macro_names.
+    """
+    parsed: dict[str, tsast.Tree] = {}
+    targets: list[Target] = []
+    refused: list[Publisher] = []
+    problems: list[str] = []
+    member_files = 0
+    for tree in tsast.parse([root / rel for rel in files], strict=False):
+        rel = str(Path(tree.path).relative_to(root))
+        if tree.diagnostic is not None:
+            problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its doors "
+                            f"and its static data members: {tree.diagnostic}")
+            continue
+        parsed[rel] = tree
+        if reads_members(rel):
+            member_files += 1
+            targets += [(rel, node.line, access, name) for node, access, name in class_members(tree)]
+    namespaces = namespace_names(parsed.values())
+    for rel, tree in parsed.items():
+        refused += publishers(tree, rel, namespaces)
+    bodies = tsast.macro_bodies(with_defines(parsed.values()))
+    door_macros = door_macro_names(bodies)
+    doors = {rel: node_doors(tree.root, lambda node: node.line, door_macros) for rel, tree in parsed.items()}
+    for body in bodies:
+        rel = str(Path(body.define.tree.path).relative_to(root))
+        doors[rel] += body_doors(body, door_macros)
+    return doors, targets, refused, problems, member_files
+
+
+def expansion_rows(texts: Sequence[str]) -> tuple[str, list[int]]:
+    """Join the chunk texts of one file as preprocessed.joined does, and return the row where each chunk starts."""
+    starts: list[int] = []
+    row = 0
+    for text in texts:
+        starts.append(row)
+        row += text.count("\n") + 1
+    return "\n".join(texts), starts
+
+
+def expanded(root: Path, compile_db: Path, scope: frozenset[str],
+             problems: list[str]) -> tuple[dict[str, list[Door]], list[Target]]:
+    """Read the doors and the open targets of each distinct expansion of each file in scope.
+
+    The result of each expansion is cached beside the compile database under
+    the store key of the expansion, with rows of the joined text.  The lines
+    of the chunks map a row to a line of the file.  The text is expanded, so
+    rule 5 has no macro left to find.
+
+    Complexity: linear in the preprocessed output of the units, plus one
+    parse for each expansion that is not in the cache.
+    """
+    store = Store(compile_db, root)
+    cache = compile_db.parent / "unchecked-access-cache"
+    cache.mkdir(exist_ok=True)
+    results: dict[str, dict] = {}
+    pending: dict[str, tuple[str, list[str]]] = {}
+    seen: list[tuple[str, str, list[int]]] = []
+    for unit in store.units():
+        if unit.failure is not None:
+            problems.append(f"PREPROC   {unit.failure} — the guard cannot read the expansions of this unit.")
+            continue
+        for path, (key, chunks) in files_of(unit).items():
+            if path not in scope:
+                continue
+            seen.append((path, key, [chunk.line for chunk in chunks]))
+            if key in results or key in pending:
+                continue
+            try:
+                results[key] = json.loads((cache / f"{SCAN_VERSION}-{key}.json").read_text())
+            except (OSError, ValueError):
+                pending[key] = (path, [store.text(chunk.digest) for chunk in chunks])
+    keys = list(pending)
+    joined = [expansion_rows(pending[key][1]) for key in keys]
+    items = [(f"{pending[key][0]} (expansion {key[:12]})", text) for key, (text, _) in zip(keys, joined)]
+    for key, (_, starts), tree in zip(keys, joined, tsast.parse_texts(items)):
+        if tree.diagnostic is not None:
+            result = {"unread": tree.diagnostic}
+        else:
+            result = {"starts": starts,
+                      "doors": [[line - 1, shape] for line, shape in node_doors(tree.root, lambda n: n.line)],
+                      "members": [[node.start[0], access, name] for node, access, name in class_members(tree)]}
+        staging = cache / f"{SCAN_VERSION}-{key}.{os.getpid()}.tmp"
+        staging.write_text(json.dumps(result))
+        os.replace(staging, cache / f"{SCAN_VERSION}-{key}.json")
+        results[key] = result
+    doors: dict[str, list[Door]] = {}
+    targets: list[Target] = []
+    unread: set[str] = set()
+    for path, key, lines in seen:
+        result = results[key]
+        if "unread" in result:
+            if path not in unread:
+                unread.add(path)
+                problems.append(f"PARSE     {path} (a macro expansion) — the parser cannot read it, so the guard "
+                                f"cannot see its doors and its static data members: {result['unread']}")
+            continue
+        starts = result["starts"]
+
+        def line_of(row: int) -> int:
+            """Map a row of the joined text to a line of the file."""
+            chunk = bisect.bisect_right(starts, row) - 1
+            return lines[chunk] + row - starts[chunk]
+
+        doors.setdefault(path, []).extend((line_of(row), shape) for row, shape in result["doors"])
+        if reads_members(path):
+            targets += [(path, line_of(row), access, name) for row, access, name in result["members"]]
+    return doors, targets
+
+
+def remedy(shape: str) -> str:
+    """Return the advice for one refused door.
+
+    A member splice is refused whatever walk gave its reflection, because
+    the reflection can come from any walk, so a walk with
+    access_context::current() does not clear it.
+    """
+    if shape.startswith(SPLICE_DOOR):
+        return (f"A splice of a member of an object has no access check, whatever walk gave its reflection, so it "
+                f"can write a proof's private state.  Read or write the member by its name or its accessor, or "
+                f"add a reviewed row to {ALLOWLIST}.")
+    return (f"A reflection of a private member lets a splice write a proof's private state.  Walk with "
+            f"access_context::current(), or add a reviewed row to {ALLOWLIST}.")
+
+
+def check(root: Path, compile_db: Path | None = None) -> int:
+    """Compare the doors in the tree with the allowlist, and report to stderr.
+
+    Returns:
+        0 clean, 1 on a finding, 2 on a bad allowlist
+    """
+    try:
+        rows = read_allowlist(root)
+    except Refused as exc:
+        print(f"check-no-unchecked-access: {exc}", file=sys.stderr)
+        return 2
+    admitted = {path for _, path in rows}
+    files = scope_files(root)
+    doors, targets, refused, problems, parsed = lexical(root, files)
+    for rel, line, name in refused:
+        problems.append(f"REFUSED   {rel}:{line} — {name} uses unchecked and returns a member of a class that a "
+                        f"walk found.  The caller can splice that member, or extract a pointer to it, with no door "
+                        f"of its own.  Keep the reflection inside the function, and return the value that the "
+                        f"caller needs: a count, a hash or a bool.")
+    if compile_db is not None:
+        more_doors, more_targets = expanded(root, compile_db, frozenset(files), problems)
+        for rel, found in more_doors.items():
+            known = {shape for _, shape in doors.get(rel, [])}
+            doors.setdefault(rel, []).extend(
+                (line, f"{shape} (in a macro expansion)") for line, shape in found if shape not in known)
+        named = {(rel, access, name) for rel, _, access, name in targets}
+        targets += [target for target in more_targets if (target[0], target[2], target[3]) not in named]
+    opened: set[str] = set()
+    for rel, line, access, name in sorted(set(targets)):
+        problems.append(f"REFUSED   {rel}:{line} — a writable {access} static data member: {name}.  A splice of "
+                        f"a static data member has no access check, so any file writes it.  Make it const or "
+                        f"constexpr, or move it into the object.")
+    for rel, found in sorted(doors.items()):
+        if found:
+            opened.add(rel)
+        if found and rel not in admitted:
+            problems += [f"REFUSED   {rel}:{line} — {shape}.  {remedy(shape)}" for line, shape in sorted(set(found))]
+    for number, path in rows:
+        if path not in opened:
+            problems.append(f"STALE     {ALLOWLIST}:{number}: {path} — does not open the door.  Remove the row.")
+    for line in problems:
+        print(f"check-no-unchecked-access: {line}", file=sys.stderr)
+    if not problems:
+        read = "the parse and the macro expansions" if compile_db is not None else "the parse"
+        print(f"check-no-unchecked-access: {len(opened)} file(s) open the unchecked access context, "
+              f"each on its reviewed row, no function that uses unchecked returns a member that a walk found, and in "
+              f"{read} {parsed} file(s) of the member roots hold no writable private or protected static data "
+              f"member.")
+    return 1 if problems else 0
+
+
+def self_test() -> int:
+    """Plant a repository, prove each verdict, and prove the verdict does not depend on the working directory.
+
+    Returns:
+        0 when every case holds, 2 otherwise
+    """
+    failures: list[str] = []
+    negatives = 0
+
+    def write(root: Path, rel: str, text: str) -> None:
+        """Write one planted file."""
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding="utf-8")
+
+    def captured(root: Path, cwd: Path | None = None, compile_db: Path | None = None) -> tuple[int, str]:
+        """Track each planted file, run the check on the planted repository and keep its report."""
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        buffer = io.StringIO()
+        previous = Path.cwd()
+        if cwd is not None:
+            os.chdir(cwd)
+        try:
+            with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+                code = check(root, compile_db)
+        finally:
+            os.chdir(previous)
+        return code, buffer.getvalue()
+
+    def expect(root: Path, code: int, needle: str, name: str, negative: bool = False,
+               compile_db: Path | None = None, absent: str | None = None) -> None:
+        """Record one case."""
+        nonlocal negatives
+        negatives += negative
+        got, report = captured(root, compile_db=compile_db)
+        ok = got == code and needle in report and (absent is None or absent not in report)
+        print(f"  {'ok  ' if ok else 'FAIL'} {name}")
+        if not ok:
+            failures.append(f"{name}: expected exit {code} and '{needle}', got exit {got}:\n{report}")
+
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        throwaway_repo.init(root)
+        write(root, "include/foundation/Walk.h",
+              "auto m = std::meta::members_of(^^T, std::meta::access_context::unchecked());\n"
+              "#define WALK_DOOR std::meta::access_context::unchecked()\n"
+              "#define WALK_OUTER WALK_DOOR\n")
+        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n")
+        write(root, "src/Clean.cpp",
+              "// std::meta::access_context::unchecked() is refused outside the allowlist.\n"
+              'const char* s = "access_context::unchecked()";\n'
+              "auto c = std::meta::access_context::current();\nbool unchecked = true;\nint n = unchecked;\n"
+              "constexpr auto mask = flags & [:field:];\nconstexpr auto r = ^^my_access_context;\n"
+              "#ifdef WALK_DOOR\n#endif\n")
+        write(root, "include/foundation/Closed.h",
+              "class Closed {\n    static constexpr int a_ = 1;\n    static const int b_ = 2;\n"
+              "    static int* const c_;\n    static const int& d_;\n    static int (&e_)(int);\n"
+              "    static int f_();\n    template <class T> static constexpr T g_{};\n"
+              "    // static int commented_;\n"
+              '    static constexpr const char* s_ = R"(static int quoted_;)";\n'
+              "public:\n    static int open_;\n};\nstruct Public { static int counter; };\n"
+              "#define NAMED static constexpr int named_ = 3;\n")
+        write(root, "src/Local.cpp", "class Local { static int n_; };\n")
+        expect(root, 0, "1 file(s) open", "a listed walk, a comment, a string, a plain name, a binary & before a "
+                                          "splice, a reflection of another name, a test of a door macro, a closed "
+                                          "member and a file outside the member roots pass")
+
+        forgeries = {
+            "src/Qualified.cpp": "auto c = std::meta::access_context::unchecked();\n",
+            "src/Alias.cpp": "namespace mm = std::meta;\nauto c = mm::access_context::unchecked();\n",
+            "src/UsingDeclaration.cpp": "using std::meta::access_context;\nauto c = 1;\n",
+            "src/TypeAlias.cpp": "using Door = std::meta::access_context;\n",
+            "src/Typedef.cpp": "typedef std::meta::access_context Door;\n",
+            "src/MultiLine.cpp": "auto c = std::meta::access_context\n    ::  /* door */\n    unchecked();\n",
+            "src/Spliced.cpp": "auto c = [: ^^std::meta::access_context :]::unchecked();\n",
+            "src/Member.cpp": "auto c = std::meta::access_context::current().unchecked();\n",
+            "src/TemplateMember.cpp": "auto c = holder.template unchecked<int>();\n",
+            "src/Address.cpp": "auto f = &std::meta::access_context::unchecked;\n",
+            "src/ReflectClass.cpp": "constexpr auto r = ^^std::meta::access_context;\n",
+            "src/ReflectNamespace.cpp": "constexpr auto r = ^^std::meta;\n",
+            "src/ReflectStd.cpp": "constexpr auto r = ^^::std;\n",
+            "src/Macro.cpp": "#define DOOR std::meta::access_context::unchecked()\n",
+            "src/PastedMacro.cpp": "#define DOOR(x) std::meta::access_context::x##_unused() . [:x:]\n",
+            "src/MacroAlias.cpp": "#define ALIAS(n) using n = std::meta::access_context; n##_tail\n",
+            "src/UseMacro.cpp": "auto c = WALK_DOOR;\n",
+            "src/UseNestedMacro.cpp": "auto c = WALK_OUTER;\n",
+            "src/DefineThroughMacro.cpp": "#define MINE WALK_DOOR\n",
+            "src/DecltypeWalk.cpp": "auto m = std::meta::members_of(^^decltype(std::meta::access_context::current()),"
+                                    " std::meta::access_context::current());\nsealed.[:field:] = 42;\n",
+            "src/TypeOfWalk.cpp": "constexpr auto ctx = std::meta::access_context::current();\n"
+                                  "auto t = std::meta::type_of(^^ctx);\nsealed->[:field:] = 42;\n",
+            "src/TemplateSplice.cpp": "void w(S& s) { s.template [:m:] = 1; }\n",
+            "src/TemplateWalk.cpp": "template <class C> consteval auto f() { return std::meta::members_of(^^C, c); }\n"
+                                    "auto g = f<decltype(std::meta::access_context::current())>();\nsealed.[:g:] = 1;\n",
+            "src/ParameterWalk.cpp": "consteval auto f(auto c) { return std::meta::members_of(^^decltype(c), c); }\n"
+                                     "void w(S& s) { s.[: f(1)[0] :] = 1; }\n",
+            "src/MemberPointer.cpp": "constexpr auto m = &[:field:];\nvoid w(S& s) { s.*m = 42; }\n",
+        }
+        for rel, text in forgeries.items():
+            write(root, rel, text)
+            expect(root, 1, f"REFUSED   {rel}", f"a door outside the allowlist: {rel}", True)
+            (root / rel).unlink()
+
+        # A member splice is refused whatever walk gave its reflection, so its
+        # advice does not send the writer to access_context::current().
+        write(root, "src/CurrentWalk.cpp",
+              "constexpr auto m = std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::current())[0];\n"
+              "void w(S& s) { s.[:m:] = 1; }\n")
+        expect(root, 1, "REFUSED   src/CurrentWalk.cpp:2 — a splice that names a member of an object.  A splice of a "
+                        "member of an object has no access check, whatever walk gave its reflection",
+               "a member splice after a walk with current() is refused, with advice that does not name current()",
+               True, absent="Walk with access_context::current()")
+        (root / "src/CurrentWalk.cpp").unlink()
+        write(root, "src/UncheckedWalk.cpp", "auto c = std::meta::access_context::unchecked();\n")
+        expect(root, 1, "a use of unchecked.  A reflection of a private member lets a splice write a proof's private "
+                        "state.  Walk with access_context::current()",
+               "a use of unchecked gets the advice to walk with current()", True)
+        (root / "src/UncheckedWalk.cpp").unlink()
+
+        # A function of a listed file that uses unchecked may not return a
+        # member that a walk found.  Each case starts on line 4 of the file.
+        walk = (root / "include/foundation/Walk.h").read_text(encoding="utf-8")
+        unchecked = "std::meta::access_context::unchecked()"
+        returns = {
+            "member_info": "template <typename T, unsigned I> consteval auto member_info() {\n"
+                           f"    return std::meta::nonstatic_data_members_of(^^T, {unchecked})[I];\n}}\n",
+            "all_members": f"consteval auto all_members() {{ return std::meta::members_of(^^S, {unchecked}); }}\n",
+            "member_named": "consteval std::meta::info member_named(std::meta::info type) {\n"
+                            f"    for (auto member : std::meta::members_of(type, {unchecked}))\n"
+                            '        if (std::meta::identifier_of(member) == "n_") return member;\n'
+                            "    return {};\n}\n",
+            "first_base": "consteval std::meta::info first_base() {\n"
+                          f"    auto bases = std::meta::bases_of(^^S, {unchecked});\n    return bases.front();\n}}\n",
+            "first_subobject": "consteval std::meta::info first_subobject() {\n"
+                               f"    return std::define_static_array(std::meta::subobjects_of(^^S, {unchecked}))[0];\n"
+                               "}\n",
+            "last_static": "consteval std::meta::info last_static() {\n"
+                           "    template for (constexpr auto m : std::define_static_array(\n"
+                           f"                      std::meta::static_data_members_of(^^S, {unchecked}))) {{\n"
+                           "        return m;\n    }\n    return {};\n}\n",
+            "a lambda": "auto pick = []() consteval {\n"
+                        f"    return std::meta::nonstatic_data_members_of(^^S, {unchecked})[0];\n}};\n",
+            "first_field": "consteval std::meta::info first_field() {\n"
+                           f"    constexpr auto context = {unchecked};\n"
+                           "    return std::meta::nonstatic_data_members_of(^^S, context)[0];\n}\n",
+            "field_under": "consteval std::meta::info field_under(std::meta::access_context context) {\n"
+                           f"    (void){unchecked};\n"
+                           "    return std::meta::nonstatic_data_members_of(^^S, context)[0];\n}\n",
+        }
+        for name, text in returns.items():
+            write(root, "include/foundation/Walk.h", walk + text)
+            expect(root, 1, f"REFUSED   include/foundation/Walk.h:4 — {name} uses unchecked and returns a member",
+                   f"a function that returns a member that a walk found: {name}", True)
+        write(root, "include/foundation/Walk.h", walk
+              + "template <typename T> consteval unsigned long member_count() {\n"
+              + f"    return std::meta::nonstatic_data_members_of(^^T, {unchecked}).size();\n}}\n"
+              + "template <typename T, unsigned I> constexpr unsigned long hash_member(const T& obj) {\n"
+              + f"    return hash_field(obj.[:std::meta::nonstatic_data_members_of(^^T, {unchecked})[I]:]);\n}}\n"
+              + "template <typename T, unsigned I> void print_member(const T& obj) {\n"
+              + "    constexpr std::string_view name =\n"
+              + f"        std::meta::identifier_of(std::meta::nonstatic_data_members_of(^^T, {unchecked})[I]);\n"
+              + f"    print_field(name, obj.[:std::meta::nonstatic_data_members_of(^^T, {unchecked})[I]:]);\n}}\n"
+              + "consteval std::meta::info first_public() {\n"
+              + "    return std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::current())[0];\n}\n"
+              + "consteval std::meta::info first_public_of_counted() {\n"
+              + f"    static_assert(std::meta::nonstatic_data_members_of(^^S, {unchecked}).size() > 0);\n"
+              + "    return std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::current())[0];\n}\n"
+              + "consteval std::meta::info first_type() {\n"
+              + f"    for (auto m : std::meta::nonstatic_data_members_of(^^S, {unchecked})) "
+              + "return std::meta::type_of(m);\n    return ^^void;\n}\n"
+              + "namespace roster { struct Entry {}; }\nconsteval std::meta::info first_entry() {\n"
+              + f"    for (auto m : std::meta::members_of(^^roster, {unchecked})) return m;\n    return ^^void;\n}}\n")
+        expect(root, 0, "1 file(s) open", "a walk that returns a count, a hash, printed text, a public member, a "
+                                          "type or a member of a namespace passes")
+        write(root, "include/foundation/Walk.h", walk)
+
+        # An untracked file is out of scope, because the export of a guard run
+        # can appear under the tree while the guard reads it.
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        write(root, "src/Untracked.cpp", "auto c = std::meta::access_context::unchecked();\n")
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            untracked_code = check(root)
+        ok = untracked_code == 0 and "Untracked.cpp" not in buffer.getvalue()
+        negatives += 1
+        print(f"  {'ok  ' if ok else 'FAIL'} an untracked file is out of scope")
+        if not ok:
+            failures.append(f"an untracked file was read:\n{buffer.getvalue()}")
+        (root / "src/Untracked.cpp").unlink()
+
+        # The write through a bare splice takes no door token, so the guard
+        # refuses the member it writes.
+        write(root, "include/foundation/Splice.h",
+              "class Source {\npublic:\n    static int issued() { return next_; }\nprivate:\n"
+              "    static inline int next_ = 0;\n};\n"
+              "consteval std::meta::info next_field() { return std::meta::members_of(^^Source, open())[1]; }\n"
+              "void forge() { [:next_field():] = 42; }\n")
+        expect(root, 1, "REFUSED   include/foundation/Splice.h:5 — a writable private static data member: next_",
+               "a private static member written through a splice", True)
+        (root / "include/foundation/Splice.h").unlink()
+        targets = {
+            "include/fixy/Protected.h": "class P {\nprotected:\n    static int count_;\n};\n",
+            "include/crucible/MultiLine.h": "struct S {\nprivate:\n    static /* hidden */ int\n        count_;\n};\n",
+            "include/foundation/ThreadLocal.h": "class T { static inline thread_local const T* held_ = nullptr; };\n",
+            "include/foundation/Reference.h": "class R { static int& ref_; };\n",
+            "include/foundation/FunctionPointer.h": "class F { static inline void (*hook_)() = nullptr; };\n",
+            "include/foundation/Variable.h": "class V { template <class X> static inline X slot_{}; };\n",
+            "include/foundation/Array.h": "class A { static int* slots_[4]; };\n",
+            "include/foundation/Nested.h": "namespace n { struct Outer { class Inner { static int n_; }; }; }\n",
+            "include/foundation/Conditional.h": "class C {\n#if A\npublic:\n#endif\n    static int n_;\n};\n",
+            "include/foundation/Constinit.h": "class K { constinit static int n_; };\n",
+        }
+        for rel, text in targets.items():
+            write(root, rel, text)
+            expect(root, 1, f"REFUSED   {rel}", f"an open static member: {rel}", True)
+            (root / rel).unlink()
+        write(root, "include/foundation/Broken.h", "class B { static int = ; }}}\n")
+        expect(root, 1, "PARSE     include/foundation/Broken.h", "a file the parser cannot read", True)
+        (root / "include/foundation/Broken.h").unlink()
+
+        # The expanded run reads what only the preprocessor shows: a door
+        # that ## builds, and a static member that a macro declares, with the
+        # access of the class where the macro expands.
+        compiler = os.environ.get("CXX") or shutil.which("c++") or shutil.which("g++")
+        if compiler is None:
+            failures.append("no C++ compiler to run the expanded pass")
+        else:
+            database = root / "build" / "compile_commands.json"
+            write(root, "include/foundation/Counter.h",
+                  "#define COUNTER static int counter_;\nstruct Open { COUNTER };\nclass Shut { COUNTER };\n")
+            write(root, "src/Glue.cpp",
+                  '#include "include/foundation/Counter.h"\n#define GLUE(a, b) a##b\n'
+                  "auto c = std::meta::access_context::GLUE(unch, ecked)();\n")
+            write(root, "build/compile_commands.json", json.dumps([{
+                "directory": str(root), "file": "src/Glue.cpp",
+                "command": f"{compiler} -std=c++20 -I. -c src/Glue.cpp -o Glue.o"}]))
+            expect(root, 0, "1 file(s) open", "the run without the database cannot see a pasted door or a macro "
+                                              "member")
+            for attempt in ("cold", "cached"):
+                expect(root, 1, "REFUSED   src/Glue.cpp:3 — a use of unchecked (in a macro expansion)",
+                       f"the {attempt} expanded run refuses a door that ## builds", True, database)
+                expect(root, 1, "REFUSED   include/foundation/Counter.h:3 — a writable private static data member: "
+                                "counter_", f"the {attempt} expanded run refuses a macro member in a class",
+                       True, database, absent="Counter.h:2")
+            if not any((root / "build" / "unchecked-access-cache").glob("*.json")):
+                failures.append("the expanded pass wrote no cache entry")
+            write(root, "src/Glue.cpp", '#include "include/foundation/Counter.h"\n#include "missing.h"\n')
+            expect(root, 1, "PREPROC", "a unit that the preprocessor rejects fails the run", True, database)
+            (root / "src/Glue.cpp").unlink()
+            (root / "include/foundation/Counter.h").unlink()
+            shutil.rmtree(root / "build")
+
+        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n"
+                               "src/Clean.cpp — opens nothing\n")
+        expect(root, 1, "STALE     utils/scripts/unchecked-access-allowlist.txt:3: src/Clean.cpp", "a stale row", True)
+        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\nsrc/Gone.cpp — gone\n")
+        expect(root, 1, "STALE     utils/scripts/unchecked-access-allowlist.txt:3: src/Gone.cpp", "a row for a missing file",
+               True)
+        write(root, ALLOWLIST, "include/foundation/Walk.h\n")
+        expect(root, 2, "is not PATH — REASON", "a row with no reason", True)
+        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n")
+        same = captured(root, root) == captured(root, Path("/"))
+        print(f"  {'ok  ' if same else 'FAIL'} the report from / equals the report from the repository")
+        if not same:
+            failures.append("the report depends on the working directory")
+        (root / ALLOWLIST).unlink()
+        expect(root, 2, "is missing", "a missing allowlist", True)
+    for failure in failures:
+        print(f"check-no-unchecked-access --self-test: FAIL — {failure}", file=sys.stderr)
+    if failures:
+        return 2
+    print(f"check-no-unchecked-access --self-test: every case passes, {negatives} of them negative controls.")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    """Check the tree, or run the self-test."""
+    parser = argparse.ArgumentParser(description="Refuse access_context::unchecked() outside the reviewed walks.")
+    parser.add_argument("--self-test", action="store_true", help="run the planted cases")
+    parser.add_argument("--compile-db", type=Path, help="also read the macro expansions of this compile database")
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        return 2
+    try:
+        if args.self_test:
+            return self_test()
+        if args.compile_db is not None and not args.compile_db.is_file():
+            print(f"check-no-unchecked-access: {args.compile_db} does not exist.  Configure the build first.",
+                  file=sys.stderr)
+            return 2
+        return check(REPO_ROOT, args.compile_db)
+    except tsast.KitMissing as exc:
+        print(f"check-no-unchecked-access: {exc}", file=sys.stderr)
+        return 3
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

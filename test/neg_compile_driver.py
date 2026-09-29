@@ -196,7 +196,7 @@ def main() -> int:
     # semantic flag, so append `enforce` to override whatever the
     # replayed preset command carried.  No-op under default/tsan
     # (already enforce); fixes the release preset.  The flag does not
-    # depend on the fixes in toolchain/gcc/patches.  Only appended when
+    # depend on the fixes in utils/toolchain/gcc/patches.  Only appended when
     # contracts are already enabled on the replayed command.
     if any(arg.startswith("-fcontract") for arg in argv):
         argv.append("-fcontract-evaluation-semantic=enforce")

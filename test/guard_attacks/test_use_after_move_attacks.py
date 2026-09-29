@@ -23,7 +23,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "utils" / "scripts"))
 
 import tsast  # noqa: E402  (the path insert above has to come first)
 
@@ -48,7 +48,7 @@ LEDGER_BOUND = 5
 EVASION_PREFIX = "evade_"
 
 CORPUS = Path("test/guard_attacks/use_after_move_evasions.cpp")
-GUARD = Path("scripts/check-use-after-move.py")
+GUARD = Path("utils/scripts/check-use-after-move.py")
 CONTROL_NAME = "control_use_after_move"
 CONTROL = f"""
 namespace use_after_move_evasions {{
@@ -59,7 +59,7 @@ void {CONTROL_NAME}(Token token) {{ sink(std::move(token)); read(token); }}
 
 def load_guard(root: Path):
     """Import the guard as a module, so its walker can read one file."""
-    sys.path.insert(0, str(root / "scripts"))
+    sys.path.insert(0, str(root / "utils" / "scripts"))
     spec = importlib.util.spec_from_file_location("check_use_after_move", root / GUARD)
     module = importlib.util.module_from_spec(spec)
     sys.modules["check_use_after_move"] = module

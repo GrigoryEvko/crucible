@@ -1,7 +1,0 @@
-# C array data members that scripts/check-no-raw-array-member.py admits.
-#
-# One line per member: `path name reason`.  An entry whose member is gone
-# fails the gate, so this list only shrinks.  Each entry here is a member in a
-# file that another change owns at the time of writing.  The change that moves
-# the member to std::array or fixy::FixedArray deletes its line in the same
-# commit.

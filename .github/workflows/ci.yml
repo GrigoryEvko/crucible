@@ -8,7 +8,7 @@
 # Tiers:
 #   * guards  — bash/ripgrep discipline suite. ubuntu-latest, no compiler.
 #   * patched-gcc — builds the patched GCC for each arch with
-#               toolchain/gcc/build.sh, and caches the install
+#               utils/toolchain/gcc/build.sh, and caches the install
 #               (.github/workflows/patched-gcc.yml).
 #   * build   — matrix(arch × preset) full compile + ctest, in a fedora:44
 #               container with the patched GCC 16.2.1
@@ -19,8 +19,8 @@
 #   * fuzz    — default+CRUCIBLE_FUZZ, build + run the Philox-seeded smoke.
 #
 # The toolchain: each job that compiles Crucible uses the patched GCC from the
-# patched-gcc job, which is the upstream commit in toolchain/gcc/BASE plus the
-# patches in toolchain/gcc/patches.  Local development builds the same compiler
+# patched-gcc job, which is the upstream commit in utils/toolchain/gcc/BASE plus the
+# patches in utils/toolchain/gcc/patches.  Local development builds the same compiler
 # with the same script.  cmake/Toolchain-gcc16.cmake refuses a compiler without
 # each fix, so no job can compile with the stock g++ of the container.
 #
@@ -107,8 +107,8 @@ jobs:
       # GitHub, and no runner label changes.
       - name: Install the pinned tree-sitter C++ kit (self-test + install)
         run: |
-          bash scripts/install-tree-sitter.sh --self-test
-          bash scripts/install-tree-sitter.sh
+          bash utils/scripts/install-tree-sitter.sh --self-test
+          bash utils/scripts/install-tree-sitter.sh
 
       # The guards read shell scripts with ast-grep's bash grammar, so a git
       # call inside a heredoc body or a comment is not a call.  The installer
@@ -116,8 +116,8 @@ jobs:
       # runs a fixture through the binary.  The binary lands in .tools/.
       - name: Install the pinned ast-grep (self-test + install)
         run: |
-          bash scripts/install-ast-grep.sh --self-test
-          bash scripts/install-ast-grep.sh
+          bash utils/scripts/install-ast-grep.sh --self-test
+          bash utils/scripts/install-ast-grep.sh
 
       # Non-blocking for now, matching the aarch64 and vessel-dispatch
       # convention: flip `continue-on-error` off once a run confirms the
@@ -137,167 +137,167 @@ jobs:
         continue-on-error: true
         run: |
           clang-format --version
-          bash scripts/check-clang-format.sh --self-test
-          bash scripts/check-clang-format.sh
+          bash utils/scripts/check-clang-format.sh --self-test
+          bash utils/scripts/check-clang-format.sh
 
       # parse_clean owns the question every AST gate depends on: does the file
       # parse. A file that does not parse is a silent hole in all of them at
       # once, so this runs before any gate that reads an AST.
       - name: AST parse coverage (self-test + scan)
         run: |
-          python3 scripts/tsast.py --self-test
-          python3 scripts/check-parse-clean.py --self-test
-          python3 scripts/check-parse-clean.py
+          python3 utils/scripts/tsast.py --self-test
+          python3 utils/scripts/check-parse-clean.py --self-test
+          python3 utils/scripts/check-parse-clean.py
 
       - name: trait injection guard (self-test + scan)
         run: |
-          python3 scripts/check-trait-injection.py --self-test
-          python3 scripts/check-trait-injection.py
+          python3 utils/scripts/check-trait-injection.py --self-test
+          python3 utils/scripts/check-trait-injection.py
 
       - name: contract cite regression (self-test + pre-callsite count vs baseline)
         run: |
-          python3 scripts/audit-pre-callsite-count.py --self-test
-          python3 scripts/audit-pre-callsite-count.py --check scripts/contracts-baseline.json
+          python3 utils/scripts/audit-pre-callsite-count.py --self-test
+          python3 utils/scripts/audit-pre-callsite-count.py --check utils/scripts/contracts-baseline.json
 
       - name: contract decide-cite ratio (self-test + scan)
         run: |
-          python3 scripts/audit-decide-cite-ratio.py --self-test
-          python3 scripts/audit-decide-cite-ratio.py
+          python3 utils/scripts/audit-decide-cite-ratio.py --self-test
+          python3 utils/scripts/audit-decide-cite-ratio.py
 
       - name: refined/pre subsumption (self-test + scan)
         run: |
-          python3 scripts/check-refined-pre-subsumption.py --self-test
-          python3 scripts/check-refined-pre-subsumption.py
+          python3 utils/scripts/check-refined-pre-subsumption.py --self-test
+          python3 utils/scripts/check-refined-pre-subsumption.py
 
       - name: mint pattern (self-test + scan)
         run: |
-          python3 scripts/check-mint-pattern.py --self-test
-          python3 scripts/check-mint-pattern.py
+          python3 utils/scripts/check-mint-pattern.py --self-test
+          python3 utils/scripts/check-mint-pattern.py
 
       - name: permission storage antipattern (self-test + scan)
         run: |
-          python3 scripts/check-permission-storage.py --self-test
-          python3 scripts/check-permission-storage.py
+          python3 utils/scripts/check-permission-storage.py --self-test
+          python3 utils/scripts/check-permission-storage.py
 
       - name: no reinterpret_cast, no vector::reserve, no band-3 file stream, no process spawn (self-test + scan)
         run: |
-          python3 scripts/check-banned-calls.py --self-test
-          python3 scripts/check-banned-calls.py
+          python3 utils/scripts/check-banned-calls.py --self-test
+          python3 utils/scripts/check-banned-calls.py
 
       - name: fixy hardware discipline (self-test + scan)
         run: |
-          python3 scripts/check-fixy-hw-discipline.py --self-test
-          python3 scripts/check-fixy-hw-discipline.py
+          python3 utils/scripts/check-fixy-hw-discipline.py --self-test
+          python3 utils/scripts/check-fixy-hw-discipline.py
 
       - name: hardening grant coverage (self-test + scan)
         run: |
-          python3 scripts/check-syscall-grant-coverage.py --self-test
-          python3 scripts/check-syscall-grant-coverage.py
+          python3 utils/scripts/check-syscall-grant-coverage.py --self-test
+          python3 utils/scripts/check-syscall-grant-coverage.py
 
       - name: git writes only to a named, isolated repository (self-test + scan)
         run: |
-          python3 scripts/check-git-isolation.py --self-test
-          python3 scripts/check-git-isolation.py
+          python3 utils/scripts/check-git-isolation.py --self-test
+          python3 utils/scripts/check-git-isolation.py
 
-      # scripts/guard-engines.txt gives the engine of each script, and the
+      # utils/scripts/guard-engines.txt gives the engine of each script, and the
       # guard holds each row to the code, so no script reads C++ as text.
       # It reads shell with the pinned ast-grep that a step above installs.
       - name: every script names its engine and reads no C++ as text (self-test + scan)
         run: |
-          python3 scripts/check-guard-engines.py --self-test
-          python3 scripts/check-guard-engines.py
+          python3 utils/scripts/check-guard-engines.py --self-test
+          python3 utils/scripts/check-guard-engines.py
 
       - name: erased brand spellings only decrease (self-test + scan)
         run: |
-          python3 scripts/check-brand-drain.py --self-test
-          python3 scripts/check-brand-drain.py
+          python3 utils/scripts/check-brand-drain.py --self-test
+          python3 utils/scripts/check-brand-drain.py
 
       # The compile-database half of the scan runs in the build legs through
       # ctest. Here the self-test runs, and the scan reads the presets and
       # the sources.
       - name: no -ffast-math (self-test + scan)
         run: |
-          python3 scripts/check-no-ffast-math.py --self-test
-          python3 scripts/check-no-ffast-math.py
+          python3 utils/scripts/check-no-ffast-math.py --self-test
+          python3 utils/scripts/check-no-ffast-math.py
 
       - name: fixy dimension prose (self-test + scan)
         run: |
-          python3 scripts/check-fixy-dim-prose.py --self-test
-          python3 scripts/check-fixy-dim-prose.py
+          python3 utils/scripts/check-fixy-dim-prose.py --self-test
+          python3 utils/scripts/check-fixy-dim-prose.py
 
       - name: syscall capability admission (self-test + scan)
         run: |
-          python3 scripts/check-syscall-capability.py --self-test
-          python3 scripts/check-syscall-capability.py
+          python3 utils/scripts/check-syscall-capability.py --self-test
+          python3 utils/scripts/check-syscall-capability.py
 
       - name: row-contains discipline (self-test + scan)
         run: |
-          python3 scripts/check-row-contains-discipline.py --self-test
-          python3 scripts/check-row-contains-discipline.py
+          python3 utils/scripts/check-row-contains-discipline.py --self-test
+          python3 utils/scripts/check-row-contains-discipline.py
 
       - name: stub-vs-live discipline (self-test + scan)
         run: |
-          python3 scripts/check-stub-discipline.py --self-test
-          python3 scripts/check-stub-discipline.py
+          python3 utils/scripts/check-stub-discipline.py --self-test
+          python3 utils/scripts/check-stub-discipline.py
 
       - name: lock-free sibling-assert discipline (self-test + scan)
         run: |
-          python3 scripts/check-lock-free-asserts.py --self-test
-          python3 scripts/check-lock-free-asserts.py
+          python3 utils/scripts/check-lock-free-asserts.py --self-test
+          python3 utils/scripts/check-lock-free-asserts.py
 
       - name: each static object is one per process or rostered (self-test + scan)
         run: |
-          python3 scripts/check-process-wide-state.py --self-test
-          python3 scripts/check-process-wide-state.py
+          python3 utils/scripts/check-process-wide-state.py --self-test
+          python3 utils/scripts/check-process-wide-state.py
 
       - name: mint inventory (self-test + drift check + HS14 floor)
         run: |
-          python3 scripts/gen-mint-inventory.py --self-test
-          python3 scripts/gen-mint-inventory.py --check
-          python3 scripts/gen-mint-inventory.py --check-floor
+          python3 utils/scripts/gen-mint-inventory.py --self-test
+          python3 utils/scripts/gen-mint-inventory.py --check
+          python3 utils/scripts/gen-mint-inventory.py --check-floor
 
       - name: split trait orphan specializations (self-test + scan)
         run: |
-          python3 scripts/check-splits-orphan.py --self-test
-          python3 scripts/check-splits-orphan.py
+          python3 utils/scripts/check-splits-orphan.py --self-test
+          python3 utils/scripts/check-splits-orphan.py
 
       - name: unchecked access context only in reviewed walks (self-test + scan)
         run: |
-          python3 scripts/check-no-unchecked-access.py --self-test
-          python3 scripts/check-no-unchecked-access.py
+          python3 utils/scripts/check-no-unchecked-access.py --self-test
+          python3 utils/scripts/check-no-unchecked-access.py
 
       - name: detail namespaces of foundation and fixy only inside the layers (self-test + scan)
         run: |
-          python3 scripts/check-detail-namespace.py --self-test
-          python3 scripts/check-detail-namespace.py
+          python3 utils/scripts/check-detail-namespace.py --self-test
+          python3 utils/scripts/check-detail-namespace.py
 
       - name: each context owner defined in its one reviewed file (self-test + scan)
         run: |
-          python3 scripts/check-host-owners.py --self-test
-          python3 scripts/check-host-owners.py
+          python3 utils/scripts/check-host-owners.py --self-test
+          python3 utils/scripts/check-host-owners.py
 
       - name: init and background doors opened only from reviewed entry points (self-test + scan)
         run: |
-          python3 scripts/check-ctx-init-door.py --self-test
-          python3 scripts/check-ctx-init-door.py
+          python3 utils/scripts/check-ctx-init-door.py --self-test
+          python3 utils/scripts/check-ctx-init-door.py
 
       - name: single combine_ids source of truth (self-test + scan)
         run: |
-          python3 scripts/check-no-combine-ids-duplicate.py --self-test
-          python3 scripts/check-no-combine-ids-duplicate.py
+          python3 utils/scripts/check-no-combine-ids-duplicate.py --self-test
+          python3 utils/scripts/check-no-combine-ids-duplicate.py
 
       - name: no task, stage or tracker references (self-test + scan)
         run: |
-          python3 scripts/check-no-coordination-refs.py --self-test
-          python3 scripts/check-no-coordination-refs.py
+          python3 utils/scripts/check-no-coordination-refs.py --self-test
+          python3 utils/scripts/check-no-coordination-refs.py
 
       - name: session oracle drift (check)
-        run: bash scripts/session-oracle.sh --check
+        run: bash utils/scripts/session-oracle.sh --check
 
       # The scan reads the tests of a configured build, so it runs in the
       # build legs through ctest. Only its self-test runs here.
       - name: ci_guard label coverage (self-test)
-        run: python3 scripts/check-ci-guard-labels.py --self-test
+        run: python3 utils/scripts/check-ci-guard-labels.py --self-test
 
   # ---------------------------------------------------------------------------
   # The substrate guards. Same free runner, no compiler.
@@ -315,17 +315,17 @@ jobs:
       # The two guards read the code from the parse tree, so this job needs
       # the pinned kit.
       - name: Install the pinned tree-sitter C++ kit
-        run: bash scripts/install-tree-sitter.sh
+        run: bash utils/scripts/install-tree-sitter.sh
 
       - name: layer boundary (self-test + scan)
         run: |
-          python3 scripts/check-layer-boundary.py --self-test
-          python3 scripts/check-layer-boundary.py
+          python3 utils/scripts/check-layer-boundary.py --self-test
+          python3 utils/scripts/check-layer-boundary.py
 
       - name: derived cardinality pins (self-test + scan)
         run: |
-          python3 scripts/check-derived-pins.py --self-test
-          python3 scripts/check-derived-pins.py
+          python3 utils/scripts/check-derived-pins.py --self-test
+          python3 utils/scripts/check-derived-pins.py
 
   # ---------------------------------------------------------------------------
   # The patched GCC, built once for each arch and cached.  The jobs below
@@ -410,7 +410,7 @@ jobs:
       # MPFR and MPC libraries that the patched GCC runs on, and isl is the
       # last library it needs.  The patched GCC carries its own sanitizer
       # runtimes and libstdc++.
-      # curl, tar and coreutils serve scripts/install-tree-sitter.sh: it
+      # curl, tar and coreutils serve utils/scripts/install-tree-sitter.sh: it
       # downloads one release asset, checks its SHA256 and unpacks it. The
       # fedora:44 base carries none of the three reliably, and weak deps are off.
       - name: Install toolchain + BPF stack + ccache
@@ -464,12 +464,12 @@ jobs:
       # the compile rather than before the test step, so a kit failure costs one
       # download instead of a full build.  The pin covers both matrix arches.
       - name: Install the pinned tree-sitter C++ kit
-        run: bash scripts/install-tree-sitter.sh
+        run: bash utils/scripts/install-tree-sitter.sh
 
       # The git isolation guard and the guard-engines guard read shell scripts
       # with the pinned ast-grep.
       - name: Install the pinned ast-grep
-        run: bash scripts/install-ast-grep.sh
+        run: bash utils/scripts/install-ast-grep.sh
 
       # The committed vmlinux.h is an x86_64 BTF dump; on aarch64 the BPF
       # programs need the matching arm64 layout. Regenerate it from the runner

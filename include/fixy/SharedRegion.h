@@ -302,7 +302,7 @@ static_assert(std::is_same_v<Read::brand_type, Erased>);
 //
 // The door's claim is spelled at a named brand rather than at the
 // erased one.  A region spelled with no brand argument is DefaultBrand,
-// which scripts/check-brand-drain.py counts and does not let a new file
+// which utils/scripts/check-brand-drain.py counts and does not let a new file
 // add, and the claim reads the same at either brand.
 using Shared = SharedRegion<int, probe_tag, probe_brand>;
 static_assert(!std::is_copy_constructible_v<Shared>);

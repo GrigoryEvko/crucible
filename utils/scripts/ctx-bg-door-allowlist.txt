@@ -1,0 +1,24 @@
+# ctx-bg-door allowlist — the scopes of production code that may name
+# host::BackgroundOwner, the owner of the one door to the background context.
+# utils/scripts/check-ctx-init-door.py reads this file.
+#
+# The door gives a background context, and a background context permits the
+# effects of a background thread: Bg, Alloc, IO and Block.  So a call of the
+# door from a scope gives that scope those effects.  Only the entry function
+# of a background thread calls the door, on that thread.  The definition site
+# in include/foundation/effects/Effect.h names the owner too, and it has its
+# row.
+#
+# Each row is `PATH SCOPE [xN] — <why this scope may name the owner>`.  The
+# scope is the enclosing function as the parse gives it, or
+# namespace-scope, or macro.  The count states how many uses the scope
+# has.  A new use in a listed scope is more than the count, and it fails.
+# A count above the uses of its scope is stale, and it fails too.
+#
+# test/ and bench/ are not scanned.  The test door serves them.
+
+include/crucible/BackgroundThread.h BackgroundThread::BuildTraceFn — the pipeline runs the build stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate trace graphs and to wait on the arena gate.
+include/crucible/BackgroundThread.h BackgroundThread::MakeRegionFn — the pipeline runs the publish stage as the entry function of a stage thread, or inline on the pipeline thread, and both are background threads.  The stage takes the context once, before its loop, to allocate regions, to wait on the arena gate and to hand to the region callback.
+include/crucible/BackgroundThread.h BackgroundThread::start — the lambda that start() gives to the pipeline thread is the entry function of that thread.  It takes the context once, on that thread, and hands it to run_in_row.
+include/foundation/effects/Effect.h namespace-scope x3 — declares the owner, makes it a friend of the background key, and defines it with its door.  This is the definition site.
+utils/tools/crucible_hwprobe.cpp main — the one-shot hardware probe runs no dispatch thread, so its main thread is its only thread, and the ledger store it drives reads and writes a file and waits on the disk.

@@ -1,0 +1,32 @@
+# fullness-guard-allowlist.txt — admitted `== <capacity>` sites.
+#
+# utils/scripts/check-fullness-guard.py reads this file.  A row is
+# `path:text — reason`, where `text` is the first line of the comparison,
+# trimmed.  The key is the content of the line, not its number, so an edit
+# above the site does not move it.  One row admits every site of the file
+# with that text.  A row with no reason, a duplicate row and a row that
+# matches no live site fail the check.
+#
+# ── NOT-FOUND SENTINELS ──────────────────────────────────────────────
+# Each row compares an index with a container bound to find a failed
+# lookup, not a full container.  The search returns exactly the bound on a
+# miss, and the code stops before an indexed access, so the equality is
+# exact.  `>=` is also correct, but it says less than the code means.
+#
+# A refined index type does not remove these rows.  A refinement bounded
+# at N-1 cannot hold the miss, and one bounded at N cannot tell the miss
+# from a real index N.  The sentinel is a problem of optionality, not of
+# range.  A strong index with a none() state, the CRUCIBLE_STRONG_ID
+# pattern of the Code Guide, removes them: the search returns that type,
+# and the caller writes `slot.is_none()` instead of `index == bound`.
+#
+#   topology/Pingmesh.h        find_peer() can return a PeerSlot.  The
+#                              same idiom is also at two sites that spell
+#                              it `!= MaxPeers`, which the guard does not
+#                              read.
+#   observe/SyntheticProbe.h   find_peer() can return a PeerSlot.  One row
+#                              holds two sites with the same text.
+
+include/crucible/topology/Pingmesh.h:if (src == MaxPeers || dst == MaxPeers) { — not-found sentinel. find_peer() returns MaxPeers on a miss, and the code checks both operands before it indexes peers_.
+include/crucible/observe/SyntheticProbe.h:if (peer_index == peers_.size() || !peers_[peer_index].enabled_kinds.test(kind)) { — not-found sentinel. find_peer() returns peers_.size() on a miss, and `||` stops before peers_[peer_index].
+include/crucible/observe/SyntheticProbe.h:if (peer_index == peers_.size() || !peers_[peer_index].enabled_kinds.test(outcome.kind)) { — not-found sentinel, the same shape as the row above.

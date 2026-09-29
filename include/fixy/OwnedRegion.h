@@ -113,7 +113,7 @@ struct split_mint_t {};
 //
 //   A copied receipt.  The type is move-only, and the copy is deleted
 //   with its reason.  A second move of one receipt compiles, because a
-//   moved-from receipt is still an object.  scripts/check-use-after-move.py
+//   moved-from receipt is still an object.  utils/scripts/check-use-after-move.py
 //   refuses that second move.  The shards of the first recombine are
 //   then empty at a null base, so the whole that a second recombine
 //   rebuilds from them covers no byte.

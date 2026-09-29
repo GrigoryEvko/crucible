@@ -4,7 +4,7 @@
 // reference or pointer through a member the guard did not sanction, and
 // the compiler is what reads the return type, so no spelling evades it.
 //
-// scripts/check-escape-doors.py reads the parse tree of the source.  It
+// utils/scripts/check-escape-doors.py reads the parse tree of the source.  It
 // is a coarse net: a return type that a macro hides is a raw escape it
 // never sees, and a missed escape is the dangerous direction.  This
 // header closes that gap for member functions.  It reads the public

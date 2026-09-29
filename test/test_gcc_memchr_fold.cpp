@@ -1,5 +1,5 @@
 // A regression test for a defect of the GCC constant evaluator, which the
-// patch series in toolchain/gcc/patches fixes.
+// patch series in utils/toolchain/gcc/patches fixes.
 //
 // For __builtin_memchr, strchr, strrchr and strstr, an unpatched GCC 10.1
 // through 16.2 rebases the folded result on the original first argument

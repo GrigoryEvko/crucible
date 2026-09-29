@@ -151,7 +151,7 @@ function(crucible_test name)
 endfunction()
 
 # A regression test for the constant-evaluator defect that the patch
-# series in toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
+# series in utils/toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
 # an offset pointer.  A compiler without the fix cannot compile it.
 crucible_test(test_gcc_memchr_fold)
 
@@ -291,13 +291,13 @@ crucible_test(test_chase_lev_deque)
 # ever carried.  The self-test needs the project compiler, because the
 # system g++ may be too old for the fixtures.
 add_test(NAME no_throw_no_rtti_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-throw-no-rtti.sh --self-test)
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh --self-test)
 set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
   ENVIRONMENT "CRUCIBLE_CXX=${CMAKE_CXX_COMPILER}"
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 add_test(NAME no_throw_no_rtti
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-no-throw-no-rtti.sh
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh
           $<TARGET_FILE:crucible> $<TARGET_FILE:foundation>)
 set_tests_properties(no_throw_no_rtti PROPERTIES
   LABELS "ci_guard"
@@ -313,7 +313,7 @@ if(CRUCIBLE_UBSAN_STRICT)
 endif()
 
 # Every configure refuses a compiler that does not have each fix in
-# toolchain/gcc/patches.  This test runs the probes on the compiler of the
+# utils/toolchain/gcc/patches.  This test runs the probes on the compiler of the
 # build, which must pass, and on stub compilers, which must each get the
 # result that their behaviour calls for.  It resolves a ccache link to the
 # compiler that ccache runs, and it configures the tree with a compiler that
@@ -330,22 +330,22 @@ set_tests_properties(patched_gcc_probe_self_test PROPERTIES LABELS "ci_guard")
 # only compiler this tree builds with, so the claim is checked here
 # rather than by an attribute no compiler reads.
 add_test(NAME lifetime_twin_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-lifetime-twin.py --self-test)
 add_test(NAME lifetime_twin
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lifetime-twin.py --quiet)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-lifetime-twin.py --quiet)
 set_tests_properties(lifetime_twin lifetime_twin_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 
 # A substrate trait or a fail-closed relation is specialized only beside
-# the declarations it names.  scripts/check-trait-injection.py reads each
+# the declarations it names.  utils/scripts/check-trait-injection.py reads each
 # specialization and each reopening of a relation namespace from the parse
 # tree.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME trait_guard_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-trait-injection.py
           --self-test)
 add_test(NAME trait_guard
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-trait-injection.py)
 set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
@@ -357,9 +357,9 @@ set_tests_properties(trait_guard trait_guard_self_test PROPERTIES
 # test_escape_reflection; this script covers the free-function residue
 # reflection cannot walk.
 add_test(NAME escape_doors_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-escape-doors.py --self-test)
 add_test(NAME escape_doors
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-escape-doors.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-escape-doors.py)
 set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
@@ -367,14 +367,14 @@ set_tests_properties(escape_doors escape_doors_self_test PROPERTIES
 # --check compares the live counts with the committed baseline.  A counter
 # that rises passes, and a counter that falls fails the test.  After a
 # deliberate removal, write the baseline again with
-# `python3 scripts/audit-pre-callsite-count.py --baseline
-# scripts/contracts-baseline.json` and give the reason in the commit.
+# `python3 utils/scripts/audit-pre-callsite-count.py --baseline
+# utils/scripts/contracts-baseline.json` and give the reason in the commit.
 add_test(NAME contract_cite_regression_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/audit-pre-callsite-count.py
           --self-test)
 add_test(NAME contract_cite_regression
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.py
-          --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/audit-pre-callsite-count.py
+          --check ${CMAKE_SOURCE_DIR}/utils/scripts/contracts-baseline.json)
 set_tests_properties(contract_cite_regression contract_cite_regression_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
@@ -385,10 +385,10 @@ set_tests_properties(contract_cite_regression contract_cite_regression_self_test
 # A procedure inside the window is informational.  A procedure past it
 # with too few cites fails the test.
 add_test(NAME contract_decide_cite_ratio_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/audit-decide-cite-ratio.py
           --self-test)
 add_test(NAME contract_decide_cite_ratio
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/audit-decide-cite-ratio.py)
 set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
@@ -398,27 +398,27 @@ set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_
 # refuses it.  The guard reads parameters, aliases, CRUCIBLE_PRE calls and
 # P2900 pre clauses from the parse tree.
 add_test(NAME refined_pre_subsumption_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-refined-pre-subsumption.py
           --self-test)
 add_test(NAME refined_pre_subsumption
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-refined-pre-subsumption.py)
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
-# The §XXI mint pattern.  scripts/check-mint-pattern.py holds each mint to
+# The §XXI mint pattern.  utils/scripts/check-mint-pattern.py holds each mint to
 # the five axes nodiscard, constexpr, noexcept, requires and ctxfit, read
 # from the parse tree, and it refuses a dead or malformed exemption.
 add_test(NAME mint_pattern_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-mint-pattern.py
           --self-test)
 add_test(NAME mint_pattern
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-mint-pattern.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-mint-pattern.py)
 set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES
   LABELS "ci_guard;ast")
 set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES SKIP_RETURN_CODE 3)
 # The witness roster.  Every type that attests to a fact it cannot see
 # — a pin, a mapping, a descriptor, a permission, a context — is named
-# in scripts/witness-roster.txt with the expression a forger would
+# in utils/scripts/witness-roster.txt with the expression a forger would
 # write, and test/fixy/CMakeLists.txt stands one generated fixture on
 # each closed line.  --check walks include/fixy and include/foundation
 # and fails when a class showing a door shape — a mint_ friend, a
@@ -431,37 +431,37 @@ set_tests_properties(mint_pattern mint_pattern_self_test PROPERTIES SKIP_RETURN_
 # skip.
 add_test(NAME witness_roster_self_test
   COMMAND ${CMAKE_COMMAND} -E env WITNESS_BUILD_DIR=${CMAKE_BINARY_DIR}
-          python3 ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.py --self-test)
+          python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-witness-roster.py --self-test)
 add_test(NAME witness_roster
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-witness-roster.py --check)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-witness-roster.py --check)
 set_tests_properties(witness_roster witness_roster_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 # A Permission held as a class member is the [[no_unique_address]]
 # member of a handle (CLAUDE.md §IX).  Without the mark, the holder can
 # be aliased across threads and the type system does not see it.
-# scripts/check-permission-storage.py reads each member from the parse
+# utils/scripts/check-permission-storage.py reads each member from the parse
 # tree, so an initializer, two declarators, a member over two lines, an
 # array and an alias do not hide one.  Exit 3 when the kit is absent
 # reports a skip.
 add_test(NAME permission_storage_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-permission-storage.py
           --self-test)
 add_test(NAME permission_storage
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-permission-storage.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-permission-storage.py)
 set_tests_properties(permission_storage permission_storage_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
 # Each object with static storage duration is one per process, through
-# CRUCIBLE_PROCESS_WIDE, or scripts/process-wide-roster.txt says why one copy
+# CRUCIBLE_PROCESS_WIDE, or utils/scripts/process-wide-roster.txt says why one copy
 # in each shared library is correct.  The build hides symbols, so an inline
 # object that two shared libraries compile has two copies without the marker.
-# scripts/check-process-wide-state.py reads each object from the parse tree.
+# utils/scripts/check-process-wide-state.py reads each object from the parse tree.
 # Exit 3 when the kit is absent reports a skip.
 add_test(NAME process_wide_state_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-process-wide-state.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-process-wide-state.py --self-test)
 add_test(NAME process_wide_state
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-process-wide-state.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-process-wide-state.py)
 set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
@@ -469,97 +469,97 @@ set_tests_properties(process_wide_state process_wide_state_self_test PROPERTIES
 # (CLAUDE.md §IV), the file-stream ban of the fixy-only band-3 directories
 # and the process-spawn ban of production code (CLAUDE.md §IX), read from
 # the parse tree of the pinned kit.  Each ban has a content-keyed allowlist:
-# scripts/no-reinterpret-allowlist.txt, scripts/no-reserve-allowlist.txt,
-# scripts/no-file-stream-allowlist.txt and
-# scripts/no-spawn-process-allowlist.txt.  The self-test plants each shape
+# utils/scripts/no-reinterpret-allowlist.txt, utils/scripts/no-reserve-allowlist.txt,
+# utils/scripts/no-file-stream-allowlist.txt and
+# utils/scripts/no-spawn-process-allowlist.txt.  The self-test plants each shape
 # that a line regex misses or misreads.  Exit 3 when the kit is absent
 # reports a skip.
 add_test(NAME banned_calls_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-banned-calls.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-banned-calls.py
           --self-test)
 add_test(NAME banned_calls
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-banned-calls.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-banned-calls.py)
 set_tests_properties(banned_calls banned_calls_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # The hardware-axis gate has two halves.  test_hardware_axis_pins.cpp holds
 # one row for each block, and the compiler walks the block by reflection:
 # the row fails when an axis of the row has no atom alias, or an atom alias
-# has an axis that the row does not list.  scripts/check-fixy-hw-discipline.py
+# has an axis that the row does not list.  utils/scripts/check-fixy-hw-discipline.py
 # reads the rows from the parse tree and requires a row for every `*_hw`
 # namespace under include/ and src/, with its block outside every
 # preprocessor conditional.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME fixy_hw_discipline_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-fixy-hw-discipline.py
           --self-test)
 add_test(NAME fixy_hw_discipline
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-hw-discipline.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-fixy-hw-discipline.py)
 set_tests_properties(fixy_hw_discipline fixy_hw_discipline_self_test PROPERTIES
     LABELS "ci_guard;ast"
     SKIP_RETURN_CODE 3)
-# The hardening grant set.  scripts/check-syscall-grant-coverage.py
+# The hardening grant set.  utils/scripts/check-syscall-grant-coverage.py
 # derives the system calls that the hardening apply path issues from the
 # parse tree, and fails when that set and the declared
 # hardening_syscall_atoms tuple disagree.  Exit 3 when the kit is absent
 # reports a skip.
 add_test(NAME syscall_grant_coverage_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-syscall-grant-coverage.py --self-test)
 add_test(NAME syscall_grant_coverage
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-grant-coverage.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-syscall-grant-coverage.py)
 set_tests_properties(syscall_grant_coverage syscall_grant_coverage_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # A script that writes to a git repository names it and clears the
-# caller's repository variables.  scripts/check-git-isolation.py refuses a
-# script under scripts/, tools/ or toolchain/ that runs git init, commit,
-# update-ref, reset, checkout, fetch or apply without
-# scripts/throwaway_repo.py, or, in shell, without the unset and the
+# caller's repository variables.  utils/scripts/check-git-isolation.py refuses a
+# script under utils/ that runs git init, commit, update-ref, reset, checkout,
+# fetch or apply without
+# utils/scripts/throwaway_repo.py, or, in shell, without the unset and the
 # --absolute-git-dir check.  It reads shell with the pinned ast-grep, and
 # exit 3 when that binary is absent reports a skip.
 add_test(NAME git_isolation_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-git-isolation.py --self-test)
 add_test(NAME git_isolation
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-git-isolation.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-git-isolation.py)
 set_tests_properties(git_isolation git_isolation_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
-# No script reads C++ source as text.  scripts/guard-engines.txt gives the
-# engine of each script under scripts/, test/, tools/mutation/ and the
-# session oracle emitter, and scripts/check-guard-engines.py holds each row
+# No script reads C++ source as text.  utils/scripts/guard-engines.txt gives the
+# engine of each script under utils/scripts/, test/, utils/tools/mutation/ and the
+# session oracle emitter, and utils/scripts/check-guard-engines.py holds each row
 # to the code: no regex or string method on the text of a tsast node, no
 # grep, rg, awk or sed over C++ in a shell script, and no cxx_lex.  It reads
 # shell with the pinned ast-grep, and exit 3 when that binary is absent
 # reports a skip.
 add_test(NAME guard_engines_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-guard-engines.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-guard-engines.py --self-test)
 add_test(NAME guard_engines
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-guard-engines.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-guard-engines.py)
 set_tests_properties(guard_engines guard_engines_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # A spelling of a branded type that names no brand is the erased
-# identity.  scripts/check-brand-drain.py reads those spellings from the
-# parse tree, and scripts/brand-drain.txt holds one count per file.  A
+# identity.  utils/scripts/check-brand-drain.py reads those spellings from the
+# parse tree, and utils/scripts/brand-drain.txt holds one count per file.  A
 # count can only decrease.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME brand_drain_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-brand-drain.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-brand-drain.py
           --self-test)
 add_test(NAME brand_drain
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-brand-drain.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-brand-drain.py)
 set_tests_properties(brand_drain brand_drain_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # std::start_lifetime_as over an array of proofs, over an aggregate that
 # holds one, and std::start_lifetime_as_array over proofs each give a
 # pointer to a proof whose lifetime never started, and no property of a
-# type refuses them.  scripts/check-start-lifetime.py refuses each use of
+# type refuses them.  utils/scripts/check-start-lifetime.py refuses each use of
 # the two library names outside a reviewed and counted list.  The guard
 # reads the compile database of this build, so a generated source and a
 # source with an unusual suffix are in scope.  The self-test plants each
 # route and each known bypass.  Exit 3 (the pinned tree-sitter kit is
 # absent) is a skip.
 add_test(NAME start_lifetime_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-start-lifetime.py --self-test)
 add_test(NAME start_lifetime
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-start-lifetime.py
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-start-lifetime.py
           --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
     LABELS "ci_guard"
@@ -567,40 +567,40 @@ set_tests_properties(start_lifetime start_lifetime_self_test PROPERTIES
 # A union, a cast of a void pointer, an allocator, an explicit
 # instantiation and a specialization of a door each build a proof type
 # with no call to its door, and the language refuses none of them.
-# scripts/check-proof-routes.py refuses each one outside a reviewed and
+# utils/scripts/check-proof-routes.py refuses each one outside a reviewed and
 # counted list.  It reads the names of the proof types from the witness
 # roster and from the reflection walk of test_forgeable_proofs, and it
 # reads the compile database, so a route that a macro forms is seen too.
 add_test(NAME proof_routes_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-proof-routes.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-proof-routes.py --self-test)
 add_test(NAME proof_routes
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-proof-routes.py
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-proof-routes.py
           --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json
           --proof-names-binary $<TARGET_FILE:test_forgeable_proofs>)
 set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# scripts/preprocessed.py preprocesses each unit of the compile database
+# utils/scripts/preprocessed.py preprocesses each unit of the compile database
 # one time for check-start-lifetime.py and check-proof-routes.py together.
 # The self-test proves that a warm run reads the store, that a changed
 # header makes its units stale, and that two runs at one time share work.
 add_test(NAME preprocessed_store_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/preprocessed.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/preprocessed.py --self-test)
 set_tests_properties(preprocessed_store_self_test PROPERTIES
     LABELS "ci_guard")
 # A linear token is an empty class, so a moved-from token looks live, and
 # a second std::move of one Permission gives two owners of one region.
 # sizeof(Permission) stays 1, so no byte records the move.
-# scripts/check-use-after-move.py walks each control-flow path of each
+# utils/scripts/check-use-after-move.py walks each control-flow path of each
 # function body and refuses a read of a name after a move spends it, unless
 # an assignment or a reset builds the value again first.  The reviewed and
-# counted exceptions are in scripts/use-after-move-allowlist.txt.  The
+# counted exceptions are in utils/scripts/use-after-move-allowlist.txt.  The
 # self-test plants the uses that the guard must catch and the correct code
 # that it must accept.
 add_test(NAME use_after_move_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-use-after-move.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-use-after-move.py --self-test)
 add_test(NAME use_after_move
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-use-after-move.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-use-after-move.py)
 set_tests_properties(use_after_move use_after_move_self_test PROPERTIES
     LABELS "ci_guard")
 # The uses after move that the guard does not read, one function each, on
@@ -612,138 +612,138 @@ set_tests_properties(use_after_move_attacks PROPERTIES
     LABELS "ci_guard")
 # A splice of a private data member has no access check, so
 # access_context::unchecked() is the one door to a proof's private state.
-# scripts/check-no-unchecked-access.py admits it only in the files that
-# scripts/unchecked-access-allowlist.txt names, each with its reason.  A
+# utils/scripts/check-no-unchecked-access.py admits it only in the files that
+# utils/scripts/unchecked-access-allowlist.txt names, each with its reason.  A
 # bare splice of a static data member has no door token, so the guard also
 # refuses a writable private or protected static data member.  It reads the
 # macro expansions of this build too, so a door that ## builds and a member
 # that a macro declares are seen.  Exit 3 (the pinned tree-sitter kit is
 # absent) is a skip.
 add_test(NAME no_unchecked_access_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-unchecked-access.py --self-test)
 add_test(NAME no_unchecked_access
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-unchecked-access.py
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-unchecked-access.py
           --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(no_unchecked_access no_unchecked_access_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A function in a detail namespace does the work of a door with no gate of
-# its own.  scripts/check-detail-namespace.py refuses a use of a detail
+# its own.  utils/scripts/check-detail-namespace.py refuses a use of a detail
 # namespace of foundation or fixy outside the two layers.  The reviewed uses
-# in tests are in scripts/detail-namespace-allowlist.txt, keyed by file and
+# in tests are in utils/scripts/detail-namespace-allowlist.txt, keyed by file and
 # namespace.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
 add_test(NAME detail_namespace_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-detail-namespace.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-detail-namespace.py --self-test)
 add_test(NAME detail_namespace
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-detail-namespace.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-detail-namespace.py)
 set_tests_properties(detail_namespace detail_namespace_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A class of the namespace foundation::effects::host is a door to a context
 # key, because its first definition in any translation unit is legal C++.
-# scripts/check-host-owners.py refuses a definition of one outside the file
-# that scripts/host-owner-roster.txt names.  Exit 3 (the pinned tree-sitter
+# utils/scripts/check-host-owners.py refuses a definition of one outside the file
+# that utils/scripts/host-owner-roster.txt names.  Exit 3 (the pinned tree-sitter
 # kit is absent) is a skip.
 add_test(NAME host_owners_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-host-owners.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-host-owners.py --self-test)
 add_test(NAME host_owners
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-host-owners.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-host-owners.py)
 set_tests_properties(host_owners host_owners_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # host::InitOwner::mint_init_context() is the one production door of the
 # init context, and host::BackgroundOwner::mint_background_context() is the
 # one production door of the background context.  Each context permits
-# effects that the hot path must not have.  scripts/check-ctx-init-door.py
+# effects that the hot path must not have.  utils/scripts/check-ctx-init-door.py
 # rejects a use of either owner in production code outside the scopes of its
-# allowlist (scripts/ctx-init-door-allowlist.txt, scripts/ctx-bg-door-allowlist.txt),
+# allowlist (utils/scripts/ctx-init-door-allowlist.txt, utils/scripts/ctx-bg-door-allowlist.txt),
 # and a stale row.  Exit 3 (the pinned tree-sitter kit is absent) is a skip.
 add_test(NAME ctx_init_door_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-init-door.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-ctx-init-door.py --self-test)
 add_test(NAME ctx_init_door
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-init-door.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-ctx-init-door.py)
 set_tests_properties(ctx_init_door ctx_init_door_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # A write past the end of a C array member lands in the next member of the
 # same object, where the address sanitizer sees valid memory, and no build
-# checks the subscript.  scripts/check-no-raw-array-member.py refuses a C
+# checks the subscript.  utils/scripts/check-no-raw-array-member.py refuses a C
 # array data member and an alias of a C array type in include/foundation and
 # include/fixy.  The reviewed exceptions are in
-# scripts/raw-array-member-allowlist.txt, and a stale entry fails the gate.
+# utils/scripts/raw-array-member-allowlist.txt, and a stale entry fails the gate.
 # Exit 3 (the pinned tree-sitter kit is absent) is a skip.
 add_test(NAME raw_array_member_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-array-member.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-raw-array-member.py --self-test)
 add_test(NAME raw_array_member
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-raw-array-member.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-raw-array-member.py)
 set_tests_properties(raw_array_member raw_array_member_self_test PROPERTIES
     LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 # The fast-math family is banned (CLAUDE.md §V, cmake/FpStrict.cmake is
-# the floor).  scripts/check-no-ffast-math.py reads the compile flags of
+# the floor).  utils/scripts/check-no-ffast-math.py reads the compile flags of
 # this build from its compile database, the link line of each target from
 # the CMake file API, the flag variables of every configure preset, and each
 # optimize attribute, GCC optimize pragma and _Pragma from the parse tree,
 # macro bodies included.  The self-test configures a planted project, so a
 # flag inside a generator expression is judged as the compiler receives it.
 add_test(NAME no_ffast_math_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.py
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-ffast-math.py
           --self-test --cmake ${CMAKE_COMMAND} --cxx ${CMAKE_CXX_COMPILER})
 add_test(NAME no_ffast_math
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-ffast-math.py
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-ffast-math.py
           --build-dir ${CMAKE_BINARY_DIR})
 set_tests_properties(no_ffast_math no_ffast_math_self_test PROPERTIES
     LABELS "ci_guard" SKIP_RETURN_CODE 3)
 # The fixy doc-blocks name an axis by the enum spelling
 # "DimensionAxis::<Name> = <ordinal>", because the retired FX numbering no
-# longer matches the enum ordinals.  scripts/check-fixy-dim-prose.py reads the
+# longer matches the enum ordinals.  utils/scripts/check-fixy-dim-prose.py reads the
 # comments and string literals of include/fixy from the parse tree and refuses
 # the FX spellings "Dim <N>" and "(dim <N>)".  Code is not prose.  Exit 3 when
 # the kit is absent reports a skip.
 add_test(NAME fixy_dim_prose_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-fixy-dim-prose.py --self-test)
 add_test(NAME fixy_dim_prose
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-fixy-dim-prose.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-fixy-dim-prose.py)
 set_tests_properties(fixy_dim_prose fixy_dim_prose_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # Each direct Linux syscall call in include/, src/ and vessel/ carries a
 # `// SYSCALL-CAP-OK: <reason>` comment in its statement or an entry in
-# scripts/syscall-capability-allowlist.txt with its effects::* capability
-# claim.  scripts/check-syscall-capability.py reads the calls from the
+# utils/scripts/syscall-capability-allowlist.txt with its effects::* capability
+# claim.  utils/scripts/check-syscall-capability.py reads the calls from the
 # parse tree, and an entry that matches no live call is stale.  The guard
 # also holds the prose of each entry to its sites: the syscall, the
 # constants the file spells, and the function that holds each call.  Exit 3
 # when the kit is absent reports a skip.
 add_test(NAME syscall_capability_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-syscall-capability.py
           --self-test)
 add_test(NAME syscall_capability
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-syscall-capability.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-syscall-capability.py)
 set_tests_properties(syscall_capability syscall_capability_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # The fullness discipline.  `if (count == Capacity) return false;` reads as
 # a bounds check, but it refuses only the exact bound: a count already past
 # Capacity compares unequal, and the next push writes out of bounds.
-# scripts/check-fullness-guard.py reads each `==` between a counter and a
+# utils/scripts/check-fullness-guard.py reads each `==` between a counter and a
 # capacity bound from the parse tree.  A counter whose name ends in `_` is
 # protected by a class invariant, by the house convention.  The content-keyed
-# rows of scripts/fullness-guard-allowlist.txt are all not-found sentinels.
+# rows of utils/scripts/fullness-guard-allowlist.txt are all not-found sentinels.
 # Exit 3 when the kit is absent reports a skip.
 add_test(NAME fullness_guard_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-fullness-guard.py --self-test)
 add_test(NAME fullness_guard
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-fullness-guard.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-fullness-guard.py)
 set_tests_properties(fullness_guard fullness_guard_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # DetSafe on the hashing path.  A ledger verdict is a property of one
 # machine, so no header of content_hash, merkle_hash, the memory plan or
 # the BITEXACT recipe choice may reach the ledger.
-# scripts/check-detsafe-ledger.py walks the transitive include closure of
+# utils/scripts/check-detsafe-ledger.py walks the transitive include closure of
 # the hashing-path roots on the parse tree, and it also catches a name of
 # the ledger namespace without the include.  There is no allowlist.  Exit 3
 # when the kit is absent reports a skip.
 add_test(NAME detsafe_ledger_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-detsafe-ledger.py --self-test)
 add_test(NAME detsafe_ledger
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-detsafe-ledger.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-detsafe-ledger.py)
 set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
@@ -768,20 +768,20 @@ set_tests_properties(detsafe_ledger detsafe_ledger_self_test PROPERTIES
 # guard, and style is not worth that.
 
 # The testing door of either tree mints a context with no key, and a context
-# is what every ctx-bound mint checks for.  scripts/check-ctx-testing-boundary.py
+# is what every ctx-bound mint checks for.  utils/scripts/check-ctx-testing-boundary.py
 # counts each use of the door in the code that ships, from the parse tree and
 # through the aliases of every file of the scan, and each file with a use needs
-# a counted entry in scripts/ctx-testing-boundary-allowlist.txt.
+# a counted entry in utils/scripts/ctx-testing-boundary-allowlist.txt.
 add_test(NAME ctx_testing_boundary_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-ctx-testing-boundary.py --self-test)
 add_test(NAME ctx_testing_boundary
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ctx-testing-boundary.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-ctx-testing-boundary.py)
 set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
     PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 
 # A comment, a script or an allowlist states what the code does, not which
 # task, stage or tracker entry produced it.
-# scripts/check-no-coordination-refs.py reads every file that git tracks,
+# utils/scripts/check-no-coordination-refs.py reads every file that git tracks,
 # except AGENTS.md, the notes under misc/ and the guard itself: the comments,
 # strings and directive arguments of C++ from the parse tree, the comments and
 # strings of Python from its tokens, and every line of any other file.  It has
@@ -791,9 +791,9 @@ set_tests_properties(ctx_testing_boundary ctx_testing_boundary_self_test
 # that the three paths out of scope and an untracked file are not read.
 # Exit 3 when the kit is absent reports a skip.
 add_test(NAME no_coordination_refs_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-coordination-refs.py --self-test)
 add_test(NAME no_coordination_refs
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-coordination-refs.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-coordination-refs.py)
 set_tests_properties(no_coordination_refs no_coordination_refs_self_test
     PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
@@ -805,24 +805,24 @@ set_tests_properties(no_coordination_refs no_coordination_refs_self_test
 # planted in each test, which must fail on that row.  The oracle itself
 # runs only when a person regenerates golden.csv.
 add_test(NAME session_oracle_check
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/session-oracle.sh --check)
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --check)
 add_test(NAME session_oracle_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/session-oracle.sh --self-test ${CMAKE_CXX_COMPILER})
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --self-test ${CMAKE_CXX_COMPILER})
 set_tests_properties(session_oracle_check session_oracle_self_test
     PROPERTIES LABELS "ci_guard;session_oracle")
 
-# The row-membership discipline.  scripts/check-row-contains-discipline.py
+# The row-membership discipline.  utils/scripts/check-row-contains-discipline.py
 # reads each row_contains_v whose first argument is the row of a context
 # from the parse tree, with any qualifier, and requires the named lift
 # (CtxOwnsCapability, CtxOwnsAnyOf or CtxOwnsAllOf) instead.  Exit 3 when
 # the kit is absent reports a skip.
 add_test(NAME row_contains_discipline_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-row-contains-discipline.py --self-test)
 add_test(NAME row_contains_discipline
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-row-contains-discipline.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-row-contains-discipline.py)
 set_tests_properties(row_contains_discipline row_contains_discipline_self_test
     PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
-# The stub discipline.  scripts/check-stub-discipline.py reads the parse tree
+# The stub discipline.  utils/scripts/check-stub-discipline.py reads the parse tree
 # of every header under include/ and pairs each honesty marker (a constexpr
 # bool *_implemented, *_attached or *_ready that is false, at namespace scope
 # or as a static member) with a `[[deprecated("CRUCIBLE_STUB:")]]` attribute
@@ -833,41 +833,41 @@ set_tests_properties(row_contains_discipline row_contains_discipline_self_test
 # neither a marker nor a deprecation.  Exit 3 when the kit is absent reports a
 # skip.
 add_test(NAME stub_discipline_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-stub-discipline.py --self-test)
 add_test(NAME stub_discipline
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-stub-discipline.py)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-stub-discipline.py)
 set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # The lock-free discipline of the cross-thread atomics (CLAUDE.md §IX).
-# scripts/check-lock-free-asserts.py reads each std::atomic, atomic_ref and
+# utils/scripts/check-lock-free-asserts.py reads each std::atomic, atomic_ref and
 # standard atomic alias of canopy, cntp, topology and warden from the parse
 # tree, and fails when the file has no sibling
 # static_assert(std::atomic<T>::is_always_lock_free) for its type.  Without
 # the assert, libatomic can put a mutex behind the atomic on another target
 # with no warning.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME lock_free_asserts_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-lock-free-asserts.py --self-test)
 add_test(NAME lock_free_asserts
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-lock-free-asserts.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-lock-free-asserts.py)
 set_tests_properties(lock_free_asserts lock_free_asserts_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # The mint inventory: its self-test, the drift gate that fails when
 # misc/mint-inventory.md was not regenerated after a mint changed, and the
-# HS14 floor gate.  scripts/gen-mint-inventory.py holds the floor value.
+# HS14 floor gate.  utils/scripts/gen-mint-inventory.py holds the floor value.
 # The generator reads the parse tree, so it skips (exit 3) where the pinned
 # tree-sitter kit is absent.  CI installs the kit, so CI enforces.
 add_test(NAME mint_inventory_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/gen-mint-inventory.py
           --self-test
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME mint_inventory_check
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/gen-mint-inventory.py
           --check
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME mint_inventory_check_floor
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/gen-mint-inventory.py
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/gen-mint-inventory.py
           --check-floor
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 set_tests_properties(mint_inventory_self_test
@@ -875,14 +875,14 @@ set_tests_properties(mint_inventory_self_test
                      mint_inventory_check_floor PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
-# One combine_ids body.  scripts/check-no-combine-ids-duplicate.py reads
+# One combine_ids body.  utils/scripts/check-no-combine-ids-duplicate.py reads
 # the parse tree and fails on a second definition named combine_ids, on a
 # name with combine_ids and an affix, and on a body with the shape of
 # combine_ids under any name.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME no_combine_ids_duplicate_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-combine-ids-duplicate.py --self-test)
 add_test(NAME no_combine_ids_duplicate
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-no-combine-ids-duplicate.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-combine-ids-duplicate.py)
 set_tests_properties(no_combine_ids_duplicate
                      no_combine_ids_duplicate_self_test PROPERTIES
     LABELS "ci_guard"
@@ -893,10 +893,10 @@ set_tests_properties(no_combine_ids_duplicate
 # and has no ci_guard label.  It reads the tests that ctest lists for this
 # build directory, so it sees every subdirectory and every label change.
 add_test(NAME ci_guard_labels_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.py
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-ci-guard-labels.py
           --self-test --cmake ${CMAKE_COMMAND} --ctest ${CMAKE_CTEST_COMMAND})
 add_test(NAME ci_guard_labels
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-ci-guard-labels.py
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-ci-guard-labels.py
           --build-dir ${CMAKE_BINARY_DIR} --ctest ${CMAKE_CTEST_COMMAND})
 set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
     LABELS "ci_guard")
@@ -920,7 +920,7 @@ set_tests_properties(ci_guard_labels ci_guard_labels_self_test PROPERTIES
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
   add_test(NAME row_hash_golden_diff
     COMMAND bash -c
-      "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
+      "set -e; \"$<TARGET_FILE:dump_row_hashes>\" > \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\"; diff -u \"${CMAKE_SOURCE_DIR}/utils/tools/row_hash_golden.txt\" \"${CMAKE_BINARY_DIR}/row_hash_dump_current.txt\""
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
   set_tests_properties(row_hash_golden_diff PROPERTIES
       LABELS "ci_guard")
@@ -969,15 +969,15 @@ crucible_test(test_computation_cache_federation)
 
 # A specialization of a split trait, or of one of its variables, is legal
 # only in the file that defines every tag it names, or in an authoring
-# location that scripts/check-splits-orphan.py lists with its reason.  C++
+# location that utils/scripts/check-splits-orphan.py lists with its reason.  C++
 # has no orphan rule, so a foreign TU could otherwise forge cross-region
 # authority (CLAUDE.md §IX).  The guard reads each specialization from the
 # parse tree.  Exit 2 names an authoring location that no specialization
 # needs.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME splits_orphan_self_test
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-splits-orphan.py --self-test)
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-splits-orphan.py --self-test)
 add_test(NAME splits_orphan
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-splits-orphan.py)
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-splits-orphan.py)
 set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
     LABELS "forgery;ci_guard"
     SKIP_RETURN_CODE 3)
@@ -989,9 +989,9 @@ set_tests_properties(splits_orphan splits_orphan_self_test PROPERTIES
 # macro-expanded text of the compile database, so a macro of another file
 # cannot hide a definition.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME federation_admission_self_test
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-federation-admission.py --self-test)
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-federation-admission.py --self-test)
 add_test(NAME federation_admission
-         COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-federation-admission.py
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-federation-admission.py
                  --compile-db ${CMAKE_BINARY_DIR}/compile_commands.json)
 set_tests_properties(federation_admission federation_admission_self_test PROPERTIES
     LABELS "forgery;ci_guard;ast"
@@ -5256,22 +5256,22 @@ endif()
 #   derived_pins   — a cardinality static_assert must have a derived
 #                    operand; a literal pinned to itself cannot fire.
 add_test(NAME layer_boundary_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-layer-boundary.py --self-test)
 add_test(NAME layer_boundary
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-layer-boundary.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-layer-boundary.py)
 set_tests_properties(layer_boundary layer_boundary_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
 add_test(NAME derived_pins_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-derived-pins.py --self-test)
 add_test(NAME derived_pins
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-derived-pins.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-derived-pins.py)
 set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
 
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
-# vessel/torch.  scripts/check-vessel-acceptance.py builds the vessel targets
+# vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a
 # PyTorch with DispatchKey::Crucible at -Werror, each vessel/torch/test_*.py
 # exits 0, and replay gives the bytes of PyTorch alone.  The self-test needs no
@@ -5285,7 +5285,7 @@ set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
 # PyTorch that TORCH_DIR names.  The default is the interpreter of the
 # virtual environment that holds TORCH_DIR, when one exists.
 add_test(NAME vessel_acceptance_self_test
-  COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-vessel-acceptance.py --self-test)
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-vessel-acceptance.py --self-test)
 set_tests_properties(vessel_acceptance_self_test PROPERTIES LABELS "ci_guard")
 option(CRUCIBLE_REQUIRE_VESSEL
   "Fail the configure step when the build cannot operate the vessel acceptance gate" OFF)
@@ -5319,7 +5319,7 @@ else()
   set(CRUCIBLE_VESSEL_PYTHON "${_vessel_default_python}" CACHE FILEPATH
     "The interpreter of the PyTorch that TORCH_DIR names, for the vessel acceptance gate")
   add_test(NAME vessel_acceptance
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/check-vessel-acceptance.py
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-vessel-acceptance.py
             --build-dir ${CMAKE_BINARY_DIR} --torch-dir ${TORCH_DIR} --python ${CRUCIBLE_VESSEL_PYTHON})
   # The gate builds the vessel targets in this build directory, so no other
   # test operates beside it.  It invokes a script, so it carries ci_guard, and
@@ -5327,15 +5327,15 @@ else()
   set_tests_properties(vessel_acceptance PROPERTIES LABELS "ci_guard;vessel" TIMEOUT 3600 RUN_SERIAL TRUE)
 endif()
 
-# allowlist_keys runs over every scripts/*allowlist*.txt and holds the one
+# allowlist_keys runs over every utils/scripts/*allowlist*.txt and holds the one
 # property none of the owning guards can hold once it breaks: the path half
 # of each key names a file that exists.  When a file moves, a key on the
 # missing path exempts nothing AND the owning guard can no longer locate
 # the site it was written for, so the guard goes quiet rather than loud.
 add_test(NAME allowlist_keys_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-allowlist-keys.sh --self-test)
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-allowlist-keys.sh --self-test)
 add_test(NAME allowlist_keys
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-allowlist-keys.sh)
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-allowlist-keys.sh)
 set_tests_properties(allowlist_keys allowlist_keys_self_test PROPERTIES
     LABELS "ci_guard;allowlist")
 
@@ -5349,9 +5349,9 @@ set_tests_properties(allowlist_keys allowlist_keys_self_test PROPERTIES
 # directory rather than from a list, and instantiates the same two
 # templates from its own tag.
 add_test(NAME atom_roster_joined_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-atom-roster-joined.sh --self-test)
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-atom-roster-joined.sh --self-test)
 add_test(NAME atom_roster_joined
-  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-atom-roster-joined.sh --quiet)
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-atom-roster-joined.sh --quiet)
 set_tests_properties(atom_roster_joined atom_roster_joined_self_test PROPERTIES
   ENVIRONMENT "CXX=${CMAKE_CXX_COMPILER}"
   LABELS "ci_guard;substrate")
@@ -5361,18 +5361,18 @@ set_tests_properties(atom_roster_joined atom_roster_joined_self_test PROPERTIES
 # rather than scan text, so a file that does not parse is a silent hole in all
 # of them at once.  The gate fails in three directions — an unadmitted parse
 # error, a roster entry whose file parses clean now, and a roster entry naming
-# a path that no longer exists — so the roster in scripts/tsast.py cannot rot.
+# a path that no longer exists — so the roster in utils/scripts/tsast.py cannot rot.
 #
 # Exit 3 (the pinned kit is absent) is a SKIP here.  A developer who has not
-# run scripts/install-tree-sitter.sh gets the instruction rather than a
+# run utils/scripts/install-tree-sitter.sh gets the instruction rather than a
 # failure.  CI installs the kit in both the guards job and the build job, so CI
 # always enforces.
 add_test(NAME parse_clean_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-parse-clean.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-clean.py --self-test)
 add_test(NAME parse_clean
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/check-parse-clean.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-clean.py)
 add_test(NAME tsast_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/tsast.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/tsast.py --self-test)
 # mintmodel derives the §XXI mint surface from the parse tree, for the guard and
 # for the inventory. Its self-test plants one fixture carrying every shape the
 # model must tell apart, and four of its cases are negative controls: a deleted
@@ -5380,7 +5380,7 @@ add_test(NAME tsast_self_test
 # trailing-underscore helper, and a friend re-declaration that must not count
 # as a second site.
 add_test(NAME mintmodel_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/scripts/mintmodel.py --self-test)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/mintmodel.py --self-test)
 set_tests_properties(parse_clean parse_clean_self_test tsast_self_test mintmodel_self_test PROPERTIES
     LABELS "ci_guard;ast")
 set_tests_properties(parse_clean tsast_self_test mintmodel_self_test PROPERTIES SKIP_RETURN_CODE 3)
@@ -5398,7 +5398,7 @@ if(CMAKE_GENERATOR MATCHES "Ninja")
   set(_mutation_ninja --ninja ${CMAKE_MAKE_PROGRAM})
 endif()
 add_test(NAME mutation_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/tools/mutation/run.py selftest
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/tools/mutation/run.py selftest
           --compiler ${CMAKE_CXX_COMPILER} ${_mutation_ninja})
 set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
 

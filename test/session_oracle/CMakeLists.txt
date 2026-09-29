@@ -3,14 +3,14 @@
 # 2023), their subject-reduction development (ECOOP 2025), the subtyping
 # relation of Ekici (ITP 2025), and mpstk-crash-stop (CONCUR 2022).
 #
-# tools/session_oracle/ writes golden.csv and the eight generated_*.cpp
+# utils/tools/session_oracle/ writes golden.csv and the eight generated_*.cpp
 # files.  Each generated file holds one static_assert for each measured
 # row, so a relation that changes its answer fails the build of that
 # test.  The wire test is the one exception: it runs each row and fails
 # when an outcome differs.  The rows of the record families (the runs,
 # the subject-reduction safety, mpstk and the subtyping certificates)
 # have no assertion.
-# Rebuild the files with scripts/session-oracle.sh --regenerate.  The
+# Rebuild the files with utils/scripts/session-oracle.sh --regenerate.  The
 # guards session_oracle_check and session_oracle_self_test are in
 # test/CMakeLists.txt beside the other script guards.
 

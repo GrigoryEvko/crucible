@@ -12,7 +12,7 @@
 //
 // foundation/permissions/Permission.h declares FederationAdmission and
 // the key, and this header defines the admission.  The definition is
-// the whole of the door, so scripts/check-federation-admission.py
+// the whole of the door, so utils/scripts/check-federation-admission.py
 // refuses a definition, a specialization or a member definition of
 // FederationAdmission in any other file.  A member name of the
 // admission is therefore refused as the last name of a qualified

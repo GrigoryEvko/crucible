@@ -17,7 +17,7 @@
 //
 // A type alias that is not an atom, such as the lattice alias of the
 // deque block, is not an axis claim, so the check skips it.
-// scripts/check-fixy-hw-discipline.py reads the rows from the parse tree
+// utils/scripts/check-fixy-hw-discipline.py reads the rows from the parse tree
 // of test/test_hardware_axis_pins.cpp and holds every `*_hw` namespace under
 // include/ and src/ to them.  That script also refuses a block inside a
 // preprocessor conditional, which the compiler sees only for the arm that
@@ -120,7 +120,7 @@ struct pinned_row {
 // The row itself.  Reading it instantiates pinned_row, so its assertion
 // runs.  A row is a static_assert and not an explicit instantiation,
 // because an explicit instantiation turns off the access check for the
-// names in it, and scripts/check-proof-routes.py refuses that shape.
+// names in it, and utils/scripts/check-proof-routes.py refuses that shape.
 template <std::meta::info Block, ::fixy::Axis... Listed>
 inline constexpr bool pinned = pinned_row<Block, Listed...>::holds;
 

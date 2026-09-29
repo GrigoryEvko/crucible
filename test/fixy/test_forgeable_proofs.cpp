@@ -363,7 +363,7 @@ union ProofOrByte {
 // and refuses one whose members hold a proof type at any depth: through an
 // array, a base class or a member of an aggregate.  Reflection cannot see a
 // union template or a union local to a function, so
-// scripts/check-proof-routes.py refuses each union definition in the tree,
+// utils/scripts/check-proof-routes.py refuses each union definition in the tree,
 // user code included, outside a reviewed list.  This file is on that list,
 // because its unions are the probes.
 
@@ -516,7 +516,7 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 // They still compile: std::start_lifetime_as over an array of proofs,
 // std::start_lifetime_as_array over proofs, and std::start_lifetime_as
 // over an aggregate or a std::array that holds a proof.  Each one names
-// std::start_lifetime_as, and scripts/check-start-lifetime.py refuses
+// std::start_lifetime_as, and utils/scripts/check-start-lifetime.py refuses
 // that name outside a reviewed list whose element types are
 // implicit-lifetime types.  Its self-test plants each of the four routes.
 // foundation::lifetime::start_as_array, which new code uses, refuses the
@@ -532,7 +532,7 @@ static_assert(is_proof_shape(^^fe::ExecCtx<>) && !is_forgeable(^^fe::ExecCtx<>),
 //                                    typed pointer with no object, and
 //                                    the language refuses none of them
 //
-// scripts/check-proof-routes.py refuses the two routes in the tree.  It
+// utils/scripts/check-proof-routes.py refuses the two routes in the tree.  It
 // refuses each union definition outside a reviewed list, and each cast to
 // a pointer or a reference, each allocator and each raw allocation whose
 // type names a proof type.  This file is on its list as the probe.  Two
@@ -666,7 +666,7 @@ static_assert(!std::is_default_constructible_v<DerivedFromContextBase>
                                      + qualified_name(declaration));
 }
 
-// The names of the proof types, for scripts/check-proof-routes.py: each
+// The names of the proof types, for utils/scripts/check-proof-routes.py: each
 // class of the two namespaces that has the shape of a proof, and the
 // template of each witness.  main() prints them under --proof-names.
 // Complexity: linear in the number of declarations under the namespace.

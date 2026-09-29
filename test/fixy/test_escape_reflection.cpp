@@ -3,7 +3,7 @@
 // not sanction, and the compiler reads the return type, so no spelling
 // evades it.
 //
-// scripts/check-escape-doors.py reads the parse tree and is the tree-wide
+// utils/scripts/check-escape-doors.py reads the parse tree and is the tree-wide
 // net.  It is coarse: a return type that a macro hides slips through,
 // which is the dangerous direction.  This TU closes that gap for the
 // wrappers where a raw escape is dangerous.  It reads the public surface

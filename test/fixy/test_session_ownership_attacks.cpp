@@ -9,7 +9,7 @@
 // An attack that the discipline refuses is a static assertion here, or a
 // negative fixture when the refusal is a compile error.  An attack that
 // compiles and goes wrong is a finding, and it is fixed.  A second use of
-// a moved-from token is legal C++, so scripts/check-use-after-move.py
+// a moved-from token is legal C++, so utils/scripts/check-use-after-move.py
 // refuses it in the source.  The section at the foot states that attack.
 //
 // The run-time attacks run under a watchdog that aborts with a
@@ -816,9 +816,9 @@ void read_proof_ends_with_the_share() {
 //
 // A liveness byte in the token can record the move, but it makes
 // sizeof(Permission) larger than 1 and defeats the empty-base collapse,
-// so the tree does not use one.  scripts/check-use-after-move.py refuses
+// so the tree does not use one.  utils/scripts/check-use-after-move.py refuses
 // the attack in the source.  It walks each path of each function body in
-// include, src, test, vessel and tools, and it refuses a read of a name
+// include, src, test, vessel and utils/tools, and it refuses a read of a name
 // after a move spends that name.  Its self-test holds this attack as
 // must_catch_token_moves_twice.
 //

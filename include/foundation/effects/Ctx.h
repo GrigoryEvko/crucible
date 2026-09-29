@@ -554,7 +554,7 @@ void require_brand_thread(ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> const&) noex
 
 }  // namespace host
 
-// The test door of the foreground context.  scripts/check-ctx-testing-boundary.py
+// The test door of the foreground context.  utils/scripts/check-ctx-testing-boundary.py
 // refuses a use of it in code that ships, as it does for the door in
 // Effect.h.
 namespace testing {

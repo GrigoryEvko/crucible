@@ -113,7 +113,7 @@ struct BackgroundThread {
         // The noexcept is load-bearing.  The callback runs on the publish
         // stage in the middle of a publication, so an exception out of it
         // would leave the transaction commit and the mode state half done.
-        // Nothing in the tree throws, and scripts/check-no-throw-no-rtti.sh
+        // Nothing in the tree throws, and utils/scripts/check-no-throw-no-rtti.sh
         // refuses an artifact that references __cxa_throw.  The noexcept
         // also puts the rule in the type: a function that is not noexcept
         // does not convert to Fn.

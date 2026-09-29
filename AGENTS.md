@@ -2231,7 +2231,7 @@ These library types make the axioms from §II true at compile time. They are in 
 | `foundation/permissions/Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` in `ReadView.h` for lifetime-bound borrows. Factories: `mint_permission_root`, `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n`, `mint_permission_combine_n` and `mint_permission_share`. |
 | `foundation/permissions/PermissionFork.h` | ThreadSafe, BorrowSafe | `mint_permission_fork<Children...>(ctx, parent, callables...)` is the CSL parallel composition rule, as a fork-join with one `std::jthread` for each child. Its constraint is `CtxFitsPermissionFork<Ctx, Parent, Children...>`, which asks for `can_split_into_pack_v<Parent, Children...>` and a context that has `Effect::Bg`. `mint_permission_fork_inline` does the bodies inline in child order. Each mint gives back the parent permission after all bodies complete. |
 
-Every header is header-only and self-contained. The dependency rule is the layer rule, and `scripts/check-layer-boundary.py` enforces it: `foundation` names only `foundation`, `fixy` names `foundation` and `fixy`, and `crucible` names every layer. No line cap applies to a header, and `foundation/permissions/Permission.h` alone has more than 1,700 lines.
+Every header is header-only and self-contained. The dependency rule is the layer rule, and `utils/scripts/check-layer-boundary.py` enforces it: `foundation` names only `foundation`, `fixy` names `foundation` and `fixy`, and `crucible` names every layer. No line cap applies to a header, and `foundation/permissions/Permission.h` alone has more than 1,700 lines.
 
 ### Usage rules
 
@@ -2248,7 +2248,7 @@ Every header is header-only and self-contained. The dependency rule is the layer
 ### Compiler enforcement
 
 - `-Werror=conversion` + the wrapper types together prevent accidental unwrapping across boundaries.
-- The deleted copy constructor of `Linear<>` rejects a second copy of a linear value at compile time. GCC 16 has no `-Wuse-after-move`, and it rejects `-Werror=use-after-move` as an unknown option. The ci_guard `scripts/check-use-after-move.py` rejects each use of a local after `std::move`. It also finds a second use of a `Permission<Tag>` after a split or a fork.
+- The deleted copy constructor of `Linear<>` rejects a second copy of a linear value at compile time. GCC 16 has no `-Wuse-after-move`, and it rejects `-Werror=use-after-move` as an unknown option. The ci_guard `utils/scripts/check-use-after-move.py` rejects each use of a local after `std::move`. It also finds a second use of a `Permission<Tag>` after a split or a fork.
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors do their check at the construction site under `semantic=enforce` (Debug) and under `semantic=observe` (Release, through a handler that aborts). In a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`, they become `[[assume]]` hints for the optimizer.
 - Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
@@ -2328,7 +2328,7 @@ shares, and pool borrows whose `ExecCtx::row_type` admits the tag row.
 
 Other carriers have folds of their own in the same header. The effect row, `Computation<R, T>`, a capability context, `ExecCtx` and `Capability` each have a specialization. A carrier that publishes `row_discipline` and `row_payload` goes to the discipline fold. A session handle publishes the Stepping modality and goes to the stepping fold. The multi-axis binding in `fixy/Fn.h` has its own specialization.
 
-The lattice identity is a reflected name, so the graded fold is not portable across toolchains. Peers that can have different toolchains use `federation_key_with_toolchain<T>()` for their keys. `test/fixy/test_row_hash_wrappers.cpp` reads the carrier roster by reflection. It gives an error for each wrapper that folds to zero with no stated reason. `test/foundation/test_row_hash.cpp` holds the algebra of the fold. `tools/dump_row_hashes.cpp` with its committed golden is the cross-build witness.
+The lattice identity is a reflected name, so the graded fold is not portable across toolchains. Peers that can have different toolchains use `federation_key_with_toolchain<T>()` for their keys. `test/fixy/test_row_hash_wrappers.cpp` reads the carrier roster by reflection. It gives an error for each wrapper that folds to zero with no stated reason. `test/foundation/test_row_hash.cpp` holds the algebra of the fold. `utils/tools/dump_row_hashes.cpp` with its committed golden is the cross-build witness.
 
 ### GCC 16 contracts — implementation gotchas
 

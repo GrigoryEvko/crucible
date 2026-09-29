@@ -52,7 +52,7 @@ function(crucible_bench name)
   # Opt out of -Werror: benches ignore nodiscard returns by design.
   set_target_properties(${name} PROPERTIES CRUCIBLE_NO_WERROR TRUE)
   # The folder marks the target as a bench in the CMake file API.
-  # scripts/pgo-bootstrap.sh reads the bench list from there.
+  # utils/scripts/pgo-bootstrap.sh reads the bench list from there.
   set_target_properties(${name} PROPERTIES FOLDER crucible_bench)
 
   # Asm dump (gitignored, opt-in via -DCRUCIBLE_DUMP_ASM=ON).
@@ -166,7 +166,7 @@ endif()
 # Usage: ./render_trace <trace.crtrace> [-o output.svg] [--blocks-only]
 # bench/serve.html is the static live-trace WebSocket viewer.  It has no CMake
 # target because browsers open it directly; keep it here while it only serves
-# bench traces, promote to scripts/ only if a launcher/backend appears.
+# bench traces, promote to utils/scripts/ only if a launcher/backend appears.
 add_executable(render_trace render_trace.cpp)
 target_link_libraries(render_trace PRIVATE crucible)
 target_compile_options(render_trace PRIVATE -O2)

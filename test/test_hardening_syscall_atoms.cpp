@@ -34,7 +34,7 @@ using HardeningAtoms = ::crucible::warden::hardening_syscall_atoms;
 
 // This count is a claim about the code that no compile-time check can
 // confirm, because the code it describes is a set of call sites rather
-// than a type.  scripts/check-syscall-grant-coverage.py reads those call
+// than a type.  utils/scripts/check-syscall-grant-coverage.py reads those call
 // sites and compares them with the tuple.  That script, not this line, is
 // what keeps the two honest.
 static_assert(std::tuple_size_v<HardeningAtoms> == 9,

@@ -1,5 +1,0 @@
-# derived-pins allowlist — the vacuous pins that a review admits.
-# scripts/check-derived-pins.py reads this file.  A row is
-# `path:NAME — reason`, keyed by the name of the constant, so a row survives
-# a line shift and goes stale only when the pin is gone.  The list can only
-# shrink.

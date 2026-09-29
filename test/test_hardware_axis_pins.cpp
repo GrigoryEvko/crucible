@@ -6,7 +6,7 @@
 // run, and it pins the atoms that the active build selects.
 //
 // The rows below hold each hardware-axis block to the axes it states.
-// scripts/check-fixy-hw-discipline.py reads them from the parse tree, and
+// utils/scripts/check-fixy-hw-discipline.py reads them from the parse tree, and
 // every `*_hw` namespace under include/ and src/ needs a row here.
 
 #include "fixy/hw_axis_pins.h"

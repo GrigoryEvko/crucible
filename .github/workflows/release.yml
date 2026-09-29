@@ -73,7 +73,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # The patched GCC of the tag, built once for each arch and cached.  A cache
-  # entry from a CI run of the same toolchain/gcc files is a hit.
+  # entry from a CI run of the same utils/toolchain/gcc files is a hit.
   # ---------------------------------------------------------------------------
   patched-gcc:
     uses: ./.github/workflows/patched-gcc.yml

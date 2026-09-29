@@ -80,7 +80,7 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<Ptr>` / `BoundedMonotonic<T, Max, Cmp>` 
 
 **Capability tags.** `include/foundation/effects/Effect.h`, in namespace `foundation::effects`, defines three groups. The first is the `Effect` enum of six atoms (Alloc, IO, Block, Bg, Init, Test). The second is the value-level tags `cap::Alloc`, `cap::IO` and `cap::Block`, which the namespace re-exports as `Alloc`, `IO` and `Block`. The third is the context classes `Bg`, `Init` and `Test`. A context holds its value atoms as empty `[[no_unique_address]]` fields (`bg.alloc`, `bg.io`, `bg.block`), so the tags cost nothing at run time.
 
-Only `mint_context<Ctx>(key)` builds a context, and only the owner of a key can build the key. `scripts/ctx-init-door-allowlist.txt` and `scripts/ctx-bg-door-allowlist.txt` list the entry points that use the two production doors. The tags and the contexts are NOT F\*X proof obligations. They are C++-level capabilities enforced at compile time. Production call sites spell them `::foundation::effects::*`.
+Only `mint_context<Ctx>(key)` builds a context, and only the owner of a key can build the key. `utils/scripts/ctx-init-door-allowlist.txt` and `utils/scripts/ctx-bg-door-allowlist.txt` list the entry points that use the two production doors. The tags and the contexts are NOT F\*X proof obligations. They are C++-level capabilities enforced at compile time. Production call sites spell them `::foundation::effects::*`.
 
 **Met(X) effect rows.** `include/foundation/effects/Row.h` gives `Row<Es...>`, the `Subrow<R1, R2>` concept, and `row_union_t / row_difference_t / row_intersection_t`. `include/foundation/effects/Computation.h` gives the `Computation<Row, T>` carrier with `mint_computation / mint_computation_in_ctx / extract / weaken / map / then` per Tang-Lindley POPL 2026 / `misc/25_04_2026.md` §3.2. `include/foundation/effects/Ctx.h` gives `ExecCtx<Cap, Row>` and the gates `CtxAdmits` and `CtxOwnsCapability`. The production hot paths take a value-level tag parameter (for example `::foundation::effects::Alloc a`), and they do not return a `Computation<Row<...>, T>`. Tests: `test/foundation/test_effects_core.cpp`, `test/foundation/test_capability.cpp`, `test/foundation/test_computation.cpp`, `test/foundation/test_ctx.cpp`, and the `neg_computation_*` fixtures in `test/foundation/neg/`.
 
@@ -506,7 +506,7 @@ L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGrap
 Goal: complete the L0 structural-guarantee layer — axioms, safety wrappers, session types, CSL permissions.
 
 - **Safety wrappers** in `include/fixy/` and `include/foundation/permissions/` — Linear, Refined, Tagged, Secret, Permission, SessionHandle, ScopedView, Machine, Monotonic, AppendOnly, WriteOnceNonNull, and the `fixy::ct` constant-time primitives. Most of them cost nothing at run time (`sizeof(Wrapper<T>) == sizeof(T)`). §L0 gives the storage regime of each graded wrapper.
-- **Session-type stack** in `include/fixy/session/` (25 headers, namespace `fixy::session`). It holds Honda 1998 binary types and HYC 2008 MPST with projection (`Global.h`, `Projection.h`). It holds Gay-Hole 2005 subtyping and an asynchronous fragment with a stated channel capacity (`Subtype.h`). It also holds liveness (`Liveness.h`), BSYZ22/BHYZ23 crash-stop (`Crash.h`, `CrashTransport.h`) and crash-stop association (`CrashAssociation.h`). The CSL × session layer is the `PS` parameter of `SessionHandle` (`Handle.h`). `tools/session_oracle` tests the session relations against published mechanisations (Tirore-Bengtson-Carbone ITP 2023 and ECOOP 2025, PMY25), and `test/session_oracle/golden.csv` pins the answers.
+- **Session-type stack** in `include/fixy/session/` (25 headers, namespace `fixy::session`). It holds Honda 1998 binary types and HYC 2008 MPST with projection (`Global.h`, `Projection.h`). It holds Gay-Hole 2005 subtyping and an asynchronous fragment with a stated channel capacity (`Subtype.h`). It also holds liveness (`Liveness.h`), BSYZ22/BHYZ23 crash-stop (`Crash.h`, `CrashTransport.h`) and crash-stop association (`CrashAssociation.h`). The CSL × session layer is the `PS` parameter of `SessionHandle` (`Handle.h`). `utils/tools/session_oracle` tests the session relations against published mechanisations (Tirore-Bengtson-Carbone ITP 2023 and ECOOP 2025, PMY25), and `test/session_oracle/golden.csv` pins the answers.
 - **CSL permissions** (misc/THREADING.md) — `Permission<Tag, Brand>`, `SharedPermission` + `SharedPermissionPool`, `mint_permission_fork` (CSL parallel rule as RAII fork-join), and the cache-tier rule of `fixy/concurrent/ParallelismRule.h` (L1/L2 → sequential, L3/DRAM → parallel).
 - **Production refactors**: Vigil → Machine + Session, TraceRing → PermissionedSpscChannel, KernelCache → SwmrSession + ContentAddressed, Cipher tiers → Delegate + Tagged, CNTP layers → Session over Session. ~70 tracked tasks in the backlog.
 - **`verify` preset (internal small SMT — deferred)** reserved for residual integer-arithmetic proof obligations only — scope matches TVM Analyzer PR #1367: bounds, divisibility, modular. No external solver dependency. Interim mode: contract enforcement only. Not a kernel-optimality engine.
@@ -547,7 +547,7 @@ Goal: distributed, self-healing, persistent, cross-run-shareable.
 
 - Keeper daemon: systemd service, health monitoring, self-updating. Executes the runtime observer's advice.
 - Canopy mesh: SWIM gossip + Raft-scoped consensus, peer discovery. No master.
-- Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced. Three-level KernelCache: L1 IR002 snapshot federation-shareable cross-vendor; L2 IR003\* snapshot cross-chip within vendor family; L3 compiled bytes per-chip. **Federation cache-key portability bound:** the bound lives in the CONTENT half of the key, not the row half. The row half (`cipher/ComputationCacheFederation.h`) is constrained to an effect row, so it reaches only the `Row<Es...>` fold over `uint8_t` enum values, which is portable. The content half (`cipher/ComputationCache.h`) folds `display_string_of(reflect_constant(FnPtr))`, `stable_function_id<FnPtr>` and a `stable_type_id` per argument, so three of its four contributions are toolchain-bound. Cross-vendor and cross-run hold on both halves, because neither folds a vendor, device or ISA identity, but cross-toolchain does not hold. So GCC ↔ Clang and major-version rolls must key through `federation_key_with_toolchain<T>()` (disjoint by construction), or stay out of scope until a V2 canonical type-walker lands. Under the one fold at `foundation/diag/RowHash.h` EVERY graded wrapper folds a reflected lattice name. `tools/dump_row_hashes.cpp` and its committed golden are the cross-build witness, because an in-TU `static_assert` cannot see a reflected name move underneath it.
+- Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced. Three-level KernelCache: L1 IR002 snapshot federation-shareable cross-vendor; L2 IR003\* snapshot cross-chip within vendor family; L3 compiled bytes per-chip. **Federation cache-key portability bound:** the bound lives in the CONTENT half of the key, not the row half. The row half (`cipher/ComputationCacheFederation.h`) is constrained to an effect row, so it reaches only the `Row<Es...>` fold over `uint8_t` enum values, which is portable. The content half (`cipher/ComputationCache.h`) folds `display_string_of(reflect_constant(FnPtr))`, `stable_function_id<FnPtr>` and a `stable_type_id` per argument, so three of its four contributions are toolchain-bound. Cross-vendor and cross-run hold on both halves, because neither folds a vendor, device or ISA identity, but cross-toolchain does not hold. So GCC ↔ Clang and major-version rolls must key through `federation_key_with_toolchain<T>()` (disjoint by construction), or stay out of scope until a V2 canonical type-walker lands. Under the one fold at `foundation/diag/RowHash.h` EVERY graded wrapper folds a reflected lattice name. `utils/tools/dump_row_hashes.cpp` and its committed golden are the cross-build witness, because an in-TU `static_assert` cannot see a reflected name move underneath it.
 - TrainingCheckpoints (weights, optimizer, data cursor, seed, step_idx, fleet UUIDs at checkpoint) survive reincarnation. Hardware-specific kernels recompiled by Mimic on new hardware using the warm-started Cipher archive.
 
 **Phase 6: L8-L12 Intelligence**
@@ -614,7 +614,7 @@ Design intent: **the lowest foreground recording and shadow-dispatch latency the
 | `tsan`    | GCC 16.2.1 (patched)  | ThreadSanitizer (mutually exclusive with ASan)|
 | `verify`  | GCC 16.2.1 (patched)  | + internal small-SMT verification suite (deferred — interim: contracts-only, no external solver) |
 
-`cmake/Toolchain-gcc16.cmake` finds the patched compiler `g++-16p`. `toolchain/gcc/build.sh` builds it from GCC 16.2.1 and the patches in `toolchain/gcc/patches/`. The `libstdc++ 16.0.1 status` notes in §IV are probes of libstdc++ 16.0.1, and this guide does not repeat each probe for 16.2.1.
+`cmake/Toolchain-gcc16.cmake` finds the patched compiler `g++-16p`. `utils/toolchain/gcc/build.sh` builds it from GCC 16.2.1 and the patches in `utils/toolchain/gcc/patches/`. The `libstdc++ 16.0.1 status` notes in §IV are probes of libstdc++ 16.0.1, and this guide does not repeat each probe for 16.2.1.
 
 **GCC 16 is the only supported compiler.** Crucible's safety axioms structurally depend on features that exist only there:
 
@@ -679,7 +679,7 @@ struct TensorSlot {
 
 **Cost of violation:** silent parameter swap, implicit conversion bug, type confusion.
 
-**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast`, plus `scripts/check-no-throw-no-rtti.sh`, which holds the no-RTTI property on the artifact.
+**Compiler enforcement:** `-Werror=conversion -Werror=sign-conversion -Werror=arith-conversion -Werror=enum-conversion -Werror=old-style-cast`, plus `utils/scripts/check-no-throw-no-rtti.sh`, which holds the no-RTTI property on the artifact.
 
 **Discipline:**
 - Every semantic value is a strong type. No raw `uint32_t` for anything with meaning.
@@ -729,7 +729,7 @@ void process(const TraceEntry* entry)
 
 **Cost of violation:** use-after-free, double-free, memory corruption, RCE.
 
-**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — `scripts/check-no-throw-no-rtti.sh` holds that on the artifact rather than a flag holding it on our TUs.
+**Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. Nothing in the tree throws, so there is no "destructor during stack unwind" class to eliminate — `utils/scripts/check-no-throw-no-rtti.sh` holds that on the artifact rather than a flag holding it on our TUs.
 
 **Discipline:**
 - All graph/DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF). Arena bulk-frees at epoch boundary.
@@ -874,15 +874,15 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — `scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `include/fixy/concurrent/Topology.h`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard checks `__cxa_throw` is absent from the artifact, which also catches a throw arriving through a library header |
-| RTTI | **not a flag** — `scripts/check-no-throw-no-rtti.sh` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks the artifact defines no typeinfo or vtable and references no `__dynamic_cast` |
+| Exceptions | **not a flag** — `utils/scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `include/fixy/concurrent/Topology.h`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard checks `__cxa_throw` is absent from the artifact, which also catches a throw arriving through a library header |
+| RTTI | **not a flag** — `utils/scripts/check-no-throw-no-rtti.sh` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks the artifact defines no typeinfo or vtable and references no `__dynamic_cast` |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
 | `[=]` capturing `this` | P0806R2 deprecated; `-Werror=deprecated-this-capture` | Lifetime footgun |
 | `memory_order::consume` | P3475R2 deprecated; `-Werror=deprecated-declarations` | Compilers promote to acquire anyway |
 | VLAs (`int arr[n]`) | `-Werror=vla` | Stack UB |
 | C-style casts | `-Werror=old-style-cast` | Silent UB conversions |
-| `reinterpret_cast` | AST guard `scripts/check-banned-calls.py`, with a content-keyed allowlist in `scripts/no-reinterpret-allowlist.txt`. A stale allowlist entry fails CI at exit 2 | Use `std::bit_cast<T>` for value reinterpretation; `std::start_lifetime_as<T>` for arena type-punning; `<simd>` first-class intrinsic interop for SIMD |
+| `reinterpret_cast` | AST guard `utils/scripts/check-banned-calls.py`, with a content-keyed allowlist in `utils/scripts/no-reinterpret-allowlist.txt`. A stale allowlist entry fails CI at exit 2 | Use `std::bit_cast<T>` for value reinterpretation; `std::start_lifetime_as<T>` for arena type-punning; `<simd>` first-class intrinsic interop for SIMD |
 | `const_cast` | `-Werror=cast-qual` | Casting away const is almost always wrong |
 | Static downcast (`static_cast<Derived*>`) | N/A — no inheritance in data types | We have no `virtual` |
 | Implicit narrowing | `-Werror=conversion -Werror=sign-conversion` | Silent truncation |
@@ -951,7 +951,7 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 | `std::thread` raw | Use `std::jthread` (C++20) |
 | `std::endl` | Flushes; use `'\n'` |
 | `std::vector<bool>` | Proxy iterators, not really a container; use `std::bitset<N>` |
-| `std::vector::reserve` (anywhere) | **Banned** (enforced by CI: the AST guard `scripts/check-banned-calls.py`, with a content-keyed allowlist in `scripts/no-reserve-allowlist.txt`) — signals wrong container choice. `vector::push_back` past capacity is **O(n)** (copies every existing element to the new buffer); reserve only delays the first O(n) spike, doesn't eliminate it. The "amortized O(1)" story hides three real costs: (1) **tail-latency**: each individual growth event is O(n), fatal for p99 budgets; (2) **silent perf cliff**: move-during-growth requires `noexcept` move ctors or falls back to **copy** without warning; (3) **heap churn**: every growth allocates new + frees old, fragments the allocator. Replacements: known max → `std::inplace_vector<T, N>` (compile-time bound, zero heap, true O(1) push_back, contract-checked overflow); known exact size at construction → `vector<T> v(N)` and fill by index (one allocation, no growth); truly unbounded → plain `vector<T>` and accept amortization (rare in practice; usually means you should have used arena-backed storage). Hot path: arena, never vector at all (per §X.10) |
+| `std::vector::reserve` (anywhere) | **Banned** (enforced by CI: the AST guard `utils/scripts/check-banned-calls.py`, with a content-keyed allowlist in `utils/scripts/no-reserve-allowlist.txt`) — signals wrong container choice. `vector::push_back` past capacity is **O(n)** (copies every existing element to the new buffer); reserve only delays the first O(n) spike, doesn't eliminate it. The "amortized O(1)" story hides three real costs: (1) **tail-latency**: each individual growth event is O(n), fatal for p99 budgets; (2) **silent perf cliff**: move-during-growth requires `noexcept` move ctors or falls back to **copy** without warning; (3) **heap churn**: every growth allocates new + frees old, fragments the allocator. Replacements: known max → `std::inplace_vector<T, N>` (compile-time bound, zero heap, true O(1) push_back, contract-checked overflow); known exact size at construction → `vector<T> v(N)` and fill by index (one allocation, no growth); truly unbounded → plain `vector<T>` and accept amortization (rare in practice; usually means you should have used arena-backed storage). Hot path: arena, never vector at all (per §X.10) |
 | `std::vector::push_back` on growth-uncertain hot paths | Same root cause as the reserve ban — growth event is O(n) with hidden allocator interaction. Use `std::inplace_vector<T, N>` for type-encoded bounds or arena allocation for unbounded cold growth |
 | `std::cout` / `std::cerr` on hot path | Synced with stdio; use `fprintf(stderr, ...)` for debug |
 | `std::printf` / `std::format` on hot path | Formatting cost; reserve for debug paths |
@@ -981,7 +981,7 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 here as common flags and neither has ever been on a compile line. The properties
 they stood for do hold — measured 2026-09-20: zero `__cxa_throw` references and
 zero typeinfo or vtable definitions in `libcrucible.a` in every preset — and
-`scripts/check-no-throw-no-rtti.sh` is what holds them, on the artifact, where a
+`utils/scripts/check-no-throw-no-rtti.sh` is what holds them, on the artifact, where a
 throw arriving through an instantiated library header is also visible. Adding the
 flags is the wrong repair; the opt-out table in §III says why for each.
 
@@ -1402,7 +1402,7 @@ Release builds are profile-guided; non-PGO release is a dev build, not productio
 ```bash
 # 1. Collect the profile for this host's tier: configures pgo-generate,
 #    builds the benches, runs them, writes pgo/gcc-<version>/<tier>/
-scripts/pgo-bootstrap.sh
+utils/scripts/pgo-bootstrap.sh
 
 # 2. Build with it
 cmake --preset pgo && cmake --build --preset pgo
@@ -1410,7 +1410,7 @@ cmake --preset pgo && cmake --build --preset pgo
 
 The tier is the name the compiler resolves native to (`znver5`, `sapphirerapids`; on aarch64 the `-mcpu=native` name), so the same two commands serve every host and no source file names the hardware. `CRUCIBLE_PGO=use` refuses a profile from a different compiler, tier or flag set, and a function whose control flow changed after collection stops the build with `-Wcoverage-mismatch`. Collect again. The CMake block in the root `CMakeLists.txt` holds the flag rationale.
 
-A release artifact is built with the `pgo-release` preset. It adds `CRUCIBLE_PGO_STRICT=ON`, which requires a profile collected at HEAD from a clean tree, and it builds no benches. The release process is: commit, `scripts/pgo-bootstrap.sh`, `cmake --preset pgo-release && cmake --build --preset pgo-release && ctest --preset pgo-release`, then archive `pgo/gcc-<version>/<tier>/` next to the artifact. The counters are an input of the binary. Every TU carries `CRUCIBLE_PGO_PROFILE` (tier, time, commit, tree state), and every bench report prints it as `pgo:`, so a number from a profiled build is never mistaken for a plain one. `ctest --preset pgo` is the proof that the profile-guided passes preserved every DetSafe result.
+A release artifact is built with the `pgo-release` preset. It adds `CRUCIBLE_PGO_STRICT=ON`, which requires a profile collected at HEAD from a clean tree, and it builds no benches. The release process is: commit, `utils/scripts/pgo-bootstrap.sh`, `cmake --preset pgo-release && cmake --build --preset pgo-release && ctest --preset pgo-release`, then archive `pgo/gcc-<version>/<tier>/` next to the artifact. The counters are an input of the binary. Every TU carries `CRUCIBLE_PGO_PROFILE` (tier, time, commit, tree state), and every bench report prints it as `pgo:`, so a number from a profiled build is never mistaken for a plain one. `ctest --preset pgo` is the proof that the profile-guided passes preserved every DetSafe result.
 
 Alternative (continuous profiling from production runs): **AutoFDO** via `-fauto-profile=<profile.afdo>` fed from `perf record`. Same wins, no instrumented build.
 
@@ -1894,7 +1894,7 @@ CRUCIBLE_HOT void scan(
 
 ## XII. Error Handling and Debug Assertions
 
-Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below, and `scripts/check-no-throw-no-rtti.sh` fails the build if `__cxa_throw` reaches an artifact. Three tiers of error response:
+Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in this build — but because every error path is one of the three tiers below, and `utils/scripts/check-no-throw-no-rtti.sh` fails the build if `__cxa_throw` reaches an artifact. Three tiers of error response:
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
@@ -2348,7 +2348,7 @@ These library types make the axioms from §II true at compile time. They are in 
 | `foundation/permissions/PermissionFork.h` | ThreadSafe, BorrowSafe | `mint_permission_fork<Children...>(ctx, parent, callables...)` is the CSL parallel composition rule, as a fork-join with one `std::jthread` for each child. Its constraint is `CtxFitsPermissionFork<Ctx, Parent, Children...>`, which asks for `can_split_into_pack_v<Parent, Children...>` and a context that has `Effect::Bg`. `mint_permission_fork_inline` does the bodies inline in child order. Each mint gives back the parent permission after all bodies complete. |
 
 Every header is header-only and self-contained. The dependency rule is the layer
-rule, and `scripts/check-layer-boundary.py` enforces it: `foundation` names only
+rule, and `utils/scripts/check-layer-boundary.py` enforces it: `foundation` names only
 `foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`
 names anything below it.
 
@@ -2384,7 +2384,7 @@ concerns rather than lines is owed.
 ### Compiler enforcement
 
 - `-Werror=conversion` + the wrapper types together prevent accidental unwrapping across boundaries.
-- `Linear<>`'s deleted copy constructor refuses a second copy of a linear value at compile time. GCC 16 has no `-Wuse-after-move` (it rejects `-Werror=use-after-move` as an unknown option), so the language does not see a second `std::move` of one local. The `use_after_move` ci_guard (`scripts/check-use-after-move.py`) is the enforcement: it refuses any use of a local after `std::move`, on any path, across the tree. It catches `Permission<Tag>` double-use after split/fork, and it lists what it cannot see (a use through a pointer or a reference, a move inside a callee that takes `T&`).
+- `Linear<>`'s deleted copy constructor refuses a second copy of a linear value at compile time. GCC 16 has no `-Wuse-after-move` (it rejects `-Werror=use-after-move` as an unknown option), so the language does not see a second `std::move` of one local. The `use_after_move` ci_guard (`utils/scripts/check-use-after-move.py`) is the enforcement: it refuses any use of a local after `std::move`, on any path, across the tree. It catches `Permission<Tag>` double-use after split/fork, and it lists what it cannot see (a use through a pointer or a reference, a move inside a callee that takes `T&`).
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (Debug) and `semantic=observe` (Release, through a handler that aborts). Under `semantic=ignore` (CRUCIBLE_CONTRACT_IGNORE_OPTIONS) they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
 - Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `SessionHandle<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
@@ -2462,7 +2462,7 @@ borrows, and the `ExecCtx::row_type` of that context must admit the tag row.
 
 Other carriers have folds of their own in the same header. The effect row, `Computation<R, T>`, a capability context, `ExecCtx` and `Capability` each have a specialization. A carrier that publishes `row_discipline` and `row_payload` goes to the discipline fold. A session handle publishes the Stepping modality and goes to the stepping fold. The multi-axis binding in `fixy/Fn.h` has its own specialization.
 
-The lattice identity is a reflected name, so the graded fold is not portable across toolchains. Peers that can have different toolchains use `federation_key_with_toolchain<T>()` for their keys. `test/fixy/test_row_hash_wrappers.cpp` reads the carrier roster by reflection. It gives an error for each wrapper that folds to zero with no stated reason. `test/foundation/test_row_hash.cpp` holds the algebra of the fold. `tools/dump_row_hashes.cpp` with its committed golden is the cross-build witness.
+The lattice identity is a reflected name, so the graded fold is not portable across toolchains. Peers that can have different toolchains use `federation_key_with_toolchain<T>()` for their keys. `test/fixy/test_row_hash_wrappers.cpp` reads the carrier roster by reflection. It gives an error for each wrapper that folds to zero with no stated reason. `test/foundation/test_row_hash.cpp` holds the algebra of the fold. `utils/tools/dump_row_hashes.cpp` with its committed golden is the cross-build witness.
 
 ### GCC 16 contracts — implementation gotchas
 
@@ -2637,7 +2637,7 @@ Every PR passes all hard stops or is rejected.
 
 **HS13.** No regression at the chosen parallelism factor. If `ParallelismRule` or any new threading code chooses parallel(N), `bench/bench_no_regression.cpp` must show ≤5% regression vs sequential at that workload's footprint tier. Cache-resident workloads stay sequential by default; DRAM-bound workloads parallelize.
 
-**HS14.** Every new mint factory ships with at least 2 negative-compile fixtures. Per the Universal Mint Pattern (§XXI) discipline, a `mint_X(ctx, args...)` factory's `requires` clause is the single load-bearing soundness gate — and a soundness gate without a witness that it FIRES is just a comment. Each fixture demonstrates a distinct mismatch class (unfit ctx residency, non-bridgeable direction, malformed parameter, etc.). It lives in the negative-compile directory of its layer: `test/fixy/neg/` or `test/foundation/neg/` for `include/fixy/` and `include/foundation/`, a `test/*_neg/` directory for `include/crucible/`. `scripts/gen-mint-inventory.py` counts the fixtures of each mint in its own layer only. Its `--check-floor` mode fails CI on a mint with fewer than two, unless `scripts/mint-hs14-floor-allowlist.txt` lists it.
+**HS14.** Every new mint factory ships with at least 2 negative-compile fixtures. Per the Universal Mint Pattern (§XXI) discipline, a `mint_X(ctx, args...)` factory's `requires` clause is the single load-bearing soundness gate — and a soundness gate without a witness that it FIRES is just a comment. Each fixture demonstrates a distinct mismatch class (unfit ctx residency, non-bridgeable direction, malformed parameter, etc.). It lives in the negative-compile directory of its layer: `test/fixy/neg/` or `test/foundation/neg/` for `include/fixy/` and `include/foundation/`, a `test/*_neg/` directory for `include/crucible/`. `utils/scripts/gen-mint-inventory.py` counts the fixtures of each mint in its own layer only. Its `--check-floor` mode fails CI on a mint with fewer than two, unless `utils/scripts/mint-hs14-floor-allowlist.txt` lists it.
 
 ---
 
@@ -2753,7 +2753,7 @@ A handle of an SPSC or MPSC channel goes into a session through `mint_substrate_
 - **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (for example `PermissionForkRunner::spawn_` and `PermissionForkRunner::run_` in `foundation/permissions/PermissionFork.h`) so `grep "mint_"` returns only the public surface.
 - **Session ctx-bound mints use the permissioned family.** `mint_session<Proto>(ctx, res)` is the empty-`PermSet` shim; `mint_permissioned_session<Proto>(ctx, res, perms...)` is the non-empty `PermSet` form. Both route through the same ctx row gate and local permission-flow closure gate.
 - **Every new mint factory MUST ship at least 2 negative-compile fixtures** demonstrating the `requires` clause fires on each kind of mismatch. See HS14.
-- **Inventory of every mint** lives in `misc/mint-inventory.md`, regenerated by `python3 scripts/gen-mint-inventory.py --write`. It reads the AST mint model in `scripts/mintmodel.py`, the same model the §XXI guard `scripts/check-mint-pattern.py` reads, over all of `include/`. Each row gives the §XXI flags (nodiscard, constexpr, noexcept, a type-level constraint) and the authorization shape (ctx, token or member). It also says whether the constraint of a ctx-bound mint gates its context, and it counts the HS14 fixtures of the mint's own layer. `--check` fails CI on drift, and `--check-floor` fails CI on a mint under the HS14 floor that `scripts/mint-hs14-floor-allowlist.txt` does not list.
+- **Inventory of every mint** lives in `misc/mint-inventory.md`, regenerated by `python3 utils/scripts/gen-mint-inventory.py --write`. It reads the AST mint model in `utils/scripts/mintmodel.py`, the same model the §XXI guard `utils/scripts/check-mint-pattern.py` reads, over all of `include/`. Each row gives the §XXI flags (nodiscard, constexpr, noexcept, a type-level constraint) and the authorization shape (ctx, token or member). It also says whether the constraint of a ctx-bound mint gates its context, and it counts the HS14 fixtures of the mint's own layer. `--check` fails CI on drift, and `--check-floor` fails CI on a mint under the HS14 floor that `utils/scripts/mint-hs14-floor-allowlist.txt` does not list.
 
 ### Anti-pattern: the runtime registry
 

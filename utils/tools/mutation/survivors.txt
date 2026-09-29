@@ -1,0 +1,90 @@
+# Gate mutants that no test kills, and why each one may stay.
+#
+# utils/tools/mutation/run.py weakens one gate at a time.  A mutant that every
+# witness survives marks a gate with no witness.  Each such gate either gets
+# a witness (a negative fixture or a death test), or gets one line here.
+#
+# A line here is an EQUIVALENT mutant: the gate it weakens is implied by
+# another gate that still holds, so no program can tell the mutant from the
+# original.  The reason names the gate that still holds.
+#
+# Columns, separated by " | ":
+#   header | kind | entity | the gate text, whitespace squeezed | reason
+#
+# For a deleted declaration, the gate text is the declaration up to "= delete".
+# The key is the gate text, not a line number, so a line shift does not
+# make a row stale.
+
+include/foundation/permissions/ReadView.h | concept | ReadViewSource | !std::is_reference_v<Source> | detail::is_read_view_source refuses a reference type, because a reference type has no template arguments
+include/foundation/permissions/ReadView.h | delete | ReadView | ReadView(const ReadView&) | the declared move constructor makes the implicit copy constructor deleted
+include/foundation/permissions/ReadView.h | delete | ReadView | ReadView(ReadView&&) | without it an rvalue selects the deleted copy constructor
+include/foundation/permissions/ReadView.h | delete | operator= | ReadView& operator=(const ReadView&) | the declared move assignment makes the implicit copy assignment deleted
+include/foundation/permissions/ReadView.h | delete | operator= | ReadView& operator=(ReadView&&) | without it an rvalue selects the deleted copy assignment
+include/foundation/permissions/ReadView.h | delete | operator new | static void* operator new(std::size_t) | the private default constructor and the deleted copy and move constructors refuse every new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator new[] | static void* operator new[](std::size_t) | the private default constructor refuses every array new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator new | static void* operator new(std::size_t, std::align_val_t) | the private default constructor and the deleted copy and move constructors refuse every new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator new[] | static void* operator new[](std::size_t, std::align_val_t) | the private default constructor refuses every array new-expression of a ReadView
+include/foundation/permissions/ReadView.h | delete | operator delete | static void operator delete(void*) | class lookup still finds the deleted aligned operator delete, which refuses delete of a view
+include/foundation/permissions/ReadView.h | delete | operator delete[] | static void operator delete[](void*) | class lookup still finds the deleted aligned operator delete[], which refuses delete[] of a view
+include/foundation/permissions/ReadView.h | delete | operator delete | static void operator delete(void*, std::align_val_t) | class lookup still finds the deleted operator delete(void*), which refuses delete of a view
+include/foundation/permissions/ReadView.h | delete | operator delete[] | static void operator delete[](void*, std::align_val_t) | class lookup still finds the deleted operator delete[](void*), which refuses delete[] of a view
+include/foundation/permissions/ReadView.h | requires | ReadLoan | ::foundation::brand::IsFreshBrand<Other> | with Other the erased brand the constructor has the move constructor's signature, and the non-template move constructor wins; a non-brand Other fails the IsBrand static_assert of ReadLoan
+include/foundation/permissions/ReadView.h | delete | operator= | ReadLoan& operator=(const ReadLoan&) | the declared move constructor and move assignment make the implicit copy assignment deleted
+include/foundation/permissions/ReadView.h | requires | LentPermission | ::foundation::brand::IsFreshBrand<Other> | with Other the erased brand the constructor has the move constructor's signature, and the non-template move constructor wins; a non-brand Other fails the IsBrand static_assert of the parked Permission
+include/foundation/permissions/ReadView.h | delete | LentPermission | LentPermission(const LentPermission&) | the declared move constructor makes the implicit copy constructor deleted
+include/foundation/permissions/ReadView.h | delete | operator= | LentPermission& operator=(const LentPermission&) | the declared, deleted move assignment makes the implicit copy assignment deleted
+include/foundation/permissions/ReadView.h | delete | operator= | LentPermission& operator=(LentPermission&&) | without it an rvalue selects the deleted copy assignment
+include/foundation/permissions/PermissionFork.h | concept | CtxFitsPermissionForkInline | ::foundation::effects::IsExecCtx<Ctx> | the next conjunct, CtxAdmitsPermission<Parent, Ctx>, opens with IsExecCtx<Ctx>, so a non-context is still refused
+include/foundation/permissions/PermissionFork.h | concept | PermissionForkCtxCallable | std::is_invocable_v<Callable, Permission<Child>, Ctx const&> | the nothrow conjunct beside it still refuses: a type that is nothrow invocable is invocable
+include/foundation/permissions/PermissionFork.h | static_assert | permission_fork_check_ | sizeof...(Children) == sizeof...(Callables) | can_each_body_take_its_child refuses a count mismatch first, in the requires-clause of both mints and of the runner's body, which has no other caller
+include/foundation/permissions/PermissionFork.h | static_assert | permission_fork_check_ | (std::is_invocable_v<Callables, Permission<Children>, Ctx const&> && ...) | can_each_body_take_its_child refuses a body that cannot take its child first, in the requires-clause of both mints and of the runner's body, which has no other caller
+include/foundation/permissions/PermissionFork.h | static_assert | permission_fork_check_ | (std::is_nothrow_invocable_v<Callables, Permission<Children>, Ctx const&> && ...) | can_each_body_take_its_child refuses a body that may throw first, in the requires-clause of both mints and of the runner's body, which has no other caller
+include/foundation/permissions/PermissionFork.h | concept | CtxFitsPermissionForkArm | (Spawn && CtxFitsPermissionFork<Ctx, Parent, Children...>) || (!Spawn && CtxFitsPermissionForkInline<Ctx, Parent, Children...>) | run_ is private and its only callers are the two mints, and the requires-clause of each mint implies the fit of its arm
+include/foundation/permissions/PermissionFork.h | requires | run_ | detail::CtxFitsPermissionForkArm<Spawn, Ctx, Parent, Children...> | run_ is private and its only callers are the two mints, and the requires-clause of each mint implies the fit of its arm
+include/foundation/permissions/PermissionFork.h | requires | run_ | detail::can_each_body_take_its_child_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>> | run_ is private and its only callers are the two mints, and the requires-clause of each mint carries the same check
+include/foundation/permissions/PermissionFork.h | delete | PermissionForkRunner | PermissionForkRunner(const PermissionForkRunner&) | the declared move constructor makes the implicit copy constructor deleted
+include/foundation/permissions/PermissionFork.h | delete | operator= | PermissionForkRunner& operator=(const PermissionForkRunner&) | the declared move constructor makes the implicit copy assignment deleted
+include/foundation/permissions/PermissionFork.h | delete | PermissionForkRunner | PermissionForkRunner(PermissionForkRunner&&) | without it an rvalue selects the deleted copy constructor
+include/foundation/permissions/PermissionFork.h | delete | operator= | PermissionForkRunner& operator=(PermissionForkRunner&&) | without it an rvalue selects the deleted copy assignment
+include/fixy/os/Spawn.h | concept | CtxFitsParallelFor | eff::IsExecCtx<Ctx> | the next conjunct, CtxOwnsCapability<Ctx, Bg>, opens with IsExecCtx<Ctx>, so a non-context is still refused
+include/fixy/os/Spawn.h | requires | run_shards_ | eff::CtxOwnsCapability<Ctx, eff::Effect::Bg> | run_shards_ is private and its only caller is mint_parallel_for, whose requires-clause demands the Bg capability
+include/fixy/os/Spawn.h | delete | ParallelForRunner | ParallelForRunner(const ParallelForRunner&) | the declared move constructor makes the implicit copy constructor deleted
+include/fixy/os/Spawn.h | delete | operator= | ParallelForRunner& operator=(const ParallelForRunner&) | the declared move constructor makes the implicit copy assignment deleted
+include/fixy/os/Spawn.h | delete | ParallelForRunner | ParallelForRunner(ParallelForRunner&&) | without it an rvalue selects the deleted copy constructor
+include/fixy/os/Spawn.h | delete | operator= | ParallelForRunner& operator=(ParallelForRunner&&) | without it an rvalue selects the deleted copy assignment
+include/fixy/Qtt.h | requires | ConsumeTrackerImpl | IsConsumeBound<Grade> | the tracker is a detail base whose only user is Qtt, whose own requires-clause is IsConsumeBound<Grade>, and utils/scripts/check-detail-namespace.py refuses a use of fixy::detail outside the layers
+include/fixy/Qtt.h | requires | ConsumeTrackerImpl | IsConsumeBound<Grade> | the tracker is a detail base whose only user is Qtt, whose own requires-clause is IsConsumeBound<Grade>, and utils/scripts/check-detail-namespace.py refuses a use of fixy::detail outside the layers
+include/fixy/Qtt.h | delete | ConsumeTrackerImpl | ConsumeTrackerImpl(const ConsumeTrackerImpl&) | the declared move constructor makes the implicit copy constructor deleted
+include/fixy/Qtt.h | delete | operator= | ConsumeTrackerImpl& operator=(const ConsumeTrackerImpl&) | the declared move constructor and move assignment make the implicit copy assignment deleted
+include/fixy/Qtt.h | requires | Qtt | std::is_constructible_v<T, Args...> | the constructor is private, and its only callers are mint_linear and mint_affine, whose requires-clauses carry the same check
+include/fixy/Qtt.h | delete | operator= | Qtt& operator=(const Qtt&) | the declared move constructor and move assignment make the implicit copy assignment deleted
+include/foundation/diag/FailClosed.h | static_assert | unique_target | std::meta::is_namespace(Ns) | the next assertion calls edge_count_from<Ns, T>, whose own static_assert refuses a reflection that is not a namespace
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishOnce& operator=(const PublishOnce&) | the atomic member makes the implicit copy assignment deleted
+include/fixy/handle/PublishOnce.h | delete | PublishOnce | PublishOnce(PublishOnce&&) | the declared copy constructor and destructor suppress the implicit move constructor, so an rvalue selects the deleted copy constructor
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishOnce& operator=(PublishOnce&&) | the declared copy assignment and destructor suppress the implicit move assignment, so an rvalue selects the deleted copy assignment
+include/fixy/handle/PublishOnce.h | contract | publish | slot_.load(std::memory_order_relaxed) == ptr | the exchange that succeeded stored ptr, and any later publish aborts before it stores, so the condition holds on every path
+include/fixy/handle/PublishOnce.h | delete | PublishSlot | PublishSlot(const PublishSlot&) | the atomic member makes the implicit copy constructor deleted
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishSlot& operator=(const PublishSlot&) | the atomic member makes the implicit copy assignment deleted
+include/fixy/handle/PublishOnce.h | delete | PublishSlot | PublishSlot(PublishSlot&&) | the declared copy constructor and destructor suppress the implicit move constructor, so an rvalue selects the deleted copy constructor
+include/fixy/handle/PublishOnce.h | delete | operator= | PublishSlot& operator=(PublishSlot&&) | the declared copy assignment and destructor suppress the implicit move assignment, so an rvalue selects the deleted copy assignment
+include/fixy/handle/Once.h | contract | set | ptr_ == p | the line above stores p, so the condition holds on every path
+include/fixy/handle/Once.h | contract | try_set | p == nullptr || ptr_ != nullptr | each exit leaves it true: a claim stores a non-null p, a refused null has p null, and a refused second set finds the slot non-null
+include/fixy/handle/Once.h | contract | reset | ptr_ == nullptr | the line above stores null, so the condition holds on every path
+include/foundation/algebra/lattices/StrongCounterLattice.h | static_assert | write_word | Offset + 8 <= Size | write_word is a detail helper whose only callers pass the literal offsets 0 and 8 into the 16-byte image, and utils/scripts/check-detail-namespace.py refuses a use of the detail namespace outside the layers
+include/fixy/Borrowed.h | requires | mint_borrowed | !std::is_lvalue_reference_v<R> | in the deleted rvalue twin of the mint, the !borrowed_range<R> conjunct is false for every lvalue range, because a range named by an lvalue reference is a borrowed range
+include/fixy/Borrowed.h | requires | mint_borrowed | std::ranges::contiguous_range<R> | in the deleted rvalue twin of the mint, the twin refuses only calls that no other overload of mint_borrowed accepts, so widening it to a non-range refuses nothing new
+include/fixy/Borrowed.h | requires | mint_borrowed | !IsBorrowed<R> | in the deleted rvalue twin of the mint, both other overloads of mint_borrowed refuse a Borrowed, so the twin taking one refuses nothing new
+include/fixy/Borrowed.h | requires | mint_borrowed_ref | (!std::is_lvalue_reference_v<T>) | in the deleted forwarding twin of the mint, an lvalue also deduces the T& overload, and partial ordering prefers T& to a forwarding reference, so every lvalue still reaches the mint. A function lvalue is refused both ways: no overload matches it, or the twin is deleted
+include/fixy/Borrowed.h | delete | BorrowedRef | BorrowedRef() | the class declares other constructors, so no default constructor is declared implicitly
+include/fixy/Borrowed.h | requires | BorrowedRef | ::foundation::brand::IsFreshBrand<Other> | with Other the erased brand the constructor has the copy constructor's signature, and the non-template copy constructor wins. A non-brand Other fails the IsBrand static_assert of BorrowedRef
+include/fixy/Borrowed.h | requires | Borrowed | !std::is_lvalue_reference_v<R> | in the deleted rvalue-range twin of the span constructor, the !borrowed_range<R> conjunct is false for every lvalue range, because a range named by an lvalue reference is a borrowed range
+include/fixy/Borrowed.h | requires | Borrowed | ::foundation::brand::IsFreshBrand<Other> | with Other the erased brand the constructor has the copy constructor's signature, and the non-template copy constructor wins. A non-brand Other fails the IsBrand static_assert of Borrowed
+include/foundation/algebra/lattices/StrongCounterLattice.h | static_assert | read_word | Offset + 8 <= Size | read_word is a detail helper whose only callers pass the literal offsets 0 and 8 into the 16-byte image, and utils/scripts/check-detail-namespace.py refuses a use of the detail namespace outside the layers
+include/foundation/permissions/Permission.h | concept | PermissionTag | std::is_class_v<T> | the is_empty_v conjunct beside it still refuses: std::is_empty_v is true only for a class type that is not a union
+include/foundation/permissions/Permission.h | concept | IsPermissionFor | IsPermission<T> | the is_same conjunct names the tag_type member, which only the Permission specialization of is_permission_impl declares, so a type that is not a Permission fails it by substitution
+include/foundation/permissions/Permission.h | concept | IsSharedPermissionFor | IsSharedPermission<T> | the is_same conjunct names the tag_type member, which only the SharedPermission specialization of is_shared_permission_impl declares, so a type that is not a SharedPermission fails it by substitution
+include/foundation/permissions/Permission.h | delete | operator= | Permission& operator=(const Permission&) | the declared move constructor and move assignment make the implicit copy assignment deleted
+include/foundation/permissions/Permission.h | requires | SharedPermission | ::foundation::brand::IsFreshBrand<Other> | with Other the erased brand the constructor has the copy constructor's signature, and the non-template copy constructor wins; a non-brand Other fails the IsBrand static_assert of SharedPermission
+include/foundation/permissions/Permission.h | delete | SharedPermissionGuard | SharedPermissionGuard(const SharedPermissionGuard&) | the declared move constructor makes the implicit copy constructor deleted
+include/foundation/permissions/Permission.h | delete | operator= | SharedPermissionGuard& operator=(const SharedPermissionGuard&) | the declared move constructor makes the implicit copy assignment deleted
+include/foundation/permissions/Permission.h | delete | operator= | SharedPermissionGuard& operator=(SharedPermissionGuard&&) | without it an rvalue selects the deleted copy assignment

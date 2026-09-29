@@ -38,10 +38,10 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_program(CRUCIBLE_OBJDUMP objdump REQUIRED)
 add_test(NAME check_ct_disassembly
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/check-ct-disassembly.py
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/scripts/check-ct-disassembly.py
           --cxx ${CMAKE_CXX_COMPILER})
 add_test(NAME check_ct_disassembly_self_test
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/check-ct-disassembly.py
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/utils/scripts/check-ct-disassembly.py
           --cxx ${CMAKE_CXX_COMPILER} --self-test)
 set_tests_properties(check_ct_disassembly check_ct_disassembly_self_test
   PROPERTIES LABELS "ci_guard;ct" WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

@@ -1,7 +1,7 @@
 # The layer rule, enforced by the compiler.
 #
 # foundation names only foundation and std, and fixy names only foundation,
-# fixy and std.  scripts/check-layer-boundary.py reads that rule from the
+# fixy and std.  utils/scripts/check-layer-boundary.py reads that rule from the
 # parse tree.  This directory makes the compiler hold it too: a header that
 # includes or names a higher layer does not compile, whatever the spelling.
 #

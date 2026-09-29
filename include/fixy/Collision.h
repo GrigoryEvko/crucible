@@ -638,7 +638,7 @@ inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition
 // The walk sees what its translation unit has included, so this file's
 // own assertion covers the families this file includes and no more.  The
 // complete answer needs a sentinel over every header that can declare a
-// roster; scripts/check-atom-roster-joined.sh builds one from the
+// roster; utils/scripts/check-atom-roster-joined.sh builds one from the
 // directory rather than from a list, and calls the same two functions.
 // Both this file and the check that every atom has a consumer read this
 // derivation rather than building a second set.
@@ -784,7 +784,7 @@ template <class Site>
 }
 
 // This header's own vantage point.  It covers the families included at
-// the top of this file and no others; scripts/check-atom-roster-joined.sh
+// the top of this file and no others; utils/scripts/check-atom-roster-joined.sh
 // instantiates the same two templates from a sentinel that includes every
 // header under fixy/ and so covers the rest.  The tag is never defined —
 // it is an identity for the instantiation point, not a type anyone uses.

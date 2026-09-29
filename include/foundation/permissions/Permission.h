@@ -16,7 +16,7 @@
 // exclusive's.  foundation/Brand.h states the three facts a brand
 // rests on.  A spelling that names no brand is the erased identity
 // DefaultBrand, kept so that code written before brands means what it
-// meant; scripts/check-brand-drain.py lists every such spelling.
+// meant; utils/scripts/check-brand-drain.py lists every such spelling.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
 // holder's writes to that memory.  Both are obligations on the code
@@ -201,7 +201,7 @@ inline constexpr bool all_distinct_tags_v = detail::is_each_tag_distinct<Childre
 //   1. an edge `edge<Tag, Row<...>>` in permission_rows, the enumerable
 //      form, which every_class_in_has_edge audits for the canonical tags.
 //      Only this header, ReadView.h and test/ may open the namespace, and
-//      scripts/check-trait-injection.py refuses it in any other file;
+//      utils/scripts/check-trait-injection.py refuses it in any other file;
 //   2. `using permission_row = Row<...>;` inside the tag, for a tag
 //      template such as a channel's Whole<UserTag>, whose instances
 //      cannot each be an edge;
@@ -632,7 +632,7 @@ private:
 // friend.  A reflection check cannot refuse it: GCC gives the location
 // of the primary template for an instance of a partial specialization,
 // and a #line directive moves any location.  The guard
-// scripts/check-federation-admission.py refuses, outside
+// utils/scripts/check-federation-admission.py refuses, outside
 // fixy/Federation.h, each class head of FederationAdmission and each
 // qualified definition that names one of its members.
 template <typename Org>

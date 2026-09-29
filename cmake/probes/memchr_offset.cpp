@@ -2,7 +2,7 @@
 //
 // The constant evaluator of GCC 10.1 through 16.2 counts the offset of the
 // first argument two times when it evaluates memchr, strchr, strrchr or
-// strstr on a pointer into a string.  toolchain/gcc/patches/0002-*.patch has
+// strstr on a pointer into a string.  utils/toolchain/gcc/patches/0002-*.patch has
 // the fix.  A compiler with the fix accepts this file.  A compiler without
 // the fix refuses each static_assert.
 constexpr long memchr_offset(const char* text, unsigned long count) {

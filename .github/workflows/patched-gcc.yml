@@ -6,9 +6,9 @@
 # refuses a compiler without each fix, so a job that uses a different compiler
 # fails at the configure step.
 #
-# toolchain/gcc/build.sh builds the compiler from toolchain/gcc/BASE and
-# toolchain/gcc/patches/.  The cache key is a hash of those files and of the
-# script, so a change to one of them builds the compiler again.  A cache hit
+# utils/toolchain/gcc/build.sh builds the compiler from utils/toolchain/gcc/BASE
+# and utils/toolchain/gcc/patches/.  The cache key is a hash of those files and
+# of the script, so a change to one of them builds the compiler again.  A cache hit
 # skips the build, and the job then takes approximately one minute.
 #
 # BILLING: the same rules as the billing block in ci.yml.  Standard runners
@@ -22,7 +22,7 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: "The commit to read toolchain/gcc from.  Empty means the commit of the run."
+        description: "The commit to read utils/toolchain/gcc from.  Empty means the commit of the run."
         required: false
         type: string
         default: ""
@@ -68,7 +68,7 @@ jobs:
       # arch.  The consumers append the arch.
       - name: Compute the cache key
         id: key
-        run: echo "key=patched-gcc-fedora44-${{ hashFiles('toolchain/gcc/BASE', 'toolchain/gcc/patches/*.patch', 'toolchain/gcc/build.sh') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=patched-gcc-fedora44-${{ hashFiles('utils/toolchain/gcc/BASE', 'utils/toolchain/gcc/patches/*.patch', 'utils/toolchain/gcc/build.sh') }}" >> "$GITHUB_OUTPUT"
 
       - name: Look up the cached install
         id: cache
@@ -87,7 +87,7 @@ jobs:
 
       - name: Build and install the patched GCC
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
-        run: bash toolchain/gcc/build.sh /opt/crucible-gcc "$(nproc)"
+        run: bash utils/toolchain/gcc/build.sh /opt/crucible-gcc "$(nproc)"
 
       - name: Save the install
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
