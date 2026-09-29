@@ -1,5 +1,5 @@
-# utils/scripts/witness-roster.txt -- every type in the new tree that attests
-# to a fact it cannot see, and the door it keeps.
+# utils/scripts/witness-roster.txt -- every type in include/foundation and
+# include/fixy that attests to a fact it cannot see, and the door it keeps.
 #
 # Read by utils/scripts/check-witness-roster.py (the walk, the generator and
 # the drift check) and by test/fixy/CMakeLists.txt (one negative-compile

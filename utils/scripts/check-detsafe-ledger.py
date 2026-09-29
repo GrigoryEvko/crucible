@@ -515,8 +515,8 @@ def self_test() -> int:
                                                     "#include SIBLING_HEADER\n",
         "include/crucible/planted/ComputedCall.h": "#pragma once\n#define LEDGER_OF(name) <crucible/ledger/name.h>\n"
                                                    "#include LEDGER_OF(Verdict)\n",
-        "include/fixy/ledger/New.h": "#pragma once\n",
-        "include/crucible/planted/NewTree.h": "#pragma once\n#include <fixy/ledger/New.h>\n",
+        "include/fixy/ledger/Other.h": "#pragma once\n",
+        "include/crucible/planted/OtherRoot.h": "#pragma once\n#include <fixy/ledger/Other.h>\n",
         "include/crucible/planted/Broken.h": "#pragma once\nvoid f() { g(1) { } }\n",
         "include/crucible/planted/Reaches.h": "#pragma once\n#include <crucible/planted/Broken.h>\n",
     }
@@ -573,7 +573,7 @@ def self_test() -> int:
                             ("InlineNested", "a nested ledger namespace name with an inline part"),
                             ("ComputedComment", "a computed include whose macro holds a comment"),
                             ("ComputedCall", "a computed include through a function-like macro"),
-                            ("NewTree", "a ledger directory of another project root"),
+                            ("OtherRoot", "a ledger directory of another project root"),
                             ("Reaches", "a closure file that the parser cannot read")):
             expect(f"caught: {label}", bool(verdict(name)))
 

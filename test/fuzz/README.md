@@ -61,7 +61,7 @@ sanitizer stops the process.
 
 To add a boundary, write `boundary/harnesses/<name>.h` and add one
 `crucible_boundary_fuzzer(<name> <mutations>)` line to
-`test/fuzz/CMakeLists.txt`.  A harness names no type of the old substrate.
+`test/fuzz/CMakeLists.txt`.
 
 ## Coverage-guided campaigns: AFL++ with its GCC plugin
 

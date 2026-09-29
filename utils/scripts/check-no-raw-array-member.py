@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""check-no-raw-array-member.py: no C array data member in the new tree.
+"""check-no-raw-array-member.py: no C array data member in include/foundation or include/fixy.
 
 A subscript of a C array member is checked by no build.  The standard
 library's debug assertions check std::array::operator[], and UBSan's bounds

@@ -708,11 +708,11 @@ def _namespace_of(node: tsast.Node) -> str:
     return "::".join(part for part in tsast.namespace_path(node) if part)
 
 
-NEW_TREE_ROOTS = ("include/foundation", "include/fixy")
+SUBSTRATE_ROOTS = ("include/foundation", "include/fixy")
 
 
-def is_new_tree(path: str) -> bool:
-    """Report whether a header path lies in the new tree.
+def is_substrate_path(path: str) -> bool:
+    """Report whether a header path lies in the substrate layer.
 
     Args:
         path: A repo-relative header path
@@ -720,26 +720,27 @@ def is_new_tree(path: str) -> bool:
     Returns:
         True for a path under `include/foundation/` or `include/fixy/`
     """
-    return any(path == root or path.startswith(root + "/") for root in NEW_TREE_ROOTS)
+    return any(path == root or path.startswith(root + "/") for root in SUBSTRATE_ROOTS)
 
 
 def fixture_files(root: Path = tsast.REPO_ROOT) -> dict[str, list[Path]]:
     """Return the negative-compile fixture files of each layer, sorted.
 
     A fixture directory is a directory under `test/` named `neg` or ending in
-    `_neg`.  The fixtures of the new tree live under `test/fixy/` and
-    `test/foundation/`.  Every other directory holds fixtures of the crucible
-    layer.  A mint's HS14 count reads only the fixtures of its own layer,
-    because two layers can declare mints of one name and a fixture of one layer
-    says nothing about a gate of the other.
+    `_neg`.  The fixtures of the substrate layer, `include/foundation/` and
+    `include/fixy/`, live under `test/fixy/` and `test/foundation/`.  Every
+    other directory holds fixtures of the crucible layer.  A mint's HS14 count
+    reads only the fixtures of its own layer, because two layers can declare
+    mints of one name and a fixture of one layer says nothing about a gate of
+    the other.
 
     Args:
         root: The repository root to search
 
     Returns:
-        `crucible` and `new` to the fixture files of that layer, relative to root
+        `crucible` and `substrate` to the fixture files of that layer, relative to root
     """
-    found: dict[str, list[Path]] = {"crucible": [], "new": []}
+    found: dict[str, list[Path]] = {"crucible": [], "substrate": []}
     test_dir = root / "test"
     if not test_dir.is_dir():
         return found
@@ -747,7 +748,7 @@ def fixture_files(root: Path = tsast.REPO_ROOT) -> dict[str, list[Path]]:
         if directory.name != "neg" and not directory.name.endswith("_neg"):
             continue
         rel = directory.relative_to(root)
-        family = "new" if rel.parts[1] in ("fixy", "foundation") else "crucible"
+        family = "substrate" if rel.parts[1] in ("fixy", "foundation") else "crucible"
         for suffix in (".h", ".hpp", ".cpp", ".cc"):
             found[family].extend(p.relative_to(root) if root == tsast.REPO_ROOT else p
                                  for p in directory.glob(f"*{suffix}"))

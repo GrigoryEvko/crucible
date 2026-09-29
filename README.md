@@ -34,7 +34,7 @@ The patched compiler is GCC 16.2.1 plus the fixes in `utils/toolchain/gcc/patche
 cmake --preset default && cmake --build --preset default -j8
 ctest --preset default          # full suite, parallel
 
-cmake --preset release          # -O3 -march=native -DNDEBUG -flto=auto
+cmake --preset release          # -O3 -march=native -DNDEBUG -g, contracts observe, no LTO
 cmake --preset tsan             # ThreadSanitizer on every target
 cmake --preset ubsan-strict     # full UBSan on every target, signed overflow undefined
 cmake --preset verify           # Release code with every contract clause enforced
@@ -45,71 +45,60 @@ Build with `-j8` maximum — heaviest TUs peak ~1GB cc1plus RSS each (template +
 ## Project layout
 
 ```
-include/crucible/        Tensor-level IR + runtime
-  Platform.h             Macros, branch hints, CRUCIBLE_INLINE
-  Types.h                ScalarType, DeviceType, Layout, strong ID/hash types
-  Arena.h                Bump-pointer allocator (~2ns, 1MB blocks)
-  TraceRing.h            SPSC ring (64B entries, op_flags 5-bit packed context)
-  MetaLog.h              Parallel SPSC for TensorMeta (168B, zero-copy drain)
-  IterationDetector.h    K=5 schema hash signature, two-match confirmation
-  BackgroundThread.h     Ring drain → TraceGraph → Merkle DAG → MemoryPlan
-  TraceGraph.h           Bidirectional CSR (DATA_FLOW, ALIAS edges)
-  MerkleDag.h            RegionNode, BranchNode, LoopNode, KernelCache
-  Graph.h                Mutable IR: 64B GraphNode, 8B Inst, DCE, CSE, toposort
-  ExprPool.h             Swiss table interned expressions (wyhash, pointer equality)
-  Ops.h                  Symbolic ops for shape/dimension algebra
-  CKernel.h              Device-agnostic compute op taxonomy (frozen ordinals)
-  CostModel.h            Hardware profiles, roofline model, kernel constraints
-  SchemaTable.h          SchemaHash → op name (sorted, binary search)
-  TraceLoader.h          .crtrace binary loader (auto-detects meta format)
-  Philox.h               Deterministic counter-based RNG
-  Serialize.h            CDAG serialization
-  ReplayEngine.h         Graduated divergence detection, atomic plan swap
-  PoolAllocator.h        base_ptr + offset allocation (~2ns)
-
-  safety/                Linear, Refined, Tagged, Secret, Permission, Session,
-                         Machine, Monotonic, AppendOnly, ScopedView, ConstantTime,
-                         Checked, Mutation, FinalBy, NotInherited, … —
-                         the 8-axiom enforcement layer
-  algebra/               Graded<Modality, Lattice, T> substrate + lattice
-                         catalog (Tolerance, RecipeFamily, NumaNode, Affinity,
-                         BitsBudget, PeakBytes, Epoch, Generation, ProductLattice, …)
-  sessions/              Type-state binary + MPST session types,
-                         PermissionedSessionHandle (CSL × session integration)
-  effects/               Met(X) effect rows, EffectRow, Computation<R, T>,
-                         capability tags (Alloc / IO / Block / Bg / Init / Test)
-  permissions/           Permission<Tag>, SharedPermission + pool, mint_permission_fork
-                         (Concurrent Separation Logic primitives)
-  concurrent/            SPSC / MPSC / MPMC rings, ChaseLevDeque, AtomicSnapshot,
-                         AdaptiveScheduler, NumaThreadPool
-  handles/               Pinned, OwnedRegion, RAII handle wrappers
-  bridges/               Cross-substrate adapters
-  perf/                  Bench harness primitives
-  rt/                    Realtime policy (SCHED_DEADLINE, mlock, isolcpus)
-
-  vis/                   Trace visualization
-    BlockDetector.h        Scope-based block grouping
-    NetworkSimplex.h       Minimum-cost rank assignment
-    SugiyamaLayout.h       Layered graph drawing
-    SvgRenderer.h          Direct SVG emission with interactive JS
-
-vessel/torch/
-  crucible_fallback.cpp  C++ boxed fallback (DispatchKey::Crucible)
-  vessel_api.cpp         C API to Vigil lifecycle
-  crucible_native.py     Python controller (CrucibleNative context manager)
-  crucible_mode.py       Legacy Python-only TorchDispatchMode path
-  examples/              Recording scripts
-    traces/              .crtrace output (gitignored)
-
-patches/                 PyTorch fork patch
-test/                    Positive tests + negative-compile fixtures
-bench/                   Micro-benchmarks
-utils/scripts/           CI guards, their allowlists and rosters, and the generators
-utils/tools/             Hardware probe, row-hash witness, mutation runner, session oracle
-utils/toolchain/         Build script and patches of the patched GCC
-misc/                    Current design specs: CRUCIBLE.md (runtime),
-                         FORGE.md (vendor-agnostic optimizer), MIMIC.md (per-vendor backends)
-papers/                  Whitepaper + yellowpaper (legacy artifacts, pending update)
+include/foundation/              Layer 1, namespace foundation: Platform.h macros, Pinned, Simd,
+                                 saturated arithmetic
+include/foundation/algebra/      Graded<Modality, Lattice, T>, the lattices and the modalities
+include/foundation/contracts/    CRUCIBLE_PRE, CRUCIBLE_POST and the decide predicates
+include/foundation/diag/         The diagnostic catalog, the fail-closed edges and the row hash
+include/foundation/effects/      Effect atoms, effect rows, contexts, capabilities, Computation<R, T>
+include/foundation/permissions/  Permission<Tag>, SharedPermission, ReadView, mint_permission_fork
+include/foundation/reflect/      Reflection helpers: enum names, type hashes, signatures
+include/fixy/                    Layer 2, namespace fixy: the safety wrappers (Linear, Refined,
+                                 Tagged, Secret, Machine, Mutation, ScopedView) and the axis table
+include/fixy/atoms/              The atoms, each of which relaxes one axis of a binding
+include/fixy/concurrent/         SPSC and MPSC rings, permissioned channels, pipelines,
+                                 ParallelismRule, Topology
+include/fixy/fp/                 Reproducible floating point: one NaN pattern, written-out polynomials
+include/fixy/handle/             Handles that a caller sets or publishes one time
+include/fixy/os/                 Doors to the operating system: files, maps, sockets, threads, time
+include/fixy/session/            Binary and multiparty session types, subtyping, crash-stop
+include/crucible/                Layer 3, namespace crucible: the runtime.  Arena, TraceRing,
+                                 MetaLog, TraceGraph, MerkleDag, Graph, ExprPool, CKernel, Philox,
+                                 Serialize, ReplayEngine, PoolAllocator, Vigil, RecipeRegistry
+include/crucible/canopy/         Mesh membership and gossip: SWIM, HyParView, Plumtree, CRDTs
+include/crucible/cipher/         The computation cache and its federation protocol
+include/crucible/cntp/           The CNTP network transport: congestion control, pacing, FEC, AF_XDP
+include/crucible/cog/            Hardware identity: NIC setup and audit, TargetCaps, latency tables
+include/crucible/forge/          IR001 operation kinds and the network recipe table
+include/crucible/ledger/         The hardware-capability ledger and its probes
+include/crucible/mimic/          Fences, semaphores and the Cog projection of the backends
+include/crucible/observe/        Metrics, health observations, histograms, synthetic probes
+include/crucible/perf/           BPF sensors: scheduler, syscalls, lock contention, PMU samples
+include/crucible/topology/       Discovery, Pingmesh, PTP, congestion telemetry
+include/crucible/vis/            Trace visualization: block detection, Sugiyama layout, SVG
+include/crucible/warden/         Deadline watchdog, hardening policy, quarantine, CPU topology
+src/                             The .cpp files of the foundation, crucible and crucible_perf
+                                 libraries
+test/                            Tests of include/crucible and src, the constant-time tests (ct/),
+                                 the layer fixtures (layer/) and the session oracle answers
+test/fixy/ test/foundation/      Tests of layers 1 and 2, with negative-compile fixtures in neg/
+test/*_neg/                      Negative-compile fixtures of layer 3, one directory per subject
+test/fuzz/                       Property tests and boundary fuzz harnesses (test/fuzz/README.md)
+utils/scripts/                   CI guards, their allowlists and rosters, and the generators
+utils/tools/                     Hardware probe, row-hash witness, mutation runner, session oracle
+utils/toolchain/                 Build script and patches of the patched GCC
+vessel/torch/                    The PyTorch Vessel: the dispatch fallback and recording kernels,
+                                 the C API, the Python controller
+vessel/torch/examples/           Recording scripts.  Their traces go to traces/, which git ignores
+patches/                         PyTorch fork patch
+bench/                           Micro-benchmarks, with their baselines in bench/baselines/
+examples/                        Worked bindings of fixy::fn
+cmake/                           Toolchain file, patched-GCC probes, contract semantic, BPF build
+crucible/data/                   Network recipe constraints in JSON.  No code reads this file
+misc/                            Design specs: CRUCIBLE.md (runtime), FORGE.md (vendor-agnostic
+                                 optimizer), MIMIC.md (per-vendor backends), and the mint inventory
+papers/                          Whitepaper and yellowpaper, legacy documents that do not agree
+                                 with the code
 ```
 
 ## Design principles

@@ -26,8 +26,9 @@ FAMILY B: FAIL-CLOSED RELATIONS
     utils/scripts/check-splits-orphan.py.
 
 FAMILY C: FAIL-CLOSED NAMESPACES
-    The new tree states a relation as a namespace of
-    foundation::fail_closed::edge<From, To> variables (foundation/diag/FailClosed.h).
+    The two layers, include/foundation and include/fixy, state a relation as a
+    namespace of foundation::fail_closed::edge<From, To> variables
+    (foundation/diag/FailClosed.h).
     A namespace is open by definition, so the guard refuses each definition
     of a namespace with one of these names outside its authoring set:
     admitted_retags (fixy/Tagged.h), admitted_policies (fixy/Secret.h),
@@ -37,17 +38,17 @@ FAMILY C: FAIL-CLOSED NAMESPACES
     a permission_row member in its own definition, so no other file needs the
     namespace.  A namespace alias adds no member and does not count.
 
-FAMILY D: THE ORPHAN RULE OF THE NEW TREE
-    A concept of the new tree reads a class template or a variable template:
+FAMILY D: THE ORPHAN RULE OF THE TWO LAYERS
+    A concept of the two layers reads a class template or a variable template:
     IsExecCtx reads is_exec_ctx_v, Subrow reads is_subrow, IsGraded reads
     Graded.  An explicit or partial specialization of one of them, from any
     file, changes what the concept admits.  `template <> inline constexpr
     bool is_exec_ctx_v<Fake> = true;` makes a plain struct a context that
     owns every effect.  An explicit specialization of one member, such as
     `template <> constexpr bool X<Fake>::value = true;`, is the same forgery.
-    So a specialization of a class template or a variable template that a
-    header of include/foundation or include/fixy defines is admitted in
-    three places only:
+    A layer template is a class template or a variable template that a
+    header of the two layers defines.  A specialization of a layer template
+    is admitted in three places only:
       * the file that defines its primary template, with a body or an
         initializer.  A forward declaration gives a file no ownership,
         because any file can declare a template again.
@@ -59,10 +60,10 @@ FAMILY D: THE ORPHAN RULE OF THE NEW TREE
         template that other files specialize by design, each with its
         reason.  An extension point that no site needs is stale.
     Name lookup of utils/scripts/tsast.py (NameIndex) finds the template that a
-    spelling names.  A spelling that names a template of another tree with
-    the same last name is not a site.  A spelling that lookup cannot resolve
-    counts for each new-tree template of its last name, so an unknown case
-    is refused.  An explicit specialization of a member whose qualifier
+    spelling names.  A spelling that names a template outside the two layers,
+    with the same last name, is not a site.  A spelling that lookup cannot
+    resolve counts for each layer template of its last name, so an unknown
+    case is refused.  An explicit specialization of a member whose qualifier
     holds no template-id, `using XF = X<Fake>;` and then
     `template <> const bool XF::value = true;`, names its class template
     through an alias that the guard does not follow, so it is refused
@@ -83,11 +84,11 @@ WHAT READS THE SITES
     node.  A macro body is parsed on its own (tsast.macro_bodies), with every
     fragment joined, so a block comment inside it does not split a head.  A
     macro body has no scope until it expands, so a specialization in a body
-    counts for each new-tree template of its last name.  A body that the
+    counts for each layer template of its last name.  A body that the
     parser cannot read is read from its preprocessing tokens: a `struct` or
     `class` head of a relation with `<` after it, a `namespace` head of a
     relation namespace with `{` after it, the machine macro with `(` after
-    it, and `template` with the name of a new-tree template and `<` after
+    it, and `template` with the name of a layer template and `<` after
     it.  The files of tsast.UNPARSEABLE are not C++ and are out of scope.
     Any other file that the parser cannot read fails.
 
@@ -135,7 +136,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import throwaway_repo  # noqa: E402  (the path insert above has to come first)
 import tsast  # noqa: E402
 
-NEW_TREE = ("include/foundation/", "include/fixy/")
+LAYER_ROOTS = ("include/foundation/", "include/fixy/")
 TEST_TREE = "test/"
 # The directory under test/ that takes no exemption of test/: the fuzz harnesses.
 FUZZ_TREE = "test/fuzz/"
@@ -174,7 +175,7 @@ BY_LABEL = {relation.label: relation for relation in RELATIONS}
 
 QualifiedName = tuple[str, ...]
 
-# Each new-tree template that other files specialize by design, with the
+# Each layer template that other files specialize by design, with the
 # files that may do it and the reason.  `*` spans `/`.  An entry that no
 # site needs is stale, and the check fails until it is removed.
 IN_THE_LAYERS = ("include/foundation/*", "include/fixy/*")
@@ -208,7 +209,7 @@ class Site:
     """One forged specialization or reopening.
 
     label is a relation label of RELATIONS, or the qualified name of a
-    new-tree template for a site of the orphan rule.
+    layer template for a site of the orphan rule.
     """
 
     label: str
@@ -326,17 +327,17 @@ def token_sites(body: tsast.MacroBody, path: str) -> list[Site]:
 class Orphans:
     """The facts of the orphan rule over one scan.
 
-    A new-tree template is owned by each new-tree file that defines it.  A
-    template that the new tree declares and never defines, such as a
+    A layer template is owned by each file of the two layers that defines
+    it.  A template that the two layers declare and never define, such as a
     registry whose specializations are its only definitions, is owned by
-    each new-tree file that declares its primary.
+    each file of the two layers that declares its primary.
 
     Attributes:
         extension_points: The table of extension points that this scan reads
         index: The declarations of include/, which name lookup reads
-        defined: The new-tree files that define each template, by qualified name
-        declared: The new-tree files that declare each primary, by qualified name
-        by_last_name: The new-tree templates of each last name
+        defined: The files of the two layers that define each template, by qualified name
+        declared: The files of the two layers that declare each primary, by qualified name
+        by_last_name: The layer templates of each last name
         used_extensions: The extension points that admitted a site
     """
 
@@ -348,10 +349,10 @@ class Orphans:
     used_extensions: set[QualifiedName] = field(default_factory=set)
 
     def learn(self, tree: tsast.Tree, rel: str) -> None:
-        """Add the declarations of one header, and the new-tree templates it declares."""
+        """Add the declarations of one header, and the layer templates it declares."""
         if rel.startswith("include/"):
             self.index.add(tree, share_aliases=True)
-        if rel.startswith(NEW_TREE):
+        if rel.startswith(LAYER_ROOTS):
             for primary in tsast.template_primaries(tree.root):
                 qualified = tsast.scope_levels(primary.template)[0] + (primary.name,)
                 self.declared.setdefault(qualified, set()).add(rel)
@@ -360,11 +361,11 @@ class Orphans:
                 self.by_last_name.setdefault(primary.name, set()).add(qualified)
 
     def owners(self, qualified: QualifiedName) -> set[str]:
-        """Return the files that own one new-tree template."""
+        """Return the files that own one layer template."""
         return self.defined.get(qualified) or self.declared.get(qualified, set())
 
     def is_admitted(self, qualified: QualifiedName, rel: str) -> bool:
-        """Report whether a file may specialize a new-tree template, and record the extension point it uses."""
+        """Report whether a file may specialize a layer template, and record the extension point it uses."""
         if rel in self.owners(qualified) or in_test_tree(rel):
             return True
         point = self.extension_points.get(qualified)
@@ -374,11 +375,11 @@ class Orphans:
         return False
 
     def referents(self, site: tsast.LookupSite, local: frozenset[QualifiedName]) -> set[QualifiedName]:
-        """Return the new-tree templates that one spelled name can name.
+        """Return the layer templates that one spelled name can name.
 
-        A name that lookup cannot resolve counts for each new-tree template of
+        A name that lookup cannot resolve counts for each layer template of
         its last name, so an unknown case is refused.  A name that resolves
-        to a template of another tree is no new-tree template.
+        to a template outside the two layers is no layer template.
         """
         candidates = self.by_last_name.get(site.parts[-1], set())
         if not candidates:
@@ -447,12 +448,12 @@ class Orphans:
     def token_sites(self, body: tsast.MacroBody, rel: str) -> list[Site]:
         """Return each specialization of a macro body that did not parse, read from its preprocessing tokens.
 
-        After `template` and its closing `>`, a class head of a new-tree name
-        with `<` after it is a site.  So is a new-tree name with `<` after it
-        whose argument list ends in `=`, `;` or `{`, which is a variable.  A
-        list that ends in `(` is a function, the rule of check-proof-routes.py.
-        The scope of such a body is unknown, so each site counts for every
-        new-tree template of its name.
+        After `template` and its closing `>`, a class head of a layer template
+        name with `<` after it is a site.  So is a layer template name with `<`
+        after it whose argument list ends in `=`, `;` or `{`, which is a
+        variable.  A list that ends in `(` is a function, the rule of
+        check-proof-routes.py.  The scope of such a body is unknown, so each
+        site counts for every layer template of its name.
         """
         tokens = tsast.pp_tokens(body.text, body.first_row)
         found: list[Site] = []
@@ -558,9 +559,9 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
         if relation is not None:
             print(f"trait_guard[{site.label}]: authoring set is: {' '.join(relation.globs)}", file=sys.stderr)
         else:
-            print(f"trait_guard[{site.label}]: a template of the new tree is specialized only in the file that "
-                  f"defines it, in test/ outside {FUZZ_TREE}, or at an extension point of EXTENSION_POINTS",
-                  file=sys.stderr)
+            print(f"trait_guard[{site.label}]: a template of include/foundation or include/fixy is specialized "
+                  f"only in the file that defines it, in test/ outside {FUZZ_TREE}, or at an extension point of "
+                  f"EXTENSION_POINTS", file=sys.stderr)
     for line in unread + stale:
         print(line, file=sys.stderr)
     if forged or unread:
@@ -572,8 +573,8 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
         return 1
     if stale:
         return 2
-    print(f"check-trait-injection: clean — {len(RELATIONS)} relations and the orphan rule of the new tree, each "
-          f"specialization inside its authoring set.", file=sys.stderr)
+    print(f"check-trait-injection: clean — {len(RELATIONS)} relations and the orphan rule of include/foundation "
+          f"and include/fixy, each specialization inside its authoring set.", file=sys.stderr)
     return 0
 
 
@@ -672,7 +673,7 @@ def self_test() -> int:
             "#define FORGE_TOKENS(T) template <> inline constexpr bool is_exec_ctx_v<T> = (#T[0] != 0);\n"
             "#define USE_TOKENS(T) static_assert(is_exec_ctx_v<T>, #T)\n"
             "#define USE_PARSED(T) static_assert(foundation::effects::is_exec_ctx_v<T>)\n"),
-        "src/planted/other_tree.cpp": (
+        "src/planted/outside_layers.cpp": (
             "namespace crucible::planted {\n"
             "template <class T> inline constexpr bool is_exec_ctx_v = false;\n"
             "template <> inline constexpr bool is_exec_ctx_v<Fake> = true;\n"
@@ -718,7 +719,7 @@ def self_test() -> int:
         ("foundation::effects::is_exec_ctx_v", "test/fuzz/planted_forge.cpp", 2),
         ("FakeGate (a class template specialization named through an alias)", "test/fuzz/planted_forge.cpp", 4),
     }
-    # The new-tree templates of the orphan rule, each with a specialization
+    # The layer templates of the orphan rule, each with a specialization
     # in the file that owns it, and the extension points of the planted tree.
     owners = {
         "include/foundation/effects/Ctx.h": (
@@ -786,10 +787,11 @@ def self_test() -> int:
         expect("a namespace alias is no reopening", ("admitted_retags", "src/planted/retags.cpp", 8) not in found)
         expect("a macro body that only names a relation is no specialization",
                ("retag_policy", "src/planted/macro.cpp", 2) not in found)
-        expect("a macro body that only reads a new-tree template is no specialization",
+        expect("a macro body that only reads a layer template is no specialization",
                not any(site.path == "src/planted/orphan_macro.cpp" and site.line > 2 for site in forged))
-        expect("a template of another tree with the same last name is no site, and a function specialization is "
-               "the rule of check-proof-routes.py", not any(site.path == "src/planted/other_tree.cpp" for site in forged))
+        expect("a template outside the two layers with the same last name is no site, and a function "
+               "specialization is the rule of check-proof-routes.py",
+               not any(site.path == "src/planted/outside_layers.cpp" for site in forged))
         for rel in [*exempt, *owners]:
             expect(f"exempt in its authoring set: {rel}", not any(site.path == rel for site in forged))
         expect("a used extension point is not stale", not stale)

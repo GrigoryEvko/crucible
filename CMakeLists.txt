@@ -378,7 +378,7 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 #
 # `foundation` is a static library for one reason: it owns the weak contract
 # handler and the CRUCIBLE_PRE / CRUCIBLE_POST failure arm for every binary
-# that links the new tree without `crucible`.  `fixy` is header-only.
+# that links `foundation` or `fixy` without `crucible`.  `fixy` is header-only.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp

@@ -67,7 +67,7 @@ class Row:
         mint: The mint model entry
         path: The site path, relative to the scanned root
         group: The section the row belongs to
-        family: `crucible` or `new`, the layer the site belongs to
+        family: `crucible` or `substrate`, the layer the site belongs to
         hs14: The number of fixtures of the row's layer that name the mint
     """
 
@@ -134,7 +134,7 @@ def build_rows(root: Path, surface: list[Path], fixtures: dict[str, list[Path]])
     Args:
         root: The scanned root
         surface: The headers of the mint surface
-        fixtures: `crucible` and `new` to the fixture files of that layer
+        fixtures: `crucible` and `substrate` to the fixture files of that layer
 
     Returns:
         One row for each mint, sorted by section, name, path and line
@@ -142,7 +142,7 @@ def build_rows(root: Path, surface: list[Path], fixtures: dict[str, list[Path]])
     mints = mintmodel.collect(surface)
     names = {family: mintmodel.fixture_names(paths) for family, paths in fixtures.items()}
     aliases = mintmodel.alias_heads(surface)
-    family_of = {id(mint): "new" if mintmodel.is_new_tree(relative(mint.path, root)) else "crucible"
+    family_of = {id(mint): "substrate" if mintmodel.is_substrate_path(relative(mint.path, root)) else "crucible"
                  for mint in mints}
     carriers: dict[tuple[str, str], set[str | None]] = {}
     for mint in mints:
@@ -284,7 +284,7 @@ def render(rows: list[Row]) -> str:
     out.append("| layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |\n")
     out.append("|---|---|---|---|---|---|---|\n")
     for family, label in (("crucible", "crucible (`include/crucible/`)"),
-                          ("new", "new (`include/foundation/`, `include/fixy/`)")):
+                          ("substrate", "substrate (`include/foundation/`, `include/fixy/`)")):
         mine = [r for r in rows if r.family == family]
         unfit = sum(1 for r in mine if mintmodel.ctxfit_applies(r.mint) and not r.mint.ctx_gated)
         under = sum(1 for r in mine if r.hs14 < HS14_FLOOR)
@@ -443,7 +443,7 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
         "test/sample_neg/names_it_in_a_comment.cpp": "// mint_planted_token is refused here\nvoid g();\n",
         "test/fixy/neg/uses_image_a.cpp": "void f() { mint_from_image(0, 0); }\n",
         "test/fixy/neg/uses_image_b.cpp": "void f() { mint_from_image(1, 1); }\n",
-        "test/fixy/neg/new_layer_names_the_crucible_token.cpp": "void f() { mint_planted_token(0); }\n",
+        "test/fixy/neg/substrate_names_the_crucible_token.cpp": "void f() { mint_planted_token(0); }\n",
         # Two classes carry the member name mint_planted_member.  A fixture
         # counts for the class it names, and one that names neither class
         # counts for neither.
@@ -494,8 +494,8 @@ constexpr Thing mint_planted_source(C const&) noexcept { return {}; }
         )
         image = by_name.get("Lattice::mint_from_image")
         check(
-            "a static member of the new tree is a ctx row in its section, with two fixtures",
-            image is not None and image.mint.shape == "ctx" and image.family == "new"
+            "a static member of the substrate layer is a ctx row in its section, with two fixtures",
+            image is not None and image.mint.shape == "ctx" and image.family == "substrate"
             and image.group == "include/foundation/algebra/" and image.hs14 == 2,
         )
         source = by_name.get("mint_planted_source")
