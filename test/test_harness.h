@@ -4,50 +4,11 @@
 // add sleep_for, yield, futex or condition_variable.
 
 #include <crucible/Vigil.h>
-#include <fixy/Ctx.h>
-#include <fixy/os/Sched.h>
-#include <foundation/effects/Effect.h>
+#include <fixy/Tags.h>
 #include "test_assert.h"
 #include <cstdint>
-#include <expected>
-#include <type_traits>
-
-#ifdef __linux__
-#include <sched.h>
-#endif
 
 namespace crucible::test {
-
-inline void elevate_priority() {
-#ifdef __linux__
-    // An elevation that fails with EPERM under a non-root runner is absorbed.
-    // The tests still run, with more scheduler noise.
-    //
-    // The affinity probe stays a raw sched_setaffinity because it pins to the
-    // calling thread's current cpu, which is a runtime choice.  The mint path
-    // takes the mask as a template argument and cannot express it.
-    //
-    // The priority mint admits only a context that owns Bg or Init, and a
-    // test context owns neither.  So the harness takes the Init source from
-    // the test witness and mints through the cold init context.
-    auto p = ::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
-    (void)p;
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(static_cast<size_t>(sched_getcpu()), &cpuset);
-    sched_setaffinity(0, sizeof(cpuset), &cpuset);
-#endif
-}
-
-// Any drift in the nice value or in the mint return shape trips here, in every
-// TU that includes this header.
-#ifdef __linux__
-static_assert(
-    std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{::foundation::effects::testing::init()})),
-                   std::expected<::fixy::sched::SchedPriority<-10>, int>>,
-    "elevate_priority must mint SchedPriority<-10> via "
-    "fixy::sched::mint_priority<-10>(ColdInitCtx).");
-#endif
 
 // Waits for the background thread to publish a region.  Replay has not
 // started at that point: the foreground aligns to the region on its next
