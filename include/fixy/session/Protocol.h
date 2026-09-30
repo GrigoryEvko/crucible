@@ -428,19 +428,35 @@ inline constexpr std::string_view unregistered_prefix =
     "fixy::session::diagnostic [Protocol_Unregistered_Combinator]: ";
 inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic [Protocol_Incoherent_Registration]: ";
 
-// The refusal every primary template states first.  The head of P must
-// be a registered combinator with a coherent registration.
-template <typename P>
-consteval void require_registered_head() {
-    static_assert(::foundation::algebra::transition::is_registered(protocol_registry, ^^P),
-                  ::foundation::algebra::transition::unregistered_message(unregistered_prefix, ^^P));
-    static_assert(::foundation::algebra::transition::check_combinator(protocol_registry,
-                                                                      ::foundation::algebra::transition::shape_of(^^P))
-                          .reason
-                      == ::foundation::algebra::transition::incoherence::none,
-                  ::foundation::algebra::transition::incoherent_message(
-                      incoherent_prefix, ::foundation::algebra::transition::check_combinator(
-                                             protocol_registry, ::foundation::algebra::transition::shape_of(^^P))));
+// The message of a refusal, as a string that the exception can take.  A
+// message function gives a view of a static string, and GCC does not
+// compare the address of such a string with a null pointer in a constant
+// evaluation.  The string constructor of the exception makes that
+// comparison, so the copy is built one character at a time, and no step
+// compares that address.
+[[nodiscard]] consteval std::string refusal_text(std::string_view message) {
+    std::string text;
+    for (const char character : message) {
+        text.push_back(character);
+    }
+    return text;
+}
+
+// The refusal every walk states first.  The head of the protocol must be
+// a registered combinator with a coherent registration.  Each refusal of
+// this layer is a function at namespace scope that is not a template, so
+// no translation unit can specialize it away.  A refusal throws, so the
+// constant evaluation that asked stops, and the diagnostic prints the
+// message of the refusal.
+consteval void require_registered_head(std::meta::info protocol) {
+    namespace tr = ::foundation::algebra::transition;
+    if (!tr::is_registered(protocol_registry, protocol)) {
+        throw std::meta::exception(refusal_text(tr::unregistered_message(unregistered_prefix, protocol)), protocol);
+    }
+    const auto checked = tr::check_combinator(protocol_registry, tr::shape_of(protocol));
+    if (checked.reason != tr::incoherence::none) {
+        throw std::meta::exception(refusal_text(tr::incoherent_message(incoherent_prefix, checked)), protocol);
+    }
 }
 
 // ── The members of a node ────────────────────────────────────────────
@@ -524,38 +540,32 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
     return result;
 }
 
-// The refusal of a protocol with a node whose members lie.  The static
-// assertion stops the build, so no program that compiles reads the answer
-// after it.  The answer is true, so a gate that holds this clause adds no
-// second error to the refusal.
-template <typename P>
-consteval bool require_agreeing_members() {
-    constexpr std::meta::info disagreeing =
-        ::foundation::algebra::transition::first_disagreeing_node(&session_node_members, ^^P);
-    static_assert(disagreeing == std::meta::info{},
-                  ::foundation::algebra::transition::disagreeing_message(
-                      specialized_prefix, disagreeing == std::meta::info{} ? ^^P : disagreeing));
+// The refusal of a protocol with a node whose members lie.  The refusal
+// throws, so no constant evaluation reads the answer after it.  The
+// answer is true, so a gate that holds this clause adds no second error
+// to the refusal.
+consteval bool require_agreeing_members(std::meta::info protocol) {
+    namespace tr = ::foundation::algebra::transition;
+    const std::meta::info disagreeing = tr::first_disagreeing_node(&session_node_members, protocol);
+    if (disagreeing != std::meta::info{}) {
+        throw std::meta::exception(refusal_text(tr::disagreeing_message(specialized_prefix, disagreeing)), disagreeing);
+    }
     return true;
 }
 
 // The refusal of every walk that reads the children of a node.  Each node
-// of the spine of P must be registered, and the message names the first
-// one that is not.  A payload and a value are not nodes.  It returns false
-// after that refusal, so the walk stops there and adds no second error.
-// Then each node must keep the members that its arguments give.  The walks
-// read the arguments, so a walk goes on after that refusal and adds no
-// error.
-template <typename P>
-consteval bool require_registered_spine() {
-    constexpr std::meta::info missing = ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P);
-    static_assert(missing == std::meta::info{}, ::foundation::algebra::transition::unregistered_message(
-                                                    unregistered_prefix, missing == std::meta::info{} ? ^^P : missing));
-    if constexpr (missing == std::meta::info{}) {
-        require_registered_head<P>();
-        return require_agreeing_members<P>();
-    } else {
-        return false;
+// of the spine of the protocol must be registered, and the message names
+// the first one that is not.  A payload and a value are not nodes.  Then
+// each node must keep the members that its arguments give.  The answer is
+// true, because each refusal throws.
+consteval bool require_registered_spine(std::meta::info protocol) {
+    namespace tr = ::foundation::algebra::transition;
+    const std::meta::info missing = tr::first_unregistered(protocol_registry, protocol);
+    if (missing != std::meta::info{}) {
+        throw std::meta::exception(refusal_text(tr::unregistered_message(unregistered_prefix, missing)), missing);
     }
+    require_registered_head(protocol);
+    return require_agreeing_members(protocol);
 }
 
 // The recognizer of every shape trait.  It is a function over
@@ -762,20 +772,21 @@ concept is_head_v = !detail::head_is(^^P, ^^Loop);
 
 namespace detail {
 
-template <typename P>
-consteval bool terminal_state_of() {
-    require_registered_head<P>();
-    return ::foundation::algebra::transition::fold(protocol_registry, ^^P,
+// A function at namespace scope that is not a template, so no
+// translation unit can specialize the answer.
+[[nodiscard]] consteval bool terminal_state_of(std::meta::info protocol) {
+    require_registered_head(protocol);
+    return ::foundation::algebra::transition::fold(protocol_registry, protocol,
                                                    ::foundation::algebra::transition::terminal_algebra{}, 0);
 }
 
 }  // namespace detail
 
 template <typename P>
-using is_terminal_state = std::bool_constant<detail::terminal_state_of<P>()>;
+using is_terminal_state = std::bool_constant<detail::terminal_state_of(^^P)>;
 
 template <typename P>
-concept is_terminal_state_v = detail::terminal_state_of<P>();
+concept is_terminal_state_v = detail::terminal_state_of(^^P);
 
 // ── Empty choices ────────────────────────────────────────────────────
 //
@@ -797,35 +808,37 @@ concept is_terminal_state_v = detail::terminal_state_of<P>();
 
 namespace detail {
 
-template <typename P>
-consteval bool empty_choice_of() {
-    if (!require_registered_spine<P>()) return false;
+// A function at namespace scope that is not a template, so no
+// translation unit can specialize the answer.
+[[nodiscard]] consteval bool empty_choice_of(std::meta::info protocol) {
+    require_registered_spine(protocol);
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::empty_choice_algebra{protocol_registry}, 0);
+        protocol_registry, protocol, ::foundation::algebra::transition::empty_choice_algebra{protocol_registry}, 0);
 }
 
 }  // namespace detail
 
 template <typename P>
-using is_empty_choice = std::bool_constant<detail::empty_choice_of<P>()>;
+using is_empty_choice = std::bool_constant<detail::empty_choice_of(^^P)>;
 
 template <typename P>
-concept is_empty_choice_v = detail::empty_choice_of<P>();
+concept is_empty_choice_v = detail::empty_choice_of(^^P);
 
 // ── Duality ──────────────────────────────────────────────────────────
 
 namespace detail {
 
-template <typename P>
-consteval std::meta::info dual_type_of() {
-    if (!require_registered_spine<P>()) return ^^void;
+// A function at namespace scope that is not a template, so no
+// translation unit can specialize the dual of a protocol.
+[[nodiscard]] consteval std::meta::info dual_type_of(std::meta::info protocol) {
+    require_registered_spine(protocol);
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::dual_algebra{protocol_registry}, 0);
+        protocol_registry, protocol, ::foundation::algebra::transition::dual_algebra{protocol_registry}, 0);
 }
 
 template <typename P>
 struct dual_view {
-    using type = typename[:dual_type_of<P>():];
+    using type = typename[:dual_type_of(^^P):];
 };
 
 }  // namespace detail
@@ -933,7 +946,7 @@ consteval bool composition_captures() {
 
 template <typename P, typename Q>
 consteval std::meta::info compose_type_of() {
-    if (!require_registered_spine<P>()) return ^^void;
+    require_registered_spine(^^P);
     return ::foundation::algebra::transition::fold(
         protocol_registry, ^^P, ::foundation::algebra::transition::compose_algebra{protocol_registry, ^^Q}, 0);
 }
@@ -1008,7 +1021,7 @@ consteval std::meta::info compose_at_branch_type_of() {
 template <typename P, std::size_t I, typename Q>
 struct compose_at_branch_view {
 private:
-    static consteval bool check() { return require_registered_spine<P>(); }
+    static consteval bool check() { return require_registered_spine(^^P); }
     static constexpr bool is_head_checked = check();
     static constexpr ::foundation::algebra::transition::shape_kind stop = spine_stop_kind<P>();
     static constexpr bool reaches_choice = stop == ::foundation::algebra::transition::shape_kind::choice;
@@ -1088,31 +1101,31 @@ using compose_at_branch_t = typename detail::compose_at_branch_view<P, I, Q>::ty
 
 namespace detail {
 
-template <typename LoopCtx>
-consteval ::foundation::algebra::transition::well_formed_algebra::position position_of() {
-    if constexpr (std::is_void_v<session_loop_ctx_inner_t<LoopCtx>>) {
-        return {0, true};
-    } else {
-        return {1, true};
-    }
+// The walk starts outside every loop when the loop context names no Loop,
+// and inside one loop after its first step when it names one.
+[[nodiscard]] consteval ::foundation::algebra::transition::well_formed_algebra::position
+position_of(std::meta::info loop_ctx) {
+    if (std::meta::dealias(inner_loop_ctx_of(loop_ctx)) == ^^void) return {0, true};
+    return {1, true};
 }
 
-template <typename P, typename LoopCtx>
-consteval bool well_formed_of() {
-    require_registered_head<P>();
-    static_cast<void>(require_agreeing_members<P>());
+// A function at namespace scope that is not a template, so no
+// translation unit can specialize the answer.
+[[nodiscard]] consteval bool well_formed_of(std::meta::info protocol, std::meta::info loop_ctx) {
+    require_registered_head(protocol);
+    require_agreeing_members(protocol);
     return ::foundation::algebra::transition::fold(
-        protocol_registry, ^^P, ::foundation::algebra::transition::well_formed_algebra{protocol_registry},
-        position_of<LoopCtx>());
+        protocol_registry, protocol, ::foundation::algebra::transition::well_formed_algebra{protocol_registry},
+        position_of(loop_ctx));
 }
 
 }  // namespace detail
 
 template <typename P, typename LoopCtx = void>
-using is_well_formed = std::bool_constant<detail::well_formed_of<P, LoopCtx>()>;
+using is_well_formed = std::bool_constant<detail::well_formed_of(^^P, ^^LoopCtx)>;
 
 template <typename P>
-concept is_well_formed_v = detail::well_formed_of<P, void>();
+concept is_well_formed_v = detail::well_formed_of(^^P, ^^void);
 
 namespace detail {
 
@@ -1136,7 +1149,7 @@ consteval std::string_view choice_fault_message() {
 // Complexity: the sum of O(b²) over the choices of P.
 template <typename P>
 consteval void ensure_choices_well_formed() noexcept {
-    detail::require_registered_head<P>();
+    detail::require_registered_head(^^P);
     static_assert(::foundation::algebra::transition::first_faulty_choice(detail::protocol_registry, ^^P).fault
                       == ::foundation::algebra::transition::choice_fault::none,
                   detail::choice_fault_message<P>());

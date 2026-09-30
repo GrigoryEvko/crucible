@@ -499,6 +499,11 @@ foundation_neg_compile_test(neg_effects_is_resource_kind_atom_specialized
 foundation_neg_compile_test(neg_effects_is_branded_foreground_specialized
   "template-id .is_branded_foreground<>. for .consteval bool foundation::effects::is_branded_foreground\\(std::meta::info\\). does not match any template declaration"
   "neg_effects_is_branded_foreground_specialized\\.cpp:12:[0-9]+: error:")
+# The escape walk answers through a function that is not a template, so a
+# specialization that sanctions every type matches no template.
+foundation_neg_compile_test(neg_raw_escape_refusal_specialized
+  "template-id .raw_escape_refusal_text<>. for .consteval std::string_view foundation::reflect::detail::raw_escape_refusal_text\\(std::meta::info\\). does not match any template declaration"
+  "neg_raw_escape_refusal_specialized\\.cpp:13:[0-9]+: error:")
 
 # A foreground context states that its holder runs on the thread that won
 # the producer claim, so each route that builds one without the claim's

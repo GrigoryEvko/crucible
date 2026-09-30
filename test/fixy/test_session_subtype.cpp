@@ -335,7 +335,7 @@ static_assert(!s::CompatibleServer<NeverStops, s::dual_of_t<DLoopS1>>
 using PatientLoop = Loop<Recv<Req, Select<Send<Resp, Continue>, Send<StopReq, End>>>>;
 using EagerEndless = Loop<Select<Send<Resp, Recv<Req, Continue>>>>;
 using EagerStopping = Loop<Select<Send<Resp, Recv<Req, Continue>>, Send<StopReq, Recv<Req, End>>>>;
-static_assert(s::detail::async::bounded_v<EagerEndless, PatientLoop, 2, false>);
+static_assert(s::detail::async::bounded(^^EagerEndless, ^^PatientLoop, 2, false));
 static_assert(!s::is_subtype_async_v<EagerEndless, PatientLoop, Slots<2>>);
 static_assert(s::is_subtype_async_v<EagerStopping, PatientLoop, Slots<2>>);
 

@@ -1867,7 +1867,7 @@ fixy_neg_compile_test(neg_sess_mint_door_derived_look_alike
 # owns.
 fixy_neg_compile_test(neg_sess_rewind_unresumable
   "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::Continue, void>"
-  "the expression ..is_resumable_position<R, LoopCtx>... .with R = fixy::session::Continue. LoopCtx = void.. evaluated to .false.")
+  "satisfaction of .ResumablePosition<R, LoopCtx>. \\[with R = fixy::session::Continue; LoopCtx = void\\]")
 fixy_neg_compile_test(neg_sess_rewind_branded
   "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::End, void>"
   "satisfaction of .carries_brand<EndLoopCtx, void>. .with EndLoopCtx = fixy::session::detail::session_brand<neg_sess_rewind_branded_types::Body, void>.")
@@ -1889,7 +1889,7 @@ fixy_neg_compile_test(neg_sess_delegated_session_forged
   "DelegatedSession.const fixy::session::DelegationKey&, handle_type&&, hold_type&&.")
 fixy_neg_compile_test(neg_sess_delegation_without_hold
   "no matching function for call to .mint_delegated_session"
-  "the expression .perm_set_is_empty_v<typename H::perm_set> .with H = fixy::session::SessionHandle<fixy::session::Send<fixy::session::Transferable<int, neg_sess_delegation_without_hold_types::Region>")
+  "perm_set_is_empty\\(.*\\(\\^\\^ typename H::perm_set\\) .with H = fixy::session::SessionHandle<fixy::session::Send<fixy::session::Transferable<int, neg_sess_delegation_without_hold_types::Region>")
 fixy_neg_compile_test(neg_sess_delegation_foreign_hold
   "no matching function for call to .mint_delegated_session"
   "required for the satisfaction of .HoldsTokensOf<Hold, H>. .with Hold = fixy::session::PermHold<foundation::permissions::PermSet<neg_sess_delegation_foreign_hold_types::Other> >")
@@ -1906,10 +1906,10 @@ fixy_neg_compile_test(neg_sess_delegation_to_own_peer_in_select
   "the expression .!.delegates_to_own_peer_v<Proto>. .with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<neg_sess_delegation_to_own_peer_in_select_types::Carol, neg_sess_delegation_to_own_peer_in_select_types::Keep, int>"
   "evaluated to .false.")
 fixy_neg_compile_test(neg_sess_delegation_handle_in_loop
-  "the expression .fixy::session::detail::is_delegatable_handle<H>::value .with H = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>,"
+  "is_delegatable_handle\\(.*\\(\\^\\^ H\\) .with H = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>,"
   "evaluated to .false.")
 fixy_neg_compile_test(neg_sess_delegation_branded_handle
-  "the expression .fixy::session::detail::is_delegatable_handle<H>::value .with H = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_delegation_branded_handle_types::Wire, fixy::session::detail::session_brand<neg_sess_delegation_branded_handle_types::Body, void>,"
+  "is_delegatable_handle\\(.*\\(\\^\\^ H\\) .with H = fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_delegation_branded_handle_types::Wire, fixy::session::detail::session_brand<neg_sess_delegation_branded_handle_types::Body, void>,"
   "evaluated to .false.")
 
 # A channel whose two endpoints are not duals has no deadlock-freedom
@@ -1936,13 +1936,13 @@ fixy_neg_compile_test(neg_sess_compose_at_branch_no_choice
 # primary template that answered for each type that it does not know
 # would compile the involution and empty-choice fixtures.
 fixy_neg_compile_test(neg_sess_unregistered_combinator_involutive
-  "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
+  "uncaught exception of type .std::meta::exception.*\\[Protocol_Unregistered_Combinator\\]"
   "the combinator .*Teleport<int, fixy::session::End> has no registration")
 fixy_neg_compile_test(neg_sess_unregistered_combinator_empty_choice
-  "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
+  "uncaught exception of type .std::meta::exception.*\\[Protocol_Unregistered_Combinator\\]"
   "the combinator .*Detour<fixy::session::Select<> > has no registration")
 fixy_neg_compile_test(neg_sess_unregistered_combinator_in_dual
-  "static assertion failed: fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]"
+  "uncaught exception of type .std::meta::exception.*\\[Protocol_Unregistered_Combinator\\]"
   "the combinator .*Teleport<int, fixy::session::End> has no registration")
 
 # A specialization of a combinator whose nested member disagrees with its
@@ -1952,7 +1952,7 @@ fixy_neg_compile_test(neg_sess_unregistered_combinator_in_dual
 fixy_test(test_session_node_members)
 fixy_neg_compile_test(neg_sess_combinator_specialized_member
   "fixy::session::diagnostic \\[Protocol_Specialized_Combinator\\]: the node fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> >"
-  "In instantiation of .consteval bool fixy::session::detail::require_agreeing_members\\(\\) \\[with P = fixy::session::Loop<")
+  "no matching function for call to .mint_session_handle<fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> > >")
 fixy_neg_compile_test(neg_sess_global_node_specialized
   "fixy::session::diagnostic \\[Projection_Specialized_Global_Node\\]: the node fixy::session::global::Branch<neg_sess_global_node_specialized_types::Hello, int, fixy::session::global::End>"
   "In instantiation of .consteval auto fixy::session::detail::proj::project_under\\(\\) \\[with G = fixy::session::global::Comm<")
@@ -2018,10 +2018,10 @@ fixy_neg_compile_test(neg_sess_trait_spec_is_vendor_pinned
   "= fixy::session::detail::vendor_view<P>.")
 fixy_neg_compile_test(neg_sess_trait_spec_is_terminal_state
   "specialization of alias template .template<class P> using fixy::session::is_terminal_state = "
-  "= std::bool_constant<\\(\\(bool\\)terminal_state_of<P>\\(\\)\\)>")
+  "= std::bool_constant<fixy::session::detail::terminal_state_of\\(\\^\\^P\\)>")
 fixy_neg_compile_test(neg_sess_trait_spec_is_empty_choice
   "specialization of alias template .template<class P> using fixy::session::is_empty_choice = "
-  "= std::bool_constant<\\(\\(bool\\)empty_choice_of<P>\\(\\)\\)>")
+  "= std::bool_constant<fixy::session::detail::empty_choice_of\\(\\^\\^P\\)>")
 fixy_neg_compile_test(neg_sess_trait_spec_dual_of
   "specialization of alias template .template<class P> using fixy::session::dual_of = "
   "= fixy::session::detail::dual_view<P>.")
@@ -2033,7 +2033,7 @@ fixy_neg_compile_test(neg_sess_trait_spec_compose_at_branch
   "= fixy::session::detail::compose_at_branch_view<P, I, Q>.")
 fixy_neg_compile_test(neg_sess_trait_spec_is_well_formed
   "specialization of alias template .template<class P, class LoopCtx> using fixy::session::is_well_formed = "
-  "= std::bool_constant<\\(\\(bool\\)well_formed_of<P, LoopCtx>\\(\\)\\)>")
+  "= std::bool_constant<fixy::session::detail::well_formed_of\\(\\^\\^P, \\^\\^LoopCtx\\)>")
 fixy_neg_compile_test(neg_sess_trait_spec_offer_sender
   "specialization of alias template .template<class OfferType> using fixy::session::offer_sender = "
   "= std::type_identity<typename OfferType::sender>.")
@@ -2057,6 +2057,41 @@ fixy_neg_compile_test(neg_sess_trait_spec_is_checkpoint_compliant
 fixy_neg_compile_test(neg_sess_loop_ctx_inner_specialized
   "invalid class name in declaration of .using fixy::session::session_loop_ctx_inner_t = "
   "struct fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> >.")
+# Each answer of this layer that a gate reads is a function at namespace
+# scope that is not a template, so no specialization matches it.
+fixy_neg_compile_test(neg_sess_well_formed_of_specialized
+  "template-id .well_formed_of<>. for .consteval bool fixy::session::detail::well_formed_of\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_well_formed_of_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_empty_choice_of_specialized
+  "template-id .empty_choice_of<>. for .consteval bool fixy::session::detail::empty_choice_of\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_empty_choice_of_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_agreeing_members_specialized
+  "template-id .require_agreeing_members<>. for .consteval bool fixy::session::detail::require_agreeing_members\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_agreeing_members_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_resource_is_copyable_specialized
+  "template-id .resource_is_copyable<>. for .consteval bool fixy::session::resource_is_copyable\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_resource_is_copyable_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_session_priority_specialized
+  "template-id .session_priority<>. for .consteval fixy::session::watch::priority fixy::session::session_priority\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_session_priority_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_has_session_network_specialized
+  "template-id .has_session_network<>. for .consteval bool fixy::session::has_session_network\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_has_session_network_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_perm_set_is_empty_specialized
+  "template-id .perm_set_is_empty<>. for .consteval bool fixy::session::detail::perm_set_is_empty\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_perm_set_is_empty_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_sync_verdict_specialized
+  "template-id .sync_verdict<>. for .consteval foundation::algebra::transition::verdict fixy::session::detail::subtype::sync_verdict\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_sync_verdict_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_bounded_specialized
+  "template-id .bounded<>. for .consteval bool fixy::session::detail::async::bounded\\(std::meta::info, std::meta::info, std::size_t, bool\\). does not match any template declaration"
+  "neg_sess_bounded_specialized\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_recover_admits_specialized
+  "template-id .recover_admits<>. for .consteval bool fixy::session::detail::recover_admits\\(std::meta::info, std::meta::info, std::size_t, std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_recover_admits_specialized\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_delegatable_handle_specialized
+  "template-id .is_delegatable_handle<>. for .consteval bool fixy::session::detail::is_delegatable_handle\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_delegatable_handle_specialized\\.cpp:12:[0-9]+: error:")
 
 # Commit is a marker that the registry marks as not plain.  The
 # well-formedness algebra refuses it at every depth, so a plain mint
@@ -2070,7 +2105,7 @@ fixy_neg_compile_test(neg_sess_marker_not_plain
 # three and the build failed later inside the handle.
 fixy_neg_compile_test(neg_sess_mint_unguarded_loop
   "no matching function for call to .mint_session_handle"
-  "well_formed_of<P, void>.\\(\\) \\[with P = fixy::session::Loop<fixy::session::Continue>\\]. evaluated to .false.")
+  "well_formed_of\\(.*\\(\\^\\^ P, \\^\\^ void\\) \\[with P = fixy::session::Loop<fixy::session::Continue>\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_unguarded_pinned_loop
   "no matching function for call to .mint_session_handle"
   "Loop<fixy::session::VendorPinned<foundation::algebra::lattices::VendorBackend::NV, fixy::session::Continue> >\\]. evaluated to .false.")
@@ -2189,8 +2224,10 @@ fixy_neg_compile_test(neg_sess_subtype_missing_crash_branch
   "because a branch of the supertype that is no label has no branch in the subtype")
 
 # A keyed choice sends a label word, so its branches pair by label in any
-# order.  The relation refuses a label that the peer does not accept, a
-# keyed choice against a positional one, and one label word with two keys.
+# order.  The relation refuses a label that the peer does not accept, and
+# a keyed choice against a positional one.  A closure label is the one
+# route to one label word with two keys, and the member check of its
+# message refuses it before the relation runs.
 fixy_neg_compile_test(neg_sess_subtype_label_set_output
   "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
   "The failed pair is .*Select<.*Retry, int>.* against .*Select<.*Bye, int>")
@@ -2204,13 +2241,11 @@ fixy_neg_compile_test(neg_sess_subtype_label_discipline_positional
   "fixy::session::diagnostic \\[Subtype_LabelDiscipline\\]: assert_subtype_sync"
   "The failed pair is fixy::session::Offer<fixy::session::Recv<int, fixy::session::End> > against .*Offer<.*PeerMsg<.*Hello, int>")
 fixy_neg_compile_test(neg_sess_subtype_label_word_clash_output
-  "fixy::session::diagnostic \\[Subtype_LabelWordClash\\]: assert_subtype_sync"
-  "The failed pair is .*Select<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Select<.*<lambda\\(\\)>, int>"
-  "a stable id refuses the type .*<lambda\\(\\)>.*has no declared name")
+  "uncaught exception of type .std::meta::exception.*\\[Protocol_Specialized_Combinator\\]: the node fixy::session::PeerMsg<neg_sess_subtype_label_word_clash_output_types::Bob, neg_sess_subtype_label_word_clash_output_types::<lambda\\(\\)>, int>"
+  "non-constant condition for static assertion")
 fixy_neg_compile_test(neg_sess_subtype_label_word_clash_input
-  "fixy::session::diagnostic \\[Subtype_LabelWordClash\\]: assert_subtype_sync"
-  "The failed pair is .*Offer<.*Recv<.*PeerMsg<.*Bob, .*<lambda\\(\\)>, int>.* against .*Offer<.*<lambda\\(\\)>, int>"
-  "a stable id refuses the type .*<lambda\\(\\)>.*has no declared name")
+  "uncaught exception of type .std::meta::exception.*\\[Protocol_Specialized_Combinator\\]: the node fixy::session::PeerMsg<neg_sess_subtype_label_word_clash_input_types::Bob, neg_sess_subtype_label_word_clash_input_types::<lambda\\(\\)>, int>"
+  "non-constant condition for static assertion")
 
 # Well-formedness of a choice: no message branch after a crash branch,
 # no two crash branches with one payload, and no two branches that name
@@ -2354,20 +2389,20 @@ fixy_neg_compile_test(neg_sess_test_channel_row_outside_ctx
 fixy_test(test_session_async_channel)
 fixy_neg_compile_test(neg_sess_async_channel_capacity_too_small
   "no matching function for call to .mint_forked_async_channel"
-  "is_subtype_async_v<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf>")
+  "SubtypeAsync<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf>")
 fixy_neg_compile_test(neg_sess_async_channel_without_capacity
   "no matching function for call to .mint_forked_async_channel"
-  "StatesChannelCapacity<ResourceSelf>. \\[with ResourceSelf = .unnamed.::SilentEnd\\]")
+  "StatesOneChannelCapacity<ResourceSelf, ResourcePeer>. \\[with ResourceSelf = .unnamed.::SilentEnd")
 # Refinement keeps each exit, and duality does not keep that property, so
 # the gate asks for refinement in each direction.  A pair in which one
 # side never sends the stop that the other waits for is refused in each
 # order.  GCC prints the parameter of dual_of under a name that can drift.
 fixy_neg_compile_test(neg_sess_async_channel_peer_drops_the_exit
   "no matching function for call to .mint_forked_async_channel"
-  "is_subtype_async_v<PeerProto, typename fixy::session::detail::dual_view<[A-Za-z0-9]+>::type, ResourcePeer> \\[with PeerProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
+  "SubtypeAsync<PeerProto, typename fixy::session::detail::dual_view<[A-Za-z0-9]+>::type, ResourcePeer>. \\[with PeerProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
 fixy_neg_compile_test(neg_sess_async_channel_self_drops_the_exit
   "no matching function for call to .mint_forked_async_channel"
-  "is_subtype_async_v<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf> \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
+  "SubtypeAsync<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf>. \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
 fixy_neg_compile_test(neg_sess_async_channel_row_outside_ctx
   "no matching function for call to .mint_forked_async_channel<async_row_fixture::LeftProto, async_row_fixture::RightProto, async_row_fixture::Left, async_row_fixture::Right>"
   "satisfaction of .CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>."
@@ -2864,7 +2899,7 @@ fixy_neg_compile_test(neg_sess_crash_report_with_count
 # state one priority, and a Resource states it with its own type.
 fixy_neg_compile_test(neg_sess_channel_ends_disagree_on_priority
   "no matching function for call to .mint_test_channel"
-  "session_priority_v<ResourceA>\\) == \\(session_priority_v<ResourceB>\\)")
+  "session_priority\\(.*\\(\\^\\^ ResourceA\\) == session_priority\\(.*\\(\\^\\^ ResourceB\\)")
 fixy_neg_compile_test(neg_sess_session_priority_untyped
   "fixy::session::diagnostic \\[Session_Priority_Type\\]"
   "declares session_priority with a type other than fixy::session::watch::priority")

@@ -23,6 +23,7 @@
 // that a specialization marks, so no variable template spells the answer.
 
 #include <meta>
+#include <string_view>
 
 namespace foundation::reflect {
 
@@ -38,6 +39,26 @@ concept IsInstanceOf = std::meta::has_template_arguments(std::meta::dealias(std:
 // that a port can carry with its arms removed.
 template <class T, std::meta::info... Templates>
 concept IsInstanceOfAny = (IsInstanceOf<T, Templates> || ...);
+
+// The member with the name of the class that type reflects, or of one of
+// its bases, that code outside the class can name, or a null reflection.
+// A type that is not a class has no member.  The query reads the
+// declarations of the class, so no specialization can add or hide a
+// member.  A member of the class hides a member of a base with the same
+// name.  Complexity: linear in the members of the class and its bases.
+[[nodiscard]] consteval std::meta::info member_named(std::meta::info type, std::string_view name) {
+    const std::meta::info bare = std::meta::dealias(std::meta::remove_cvref(type));
+    if (!std::meta::is_class_type(bare)) return {};
+    const std::meta::access_context outside = std::meta::access_context::unprivileged();
+    for (const std::meta::info member : std::meta::members_of(bare, outside)) {
+        if (std::meta::has_identifier(member) && std::meta::identifier_of(member) == name) return member;
+    }
+    for (const std::meta::info base : std::meta::bases_of(bare, outside)) {
+        const std::meta::info inherited = member_named(std::meta::type_of(base), name);
+        if (inherited != std::meta::info{}) return inherited;
+    }
+    return {};
+}
 
 namespace detail::instance_self_test {
 
@@ -74,6 +95,25 @@ static_assert(IsInstanceOfAny<TypeAlias<int> const&, ^^TypeParam, ^^MixedParam>)
 static_assert(!IsInstanceOfAny<Plain, ^^TypeParam, ^^MixedParam>);
 static_assert(!IsInstanceOfAny<int, ^^TypeParam>);
 static_assert(!IsInstanceOfAny<TypeParam<int>>);
+
+// A member is found in the class and in a public base, and not when it is
+// private or when the type is no class.
+struct StatesAValue {
+    static constexpr int stated = 1;
+};
+struct InheritsAValue : StatesAValue {};
+class HidesAValue {
+    static constexpr int stated = 2;
+
+public:
+    static constexpr int shown = stated;
+};
+static_assert(member_named(^^StatesAValue, "stated") == ^^StatesAValue::stated);
+static_assert(member_named(^^InheritsAValue const&, "stated") == ^^StatesAValue::stated);
+static_assert(member_named(^^HidesAValue, "stated") == std::meta::info{});
+static_assert(member_named(^^HidesAValue, "shown") == ^^HidesAValue::shown);
+static_assert(member_named(^^int, "stated") == std::meta::info{});
+static_assert(member_named(^^Plain, "stated") == std::meta::info{});
 
 }  // namespace detail::instance_self_test
 

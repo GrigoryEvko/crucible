@@ -114,6 +114,7 @@
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
+#include <foundation/reflect/Instance.h>
 
 #include <array>
 #include <concepts>
@@ -565,10 +566,15 @@ using perm_set_after_recv_t = ::fixy::session::perm_set_after_recv_t<PS, T>;
 template <typename PS>
 concept perm_set_admits_close_v = !perm_set_has_open_loan_v<PS>;
 
-// True when the set is empty, so a loop frame is the Loop itself.
-template <typename PS>
-inline constexpr bool perm_set_is_empty_v =
-    ::foundation::permissions::perm_set_equal_v<PS, ::foundation::permissions::EmptyPermSet>;
+// True when the set is a PermSet with no tag, so a loop frame is the Loop
+// itself.  The answer is a function at namespace scope that is not a
+// template, so no translation unit can specialize it.
+[[nodiscard]] consteval bool perm_set_is_empty(std::meta::info set) {
+    const std::meta::info type = std::meta::dealias(set);
+    return std::meta::has_template_arguments(type)
+        && std::meta::template_of(type) == (^^::foundation::permissions::PermSet)
+        && std::meta::template_arguments_of(type).empty();
+}
 
 // ── The loop frame ────────────────────────────────────────────────────
 //
@@ -594,7 +600,7 @@ template <typename Frame>
 using loop_entry_perm_set_t = [:entry_perm_set_of(^^Frame):];
 
 template <typename LoopType, typename PS>
-using loop_frame_t = std::conditional_t<perm_set_is_empty_v<PS>, LoopType, PermLoopFrame<LoopType, PS>>;
+using loop_frame_t = std::conditional_t<perm_set_is_empty(^^PS), LoopType, PermLoopFrame<LoopType, PS>>;
 
 // ── The session brand ────────────────────────────────────────────────
 //
@@ -1198,30 +1204,20 @@ concept PermissionFlowCloses = detail::permission_flow_<Proto, PS, void>::closes
 //   - The handle at End belongs to no session that a callback entry owns,
 //     because that entry takes its handle back.
 
-namespace detail {
-
-template <typename R, typename LoopCtx>
-consteval bool is_resumable_position() noexcept {
-    using Empty = ::foundation::permissions::EmptyPermSet;
-    if constexpr (std::is_void_v<LoopCtx>) {
-        return !std::is_same_v<R, Continue> && WellFormedRunnableProtocol<R> && PermissionFlowCloses<R, Empty>;
-    } else if constexpr (!is_loop_v<LoopCtx>) {
-        return false;
-    } else if constexpr (!(WellFormedRunnableProtocol<LoopCtx> && PermissionFlowCloses<LoopCtx, Empty>)) {
-        return false;
-    } else if constexpr (std::is_same_v<R, Continue>) {
-        return true;
-    } else {
-        return WellFormedRunnableProtocol<Loop<R>> && PermissionFlowCloses<Loop<R>, Empty>
-            && distinct_peer_count({^^R, ^^LoopCtx}) <= 1;
-    }
-}
-
-}  // namespace detail
-
 // True when a session can start at position R in the loop context LoopCtx.
+// The concept names each condition itself, and each operand of a
+// conjunction or a disjunction is asked only when the operands before it
+// leave the answer open.  No function template decides the answer, so no
+// translation unit can specialize it.
 template <typename R, typename LoopCtx>
-concept ResumablePosition = detail::is_resumable_position<R, LoopCtx>();
+concept ResumablePosition = (std::is_void_v<LoopCtx> && !std::is_same_v<R, Continue> && WellFormedRunnableProtocol<R>
+                             && PermissionFlowCloses<R, ::foundation::permissions::EmptyPermSet>)
+                         || (is_loop_v<LoopCtx> && WellFormedRunnableProtocol<LoopCtx>
+                             && PermissionFlowCloses<LoopCtx, ::foundation::permissions::EmptyPermSet>
+                             && (std::is_same_v<R, Continue>
+                                 || (WellFormedRunnableProtocol<Loop<R>>
+                                     && PermissionFlowCloses<Loop<R>, ::foundation::permissions::EmptyPermSet>
+                                     && detail::distinct_peer_count({^^R, ^^LoopCtx}) <= 1)));
 
 // The gate of HandleFactory::rewind.
 template <typename R, typename LoopCtx, typename EndLoopCtx>
@@ -1272,8 +1268,10 @@ concept CtxPicksLocally = ::foundation::effects::CtxOwnsCapability<Ctx, ::founda
 
 namespace detail {
 // The gate of HandleFactory::recover, defined after CtxAdmitsProtocolRow.
-template <typename Ctx, typename Choice, std::size_t I, typename LoopCtx, typename PS>
-struct recover_gate;
+// It is a function that is not a template, so no translation unit can
+// specialize it to enter a branch that a peer picks.
+[[nodiscard]] consteval bool recover_admits(std::meta::info ctx, std::meta::info choice, std::size_t index,
+                                            std::meta::info loop_ctx, std::meta::info perm_set);
 }  // namespace detail
 
 namespace detail {
@@ -1417,7 +1415,7 @@ public:
     // handle keeps the record of the session.
     template <std::size_t I, typename Ctx, typename... Branches, typename Resource, typename LoopCtx,
               AbandonmentPolicy Policy, typename PS>
-        requires detail::recover_gate<Ctx, Offer<Branches...>, I, LoopCtx, PS>::value
+        requires(detail::recover_admits(^^Ctx, ^^Offer<Branches...>, I, ^^LoopCtx, ^^PS))
     [[nodiscard]] static constexpr auto
     recover(Ctx const&, SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy, PS>&& handle) noexcept(
         std::is_nothrow_move_constructible_v<Resource>) {
@@ -2279,16 +2277,18 @@ struct MoveOnlyResource {
 };
 
 // True when a value of the type can be duplicated: by construction from
-// a copy, or by assignment from one.
-template <typename Resource>
-inline constexpr bool resource_is_copyable_v =
-    std::is_copy_constructible_v<Resource> || std::is_copy_assignable_v<Resource>;
+// a copy, or by assignment from one.  The answer is a function at
+// namespace scope that is not a template, so no translation unit can
+// specialize it.
+[[nodiscard]] consteval bool resource_is_copyable(std::meta::info resource) {
+    return std::meta::is_copy_constructible_type(resource) || std::meta::is_copy_assignable_type(resource);
+}
 
 // A value Resource: owned by the handle, and either self-contained or
 // impossible to copy.
 template <typename Resource>
 concept OwnedSessionResource =
-    !std::is_reference_v<Resource> && (!resource_is_copyable_v<Resource> || ::fixy::SelfContained<Resource>);
+    !std::is_reference_v<Resource> && (!resource_is_copyable(^^Resource) || ::fixy::SelfContained<Resource>);
 
 // A reference Resource: an lvalue reference to a Pinned object.
 template <typename Resource>
@@ -2307,32 +2307,27 @@ concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResourc
 // priority.  A member of that name with another type is refused: a plain
 // integer with that name could be a count, and the order would read it.
 
-namespace detail {
-
-template <typename Resource>
-consteval watch::priority session_priority_of() noexcept {
-    using Bare = std::remove_cvref_t<Resource>;
-    constexpr bool states_a_priority = requires { Bare::session_priority; };
-    if constexpr (states_a_priority) {
-        constexpr bool is_typed = std::same_as<std::remove_cv_t<decltype(Bare::session_priority)>, watch::priority>;
-        static_assert(is_typed,
-                      "fixy::session::diagnostic [Session_Priority_Type]: the Resource declares session_priority "
-                      "with a type other than fixy::session::watch::priority.  Declare it as "
-                      "static constexpr fixy::session::watch::priority session_priority{N};");
-        if constexpr (is_typed) return Bare::session_priority;
+// The priority that a Resource states, or the lowest priority for a
+// Resource that states none.  The answer is a function at namespace scope
+// that is not a template, so no translation unit can specialize it.
+[[nodiscard]] consteval watch::priority session_priority(std::meta::info resource) {
+    const std::meta::info member = ::foundation::reflect::member_named(resource, "session_priority");
+    if (member == std::meta::info{}) return watch::priority::lowest;
+    if (!std::meta::is_variable(member) || !std::meta::is_static_member(member)
+        || std::meta::remove_cv(std::meta::type_of(member)) != ^^watch::priority) {
+        throw std::meta::exception(
+            u8"fixy::session::diagnostic [Session_Priority_Type]: the Resource declares session_priority with a type "
+            u8"other than fixy::session::watch::priority, or not as a static member.  Declare it as static constexpr "
+            u8"fixy::session::watch::priority session_priority{N};",
+            member);
     }
-    return watch::priority::lowest;
+    return std::meta::extract<watch::priority>(member);
 }
-
-}  // namespace detail
-
-template <typename Resource>
-inline constexpr watch::priority session_priority_v = detail::session_priority_of<Resource>();
 
 // The two ends of a channel are one session, so their Resources state one
 // priority.
 template <typename ResourceA, typename ResourceB>
-concept ChannelEndsShareAPriority = session_priority_v<ResourceA> == session_priority_v<ResourceB>;
+concept ChannelEndsShareAPriority = session_priority(^^ResourceA) == session_priority(^^ResourceB);
 
 // The member definitions of the factory that read the admission concepts
 // stand here, after those concepts.
@@ -2385,11 +2380,15 @@ constexpr auto HandleFactory::start_(Resource r, std::source_location loc, watch
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy>
 constexpr watch::session_ref HandleFactory::claim_(std::source_location loc) noexcept {
+    // A constexpr variable is evaluated where it stands, so a Resource that
+    // states its priority with the wrong type is refused here, with the
+    // message of the refusal.
+    constexpr watch::priority resource_priority = session_priority(^^Resource);
     watch::session_ref session{};
     if constexpr (Policy::checks_abandonment) {
         if !consteval {
-            const watch::endpoint_id endpoint = watch::claim(
-                type_display_name_v<Proto>, loc, session_priority_v<Resource>, watch::holder_on_claim::calling_thread);
+            const watch::endpoint_id endpoint = watch::claim(type_display_name_v<Proto>, loc, resource_priority,
+                                                             watch::holder_on_claim::calling_thread);
             session = {endpoint, watch::current_thread_slot()};
         }
     }
@@ -2709,19 +2708,22 @@ concept CtxAdmitsProtocolRow =
 
 namespace detail {
 
-// The gate of HandleFactory::recover: branch I of the Offer exists and is
-// no label, the permission set is empty, a session can start at the branch
-// in the loop context, and the context admits the effect row of the branch.
+// The gate of HandleFactory::recover: the choice is an Offer, branch I of
+// it exists and is no label, the permission set is empty, a session can
+// start at the branch in the loop context, and the context admits the
+// effect row of the branch.
 template <typename Ctx, typename Choice, std::size_t I, typename LoopCtx, typename PS>
-struct recover_gate : std::false_type {};
+concept RecoverAdmitted = ::foundation::reflect::IsInstanceOf<Choice, ^^Offer> && (I < Choice::branch_count)
+                       && !::foundation::algebra::transition::wire_word_of(protocol_registry, ^^Choice, I).is_wired
+                       && perm_set_is_empty(^^PS)
+                       && RewindableTo<std::tuple_element_t<I, typename Choice::branches_tuple>, LoopCtx, LoopCtx>
+                       && CtxAdmitsProtocolRow<Ctx, std::tuple_element_t<I, typename Choice::branches_tuple>>;
 
-template <typename Ctx, typename... Branches, std::size_t I, typename LoopCtx, typename PS>
-    requires(I < Offer<Branches...>::branch_count)
-struct recover_gate<Ctx, Offer<Branches...>, I, LoopCtx, PS>
-    : std::bool_constant<
-          !wire_words_v<Offer<Branches...>>[I].is_wired && perm_set_is_empty_v<PS>
-          && RewindableTo<std::tuple_element_t<I, typename Offer<Branches...>::branches_tuple>, LoopCtx, LoopCtx>
-          && CtxAdmitsProtocolRow<Ctx, std::tuple_element_t<I, typename Offer<Branches...>::branches_tuple>>> {};
+[[nodiscard]] consteval bool recover_admits(std::meta::info ctx, std::meta::info choice, std::size_t index,
+                                            std::meta::info loop_ctx, std::meta::info perm_set) {
+    return std::meta::extract<bool>(std::meta::substitute(
+        ^^RecoverAdmitted, {ctx, choice, std::meta::reflect_constant(index), loop_ctx, perm_set}));
+}
 
 }  // namespace detail
 
@@ -2912,10 +2914,9 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
 // for each clause.
 template <typename SelfProto, typename PeerProto, typename ResourceSelf, typename ResourcePeer>
 concept ForkedSidesAgree = std::is_same_v<PeerProto, dual_of_t<SelfProto>>
-                        || (StatesChannelCapacity<ResourceSelf> && StatesChannelCapacity<ResourcePeer>
-                            && (channel_capacity_v<ResourceSelf> == channel_capacity_v<ResourcePeer>)
-                            && is_subtype_async_v<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
-                            && is_subtype_async_v<PeerProto, dual_of_t<SelfProto>, ResourcePeer>);
+                        || (StatesOneChannelCapacity<ResourceSelf, ResourcePeer>
+                            && SubtypeAsync<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
+                            && SubtypeAsync<PeerProto, dual_of_t<SelfProto>, ResourcePeer>);
 
 // The whole gate of a fork-shaped channel: two runnable sides whose
 // permission flow closes, a context that admits the row of each side and
@@ -3036,7 +3037,7 @@ public:
         using SelfSide = forked_endpoint_<SelfProto, Policy, ResourceSelf, SelfBody>;
         using PeerSide = forked_endpoint_<PeerProto, Policy, ResourcePeer, PeerBody>;
         const auto [self_endpoint, peer_endpoint] =
-            detail::claim_channel_<SelfProto, PeerProto, Policy, session_priority_v<ResourceSelf>>(loc);
+            detail::claim_channel_<SelfProto, PeerProto, Policy, session_priority(^^ResourceSelf)>(loc);
         return ::foundation::permissions::mint_permission_fork<SelfTag, PeerTag>(
             ctx, std::move(parent),
             SelfSide{std::forward<ResourceSelf>(self_resource), std::move(self_body), loc, self_endpoint},
@@ -3052,7 +3053,7 @@ public:
                                                           std::source_location loc) noexcept {
         std::pair<watch::endpoint_id, watch::endpoint_id> endpoints{watch::endpoint_id::none, watch::endpoint_id::none};
         if !consteval {
-            endpoints = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority_v<ResourceA>>(loc);
+            endpoints = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority(^^ResourceA)>(loc);
         }
         return std::pair{
             HandleFactory::open_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(

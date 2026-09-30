@@ -1,13 +1,14 @@
 // The clash of one label word with two label keys, on an Offer.  The
-// relation refuses it on an input choice as it does on an output choice.
-// The stable id under the word refuses each closure label first, and the
-// relation stays as the guard against a collision of two stable ids.
+// member check of the message node refuses each closure label first, on an
+// input choice as on an output choice, and the build stops at that
+// refusal.  The relation stays as the guard against a collision of two
+// stable ids.
 
 #include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
-// Bob has external linkage, so the stable id refuses the closure label
-// and not the role.
+// Bob has external linkage, so the closure label is the one part of the
+// message that a stable id cannot name.
 namespace neg_sess_subtype_label_word_clash_input_types {
 
 namespace s = ::fixy::session;

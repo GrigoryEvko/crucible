@@ -177,12 +177,12 @@ struct CountedNotTyped {
     static constexpr unsigned session_network = 1;
 };
 
-static_assert(s::has_session_network_v<PairQueues>);
-static_assert(s::has_session_network_v<PairQueues&>);
-static_assert(s::has_session_network_v<const SharedBag>);
-static_assert(!s::has_session_network_v<Silent>);
-static_assert(!s::has_session_network_v<CountedNotTyped>);
-static_assert(s::session_network_v<SharedMailbox> == s::Network::Mailbox);
+static_assert(s::has_session_network(^^PairQueues));
+static_assert(s::has_session_network(^^PairQueues&));
+static_assert(s::has_session_network(^^const SharedBag));
+static_assert(!s::has_session_network(^^Silent));
+static_assert(!s::has_session_network(^^CountedNotTyped));
+static_assert(s::session_network(^^SharedMailbox) == s::Network::Mailbox);
 
 static_assert(s::CarrierImplements<R41, PairQueues>);
 static_assert(!s::CarrierImplements<R41, SharedBag>);

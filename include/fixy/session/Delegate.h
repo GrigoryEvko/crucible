@@ -68,6 +68,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <meta>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -177,7 +178,7 @@ public:
         hold_type hold{std::move(*hold_)};
         handle_.reset();
         hold_.reset();
-        if constexpr (detail::perm_set_is_empty_v<InnerPS>) {
+        if constexpr (detail::perm_set_is_empty(^^InnerPS)) {
             return handle;
         } else {
             return std::pair{std::move(handle), std::move(hold)};
@@ -187,17 +188,20 @@ public:
 
 namespace detail {
 
-// A handle that can delegate: a handle outside every Loop, with no brand.
-template <typename H>
-struct is_delegatable_handle : std::false_type {};
-template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS>
-struct is_delegatable_handle<SessionHandle<Proto, Resource, void, Policy, PS>> : std::true_type {};
+// True when the type is a handle that can delegate: a handle outside every
+// Loop, with no brand.  The test is a function at namespace scope that is
+// not a template, so no translation unit can specialize it to delegate a
+// handle inside a Loop.
+[[nodiscard]] consteval bool is_delegatable_handle(std::meta::info handle) {
+    return std::meta::has_template_arguments(handle) && std::meta::template_of(handle) == (^^SessionHandle)
+        && std::meta::dealias(std::meta::template_arguments_of(handle)[2]) == (^^void);
+}
 
 }  // namespace detail
 
 // True when H is a session handle that can travel as a DelegatedSession.
 template <typename H>
-concept DelegatableHandle = detail::is_delegatable_handle<H>::value;
+concept DelegatableHandle = detail::is_delegatable_handle(^^H);
 
 // True when Hold backs the permission set of the handle H: it holds the
 // token of each tag of that set, and nothing else.
@@ -234,7 +238,7 @@ public:
 // Moves the live handle, with the empty permission set, into the payload
 // that carries it.  The payload travels as the value of a Send.
 template <typename H>
-    requires DelegatableHandle<H> && detail::perm_set_is_empty_v<typename H::perm_set>
+    requires DelegatableHandle<H> && (detail::perm_set_is_empty(^^typename H::perm_set))
 [[nodiscard]] constexpr auto
 mint_delegated_session(H handle) noexcept(std::is_nothrow_move_constructible_v<typename H::resource_type>) {
     return DelegationDoor::give(std::move(handle), mint_permission_hold());
@@ -292,12 +296,10 @@ using InLoop = SessionHandle<End, Wire, Loop<Send<int, Continue>>, DefaultAbando
                              ::foundation::permissions::EmptyPermSet>;
 }  // namespace fixy::session::detail::delegatable_armed_witness
 
-template <>
-struct foundation::contracts::armed_cell<::fixy::session::detail::is_delegatable_handle> {
-    using accepts = witnesses<::fixy::session::detail::delegatable_armed_witness::Loose>;
-    using refuses = witnesses<int, ::fixy::session::detail::delegatable_armed_witness::Branded,
-                              ::fixy::session::detail::delegatable_armed_witness::InLoop>;
-};
+static_assert(::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::Loose>);
+static_assert(!::fixy::session::DelegatableHandle<int>
+              && !::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::Branded>
+              && !::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::InLoop>);
 
 namespace fixy::session::detail::delegation_head_armed_witness {
 using Carried = Send<int, End>;

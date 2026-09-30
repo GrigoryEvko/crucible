@@ -482,10 +482,6 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) 
     return run.verdict;
 }
 
-// The verdict that the gate reads.  It is computed once for each pair.
-template <typename P1, typename P2>
-inline constexpr CheckpointVerdict verdict_v = verdict_of(^^P1, ^^P2);
-
 // True when the question is a CheckpointPair whose verdict is Compliant.
 // Any other type answers false.
 [[nodiscard]] consteval bool pair_is_compliant(info question);
@@ -517,7 +513,7 @@ template <typename Q>
 using is_checkpoint_compliant = std::bool_constant<detail::checkpoint::pair_is_compliant(^^Q)>;
 
 template <typename P1, typename P2>
-concept checkpoint_compliant_v = detail::checkpoint::verdict_v<P1, P2> == CheckpointVerdict::Compliant;
+concept checkpoint_compliant_v = detail::checkpoint::verdict_of(^^P1, ^^P2) == CheckpointVerdict::Compliant;
 
 // Whether Proto can run on one endpoint of a checkpoint session whose
 // other endpoint runs PeerProto.  Each refusal is its own atomic
@@ -525,18 +521,20 @@ concept checkpoint_compliant_v = detail::checkpoint::verdict_v<P1, P2> == Checkp
 // clause asks for Compliant, so a verdict added later and not listed
 // here still refuses.  The runtime reads nested members of each protocol,
 // so the first two clauses refuse a node whose members disagree with its
-// arguments (fixy/session/Protocol.h).
+// arguments (fixy/session/Protocol.h).  Each clause calls a function at
+// namespace scope that is not a template, so no translation unit can
+// specialize a verdict.
 template <typename Proto, typename PeerProto>
 concept CheckpointSessionAdmissible =
-    ::fixy::session::detail::require_agreeing_members<Proto>()
-    && ::fixy::session::detail::require_agreeing_members<PeerProto>()
-    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::NotCheckpointShaped
-    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::Stuck
-    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelOutOfRange
-    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LabelsDisagree
-    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::RollToImposedCheckpoint
-    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::LoopUnresolved
-    && detail::checkpoint::verdict_v<Proto, PeerProto> != CheckpointVerdict::TooManyConfigurations
+    ::fixy::session::detail::require_agreeing_members(^^Proto)
+    && ::fixy::session::detail::require_agreeing_members(^^PeerProto)
+    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::NotCheckpointShaped
+    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::Stuck
+    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelOutOfRange
+    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelsDisagree
+    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::RollToImposedCheckpoint
+    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LoopUnresolved
+    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::TooManyConfigurations
     && checkpoint_compliant_v<Proto, PeerProto> && WellFormedRunnableProtocol<checkpoint_erase_t<Proto>>
     && WellFormedRunnableProtocol<checkpoint_erase_t<PeerProto>>;
 

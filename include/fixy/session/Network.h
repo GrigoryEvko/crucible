@@ -408,8 +408,8 @@ inline constexpr NetworkRefusal network_refusal_v = detail::network::refusal_of<
 // asks this concept, and ensure_carrier_implements names the reason of a
 // refusal.
 template <typename G, typename Resource, typename Reliable = EveryRoleReliable>
-concept CarrierImplements = has_session_network_v<Resource>
-                         && is_implementable_on<Implementability<G, session_network_v<Resource>, Reliable>>::value;
+concept CarrierImplements = has_session_network(^^Resource)
+                         && is_implementable_on<Implementability<G, session_network(^^Resource), Reliable>>::value;
 
 template <typename G, Network N, typename Reliable = EveryRoleReliable>
 consteval void ensure_implementable_on() noexcept {
@@ -461,20 +461,19 @@ consteval void ensure_implementable_on() noexcept {
 
 template <typename G, typename Resource, typename Reliable = EveryRoleReliable>
 consteval void ensure_carrier_implements() noexcept {
-    if constexpr (detail::network::states_a_network_member<Resource>()
-                  && !detail::network::states_a_typed_network<Resource>()) {
+    if constexpr (states_a_network_member(^^Resource) && !has_session_network(^^Resource)) {
         static_assert(detail::network::dependent_false_v<G, Resource>,
                       "fixy::session::diagnostic [Session_Network_Type]: the carrier declares session_network with "
                       "a type other than fixy::session::Network.  Declare it as static constexpr "
                       "fixy::session::Network session_network = fixy::session::Network::PerPairFifo; or with the "
                       "value that states its semantics.");
-    } else if constexpr (!has_session_network_v<Resource>) {
+    } else if constexpr (!has_session_network(^^Resource)) {
         static_assert(detail::network::dependent_false_v<G, Resource>,
                       "fixy::session::diagnostic [Carrier_Network_Undeclared]: the carrier states no network model, "
                       "so no check can say that the protocol is implementable on it.  Give the carrier a static "
                       "constexpr fixy::session::Network session_network member.");
     } else {
-        ensure_implementable_on<G, session_network_v<Resource>, Reliable>();
+        ensure_implementable_on<G, session_network(^^Resource), Reliable>();
     }
 }
 

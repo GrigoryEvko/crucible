@@ -47,9 +47,9 @@
 
 namespace fixy::session {
 
-// StatesChannelCapacity and channel_capacity_v are in fixy/session/Subtype.h,
-// because the asynchronous relation reads its capacity from the same
-// channel type.
+// StatesChannelCapacity and StatesOneChannelCapacity are in
+// fixy/session/Subtype.h, because the asynchronous relation reads its
+// capacity from the same channel type.
 
 // The gate of the asynchronous fork-shaped mint.  Each side is runnable,
 // its permission flow closes, the context admits the row of each side
@@ -67,10 +67,9 @@ concept CtxFitsAsyncForkedChannel =
     WellFormedRunnableProtocol<SelfProto> && WellFormedRunnableProtocol<PeerProto>
     && PermissionFlowCloses<SelfProto, ::foundation::permissions::EmptyPermSet>
     && PermissionFlowCloses<PeerProto, ::foundation::permissions::EmptyPermSet>
-    && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto> && StatesChannelCapacity<ResourceSelf>
-    && StatesChannelCapacity<ResourcePeer> && (channel_capacity_v<ResourceSelf> == channel_capacity_v<ResourcePeer>)
-    && is_subtype_async_v<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
-    && is_subtype_async_v<PeerProto, dual_of_t<SelfProto>, ResourcePeer>
+    && CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto> && StatesOneChannelCapacity<ResourceSelf, ResourcePeer>
+    && SubtypeAsync<SelfProto, dual_of_t<PeerProto>, ResourceSelf>
+    && SubtypeAsync<PeerProto, dual_of_t<SelfProto>, ResourcePeer>
     && ::foundation::permissions::CtxFitsPermissionFork<Ctx, Parent, SelfTag, PeerTag>;
 
 // Makes a channel whose self side runs SelfProto and whose peer side runs

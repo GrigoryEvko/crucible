@@ -26,10 +26,10 @@
 // fixy/session/Network.h holds the check that a global type is
 // implementable on a model.
 
-#include <foundation/contracts/Armed.h>
+#include <foundation/reflect/Instance.h>
 
 #include <cstdint>
-#include <type_traits>
+#include <meta>
 
 namespace fixy::session {
 
@@ -47,46 +47,45 @@ enum class Network : std::uint8_t {
 };
 
 // ── The declaration of a carrier ─────────────────────────────────────
+//
+// Each answer below is a function at namespace scope that is not a
+// template, so no translation unit can specialize it.  A carrier states
+// its network in its own declarations, and nothing else states it.
 
 namespace detail::network {
 
-template <typename Resource>
-consteval bool states_a_network_member() noexcept {
-    using Bare = std::remove_cvref_t<Resource>;
-    return requires { Bare::session_network; };
-}
-
-template <typename Resource>
-consteval bool states_a_typed_network() noexcept {
-    using Bare = std::remove_cvref_t<Resource>;
-    if constexpr (states_a_network_member<Resource>()) {
-        return std::is_same_v<std::remove_cv_t<decltype(Bare::session_network)>, Network>;
-    } else {
-        return false;
-    }
-}
+// Declared and not defined, and not constexpr.  A constant evaluation
+// that calls it fails, and the diagnostic gives its name as the reason.
+void carrier_states_no_network() noexcept;
 
 }  // namespace detail::network
+
+// True when the carrier, or a base of it, has a member named
+// session_network that code outside the class can name.
+[[nodiscard]] consteval bool states_a_network_member(std::meta::info resource) {
+    return ::foundation::reflect::member_named(resource, "session_network") != std::meta::info{};
+}
 
 // True when the carrier states its network model with a static member
 // session_network of the type Network.  A member of that name with
 // another type states nothing: a plain integer could be a count.
-template <typename Resource>
-struct has_session_network : std::bool_constant<detail::network::states_a_typed_network<Resource>()> {};
+[[nodiscard]] consteval bool has_session_network(std::meta::info resource) {
+    const std::meta::info member = ::foundation::reflect::member_named(resource, "session_network");
+    return member != std::meta::info{} && std::meta::is_variable(member) && std::meta::is_static_member(member)
+        && std::meta::remove_cv(std::meta::type_of(member)) == ^^Network;
+}
 
-template <typename Resource>
-inline constexpr bool has_session_network_v = has_session_network<Resource>::value;
+// The network that the carrier states.  A carrier that states none has no
+// network, and a call for it is not a constant expression.
+[[nodiscard]] consteval Network session_network(std::meta::info resource) {
+    if (!has_session_network(resource)) detail::network::carrier_states_no_network();
+    return std::meta::extract<Network>(::foundation::reflect::member_named(resource, "session_network"));
+}
 
+// True when the carrier states the Local network, so it has no peer.  A
+// carrier that states no network, or another one, answers false.
 template <typename Resource>
-    requires has_session_network_v<Resource>
-inline constexpr Network session_network_v = std::remove_cvref_t<Resource>::session_network;
-
-// True when the carrier states the Local network, so it has no peer.  The
-// concept reads the member of the carrier itself, so a carrier that states
-// no network, or another one, answers false.
-template <typename Resource>
-concept LocalCarrier = detail::network::states_a_typed_network<Resource>()
-                    && std::remove_cvref_t<Resource>::session_network == Network::Local;
+concept LocalCarrier = has_session_network(^^Resource) && session_network(^^Resource) == Network::Local;
 
 namespace detail::network::witness {
 
@@ -107,17 +106,18 @@ struct IntegerCarrier {
     static constexpr int session_network = 0;
 };
 
+struct InheritedCarrier : MailboxCarrier {};
+
+static_assert(has_session_network(^^FifoCarrier) && has_session_network(^^MailboxCarrier)
+              && has_session_network(^^BagCarrier) && has_session_network(^^LocalCarrier)
+              && has_session_network(^^FifoCarrier&) && has_session_network(^^InheritedCarrier));
+static_assert(!has_session_network(^^int) && !has_session_network(^^SilentCarrier)
+              && !has_session_network(^^IntegerCarrier));
+static_assert(states_a_network_member(^^IntegerCarrier) && !states_a_network_member(^^SilentCarrier));
+static_assert(session_network(^^InheritedCarrier) == Network::Mailbox);
+static_assert(::fixy::session::LocalCarrier<LocalCarrier> && !::fixy::session::LocalCarrier<FifoCarrier>
+              && !::fixy::session::LocalCarrier<SilentCarrier> && !::fixy::session::LocalCarrier<IntegerCarrier>);
+
 }  // namespace detail::network::witness
 
 }  // namespace fixy::session
-
-template <>
-struct foundation::contracts::armed_cell<::fixy::session::has_session_network> {
-    using accepts = witnesses<::fixy::session::detail::network::witness::FifoCarrier,
-                              ::fixy::session::detail::network::witness::MailboxCarrier,
-                              ::fixy::session::detail::network::witness::BagCarrier,
-                              ::fixy::session::detail::network::witness::LocalCarrier,
-                              ::fixy::session::detail::network::witness::FifoCarrier&>;
-    using refuses = witnesses<int, ::fixy::session::detail::network::witness::SilentCarrier,
-                              ::fixy::session::detail::network::witness::IntegerCarrier>;
-};

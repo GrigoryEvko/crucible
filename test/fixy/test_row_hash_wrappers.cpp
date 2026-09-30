@@ -1214,7 +1214,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::CrashLiveness, kQuery},
     {^^::fixy::session::is_crash_live_by_construction, kMetafunction},
     {^^::fixy::session::is_live_by_construction, kMetafunction},
-    {^^::fixy::session::has_session_network, kMetafunction},
     {^^::fixy::session::Implementability, kQuery},
     {^^::fixy::session::is_implementable_on, kMetafunction},
 

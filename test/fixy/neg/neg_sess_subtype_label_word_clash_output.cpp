@@ -1,14 +1,14 @@
-// Two closure types in one translation unit print one name.  The stable
-// id under a label word refuses a closure, because its printed name is
-// not an identity.  The compiler still reaches the relation.  The
-// relation refuses two label keys of one word, and it stays as the guard
-// against a collision of two stable ids.
+// Two closure types in one translation unit print one name, so a stable
+// id cannot name a closure label.  The member check of the message node
+// refuses a closure label before the relation runs, and the build stops at
+// that refusal.  The relation keeps its refusal of two label keys of one
+// word, as the guard against a collision of two stable ids.
 
 #include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
-// Bob has external linkage, so the stable id refuses the closure label
-// and not the role.
+// Bob has external linkage, so the closure label is the one part of the
+// message that a stable id cannot name.
 namespace neg_sess_subtype_label_word_clash_output_types {
 
 namespace s = ::fixy::session;

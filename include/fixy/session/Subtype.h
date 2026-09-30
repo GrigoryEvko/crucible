@@ -237,8 +237,7 @@ namespace detail::subtype {
 // The synchronous verdict on one pair, defined below.  The payload order
 // reads it for a delegated endpoint, whose protocol is a smaller type
 // than the protocol that sends it, so the recursion ends.
-template <typename Sub, typename Super>
-consteval ::foundation::algebra::transition::verdict sync_verdict();
+consteval ::foundation::algebra::transition::verdict sync_verdict(std::meta::info sub, std::meta::info super);
 
 }  // namespace detail::subtype
 
@@ -249,7 +248,7 @@ inline constexpr bool delegation_weakens_v = false;
 template <typename P, typename Q, typename Resource, typename Policy, typename PS>
 inline constexpr bool
     delegation_weakens_v<DelegatedSession<P, Resource, Policy, PS>, DelegatedSession<Q, Resource, Policy, PS>> =
-        ::fixy::session::detail::subtype::sync_verdict<Q, P>().holds;
+        ::fixy::session::detail::subtype::sync_verdict(^^Q, ^^P).holds;
 
 template <typename T>
 struct refinement_parts {
@@ -371,48 +370,78 @@ namespace detail::subtype {
 inline constexpr std::string_view unregistered_prefix = "fixy::session::diagnostic [Subtype_Unregistered_Combinator]: ";
 inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic [Subtype_Incoherent_Registration]: ";
 
-// Both spines must hold registered combinators only.  The relation
-// reads every node, so a combinator it does not know stops the build.
-template <typename P>
-consteval void require_registered_spine() {
-    static_assert(
-        ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P) == std::meta::info{},
-        ::foundation::algebra::transition::unregistered_message(
-            unregistered_prefix, ::foundation::algebra::transition::first_unregistered(protocol_registry, ^^P)));
-    static_assert(::foundation::algebra::transition::first_incoherent(protocol_registry, ^^P).reason
-                      == ::foundation::algebra::transition::incoherence::none,
-                  ::foundation::algebra::transition::incoherent_message(
-                      incoherent_prefix, ::foundation::algebra::transition::first_incoherent(protocol_registry, ^^P)));
+// True when each node of the spine of the protocol is registered and
+// coherent.
+[[nodiscard]] consteval bool spine_is_sound(std::meta::info protocol) {
+    namespace tr = ::foundation::algebra::transition;
+    return tr::first_unregistered(protocol_registry, protocol) == std::meta::info{}
+        && tr::first_incoherent(protocol_registry, protocol).reason == tr::incoherence::none;
 }
 
-template <typename Sub, typename Super>
-consteval ::foundation::algebra::transition::verdict sync_verdict() {
-    require_registered_spine<Sub>();
-    require_registered_spine<Super>();
-    if (!is_well_formed_v<Sub>) {
-        return {false, ::foundation::algebra::transition::mismatch::ill_formed, ^^Sub, {}};
+// The answer of spine_is_sound for one protocol, as a concept.
+template <typename P>
+concept SoundSpine = spine_is_sound(^^P);
+
+// The answer of a concept of one type argument for the protocol.  The
+// compiler keeps the satisfaction of each concept-id, so the relation
+// walks each protocol one time.  A call of a function over reflections
+// that allocates is evaluated again at each call, and the relation asks
+// about each protocol once for each pair that holds it.
+[[nodiscard]] consteval bool holds_for(std::meta::info concept_template, std::meta::info protocol) {
+    return std::meta::extract<bool>(std::meta::substitute(concept_template, {protocol}));
+}
+
+// Both spines must hold registered combinators only.  The relation
+// reads every node, so a combinator it does not know stops the build.
+// The refusal is a function at namespace scope that is not a template, so
+// no translation unit can specialize it away.  It throws, so the constant
+// evaluation that asked stops, and the diagnostic prints the message.
+consteval void require_registered_spine(std::meta::info protocol) {
+    if (holds_for(^^SoundSpine, protocol)) return;
+    namespace tr = ::foundation::algebra::transition;
+    const std::meta::info missing = tr::first_unregistered(protocol_registry, protocol);
+    if (missing != std::meta::info{}) {
+        throw std::meta::exception(
+            ::fixy::session::detail::refusal_text(tr::unregistered_message(unregistered_prefix, missing)), missing);
     }
-    if (!is_well_formed_v<Super>) {
-        return {false, ::foundation::algebra::transition::mismatch::ill_formed, {}, ^^Super};
+    const auto incoherent = tr::first_incoherent(protocol_registry, protocol);
+    if (incoherent.reason != tr::incoherence::none) {
+        throw std::meta::exception(
+            ::fixy::session::detail::refusal_text(tr::incoherent_message(incoherent_prefix, incoherent)), protocol);
     }
-    return ::foundation::algebra::transition::refines(protocol_registry, ^^::fixy::session::payload_axioms, ^^Sub,
-                                                      ^^Super);
+}
+
+// A function at namespace scope that is not a template, so no
+// translation unit can specialize the verdict.
+consteval ::foundation::algebra::transition::verdict sync_verdict(std::meta::info sub, std::meta::info super) {
+    require_registered_spine(sub);
+    require_registered_spine(super);
+    if (!holds_for(^^::fixy::session::is_well_formed_v, sub)) {
+        return {false, ::foundation::algebra::transition::mismatch::ill_formed, sub, {}};
+    }
+    if (!holds_for(^^::fixy::session::is_well_formed_v, super)) {
+        return {false, ::foundation::algebra::transition::mismatch::ill_formed, {}, super};
+    }
+    return ::foundation::algebra::transition::refines(protocol_registry, ^^::fixy::session::payload_axioms, sub, super);
 }
 
 }  // namespace detail::subtype
 
+// The gate reads the verdict through SubtypeSync.  The value spellings
+// below read the same function, so they give the answer of the gate, and a
+// specialization of one of them changes only what its author reads.
+template <typename Sub, typename Super>
+concept SubtypeSync = detail::subtype::sync_verdict(^^Sub, ^^Super).holds;
+
 template <typename Sub, typename Super>
 inline constexpr ::foundation::algebra::transition::verdict subtype_verdict_v =
-    detail::subtype::sync_verdict<Sub, Super>();
+    detail::subtype::sync_verdict(^^Sub, ^^Super);
 
 template <typename Sub, typename Super>
 inline constexpr ::foundation::algebra::transition::mismatch subtype_mismatch_v = subtype_verdict_v<Sub, Super>.reason;
 
 template <typename Sub, typename Super>
-inline constexpr bool is_subtype_sync_v = subtype_verdict_v<Sub, Super>.holds;
-
-template <typename Sub, typename Super>
-concept SubtypeSync = is_subtype_sync_v<Sub, Super>;
+inline constexpr bool is_subtype_sync_v = SubtypeSync<Sub, Super>;
 
 // The question "does Sub refine Super", as one type, so the predicate
 // below takes one argument and can hold an armed cell.
@@ -528,16 +557,16 @@ using subtype_reason_t = typename detail::subtype::reason_of<Sub, Super>::type;
 // the dual of the server, because the peer of a server is its dual.
 
 template <typename Sub, typename Super>
-inline constexpr bool equivalent_sync_v = is_subtype_sync_v<Sub, Super> && is_subtype_sync_v<Super, Sub>;
+concept EquivalentSync = SubtypeSync<Sub, Super> && SubtypeSync<Super, Sub>;
 
 template <typename Sub, typename Super>
-concept EquivalentSync = equivalent_sync_v<Sub, Super>;
+inline constexpr bool equivalent_sync_v = EquivalentSync<Sub, Super>;
 
 template <typename Sub, typename Super>
-inline constexpr bool is_strict_subtype_sync_v = is_subtype_sync_v<Sub, Super> && !is_subtype_sync_v<Super, Sub>;
+concept StrictSubtypeSync = SubtypeSync<Sub, Super> && !SubtypeSync<Super, Sub>;
 
 template <typename Sub, typename Super>
-concept StrictSubtypeSync = is_strict_subtype_sync_v<Sub, Super>;
+inline constexpr bool is_strict_subtype_sync_v = StrictSubtypeSync<Sub, Super>;
 
 namespace detail::subtype {
 
@@ -571,7 +600,7 @@ inline constexpr bool subtype_chain_v = detail::subtype::chain_holds<Ts...>();
 // CompatibleServer<S, C> always agree.
 template <typename ClientProto, typename ServerProto>
 concept CompatibleClient =
-    is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>> && is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
+    SubtypeSync<ClientProto, dual_of_t<ServerProto>> && SubtypeSync<ServerProto, dual_of_t<ClientProto>>;
 
 template <typename ServerProto, typename ClientProto>
 concept CompatibleServer = CompatibleClient<ClientProto, ServerProto>;
@@ -1033,20 +1062,25 @@ consteval bool prove(search& state, std::vector<action> sub_prefix, std::size_t 
 }
 
 // The bounded check in one direction.  Top-level wrappers must agree,
-// shape and value, and are then passed.  `ChecksExits` adds exit
+// shape and value, and are then passed.  checks_exits adds exit
 // preservation.  The check of the dual direction runs without it: exit
 // preservation asks the subtype to keep the exits of the supertype, and
-// in the dual direction the roles of the two are swapped.
-template <typename Sub, typename Super, std::size_t Capacity, bool ChecksExits>
-consteval bool bounded() {
-    subtype::require_registered_spine<Sub>();
-    subtype::require_registered_spine<Super>();
-    if (!is_well_formed_v<Sub> || !is_well_formed_v<Super>) return false;
+// in the dual direction the roles of the two are swapped.  A function at
+// namespace scope that is not a template, so no translation unit can
+// specialize the answer.
+[[nodiscard]] consteval bool bounded(std::meta::info sub, std::meta::info super, std::size_t capacity,
+                                     bool checks_exits) {
+    subtype::require_registered_spine(sub);
+    subtype::require_registered_spine(super);
+    if (!subtype::holds_for(^^::fixy::session::is_well_formed_v, sub)
+        || !subtype::holds_for(^^::fixy::session::is_well_formed_v, super)) {
+        return false;
+    }
     search state{};
-    state.sub = ::foundation::algebra::transition::graph_of(protocol_registry, ^^Sub);
-    state.super = ::foundation::algebra::transition::graph_of(protocol_registry, ^^Super);
+    state.sub = ::foundation::algebra::transition::graph_of(protocol_registry, sub);
+    state.super = ::foundation::algebra::transition::graph_of(protocol_registry, super);
     state.axioms = ^^::fixy::session::payload_axioms;
-    state.capacity = Capacity;
+    state.capacity = capacity;
     std::size_t sub_top = 0;
     std::size_t super_top = 0;
     while (state.sub.nodes[sub_top].entry.kind == ::foundation::algebra::transition::shape_kind::wrapper
@@ -1060,32 +1094,11 @@ consteval bool bounded() {
     if (is_outside_the_check(state.sub, sub_top) || is_outside_the_check(state.super, super_top)) {
         return false;
     }
-    if (!prove(state, {}, sub_top, Capacity + 1, {}, super_top, Capacity + 1,
+    if (!prove(state, {}, sub_top, capacity + 1, {}, super_top, capacity + 1,
                ::foundation::algebra::transition::npos)) {
         return false;
     }
-    return !ChecksExits || keeps_exits(state);
-}
-
-// One direction of the bounded check, as its own constant evaluation,
-// so each direction has the full operation budget of the build.
-template <typename Sub, typename Super, std::size_t Capacity, bool ChecksExits>
-inline constexpr bool bounded_v = bounded<Sub, Super, Capacity, ChecksExits>();
-
-// The synchronous relation first, then each direction of the bounded
-// check only when the step before it did not decide.  Each call of a
-// consteval function in a variable initializer is evaluated where it
-// stands, also on the side of a || that is not needed, so the order is
-// made by `if constexpr` and not by the operators.
-template <typename Sub, typename Super, std::size_t Capacity>
-consteval bool holds() {
-    if constexpr (is_subtype_sync_v<Sub, Super>) {
-        return true;
-    } else if constexpr (!bounded_v<Sub, Super, Capacity, true>) {
-        return false;
-    } else {
-        return bounded_v<dual_of_t<Super>, dual_of_t<Sub>, Capacity, false>;
-    }
+    return !checks_exits || keeps_exits(state);
 }
 
 }  // namespace detail::async
@@ -1096,6 +1109,31 @@ concept StatesChannelCapacity = requires {
     { std::remove_cvref_t<Channel>::channel_capacity } -> std::convertible_to<std::size_t>;
 } && (static_cast<std::size_t>(std::remove_cvref_t<Channel>::channel_capacity) > 0);
 
+// True when the two channel types state one capacity.
+template <typename ChannelA, typename ChannelB>
+concept StatesOneChannelCapacity = StatesChannelCapacity<ChannelA> && StatesChannelCapacity<ChannelB>
+                                && (static_cast<std::size_t>(std::remove_cvref_t<ChannelA>::channel_capacity)
+                                    == static_cast<std::size_t>(std::remove_cvref_t<ChannelB>::channel_capacity));
+
+// True when Sub refines Super on a channel with the capacity that Channel
+// states: the synchronous relation holds, or the bounded check proves
+// each direction.  Each operand is its own constant evaluation, so each
+// direction has the full operation budget of the build, and an operand is
+// asked only when the operands before it leave the answer open.  No
+// template decides an operand, so no translation unit can specialize the
+// answer.
+template <typename Sub, typename Super, typename Channel>
+concept SubtypeAsync =
+    StatesChannelCapacity<Channel>
+    && (SubtypeSync<Sub, Super>
+        || (detail::async::bounded(^^Sub, ^^Super,
+                                   static_cast<std::size_t>(std::remove_cvref_t<Channel>::channel_capacity), true)
+            && detail::async::bounded(detail::dual_type_of(^^Super), detail::dual_type_of(^^Sub),
+                                      static_cast<std::size_t>(std::remove_cvref_t<Channel>::channel_capacity),
+                                      false)));
+
+// The value spellings read the gate, so they give its answer, and a
+// specialization of one of them changes only what its author reads.
 template <typename Channel>
     requires StatesChannelCapacity<Channel>
 inline constexpr std::size_t channel_capacity_v =
@@ -1103,10 +1141,7 @@ inline constexpr std::size_t channel_capacity_v =
 
 template <typename Sub, typename Super, typename Channel>
     requires StatesChannelCapacity<Channel>
-inline constexpr bool is_subtype_async_v = detail::async::holds<Sub, Super, channel_capacity_v<Channel>>();
-
-template <typename Sub, typename Super, typename Channel>
-concept SubtypeAsync = StatesChannelCapacity<Channel> && is_subtype_async_v<Sub, Super, Channel>;
+inline constexpr bool is_subtype_async_v = SubtypeAsync<Sub, Super, Channel>;
 
 template <typename Sub, typename Super, typename Channel>
 struct AsyncSubtypeQuery {};
@@ -1116,12 +1151,12 @@ struct is_async_subtype : std::false_type {};
 template <typename Sub, typename Super, typename Channel>
     requires StatesChannelCapacity<Channel>
 struct is_async_subtype<AsyncSubtypeQuery<Sub, Super, Channel>>
-    : std::bool_constant<is_subtype_async_v<Sub, Super, Channel>> {};
+    : std::bool_constant<SubtypeAsync<Sub, Super, Channel>> {};
 
 template <typename Sub, typename Super, typename Channel>
     requires StatesChannelCapacity<Channel>
 consteval void assert_subtype_async() noexcept {
-    static_assert(is_subtype_async_v<Sub, Super, Channel>,
+    static_assert(SubtypeAsync<Sub, Super, Channel>,
                   "fixy::session::diagnostic [Subtype_Async_Not_Proven]: assert_subtype_async<Sub, Super, "
                   "Channel>: the bounded check did not prove that Sub refines Super on a channel with the "
                   "capacity that Channel states.  The check refuses a pair it cannot prove.  Usual causes: "

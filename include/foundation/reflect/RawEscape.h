@@ -208,13 +208,12 @@ struct RawEscape {
     return std::define_static_string(text);
 }
 
-template <typename T>
-inline constexpr std::string_view raw_escape_refusal_v = raw_escape_refusal_text(^^T);
-
 }  // namespace detail
 
+// The concept reads the walk through a function at namespace scope that
+// is not a template, so no translation unit can specialize the verdict.
 template <typename T>
-concept RawEscapesSanctioned = detail::raw_escape_refusal_v<T>.empty();
+concept RawEscapesSanctioned = detail::raw_escape_refusal_text(^^T).empty();
 
 }  // namespace foundation::reflect
 
@@ -226,4 +225,4 @@ concept RawEscapesSanctioned = detail::raw_escape_refusal_v<T>.empty();
 // or to a base of it, stops the build.
 #define CRUCIBLE_NO_RAW_ESCAPE(...)                                         \
     static_assert(::foundation::reflect::RawEscapesSanctioned<__VA_ARGS__>, \
-                  ::foundation::reflect::detail::raw_escape_refusal_v<__VA_ARGS__>)
+                  ::foundation::reflect::detail::raw_escape_refusal_text(^^__VA_ARGS__))
