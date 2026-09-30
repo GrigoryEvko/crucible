@@ -30,6 +30,13 @@ namespace wip_source {
 struct Sharp {};
 }  // namespace wip_source
 
+// False: no SHARP runtime is linked and no switch reduces.  mint_sharp_context
+// builds a context from the flags of the plan alone, allreduce_via_sharp
+// returns a deferral or an unavailable error, and dispatch_sharp_allreduce
+// returns a fallback.  Each of the three carries a CRUCIBLE_STUB deprecation, so each
+// call site sees the stub at compile time.
+inline constexpr bool sharp_backend_implemented = false;
+
 enum class SharpError : std::uint8_t {
     None = 0,
     ZeroSwitchCog,
@@ -272,6 +279,7 @@ mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitch
 
 template <class Ctx>
     requires CtxFitsSharpMint<Ctx>
+[[deprecated("CRUCIBLE_STUB: no SHARP runtime opens a context. The flags of the plan alone decide the result")]]
 [[nodiscard]] constexpr std::expected<SharpContext, SharpError>
 mint_sharp_context(Ctx const&, DeclaredSharpFabricPlan plan) noexcept {
     auto const& raw = plan.value();
@@ -320,7 +328,9 @@ public:
 
     template <class Ctx>
         requires CtxFitsSharpDispatch<Ctx>
-    [[nodiscard]] std::expected<DeclaredSharpDispatch, SharpError>
+    [[nodiscard, deprecated("CRUCIBLE_STUB: no switch reduces. A valid request returns DispatchDeferred, "
+                            "RuntimeUnavailable or VendorBackendUnavailable")]]
+    std::expected<DeclaredSharpDispatch, SharpError>
     allreduce_via_sharp(Ctx const&, std::span<const float> input, std::span<float> output,
                         NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
         if (input.size() != output.size()) {
@@ -345,7 +355,8 @@ public:
     }
 };
 
-[[nodiscard]] std::expected<DeclaredSharpDispatch, SharpError>
+[[nodiscard, deprecated("CRUCIBLE_STUB: no switch reduces. Returns a fallback for every request")]]
+std::expected<DeclaredSharpDispatch, SharpError>
 dispatch_sharp_allreduce(std::span<const float> input, std::span<float> output, NumericalRecipe const& recipe,
                          SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept;
 

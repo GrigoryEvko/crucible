@@ -3422,6 +3422,8 @@ crucible_neg_compile_test(neg_roce_pause_counters_hot_ctx
 #     plan is minted at initialization.
 #   * neg_gpu_direct_storage_bg_ctx, neg_gpu_direct_storage_hot_ctx: a
 #     storage plan is minted at initialization.
+#   * neg_gpu_direct_register_is_a_stub: no driver registers a region, and
+#     each call of the registration sees its CRUCIBLE_STUB deprecation.
 crucible_neg_compile_test(neg_gpu_direct_null_address
   "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
@@ -3443,6 +3445,9 @@ crucible_neg_compile_test(neg_gpu_direct_storage_bg_ctx
 crucible_neg_compile_test(neg_gpu_direct_storage_hot_ctx
   "no matching function for call to .mint_gpu_direct_storage_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::GpuTargetCaps&, "
   "required for the satisfaction of .CtxFitsGpuDirectMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_test(neg_gpu_direct_register_is_a_stub
+  "crucible::cntp::_wip::gpu_direct::register_gpu_memory\\(DeclaredGpuDirectMrPlan\\). is deprecated: CRUCIBLE_STUB: no driver registers the region"
+  "\\[-Werror=deprecated-declarations\\]")
 
 # cntp/_wip/Sharp.h, the in-network reduction scaffold.  Each fixture names
 # the call that fails and the reason.
@@ -3457,6 +3462,8 @@ crucible_neg_compile_test(neg_gpu_direct_storage_hot_ctx
 #     is minted at initialization.
 #   * neg_sharp_dispatch_init_ctx, neg_sharp_dispatch_hot_ctx: an
 #     all-reduce is background work.
+#   * neg_sharp_dispatch_is_a_stub: no switch reduces, and each call of the
+#     free dispatch sees its CRUCIBLE_STUB deprecation.
 crucible_neg_compile_test(neg_sharp_zero_participants
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), short unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
@@ -3487,6 +3494,9 @@ crucible_neg_compile_test(neg_sharp_dispatch_init_ctx
 crucible_neg_compile_test(neg_sharp_dispatch_hot_ctx
   "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_test(neg_sharp_dispatch_is_a_stub
+  "crucible::cntp::_wip::sharp::dispatch_sharp_allreduce\\(std::span<const float>, std::span<float>, const crucible::NumericalRecipe&, SharpRecipeLaws, DeclaredSharpFabricPlan\\). is deprecated: CRUCIBLE_STUB: no switch reduces"
+  "\\[-Werror=deprecated-declarations\\]")
 
 # cntp/Tcam.h, the hardware ACL and flow-rule substrate.
 #   * neg_tcam_zero_entry_count: a table capacity is at least one entry.

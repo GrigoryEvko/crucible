@@ -14,6 +14,8 @@
 #include <crucible/cntp/MtlsTransport.h>
 #include <crucible/cntp/RoceConfig.h>
 #include <crucible/cntp/Tcam.h>
+#include <crucible/cntp/_wip/GpuDirect.h>
+#include <crucible/cntp/_wip/Sharp.h>
 #include <crucible/cog/NicConfig.h>
 #include <crucible/cog/SrIov.h>
 #include <crucible/perf/SenseHubV2.h>
@@ -53,6 +55,18 @@ static_assert(crucible::cntp::tcam::vendor_backend_attached == false,
               "vendor_backend_attached flipped to true. Rewrite the live-tier "
               "test for this surface and remove the deprecation from "
               "force_tcam_backend_boundary in lockstep.");
+
+static_assert(crucible::cntp::_wip::gpu_direct::gpu_direct_backend_implemented == false,
+              "gpu_direct_backend_implemented flipped to true. Rewrite the live-tier "
+              "test for this surface and remove the deprecation from the registry "
+              "methods, register_gpu_memory, deregister_gpu_memory, read_from_nvme "
+              "and write_to_nvme in lockstep.");
+
+static_assert(crucible::cntp::_wip::sharp::sharp_backend_implemented == false,
+              "sharp_backend_implemented flipped to true. Rewrite the live-tier "
+              "test for this surface and remove the deprecation from "
+              "mint_sharp_context, allreduce_via_sharp and dispatch_sharp_allreduce "
+              "in lockstep.");
 
 // The v2 hub has no call below.  Its stub load is compiled only when
 // CRUCIBLE_SENSE_HUB_V2 is on, so the pin is the constant alone.

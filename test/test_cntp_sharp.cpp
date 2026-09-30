@@ -9,6 +9,13 @@
 #include <type_traits>
 #include <utility>
 
+// The context mint and the two dispatch calls carry a CRUCIBLE_STUB
+// deprecation, because no SHARP runtime stands behind them.  This file calls
+// them on purpose to pin their results, so the warning is suppressed for this
+// file alone.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cog = crucible::cog;
 namespace fe = ::foundation::effects;
 namespace shp = crucible::cntp::_wip::sharp;
@@ -224,6 +231,8 @@ int main() {
     static_assert(!std::is_default_constructible_v<shp::DeclaredSharpFabricPlan>);
     static_assert(!std::is_copy_constructible_v<shp::SharpContextHandle>);
     static_assert(!std::is_constructible_v<shp::SharpContextHandle, cog::Uuid, shp::SharpParticipantCount, bool, bool>);
+    static_assert(!shp::sharp_backend_implemented,
+                  "no SHARP runtime is linked, so the context mint and the dispatch calls are stubs");
 
     std::printf("test_cntp_sharp:\n");
     test_admission_and_names();
@@ -233,3 +242,5 @@ int main() {
     std::printf("test_cntp_sharp: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

@@ -7,6 +7,12 @@
 #include <string_view>
 #include <type_traits>
 
+// The registration and storage calls carry a CRUCIBLE_STUB deprecation,
+// because no driver stands behind them.  This file calls them on purpose to
+// pin their sentinel errors, so the warning is suppressed for this file alone.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace cog = crucible::cog;
 namespace fe = ::foundation::effects;
 namespace gd = crucible::cntp::_wip::gpu_direct;
@@ -246,6 +252,8 @@ int main() {
     static_assert(!std::is_default_constructible_v<gd::DeclaredGpuDirectMrPlan>);
     static_assert(!std::is_default_constructible_v<gd::DeclaredGpuDirectStoragePlan>);
     static_assert(!std::is_copy_constructible_v<gd::GpuDirectMrHandle>);
+    static_assert(!gd::gpu_direct_backend_implemented,
+                  "no driver registers a region, so each registration and storage call is a stub");
 
     std::printf("test_cntp_gpu_direct:\n");
     test_admission_and_names();
@@ -255,3 +263,5 @@ int main() {
     std::printf("test_cntp_gpu_direct: all PASSED\n");
     return 0;
 }
+
+#pragma GCC diagnostic pop

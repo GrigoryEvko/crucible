@@ -2,7 +2,11 @@
 //
 // A SHARP all-reduce is background work.  The initialization context can
 // mint the plan and the context, and it owns no Bg effect, so the dispatch
-// refuses it.
+// refuses it.  The context mint is deprecated as a stub, and the pragma keeps
+// that warning out, so the context is the one reason this file does not
+// compile.
+
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <crucible/cntp/_wip/Sharp.h>
 #include <fixy/Ctx.h>

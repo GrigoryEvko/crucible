@@ -99,6 +99,11 @@ std::expected<void, GpuDirectError> GpuDirectMrRegistry::deregister_gpu_memory(O
     return std::unexpected(GpuDirectError::VendorBackendUnavailable);
 }
 
+// The free functions forward to the stub methods of the registry, and each
+// carries the same deprecation on itself.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 std::expected<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept {
     GpuDirectMrRegistry registry{};
     return registry.register_gpu_memory(plan);
@@ -126,5 +131,7 @@ std::expected<void, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan 
 std::expected<void, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept {
     return read_from_nvme(plan);
 }
+
+#pragma GCC diagnostic pop
 
 }  // namespace crucible::cntp::_wip::gpu_direct

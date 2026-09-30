@@ -27,6 +27,12 @@ namespace wip_source {
 struct GpuDirect {};
 }  // namespace wip_source
 
+// False: no driver registers a memory region and no storage I/O reaches a
+// device.  The registration, deregistration, read and write calls return a
+// deferral or an unavailable error for every plan.  Each of them carries a
+// CRUCIBLE_STUB deprecation, so each call site sees the stub at compile time.
+inline constexpr bool gpu_direct_backend_implemented = false;
+
 enum class GpuDirectError : std::uint8_t {
     None = 0,
     ZeroGpuCog,
@@ -348,20 +354,30 @@ class GpuDirectMrRegistry : public ::foundation::Pinned<GpuDirectMrRegistry> {
 public:
     GpuDirectMrRegistry() = default;
 
-    [[nodiscard]] std::expected<OwnedGpuDirectMr, GpuDirectError>
-    register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
+    [[nodiscard, deprecated("CRUCIBLE_STUB: no driver registers the region. A valid plan returns "
+                            "PeerModuleUnavailable, RegistrationDeferred or VendorBackendUnavailable")]]
+    std::expected<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
 
-    [[nodiscard]] std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
+    [[nodiscard, deprecated("CRUCIBLE_STUB: no driver deregisters the region. A valid handle returns "
+                            "VendorBackendUnavailable")]]
+    std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
 };
 
-[[nodiscard]] std::expected<OwnedGpuDirectMr, GpuDirectError>
-register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
+[[nodiscard, deprecated("CRUCIBLE_STUB: no driver registers the region. A valid plan returns "
+                        "PeerModuleUnavailable, RegistrationDeferred or VendorBackendUnavailable")]]
+std::expected<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
 
-[[nodiscard]] std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
+[[nodiscard, deprecated("CRUCIBLE_STUB: no driver deregisters the region. A valid handle returns "
+                        "VendorBackendUnavailable")]]
+std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
 
-[[nodiscard]] std::expected<void, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
+[[nodiscard, deprecated("CRUCIBLE_STUB: no storage I/O reaches the device. A valid plan returns "
+                        "StorageBackendUnavailable")]]
+std::expected<void, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
 
-[[nodiscard]] std::expected<void, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
+[[nodiscard, deprecated("CRUCIBLE_STUB: no storage I/O reaches the device. A valid plan returns "
+                        "StorageBackendUnavailable")]]
+std::expected<void, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
 
 static_assert(sizeof(GpuVirtualAddress) == sizeof(std::uintptr_t));
 static_assert(sizeof(GpuDirectByteCount) == sizeof(std::uint64_t));

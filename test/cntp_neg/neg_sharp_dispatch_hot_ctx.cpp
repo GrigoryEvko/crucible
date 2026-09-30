@@ -1,7 +1,11 @@
 // NEGATIVE-COMPILE TEST.  This file must fail to compile.
 //
 // A SHARP all-reduce is background work.  The foreground context claims no
-// effect, so the dispatch refuses it.
+// effect, so the dispatch refuses it.  The context mint is deprecated as a
+// stub, and the pragma keeps that warning out, so the context is the one
+// reason this file does not compile.
+
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <crucible/cntp/_wip/Sharp.h>
 #include <fixy/Ctx.h>
