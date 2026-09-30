@@ -2,15 +2,15 @@
 
 // Exclusive ownership of one stdio stream, closed on destruction.
 //
-// The destructor calls std::fclose on whatever the handle holds.  With a
-// public constructor over a FILE*, `OwnedFile f{stdin};` is one line of
-// ordinary-looking code that closes the process's standard input on
-// scope exit, and a stream owned by some other handle can be closed
-// twice.  So the constructor is private, as the constructor of
-// fixy/OwnedMmap.h is over an address.
-// OwnedFileDoor below is its one caller, and the door performs the open
-// itself, so a stream that exists is one std::fopen or std::tmpfile
-// returned to this class.
+// The destructor calls std::fclose on the stream that the handle holds.
+// A public constructor from a FILE* lets the line `OwnedFile f{stdin};`
+// close the standard input of the process at the end of its scope, and
+// nothing in that line shows the risk.  It also lets two handles hold one
+// stream, and the stream then closes two times.  So the constructor is
+// private, as the constructor of fixy/OwnedMmap.h from an address is.
+// OwnedFileDoor below is its one caller.  The door opens the stream
+// itself, so each stream that this class holds came from std::fopen or
+// std::tmpfile.
 //
 // The opens are in a door class, and no passkey gates them.  A passkey
 // would have to go through fixy::mint_linear, a variadic forwarder that

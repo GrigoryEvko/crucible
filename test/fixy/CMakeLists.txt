@@ -1686,6 +1686,13 @@ fixy_neg_compile_test(neg_saturated_checked_op_on_float
   "constraints not satisfied"
   "required for the satisfaction of .integral<T>. \\[with T = float\\]")
 
+# The value of a Saturated is read-only after construction, so the flag
+# keeps describing it.  The accessor gives a const reference, and a write
+# through it does not compile.
+fixy_neg_compile_test(neg_saturated_value_write_after_clamp
+  "assignment of read-only location"
+  "fixy::Saturated<unsigned char>::value\\(\\)")
+
 # The ninth value-wrapper header.  fixy/Path.h holds the declarations
 # and, after them, the sanitizer that reads them.
 fixy_test(test_path)

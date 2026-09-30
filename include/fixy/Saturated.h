@@ -7,6 +7,11 @@
 // that fact away, leaving a caller unable to tell a genuine maximum from
 // an overflow that landed on one.  Carrying the observation costs a
 // single byte.
+//
+// The flag describes the value that the operation gave.  So the value is
+// read-only after construction: no accessor gives a mutable reference.
+// A caller that changes the value makes a new Saturated, and an
+// assignment replaces the value and the flag together.
 
 #include <foundation/Platform.h>
 
@@ -61,7 +66,6 @@ public:
     ~Saturated() = default;
 
     [[nodiscard]] constexpr T const& value() const& noexcept { return value_; }
-    [[nodiscard]] constexpr T& value() & noexcept { return value_; }
     [[nodiscard]] constexpr T value() && noexcept { return value_; }
 
     [[nodiscard]] constexpr bool was_clamped() const noexcept { return clamped_; }
@@ -129,6 +133,12 @@ static_assert(std::is_convertible_v<uint64_t, Saturated<uint64_t>>);
 static_assert(!std::is_convertible_v<Saturated<uint64_t>, uint64_t>);
 
 namespace detail::saturated_self_test {
+
+// No accessor writes the value, so the flag keeps its meaning.
+template <typename S>
+concept WritesValueInPlace = requires(S& carrier) { carrier.value() = typename S::value_type{}; };
+static_assert(!WritesValueInPlace<Saturated<uint64_t>>);
+static_assert(!WritesValueInPlace<Saturated<int8_t>>);
 
 using Sat64 = Saturated<uint64_t>;
 using SatI32 = Saturated<int32_t>;

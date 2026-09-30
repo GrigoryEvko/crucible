@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -32,6 +33,16 @@ static_assert(!std::is_convertible_v<Saturated<std::uint64_t>, std::uint64_t>);
 // two different values.
 static_assert(Saturated<int>{5} == Saturated<int>{5});
 static_assert(!(Saturated<int>{5} == Saturated<int>{5, true}));
+
+// The flag describes the value that the operation gave.  No accessor
+// gives a mutable reference, so a caller cannot change the value and
+// keep the flag of a clamp that did not give that value.
+template <typename S>
+concept WritesValueInPlace = requires(S& carrier) { carrier.value() = typename S::value_type{}; };
+static_assert(!WritesValueInPlace<Saturated<std::uint8_t>>);
+static_assert(!WritesValueInPlace<Saturated<std::int64_t>>);
+static_assert(std::is_same_v<decltype(std::declval<Saturated<std::uint8_t>&>().value()), std::uint8_t const&>);
+static_assert(std::is_same_v<decltype(std::declval<Saturated<std::uint8_t>&&>().value()), std::uint8_t>);
 
 // The carrier admits any arithmetic type, but only an integral one has
 // checked operations, because the clamp is defined by the integer range.
@@ -146,6 +157,13 @@ int check_carrier_shape() {
     Sat64 dst;
     dst = src;
     if (dst.value() != src.value() || dst.was_clamped() != src.was_clamped()) return 29;
+
+    // An assignment is the one way to change a carrier, and it replaces
+    // the value and the flag together.
+    Sat64 carrier = sub_sat_checked<std::uint64_t>(5, 10);
+    if (!carrier.was_clamped()) return 30;
+    carrier = add_sat_checked<std::uint64_t>(1, 2);
+    if (carrier.value() != 3u || carrier.was_clamped()) return 31;
 
     return 0;
 }
