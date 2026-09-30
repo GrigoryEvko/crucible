@@ -315,6 +315,11 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
   endif()
 endif()
 
+# The quarantine plugin of GCC: CRUCIBLE_QUARANTINE = OFF | REPORT | ERROR.
+# It puts its flags on the directory, so it comes before the first target.
+# It can clear the compiler launcher, as the PGO block does.
+include(utils/tools/quarantine/Quarantine.cmake)
+
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

@@ -1,0 +1,34 @@
+# The entities of the standard library that quarantined code may name.
+#
+# The quarantine plugin in utils/tools/quarantine/ reads this file.  An entity
+# is admitted when the compiler resolves it at compile time, or when it is a
+# cast, and when it makes no object of a library type and no raw pointer.  The
+# plugin never reports an admitted entity, and it does not look inside the
+# template arguments of an admitted class.
+#
+# One entry on each line:  ENTRY | REASON
+#   ENTRY   a qualified name, which admits the entity and each name nested in
+#           it, or a header in angle brackets, which admits each entity that
+#           the header declares
+#   REASON  why the entity makes no object, which is necessary
+# A line that starts with '#' is a comment.
+
+<type_traits> | a type trait is a compile-time query, and it makes no object
+<concepts> | a concept is a compile-time predicate, and it makes no object
+<meta> | reflection runs at compile time only
+<limits> | numeric_limits gives compile-time constants of fundamental types
+std::move | a cast to an rvalue reference, and it makes no object
+std::forward | a cast that keeps the value category, and it makes no object
+std::move_if_noexcept | a cast to a reference, and it makes no object
+std::as_const | a cast to a const reference, and it makes no object
+std::to_underlying | a cast of an enumerator to the integer of its enumeration
+std::bit_cast | a copy of the bits into the type that the declaration of the result checks
+std::declval | an unevaluated operand only
+std::integer_sequence | a pack of compile-time integers, with no data
+std::make_integer_sequence | an alias of std::integer_sequence
+std::index_sequence | an alias of std::integer_sequence
+std::make_index_sequence | an alias of std::integer_sequence
+std::index_sequence_for | an alias of std::integer_sequence
+std::tuple_size | a compile-time trait of the tuple protocol
+std::tuple_element | a compile-time trait of the tuple protocol
+std::unreachable | a hint to the optimizer, and it makes no object
