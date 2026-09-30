@@ -1,14 +1,15 @@
 // example_forge_phase: a Forge compiler phase bound as a pure function.
 //
-// The twelve phases of Forge (FORGE.md section 5) lower the IR001 tensor
+// The twelve phases of Forge (FORGE.md section 5) are planned, and no
+// phase exists at this time.  In the design, they lower the IR001 tensor
 // DAG to the IR002 portable kernel DAG.  Each phase takes a snapshot of
 // the IR and an arena, builds a new snapshot in the arena, and returns
-// it.
+// it.  The phase in this file is a stand-in for one of them.
 //
 // A phase reads its input and does not change it.  It builds its output
-// in the arena.  This discipline makes the wall-clock budget of Forge
-// enforceable: each phase has a hard time limit, and with no in-place
-// mutation a retry or a rollback costs nothing.
+// in the arena.  This discipline makes the planned wall-clock budget of
+// Forge enforceable: each phase will have a hard time limit, and with no
+// in-place mutation a retry or a rollback costs nothing.
 //
 // The binding records that the phase runs on the background thread, that
 // it allocates IR nodes in the arena, that it does no in-place mutation,
@@ -44,7 +45,7 @@ using ::fixy::Axis;
 using ::fixy::axis_traits;
 using Effect = ::foundation::effects::Effect;
 
-// Stand-ins for the IR.  In production an IR node carries shapes, dtypes
+// Stand-ins for the IR.  In the design, an IR node carries shapes, dtypes
 // and a recipe pin.  The grades describe the contract of the phase, not
 // the content of the IR, so a placeholder is sufficient.
 struct KernelGraph {

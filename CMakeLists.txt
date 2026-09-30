@@ -792,16 +792,12 @@ endif()
 # handler from libfoundation.a before it reads this archive.
 target_link_libraries(crucible_dialect INTERFACE stdc++exp)
 
-# Re `-fno-ipa-modref`: we considered it as a workaround for a GCC 16
-# miscompile where `asm volatile("" : "+m,r"(ptr) : : "memory")` applied
-# to a non-const pointer-to-class-with-pre()-contract-method, captured
-# by reference in a lambda, generates wrong code. Our release build
-# uses `-fcontract-evaluation-semantic=ignore` which happens to avoid
-# the minimal-repro crash path, but the real bench still triggers a
-# DIFFERENT miscompile along the same family. Safer fix is at the
-# source level: don't use `do_not_optimize(raw_typed_ptr)` — pass the
-# result of a method call instead. See bugs/gcc-modref-miscompile/
-# for the full GCC bug writeup.
+# No target sets -fno-ipa-modref.  A benchmark got wrong code from the
+# inline asm `"+m,r"` of its do_not_optimize helper.  The flag removed
+# the symptom from a small reproducer, but not from the benchmark.  GCC
+# PR124958 found the defect in that asm, not in GCC.  do_not_optimize in
+# bench/bench_harness.h is an empty [[gnu::noipa]] function with no
+# inline asm, so no flag is necessary.
 
 # ╔═══════════════════════════════════════════════════════════════════╗
 # ║  CRUCIBLE HARDENING — 300+ compiler/linker/sanitizer flags       ║
@@ -840,9 +836,10 @@ endif()
 # add, and each report from it is a real defect.
 #
 # CRUCIBLE_VERIFY builds Release code with the contract families armed.
-# The P2900 clauses operate under `enforce`, and the preset removes NDEBUG,
-# which arms CRUCIBLE_PRE, CRUCIBLE_POST and CRUCIBLE_INVARIANT.  The
-# build shows how the optimizer changes a checked program.
+# The P2900 clauses, CRUCIBLE_PRE and CRUCIBLE_POST operate under
+# `enforce`.  The preset also removes NDEBUG, which arms
+# CRUCIBLE_INVARIANT and CRUCIBLE_DEBUG_ASSERT.  The build shows how the
+# optimizer changes a checked program.
 option(CRUCIBLE_SANITIZE
   "Put ASan on every target and UBSan on the tests in a Debug build" ON)
 option(CRUCIBLE_TSAN
@@ -1600,9 +1597,10 @@ endif()
 # is an error when bench/ was never added, and bench/ is added only
 # under that option.  One consequence is worth stating plainly: with
 # the plain `release` preset (CRUCIBLE_BENCH=OFF) this block does
-# nothing, so every TU in that build evaluates its contracts.  The one
-# exception is the test_pre_post_cost sentinel, which measures
-# the ignore arm (test/foundation/CMakeLists.txt).
+# nothing, so every TU in that build evaluates its contracts.  The two
+# exceptions are the test_pre_post_cost sentinel, which measures the
+# ignore arm, and test_swiss_table_buffer_ignore, which shows that the
+# plain checks still abort (test/foundation/CMakeLists.txt).
 if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
   set(CRUCIBLE_CONTRACT_IGNORE_TUS
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_trace_ring.cpp     # TraceRing push/pop

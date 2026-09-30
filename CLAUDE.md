@@ -257,7 +257,7 @@ Graph's fixed execution order is a pillar of deterministic replay.
 
 **Content-addressable, versioned computation graph.**
 
-Central data structure. L1-L6 feed in, L8-L16 read/modify. L0 proves correctness. Simultaneously: computation specification, compilation cache key, guard system, versioning mechanism, and deployment artifact.
+Central data structure. L3-L6 feed in at this time. In the design, L1 and L2 also feed in, and L8-L16 read and modify the DAG. L0 does not prove correctness: its contracts and safety wrappers are the discipline that the DAG code obeys. At the same time, the DAG is the computation specification, the compilation cache key, the guard system and the versioning mechanism. Its use as the deployment artifact is planned (Phase 5).
 
 **RegionNodes:** compilable op sequences. **content_hash** = hash(schema_hashes, input shapes/strides/dtypes/devices, scalar values). Identical computation → identical hash, even across models. **merkle_hash** = content_hash + child hashes → O(1) equality for entire subtrees (like git commits).
 
@@ -499,7 +499,7 @@ residency, quarantine, and hardening policy.
 
 ## Development Plan
 
-**Phase 1: Foundation (DONE — 9.5K lines, 24 tests, Clang 22 + GCC 15)**
+**Phase 1: Foundation (DONE — 9.5K lines and 24 tests at the end of the phase, built then with Clang 22 and GCC 15. The tree builds only with GCC 16 at this time, §I)**
 
 L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Met(X) effect rows + cap tags (`foundation/effects/Effect.h`, which defines `Alloc / IO / Block` and `Bg / Init / Test`, `foundation/effects/Computation.h`, `foundation/effects/Row.h`), Reflect.h (reflect_hash, reflect_print). Vessel: PyTorch adapter.
 
@@ -614,7 +614,7 @@ Design intent: **the lowest foreground recording and shadow-dispatch latency the
 | `release` | GCC 16.2.1 (patched)  | Production. `-O3 -march=native -DNDEBUG -g`, contracts `observe`. §V tells why the level is `-O3` |
 | `bench`   | GCC 16.2.1 (patched)  | Release + `CRUCIBLE_BENCH=ON`                 |
 | `tsan`    | GCC 16.2.1 (patched)  | ThreadSanitizer (mutually exclusive with ASan)|
-| `verify`  | GCC 16.2.1 (patched)  | + internal small-SMT verification suite (deferred — interim: contracts-only, no external solver) |
+| `verify`  | GCC 16.2.1 (patched)  | Release code with no `NDEBUG` and contracts `enforce` (§V). The internal small-SMT verification suite is deferred, and no external solver is used |
 
 `cmake/Toolchain-gcc16.cmake` finds the patched compiler `g++-16p`. `utils/toolchain/gcc/build.sh` builds it from GCC 16.2.1 and the patches in `utils/toolchain/gcc/patches/`. The `libstdc++ 16.0.1 status` notes in §IV are probes of libstdc++ 16.0.1, and this guide does not repeat each probe for 16.2.1.
 
@@ -817,7 +817,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 - DAG fixes execution order (topological sort with hash-based tiebreak).
 - Memory plan fixes addresses (pool_base + offset, content-addressed).
 - Philox4x32 RNG: counter-based, platform-independent. Zero RNG state anywhere.
-- KernelCache keyed on `(content_hash, device_capability)`.
+- KernelCache keyed on `(content_hash, row_hash)` (`include/crucible/MerkleDag.h`).
 - Reduction topology: pinned binary tree sorted by UUID for BITEXACT recipes.
 - No hash-table iteration order dependencies. Sort keys before iterating.
 - No pointer-based ordering. Events have `(cycle, kind, sequence_number)`.
@@ -1060,7 +1060,7 @@ Common flags +
 
 ### Verify preset
 
-Release flags + `-fcontract-evaluation-semantic=enforce` + `-fanalyzer`. The internal small-SMT verification tier is reserved for residual integer-arithmetic obligations (deferred — interim: contracts-only). No external solver dependency: Crucible ships no Z3, no CVC, no proprietary SMT engine, period.
+The `verify` preset inherits `release` and makes two changes. It removes `-DNDEBUG` from `CMAKE_CXX_FLAGS` and `CMAKE_CXX_FLAGS_RELEASE`, so `CRUCIBLE_INVARIANT` and `CRUCIBLE_DEBUG_ASSERT` do their checks in the Release code. It sets `CRUCIBLE_VERIFY=ON`, which changes the Release contract semantic from `observe` to `enforce` (§XII). The preset does not add `-fanalyzer`. The separate `analyzer` preset sets `CRUCIBLE_ANALYZER=ON`, which adds `-fanalyzer` to a Debug build. The internal small-SMT verification tier is reserved for residual integer-arithmetic obligations (deferred — interim: contracts-only). No external solver dependency: Crucible ships no Z3, no CVC, no proprietary SMT engine, period.
 
 ### NEVER (kills determinism or wastes perf)
 
@@ -1371,17 +1371,22 @@ Every hot operation has a structural cost shape — what it must do per call. Cr
 
 | Operation | Per-call shape | Notes |
 |---|---|---|
-| Shadow handle dispatch | metadata write, no function call | `[[gnu::flatten]]` |
 | TraceRing push | one acquire/release pair on isolated cache lines | SPSC + `_mm_pause` + `alignas(64)` head/tail |
 | Arena bump allocation | bump + mask, no branch, no lock | one cache line touch |
 | MetaLog append | one acquire/release pair on isolated cache lines | SPSC, write-combined |
 | Cross-core signal wait | bounded by MESI cache-line transfer cost | floor is the interconnect; cross-socket worse than intra-socket |
 | Swiss-table lookup (hit) | one open-addressed probe with SIMD compare | Open addressing + SIMD probe |
-| Contract check at boundary | one branch under `semantic=observe`; nothing under `ignore` | hot TUs use `ignore` |
-| ExecutionPlan submit (warm) | cache lookup + doorbell write | Cache hit + doorbell |
-| ExecutionPlan submit (cold, ≤5 patches) | plan lookup + patch writes + SFENCE + doorbell | one plan creation per fresh shape |
+| Contract check at boundary | one branch under `semantic=observe`; nothing under `ignore` | only four bench TUs and two tests use `ignore` (§XII) |
 | Syscall | kernel-mediated transition | Banned on hot path |
 | `malloc` | allocator round-trip | Banned on hot path |
+
+The operations that follow are planned (Phase 4). No shadow handle and no `ExecutionPlan` exist at this time, so the table gives the design shape and not a measured path.
+
+| Planned operation | Per-call shape | Notes |
+|---|---|---|
+| Shadow handle dispatch | metadata write, no function call | `[[gnu::flatten]]` |
+| ExecutionPlan submit (warm) | cache lookup + doorbell write | Cache hit + doorbell |
+| ExecutionPlan submit (cold, ≤5 patches) | plan lookup + patch writes + SFENCE + doorbell | one plan creation per fresh shape |
 
 A regression in measured latency on the bench suite is investigated like any other regression — root-cause first, then fix. There is no fixed "budget number" promised in this guide; the bench-suite outputs are the source of truth for the current state of the world on each hardware target.
 
@@ -1428,14 +1433,18 @@ No single `-march=` default ships with Crucible. The build owner picks it for th
 
 ## IX. Concurrency Patterns
 
-### The only two threads
+### The thread set
 
 ```
-Foreground (hot):  records ops at ~5 ns each via TraceRing
-Background (warm): drains ring, builds TraceGraph, memory plan, compiles
+Foreground (hot):   records each op into TraceRing and MetaLog
+Background (warm):  one pipeline thread, which starts four stage threads and joins them
+  drain     pops batches of entries from TraceRing
+  detect    finds the iteration boundaries
+  build     builds the TraceGraph of an iteration
+  publish   makes the RegionNode and its memory plan, and activates the region
 ```
 
-No third thread except OS / OS-adjacent (systemd, signal handlers). Multiple background workers allowed inside Mimic for parallel kernel compilation.
+`BackgroundThread::start` (`include/crucible/BackgroundThread.h`) starts the pipeline thread. The pipeline gives each stage a thread of its own, and SPSC channels connect the stages. Each stage spins on its input channel. The build stage and the publish stage also share `arena_alloc_gate_`, a blocking lock around the bump cursor of the arena. A waiter on that lock sleeps in the kernel. `bench/baselines/record_leaf.json` holds the measured cost of a foreground record. The Vigil starts no other thread. The ledger refresh daemon and its cache-tier probe in `include/crucible/ledger/` have threads of their own, and only their tests start them at this time. Apart from these, only the OS and OS-adjacent code (systemd, signal handlers) add threads. Background workers for parallel kernel compilation inside Mimic are planned.
 
 ### SPSC ring pattern
 
@@ -1600,7 +1609,7 @@ Zero machine cost. Just blocks the optimizer.
 
 ### Permission discipline — CSL-typed concurrency
 
-The "two threads" rule above is the *floor* of concurrency in Crucible. It's also the easy case: one fg producer, one bg consumer, hand-coded SPSC ring. Beyond that — kernel compile pools, sharded dispatch, multi-reader snapshots, BG pipelines — the discipline must scale, and "scale" means the type system has to do the bookkeeping the human stops doing.
+The TraceRing between the foreground and the drain stage is the *floor* of concurrency in Crucible. It is also the easy case: one fg producer, one bg consumer, one SPSC ring. Beyond that — the background pipeline, multi-reader snapshots, and the planned kernel compile pools and sharded dispatch — the discipline must scale, and "scale" means the type system has to do the bookkeeping the human stops doing.
 
 Crucible encodes **Concurrent Separation Logic** (O'Hearn 2007) as a family of zero-cost C++ types. The discipline is mechanical: tokens prove ownership at the type level; the compiler enforces who can call what. The runtime cost is exactly the underlying primitive's cost (SpscRing acquire/release, AtomicSnapshot seqlock, etc.) — no extra mutex, no extra CAS, because the type system already proved the access pattern is sound.
 
@@ -1916,8 +1925,10 @@ places in the tree apply that list:
 - SECTION 6b at the foot of `CMakeLists.txt` applies it to the four bench TUs
   in `CRUCIBLE_CONTRACT_IGNORE_TUS`, and only in a Release build with
   `CRUCIBLE_BENCH`.
-- `test/foundation/CMakeLists.txt` applies it to the `test_pre_post_cost` target
-  in every build, because that test measures the ignore arm of `CRUCIBLE_PRE`.
+- `test/foundation/CMakeLists.txt` applies it to two targets in every build.
+  `test_pre_post_cost` measures the ignore arm of `CRUCIBLE_PRE`.
+  `test_swiss_table_buffer_ignore` shows that the capacity check and the size
+  check of the Swiss table buffer still abort when no contract clause checks.
 
 `observe` does not mean the program keeps running. P2900 says the handler returns
 and execution resumes, but this project's `handle_contract_violation`
@@ -2120,7 +2131,7 @@ These tests ARE the design guarantee. If they red, the guarantee is broken — s
 | Test | Axiom(s) | Cadence |
 |---|---|---|
 | `bit_exact_replay_invariant` — `test_bit_exact_replay_invariant`, label `determinism` | DetSafe | Every PR |
-| `cross_vendor_step_invariant` — not buildable until a second backend exists; only the CPU oracle does | DetSafe | Release gate (multi-backend) |
+| `cross_vendor_step_invariant` — not buildable until two compute backends exist; no compute backend exists at this time, and the CPU oracle is planned too | DetSafe | Release gate (multi-backend) |
 | `fleet_reshard_replay` — not buildable until a fleet exists | DetSafe + BorrowSafe | Release gate |
 | `bit_exact_recovery_invariant` | DetSafe + MemSafe | Release gate |
 | `checkpoint_format_stability` — `test_serialize` and `test_serialize_release_gate`, label `determinism`; no `TrainingCheckpoint` type exists, so the DAG wire format is the checkpoint format | DetSafe + LeakSafe | Every PR |
@@ -2274,7 +2285,7 @@ Under `BITEXACT_STRICT`, the same IR + same seed produces byte-identical output 
 - Canonical reduction topology (UUID-sorted binary tree)
 - `std::bit_cast` for serialization — no endian-dependent `reinterpret_cast`
 
-CI verifies with `cross_vendor_step_invariant`. A new platform must pass this test before shipping.
+The CI test for this property, `cross_vendor_step_invariant`, is planned. It cannot be built until two compute backends exist (§XIII). When it exists, a new platform must pass this test before shipping.
 
 ---
 
@@ -2319,7 +2330,7 @@ CI verifies with `cross_vendor_step_invariant`. A new platform must pass this te
 
 ### C++20 Modules — deferred
 
-GCC 16 has ABI-stable modules but we defer: CMake/ninja integration still maturing, debug info less mature than headers, and `-flto=auto` on header-only hot paths already delivers cross-TU inlining. Revisit when clean-rebuild exceeds ~30 s or modules become part of the public API. Until then: `#include`-based, header-only hot, split cold.
+GCC 16 has ABI-stable modules but we defer: CMake/ninja integration still maturing, debug info less mature than headers, and the header-only hot path already gives cross-TU inlining without LTO. No build uses LTO at this time. Revisit when clean-rebuild exceeds ~30 s or modules become part of the public API. Until then: `#include`-based, header-only hot, split cold.
 
 ### One-definition rule (ODR) discipline
 
