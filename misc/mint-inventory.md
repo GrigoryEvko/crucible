@@ -189,7 +189,7 @@ apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `OwnedMmap::mint_region` | `include/fixy/OwnedMmap.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 3 |
-| `foundation::permissions::FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `foundation::permissions::FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `foundation::permissions::FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | HS14: 2 |
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
 | `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |

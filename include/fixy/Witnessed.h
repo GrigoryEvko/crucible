@@ -83,54 +83,21 @@ namespace fixy {
 
 // ── The witness kinds ────────────────────────────────────────────────
 //
-// Each kind is an empty type carrying only its parameter, and each
-// answers `admits` for itself.  The answer is a variable template
-// rather than a member concept because a concept cannot be a class
-// member, and a caller reads it only through Discharges below.
+// Each kind is an empty type carrying only its parameter.  The kind
+// holds no answer of its own: witness_discharges below reads the
+// parameter of the kind, and a caller reads it only through Discharges.
 namespace witness {
-
-namespace detail {
-
-// The second question is asked only of a type that answered the first.
-// Written as one expression the two would both be instantiated, and
-// reading protocol_type off a context that has none is an error rather
-// than an answer.  `if constexpr` is what makes the order real.
-template <typename Presented, typename Proto>
-[[nodiscard]] consteval bool is_handle_at() noexcept {
-    if constexpr (::foundation::reflect::IsInstanceOf<Presented, ^^::fixy::session::SessionHandle>) {
-        return std::is_same_v<typename Presented::protocol_type, Proto>;
-    } else {
-        return false;
-    }
-}
-
-}  // namespace detail
 
 // TEMPORAL.  The obligation is a protocol position.
 template <typename Proto>
 struct AtProtocol {
     using protocol_type = Proto;
-
-    // A handle at this position, and nothing else.  The recognition is
-    // structural rather than a list of handle spellings: it asks
-    // whether the presented type is an instance of the one handle
-    // template, and then whether that instance sits at Proto.
-    template <typename Presented>
-    static constexpr bool admits = detail::is_handle_at<std::remove_cvref_t<Presented>, Proto>();
 };
 
 // EFFECT.  The obligation is the row the region's tag carries.
 template <typename Tag>
 struct UnderRow {
     using tag_type = Tag;
-
-    // The same test a lend from the permission pool applies, reused
-    // rather than restated: the presented type is an execution context
-    // and its row admits the tag's row.  A tag with no row declared is
-    // refused here, because permission_row_lookup answers only for a
-    // tag that declares one.
-    template <typename Presented>
-    static constexpr bool admits = ::foundation::permissions::CtxAdmitsPermission<Tag, std::remove_cvref_t<Presented>>;
 };
 
 }  // namespace witness
@@ -145,11 +112,36 @@ concept IsWitnessKind = ::foundation::reflect::IsInstanceOfAny<W, ^^witness::AtP
 
 // ── The one gate ─────────────────────────────────────────────────────
 //
+// True when the presented type discharges the witness.  An AtProtocol
+// witness takes a handle at its position, and nothing else: the presented
+// type is an instance of the one handle template, and its protocol is the
+// parameter of the witness.  An UnderRow witness takes an execution
+// context whose row admits the row of its tag, the same test a lend from
+// the permission pool applies.  A tag with no row declared is refused,
+// because permission_row_lookup answers only for a tag that declares one.
+// The answer is a function at namespace scope that is not a template, so
+// no translation unit can specialize it.
+[[nodiscard]] consteval bool witness_discharges(std::meta::info witness, std::meta::info presented) {
+    const std::meta::info kind = std::meta::dealias(std::meta::remove_cvref(witness));
+    const std::meta::info value = std::meta::dealias(std::meta::remove_cvref(presented));
+    if (!std::meta::has_template_arguments(kind)) return false;
+    const std::meta::info obligation = std::meta::template_arguments_of(kind)[0];
+    if (std::meta::template_of(kind) == ^^witness::AtProtocol) {
+        return std::meta::has_template_arguments(value)
+            && std::meta::template_of(value) == (^^::fixy::session::SessionHandle)
+            && std::meta::dealias(std::meta::template_arguments_of(value)[0]) == std::meta::dealias(obligation);
+    }
+    if (std::meta::template_of(kind) == ^^witness::UnderRow) {
+        return std::meta::extract<bool>(
+            std::meta::substitute(^^::foundation::permissions::CtxAdmitsPermission, {obligation, value}));
+    }
+    return false;
+}
+
 // Written once, for every kind.  A caller presents a value; the gate
-// asks the witness whether that value discharges it.  Nothing here
-// knows what a protocol or a row is.
+// asks the witness whether that value discharges it.
 template <typename Witness, typename Presented>
-concept Discharges = IsWitnessKind<Witness> && Witness::template admits<std::remove_cvref_t<Presented>>;
+concept Discharges = IsWitnessKind<Witness> && witness_discharges(^^Witness, ^^Presented);
 
 namespace detail {
 

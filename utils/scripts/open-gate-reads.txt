@@ -10,9 +10,7 @@
 #
 # Run check-trait-injection.py --refresh in the commit that removes a read.
 fixy::ClockSource::satisfies | 1
-fixy::CpuPinned::meets_posture | 1
 fixy::SchedClass::runnable_on | 1
-fixy::admits | 2
 fixy::atom::detail::atom_refusal_v | 1
 fixy::atom::detail::effect_grade_row_ | 1
 fixy::atom::fp::detail::settings_from_ | 1
@@ -61,7 +59,6 @@ fixy::detail::earned_tag::is_earned | 1
 fixy::detail::reject::first_duplicated_axis_ | 1
 fixy::detail::role::is_accepted_fn | 1
 fixy::detail::thread_name_extract::is_thread_named_v | 1
-fixy::federation::policy::admit_orgs::admits | 2
 fixy::fs::detail::all_atom_tags_known_v | 1
 fixy::io::detail::all_ring_flags_known_v | 1
 fixy::io::detail::cq_entries_is_pow2_or_default_v | 1
@@ -124,8 +121,6 @@ fixy::session::resource_is_copyable_v | 1
 fixy::session::session_priority_v | 1
 fixy::session::type_display_name_v | 1
 fixy::spawn::detail::can_ctx_fit_spawn | 1
-fixy::witness::AtProtocol::admits | 2
-fixy::witness::UnderRow::admits | 2
 foundation::AlignedBuffer | 2
 foundation::algebra::Graded::can_regrade_ | 2
 foundation::algebra::Graded::inject | 3

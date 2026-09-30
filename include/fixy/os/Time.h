@@ -215,7 +215,7 @@ concept IsSingletonCpuPin =
 // sight.
 template <typename PinT>
 concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_reference_v<PinT> && !std::is_const_v<PinT>
-                                   && PinT::template meets_posture<sf::PinningPosture::PinnedExplicit>;
+                                   && sf::pin_meets_posture(^^PinT, sf::PinningPosture::PinnedExplicit);
 
 // Whether the kernel promises the clock never steps backward.  Realtime
 // can be set, and the two CPU-time clocks are per-thread and per-process

@@ -45,8 +45,20 @@ using TestPolicy = fed::policy::admit_orgs<FederationTestOrg>;
 
 static_assert(fed::federation_org_id<FederationTestOrg>.is_set());
 static_assert(fed::federation_org_id<FederationTestOrg> != fed::federation_org_id<FederationOtherOrg>);
-static_assert(TestPolicy::admits<FederationTestOrg>);
-static_assert(!TestPolicy::admits<FederationOtherOrg>);
+static_assert(fed::policy_admits(^^TestPolicy, ^^FederationTestOrg));
+static_assert(!fed::policy_admits(^^TestPolicy, ^^FederationOtherOrg));
+
+// A class of the caller is no policy, whatever members it declares, and an
+// organization reached through an alias is the organization itself.
+struct AdmitsEveryOrg {
+    template <class Org>
+    static constexpr bool admits = true;
+};
+using TestOrgAlias = FederationTestOrg;
+static_assert(!fed::policy_admits(^^AdmitsEveryOrg, ^^FederationTestOrg));
+static_assert(fed::policy_admits(^^TestPolicy, ^^TestOrgAlias));
+static_assert(fed::policy_admits(^^fed::policy::admit_orgs<FederationOtherOrg, FederationTestOrg>,
+                                 ^^FederationTestOrg));
 
 // An organization is an empty class.  The door that signs a handshake,
 // and the identity on the wire, refuse a type that is not a class and a

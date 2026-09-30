@@ -1133,7 +1133,16 @@ fixy_neg_compile_test(neg_federation_admission_foreground_ctx
 fixy_neg_compile_test(neg_federation_admission_policy_refuses_org
   "no matching function for call to .foundation::permissions::FederationAdmission<NegStrangerOrg>::mint_federation_admission<fixy::federation::policy::admit_orgs<NegAdmittedOrg> >"
   "required for the satisfaction of .CtxFitsFederationAdmission<Ctx, Org, Policy>."
-  "the expression .Policy::admits<Org> \\[with Policy = fixy::federation::policy::admit_orgs<NegAdmittedOrg>. Org = NegStrangerOrg\\]. evaluated to .false.")
+  "the expression .policy_admits\\(.*\\(\\^\\^ Policy, \\^\\^ Org\\) \\[with Policy = fixy::federation::policy::admit_orgs<NegAdmittedOrg>. Org = NegStrangerOrg\\]. evaluated to .false.")
+# A class of the caller is no policy, whatever members it declares, and a
+# specialization that makes every policy admit every organization matches
+# no template.
+fixy_neg_compile_test(neg_federation_admission_policy_of_the_caller
+  "no matching function for call to .foundation::permissions::FederationAdmission<NegAnyPolicyOrg>::mint_federation_admission<\\{anonymous\\}::AnyPolicy>"
+  "the expression .policy_admits\\(.*\\(\\^\\^ Policy, \\^\\^ Org\\) \\[with Policy = <unnamed>::AnyPolicy. Org = NegAnyPolicyOrg\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_federation_policy_admits_specialized
+  "template-id .policy_admits<>. for .consteval bool fixy::federation::policy_admits\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_federation_policy_admits_specialized\\.cpp:12:[0-9]+: error:")
 
 # A caller cannot name the brand of an admitted peer token.
 fixy_neg_compile_test(neg_federation_admittance_names_brand
@@ -4129,7 +4138,13 @@ fixy_neg_compile_test(neg_os_tsc_reader_lvalue_pin
   "the expression .!\\(is_reference_v<PinT>\\) \\[with PinT = fixy::CpuPinned<")
 fixy_neg_compile_test(neg_os_tsc_reader_auto_posture
   "no matching function for call to .mint_tsc_reader<fixy::time::TscMode::Raw>\\(const \\{anonymous\\}::InitCtx&"
-  "the expression .PinT::meets_posture<fixy::PinningPosture::PinnedExplicit> \\[with PinT = fixy::CpuPinned<.*fixy::PinningPosture::PinnedAuto, int>\\]. evaluated to .false.")
+  "the expression .pin_meets_posture\\(.*\\(\\^\\^ PinT, fixy::PinningPosture::PinnedExplicit\\) \\[with PinT = fixy::CpuPinned<.*fixy::PinningPosture::PinnedAuto, int>\\]. evaluated to .false.")
+# The posture of a pin is read from its template arguments by a function
+# that is not a template, so a specialization that makes each pin explicit
+# matches no template.
+fixy_neg_compile_test(neg_os_pin_meets_posture_specialized
+  "template-id .pin_meets_posture<>. for .consteval bool fixy::pin_meets_posture\\(std::meta::info, PinningPosture\\). does not match any template declaration"
+  "neg_os_pin_meets_posture_specialized\\.cpp:12:[0-9]+: error:")
 fixy_neg_compile_test(neg_os_tsc_reader_foreground_ctx
   "no matching function for call to .mint_tsc_reader<fixy::time::TscMode::Raw>\\(const fixy::HotFgCtx&"
   "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
@@ -5092,6 +5107,13 @@ fixy_neg_compile_test(neg_witnessed_deref_with_a_handle_for_a_row
   "no matching function for call to .deref\\("
   "Witness = fixy::witness::UnderRow<<unnamed>::Cache"
   "Presented = fixy::session::SessionHandle<fixy::session::Send<")
+
+# The one gate reads a function that is not a template, so a
+# specialization that lets every value discharge every witness matches no
+# template.
+fixy_neg_compile_test(neg_witness_discharges_specialized
+  "template-id .witness_discharges<>. for .consteval bool fixy::witness_discharges\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_witness_discharges_specialized\\.cpp:12:[0-9]+: error:")
 
 # The mint refuses a tag that states no obligation, rather than minting
 # a witness every context discharges.

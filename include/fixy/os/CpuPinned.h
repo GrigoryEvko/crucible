@@ -61,6 +61,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -278,10 +279,18 @@ public:
     [[nodiscard]] constexpr Unit consume() && noexcept(std::is_nothrow_move_constructible_v<Unit>) {
         return std::move(value_);
     }
-
-    template <PinningPosture Required>
-    static constexpr bool meets_posture = static_cast<std::uint8_t>(Posture) >= static_cast<std::uint8_t>(Required);
 };
+
+// True when pin reflects a CpuPinned whose posture is at least required.
+// The posture comes from the template arguments of the pin, so no member
+// of the class plays a part.  The answer is a function at namespace scope
+// that is not a template, so no translation unit can specialize it.
+[[nodiscard]] consteval bool pin_meets_posture(std::meta::info pin, PinningPosture required) {
+    const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(pin));
+    if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^CpuPinned) return false;
+    const PinningPosture posture = std::meta::extract<PinningPosture>(std::meta::template_arguments_of(type)[1]);
+    return static_cast<std::uint8_t>(posture) >= static_cast<std::uint8_t>(required);
+}
 
 static_assert(sizeof(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>)
                   == 2 * sizeof(std::uint64_t),
@@ -333,13 +342,14 @@ static_assert(!TwoBitC::is_singleton_pin, "a 2-core mask is NOT a singleton — 
 static_assert(PinnedC0::is_pinned);
 static_assert(!UnpinnedC0::is_pinned);
 
-static_assert(PinnedC0::meets_posture<PinningPosture::PinnedExplicit>);
-static_assert(PinnedC0::meets_posture<PinningPosture::PinnedAuto>);
-static_assert(AutoC0::meets_posture<PinningPosture::PinnedAuto>);
-static_assert(!AutoC0::meets_posture<PinningPosture::PinnedExplicit>,
+static_assert(pin_meets_posture(^^PinnedC0, PinningPosture::PinnedExplicit));
+static_assert(pin_meets_posture(^^PinnedC0, PinningPosture::PinnedAuto));
+static_assert(pin_meets_posture(^^AutoC0, PinningPosture::PinnedAuto));
+static_assert(!pin_meets_posture(^^AutoC0, PinningPosture::PinnedExplicit),
               "PinnedAuto does NOT meet a PinnedExplicit floor — auto "
               "pinning can still migrate, so a HotPath stance rejects it.");
-static_assert(!UnpinnedC0::meets_posture<PinningPosture::PinnedAuto>);
+static_assert(!pin_meets_posture(^^UnpinnedC0, PinningPosture::PinnedAuto));
+static_assert(!pin_meets_posture(^^int, PinningPosture::NotPinned), "a type that is no pin meets no posture");
 
 static_assert(!std::is_same_v<PinnedC0, AutoC0>);
 static_assert(!std::is_same_v<PinnedC0, CpuPinned<kCore7, PinningPosture::PinnedExplicit, int>>);

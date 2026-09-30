@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <meta>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -96,14 +97,27 @@ inline constexpr OrgId federation_org_id = OrgId{::foundation::reflect::stable_t
 namespace policy {
 
 // The organizations that a deployment admits.  The admission mint
-// refuses an organization that the policy does not name.
+// refuses an organization that the policy does not name.  The policy
+// holds no answer of its own: policy_admits reads the organizations from
+// its template arguments.
 template <typename... Orgs>
-struct admit_orgs {
-    template <typename Org>
-    static constexpr bool admits = (std::same_as<Org, Orgs> || ...);
-};
+struct admit_orgs {};
 
 }  // namespace policy
+
+// True when policy reflects a specialization of admit_orgs that names
+// org.  A class of the caller is no policy, whatever members it declares.
+// The answer is a function at namespace scope that is not a template, so
+// no translation unit can specialize it.  Complexity: linear in the
+// organizations of the policy.
+[[nodiscard]] consteval bool policy_admits(std::meta::info policy, std::meta::info org) {
+    const std::meta::info type = std::meta::dealias(policy);
+    if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^policy::admit_orgs) return false;
+    for (const std::meta::info named : std::meta::template_arguments_of(type)) {
+        if (std::meta::dealias(named) == std::meta::dealias(org)) return true;
+    }
+    return false;
+}
 
 struct FederationHandshake {
     OrgId org_id{};
@@ -266,14 +280,14 @@ private:
 };
 
 // The fit of the admission mint.  The context must admit the row of the
-// local cipher and the row of the peer token, and the policy must name
-// the organization.
+// local cipher and the row of the peer token, and the policy must be an
+// admit_orgs that names the organization.
 template <typename Ctx, typename Org, typename Policy>
 concept CtxFitsFederationAdmission =
     ::foundation::effects::IsExecCtx<Ctx> && FederationOrgTag<Org>
     && ::foundation::permissions::CtxAdmitsPermission<LocalCipherTag, Ctx>
     && ::foundation::permissions::CtxAdmitsPermission<::foundation::permissions::tag::FederatedPeer<Org>, Ctx>
-    && Policy::template admits<Org>;
+    && policy_admits(^^Policy, ^^Org);
 
 // The peer token takes a fresh brand from each call site.  A caller
 // cannot name the brand: an explicit template argument lands in this
