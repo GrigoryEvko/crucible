@@ -35,8 +35,8 @@ static_assert(!fe::LiftsToRow<void>);
 
 static_assert(std::is_same_v<fe::lift_row_t<reaches_disk>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<reaches_nothing>, fe::Row<>>);
-static_assert(fe::row_contains_v<fe::lift_row_t<reaches_disk>, fe::Effect::Block>);
-static_assert(!fe::row_contains_v<fe::lift_row_t<reaches_nothing>, fe::Effect::IO>);
+static_assert(fe::row_contains(^^fe::lift_row_t<reaches_disk>, fe::Effect::Block));
+static_assert(!fe::row_contains(^^fe::lift_row_t<reaches_nothing>, fe::Effect::IO));
 
 // The lifted row is a canonical row, so a subrow query over it agrees
 // with the row algebra.

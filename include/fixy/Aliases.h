@@ -41,15 +41,15 @@ using STRow = Row<Effect::Block, Effect::Alloc, Effect::IO>;
 // from the enumerators, so a new atom is in it with no edit here.
 using AllRow = ::foundation::effects::every_effect_row;
 
-static_assert(::foundation::effects::is_subrow_v<PureRow, DivRow>);
-static_assert(::foundation::effects::is_subrow_v<DivRow, STRow>);
-static_assert(::foundation::effects::is_subrow_v<STRow, AllRow>);
-static_assert(::foundation::effects::is_subrow_v<DivRow, AllRow>);
-static_assert(::foundation::effects::is_subrow_v<PureRow, AllRow>);
+static_assert(::foundation::effects::Subrow<PureRow, DivRow>);
+static_assert(::foundation::effects::Subrow<DivRow, STRow>);
+static_assert(::foundation::effects::Subrow<STRow, AllRow>);
+static_assert(::foundation::effects::Subrow<DivRow, AllRow>);
+static_assert(::foundation::effects::Subrow<PureRow, AllRow>);
 
-static_assert(!::foundation::effects::is_subrow_v<DivRow, PureRow>);
-static_assert(!::foundation::effects::is_subrow_v<STRow, DivRow>);
-static_assert(!::foundation::effects::is_subrow_v<AllRow, STRow>);
+static_assert(!::foundation::effects::Subrow<DivRow, PureRow>);
+static_assert(!::foundation::effects::Subrow<STRow, DivRow>);
+static_assert(!::foundation::effects::Subrow<AllRow, STRow>);
 
 template <typename R>
 concept IsPure = Subrow<R, PureRow>;

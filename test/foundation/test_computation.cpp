@@ -83,9 +83,8 @@ static_assert(
         auto chained = bg.then(
             [&ctx](int x) { return fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::IO>(ctx, x + 1); });
         using Chained = decltype(chained);
-        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type>
-            && fe::is_subrow_v<Row<Effect::IO>, Chained::row_type> && std::is_same_v<Chained::value_type, int>
-            && chained.graded().peek() == 11;
+        return fe::Subrow<Row<Effect::Bg>, Chained::row_type> && fe::Subrow<Row<Effect::IO>, Chained::row_type>
+            && std::is_same_v<Chained::value_type, int> && chained.graded().peek() == 11;
     }(),
     "A bind must carry the effects of both sides into the result row.");
 
@@ -98,8 +97,7 @@ static_assert(
         auto chained = std::move(bg).then(
             [&ctx](int x) { return fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, x); });
         using Chained = decltype(chained);
-        return fe::is_subrow_v<Row<Effect::Bg>, Chained::row_type>
-            && fe::is_subrow_v<Chained::row_type, Row<Effect::Bg>>;
+        return fe::Subrow<Row<Effect::Bg>, Chained::row_type> && fe::Subrow<Chained::row_type, Row<Effect::Bg>>;
     }(),
     "A bind over two rows naming the same effect must absorb the duplicate.");
 

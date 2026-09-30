@@ -42,16 +42,16 @@ static void test_t01_required_row_pinned() {
                                  eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>,
                   "BackgroundThread::run_required_row is exactly Row<Bg, Alloc, IO, Block>.");
 
-    static_assert(eff::row_contains_v<BackgroundThread::run_required_row, eff::Effect::Bg>);
-    static_assert(eff::row_contains_v<BackgroundThread::run_required_row, eff::Effect::Alloc>);
-    static_assert(eff::row_contains_v<BackgroundThread::run_required_row, eff::Effect::IO>);
-    static_assert(eff::row_contains_v<BackgroundThread::run_required_row, eff::Effect::Block>);
+    static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Bg));
+    static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Alloc));
+    static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::IO));
+    static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Block));
 
     // Init and Test tag other entry points.  The drain loop exhibits neither.
-    static_assert(!eff::row_contains_v<BackgroundThread::run_required_row, eff::Effect::Init>);
-    static_assert(!eff::row_contains_v<BackgroundThread::run_required_row, eff::Effect::Test>);
+    static_assert(!eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Init));
+    static_assert(!eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Test));
 
-    static_assert(eff::row_size_v<BackgroundThread::run_required_row> == 4);
+    static_assert(eff::row_size(^^BackgroundThread::run_required_row) == 4);
 
     std::printf("  T01 required_row_pinned:                   PASSED\n");
 }
@@ -136,8 +136,8 @@ static void test_cross_fence_consistency() {
     // and Alloc, so the two rows are not equal.
     static_assert(!eff::Subrow<BgRow, RecordRow>, "The background drain row strictly contains the record_event row: "
                                                   "Bg and Alloc are extra.");
-    static_assert(eff::row_size_v<BgRow> == 4u);
-    static_assert(eff::row_size_v<RecordRow> == 2u);
+    static_assert(eff::row_size(^^BgRow) == 4u);
+    static_assert(eff::row_size(^^RecordRow) == 2u);
 
     std::printf("  cross_fence_consistency:                   PASSED\n");
 }

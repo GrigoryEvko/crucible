@@ -398,10 +398,10 @@ foundation_neg_compile_test(neg_mint_from_ctx_source_is_not_a_context
 # row check and the two rows it compared.
 foundation_neg_compile_test(neg_exec_ctx_cap_from_a_narrower_row
   "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::cap\\(\\) const."
-  "the expression .is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>; R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>\\]. evaluated to .false.")
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>; R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_exec_ctx_cap_from_init_without_block
   "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >::cap\\(\\) const."
-  "the expression .is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>; R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>\\]. evaluated to .false.")
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>; R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_exec_ctx_in_row_widens_the_drain_row
   "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::in_row<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\(\\) const."
   "required for the satisfaction of .Subrow<NewRow, Row>. \\[with NewRow = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>; Row = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>\\]")
@@ -465,6 +465,41 @@ foundation_neg_compile_test(neg_exec_ctx_specialized_trait
   "template-id .is_exec_ctx<>. for .consteval bool foundation::effects::is_exec_ctx\\(std::meta::info\\). does not match any template declaration"
   "neg_exec_ctx_specialized_trait\\.cpp:12:[0-9]+: error:")
 
+# Each answer about a row, an atom or a context is a function at namespace
+# scope that is not a template.  Each fixture below writes an explicit
+# specialization of one of them that says yes for every argument, and no
+# template matches it.
+foundation_neg_compile_test(neg_effects_row_contains_specialized
+  "template-id .row_contains<>. for .consteval bool foundation::effects::row_contains\\(std::meta::info, Effect\\). does not match any template declaration"
+  "neg_effects_row_contains_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_is_subrow_specialized
+  "template-id .is_subrow<>. for .consteval bool foundation::effects::is_subrow\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_effects_is_subrow_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_is_effect_row_specialized
+  "template-id .is_effect_row<>. for .consteval bool foundation::effects::is_effect_row\\(std::meta::info\\). does not match any template declaration"
+  "neg_effects_is_effect_row_specialized\\.cpp:11:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_row_size_specialized
+  "template-id .row_size<>. for .consteval std::size_t foundation::effects::row_size\\(std::meta::info\\). does not match any template declaration"
+  "neg_effects_row_size_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_is_concurrent_row_specialized
+  "template-id .is_concurrent_row<>. for .consteval bool foundation::effects::is_concurrent_row\\(std::meta::info\\). does not match any template declaration"
+  "neg_effects_is_concurrent_row_specialized\\.cpp:11:[0-9]+: error:")
+foundation_neg_compile_test(neg_decide_row_subset_specialized
+  "template-id .row_subset<>. for .consteval bool foundation::decide::row_subset\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_decide_row_subset_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_is_effect_atom_specialized
+  "template-id .is_effect_atom<>. for .consteval bool foundation::effects::is_effect_atom\\(Effect\\). does not match any template declaration"
+  "neg_effects_is_effect_atom_specialized\\.cpp:10:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_is_rostered_context_specialized
+  "template-id .is_rostered_context<>. for .consteval bool foundation::effects::is_rostered_context\\(std::meta::info\\). does not match any template declaration"
+  "neg_effects_is_rostered_context_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_is_resource_kind_atom_specialized
+  "template-id .is_resource_kind_atom<>. for .consteval bool foundation::effects::is_resource_kind_atom\\(ResourceKind\\). does not match any template declaration"
+  "neg_effects_is_resource_kind_atom_specialized\\.cpp:11:[0-9]+: error:")
+foundation_neg_compile_test(neg_effects_is_branded_foreground_specialized
+  "template-id .is_branded_foreground<>. for .consteval bool foundation::effects::is_branded_foreground\\(std::meta::info\\). does not match any template declaration"
+  "neg_effects_is_branded_foreground_specialized\\.cpp:12:[0-9]+: error:")
+
 # A foreground context states that its holder runs on the thread that won
 # the producer claim, so each route that builds one without the claim's
 # key is refused: braces, the key itself, a byte, and a lifetime started
@@ -515,7 +550,7 @@ foundation_neg_compile_test(neg_extract_bare_thread_atom
 # a capability source is not a context.
 foundation_neg_compile_test(neg_lift_in_ctx_without_the_effect
   "constraints not satisfied"
-  "row_contains_v")
+  "row_contains\\(.*\\(\\^\\^ typename Ctx::row_type, Cap\\) \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >; Cap = foundation::effects::Effect::IO\\]")
 foundation_neg_compile_test(neg_mint_computation_in_ctx_source_is_not_a_context
   "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, int>::mint_computation_in_ctx<foundation::effects::Effect::Bg>\\(const foundation::effects::Bg&, int\\)."
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::Bg\\]")
@@ -566,7 +601,7 @@ foundation_neg_compile_test(neg_computation_engaged_row_from_a_value
   "foundation/effects/Computation\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_computation_engaged_row_default_built
   "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>::Computation\\(\\)."
-  "the expression .\\(row_size_v<R>\\) == 0 \\[with R = foundation::effects::Row<foundation::effects::Effect::IO>\\]. evaluated to .false.")
+  "the expression .row_size\\(.*\\(\\^\\^ R\\) == 0 \\[with R = foundation::effects::Row<foundation::effects::Effect::IO>\\]. evaluated to .false.")
 
 # Each route that hands the payload out carries the payload constraint of
 # extract: the substrate view in both forms, map and then.  The second

@@ -74,21 +74,17 @@ struct ConcurrentRow {
 
 using EmptyConcurrentRow = ConcurrentRow<>;
 
-namespace detail {
+// True when type reflects a specialization of ConcurrentRow, read through
+// its aliases, with no qualifier.  The answer is a function at namespace
+// scope that is not a template, so no translation unit can specialize it
+// to make a class a row.
+[[nodiscard]] consteval bool is_concurrent_row(std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    return std::meta::has_template_arguments(dealiased) && std::meta::template_of(dealiased) == ^^ConcurrentRow;
+}
 
 template <typename T>
-struct is_concurrent_row : std::false_type {};
-
-template <ResourceTag... Ts>
-struct is_concurrent_row<ConcurrentRow<Ts...>> : std::true_type {};
-
-}  // namespace detail
-
-template <typename T>
-inline constexpr bool is_concurrent_row_v = detail::is_concurrent_row<T>::value;
-
-template <typename T>
-concept IsConcurrentRow = is_concurrent_row_v<T>;
+concept IsConcurrentRow = is_concurrent_row(^^T);
 
 // The demand of a row on one axis.  The constraint of the row makes the
 // fold exact.
@@ -517,9 +513,8 @@ static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<0>>> == row_hash_co
 
 // A concurrent row is a ConcurrentRow over resource tags, empty or not.  A
 // resource tag alone is no row.
-template <>
-struct foundation::contracts::armed_cell<::foundation::effects::detail::is_concurrent_row> {
-    using accepts = witnesses<::foundation::effects::ConcurrentRow<>,
-                              ::foundation::effects::ConcurrentRow<::foundation::effects::resource::SmBudget<32>>>;
-    using refuses = witnesses<int, ::foundation::effects::resource::SmBudget<32>>;
-};
+static_assert(::foundation::effects::IsConcurrentRow<::foundation::effects::ConcurrentRow<>>
+              && ::foundation::effects::IsConcurrentRow<
+                  ::foundation::effects::ConcurrentRow<::foundation::effects::resource::SmBudget<32>>>);
+static_assert(!::foundation::effects::IsConcurrentRow<int>
+              && !::foundation::effects::IsConcurrentRow<::foundation::effects::resource::SmBudget<32>>);

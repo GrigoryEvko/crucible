@@ -298,7 +298,7 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
         const bool classified_on_io = detail::is_classified_on_<DischargeAxis::IO, Security>::value;
-        const bool has_io = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::IO>;
+        const bool has_io = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::IO);
         return classified_on_io && has_io;
     }
 
@@ -330,7 +330,7 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
         const bool classified_on_bg = detail::is_classified_on_<DischargeAxis::Bg, Security>::value;
-        const bool has_bg = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::Bg>;
+        const bool has_bg = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::Bg);
         return classified_on_bg && has_bg;
     }
 
@@ -441,7 +441,7 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_io = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::IO>;
+        const bool has_io = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::IO);
         return has_internal && has_io;
     }
 
@@ -472,7 +472,7 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
         using Security = detail::grade_on<Axis::Security, Atoms...>;
         using Effects = detail::binding_row_on<Atoms...>;
         const bool has_internal = detail::is_internal_<Security>::value;
-        const bool has_bg = ::foundation::effects::row_contains_v<Effects, ::foundation::effects::Effect::Bg>;
+        const bool has_bg = ::foundation::effects::row_contains(^^Effects, ::foundation::effects::Effect::Bg);
         return has_internal && has_bg;
     }
 

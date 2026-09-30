@@ -44,17 +44,36 @@ struct Row {
 
 using EmptyRow = Row<>;
 
-// Top-level cv and reference are stripped before matching, so that a
-// concept fed a forwarding-reference deduction still recognizes the
-// row.  Every recognition trait in the project behaves this way.
+// Each answer below about a row is a function at namespace scope that is
+// not a template, or a concept that reads one, so no translation unit can
+// specialize it.  A variable template or a class template in its place is
+// a door: a specialization for a row that no header instantiates first
+// gives that row an effect, and every context gate then admits a context
+// that owns no such effect.
+namespace detail {
+
+// True when type reflects a specialization of Row, read through its
+// aliases, with no qualifier.
+[[nodiscard]] consteval bool is_row_specialization(std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    return std::meta::has_template_arguments(dealiased) && std::meta::template_of(dealiased) == ^^Row;
+}
+
+// Declared and not defined, and not constexpr.  A constant evaluation
+// that calls it fails, and the diagnostic gives its name as the reason.
+void type_is_not_an_effect_row() noexcept;
+
+}  // namespace detail
+
+// True when the type is a row.  Top-level cv and reference are stripped,
+// so that a concept fed a forwarding-reference deduction still recognizes
+// the row.
+[[nodiscard]] consteval bool is_effect_row(std::meta::info type) {
+    return detail::is_row_specialization(std::meta::remove_cvref(std::meta::dealias(type)));
+}
+
 template <class T>
-struct is_effect_row : std::false_type {};
-template <Effect... Es>
-struct is_effect_row<Row<Es...>> : std::true_type {};
-template <class T>
-inline constexpr bool is_effect_row_v = is_effect_row<std::remove_cvref_t<T>>::value;
-template <class T>
-concept IsEffectRow = is_effect_row_v<T>;
+concept IsEffectRow = is_effect_row(^^T);
 
 // The sort key is the Effect underlying value.  The row hash that keys
 // the federation cache is permutation-invariant and set-semantic, so
@@ -129,16 +148,25 @@ inline constexpr std::size_t row_pack_size_v = R::size;
 template <typename R>
 inline constexpr std::size_t row_unique_size_v = row_pack_size_v<canonical_row_t<R>>;
 
-// The unqualified spelling of `row_pack_size_v`.  Both names exist so
-// that a call site can say which cardinality it means.
-template <typename R>
-inline constexpr std::size_t row_size_v = R::size;
+// The number of atoms that the row names, duplicates counted, as
+// row_pack_size_v counts them.  The count comes from the template
+// arguments of the row, so no member of the class plays a part.  A type
+// that is not a row has no size, and a call for one is not a constant
+// expression.
+[[nodiscard]] consteval std::size_t row_size(std::meta::info row) {
+    if (!detail::is_row_specialization(row)) detail::type_is_not_an_effect_row();
+    return std::meta::template_arguments_of(std::meta::dealias(row)).size();
+}
 
-template <typename R, Effect E>
-inline constexpr bool row_contains_v = false;
-
-template <Effect E, Effect... Es>
-inline constexpr bool row_contains_v<Row<Es...>, E> = ((Es == E) || ...);
+// True when the row names the effect.  A type that is not a row names no
+// effect.  Complexity: linear in the size of the row.
+[[nodiscard]] consteval bool row_contains(std::meta::info row, Effect effect) {
+    if (!detail::is_row_specialization(row)) return false;
+    for (const std::meta::info argument : std::meta::template_arguments_of(std::meta::dealias(row))) {
+        if (std::meta::extract<Effect>(argument) == effect) return true;
+    }
+    return false;
+}
 
 namespace detail {
 
@@ -190,7 +218,7 @@ struct row_difference_impl;
 template <Effect... E1s, typename R2>
 struct row_difference_impl<Row<E1s...>, R2> {
     template <Effect E>
-    using keep_or_drop = std::conditional_t<row_contains_v<R2, E>, Row<>, Row<E>>;
+    using keep_or_drop = std::conditional_t<row_contains(^^R2, E), Row<>, Row<E>>;
 
     using type = typename row_concat<keep_or_drop<E1s>...>::type;
 };
@@ -201,7 +229,7 @@ struct row_intersection_impl;
 template <Effect... E1s, typename R2>
 struct row_intersection_impl<Row<E1s...>, R2> {
     template <Effect E>
-    using keep_or_drop = std::conditional_t<row_contains_v<R2, E>, Row<E>, Row<>>;
+    using keep_or_drop = std::conditional_t<row_contains(^^R2, E), Row<E>, Row<>>;
 
     using type = typename row_concat<keep_or_drop<E1s>...>::type;
 };
@@ -217,17 +245,19 @@ using row_difference_t = canonical_row_t<typename detail::row_difference_impl<R1
 template <typename R1, typename R2>
 using row_intersection_t = canonical_row_t<typename detail::row_intersection_impl<R1, R2>::type>;
 
-template <typename R1, typename R2>
-struct is_subrow : std::false_type {};
+// True when each atom of the narrow row is in the wide row.  A type that
+// is not a row is no subrow and has no subrow.  Complexity: the product
+// of the two sizes.
+[[nodiscard]] consteval bool is_subrow(std::meta::info narrow, std::meta::info wide) {
+    if (!detail::is_row_specialization(narrow) || !detail::is_row_specialization(wide)) return false;
+    for (const std::meta::info argument : std::meta::template_arguments_of(std::meta::dealias(narrow))) {
+        if (!row_contains(wide, std::meta::extract<Effect>(argument))) return false;
+    }
+    return true;
+}
 
-template <Effect... E1s, Effect... E2s>
-struct is_subrow<Row<E1s...>, Row<E2s...>> : std::bool_constant<(row_contains_v<Row<E2s...>, E1s> && ...)> {};
-
 template <typename R1, typename R2>
-inline constexpr bool is_subrow_v = is_subrow<R1, R2>::value;
-
-template <typename R1, typename R2>
-concept Subrow = is_subrow_v<R1, R2>;
+concept Subrow = is_subrow(^^R1, ^^R2);
 
 namespace detail {
 
@@ -253,7 +283,7 @@ namespace detail {
 // would silently leave behind at five atoms.
 using every_effect_row = [:detail::every_effect_of_(^^Row):];
 
-static_assert(row_size_v<every_effect_row> == effect_count,
+static_assert(row_size(^^every_effect_row) == effect_count,
               "every_effect_row must hold one atom for each Effect enumerator.  It is substituted from "
               "enumerators_of, so a mismatch means a duplicate enumerator value collapsed two atoms into "
               "one row bit.");
@@ -266,24 +296,26 @@ using R_io = Row<Effect::IO>;
 using R_alloc_io = Row<Effect::Alloc, Effect::IO>;
 using R_alloc_io_bg = Row<Effect::Alloc, Effect::IO, Effect::Bg>;
 
-static_assert(row_size_v<R_empty> == 0);
-static_assert(row_size_v<R_alloc> == 1);
-static_assert(row_size_v<R_alloc_io> == 2);
-static_assert(row_size_v<R_alloc_io_bg> == 3);
+static_assert(row_size(^^R_empty) == 0);
+static_assert(row_size(^^R_alloc) == 1);
+static_assert(row_size(^^R_alloc_io) == 2);
+static_assert(row_size(^^R_alloc_io_bg) == 3);
 
-static_assert(!row_contains_v<R_empty, Effect::Alloc>);
-static_assert(row_contains_v<R_alloc, Effect::Alloc>);
-static_assert(!row_contains_v<R_alloc, Effect::IO>);
-static_assert(row_contains_v<R_alloc_io, Effect::Alloc>);
-static_assert(row_contains_v<R_alloc_io, Effect::IO>);
-static_assert(!row_contains_v<R_alloc_io, Effect::Bg>);
+static_assert(!row_contains(^^R_empty, Effect::Alloc));
+static_assert(row_contains(^^R_alloc, Effect::Alloc));
+static_assert(!row_contains(^^R_alloc, Effect::IO));
+static_assert(row_contains(^^R_alloc_io, Effect::Alloc));
+static_assert(row_contains(^^R_alloc_io, Effect::IO));
+static_assert(!row_contains(^^R_alloc_io, Effect::Bg));
+static_assert(!row_contains(^^int, Effect::Alloc), "a type that is not a row names no effect");
 
-static_assert(is_subrow_v<R_empty, R_empty>);
-static_assert(is_subrow_v<R_empty, R_alloc>);
-static_assert(is_subrow_v<R_alloc, R_alloc_io>);
-static_assert(!is_subrow_v<R_alloc_io, R_alloc>);
-static_assert(is_subrow_v<R_alloc_io, R_alloc_io_bg>);
-static_assert(!is_subrow_v<R_io, R_alloc>);
+static_assert(is_subrow(^^R_empty, ^^R_empty));
+static_assert(is_subrow(^^R_empty, ^^R_alloc));
+static_assert(is_subrow(^^R_alloc, ^^R_alloc_io));
+static_assert(!is_subrow(^^R_alloc_io, ^^R_alloc));
+static_assert(is_subrow(^^R_alloc_io, ^^R_alloc_io_bg));
+static_assert(!is_subrow(^^R_io, ^^R_alloc));
+static_assert(!is_subrow(^^int, ^^R_alloc) && !is_subrow(^^R_empty, ^^int), "a type that is not a row is no subrow");
 
 static_assert(Subrow<R_empty, R_alloc_io>);
 static_assert(Subrow<R_alloc, R_alloc_io_bg>);
@@ -291,59 +323,59 @@ static_assert(!Subrow<R_alloc_io, R_alloc>);
 
 static_assert(std::is_same_v<row_union_t<R_empty, R_empty>, R_empty>);
 static_assert(std::is_same_v<row_union_t<R_alloc_io, R_empty>, R_alloc_io>);
-static_assert(is_subrow_v<R_alloc_io, row_union_t<R_empty, R_alloc_io>>);
-static_assert(is_subrow_v<row_union_t<R_empty, R_alloc_io>, R_alloc_io>);
+static_assert(is_subrow(^^R_alloc_io, ^^row_union_t<R_empty, R_alloc_io>));
+static_assert(is_subrow(^^row_union_t<R_empty, R_alloc_io>, ^^R_alloc_io));
 
 using R_union_a_io = row_union_t<R_alloc, R_io>;
-static_assert(is_subrow_v<R_alloc, R_union_a_io>);
-static_assert(is_subrow_v<R_io, R_union_a_io>);
-static_assert(row_size_v<R_union_a_io> == 2);
+static_assert(is_subrow(^^R_alloc, ^^R_union_a_io));
+static_assert(is_subrow(^^R_io, ^^R_union_a_io));
+static_assert(row_size(^^R_union_a_io) == 2);
 
 using R_union_dup = row_union_t<R_alloc_io, R_alloc>;
-static_assert(row_size_v<R_union_dup> == 2);
-static_assert(is_subrow_v<R_alloc_io, R_union_dup>);
-static_assert(is_subrow_v<R_alloc, R_union_dup>);
-static_assert(!row_contains_v<R_union_dup, Effect::Bg>);
+static_assert(row_size(^^R_union_dup) == 2);
+static_assert(is_subrow(^^R_alloc_io, ^^R_union_dup));
+static_assert(is_subrow(^^R_alloc, ^^R_union_dup));
+static_assert(!row_contains(^^R_union_dup, Effect::Bg));
 
 using R_left = row_union_t<R_alloc, R_io>;
 using R_right = row_union_t<R_io, R_alloc>;
-static_assert(is_subrow_v<R_left, R_right>);
-static_assert(is_subrow_v<R_right, R_left>);
+static_assert(is_subrow(^^R_left, ^^R_right));
+static_assert(is_subrow(^^R_right, ^^R_left));
 
 using R_lr_then_bg = row_union_t<row_union_t<R_alloc, R_io>, Row<Effect::Bg>>;
 using R_lr_then_bg_alt = row_union_t<R_alloc, row_union_t<R_io, Row<Effect::Bg>>>;
-static_assert(is_subrow_v<R_lr_then_bg, R_lr_then_bg_alt>);
-static_assert(is_subrow_v<R_lr_then_bg_alt, R_lr_then_bg>);
-static_assert(row_size_v<R_lr_then_bg> == 3);
+static_assert(is_subrow(^^R_lr_then_bg, ^^R_lr_then_bg_alt));
+static_assert(is_subrow(^^R_lr_then_bg_alt, ^^R_lr_then_bg));
+static_assert(row_size(^^R_lr_then_bg) == 3);
 
 static_assert(std::is_same_v<row_difference_t<R_alloc_io, R_empty>, R_alloc_io>);
-static_assert(row_size_v<row_difference_t<R_alloc_io, R_alloc_io>> == 0);
+static_assert(row_size(^^row_difference_t<R_alloc_io, R_alloc_io>) == 0);
 static_assert(std::is_same_v<row_difference_t<R_alloc_io, R_alloc_io>, R_empty>);
 
 using R_diff = row_difference_t<R_alloc_io_bg, R_alloc>;
-static_assert(row_size_v<R_diff> == 2);
-static_assert(!row_contains_v<R_diff, Effect::Alloc>);
-static_assert(row_contains_v<R_diff, Effect::IO>);
-static_assert(row_contains_v<R_diff, Effect::Bg>);
+static_assert(row_size(^^R_diff) == 2);
+static_assert(!row_contains(^^R_diff, Effect::Alloc));
+static_assert(row_contains(^^R_diff, Effect::IO));
+static_assert(row_contains(^^R_diff, Effect::Bg));
 
-static_assert(row_size_v<row_intersection_t<R_empty, R_alloc_io>> == 0);
+static_assert(row_size(^^row_intersection_t<R_empty, R_alloc_io>) == 0);
 static_assert(std::is_same_v<row_intersection_t<R_alloc_io, R_alloc_io>, R_alloc_io>);
 
 using R_inter = row_intersection_t<R_alloc_io, R_alloc_io_bg>;
-static_assert(is_subrow_v<R_inter, R_alloc_io>);
-static_assert(is_subrow_v<R_alloc_io, R_inter>);
-static_assert(row_size_v<R_inter> == 2);
+static_assert(is_subrow(^^R_inter, ^^R_alloc_io));
+static_assert(is_subrow(^^R_alloc_io, ^^R_inter));
+static_assert(row_size(^^R_inter) == 2);
 
 using R_inter_disjoint = row_intersection_t<R_alloc, R_io>;
-static_assert(row_size_v<R_inter_disjoint> == 0);
+static_assert(row_size(^^R_inter_disjoint) == 0);
 
 using R_universe = every_effect_row;
-static_assert(row_size_v<R_universe> == effect_count);
-static_assert(is_subrow_v<R_alloc_io, R_universe>);
-static_assert(is_subrow_v<R_alloc_io_bg, R_universe>);
+static_assert(row_size(^^R_universe) == effect_count);
+static_assert(is_subrow(^^R_alloc_io, ^^R_universe));
+static_assert(is_subrow(^^R_alloc_io_bg, ^^R_universe));
 
-static_assert(row_size_v<row_difference_t<R_universe, R_universe>> == 0);
-static_assert(row_size_v<row_intersection_t<R_universe, R_empty>> == 0);
+static_assert(row_size(^^row_difference_t<R_universe, R_universe>) == 0);
+static_assert(row_size(^^row_intersection_t<R_universe, R_empty>) == 0);
 
 // The expected packs below are in sorted underlying-value order:
 // Alloc, IO, Block, Bg, Init, Test.
@@ -367,16 +399,16 @@ using R_canon_twice = canonical_row_t<R_canon_once>;
 static_assert(std::is_same_v<R_canon_once, R_canon_twice>);
 static_assert(std::is_same_v<R_canon_once, Row<Effect::Alloc, Effect::Bg>>);
 
-static_assert(row_size_v<canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>> == 2);
-static_assert(row_size_v<canonical_row_t<Row<Effect::IO, Effect::IO, Effect::IO>>> == 1);
-static_assert(row_size_v<canonical_row_t<Row<>>> == 0);
+static_assert(row_size(^^canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>) == 2);
+static_assert(row_size(^^canonical_row_t<Row<Effect::IO, Effect::IO, Effect::IO>>) == 1);
+static_assert(row_size(^^canonical_row_t<Row<>>) == 0);
 
 namespace cardinality_lens_witness {
 
 using R_dup = Row<Effect::Bg, Effect::IO, Effect::Bg>;
 
 static_assert(row_pack_size_v<R_dup> == 3);
-static_assert(row_size_v<R_dup> == 3);
+static_assert(row_size(^^R_dup) == 3);
 
 static_assert(row_unique_size_v<R_dup> == 2);
 
@@ -390,7 +422,7 @@ static_assert(row_unique_size_v<R_canon> == 2);
 
 static_assert(row_pack_size_v<Row<>> == 0);
 static_assert(row_unique_size_v<Row<>> == 0);
-static_assert(row_size_v<Row<>> == 0);
+static_assert(row_size(^^Row<>) == 0);
 
 }  // namespace cardinality_lens_witness
 
@@ -653,24 +685,24 @@ static_assert(!L::contains(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>, Eff
 static_assert(L::contains(e_top, Effect::Init));
 static_assert(!L::contains(e_bot, Effect::Init));
 static_assert(L::contains(row_descriptor_v<Row<Effect::Bg>>, Effect::Bg)
-              == row_contains_v<Row<Effect::Bg>, Effect::Bg>);
+              == row_contains(^^Row<Effect::Bg>, Effect::Bg));
 static_assert(L::contains(row_descriptor_v<Row<Effect::Bg>>, Effect::IO)
-              == row_contains_v<Row<Effect::Bg>, Effect::IO>);
+              == row_contains(^^Row<Effect::Bg>, Effect::IO));
 
 // The membership-based subrow test and the bitmask-based order must
 // give the same answer at every query site.  A disagreement would let
 // the two surfaces classify the same pair of rows differently.
 static_assert(L::leq(row_descriptor_v<Row<>>, row_descriptor_v<Row<Effect::Alloc>>)
-              == is_subrow_v<Row<>, Row<Effect::Alloc>>);
+              == is_subrow(^^Row<>, ^^Row<Effect::Alloc>));
 
 static_assert(L::leq(row_descriptor_v<Row<Effect::Alloc>>, row_descriptor_v<Row<Effect::Alloc, Effect::IO>>)
-              == is_subrow_v<Row<Effect::Alloc>, Row<Effect::Alloc, Effect::IO>>);
+              == is_subrow(^^Row<Effect::Alloc>, ^^Row<Effect::Alloc, Effect::IO>));
 
 static_assert(L::leq(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>, row_descriptor_v<Row<Effect::Alloc>>)
-              == is_subrow_v<Row<Effect::Alloc, Effect::IO>, Row<Effect::Alloc>>);
+              == is_subrow(^^Row<Effect::Alloc, Effect::IO>, ^^Row<Effect::Alloc>));
 
 static_assert(L::leq(row_descriptor_v<Row<Effect::IO>>, row_descriptor_v<Row<Effect::Alloc>>)
-              == is_subrow_v<Row<Effect::IO>, Row<Effect::Alloc>>);
+              == is_subrow(^^Row<Effect::IO>, ^^Row<Effect::Alloc>));
 
 }  // namespace detail::effect_row_lattice_self_test
 

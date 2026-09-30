@@ -997,7 +997,7 @@ static_assert(pending_rule_count == detail::corpus_count_(Disposition::Pending),
 // binding does reads the row of the binding, which fixy/Atom.h computes:
 // the Effect grade joined with the row that the atoms of the pack lift
 // to.  That row is a canonical Row, so a question about one effect in it
-// is row_contains_v.
+// is row_contains.
 
 namespace detail {
 
@@ -1516,7 +1516,7 @@ struct rules_of {
     using binding_row = ::fixy::atom::binding_row_of_t<typename G::template on<Axis::Effect>, Atoms...>;
 
     static constexpr bool row_bg =
-        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Bg>;
+        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Bg);
     static constexpr bool row_observable = detail::row_admits_observable_<binding_row>::value;
     static constexpr bool atomic_repr = detail::repr_is_atomic_<typename G::template on<Axis::Representation>>::value;
     static constexpr bool thread_local_state =
@@ -1567,8 +1567,8 @@ struct rules_of {
     // the pack-only view.
     static constexpr bool replay_deterministic = detail::is_replay_deterministic_<Payload>::value;
     static constexpr bool row_alloc_or_io =
-        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Alloc>
-        || ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::IO>;
+        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Alloc)
+        || ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::IO);
 
     // "Unstated" is the strict pole on Complexity, so an unstated cost
     // is the absence of a grade rather than a grade of its own.  H001
@@ -1624,7 +1624,7 @@ struct rules_of {
     // W002 reads the axis through the predicate of fixy/atoms/Sync.h.  The
     // rule and the atom header then cannot disagree about the line.
     static constexpr bool blocks =
-        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Block>;
+        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Block);
     static constexpr bool core_burning_spin =
         detail::is_busy_wait_<typename G::template on<Axis::Synchronization>>::value;
 
@@ -1685,7 +1685,7 @@ struct rules_of {
         detail::is_hw_at_or_above_<::fixy::atom::hw::HwInstruction::PrivilegedMsr,
                                    typename G::template on<Axis::HwInstruction>>::value;
     static constexpr bool row_init =
-        ::foundation::effects::row_contains_v<binding_row, ::foundation::effects::Effect::Init>;
+        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Init);
 
     static constexpr bool V201_ok = !(hot && hw_nondeterministic);
     static constexpr bool V202_ok = !(hw_privileged && !row_init);

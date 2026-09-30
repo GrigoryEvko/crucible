@@ -2704,8 +2704,8 @@ using protocol_delivered_permission_row_t =
 template <typename Ctx, typename Proto>
 concept CtxAdmitsProtocolRow =
     ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::effects::is_subrow_v<protocol_payload_row_t<Proto>, typename Ctx::row_type>
-    && ::foundation::effects::is_subrow_v<protocol_delivered_permission_row_t<Proto>, typename Ctx::row_type>;
+    && ::foundation::effects::is_subrow(^^protocol_payload_row_t<Proto>, ^^typename Ctx::row_type)
+    && ::foundation::effects::is_subrow(^^protocol_delivered_permission_row_t<Proto>, ^^typename Ctx::row_type);
 
 namespace detail {
 

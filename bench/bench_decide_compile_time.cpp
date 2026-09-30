@@ -54,11 +54,11 @@
 namespace dc = ::foundation::decide;
 namespace eff = ::foundation::effects;
 
-// ── Row instances for row_subset<P, C>() ──────────────────────────
+// ── Row instances for row_subset(^^P, ^^C) ────────────────────────
 //
-// row_subset is parametric in two row types; we instantiate one
+// row_subset reads the reflections of two row types; we name one
 // canonical Subrow case (Payload ⊆ Ctx) so the bench covers the
-// is_subrow_v fold path.  eff::Row<...> is a phantom carrier —
+// is_subrow path.  eff::Row<...> is a phantom carrier —
 // no runtime state — so the call resolves to a single bool constant
 // folded under -O3.  We still measure to confirm the foldability.
 
@@ -206,13 +206,13 @@ int main() {
                        bool r = dc::tier_replaces<CipherBenchTier>(CipherBenchTier::Hot, CipherBenchTier::Warm);
                        bench::do_not_optimize(r);
                    }),
-        bench::run("decide::row_subset<Row<Bg>, Row<Bg,Alloc>>",
+        bench::run("decide::row_subset(Row<Bg>, Row<Bg,Alloc>)",
                    [] {
-                       // Pure compile-time: is_subrow_v folds to a constant.
-                       // The bench measures the .text overhead of the noipa
-                       // do_not_optimize call — confirming the predicate body
-                       // itself contributes nothing.
-                       bool r = dc::row_subset<PayloadRow, CtxRow>();
+                       // Pure compile-time: row_subset is consteval, so the
+                       // call is a constant.  The bench measures the .text
+                       // overhead of the noipa do_not_optimize call —
+                       // confirming the predicate body contributes nothing.
+                       bool r = dc::row_subset(^^PayloadRow, ^^CtxRow);
                        bench::do_not_optimize(r);
                    }),
     };

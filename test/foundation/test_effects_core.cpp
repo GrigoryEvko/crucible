@@ -134,7 +134,7 @@ static_assert(::foundation::algebra::Row<fe::EffectRowLattice>);
         constexpr fe::Effect atom = [:en:];
         if (!fe::EffectRowLattice::contains(fe::row_descriptor_v<fe::Row<atom>>, atom)) return false;
         if (fe::EffectRowLattice::contains(fe::row_descriptor_v<fe::Row<>>, atom)) return false;
-        if (!fe::row_contains_v<fe::Row<atom>, atom>) return false;
+        if (!fe::row_contains(^^fe::Row<atom>, atom)) return false;
     }
 #pragma GCC diagnostic pop
     return true;

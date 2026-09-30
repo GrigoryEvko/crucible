@@ -1042,9 +1042,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^fp::perm_set_difference, kMetafunction},
     {^^fp::perm_set_canonicalize, kMetafunction},
 
-    {^^fe::is_effect_row, kMetafunction},
     {^^fe::canonical_row, kMetafunction},
-    {^^fe::is_subrow, kMetafunction},
     {^^fe::EffectRowLattice, "the lattice over effect rows: a grade, where the row it grades is what folds"},
     {^^fe::is_cap_type, kMetafunction},
     {^^fe::cap_permitted_row, kMetafunction},

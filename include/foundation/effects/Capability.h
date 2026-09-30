@@ -30,7 +30,7 @@
 namespace foundation::effects {
 
 template <Effect E, class Source>
-concept CanMintCap = IsCapType<Source> && row_contains_v<cap_permitted_row_t<Source>, E>;
+concept CanMintCap = IsCapType<Source> && row_contains(^^cap_permitted_row_t<Source>, E);
 
 template <Effect Cap, class Source>
 class Capability;
@@ -178,7 +178,7 @@ template <Effect E, IsExecCtx Ctx>
 // The capability may have been minted in another scope.  This says the
 // surrounding context is still authorized for that effect.
 template <class Cap, class Ctx>
-concept CapMatchesCtx = IsCapability<Cap> && IsExecCtx<Ctx> && row_contains_v<row_type_of_t<Ctx>, cap_of(^^Cap)>;
+concept CapMatchesCtx = IsCapability<Cap> && IsExecCtx<Ctx> && row_contains(^^row_type_of_t<Ctx>, cap_of(^^Cap));
 
 // The bare tag of an atom is the type in namespace cap whose identifier
 // is the enumerator's own, which is how Alloc, IO and Block each reach

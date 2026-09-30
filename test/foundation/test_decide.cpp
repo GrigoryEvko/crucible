@@ -370,47 +370,50 @@ using R_alloc_io_bg = fx::Row<fx::Effect::Alloc, fx::Effect::IO, fx::Effect::Bg>
 using R_full =
     fx::Row<fx::Effect::Alloc, fx::Effect::IO, fx::Effect::Block, fx::Effect::Bg, fx::Effect::Init, fx::Effect::Test>;
 
-static_assert(dc::row_subset<R_empty, R_empty>());
-static_assert(dc::row_subset<R_alloc, R_alloc>());
-static_assert(dc::row_subset<R_alloc_io, R_alloc_io>());
-static_assert(dc::row_subset<R_full, R_full>());
+static_assert(dc::row_subset(^^R_empty, ^^R_empty));
+static_assert(dc::row_subset(^^R_alloc, ^^R_alloc));
+static_assert(dc::row_subset(^^R_alloc_io, ^^R_alloc_io));
+static_assert(dc::row_subset(^^R_full, ^^R_full));
 
-static_assert(dc::row_subset<R_empty, R_alloc>());
-static_assert(dc::row_subset<R_empty, R_alloc_io>());
-static_assert(dc::row_subset<R_empty, R_full>());
+static_assert(dc::row_subset(^^R_empty, ^^R_alloc));
+static_assert(dc::row_subset(^^R_empty, ^^R_alloc_io));
+static_assert(dc::row_subset(^^R_empty, ^^R_full));
 
-static_assert(dc::row_subset<R_alloc, R_alloc_io>());
-static_assert(dc::row_subset<R_io, R_alloc_io>());
-static_assert(dc::row_subset<R_alloc_io, R_alloc_io_bg>());
-static_assert(dc::row_subset<R_alloc, R_full>());
-static_assert(dc::row_subset<R_alloc_io_bg, R_full>());
+static_assert(dc::row_subset(^^R_alloc, ^^R_alloc_io));
+static_assert(dc::row_subset(^^R_io, ^^R_alloc_io));
+static_assert(dc::row_subset(^^R_alloc_io, ^^R_alloc_io_bg));
+static_assert(dc::row_subset(^^R_alloc, ^^R_full));
+static_assert(dc::row_subset(^^R_alloc_io_bg, ^^R_full));
 
 using R_io_alloc = fx::Row<fx::Effect::IO, fx::Effect::Alloc>;
-static_assert(dc::row_subset<R_alloc_io, R_io_alloc>());
-static_assert(dc::row_subset<R_io_alloc, R_alloc_io>());
-static_assert(dc::row_subset<R_alloc, R_io_alloc>());
+static_assert(dc::row_subset(^^R_alloc_io, ^^R_io_alloc));
+static_assert(dc::row_subset(^^R_io_alloc, ^^R_alloc_io));
+static_assert(dc::row_subset(^^R_alloc, ^^R_io_alloc));
 
-static_assert(!dc::row_subset<R_alloc_io, R_alloc>());
-static_assert(!dc::row_subset<R_alloc_io_bg, R_alloc_io>());
-static_assert(!dc::row_subset<R_full, R_alloc_io_bg>());
+static_assert(!dc::row_subset(^^R_alloc_io, ^^R_alloc));
+static_assert(!dc::row_subset(^^R_alloc_io_bg, ^^R_alloc_io));
+static_assert(!dc::row_subset(^^R_full, ^^R_alloc_io_bg));
 
 // Equal cardinality with no shared atom, which a count-based test
 // would accept.
-static_assert(!dc::row_subset<R_io, R_alloc>());
-static_assert(!dc::row_subset<R_block, R_alloc>());
-static_assert(!dc::row_subset<R_block, R_io>());
+static_assert(!dc::row_subset(^^R_io, ^^R_alloc));
+static_assert(!dc::row_subset(^^R_block, ^^R_alloc));
+static_assert(!dc::row_subset(^^R_block, ^^R_io));
 
 using R_alloc_block = fx::Row<fx::Effect::Alloc, fx::Effect::Block>;
-static_assert(!dc::row_subset<R_alloc_block, R_alloc_io>());
-static_assert(!dc::row_subset<R_alloc_io, R_alloc_block>());
+static_assert(!dc::row_subset(^^R_alloc_block, ^^R_alloc_io));
+static_assert(!dc::row_subset(^^R_alloc_io, ^^R_alloc_block));
 
-static_assert(dc::row_subset<R_empty, R_empty>());
-static_assert(!dc::row_subset<R_alloc, R_empty>());
-static_assert(!dc::row_subset<R_full, R_empty>());
+static_assert(dc::row_subset(^^R_empty, ^^R_empty));
+static_assert(!dc::row_subset(^^R_alloc, ^^R_empty));
+static_assert(!dc::row_subset(^^R_full, ^^R_empty));
+
+// A type that is not a row is in no subset relation, on either side.
+static_assert(!dc::row_subset(^^int, ^^R_full) && !dc::row_subset(^^R_empty, ^^int));
 
 template <typename Payload, typename Ctx>
 [[nodiscard]] constexpr bool admit_payload() noexcept {
-    CRUCIBLE_PRE((dc::row_subset<Payload, Ctx>()));
+    CRUCIBLE_PRE((dc::row_subset(^^Payload, ^^Ctx)));
     return true;
 }
 
@@ -858,23 +861,23 @@ int main() {
     // row_subset is settled entirely at compile time, so only the
     // result can be made opaque to the optimizer.
     {
-        volatile bool ok_legal_subset = dc::row_subset<R_alloc, R_alloc_io>();
+        volatile bool ok_legal_subset = dc::row_subset(^^R_alloc, ^^R_alloc_io);
         if (!ok_legal_subset) {
             std::fprintf(stderr, "test_decide: row_subset {Alloc} ⊆ {Alloc,IO} WRONGLY rejected\n");
             return 1;
         }
-        volatile bool ok_empty = dc::row_subset<R_empty, R_full>();
+        volatile bool ok_empty = dc::row_subset(^^R_empty, ^^R_full);
         if (!ok_empty) {
             std::fprintf(stderr, "test_decide: row_subset ∅ ⊆ R_full WRONGLY rejected\n");
             return 1;
         }
-        volatile bool bad_extra = dc::row_subset<R_alloc_io, R_alloc>();
+        volatile bool bad_extra = dc::row_subset(^^R_alloc_io, ^^R_alloc);
         if (bad_extra) {
             std::fprintf(stderr, "test_decide: row_subset {Alloc,IO} ⊆ {Alloc} extra-effect "
                                  "WRONGLY accepted\n");
             return 1;
         }
-        volatile bool bad_disjoint = dc::row_subset<R_block, R_alloc>();
+        volatile bool bad_disjoint = dc::row_subset(^^R_block, ^^R_alloc);
         if (bad_disjoint) {
             std::fprintf(stderr, "test_decide: row_subset {Block} ⊆ {Alloc} disjoint-axis "
                                  "WRONGLY accepted\n");

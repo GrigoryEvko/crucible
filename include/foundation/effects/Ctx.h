@@ -163,17 +163,16 @@ using Test = ::foundation::effects::Test;
 // translation unit declares can add a source.  The value and the trait
 // spellings are derived from it and read by nothing that gates.
 //
-// A branded source is recognized by reflection on its template, not by a
-// trait a translation unit could specialize.
-namespace detail {
-template <class T>
-[[nodiscard]] consteval bool is_branded_foreground_() noexcept {
-    return std::meta::has_template_arguments(^^T) && std::meta::template_of(^^T) == ^^ctx_cap::BrandedFg;
+// A branded source is recognized by reflection on its template, in a
+// function at namespace scope that is not a template, so no translation
+// unit can specialize the test.
+[[nodiscard]] consteval bool is_branded_foreground(std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    return std::meta::has_template_arguments(dealiased) && std::meta::template_of(dealiased) == ^^ctx_cap::BrandedFg;
 }
-}  // namespace detail
 
 template <class T>
-concept IsBrandedForeground = detail::is_branded_foreground_<T>();
+concept IsBrandedForeground = is_branded_foreground(^^T);
 
 template <class T>
 concept IsCapType = std::same_as<T, ctx_cap::Fg> || IsBrandedForeground<T> || IsContext<T>;
@@ -661,17 +660,17 @@ template <class Ctx, class R>
 concept CtxAdmits = IsExecCtx<Ctx> && IsEffectRow<R> && Subrow<R, row_type_of_t<Ctx>>;
 
 template <class Ctx, Effect Cap>
-concept CtxOwnsCapability = IsExecCtx<Ctx> && row_contains_v<row_type_of_t<Ctx>, Cap>;
+concept CtxOwnsCapability = IsExecCtx<Ctx> && row_contains(^^row_type_of_t<Ctx>, Cap);
 
 // The two named lifts below cost exactly what writing the fold by hand
 // costs.  What they buy is that a reviewer recognizes the shape of an
 // authorization at a glance, and that a rename of the row extractor
 // reaches every site through one definition.
 template <class Ctx, Effect... Es>
-concept CtxOwnsAnyOf = IsExecCtx<Ctx> && (row_contains_v<row_type_of_t<Ctx>, Es> || ...);
+concept CtxOwnsAnyOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es) || ...);
 
 template <class Ctx, Effect... Es>
-concept CtxOwnsAllOf = IsExecCtx<Ctx> && (row_contains_v<row_type_of_t<Ctx>, Es> && ...);
+concept CtxOwnsAllOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es) && ...);
 
 namespace detail::ctx_witnesses {
 
@@ -831,14 +830,14 @@ static_assert(is_cap_type_v<Test>);
 static_assert(!is_cap_type_v<int>);
 static_assert(!is_cap_type_v<void*>);
 
-static_assert(is_effect_row_v<Row<>>);
-static_assert(is_effect_row_v<Row<Effect::Bg, Effect::Alloc>>);
-static_assert(!is_effect_row_v<int>);
-static_assert(is_effect_row_v<Row<> const>);
-static_assert(is_effect_row_v<Row<>&>);
-static_assert(is_effect_row_v<Row<Effect::Bg> const&>);
-static_assert(is_effect_row_v<Row<Effect::Bg>&&>);
-static_assert(!is_effect_row_v<int const&>);
+static_assert(is_effect_row(^^Row<>));
+static_assert(is_effect_row(^^Row<Effect::Bg, Effect::Alloc>));
+static_assert(!is_effect_row(^^int));
+static_assert(is_effect_row(^^Row<> const));
+static_assert(is_effect_row(^^Row<>&));
+static_assert(is_effect_row(^^Row<Effect::Bg> const&));
+static_assert(is_effect_row(^^Row<Effect::Bg>&&));
+static_assert(!is_effect_row(^^int const&));
 static_assert(IsEffectRow<Row<Effect::Bg> const&>);
 static_assert(IsEffectRow<Row<Effect::Bg>&&>);
 

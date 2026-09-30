@@ -300,7 +300,7 @@ namespace detail {
 template <typename Tag>
 [[nodiscard]] consteval bool permission_row_empty_() noexcept {
     if constexpr (has_permission_row_v<Tag>) {
-        return ::foundation::effects::row_size_v<permission_row_t<Tag>> == 0;
+        return ::foundation::effects::row_size(^^permission_row_t<Tag>) == 0;
     } else {
         return false;
     }
@@ -313,7 +313,7 @@ inline constexpr bool permission_row_empty_v = detail::permission_row_empty_<Tag
 
 template <typename Tag, typename Ctx>
 concept CtxAdmitsPermission = ::foundation::effects::IsExecCtx<Ctx> && has_permission_row_v<Tag>
-                           && ::foundation::effects::is_subrow_v<permission_row_t<Tag>, typename Ctx::row_type>;
+                           && ::foundation::effects::is_subrow(^^permission_row_t<Tag>, ^^typename Ctx::row_type);
 
 // The concepts below carry an Is prefix because a concept and a class
 // share one namespace lookup table, so a `concept Permission` would

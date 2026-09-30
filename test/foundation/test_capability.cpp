@@ -42,7 +42,7 @@ template <class Ctx>
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto atom : atoms) {
         constexpr Effect effect = [:atom:];
-        constexpr bool claims = fe::row_contains_v<typename Ctx::row_type, effect>;
+        constexpr bool claims = fe::row_contains(^^typename Ctx::row_type, effect);
         if constexpr (MintsFromCtx<effect, Ctx> != claims) return false;
         if constexpr (fe::CapMatchesCtx<fe::Capability<effect, fe::Init>, Ctx> != claims) return false;
     }
@@ -84,7 +84,7 @@ template <class R>
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto atom : atoms) {
         constexpr Effect effect = [:atom:];
-        if constexpr (fe::row_contains_v<R, effect>) sum += static_cast<int>(effect) + 1;
+        if constexpr (fe::row_contains(^^R, effect)) sum += static_cast<int>(effect) + 1;
     }
 #pragma GCC diagnostic pop
     return sum;
@@ -98,7 +98,7 @@ template <class Ctx>
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto atom : atoms) {
         constexpr Effect effect = [:atom:];
-        if constexpr (fe::row_contains_v<typename Ctx::row_type, effect>) {
+        if constexpr (fe::row_contains(^^typename Ctx::row_type, effect)) {
             auto token = fe::mint_from_ctx<effect>(ctx);
             static_assert(std::is_same_v<decltype(token), fe::Capability<effect, typename Ctx::cap_type>>);
             sum += spend(std::move(token));

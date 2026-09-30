@@ -11,7 +11,7 @@
 //
 // The relation is stated positively and enumerates what conveys
 // authority, so a capability payload refuses.  extract carries
-// `requires(row_size_v<R> == 0) && detail::extract_admits_payload_v<T>`,
+// `requires(row_size(^^R) == 0) && detail::extract_admits_payload_v<T>`,
 // and the second conjunct is the one that fails here.  The row IS empty,
 // so a check of the row alone would admit this payload.
 //

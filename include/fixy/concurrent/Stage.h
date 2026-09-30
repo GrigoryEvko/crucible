@@ -53,14 +53,14 @@ namespace fixy::concurrent {
 template <auto FnPtr, class Ctx>
 concept StageInputRowAdmitted =
     PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::decide::row_subset<payload_effect_row_t<pipeline_stage_input_value_t<FnPtr>>,
-                                        typename Ctx::row_type>();
+    && ::foundation::decide::row_subset(^^payload_effect_row_t<pipeline_stage_input_value_t<FnPtr>>,
+                                        ^^typename Ctx::row_type);
 
 template <auto FnPtr, class Ctx>
 concept StageOutputRowAdmitted =
     PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::decide::row_subset<payload_effect_row_t<pipeline_stage_output_value_t<FnPtr>>,
-                                        typename Ctx::row_type>();
+    && ::foundation::decide::row_subset(^^payload_effect_row_t<pipeline_stage_output_value_t<FnPtr>>,
+                                        ^^typename Ctx::row_type);
 
 template <auto FnPtr, class Ctx>
 concept CtxFitsStage = PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
@@ -114,8 +114,8 @@ consteval bool variadic_stage_rows_admitted() noexcept {
     if constexpr (!VariadicPipelineStage<FnPtr> || !::foundation::effects::IsExecCtx<Ctx>) {
         return false;
     } else {
-        return ::foundation::decide::row_subset<typename variadic_stage_row_union<FnPtr>::type,
-                                                typename Ctx::row_type>();
+        return ::foundation::decide::row_subset(^^typename variadic_stage_row_union<FnPtr>::type,
+                                                ^^typename Ctx::row_type);
     }
 }
 
@@ -189,7 +189,7 @@ using swmr_stage_row_union_t = ::foundation::effects::row_union_t<
 template <auto FnPtr, class Ctx>
 concept CtxFitsSwmrPublishStage =
     SwmrPublishStageBody<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
-    && ::foundation::decide::row_subset<swmr_stage_row_union_t<FnPtr>, typename Ctx::row_type>();
+    && ::foundation::decide::row_subset(^^swmr_stage_row_union_t<FnPtr>, ^^typename Ctx::row_type);
 
 template <auto FnPtr, class Ctx>
     requires CtxFitsStage<FnPtr, Ctx>

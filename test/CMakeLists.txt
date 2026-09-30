@@ -811,7 +811,7 @@ set_tests_properties(session_oracle_check session_oracle_self_test
     PROPERTIES LABELS "ci_guard;session_oracle")
 
 # The row-membership discipline.  utils/scripts/check-row-contains-discipline.py
-# reads each row_contains_v whose first argument is the row of a context
+# reads each call of row_contains whose first argument is the row of a context
 # from the parse tree, with any qualifier, and requires the named lift
 # (CtxOwnsCapability, CtxOwnsAnyOf or CtxOwnsAllOf) instead.  Exit 3 when
 # the kit is absent reports a skip.
@@ -1292,7 +1292,7 @@ crucible_neg_compile_test(neg_philox_box_muller_polynomial_det_wrong_tier_consum
 # context the gate admits with a decision written by hand, which the
 # parameter type refuses.
 crucible_neg_compile_test(neg_workload_decision_dispatch_hot_fg
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsWorkloadDecisionDispatch<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_workload_decision_dispatch_raw_decision
     "no matching function for call to .dispatch_workload_decision\\(const fixy::BgDrainCtx&, const fixy::concurrent::ParallelismDecision&,"
@@ -1589,16 +1589,16 @@ crucible_neg_compile_test(neg_deadline_watchdog_mint_hot_fg_ctx
 # background compile context.  Each fixture pins the gate, the row that
 # the gate demands and the row of the context that it rejects.
 crucible_neg_compile_test(neg_sense_hub_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sense_hub_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_sense_hub_v2_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sense_hub_v2_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 
 # The six other BPF hubs (LockContention, PmuSample, SchedSwitch,
@@ -1606,46 +1606,46 @@ crucible_neg_compile_test(neg_sense_hub_v2_mint_hot_fg_ctx
 # SenseHub mint.  WorkloadProfiler borrows a hub that is already loaded,
 # and its gate is a different one.
 crucible_neg_compile_test(neg_lock_contention_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_lock_contention_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_pmu_sample_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_pmu_sample_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_sched_switch_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sched_switch_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_sched_tp_btf_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sched_tp_btf_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_syscall_latency_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_syscall_latency_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_syscall_tp_btf_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_syscall_tp_btf_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 crucible_neg_compile_test(neg_workload_profiler_mint_bg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsWorkloadProfilerMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_workload_profiler_mint_hot_fg_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Init>. R2 = foundation::effects::Row<>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsWorkloadProfilerMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg,")
 # The two constructors are private: a profiler comes only from its
 # mint, and a ProfiledDecision only from a profiler.  The decision is
@@ -1673,56 +1673,56 @@ crucible_neg_compile_test(neg_workload_profiler_decision_bit_cast
 # a pair for the family as a whole would leave the other gates with no
 # witness.
 crucible_neg_compile_test(neg_lock_contention_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_lock_contention_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsLockContentionMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_pmu_sample_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_pmu_sample_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsPmuSampleMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sched_switch_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_sched_switch_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedSwitchMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sched_tp_btf_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_sched_tp_btf_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSchedTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sense_hub_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_sense_hub_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_syscall_latency_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_syscall_latency_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallLatencyMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_syscall_tp_btf_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_syscall_tp_btf_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSyscallTpBtfMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_sense_hub_v2_mint_cold_init_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_sense_hub_v2_mint_bg_compile_ctx
-    "is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
+    "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>.. evaluated to .false."
     "required for the satisfaction of .CtxFitsSenseHubV2Mint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 
 # 3 strengthening fixtures: SECOND mismatch class per mint = non-IsExecCtx.
-# CtxFitsXMint = IsExecCtx<Ctx> ∧ row_contains_v<…, Init>; fixtures
+# CtxFitsXMint = IsExecCtx<Ctx> ∧ CtxOwnsCapability<Ctx, Init>; fixtures
 # above exercise the row half (different Init-less ExecCtx shapes);
 # fixtures below exercise the IsExecCtx half via raw struct rejection.
 crucible_neg_compile_test(neg_hardening_mint_not_exec_ctx
@@ -4001,19 +4001,19 @@ crucible_neg_compile_test(neg_costmodel_utilization_negative
 crucible_neg_compile_test(neg_costmodel_wave_efficiency_io_row
   "no matching function for call to .wave_efficiency\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
-  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
+  "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_costmodel_sm_occupancy_alloc_row
   "no matching function for call to .sm_occupancy\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
-  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
+  "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Alloc>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_costmodel_evaluate_cost_bg_row
   "no matching function for call to .evaluate_cost\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
-  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
+  "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Bg>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_costmodel_fusion_benefit_block_row
   "no matching function for call to .compute_fusion_benefit\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Block> >&"
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
-  "is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
+  "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
 
 # BackgroundThread::RegionReadyCallback::Fn is a noexcept function
 # pointer, because the callback runs on the publish stage in the middle

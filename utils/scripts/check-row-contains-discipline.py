@@ -3,34 +3,34 @@
 
 A check that a context owns an effect is written with a named lift:
 
-    row_contains_v<row_type_of_t<Ctx>, Effect::X>        ->  CtxOwnsCapability<Ctx, Effect::X>
-    row_contains_v<..., X> || row_contains_v<..., Y>     ->  CtxOwnsAnyOf<Ctx, Effect::X, Effect::Y>
-    row_contains_v<..., X> && row_contains_v<..., Y>     ->  CtxOwnsAllOf<Ctx, Effect::X, Effect::Y>
+    row_contains(^^row_type_of_t<Ctx>, Effect::X)          ->  CtxOwnsCapability<Ctx, Effect::X>
+    row_contains(^^..., X) || row_contains(^^..., Y)       ->  CtxOwnsAnyOf<Ctx, Effect::X, Effect::Y>
+    row_contains(^^..., X) && row_contains(^^..., Y)       ->  CtxOwnsAllOf<Ctx, Effect::X, Effect::Y>
 
 `grep CtxOwns` then finds each capability admission, and a rename of the
 row accessor reaches every check through the lift.
 
 WHAT COUNTS AS A CONTEXT CAPABILITY CHECK
     The guard reads the parse tree of the pinned tree-sitter kit.  A check is
-    a template-id named row_contains_v, bare or with any qualifier, so an
-    alias of the effects namespace and a using-directive do not hide it,
-    whose first template argument reads the row of a context: a template-id
-    named row_type_of_t, or a qualified name whose last part is row_type,
-    such as `typename Ctx::row_type`.  A membership check on a concrete row,
-    such as a required row that a static_assert names, is not a context
+    a call of row_contains, bare or with any qualifier, so an alias of the
+    effects namespace and a using-directive do not hide it, whose first
+    argument reads the row of a context: a template-id named row_type_of_t,
+    or a qualified name whose last part is row_type, such as
+    `^^typename Ctx::row_type`.  A membership check on a concrete row, such
+    as a required row that a static_assert names, is not a context
     capability check.
 
     A macro body is parsed on its own (tsast.macro_bodies), with every
     fragment joined, so a block comment inside the body does not split the
     check.  A body that the parser cannot read, such as one that pastes
-    tokens with ##, is read from its preprocessing tokens: row_contains_v,
-    `<`, and a first argument that holds row_type_of_t or `:: row_type`.
+    tokens with ##, is read from its preprocessing tokens: row_contains,
+    `(`, and a first argument that holds row_type_of_t or `:: row_type`.
 
 SCOPE
-    Every C++ file of include/ and src/ that spells row_contains_v.  The
-    test removes each line splice first, so a splice cannot hide the name,
-    and a name is compared as the lexer spells it, after the splices.  These
-    files are out of scope:
+    Every C++ file of include/ and src/ that spells row_contains.  The test
+    removes each line splice first, so a splice cannot hide the name, and a
+    name is compared as the lexer spells it, after the splices.  These files
+    are out of scope:
       * The definitions of the lifts, in include/foundation/effects/
       * The files of tsast.UNPARSEABLE, which are not C++.
 
@@ -61,7 +61,7 @@ import tsast  # noqa: E402
 ROOTS = ("include", "src")
 EXCLUDED_PREFIXES = ("include/foundation/effects/",)
 EXCLUDED_COMPONENTS = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
-NAME = "row_contains_v"
+NAME = "row_contains"
 ROW_OF = "row_type_of_t"
 ROW_MEMBER = "row_type"
 ROW_NODES = ("template_type", "template_function", "qualified_identifier")
@@ -70,10 +70,11 @@ LINE_SPLICE = re.compile(rb"\\\r?\n")
 STATEMENTS = ("declaration", "field_declaration", "alias_declaration", "requires_clause", "condition_clause",
               "expression_statement", "return_statement", "static_assert_declaration", "template_declaration",
               "concept_definition")
+OPENERS = {"(": 1, "[": 1, "{": 1, "<": 1, ")": -1, "]": -1, "}": -1, ">": -1, ">>": -2}
 
 
 def scope_files(root: Path) -> list[Path]:
-    """Return the C++ files in scope that spell row_contains_v, sorted.
+    """Return the C++ files in scope that spell row_contains, sorted.
 
     The test reads the bytes with each line splice removed, so a name that
     a splice cuts in two still counts.
@@ -93,23 +94,31 @@ def scope_files(root: Path) -> list[Path]:
     return sorted(found)
 
 
-def first_argument(node: tsast.Node) -> tsast.Node | None:
-    """Return the first template argument of a template-id, or None."""
-    arguments = node.child_by_field("arguments")
+def called_name(call: tsast.Node) -> str | None:
+    """Return the last part of the name that a call names, or None for a call of any other shape."""
+    function = call.child_by_field("function")
+    while function is not None and function.type == "qualified_identifier":
+        function = function.child_by_field("name")
+    return tsast.spelled(function) if function is not None and function.type == "identifier" else None
+
+
+def first_argument(call: tsast.Node) -> tsast.Node | None:
+    """Return the first argument of a call, or None."""
+    arguments = call.child_by_field("arguments")
     if arguments is None:
         return None
-    inner = [child for child in arguments.children if child.type != "comment"]
+    inner = tsast.non_comment_children(arguments)
     return inner[0] if inner else None
 
 
 def reads_context_row(argument: tsast.Node) -> bool:
-    """Report whether a template argument reads the row of a context.
+    """Report whether an argument reads the row of a context.
 
     The argument reads it through a template-id named row_type_of_t, or
     through a qualified name whose last part is row_type, such as
-    `typename Ctx::row_type`.  A comment inside the argument is its own node,
-    so it cannot supply either name.  A name is compared as the lexer spells
-    it, after the line splices of phase 2.
+    `^^typename Ctx::row_type`.  A comment inside the argument is its own
+    node, so it cannot supply either name.  A name is compared as the lexer
+    spells it, after the line splices of phase 2.
     """
     for node in [argument, *argument.descendants(*ROW_NODES)]:
         named = node.child_by_field("name")
@@ -132,31 +141,29 @@ def statement_rows(node: tsast.Node) -> range:
 
 
 def context_checks(nodes: Iterator[tsast.Node]) -> Iterator[tsast.Node]:
-    """Yield each template-id among the nodes that is a context capability check through row_contains_v."""
+    """Yield each call among the nodes that is a context capability check through row_contains."""
     for node in nodes:
-        named = node.child_by_field("name")
         argument = first_argument(node)
-        if named is not None and tsast.spelled(named) == NAME and argument is not None \
-                and reads_context_row(argument):
+        if called_name(node) == NAME and argument is not None and reads_context_row(argument):
             yield node
 
 
 def token_checks(tokens: list[tsast.Token]) -> Iterator[int]:
     """Yield the row of each context capability check in a token list: the tokens of a body that did not parse.
 
-    The first argument runs from the `<` after row_contains_v to the first
-    `,` or the closing `>` at the same depth.  It reads a context row when it
+    The first argument runs from the `(` after row_contains to the first `,`
+    or the closing `)` at the same depth.  It reads a context row when it
     holds row_type_of_t, or `::` followed by row_type.
     """
     for index, token in enumerate(tokens):
-        if token.text != NAME or index + 1 >= len(tokens) or tokens[index + 1].text != "<":
+        if token.text != NAME or index + 1 >= len(tokens) or tokens[index + 1].text != "(":
             continue
         depth, cursor, first = 0, index + 2, []
         while cursor < len(tokens):
             text = tokens[cursor].text
-            if text in (",", ">", ">>") and depth == 0:
+            if text in (",", ")") and depth == 0:
                 break
-            depth += {"<": 1, ">": -1, ">>": -2}.get(text, 0)
+            depth += OPENERS.get(text, 0)
             first.append(tokens[cursor])
             cursor += 1
         texts = [piece.text for piece in first]
@@ -169,7 +176,7 @@ def unlifted_checks(tree: tsast.Tree, marked: set[int]) -> Iterator[int]:
 
     Complexity: linear in the number of nodes of the file.
     """
-    for node in context_checks(tree.find("template_type", "template_function")):
+    for node in context_checks(tree.find("call_expression")):
         if not any(row in marked for row in statement_rows(node)):
             yield node.start[0]
 
@@ -178,15 +185,17 @@ def unlifted_macro_checks(body: tsast.MacroBody, marked: set[int]) -> Iterator[i
     """Yield the file row of each context capability check in one macro body that does not use a lift.
 
     A marker on any row of the definition, to the row of the last token of
-    its body, exempts the checks of its body.
+    its body, exempts the checks of its body.  A parsed body is read from
+    its parse tree and from its tokens too, because a line splice inside a
+    call can leave the parse with no call node, and the tokens still hold
+    the call.
     """
     if any(row in marked for row in range(body.define.start[0], body.last_row + 1)):
         return
     if body.is_parsed:
-        for node in context_checks(body.root.descendants("template_type", "template_function")):
+        for node in context_checks(body.root.descendants("call_expression")):
             yield body.origin(node)[0]
-    else:
-        yield from token_checks(tsast.pp_tokens(body.text, body.first_row))
+    yield from token_checks(tsast.pp_tokens(body.text, body.first_row))
 
 
 def scan(root: Path) -> list[str]:
@@ -212,7 +221,7 @@ def scan(root: Path) -> list[str]:
         rel = Path(body.define.tree.path).relative_to(root).as_posix()
         rows[rel].update(unlifted_macro_checks(body, marks[rel]))
     for rel in sorted(rows):
-        violations.extend(f"{rel}:{row + 1}: a context capability check through row_contains_v"
+        violations.extend(f"{rel}:{row + 1}: a context capability check through row_contains"
                           for row in sorted(rows[rel]))
     return violations
 
@@ -257,36 +266,36 @@ def self_test() -> int:
         ("#pragma once", None, ""),
         ("namespace crucible::planted {", None, ""),
         ("namespace eff = ::foundation::effects;", None, ""),
-        ("template <class Ctx> requires effects::row_contains_v<effects::row_type_of_t<Ctx>, X> void a();", True,
+        ("template <class Ctx> requires (effects::row_contains(^^effects::row_type_of_t<Ctx>, X)) void a();", True,
          "a qualified check"),
-        ("template <class Ctx> requires eff::row_contains_v<eff::row_type_of_t<Ctx>, X> void b();", True,
+        ("template <class Ctx> requires (eff::row_contains(^^eff::row_type_of_t<Ctx>, X)) void b();", True,
          "a check through an alias of the namespace"),
-        ("template <class Ctx> requires row_contains_v<row_type_of_t<Ctx>, X> void c();", True, "a bare check"),
-        ("template <class Ctx> requires row_contains_v<typename Ctx::row_type, X> void d();", True,
+        ("template <class Ctx> requires (row_contains(^^row_type_of_t<Ctx>, X)) void c();", True, "a bare check"),
+        ("template <class Ctx> requires (row_contains(^^typename Ctx::row_type, X)) void d();", True,
          "a check of a member row"),
         ("template <class Ctx>", None, ""),
-        ("    requires effects::row_contains_v<", True, "a check that spans lines"),
-        ("        effects::row_type_of_t<Ctx>, X>", None, ""),
+        ("    requires (effects::row_contains(", True, "a check that spans lines"),
+        ("        ^^effects::row_type_of_t<Ctx>, X))", None, ""),
         ("void e();", None, ""),
-        ("template <class Ctx> requires row_contains_v<row_type_of_t<Ctx>, X> void f();  // ROW-CONTAINS-OK: fixture",
+        ("template <class Ctx> requires (row_contains(^^row_type_of_t<Ctx>, X)) void f();  // ROW-CONTAINS-OK: fix",
          False, "a marked check"),
-        ("template <class Ctx> requires row_contains_v<row_type_of_t<Ctx>, X> void g();  // ROW-CONTAINS-OK:", True,
+        ("template <class Ctx> requires (row_contains(^^row_type_of_t<Ctx>, X)) void g();  // ROW-CONTAINS-OK:", True,
          "a marker with no reason"),
-        ("static_assert(effects::row_contains_v<required_row, X>);", False, "a check of a concrete row"),
+        ("static_assert(effects::row_contains(^^required_row, X));", False, "a check of a concrete row"),
         ("template <class Ctx> requires CtxOwnsCapability<Ctx, X> void h();", False, "a named lift"),
-        ("// requires effects::row_contains_v<effects::row_type_of_t<Ctx>, X>", False, "a comment"),
-        ('inline const char* text = "row_contains_v<row_type_of_t<Ctx>, X>";', False, "a string literal"),
-        ("#define OWNS(C, E) effects::row_contains_v<effects::row_type_of_t<C>, E>", True, "a macro body"),
-        ("#define HAS(R, E) effects::row_contains_v<R, E>", False, "a macro over a concrete row"),
-        ("#define SPLIT_OWNS(C, E) row_contains_v< /* ctx */ \\", True, "a macro body split by a block comment"),
-        ("    row_type_of_t<C>, E>", None, ""),
-        ("#define PASTE_ROW(R, E) row_contains_v<R##_row, E>", False, "a pasting macro over a concrete row"),
-        ("#define PASTE_OWNS(C, E) row_contains_v<row_type_of_t<C##_ctx>, E>", True,
+        ("// requires effects::row_contains(^^effects::row_type_of_t<Ctx>, X)", False, "a comment"),
+        ('inline const char* text = "row_contains(^^row_type_of_t<Ctx>, X)";', False, "a string literal"),
+        ("#define OWNS(C, E) effects::row_contains(^^effects::row_type_of_t<C>, E)", True, "a macro body"),
+        ("#define HAS(R, E) effects::row_contains(^^R, E)", False, "a macro over a concrete row"),
+        ("#define SPLIT_OWNS(C, E) row_contains( /* ctx */ \\", True, "a macro body split by a block comment"),
+        ("    ^^row_type_of_t<C>, E)", None, ""),
+        ("#define PASTE_ROW(R, E) row_contains(^^R##_row, E)", False, "a pasting macro over a concrete row"),
+        ("#define PASTE_OWNS(C, E) row_contains(^^row_type_of_t<C##_ctx>, E)", True,
          "a macro body that pastes tokens, read from its tokens, with a marked definition on the next row"),
-        ("#define MARKED_OWNS(C, E) row_contains_v<row_type_of_t<C>, E>  // ROW-CONTAINS-OK: fixture", False,
+        ("#define MARKED_OWNS(C, E) row_contains(^^row_type_of_t<C>, E)  // ROW-CONTAINS-OK: fixture", False,
          "a marked macro"),
-        ("template <class Ctx> requires row_contains_\\", True, "a check whose name a line splice cuts in two"),
-        ("v<row_type_of_t<Ctx>, X> void spliced();", None, ""),
+        ("template <class Ctx> requires (row_cont\\", True, "a check whose name a line splice cuts in two"),
+        ("ains(^^row_type_of_t<Ctx>, X)) void spliced();", None, ""),
         ("}", None, ""),
     ]
     with tempfile.TemporaryDirectory() as work:
@@ -294,8 +303,8 @@ def self_test() -> int:
         for rel, text in (
             ("include/crucible/planted/Row.h", "\n".join(line for line, _, _ in planted) + "\n"),
             ("include/foundation/effects/Lifts.h",
-             "template <class C, class E> concept O = row_contains_v<row_type_of_t<C>, E>;\n"),
-            ("src/planted/Row.cpp", "template <class C> requires row_contains_v<row_type_of_t<C>, X> void s();\n"),
+             "template <class C, class E> concept O = row_contains(^^row_type_of_t<C>, E);\n"),
+            ("src/planted/Row.cpp", "template <class C> requires (row_contains(^^row_type_of_t<C>, X)) void s();\n"),
         ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text, encoding="utf-8")
@@ -328,7 +337,7 @@ def self_test() -> int:
         (root / "include/crucible/planted/Row.h").unlink()
         (root / "src/planted/Row.cpp").unlink()
         expect("a clean tree passes", captured(root)[0] == 0, True)
-        (root / "include/crucible/planted/Broken.h").write_text("void f() { g(1) { } }  // row_contains_v\n",
+        (root / "include/crucible/planted/Broken.h").write_text("void f() { g(1) { } }  // row_contains\n",
                                                                  encoding="utf-8")
         expect("a file the parser cannot read fails the check", captured(root)[0] == 1)
     if failures:

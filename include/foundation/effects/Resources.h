@@ -71,27 +71,19 @@ enum class ResourceKind : std::uint8_t {
 
 inline constexpr std::size_t resource_kind_count = std::meta::enumerators_of(^^ResourceKind).size();
 
-namespace detail {
-
-// True when an enumerator of the catalog holds K.  A value cast from an
-// integer that no enumerator holds is a well-formed ResourceKind, and
-// the gate refuses it.
-template <ResourceKind K>
-[[nodiscard]] consteval bool is_resource_kind_atom_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (K == [:en:]) return true;
+// True when an enumerator of the catalog holds kind.  A value cast from
+// an integer that no enumerator holds is a well-formed ResourceKind, and
+// the gate refuses it.  The answer is a function at namespace scope that
+// is not a template, so no translation unit can specialize it.
+[[nodiscard]] consteval bool is_resource_kind_atom(ResourceKind kind) {
+    for (const std::meta::info enumerator : std::meta::enumerators_of(^^ResourceKind)) {
+        if (std::meta::extract<ResourceKind>(std::meta::constant_of(enumerator)) == kind) return true;
     }
-#pragma GCC diagnostic pop
     return false;
 }
 
-}  // namespace detail
-
 template <ResourceKind K>
-concept IsResourceKind = detail::is_resource_kind_atom_<K>();
+concept IsResourceKind = is_resource_kind_atom(K);
 
 namespace resource {
 

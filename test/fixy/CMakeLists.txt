@@ -2459,11 +2459,11 @@ fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
 fixy_neg_compile_test(neg_sess_mint_session_receives_region_outside_ctx
   "no matching function for call to .mint_session<receives_region_fixture::Proto>"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>."
-  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<.*>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
+  "is_subrow\\(.*\\(\\^\\^ typename fixy::session::detail::permission_rows_of_set<.*>::type, \\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_mint_session_delegated_region_outside_ctx
   "no matching function for call to .mint_session<delegated_region_fixture::Proto>"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::DelegatedSession<fixy::session::End, delegated_region_fixture::Wire, "
-  "is_subrow_v<typename fixy::session::detail::permission_rows_of_set<.*>::type, typename Ctx::row_type> .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
+  "is_subrow\\(.*\\(\\^\\^ typename fixy::session::detail::permission_rows_of_set<.*>::type, \\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
 fixy_neg_compile_test(neg_sess_mint_session_delivered_region_without_row
   "static assertion failed: fixy::session::diagnostic \\[Delivered_Region_Without_Row\\]: a receive of the protocol delivers a permission of the region region_without_row_fixture::BareRegion, and its tag declares no permission row"
   "In instantiation of .struct fixy::session::detail::union_of_permission_rows<foundation::effects::Row<>, region_without_row_fixture::BareRegion>.")
@@ -3790,7 +3790,7 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_ctx_starts_no_threads
 fixy_neg_compile_test(neg_pipeline_mint_row_union_not_admitted
   "constraints not satisfied"
   "required for the satisfaction of .CtxFitsPipeline<"
-  "row_subset<.*Ctx::row_type>.*evaluated to")
+  "row_subset\\(.*\\(\\^\\^ typename fixy::concurrent::detail::pipeline_row_union_impl<.*>::type, \\^\\^ typename Ctx::row_type\\).*evaluated to")
 
 # The two disciplines the pipeline carries, as for the stage above.
 fixy_neg_compile_test(neg_pipeline_copied
@@ -4194,7 +4194,7 @@ fixy_test(test_os_io)
 # a power of two, and one ring flag named two times.
 fixy_neg_compile_test(neg_os_io_uring_ring_ctx_lacks_block
   "no matching function for call to .mint_io_uring_ring<\\{anonymous\\}::Engine, \\{anonymous\\}::Sq8>\\(const \\{anonymous\\}::IoOnlyCtx&\\)."
-  "the expression .is_subrow_v<R1, R2> \\[with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO>\\]. evaluated to .false.")
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO>\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_os_io_uring_ring_sq_not_pow2
   "no matching function for call to .mint_io_uring_ring<\\{anonymous\\}::Engine, \\{anonymous\\}::Sq7>\\(const \\{anonymous\\}::IoBlockCtx&\\)."
   "the expression .sq_entries_is_pow2_v<Atoms ...> \\[with Atoms = \\{fixy::atom::io::engine<fixy::io::engine::IoUring>, fixy::atom::io::sq_entries<7>\\}\\]. evaluated to .false.")
@@ -4251,7 +4251,7 @@ fixy_neg_compile_test(neg_os_mmap_shared_permission
 fixy_neg_compile_test(neg_os_mmap_ctx_lacks_io
   "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::BlockOnlyCtx&"
   "required for the satisfaction of .CtxFitsMmapMint<Ctx, Atoms ...>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block> >"
-  "the expression .is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_mmap_non_ctx
   "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(const foundation::effects::Test&"
@@ -4264,7 +4264,7 @@ fixy_neg_compile_test(neg_os_mmap_anon_pool_share
 fixy_neg_compile_test(neg_os_mmap_anon_ctx_lacks_io
   "no matching function for call to .mint_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(\\{anonymous\\}::BlockOnlyCtx&"
   "required for the satisfaction of .CtxFitsAnonMmapMint<Ctx, Atoms ...>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block> >"
-  "the expression .is_subrow_v<R1, R2> .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_mmap_anon_non_ctx
   "no matching function for call to .mint_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(const foundation::effects::Test&"
@@ -5026,7 +5026,7 @@ fixy_neg_compile_test(neg_shared_read_without_a_share
 fixy_neg_compile_test(neg_shared_read_ctx_refuses_the_row
   "required for the satisfaction of .CtxAdmitsPermission<Tag, Ctx>."
   "required for the satisfaction of .CtxFitsSharedRead<T, Tag, Brand, Ctx>."
-  "is_subrow_v<.*permission_row_lookup<Tag>::type, typename Ctx::row_type>")
+  "is_subrow\\(.*\\(\\^\\^ typename foundation::permissions::detail::permission_row_lookup<Tag>::type, \\^\\^ typename Ctx::row_type\\)")
 
 # The share a read stands on has to outlive it.
 fixy_neg_compile_test(neg_shared_read_from_a_temporary_share

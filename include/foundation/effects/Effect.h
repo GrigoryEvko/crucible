@@ -117,24 +117,18 @@ static_assert(detail::every_effect_underlying_distinct_(),
 // The gate reads the catalog through reflection so that a new atom
 // satisfies it without an edit here.  A hand-written disjunction would
 // reject every future atom until someone remembered to extend it.
-namespace detail {
-
-template <Effect E>
-[[nodiscard]] consteval bool is_effect_atom_() noexcept {
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        if (E == [:en:]) return true;
+// The answer is a function at namespace scope that is not a template, so
+// no translation unit can specialize it to admit a value that the catalog
+// does not name.
+[[nodiscard]] consteval bool is_effect_atom(Effect effect) {
+    for (const std::meta::info enumerator : std::meta::enumerators_of(^^Effect)) {
+        if (std::meta::extract<Effect>(std::meta::constant_of(enumerator)) == effect) return true;
     }
-#pragma GCC diagnostic pop
     return false;
 }
 
-}  // namespace detail
-
 template <Effect E>
-concept IsEffect = detail::is_effect_atom_<E>();
+concept IsEffect = is_effect_atom(E);
 
 // An atom is observable when ghost-code elision may not silently drop
 // a binding tagged with it.  Alloc, IO, Block and Bg reach the outside
@@ -320,21 +314,20 @@ namespace detail {
 
 inline constexpr std::meta::info context_roster[] = {^^Bg, ^^Init, ^^Test};
 
-template <class T>
-[[nodiscard]] consteval bool is_rostered_context_() noexcept {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto entry : context_roster) {
-        if constexpr (std::is_same_v<T, typename[:entry:]>) return true;
+}  // namespace detail
+
+// True when type names one of the rostered contexts, with no qualifier.
+// The answer is a function at namespace scope that is not a template, so
+// no translation unit can specialize it.
+[[nodiscard]] consteval bool is_rostered_context(std::meta::info type) {
+    for (const std::meta::info entry : detail::context_roster) {
+        if (std::meta::dealias(type) == entry) return true;
     }
-#pragma GCC diagnostic pop
     return false;
 }
 
-}  // namespace detail
-
 template <class T>
-concept IsContext = detail::is_rostered_context_<T>();
+concept IsContext = is_rostered_context(^^T);
 
 // One passkey mints one context.  The binding is the context's own
 // key_type, a member each context declares below, so handing the wrong

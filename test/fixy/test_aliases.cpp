@@ -99,8 +99,8 @@ void instantiate_every_alias_outside_an_assert() noexcept {
     [[maybe_unused]] constexpr bool div_is_div = fixy::IsDiv<fixy::DivRow>;
     [[maybe_unused]] constexpr bool st_is_st = fixy::IsST<fixy::STRow>;
     [[maybe_unused]] constexpr bool all_is_all = fixy::IsAll<fixy::AllRow>;
-    [[maybe_unused]] constexpr auto pure_size = ::foundation::effects::row_size_v<fixy::PureRow>;
-    [[maybe_unused]] constexpr auto all_size = ::foundation::effects::row_size_v<fixy::AllRow>;
+    [[maybe_unused]] constexpr auto pure_size = ::foundation::effects::row_size(^^fixy::PureRow);
+    [[maybe_unused]] constexpr auto all_size = ::foundation::effects::row_size(^^fixy::AllRow);
 
     static_assert(fixy::IsPure<fixy::PureRow> && fixy::IsAll<fixy::AllRow>);
 

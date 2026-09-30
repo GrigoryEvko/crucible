@@ -85,12 +85,12 @@ static void test_t01_required_row_pinned() {
                   "breaks every existing call site, so change the contract "
                   "first.");
 
-    static_assert(eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::IO>);
-    static_assert(eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Block>);
-    static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Alloc>);
-    static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Bg>);
+    static_assert(eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::IO));
+    static_assert(eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Block));
+    static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Alloc));
+    static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Bg));
 
-    static_assert(eff::row_size_v<Cipher::record_event_required_row> == 2);
+    static_assert(eff::row_size(^^Cipher::record_event_required_row) == 2);
 
     std::printf("  T01 required_row_pinned:                 PASSED\n");
 }
@@ -362,13 +362,13 @@ static void test_t11_log_holds_monotonic_readings(const char* base_dir) {
 
 static void test_required_row_header_fence() {
     static_assert(std::is_same_v<Cipher::record_event_required_row, eff::Row<eff::Effect::IO, eff::Effect::Block>>);
-    static_assert(eff::row_size_v<Cipher::record_event_required_row> == 2u);
-    static_assert(eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::IO>);
-    static_assert(eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Block>);
-    static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Alloc>);
-    static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Bg>);
-    static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Init>);
-    static_assert(!eff::row_contains_v<Cipher::record_event_required_row, eff::Effect::Test>);
+    static_assert(eff::row_size(^^Cipher::record_event_required_row) == 2u);
+    static_assert(eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::IO));
+    static_assert(eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Block));
+    static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Alloc));
+    static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Bg));
+    static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Init));
+    static_assert(!eff::row_contains(^^Cipher::record_event_required_row, eff::Effect::Test));
 
     std::printf("  required_row_header_fence:              PASSED\n");
 }
@@ -417,7 +417,7 @@ static void test_multi_event_durability(const char* base_dir) {
 
 namespace external_visibility {
 using ExtRow = ::crucible::Cipher::record_event_required_row;
-static_assert(eff::row_size_v<ExtRow> == 2u);
+static_assert(eff::row_size(^^ExtRow) == 2u);
 static_assert(eff::Subrow<ExtRow, eff::Row<eff::Effect::IO, eff::Effect::Block>>);
 static_assert(eff::Subrow<ExtRow, eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Bg>>);
 static_assert(!eff::Subrow<ExtRow, eff::Row<>>);
@@ -426,7 +426,7 @@ static_assert(eff::CtxAdmits<::fixy::TestRunnerCtx, ExtRow>);
 
 static void test_external_visibility() {
     using ExtRow = external_visibility::ExtRow;
-    static_assert(eff::row_size_v<ExtRow> == 2u);
+    static_assert(eff::row_size(^^ExtRow) == 2u);
     std::printf("  external_visibility:                    PASSED\n");
 }
 

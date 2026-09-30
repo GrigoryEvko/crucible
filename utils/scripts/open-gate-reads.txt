@@ -138,7 +138,6 @@ foundation::algebra::lattices::SeqPrefixLattice::grade_of | 1
 foundation::algebra::lattices::monotone_bounds | 1
 foundation::algebra::verify_bounded_lattice_axioms_at | 1
 foundation::algebra::verify_lattice_axioms_at | 1
-foundation::decide::row_subset | 5
 foundation::diag::has_insights_v | 1
 foundation::diag::has_substantive_insights_v | 1
 foundation::diag::is_diagnostic_class_v | 5
@@ -146,21 +145,12 @@ foundation::effects::Computation | 1
 foundation::effects::detail::bare_tag_info_ | 1
 foundation::effects::detail::extract_admits_payload_v | 8
 foundation::effects::detail::is_axis_tag_ | 1
-foundation::effects::detail::is_branded_foreground_ | 1
 foundation::effects::detail::is_computation | 1
-foundation::effects::detail::is_effect_atom_ | 1
-foundation::effects::detail::is_resource_kind_atom_ | 1
-foundation::effects::detail::is_rostered_context_ | 1
 foundation::effects::detail::names_each_axis_once_ | 1
 foundation::effects::detail::pack_sums_fit_ | 1
 foundation::effects::detail::rows_sum_fit_ | 1
 foundation::effects::detail::sums_fit_pairwise_ | 1
 foundation::effects::extract_bare | 1
-foundation::effects::is_concurrent_row_v | 1
-foundation::effects::is_effect_row_v | 1
-foundation::effects::is_subrow_v | 3
-foundation::effects::row_contains_v | 5
-foundation::effects::row_size_v | 6
 foundation::lifetime::start_as_array | 1
 foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
 foundation::permissions::detail::can_each_body_take_its_child_v | 7

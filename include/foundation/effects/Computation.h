@@ -345,9 +345,11 @@ public:
     using base::modality_name;
     using base::value_type_name;
 
-    static constexpr std::size_t row_size = row_size_v<R>;
+    static constexpr std::size_t row_size = ::foundation::effects::row_size(^^R);
 
-    [[nodiscard]] static consteval std::size_t effect_count_in_row() noexcept { return row_size_v<R>; }
+    [[nodiscard]] static consteval std::size_t effect_count_in_row() noexcept {
+        return ::foundation::effects::row_size(^^R);
+    }
 
     // A default value makes no claim only at the empty row.  At an engaged
     // row it would claim effects that nothing exercised, which the
@@ -355,7 +357,7 @@ public:
     // from being defined for a payload that has no default constructor.
     constexpr Computation() noexcept(std::is_nothrow_default_constructible_v<T>
                                      && std::is_nothrow_move_constructible_v<T>)
-        requires(row_size_v<R> == 0) && std::is_default_constructible_v<T>
+        requires(::foundation::effects::row_size(^^R) == 0) && std::is_default_constructible_v<T>
         : base{::foundation::algebra::grade_key<Computation>{}, T{}, grade_type{}} {}
     constexpr Computation(const Computation&) = default;
     constexpr Computation(Computation&&) = default;
@@ -378,7 +380,7 @@ public:
     // every authorization point.  It derives its authority from the
     // empty-row constraint alone, so it takes no context.
     [[nodiscard]] static constexpr Computation mint_computation(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires(row_size_v<R> == 0)
+        requires(::foundation::effects::row_size(^^R) == 0)
     {
         return Computation{std::move(x)};
     }
@@ -386,13 +388,13 @@ public:
     // The payload constraint is what stops an engaged Computation from
     // being carried out through a pure-looking wrapper.
     [[nodiscard]] constexpr const T& extract() const& noexcept
-        requires(row_size_v<R> == 0) && detail::extract_admits_payload_v<T>
+        requires(::foundation::effects::row_size(^^R) == 0) && detail::extract_admits_payload_v<T>
     {
         return base::peek();
     }
 
     [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires(row_size_v<R> == 0) && detail::extract_admits_payload_v<T>
+        requires(::foundation::effects::row_size(^^R) == 0) && detail::extract_admits_payload_v<T>
     {
         return std::move(*this).base::consume();
     }
@@ -426,13 +428,16 @@ public:
     // resolution, where the caller is told to use the rvalue form.
     // The rvalue overload needs no such gate: it moves.
     template <typename R2>
-        requires Subrow<R, R2> && (row_size_v<R> > 0 || row_size_v<R2> == 0) && std::is_copy_constructible_v<T>
+        requires Subrow<R, R2>
+              && (::foundation::effects::row_size(^^R) > 0 || ::foundation::effects::row_size(^^R2) == 0)
+              && std::is_copy_constructible_v<T>
     [[nodiscard]] constexpr Computation<R2, T> weaken() const& noexcept(std::is_nothrow_copy_constructible_v<T>) {
         return Computation<R2, T>{base::peek()};
     }
 
     template <typename R2>
-        requires Subrow<R, R2> && (row_size_v<R> > 0 || row_size_v<R2> == 0)
+        requires Subrow<R, R2>
+              && (::foundation::effects::row_size(^^R) > 0 || ::foundation::effects::row_size(^^R2) == 0)
     [[nodiscard]] constexpr Computation<R2, T> weaken() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Computation<R2, T>{std::move(*this).base::consume()};
     }
@@ -540,7 +545,7 @@ struct is_computation<Computation<R, T>> : std::true_type {};
 // capability does.  The payload is a template argument, so the walk
 // reads it, which is what keeps a stack of carriers from laundering one.
 template <typename R, typename U>
-struct conveys_authority_listed<Computation<R, U>> : std::bool_constant<(row_size_v<R> != 0)> {};
+struct conveys_authority_listed<Computation<R, U>> : std::bool_constant<(::foundation::effects::row_size(^^R) != 0)> {};
 
 // A Computation declares no opt-in member, so its answer is the row
 // alone.  This keeps the walk from a member lookup that instantiates
@@ -808,11 +813,11 @@ static_assert(!HasUnwitnessedLift<Computation<Row<>, int>>);
 // The asymmetry between the two contexts below is the closure: one
 // carries Bg in its row and can witness a Bg claim, the other cannot.
 // If either pin reds, the gate has lost its discriminating power.
-static_assert(row_contains_v<typename detail::ctx_witnesses::BgWitness::row_type, Effect::Bg>,
+static_assert(row_contains(^^typename detail::ctx_witnesses::BgWitness::row_type, Effect::Bg),
               "The background drain context must carry Effect::Bg in its row.  It is the context that "
               "witnesses a Bg claim.");
 
-static_assert(!row_contains_v<typename detail::ctx_witnesses::FgWitness::row_type, Effect::Bg>,
+static_assert(!row_contains(^^typename detail::ctx_witnesses::FgWitness::row_type, Effect::Bg),
               "The hot foreground context must not carry Effect::Bg in its row.  Foreground code must "
               "not be able to witness a Bg claim.");
 

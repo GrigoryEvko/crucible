@@ -955,11 +955,11 @@ def self_test() -> int:
         "src/planted/orphan_class.cpp": (
             "template <> class foundation::effects::ExecCtx<Bg, OddRow> { public: ExecCtx() = default; };\n"
             "template <> class foundation::algebra::Graded<0, Lattice, Payload> { public: Payload anything; };\n"
-            "template <> constexpr bool foundation::effects::is_subrow<Wide, Narrow>::value = true;\n"
+            "template <> constexpr bool foundation::effects::is_planted_gate<Wide, Narrow>::value = true;\n"
             "namespace foundation::effects { template <class T> extern const bool is_exec_ctx_v; }\n"
             "template <> const bool foundation::effects::is_exec_ctx_v<Forward> = true;\n"
             "template <> struct foundation::contracts::armed_cell<42> {};\n"
-            "using FakeGate = foundation::effects::is_subrow<Wide, Narrow>;\n"
+            "using FakeGate = foundation::effects::is_planted_gate<Wide, Narrow>;\n"
             "template <> const bool FakeGate::value = true;\n"),
         "src/planted/orphan_macro.cpp": (
             "#define FORGE_CTX(T) template <> inline constexpr bool foundation::effects::is_exec_ctx_v<T> = true\n"
@@ -976,7 +976,7 @@ def self_test() -> int:
         "test/fuzz/planted_forge.cpp": (
             "namespace fixy { template <> struct retag_policy<X, Y> {}; }\n"
             "template <> inline constexpr bool foundation::effects::is_exec_ctx_v<Fake> = true;\n"
-            "using FakeGate = foundation::effects::is_subrow<Wide, Narrow>;\n"
+            "using FakeGate = foundation::effects::is_planted_gate<Wide, Narrow>;\n"
             "template <> const bool FakeGate::value = true;\n"),
     }
     expected = {
@@ -1002,7 +1002,7 @@ def self_test() -> int:
         ("foundation::effects::is_exec_ctx_v", "src/planted/orphan_variable.cpp", 7),
         ("foundation::effects::ExecCtx", "src/planted/orphan_class.cpp", 1),
         ("foundation::algebra::Graded", "src/planted/orphan_class.cpp", 2),
-        ("foundation::effects::is_subrow", "src/planted/orphan_class.cpp", 3),
+        ("foundation::effects::is_planted_gate", "src/planted/orphan_class.cpp", 3),
         ("foundation::effects::is_exec_ctx_v", "src/planted/orphan_class.cpp", 5),
         ("foundation::contracts::armed_cell", "src/planted/orphan_class.cpp", 6),
         ("FakeGate (a class template specialization named through an alias)", "src/planted/orphan_class.cpp", 8),
@@ -1020,7 +1020,7 @@ def self_test() -> int:
             "template <class T> inline constexpr bool is_exec_ctx_v = false;\n"
             "template <> inline constexpr bool is_exec_ctx_v<int> = true;\n"
             "template <class Cap, class Row> class ExecCtx {};\n"
-            "template <class R1, class R2> struct is_subrow { static constexpr bool value = false; };\n"
+            "template <class R1, class R2> struct is_planted_gate { static constexpr bool value = false; };\n"
             "}\n"),
         "include/foundation/diag/RowHash.h": (
             "namespace foundation::effects { template <class Cap, class Row> class ExecCtx; }\n"),
@@ -1030,7 +1030,7 @@ def self_test() -> int:
         "include/fixy/Cells.h": "template <> struct foundation::contracts::armed_cell<7> {};\n",
         "include/foundation/permissions/Permission.h": "namespace foundation::permissions::permission_rows {\n}\n",
         "test/planted_orphan.cpp": ("template <> inline constexpr bool foundation::effects::is_exec_ctx_v<Fake> = true;\n"
-                                    "using FakeGate = foundation::effects::is_subrow<Wide, Narrow>;\n"
+                                    "using FakeGate = foundation::effects::is_planted_gate<Wide, Narrow>;\n"
                                     "template <> const bool FakeGate::value = true;\n"),
     }
     points = {

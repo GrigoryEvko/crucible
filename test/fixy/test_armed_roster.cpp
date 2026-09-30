@@ -209,12 +209,6 @@ struct foundation::contracts::armed_cell<fe::detail::extract_admits_payload> {
 };
 
 template <>
-struct foundation::contracts::armed_cell<fe::is_effect_row> {
-    using accepts = witnesses<Row<>, Row<Effect::IO, Effect::Bg>>;
-    using refuses = witnesses<int, at::with<Effect::IO>>;
-};
-
-template <>
 struct foundation::contracts::armed_cell<fe::is_cap_type> {
     using accepts = witnesses<fe::Bg, fe::Init, fe::Test>;
     using refuses = witnesses<int, Row<>, w::BgCtx>;
@@ -236,16 +230,6 @@ template <>
 struct foundation::contracts::armed_cell<::foundation::diag::is_diagnostic> {
     using accepts = witnesses<::foundation::diag::Diagnostic<::foundation::diag::EffectRowMismatch, int>>;
     using refuses = witnesses<int, ::foundation::diag::EffectRowMismatch>;
-};
-
-// A row is a subrow when each of its effects is in the other row.  A
-// shape that is not a row is in no subrow relation.
-template <>
-struct foundation::contracts::armed_instances<^^fe::is_subrow> {
-    using accepts =
-        witnesses<fe::is_subrow<Row<>, Row<Effect::IO>>, fe::is_subrow<Row<Effect::IO>, Row<Effect::Bg, Effect::IO>>>;
-    using refuses = witnesses<fe::is_subrow<Row<Effect::IO>, Row<>>,
-                              fe::is_subrow<Row<Effect::IO, Effect::Bg>, Row<Effect::IO>>, fe::is_subrow<int, Row<>>>;
 };
 
 // A context admits a tuple of permission tags when its row holds the row

@@ -12,6 +12,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <meta>
 #include <span>
 #include <type_traits>
 
@@ -117,10 +118,10 @@ constexpr bool tier_replaces(TierTag candidate, TierTag required) noexcept {
 // True iff every effect atom of row Payload also appears in row Ctx, so a
 // value declared over Payload lifts into a slot declared over Ctx. The relation
 // is set membership, not structural equality: atom order does not matter.
-template <typename Payload, typename Ctx>
-[[nodiscard, gnu::const]]
-constexpr bool row_subset() noexcept {
-    return ::foundation::effects::is_subrow_v<Payload, Ctx>;
+// The answer is a function at namespace scope that is not a template, so
+// no translation unit can specialize it for a pair of rows.
+[[nodiscard]] consteval bool row_subset(std::meta::info payload, std::meta::info ctx) {
+    return ::foundation::effects::is_subrow(payload, ctx);
 }
 
 // Material implication. False only for a true antecedent with a false

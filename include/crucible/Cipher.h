@@ -460,20 +460,15 @@ public:
         "Cipher::record_event_required_row must be exactly Row<IO, Block>.  "
         "Adding or removing an atom changes the fence every call site "
         "depends on.");
-    static_assert(::foundation::effects::row_size_v<record_event_required_row> == 2u,
+    static_assert(::foundation::effects::row_size(^^record_event_required_row) == 2u,
                   "record_event_required_row must be exactly 2 atoms (IO + Block).");
-    static_assert(
-        ::foundation::effects::
-            row_contains_v<  // ROW-CONTAINS-OK: concrete-row static_assert (record_event_required_row), not a Ctx capability check
-                record_event_required_row, ::foundation::effects::Effect::IO>,
-        "record_event_required_row must contain Effect::IO.  It is the "
-        "fence's reason for existence: HEAD and log file writes.");
-    static_assert(
-        ::foundation::effects::
-            row_contains_v<  // ROW-CONTAINS-OK: concrete-row static_assert (record_event_required_row), not a Ctx capability check
-                record_event_required_row, ::foundation::effects::Effect::Block>,
-        "record_event_required_row must contain Effect::Block.  File writes "
-        "block on the kernel.");
+    static_assert(::foundation::effects::row_contains(^^record_event_required_row, ::foundation::effects::Effect::IO),
+                  "record_event_required_row must contain Effect::IO.  It is the "
+                  "fence's reason for existence: HEAD and log file writes.");
+    static_assert(::foundation::effects::row_contains(^^record_event_required_row,
+                                                      ::foundation::effects::Effect::Block),
+                  "record_event_required_row must contain Effect::Block.  File writes "
+                  "block on the kernel.");
     static_assert(std::is_same_v<persist_session_events_required_row, record_event_required_row>,
                   "Session-event persistence uses the same IO+Block row fence "
                   "as Cipher::record_event.");
