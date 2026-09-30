@@ -4541,7 +4541,7 @@ crucible_neg_compile_test(neg_cipher_open_ctx_without_block
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >")
 crucible_neg_compile_test(neg_cipher_open_non_context
   "no matching function for call to .crucible::Cipher::open.foundation::effects::Test, "
-  "the expression .is_exec_ctx_v<T> .with T = foundation::effects::Test.. evaluated to .false.")
+  "the expression .is_exec_ctx\\(.* .with T = foundation::effects::Test.. evaluated to .false.")
 crucible_neg_compile_test(neg_cipher_persist_session_events_fg_ctx
   "no matching function for call to .crucible::Cipher::persist_session_events."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")

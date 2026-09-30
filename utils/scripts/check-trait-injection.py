@@ -39,13 +39,14 @@ FAMILY C: FAIL-CLOSED NAMESPACES
     namespace.  A namespace alias adds no member and does not count.
 
 FAMILY D: THE ORPHAN RULE OF THE TWO LAYERS
-    A concept of the two layers reads a class template or a variable template:
-    IsExecCtx reads is_exec_ctx_v, Subrow reads is_subrow, IsGraded reads
-    Graded.  An explicit or partial specialization of one of them, from any
-    file, changes what the concept admits.  `template <> inline constexpr
-    bool is_exec_ctx_v<Fake> = true;` makes a plain struct a context that
-    owns every effect.  An explicit specialization of one member, such as
-    `template <> constexpr bool X<Fake>::value = true;`, is the same forgery.
+    A concept of the two layers can read a class template: IsGraded reads
+    Graded.  An explicit or partial specialization of such a template, from
+    any file, changes what the concept admits.  `template <> class
+    foundation::algebra::Graded<M, L, T> { public: T value; };` replaces the
+    whole wrapper with an open aggregate.  An explicit specialization of one
+    member, such as `template <> constexpr bool X<Fake>::value = true;`, is
+    the same forgery.  The language admits each of them, and this guard sees
+    only the files that git tracks.
     A layer template is a class template or a variable template that a
     header of the two layers defines.  A specialization of a layer template
     is admitted in three places only:
@@ -70,6 +71,34 @@ FAMILY D: THE ORPHAN RULE OF THE TWO LAYERS
     everywhere outside test/.  An explicit specialization of a function
     template is the function-specialization rule of
     utils/scripts/check-proof-routes.py, which refuses each one in the tree.
+
+FAMILY E: A GATE READS NO OPEN TEMPLATE
+    Family D sees only the files that git tracks, and the language admits a
+    specialization in any file.  So a gate of the two layers must not read a
+    template that a translation unit can specialize.  A gate is a concept
+    definition or a requires clause in a header of the two layers.  An open
+    read in a gate is a name that resolves to a layer template of one of
+    three kinds:
+      * a variable template: `template <> inline constexpr bool X_v<Fake> =
+        true;` changes the answer
+      * a function template: an explicit specialization of a function
+        template is legal, so `f<Fake>()` has the same door
+      * a member of a class template specialization, such as
+        `trait<T>::value` or `Holder<T>::answer()`.
+    Only two shapes are closed, and no translation unit can specialize
+    either: a concept, and a function at namespace scope that is not a
+    template, such as a consteval function that takes reflections.  Every
+    other shape is open.  An explicit specialization of a class template
+    replaces the whole class.  A member function and a member template of
+    a class template each accept an explicit member specialization.  An
+    explicit specialization also skips access checks, so a private key
+    type does not close a template.
+    The ledger utils/scripts/open-gate-reads.txt counts the open reads of
+    each template, and each count only shrinks.  A template that the ledger
+    does not name, or a count above its row, fails.  A count below its row,
+    or a row that no gate reads, is stale and fails until --refresh writes
+    the new count.  A row whose second field is `open` stays open on purpose,
+    and its third field gives the reason.
 
 WHAT READS THE SITES
     The parse tree of the pinned tree-sitter kit (utils/scripts/tsast.py), over each
@@ -111,11 +140,13 @@ AUTHORING SETS ARE PER RELATION
 
 Usage
     check-trait-injection.py              scan the tree
+    check-trait-injection.py --refresh    write the counts of the gate ledger
     check-trait-injection.py --self-test  plant each forgery and each exemption
 
-Exit 0 clean, 1 on a forged specialization or a file the parser cannot read,
-2 on a stale extension point, a bad invocation or a failed self-test, 3 when
-the kit is not installed.
+Exit 0 clean, 1 on a forged specialization, an open read above its ledger
+row or a file the parser cannot read, 2 on a stale extension point, a stale
+ledger row, a bad invocation or a failed self-test, 3 when the kit is not
+installed.
 """
 
 from __future__ import annotations
@@ -202,6 +233,25 @@ EXTENSION_POINTS: dict[QualifiedName, tuple[tuple[str, ...], str]] = {
     ("foundation", "permissions", "has_split_authoring_witness"): (("*",), SPLIT_REASON),
     ("foundation", "permissions", "has_split_pack_authoring_witness"): (("*",), SPLIT_REASON),
 }
+
+# Family E.  The ledger of open reads, the gate nodes, and the name nodes that
+# a gate can read a template through.
+GATE_LEDGER = "utils/scripts/open-gate-reads.txt"
+GATE_NODES = ("concept_definition", "requires_clause")
+GATE_NAMES = ("template_function", "template_type", "qualified_identifier", "identifier")
+OPEN_MARK = "open"
+LEDGER_HEADER = (
+    "# utils/scripts/open-gate-reads.txt — the open reads of each template that a gate of\n"
+    "# include/foundation or include/fixy reads, read by utils/scripts/check-trait-injection.py\n"
+    "# (Family E).  A gate is a concept definition or a requires clause.  An open read\n"
+    "# names a variable template, a function template, or a class template for its value\n"
+    "# or its type: a translation unit can specialize each, and the specialization changes\n"
+    "# the answer of the gate.\n"
+    "#\n"
+    "#   <template> | <count>             reads that wait for a fix.  The count only shrinks.\n"
+    "#   <template> | open | <reason>     a template that stays open on purpose.\n"
+    "#\n"
+    "# Run check-trait-injection.py --refresh in the commit that removes a read.\n")
 
 
 @dataclass(frozen=True)
@@ -339,6 +389,9 @@ class Orphans:
         declared: The files of the two layers that declare each primary, by qualified name
         by_last_name: The layer templates of each last name
         used_extensions: The extension points that admitted a site
+        kinds: The kind of each layer template, `class`, `variable` or
+            `function`, for the gate walk of Family E
+        function_last_name: The layer function templates of each last name
     """
 
     extension_points: dict[QualifiedName, tuple[tuple[str, ...], str]] = field(default_factory=dict)
@@ -347,6 +400,8 @@ class Orphans:
     declared: dict[QualifiedName, set[str]] = field(default_factory=dict)
     by_last_name: dict[str, set[QualifiedName]] = field(default_factory=dict)
     used_extensions: set[QualifiedName] = field(default_factory=set)
+    kinds: dict[QualifiedName, str] = field(default_factory=dict)
+    function_last_name: dict[str, set[QualifiedName]] = field(default_factory=dict)
 
     def learn(self, tree: tsast.Tree, rel: str) -> None:
         """Add the declarations of one header, and the layer templates it declares."""
@@ -359,6 +414,10 @@ class Orphans:
                 if primary.is_definition:
                     self.defined.setdefault(qualified, set()).add(rel)
                 self.by_last_name.setdefault(primary.name, set()).add(qualified)
+                self.kinds[qualified] = primary.kind
+            for qualified in function_templates(tree):
+                self.kinds.setdefault(qualified, "function")
+                self.function_last_name.setdefault(qualified[-1], set()).add(qualified)
 
     def owners(self, qualified: QualifiedName) -> set[str]:
         """Return the files that own one layer template."""
@@ -499,8 +558,205 @@ def closing_angle(tokens: list[tsast.Token], opener: int) -> int:
     return len(tokens)
 
 
+def function_templates(tree: tsast.Tree) -> list[QualifiedName]:
+    """Return the qualified name of each primary function template of a tree."""
+    return [name for name, _template in tsast.template_functions(tree.root)]
+
+
+@dataclass(frozen=True)
+class GateRead:
+    """One gate that reads one open template.
+
+    template is the qualified name of the template, joined with `::`.
+    """
+
+    template: str
+    path: str
+    line: int
+
+
+def innermost_qualified(node: tsast.Node) -> tsast.Node:
+    """Return the last qualified name in the name chain of a qualified name, the one that holds the last part."""
+    while node.type == "qualified_identifier":
+        inner = node.child_by_field("name")
+        if inner is None or inner.type != "qualified_identifier":
+            break
+        node = inner
+    return node
+
+
+def read_target(node: tsast.Node) -> tuple[tsast.Node, bool] | None:
+    """Return the name node that a gate reads through one name node, and whether it reads a class member.
+
+    A name inside a qualified name counts at the outermost one.  An identifier
+    counts only as the callee of a call, which a function template can be.
+    A qualified name whose qualifier ends in a template-id reads a member of
+    that class template: an explicit specialization of the class replaces
+    the member, and a member function or a member template also accepts a
+    member specialization.  Returns None for a node that reads nothing.
+    """
+    parent = node.parent
+    if parent is not None and parent.type == "qualified_identifier" and node.field in ("name", "scope"):
+        return None
+    if node.type == "identifier":
+        return (node, False) if parent is not None and parent.type == "call_expression" and \
+            node.field == "function" else None
+    if node.type == "qualified_identifier":
+        last = innermost_qualified(node)
+        scope = last.child_by_field("scope")
+        if scope is not None and scope.type == "template_type":
+            return scope, True
+    return node, False
+
+
+def gate_templates(gate: tsast.Node, orphans: Orphans, aliases: list[tsast.NamespaceAlias],
+                   usings: list[tsast.UsingDecl], extra: frozenset[QualifiedName]) -> set[QualifiedName]:
+    """Return the open layer templates that one gate reads.
+
+    A name that lookup resolves counts for the templates that it names.  A
+    qualified name whose head lookup does not know counts for each layer
+    template of its last name, so an unknown case is refused.  A class
+    template counts only when the gate reads its value or its type.
+
+    Complexity: linear in the nodes of the gate, times the scopes of each
+    name for its lookup.
+    """
+    found: set[QualifiedName] = set()
+    for node in [gate, *gate.descendants(*GATE_NAMES)]:
+        if node.type not in GATE_NAMES:
+            continue
+        target = read_target(node)
+        if target is None:
+            continue
+        name, member_read = target
+        if name.type == "template_type" and not member_read:
+            continue
+        path = tsast.qualified_parts(name) if name.type == "qualified_identifier" else tsast.qualified_path(name)
+        if path is None or not path[1]:
+            continue
+        is_global, parts = path
+        candidates = orphans.by_last_name.get(parts[-1], set()) | orphans.function_last_name.get(parts[-1], set())
+        if not candidates:
+            continue
+        site = tsast.lookup_site_of_parts(gate, is_global, parts, aliases, usings)
+        resolved, known = orphans.index.resolve(site, extra)
+        hits = [q for q in resolved if q in orphans.kinds] if resolved else ([] if known else sorted(candidates))
+        found |= {q for q in hits if orphans.kinds[q] != "class" or member_read}
+    return found
+
+
+def gate_reads(trees: list[tuple[str, tsast.Tree]], orphans: Orphans) -> list[GateRead]:
+    """Return each open read of each gate of the two layers, in path and line order.
+
+    Complexity: linear in the size of the headers of the two layers.
+    """
+    functions = frozenset(qualified for qualified, kind in orphans.kinds.items() if kind == "function")
+    reads: list[GateRead] = []
+    for rel, tree in trees:
+        if not rel.startswith(LAYER_ROOTS):
+            continue
+        aliases, usings = tsast.namespace_aliases(tree), tsast.using_names(tree)
+        local = tsast.NameIndex()
+        local.add(tree)
+        extra = frozenset(local.names) | functions
+        for gate in tree.find(*GATE_NODES):
+            reads += [GateRead("::".join(template), rel, gate.line)
+                      for template in sorted(gate_templates(gate, orphans, aliases, usings, extra))]
+    return reads
+
+
+@dataclass(frozen=True)
+class LedgerRow:
+    """One row of the gate ledger: a count that waits for a fix, or an open template with its reason."""
+
+    template: str
+    count: int | None
+    reason: str
+
+
+def read_ledger(path: Path) -> tuple[dict[str, LedgerRow], list[str]]:
+    """Return the rows of the gate ledger by template, and each malformed row.
+
+    A missing ledger has no rows.
+    """
+    rows: dict[str, LedgerRow] = {}
+    errors: list[str] = []
+    if not path.is_file():
+        return rows, errors
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not raw.strip() or raw.startswith("#"):
+            continue
+        fields = [part.strip() for part in raw.split("|", 2)]
+        if len(fields) == 2 and fields[1].isdigit() and int(fields[1]) > 0:
+            row = LedgerRow(fields[0], int(fields[1]), "")
+        elif len(fields) == 3 and fields[1] == OPEN_MARK and fields[2]:
+            row = LedgerRow(fields[0], None, fields[2])
+        else:
+            errors.append(f"trait_guard[gate ledger]: {path.name}:{number} is neither `<template> | <count>` nor "
+                          f"`<template> | open | <reason>`")
+            continue
+        if row.template in rows:
+            errors.append(f"trait_guard[gate ledger]: {path.name}:{number} names {row.template} a second time")
+            continue
+        rows[row.template] = row
+    return rows, errors
+
+
+def check_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> tuple[list[str], list[str]]:
+    """Compare the open reads with the ledger, and return the reads above it and the stale rows.
+
+    A template that the ledger does not name, and a count above its row, are
+    above it.  A count below its row and a row that no gate reads are stale.
+    """
+    counts: dict[str, int] = {}
+    where: dict[str, list[GateRead]] = {}
+    for read in reads:
+        counts[read.template] = counts.get(read.template, 0) + 1
+        where.setdefault(read.template, []).append(read)
+    above: list[str] = []
+    for template in sorted(counts):
+        row = rows.get(template)
+        if row is not None and (row.count is None or counts[template] <= row.count):
+            continue
+        allowed = "no row" if row is None else f"a row of {row.count}"
+        sites = ", ".join(f"{read.path}:{read.line}" for read in where[template])
+        above.append(f"trait_guard[gate]: {counts[template]} gate(s) read the open template {template}, and the "
+                     f"ledger holds {allowed}: {sites}")
+    stale: list[str] = []
+    for template, row in sorted(rows.items()):
+        count = counts.get(template, 0)
+        if count == 0:
+            stale.append(f"trait_guard[gate ledger]: no gate reads {template}.  Delete its row, or run --refresh")
+        elif row.count is not None and count < row.count:
+            stale.append(f"trait_guard[gate ledger]: {count} gate(s) read {template}, and its row says {row.count}.  "
+                         f"Run --refresh in this commit")
+    return above, stale
+
+
+def refreshed_ledger(reads: list[GateRead], rows: dict[str, LedgerRow]) -> str:
+    """Return the ledger text with the count of each row lowered to the current reads.
+
+    A row that no gate reads goes.  An open row keeps its reason.  A template
+    with no row, or a count above its row, is not written: a refresh only
+    shrinks the ledger.
+    """
+    counts: dict[str, int] = {}
+    for read in reads:
+        counts[read.template] = counts.get(read.template, 0) + 1
+    lines = [LEDGER_HEADER]
+    for template in sorted(counts):
+        row = rows.get(template)
+        if row is None:
+            continue
+        if row.count is None:
+            lines.append(f"{template} | {OPEN_MARK} | {row.reason}\n")
+        else:
+            lines.append(f"{template} | {min(row.count, counts[template])}\n")
+    return "".join(lines)
+
+
 def scan(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...], str]] | None = None,
-         ) -> tuple[list[Site], list[str], list[str]]:
+         gates: list[GateRead] | None = None) -> tuple[list[Site], list[str], list[str]]:
     """Return each site outside its authoring set, each file the parser cannot read, and each stale extension point.
 
     Complexity: linear in the size of the tracked C++ files, and in the
@@ -509,6 +765,8 @@ def scan(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...]
     Args:
         root: The root of the tree
         extension_points: The extension points, or None for EXTENSION_POINTS
+        gates: A list that receives the open reads of each gate of Family E,
+            or None to skip the gate walk
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -541,6 +799,8 @@ def scan(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...]
             sites += orphans.token_sites(body, rel)
     for rel, tree in trees:
         sites += orphans.file_sites(tree, rel)
+    if gates is not None:
+        gates += gate_reads(trees, orphans)
     forged = sorted({site for site in sites if site.label not in BY_LABEL or not authored(BY_LABEL[site.label], site.path)},
                     key=lambda site: (site.path, site.line, site.label))
     stale = [f"trait_guard: the extension point {'::'.join(point)} admits no specialization in the tree.  Remove "
@@ -551,7 +811,10 @@ def scan(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...]
 
 def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...], str]] | None = None) -> int:
     """Scan, print each finding, and return the exit code."""
-    forged, unread, stale = scan(root, extension_points)
+    gates: list[GateRead] = []
+    forged, unread, stale = scan(root, extension_points, gates)
+    rows, ledger_errors = read_ledger(root / GATE_LEDGER)
+    above, stale_rows = check_ledger(gates, rows)
     for site in forged:
         relation = BY_LABEL.get(site.label)
         print(f"trait_guard[{site.label}]: forbidden specialization at {site.path}:{site.line}", file=sys.stderr)
@@ -562,7 +825,7 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
             print(f"trait_guard[{site.label}]: a template of include/foundation or include/fixy is specialized "
                   f"only in the file that defines it, in test/ outside {FUZZ_TREE}, or at an extension point of "
                   f"EXTENSION_POINTS", file=sys.stderr)
-    for line in unread + stale:
+    for line in unread + stale + ledger_errors + above + stale_rows:
         print(line, file=sys.stderr)
     if forged or unread:
         print("trait_guard: each scanned relation is specialized only inside its own authoring set.  C++ has no "
@@ -570,11 +833,41 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
               "or an authority that was never granted.  If the new place is legitimate, widen that relation's row, "
               "or add an extension point, in utils/scripts/check-trait-injection.py so the widening is reviewed.",
               file=sys.stderr)
+    if above:
+        print(f"trait_guard[gate]: a gate reads a template that any translation unit can specialize, and the "
+              f"specialization changes what the gate admits.  Read a concept, or a consteval function that is not "
+              f"a template and takes reflections.  A template that stays open on purpose needs a row with its "
+              f"reason in {GATE_LEDGER}.", file=sys.stderr)
+    if forged or unread or above or ledger_errors:
         return 1
-    if stale:
+    if stale or stale_rows:
         return 2
     print(f"check-trait-injection: clean — {len(RELATIONS)} relations and the orphan rule of include/foundation "
-          f"and include/fixy, each specialization inside its authoring set.", file=sys.stderr)
+          f"and include/fixy, each specialization inside its authoring set, and {len(gates)} open gate reads, "
+          f"each on its ledger row.", file=sys.stderr)
+    return 0
+
+
+def refresh(root: Path) -> int:
+    """Lower the count of each gate ledger row to the reads of the tree, and drop each row that no gate reads.
+
+    A refresh only shrinks the ledger.  A read that is above the ledger is
+    printed, and the ledger is not written.
+    """
+    gates: list[GateRead] = []
+    scan(root, None, gates)
+    path = root / GATE_LEDGER
+    rows, errors = read_ledger(path)
+    above, _stale = check_ledger(gates, rows)
+    for line in errors + above:
+        print(line, file=sys.stderr)
+    if errors or above:
+        print("check-trait-injection --refresh: the ledger only shrinks, so it is not written", file=sys.stderr)
+        return 1
+    text = refreshed_ledger(gates, rows)
+    if not path.is_file() or path.read_text(encoding="utf-8") != text:
+        path.write_text(text, encoding="utf-8")
+        print(f"check-trait-injection --refresh: wrote {GATE_LEDGER}", file=sys.stderr)
     return 0
 
 
@@ -844,11 +1137,88 @@ def self_test() -> int:
         expect("the same file is refused once git tracks it",
                code == 1 and "grun/change/src/orphan_variable.cpp:1" in report, True)
 
+    self_test_gates(expect, captured)
+
     if failures:
         print(f"check-trait-injection --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2
     print(f"check-trait-injection --self-test: every case passes, {negatives} of them negative controls.")
     return 0
+
+
+def self_test_gates(expect: Callable[..., None], captured: Callable[[Callable[[], int]], tuple[int, str]]) -> None:
+    """Plant gates over each kind of open template and over closed ones, and examine the verdicts of Family E."""
+    header = (
+        "namespace foundation::gates {\n"
+        "template <class T> inline constexpr bool open_v = false;\n"
+        "template <class T> constexpr bool open_f() { return false; }\n"
+        "template <class T> struct open_trait { static constexpr bool value = false; };\n"
+        "template <class T> struct Wrapper { static constexpr bool value = true; };\n"
+        "template <class T> concept Closed = sizeof(T) > 0;\n"
+        "consteval bool closed_answer(int) { return true; }\n"
+        "template <class T> concept ReadsVariable = open_v<T>;\n"
+        "template <class T> concept ReadsFunction = open_f<T>();\n"
+        "template <class T> concept ReadsTrait = open_trait<T>::value;\n"
+        "template <class T> concept ReadsClosed = Closed<T> && closed_answer(0) && Closed<Wrapper<T>>;\n"
+        "template <class T> requires open_v<T*> void gated(T);\n"
+        "template <class T> struct Holder { static consteval bool answer() { return false; } };\n"
+        "template <class T> concept ReadsMember = Holder<T>::answer();\n"
+        "}\n")
+    exact = ("foundation::gates::Holder | 1\n"
+             "foundation::gates::open_f | 1\n"
+             "foundation::gates::open_trait | 1\n"
+             "foundation::gates::open_v | 2\n")
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        (root / "include" / "foundation").mkdir(parents=True)
+        (root / "include" / "foundation" / "gates.h").write_text(header, encoding="utf-8")
+        ledger = root / GATE_LEDGER
+        ledger.parent.mkdir(parents=True)
+
+        gates: list[GateRead] = []
+        scan(root, {}, gates)
+        found = sorted((read.template, read.line) for read in gates)
+        expect("a gate over a variable template, a function template, a class trait and a member function of a "
+               "class template is an open read, and a requires clause is a gate",
+               found == [("foundation::gates::Holder", 14), ("foundation::gates::open_f", 9),
+                         ("foundation::gates::open_trait", 10), ("foundation::gates::open_v", 8),
+                         ("foundation::gates::open_v", 12)], True)
+        expect("a concept, a function that is not a template and a class template named as a type are closed",
+               not any(read.line == 11 for read in gates), True)
+
+        code, report = captured(lambda: run(root, {}))
+        expect("a variable-template read with no ledger row fails",
+               code == 1 and "read the open template foundation::gates::open_v" in report, True)
+        expect("a function-template read with no ledger row fails",
+               "read the open template foundation::gates::open_f" in report, True)
+
+        ledger.write_text(exact, encoding="utf-8")
+        expect("a ledger that holds each count exits 0", captured(lambda: run(root, {}))[0] == 0)
+
+        ledger.write_text(exact.replace("open_v | 2", "open_v | 1"), encoding="utf-8")
+        expect("a count above its row fails", captured(lambda: run(root, {}))[0] == 1, True)
+
+        ledger.write_text(exact.replace("open_v | 2", "open_v | 3"), encoding="utf-8")
+        code, report = captured(lambda: run(root, {}))
+        expect("a count below its row is stale", code == 2 and "Run --refresh" in report, True)
+        expect("a refresh lowers the row",
+               captured(lambda: refresh(root))[0] == 0 and "open_v | 2\n" in ledger.read_text(encoding="utf-8"))
+
+        ledger.write_text(exact + "foundation::gates::gone_v | 4\n", encoding="utf-8")
+        code, report = captured(lambda: run(root, {}))
+        expect("a row that no gate reads is stale", code == 2 and "no gate reads foundation::gates::gone_v" in report,
+               True)
+
+        ledger.write_text(exact.replace("open_f | 1", "open_f | open | a planted extension point"), encoding="utf-8")
+        expect("an open row admits its template with its reason", captured(lambda: run(root, {}))[0] == 0)
+        ledger.write_text(exact.replace("open_f | 1", "open_f | open | "), encoding="utf-8")
+        expect("an open row with no reason is malformed", captured(lambda: run(root, {}))[0] == 1, True)
+
+        ledger.write_text(exact.replace("foundation::gates::open_trait | 1\n", ""), encoding="utf-8")
+        before = ledger.read_text(encoding="utf-8")
+        code, _report = captured(lambda: refresh(root))
+        expect("a refresh does not write a template with no row", code == 1 and
+               ledger.read_text(encoding="utf-8") == before, True)
 
 
 def main(argv: list[str]) -> int:
@@ -858,10 +1228,12 @@ def main(argv: list[str]) -> int:
             return run(tsast.REPO_ROOT)
         if argv == ["--self-test"]:
             return self_test()
+        if argv == ["--refresh"]:
+            return refresh(tsast.REPO_ROOT)
     except tsast.KitMissing as exc:
         print(f"check-trait-injection: {exc}", file=sys.stderr)
         return 3
-    print("usage: check-trait-injection.py [--self-test]", file=sys.stderr)
+    print("usage: check-trait-injection.py [--self-test | --refresh]", file=sys.stderr)
     return 2
 
 

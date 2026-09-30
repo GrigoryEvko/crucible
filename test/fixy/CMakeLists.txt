@@ -247,11 +247,12 @@ fixy_neg_compile_test(neg_simd_register_bits_of_a_scalable_isa
 fixy_neg_compile_test(neg_simd_register_bits_of_portable
   "call to consteval function .fixy::atom::simd::register_bits\\(fixy::atom::simd::SimdIsa::Portable\\). is not a constant expression"
   "call to non-.constexpr. function .void fixy::atom::detail::simd_isa_has_no_fixed_register_width\\(\\).")
-# The register width is a function, so a specialization that gives one
-# ISA another width has no template to name.
+# The register width is a function that is not a template, so an explicit
+# specialization of it that gives each ISA another width matches no
+# template.
 fixy_neg_compile_test(neg_simd_register_bits_specialized_trait
-  "expected initializer before .<. token"
-  "neg_simd_register_bits_specialized_trait\\.cpp:14:[0-9]+: error:")
+  "template-id .register_bits<>. for .consteval uint16_t fixy::atom::simd::register_bits\\(SimdIsa\\). does not match any template declaration"
+  "neg_simd_register_bits_specialized_trait\\.cpp:12:[0-9]+: error:")
 
 # ── The fn gate ───────────────────────────────────────────────────────
 # The resolver, the silent strict defaults and what the gate refuses.
@@ -688,21 +689,22 @@ fixy_neg_compile_test(neg_rule_w003_hot_session_payload_unstated_wait
 fixy_neg_compile_test(neg_security_grade_without_class
   "the Security grade of this binding has no entry in fixy::atom::detail::security_class_answer_of_"
   "security_class_or_refuse_.+unlisted_level")
-# The relation and its readings are one function and two concepts, so a
-# specialization that gives a class of the caller an answer has no
-# template to name.
+# The relation and its reading are functions that are not templates, so an
+# explicit specialization of either matches no template.  The two
+# readings of a class are concepts, and the template-id of a concept
+# declares nothing.
 fixy_neg_compile_test(neg_security_class_specialized_trait
-  ".security_class_of_. is not a class template"
-  "neg_security_class_specialized_trait\\.cpp:20:[0-9]+: error:")
+  "template-id .security_class_answer_of_<>. for .consteval fixy::atom::detail::security_class_answer fixy::atom::detail::security_class_answer_of_\\(std::meta::info\\). does not match any template declaration"
+  "neg_security_class_specialized_trait\\.cpp:13:[0-9]+: error:")
 fixy_neg_compile_test(neg_security_class_value_specialized_trait
-  "expected initializer before .<. token"
+  "template-id .security_class_of<>. for .consteval fixy::atom::SecurityClass fixy::atom::security_class_of\\(std::meta::info\\). does not match any template declaration"
   "neg_security_class_value_specialized_trait\\.cpp:12:[0-9]+: error:")
 fixy_neg_compile_test(neg_security_carrier_specialized_trait
-  "expected initializer before .<. token"
-  "neg_security_carrier_specialized_trait\\.cpp:10:[0-9]+: error:")
+  "template-id .IsClassifiedCarrier<fixy::atom::as_secret>. used as a declarator"
+  "neg_security_carrier_specialized_trait\\.cpp:10:[0-9]+: error: too many template headers for .fixy::atom::IsClassifiedCarrier. \\(should be 0\\)")
 fixy_neg_compile_test(neg_security_constant_time_specialized_trait
-  "expected initializer before .<. token"
-  "neg_security_constant_time_specialized_trait\\.cpp:10:[0-9]+: error:")
+  "template-id .IsConstantTime<fixy::atom::as_secret>. used as a declarator"
+  "neg_security_constant_time_specialized_trait\\.cpp:10:[0-9]+: error: too many template headers for .fixy::atom::IsConstantTime. \\(should be 0\\)")
 
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
@@ -1264,11 +1266,12 @@ fixy_neg_compile_test(neg_scoped_view_escapes_through_private_member
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "fixy/ScopedView\\.h:[0-9]+:[0-9]+: error"
   "fixy::contains_scoped_view<Holder>\\(\\). evaluates to false")
-# The audit reads a concept, so a specialization that hides a stored view
-# from it has no template to name.
+# The audit reads a concept, and the template-id of a concept declares
+# nothing, so an explicit specialization that hides a stored view from
+# the audit is refused.
 fixy_neg_compile_test(neg_scoped_view_specialized_trait
-  ".is_scoped_view. is not a class template"
-  "neg_scoped_view_specialized_trait\\.cpp:20:[0-9]+: error:")
+  "template-id .IsScopedView<fixy::ScopedView<.anonymous.::Carrier, .anonymous.::Ready, .anonymous.::ViewBrand> >. used as a declarator"
+  "neg_scoped_view_specialized_trait\\.cpp:18:[0-9]+: error: too many template headers for .fixy::IsScopedView. \\(should be 0\\)")
 
 # A transition whose edge is not declared in the namespace the machine
 # names fails the MachineTransition constraint on transition_to.
@@ -3661,7 +3664,7 @@ fixy_neg_compile_test(neg_stage_mint_body_not_a_stage
 fixy_neg_compile_test(neg_stage_mint_ctx_not_exec_ctx
   "no matching function for call to .mint_stage<\\{anonymous\\}::pass_through>\\(int&"
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = int\\]"
-  "is_exec_ctx_v<T> \\[with T = int\\]. evaluated to .false.")
+  "is_exec_ctx\\(.* \\[with T = int\\]. evaluated to .false.")
 
 # The row gate, one fixture per direction and one for both at once.
 # The gate is a conjunction and the compiler reports the first conjunct
@@ -3744,7 +3747,7 @@ fixy_neg_compile_test(neg_pipeline_mint_empty_pack
 fixy_neg_compile_test(neg_pipeline_mint_ctx_not_exec_ctx
   "no matching function for call to .mint_pipeline\\(int&"
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = int\\]"
-  "is_exec_ctx_v<T> \\[with T = int\\]. evaluated to .false.")
+  "is_exec_ctx\\(.* \\[with T = int\\]. evaluated to .false.")
 
 # The authority to start threads.  A pipeline starts one thread per stage
 # unless the cache sizes probed at run time say it fits inline, so the

@@ -1,15 +1,16 @@
-// fixy/Collision.h reads the class of a Security grade before it lets a
-// binding through.  This file tries to make a declassified grade read as
-// public.  It specializes the variable template that the class once was.
-// The class comes from one function over reflections, so the
-// specialization has nothing to name.
+// fixy/Collision.h reads the class of a Security grade through
+// security_class_of before it lets a binding through.  This file tries to
+// make each grade read as public: it writes an explicit specialization of
+// security_class_of.  The reading is a function at namespace scope that is
+// not a template, so no specialization matches it.
 
 #include <fixy/Atom.h>
-#include <fixy/Tags.h>
+
+#include <meta>
 
 template <>
-inline constexpr fixy::atom::SecurityClass
-    fixy::atom::security_class_of_v<fixy::atom::declassify<fixy::tags::secret_policy::WireSerialize>> =
-        fixy::atom::SecurityClass::Public;
+consteval fixy::atom::SecurityClass fixy::atom::security_class_of(std::meta::info) {
+    return fixy::atom::SecurityClass::Public;
+}
 
 int main() { return 0; }

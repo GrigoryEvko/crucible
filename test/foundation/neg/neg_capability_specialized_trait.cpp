@@ -1,9 +1,8 @@
-// IsCapability admits a type only when it is a specialization of
-// Capability.  This file tries to add a class of its own to that set.  It
-// specializes the variable template that the concept once read, so a
-// class of the caller would pass each gate that asks for a capability.
-// The concept reads the instance query itself, so the specialization has
-// nothing to name.
+// Each gate that asks for a capability reads IsCapability.  This file
+// tries to add a class of its own to the capabilities: it writes an
+// explicit specialization of IsCapability, as it would for a variable
+// template.  IsCapability is a concept, and the template-id of a concept
+// declares nothing.
 
 #include <foundation/effects/Capability.h>
 
@@ -14,6 +13,6 @@ struct Fake final {};
 }  // namespace
 
 template <>
-inline constexpr bool foundation::effects::is_capability_v<Fake> = true;
+inline constexpr bool foundation::effects::IsCapability<Fake> = true;
 
 int main() { return 0; }

@@ -454,10 +454,16 @@ foundation_neg_compile_test(neg_exec_ctx_with_cap_needs_the_capability
 # regex of each names the specialization that the concept refused.
 foundation_neg_compile_test(neg_exec_ctx_specialization_without_source
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
-  "the expression .is_exec_ctx_v<T> \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]. evaluated to .false.")
+  "the expression .is_exec_ctx\\(.* \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_exec_ctx_specialization_outside_permitted_row
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::Init> >\\]"
-  "the expression .is_exec_ctx_v<T> \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::Init> >\\]. evaluated to .false.")
+  "the expression .is_exec_ctx\\(.* \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::Init> >\\]. evaluated to .false.")
+# IsExecCtx reads a function that is not a template, so an explicit
+# specialization of that function that makes each type a context matches
+# no template.
+foundation_neg_compile_test(neg_exec_ctx_specialized_trait
+  "template-id .is_exec_ctx<>. for .consteval bool foundation::effects::is_exec_ctx\\(std::meta::info\\). does not match any template declaration"
+  "neg_exec_ctx_specialized_trait\\.cpp:12:[0-9]+: error:")
 
 # A foreground context states that its holder runs on the thread that won
 # the producer claim, so each route that builds one without the claim's
@@ -1114,19 +1120,19 @@ foundation_neg_compile_test(neg_capability_forged_by_bit_cast
 foundation_neg_compile_test(neg_capability_forged_by_start_lifetime_as
   "static assertion failed"
   ".foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg.* is not an implicit-lifetime type")
-# IsCapability, the effect of a capability and the instance query read no
-# variable template, so a specialization that adds a class of the caller
-# to the capabilities, or gives a capability another effect, has no
-# template to name.
+# IsCapability and the instance query are concepts, and the template-id of
+# a concept declares nothing.  The effect of a capability is a function
+# that is not a template, so an explicit specialization of it matches no
+# template.
 foundation_neg_compile_test(neg_capability_specialized_trait
-  "expected initializer before .<. token"
-  "neg_capability_specialized_trait\\.cpp:17:[0-9]+: error:")
+  "template-id .IsCapability<.anonymous.::Fake>. used as a declarator"
+  "neg_capability_specialized_trait\\.cpp:16:[0-9]+: error: too many template headers for .foundation::effects::IsCapability. \\(should be 0\\)")
 foundation_neg_compile_test(neg_capability_effect_specialized_trait
-  "expected initializer before .<. token"
-  "neg_capability_effect_specialized_trait\\.cpp:11:[0-9]+: error:")
+  "template-id .cap_of<>. for .consteval foundation::effects::Effect foundation::effects::cap_of\\(std::meta::info\\). does not match any template declaration"
+  "neg_capability_effect_specialized_trait\\.cpp:13:[0-9]+: error:")
 foundation_neg_compile_test(neg_instance_of_specialized_trait
-  "expected initializer before .<. token"
-  "neg_instance_of_specialized_trait\\.cpp:18:[0-9]+: error:")
+  "template-id .IsInstanceOf<.anonymous.::Fake, \\^\\^template<foundation::effects::Effect Cap, class Source> class foundation::effects::Capability>. used as a declarator"
+  "neg_instance_of_specialized_trait\\.cpp:17:[0-9]+: error: too many template headers for .foundation::reflect::IsInstanceOf. \\(should be 0\\)")
 foundation_neg_compile_test(neg_bg_exec_ctx_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<"
   "is_trivially_copyable_v<_To> .with _To = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<")

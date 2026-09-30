@@ -1,12 +1,10 @@
-// The field audit of fixy/ScopedView.h refuses a class that stores a
-// view.  This file tries to hide a stored view from the audit.  It
-// specializes the class template that the audit once read, so a view
-// would read as no view.  The audit reads a concept over the instance
-// query, so the specialization has nothing to name.
+// The field audit of fixy/ScopedView.h asks IsScopedView whether a class
+// stores a view.  This file tries to hide a stored view from the audit: it
+// writes an explicit specialization of IsScopedView for one view type, as
+// it would for a variable template.  IsScopedView is a concept, and the
+// template-id of a concept declares nothing.
 
 #include <fixy/ScopedView.h>
-
-#include <type_traits>
 
 namespace {
 
@@ -17,6 +15,6 @@ struct ViewBrand {};
 }  // namespace
 
 template <>
-struct fixy::is_scoped_view<fixy::ScopedView<Carrier, Ready, ViewBrand>> : std::false_type {};
+inline constexpr bool fixy::IsScopedView<fixy::ScopedView<Carrier, Ready, ViewBrand>> = false;
 
 int main() { return 0; }

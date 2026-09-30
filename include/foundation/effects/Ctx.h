@@ -32,6 +32,7 @@
 #include <string_view>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 namespace foundation::effects {
 
@@ -604,50 +605,51 @@ template <class Brand = void>
 //
 // Top-level cv and reference are stripped before the check, so a concept
 // fed a forwarding-reference deduction still recognizes the context.
+//
+// The check is a function that is not a template, and the concept reads
+// it directly.  No translation unit can specialize either.  A variable
+// template or a function template in their place is a door: an explicit
+// specialization of it skips the structure test, and a plain struct with a
+// row_type then passes every ctx-bound gate.
 namespace detail {
 
-template <class Cap, class R>
-[[nodiscard]] consteval bool has_exec_ctx_structure_() noexcept {
-    using Ctx = ExecCtx<Cap, R>;
-    if constexpr (!WellFormedExecCtx<Cap, R>) {
-        return false;
-    } else if constexpr (!requires {
-                             typename Ctx::cap_type;
-                             typename Ctx::row_type;
-                         }) {
-        return false;
-    } else if constexpr (!std::is_same_v<typename Ctx::cap_type, Cap> || !std::is_same_v<typename Ctx::row_type, R>) {
-        return false;
-    } else {
-        static constexpr auto members = std::define_static_array(
-            std::meta::nonstatic_data_members_of(^^Ctx, std::meta::access_context::unchecked()));
-        constexpr std::meta::info expected_types[] = {std::meta::dealias(^^Cap), std::meta::dealias(^^R)};
-        if (members.size() != std::size(expected_types)) return false;
-        for (std::size_t index = 0; index < members.size(); ++index) {
-            if (!std::meta::is_private(members[index])) return false;
-            if (std::meta::dealias(std::meta::type_of(members[index])) != expected_types[index]) return false;
-        }
-        return true;
+// True when the class has a public member type with the identifier, and
+// that member names the expected type.
+[[nodiscard]] consteval bool names_member_type_(std::meta::info type, std::string_view identifier,
+                                                std::meta::info expected) {
+    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::current())) {
+        if (!std::meta::is_type(member) || !std::meta::has_identifier(member)) continue;
+        if (std::meta::identifier_of(member) != identifier) continue;
+        return std::meta::dealias(member) == std::meta::dealias(expected);
     }
-}
-
-template <class T>
-[[nodiscard]] consteval bool is_exec_ctx_() noexcept {
-    constexpr std::meta::info type = std::meta::dealias(^^T);
-    if constexpr (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^ExecCtx) {
-        return false;
-    } else {
-        static constexpr auto arguments = std::define_static_array(std::meta::template_arguments_of(type));
-        return has_exec_ctx_structure_<typename[:arguments[0]:], typename[:arguments[1]:]>();
-    }
+    return false;
 }
 
 }  // namespace detail
 
+[[nodiscard]] consteval bool is_exec_ctx(std::meta::info spelled) {
+    const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(spelled));
+    if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^ExecCtx) return false;
+    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
+    const std::meta::info cap = arguments[0];
+    const std::meta::info row = arguments[1];
+    if (!std::meta::extract<bool>(std::meta::substitute(^^WellFormedExecCtx, {cap, row}))) return false;
+    if (!detail::names_member_type_(type, "cap_type", cap) || !detail::names_member_type_(type, "row_type", row)) {
+        return false;
+    }
+    const std::vector<std::meta::info> members =
+        std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
+    const std::meta::info expected_types[] = {std::meta::dealias(cap), std::meta::dealias(row)};
+    if (members.size() != std::size(expected_types)) return false;
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        if (!std::meta::is_private(members[index])) return false;
+        if (std::meta::dealias(std::meta::type_of(members[index])) != expected_types[index]) return false;
+    }
+    return true;
+}
+
 template <class T>
-inline constexpr bool is_exec_ctx_v = detail::is_exec_ctx_<std::remove_cvref_t<T>>();
-template <class T>
-concept IsExecCtx = is_exec_ctx_v<T>;
+concept IsExecCtx = is_exec_ctx(^^T);
 
 template <IsExecCtx Ctx>
 using cap_type_of_t = typename Ctx::cap_type;
@@ -864,19 +866,18 @@ static_assert(!WellFormedExecCtx<Init, Row<Effect::Bg>>, "An init source cannot 
 static_assert(!WellFormedExecCtx<Test, Row<Effect::Bg>>, "A test source cannot stand in for a background one.");
 static_assert(!WellFormedExecCtx<int, Row<>>);
 
-static_assert(is_exec_ctx_v<FgWitness>);
-static_assert(is_exec_ctx_v<BgWitness>);
-static_assert(!is_exec_ctx_v<int>);
-static_assert(!is_exec_ctx_v<Bg>);
-static_assert(is_exec_ctx_v<FgWitness const>);
-static_assert(is_exec_ctx_v<FgWitness&>);
-static_assert(is_exec_ctx_v<FgWitness const&>);
-static_assert(is_exec_ctx_v<FgWitness&&>);
-static_assert(is_exec_ctx_v<BgWitness const&>);
-static_assert(!is_exec_ctx_v<int const&>);
-static_assert(!is_exec_ctx_v<Bg const&>);
+static_assert(IsExecCtx<FgWitness>);
+static_assert(IsExecCtx<BgWitness>);
+static_assert(!IsExecCtx<int>);
+static_assert(!IsExecCtx<Bg>);
+static_assert(IsExecCtx<FgWitness const>);
+static_assert(IsExecCtx<FgWitness&>);
 static_assert(IsExecCtx<FgWitness const&>);
 static_assert(IsExecCtx<FgWitness&&>);
+static_assert(IsExecCtx<BgWitness const&>);
+static_assert(!IsExecCtx<int const&>);
+static_assert(!IsExecCtx<Bg const&>);
+static_assert(is_exec_ctx(^^FgWitness) && !is_exec_ctx(^^int));
 
 static_assert(std::is_same_v<cap_type_of_t<BgWitness>, Bg>);
 static_assert(std::is_same_v<row_type_of_t<BgWitness>, Row<Effect::Bg, Effect::Alloc>>);

@@ -2160,6 +2160,36 @@ def template_primaries(root: Node) -> Iterator[TemplatePrimary]:
                                   declarator is not None and declarator.type == "init_declarator")
 
 
+def template_functions(root: Node) -> Iterator[tuple[tuple[str, ...], Node]]:
+    """Yield the qualified name of each primary function template under a node, with its template declaration.
+
+    A primary has template parameters, so `template <>` is no primary.  A
+    declared name that ends in a template-id is a specialization, and it is
+    skipped.  A member function template is named through its class.
+
+    Complexity: linear in the number of nodes under the root.
+
+    Args:
+        root: The root of a file
+
+    Yields:
+        (the qualified name, the template_declaration), in source order
+    """
+    for template in root.descendants("template_declaration"):
+        params = template.child_by_field("parameters")
+        item = _template_item(template)
+        if params is None or not non_comment_children(params) or item is None:
+            continue
+        declarator = _function_declarator(item)
+        named = None if declarator is None else declarator.child_by_field("declarator")
+        if named is None or _is_template_id(named):
+            continue
+        parts = qualified_parts(named)
+        if parts is None or not parts[1]:
+            continue
+        yield (parts[1] if parts[0] else scope_levels(template)[0] + parts[1]), template
+
+
 # ── Name lookup ──────────────────────────────────────────────────────────────
 #
 # A guard that asks which declaration a spelled name refers to cannot compare
@@ -3693,6 +3723,20 @@ def _self_test_lookup(check: Callable[..., None], parse_text: Callable[[str, str
           "declaration as none",
           primaries == [(1, "class", "Primary", True), (2, "class", "Declared", False),
                         (3, "variable", "gate_v", True)], negative=True)
+    functions = parse_text(
+        "functions.cpp",
+        "namespace ns {\n"
+        "template <class T> constexpr bool holds() { return true; }\n"
+        "template <class T> requires (sizeof(T) > 0) bool checked(T value);\n"
+        "struct Door { template <class T> static bool admits(); };\n"
+        "template <> constexpr bool holds<int>() { return false; }\n"
+        "consteval bool plain(int) { return true; }\n"
+        "}\n",
+    )
+    function_names = [name for name, _template in template_functions(functions.root)]
+    check("template_functions reads a primary, a constrained and a member function template, and no "
+          "specialization or plain function",
+          function_names == [("ns", "holds"), ("ns", "checked"), ("ns", "Door", "admits")], negative=True)
 
 
 if __name__ == "__main__":
