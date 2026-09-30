@@ -1,8 +1,7 @@
 // std::bit_cast builds a value of a trivially copyable type from bytes, and
 // no constructor runs.  GCC reports a class whose copy and move are all
-// deleted as trivially copyable, so the trait alone does not refuse this
-// route.  The deleted move does: bit_cast returns its result by value, and
-// a witness cannot be moved.  This fixture keeps the move deleted.
+// deleted as trivially copyable.  The seal member of the witness makes it
+// not trivially copyable, so bit_cast refuses it at its constraint.
 
 #include <fixy/os/ThreadName.h>
 

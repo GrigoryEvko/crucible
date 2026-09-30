@@ -66,6 +66,7 @@
 #include <fixy/Borrowed.h>
 #include <fixy/OwnedRegion.h>
 #include <foundation/Brand.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
@@ -229,6 +230,9 @@ class [[nodiscard]] SharedRead {
                                                        "type: the brand of the region read, or DefaultBrand.");
 
     std::span<T const> span_{};
+    // No byte route builds a read, so a read names only a region that its
+    // mint paired with a live share.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     constexpr SharedRead(detail::shared_read_mint_t, std::span<T const> span) noexcept : span_{span} {}
 
@@ -296,6 +300,8 @@ using Read = SharedRead<int, probe_tag>;
 static_assert(sizeof(Read) == sizeof(std::span<int const>));
 static_assert(!std::is_default_constructible_v<Read>, "a read nobody minted proves nothing");
 static_assert(std::is_copy_constructible_v<Read>, "a read is a value, and the header says what that costs");
+static_assert(!std::is_trivially_copyable_v<Read> && !::foundation::lifetime::ImplicitLifetimeThroughout<Read>,
+              "std::bit_cast and std::start_lifetime_as must not build a read that no share stands behind");
 static_assert(std::is_same_v<Read::brand_type, Erased>);
 
 // A shared region holds its address, so it is neither copied nor moved.

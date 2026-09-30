@@ -165,6 +165,10 @@ public:
     ~Disjoint() = default;
 
 private:
+    // No byte route builds a receipt, so no receipt stands for a split
+    // that did not happen.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
     // The door.  mint_split holds the key; nothing else does.
     constexpr explicit Disjoint(detail::split_mint_t) noexcept {}
 
@@ -686,6 +690,9 @@ using ReceiptOtherTag = Disjoint<test_tag_b, ::foundation::brand::DefaultBrand, 
 static_assert(sizeof(ReceiptA2) == 1, "a receipt is a type, not a byte of state");
 static_assert(std::is_empty_v<ReceiptA2>);
 static_assert(!std::is_default_constructible_v<ReceiptA2>, "a receipt nobody wrote proves nothing");
+static_assert(!std::is_trivially_copyable_v<ReceiptA2>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<ReceiptA2>,
+              "std::bit_cast and std::start_lifetime_as must not write a receipt");
 static_assert(!std::is_copy_constructible_v<ReceiptA2>, "a copied receipt would authorize two rebuilds");
 static_assert(!std::is_copy_assignable_v<ReceiptA2>);
 static_assert(std::is_move_constructible_v<ReceiptA2>);

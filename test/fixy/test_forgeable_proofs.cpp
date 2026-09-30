@@ -21,7 +21,9 @@
 // types come from witness lists.  In the two namespaces that hold the
 // gated types, foundation::effects and foundation::permissions, every
 // class template must have a witness or a place on the open list, so a
-// new template there fails the build until someone classifies it.
+// new template there fails the build until someone classifies it.  Each
+// type of utils/scripts/witness-roster.txt gets the same test, and a byte
+// ledger names each roster type that stays trivially copyable by design.
 //
 // The route ledger at the foot names the routes that still forge a proof
 // type after the repair.  Each one reads an object whose lifetime never
@@ -30,10 +32,12 @@
 // compiles fails its pin.
 
 #include "every_header.h"
+#include "witness_roster.h"
 
 #include <foundation/Lifetime.h>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdio>
 #include <meta>
@@ -321,6 +325,222 @@ static_assert(verdict.unclassified_templates == 0,
                     "place on the open list.  Add a specialization to the witness list if it gates authority, "
                     "or add the template to the open list if anyone may build it.  The template: ",
                     verdict.first_unclassified));
+
+// ── the witness roster ──────────────────────────────────────────────
+//
+// Each type of utils/scripts/witness-roster.txt attests to a fact that it
+// cannot see, and a caller cannot reach its constructor.  Reflection
+// cannot list the specializations of a template, so the build lists the
+// roster types in witness_roster.h.  The walk applies the test of the walk
+// above to each roster type.  A type that is trivially copyable, or that
+// the checked lifetime start admits, is built from bytes with no
+// constructor call.  A proof closes the two routes with a seal member,
+// foundation::lifetime::byte_seal.
+//
+// The ledger names each roster type that the byte routes still build, and
+// says why a byte image makes nothing that the public members of the type
+// do not make.  An entry names a class, or the class template of a roster
+// type.  The ledger only shrinks: an entry that covers no roster type that
+// the byte routes build fails the walk.
+
+// True when std::bit_cast builds a T from a byte array of its size.  The
+// requirement reads the route and not a trait.
+template <class T>
+concept BitCastBuildsFromBytes =
+    requires(std::array<unsigned char, sizeof(T)> const bytes) { std::bit_cast<T>(bytes); };
+
+[[nodiscard]] consteval bool is_built_by_bit_cast(std::meta::info type) {
+    return std::meta::extract<bool>(std::meta::substitute(^^BitCastBuildsFromBytes, {std::meta::dealias(type)}));
+}
+
+struct ByteCopyAllowance {
+    std::meta::info entity;
+    std::string_view reason;
+};
+
+inline constexpr ByteCopyAllowance byte_copy_ledger[] = {
+    {^^::fixy::Qtt,
+     "for a trivially copyable payload, peek and mint_linear already build the same duplicate.  A payload that is "
+     "not trivially copyable makes the wrapper not trivially copyable"},
+    {^^::fixy::Tagged,
+     "mint_tagged builds a tag that names a source from any value.  An earned tag makes the wrapper not trivially "
+     "copyable"},
+    {^^::fixy::fn, "mint_fn builds a binding of each accepted pack from any value, and a refused pack is no type"},
+    {^^::fixy::Machine,
+     "mint_machine opens a machine in any state, and data_mut writes the data of a live machine, so a byte image "
+     "adds no state"},
+    {^^::fixy::Monotonic,
+     "mint_monotonic takes any initial value, and reset_under_quiescence puts any value in a live counter through "
+     "a public member, so a byte image adds no value"},
+    {^^::fixy::AtomicMonotonic,
+     "mint_atomic_monotonic takes any initial value, and reset_under_quiescence puts any value in a live counter "
+     "through a public member, so a byte image adds no value"},
+    {^^::fixy::WriteOnce,
+     "mint_write_once and set build each state that the bytes can describe, and std::destroy_at with "
+     "std::construct_at from a copy puts an unset slot at the address of a set one through public members"},
+    {^^::fixy::WriteOnceNonNull,
+     "mint_write_once_non_null and set build each state that the bytes can describe, a null pointer is the unset "
+     "state, and std::destroy_at with std::construct_at from a copy puts an unset slot at the address of a set one"},
+    {^^::foundation::algebra::Graded,
+     "the substrate keeps the trivial copyability of its payload by design, and foundation/algebra/Graded.h pins "
+     "that parity.  A band of fixy/Bands.h is the substrate, so a byte image of a band claims a tier that mint_band "
+     "did not set.  The entry stays until the parity rule changes"},
+    {^^::foundation::permissions::SharedPermission,
+     "a share confers no run-time access, and its header pins that.  The guard of the pool is the object that "
+     "stands for a live share, and the walk above keeps the token on the inert list"},
+};
+
+// The ledger only shrinks.  Lower this count in the commit that removes an
+// entry.  A new entry also needs a higher count, so the change shows the
+// reason of that entry to its reviewer.
+inline constexpr std::size_t byte_copy_ledger_size = 10;
+static_assert(std::size(byte_copy_ledger) == byte_copy_ledger_size,
+              "the byte-copy ledger changed size.  Lower byte_copy_ledger_size when an entry leaves.  A new entry "
+              "needs a reason that a reviewer accepts, and then a higher count");
+
+[[nodiscard]] consteval bool allowance_covers(std::meta::info entity, std::meta::info spelled) {
+    const std::meta::info type = std::meta::dealias(spelled);
+    return type == entity || (std::meta::has_template_arguments(type) && std::meta::template_of(type) == entity);
+}
+
+[[nodiscard]] consteval bool is_allowed(std::span<const ByteCopyAllowance> ledger, std::meta::info type) {
+    for (const ByteCopyAllowance& allowance : ledger) {
+        if (allowance_covers(allowance.entity, type) && !allowance.reason.empty()) return true;
+    }
+    return false;
+}
+
+// The first forgeable types that a verdict names, and no more.
+inline constexpr std::size_t named_forgeable_limit = 32;
+
+struct RosterVerdict {
+    std::size_t walked = 0;
+    std::size_t refused = 0;
+    std::size_t allowed = 0;
+    std::size_t forgeable = 0;
+    std::size_t refused_but_built_by_bit_cast = 0;
+    std::size_t stale_allowances = 0;
+    std::array<std::meta::info, named_forgeable_limit> forgeable_types{};
+    std::meta::info first_stale{};
+};
+
+// Complexity: the size of the roster times the size of the ledger.
+[[nodiscard]] consteval RosterVerdict roster_verdict(std::span<const std::meta::info> roster,
+                                                     std::span<const ByteCopyAllowance> ledger) {
+    RosterVerdict result;
+    for (const std::meta::info type : roster) {
+        ++result.walked;
+        if (!is_forgeable(type)) {
+            ++result.refused;
+            if (is_built_by_bit_cast(type)) ++result.refused_but_built_by_bit_cast;
+            continue;
+        }
+        if (is_allowed(ledger, type)) {
+            ++result.allowed;
+            continue;
+        }
+        if (result.forgeable < named_forgeable_limit) result.forgeable_types[result.forgeable] = type;
+        ++result.forgeable;
+    }
+    for (const ByteCopyAllowance& allowance : ledger) {
+        bool covers_a_forgeable_type = false;
+        for (const std::meta::info type : roster) {
+            if (allowance_covers(allowance.entity, type) && is_forgeable(type)) covers_a_forgeable_type = true;
+        }
+        if (!covers_a_forgeable_type && result.stale_allowances++ == 0) result.first_stale = allowance.entity;
+    }
+    return result;
+}
+
+// True when the outcome names the type among its forgeable types.
+[[nodiscard]] consteval bool names_forgeable(const RosterVerdict& outcome, std::meta::info type) {
+    for (const std::meta::info forgeable : outcome.forgeable_types) {
+        if (forgeable == type) return true;
+    }
+    return false;
+}
+
+// The lead and the name of each forgeable type of the outcome.  The copy
+// is built one character at a time: GCC does not compare the address of a
+// static string with a null pointer in a constant evaluation, and each
+// string append makes that comparison.
+[[nodiscard]] consteval std::string_view listed(std::string_view lead, const RosterVerdict& outcome) {
+    if (outcome.forgeable == 0) return {};
+    std::string text;
+    const auto append = [&text](std::string_view part) {
+        for (const char character : part)
+            text.push_back(character);
+    };
+    append(lead);
+    for (std::size_t index = 0; index < outcome.forgeable && index < named_forgeable_limit; ++index) {
+        if (index != 0) append("; ");
+        append(std::meta::display_string_of(outcome.forgeable_types[index]));
+    }
+    return std::define_static_string(text);
+}
+
+inline constexpr RosterVerdict roster = roster_verdict(::witness_roster::types, byte_copy_ledger);
+
+static_assert(roster.walked == std::size(::witness_roster::types) && roster.walked > 0,
+              "the roster walk read no type, so it proves nothing");
+static_assert(roster.forgeable == 0,
+              listed("a byte route builds a type of the witness roster with no constructor call.  Give it a "
+                     "foundation::lifetime::byte_seal member, or a ledger entry that says why a byte image makes "
+                     "nothing new.  The types: ",
+                     roster));
+static_assert(roster.refused_but_built_by_bit_cast == 0,
+              "std::bit_cast builds a roster type that the walk refuses, so the walk misreads the route");
+static_assert(roster.stale_allowances == 0,
+              named("a ledger entry covers no roster type that a byte route builds.  Delete it: the ledger only "
+                    "shrinks.  The entry: ",
+                    roster.first_stale));
+static_assert(roster.refused + roster.allowed == roster.walked);
+
+// The walk is not vacuous.  Over a roster made to measure, it flags the
+// probe that std::bit_cast builds from its trivial copy, and the pinned
+// probe whose copies are all deleted: GCC counts that class trivially
+// copyable, and std::bit_cast builds it too.  It passes the two sealed
+// probes, a ledger entry clears what it names, and an entry that clears
+// nothing is reported.
+class BitCastProbe {
+    int value_ = 0;
+    constexpr BitCastProbe() noexcept = default;
+};
+class PinnedProbe {
+    constexpr PinnedProbe() noexcept {}
+
+public:
+    PinnedProbe(const PinnedProbe&) = delete;
+    PinnedProbe& operator=(const PinnedProbe&) = delete;
+};
+class SealedProbe {
+    int value_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    constexpr SealedProbe() noexcept = default;
+};
+class SealedPinnedProbe {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    constexpr SealedPinnedProbe() noexcept {}
+
+public:
+    SealedPinnedProbe(const SealedPinnedProbe&) = delete;
+    SealedPinnedProbe& operator=(const SealedPinnedProbe&) = delete;
+};
+inline constexpr std::meta::info probe_roster[] = {^^BitCastProbe, ^^PinnedProbe, ^^SealedProbe, ^^SealedPinnedProbe};
+inline constexpr ByteCopyAllowance probe_ledger[] = {{^^BitCastProbe, "a probe"}, {^^PinnedProbe, "a probe"}};
+inline constexpr ByteCopyAllowance stale_probe_ledger[] = {{^^SealedProbe, "a probe that no byte route builds"}};
+static_assert(BitCastBuildsFromBytes<BitCastProbe> && BitCastBuildsFromBytes<PinnedProbe>
+              && !BitCastBuildsFromBytes<SealedProbe> && !BitCastBuildsFromBytes<SealedPinnedProbe>);
+static_assert(roster_verdict(probe_roster, {}).forgeable == 2
+                  && names_forgeable(roster_verdict(probe_roster, {}), ^^BitCastProbe)
+                  && names_forgeable(roster_verdict(probe_roster, {}), ^^PinnedProbe),
+              "the roster walk misses a type that a byte route builds");
+static_assert(roster_verdict(probe_roster, {}).refused == 2, "the roster walk flags a sealed type");
+static_assert(roster_verdict(probe_roster, probe_ledger).forgeable == 0
+                  && roster_verdict(probe_roster, probe_ledger).allowed == 2,
+              "a ledger entry does not clear the type that it names");
+static_assert(roster_verdict(probe_roster, stale_probe_ledger).stale_allowances == 1,
+              "a ledger entry that covers no forgeable type is not reported");
 
 // An aggregate that holds the proof.  An aggregate is an
 // implicit-lifetime type whatever its members are.

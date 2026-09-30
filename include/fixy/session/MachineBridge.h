@@ -24,6 +24,7 @@
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 
+#include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 
 #include <atomic>
@@ -69,6 +70,9 @@ class [[nodiscard]] SessionFromMachine : public ::foundation::Pinned<SessionFrom
                                            "enclosing Loop.");
 
     ::fixy::Machine<State, Edges> machine_;
+    // No byte route builds a bridge, so no bridge stands over a protocol
+    // that its mint did not admit.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     constexpr explicit SessionFromMachine(::fixy::Machine<State, Edges> m) noexcept : machine_{std::move(m)} {}
 

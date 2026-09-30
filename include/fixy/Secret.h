@@ -18,6 +18,7 @@
 
 #include <fixy/GradedFacade.h>
 #include <fixy/Tags.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/ConfLattice.h>
@@ -146,6 +147,12 @@ public:
 
 private:
     graded_type impl_;
+    // No byte route builds a Secret, so no byte route reads a classified
+    // value out with no declassify<Policy>() and no audit entry.
+    // std::bit_cast refuses the class, and -Wclass-memaccess refuses a
+    // memcpy.  The move constructor stays trivial, so a Secret still passes
+    // in a register.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     using key_ = ::foundation::algebra::grade_key<Secret>;
 
@@ -171,16 +178,7 @@ public:
     Secret(const Secret&) = delete("Secret<T> cannot be silently duplicated");
     Secret& operator=(const Secret&) = delete("Secret<T> cannot be silently duplicated");
     Secret(Secret&&) = default;
-    // User-provided, so the class is not trivially copyable.  A trivially
-    // copyable Secret<int> let std::bit_cast<int>(secret) read the value
-    // out with no declassify<Policy>() and no audit entry, and let memcpy
-    // do the same.  bit_cast refuses the class now, and -Wclass-memaccess
-    // refuses the memcpy.  The move constructor stays trivial, so a
-    // Secret still passes in a register.
-    constexpr Secret& operator=(Secret&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
-        impl_ = std::move(other.impl_);
-        return *this;
-    }
+    Secret& operator=(Secret&&) = default;
     ~Secret() = default;
 
     // A classified value cannot steer a branch, an address or an order.
@@ -323,6 +321,8 @@ static_assert(sizeof(Secret<int>) == sizeof(int));
 static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
 static_assert(!std::is_trivially_copyable_v<Secret<int>> && !std::is_trivially_copyable_v<Secret<unsigned long long>>,
               "std::bit_cast must not read a classified value out with no declassify<Policy>()");
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Secret<int>>,
+              "std::start_lifetime_as must not build a classified value over bytes");
 static_assert(std::is_trivially_move_constructible_v<Secret<int>> && std::is_trivially_destructible_v<Secret<int>>,
               "the move constructor stays trivial, so a Secret still passes in a register");
 

@@ -27,6 +27,7 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Lifetime.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
 
@@ -97,13 +98,14 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, TwoWords);
 // a value the predicate never saw, and a trivially copyable Secret let it
 // read the value out with no policy.  The shared invariant asserts that
 // parity, so the three other properties are stated here one by one, and
-// the fourth inverted.  Sealing removes the rvalue extractor from the API
-// and changes no storage.
+// the fourth inverted.  The checked lifetime start refuses each of the
+// three too.  Sealing removes the rvalue extractor from the API and
+// changes no storage.
 template <template <typename> class Wrapper, typename T>
 inline constexpr bool keeps_the_value_layout_with_no_byte_route =
     sizeof(Wrapper<T>) == sizeof(T) && alignof(Wrapper<T>) == alignof(T)
     && std::is_trivially_destructible_v<Wrapper<T>> == std::is_trivially_destructible_v<T>
-    && !std::is_trivially_copyable_v<Wrapper<T>>;
+    && !std::is_trivially_copyable_v<Wrapper<T>> && !::foundation::lifetime::ImplicitLifetimeThroughout<Wrapper<T>>;
 
 template <template <typename> class Wrapper>
 inline constexpr bool keeps_the_layout_of_every_shape = keeps_the_value_layout_with_no_byte_route<Wrapper, int>

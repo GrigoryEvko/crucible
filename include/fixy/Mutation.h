@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fixy/GradedFacade.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -443,6 +444,9 @@ mint_bounded_monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<
 template <typename T, auto Max, typename Cmp>
 class [[nodiscard]] BoundedMonotonic {
     Monotonic<T, Cmp> inner_;
+    // No byte route builds a counter, so no counter holds a value above
+    // its bound.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     // Exact: the door's concept proved that T holds the bound.
     static constexpr T kMax = static_cast<T>(Max);
@@ -498,6 +502,9 @@ mint_bounded_monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<
 
 static_assert(sizeof(BoundedMonotonic<std::uint32_t, 1024U>) == sizeof(std::uint32_t),
               "BoundedMonotonic must collapse to underlying T");
+static_assert(!std::is_trivially_copyable_v<BoundedMonotonic<std::uint32_t, 1024U>>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<BoundedMonotonic<std::uint32_t, 1024U>>,
+              "std::bit_cast and std::start_lifetime_as must not build a counter above its bound");
 
 template <typename T>
     requires std::move_constructible<T>

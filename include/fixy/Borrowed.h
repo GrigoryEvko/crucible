@@ -41,6 +41,7 @@
 // the deleted overload and the compiler names the reason.
 
 #include <foundation/Brand.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/reflect/Instance.h>
@@ -199,6 +200,9 @@ private:
     // here so that a constructor added later, or an aggregate path,
     // lands on a deterministic null rather than an indeterminate value.
     T* ptr_ = nullptr;
+    // No byte route builds a borrow, so a branded borrow names only the
+    // object that its mint took.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     struct from_raw_tag_t {};
     constexpr BorrowedRef(from_raw_tag_t, T* p) noexcept : ptr_{p} {}
@@ -274,6 +278,9 @@ public:
 
 private:
     span_type span_{};
+    // No byte route builds a borrow, so a branded borrow names only the
+    // range that its mint took.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     // The branded door, for the mints and for subview.
     constexpr Borrowed(detail::borrow_mint_t, span_type span) noexcept : span_{span} {}
@@ -479,6 +486,9 @@ struct OwnerB {
 struct brand_a {};
 struct brand_b {};
 
+using sealed_ref = BorrowedRef<int, brand_a>;
+using sealed_range = Borrowed<int, OwnerA, brand_a>;
+
 }  // namespace detail::borrowed_layout
 
 static_assert(sizeof(BorrowedRef<int>) == sizeof(int*));
@@ -492,8 +502,15 @@ static_assert(sizeof(Borrowed<const char, detail::borrowed_layout::OwnerA>) == s
 static_assert(sizeof(WeakRef<int>) == sizeof(int*));
 static_assert(alignof(WeakRef<int>) == alignof(int*));
 
-static_assert(std::is_trivially_copyable_v<BorrowedRef<int>>);
-static_assert(std::is_trivially_copyable_v<Borrowed<int, detail::borrowed_layout::OwnerA>>);
+// A borrow keeps the trivial copy that passes it in a register, and no byte
+// route builds one.  A WeakRef proves nothing, so it stays trivially
+// copyable.
+static_assert(!std::is_trivially_copyable_v<detail::borrowed_layout::sealed_ref>
+              && !::foundation::lifetime::ImplicitLifetimeThroughout<detail::borrowed_layout::sealed_ref>);
+static_assert(!std::is_trivially_copyable_v<detail::borrowed_layout::sealed_range>
+              && !::foundation::lifetime::ImplicitLifetimeThroughout<detail::borrowed_layout::sealed_range>);
+static_assert(std::is_trivially_copy_constructible_v<detail::borrowed_layout::sealed_ref>
+              && std::is_trivially_copy_constructible_v<detail::borrowed_layout::sealed_range>);
 static_assert(std::is_trivially_copyable_v<WeakRef<int>>);
 static_assert(std::is_trivially_destructible_v<BorrowedRef<int>>);
 static_assert(std::is_trivially_destructible_v<Borrowed<int, detail::borrowed_layout::OwnerA>>);

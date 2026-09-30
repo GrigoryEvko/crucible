@@ -3310,6 +3310,34 @@ target_include_directories(test_armed_roster PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
 fixy_test(test_forgeable_proofs)
 target_include_directories(test_forgeable_proofs PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/armed_roster)
 
+# The witness roster, for the byte-route walk of test_forgeable_proofs.
+# Reflection cannot list the specializations of a template, so the build
+# writes each type of utils/scripts/witness-roster.txt into
+# witness_roster.h, with the header of each type.  A change of the roster
+# runs the configure step again.
+set(_witness_roster_file ${CMAKE_SOURCE_DIR}/utils/scripts/witness-roster.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_witness_roster_file})
+file(STRINGS ${_witness_roster_file} _witness_roster_lines REGEX "^[^#].*[|]")
+set(_witness_roster_types "")
+set(_witness_roster_headers "")
+foreach(_witness_roster_line IN LISTS _witness_roster_lines)
+  string(REPLACE "|" ";" _witness_roster_fields "${_witness_roster_line}")
+  list(GET _witness_roster_fields 0 _witness_roster_type)
+  list(GET _witness_roster_fields 1 _witness_roster_header)
+  string(STRIP "${_witness_roster_type}" _witness_roster_type)
+  string(STRIP "${_witness_roster_header}" _witness_roster_header)
+  string(APPEND _witness_roster_types "    ^^${_witness_roster_type},\n")
+  list(APPEND _witness_roster_headers "${_witness_roster_header}")
+endforeach()
+list(REMOVE_DUPLICATES _witness_roster_headers)
+list(SORT _witness_roster_headers)
+set(_witness_roster_include_lines "")
+foreach(_witness_roster_header IN LISTS _witness_roster_headers)
+  string(APPEND _witness_roster_include_lines "#include <${_witness_roster_header}>\n")
+endforeach()
+file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/armed_roster/witness_roster.h
+  CONTENT "#pragma once\n${_witness_roster_include_lines}\n#include <meta>\n\n// The brand that a roster line spells.\nnamespace forge {\nstruct brand {};\n}  // namespace forge\n\nnamespace witness_roster {\ninline constexpr std::meta::info types[] = {\n${_witness_roster_types}};\n}  // namespace witness_roster\n")
+
 # Attacks on ownership transfer that use the discipline correctly.  The
 # threaded half runs under a watchdog, and it is the half that means
 # anything under the tsan preset.
@@ -4144,8 +4172,8 @@ fixy_neg_compile_test(neg_os_thread_named_moved
   "a move could carry it to a thread that carries no such name")
 
 fixy_neg_compile_test(neg_os_thread_named_bit_cast
-  "use of deleted function"
-  "a thread-name witness is bound to the thread that minted it")
+  "no matching function for call to .bit_cast<fixy::ThreadNamed<"
+  "the expression .is_trivially_copyable_v<_To> \\[with _To = fixy::ThreadNamed<fixy::ThreadNameLiteral<7>\\{\\{.forged.\\}\\}>\\]. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_thread_named_start_as_array
   "no matching function for call to .start_as_array<Witness>"

@@ -7,6 +7,7 @@
 // Naming writes to the calling thread's entry under /proc, so the mint takes an
 // init-phase context.  Code that holds no context cannot name a thread.
 
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
@@ -66,9 +67,9 @@ template <ThreadNameLiteral Name, typename Ctx>
 // names the calling thread, and the witness then stays in the frame of that
 // thread: a copy or a move into another thread would claim a name that the
 // other thread does not carry.  A reference can still leave the frame, but the
-// ownership of the claim cannot.  The constructor is user-provided, so the type
-// is neither trivially copyable nor an implicit-lifetime type, and neither
-// std::bit_cast nor std::start_lifetime_as builds one.
+// ownership of the claim cannot.  The seal member makes the type not trivially
+// copyable, and the user-provided constructor makes it no implicit-lifetime
+// type, so neither std::bit_cast nor std::start_lifetime_as builds one.
 template <ThreadNameLiteral Name>
 class [[nodiscard]] ThreadNamed {
 public:
@@ -88,6 +89,8 @@ public:
     ~ThreadNamed() = default;
 
 private:
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
     constexpr ThreadNamed() noexcept {}
 
     template <ThreadNameLiteral FriendName, typename FriendCtx>
@@ -129,11 +132,14 @@ static_assert(sizeof(ThreadNamed<"x">) == 1, "ThreadNamed must be an empty witne
 static_assert(!std::is_default_constructible_v<ThreadNamed<"x">> && !std::is_copy_constructible_v<ThreadNamed<"x">>
                   && !std::is_move_constructible_v<ThreadNamed<"x">>,
               "a thread-name witness comes only from mint_thread_name and never leaves the frame that holds it");
-// GCC reports a class whose copy and move are all deleted as trivially
-// copyable, so the trait is no witness here.  std::bit_cast still fails,
-// because it returns its result by value and the move is deleted, and
-// neg_os_thread_named_bit_cast pins that.  std::start_lifetime_as needs an
-// implicit-lifetime type, and this class is none.
+// GCC reports a class whose copies and moves are all deleted as trivially
+// copyable, and the constraints of std::bit_cast then admit it.  The seal
+// member makes the class not trivially copyable, so std::bit_cast refuses
+// it at its constraint, and neg_os_thread_named_bit_cast pins that.
+// std::start_lifetime_as needs an implicit-lifetime type, and this class
+// is none.
+static_assert(!std::is_trivially_copyable_v<ThreadNamed<"x">>,
+              "std::bit_cast must not build a thread-name witness from bytes");
 static_assert(!std::is_implicit_lifetime_v<ThreadNamed<"x">> && !std::is_aggregate_v<ThreadNamed<"x">>,
               "std::start_lifetime_as and aggregate initialization must not build a thread-name witness");
 static_assert(ThreadNameLiteral<2>{"x"}.visible_length == 1);

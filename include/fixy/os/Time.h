@@ -17,6 +17,7 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Fs.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
@@ -359,6 +360,9 @@ private:
     }
 
     mutable clamp_state last_;
+    // No byte route builds a reader, so a reader exists only in a frame
+    // whose context the mint read.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
 // The clamped, gated monotonic reader.
@@ -596,6 +600,10 @@ struct BoundedSleeper final {
     }
 
 private:
+    // No byte route builds a sleeper, so a thread that owns no Block does
+    // not get one.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
     constexpr BoundedSleeper() noexcept {}
 
     template <std::uint64_t FriendMaxNanos, eff::IsExecCtx FriendCtx>
@@ -702,6 +710,9 @@ static_assert(!std::is_default_constructible_v<BoundedSleeper<1000000>>
                   && !std::is_copy_constructible_v<BoundedSleeper<1000000>>
                   && !std::is_move_constructible_v<BoundedSleeper<1000000>>,
               "a sleeper comes only from mint_bounded_sleep and never leaves the frame that holds it");
+static_assert(!std::is_trivially_copyable_v<BoundedSleeper<1000000>> && !std::is_trivially_copyable_v<MonotonicClock>
+                  && !std::is_trivially_copyable_v<ClockReader<ClockSource_v::Realtime>>,
+              "std::bit_cast must not build a sleeper or a clock reader from bytes");
 static_assert(IsSleepBound<1> && IsSleepBound<max_bounded_sleep_nanos>);
 static_assert(!IsSleepBound<0> && !IsSleepBound<max_bounded_sleep_nanos + 1>);
 

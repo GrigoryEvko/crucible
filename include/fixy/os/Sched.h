@@ -9,6 +9,7 @@
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/diag/RowHash.h>
@@ -71,6 +72,11 @@ public:
     SchedPriority& operator=(const SchedPriority&) = delete("a priority proof is not assignable");
     SchedPriority& operator=(SchedPriority&&) = delete("a priority proof is not assignable");
     ~SchedPriority() = default;
+
+private:
+    // No byte route builds a proof, so no proof claims a nice value that no
+    // syscall set.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
 namespace detail {
@@ -414,6 +420,7 @@ static_assert(!std::is_default_constructible_v<SchedPriority<5>> && !std::is_cop
               "a priority proof comes only from mint_priority and never leaves the frame that holds it");
 static_assert(!std::is_implicit_lifetime_v<SchedPriority<5>> && !std::is_aggregate_v<SchedPriority<5>>,
               "std::start_lifetime_as and aggregate initialization must not build a priority proof");
+static_assert(!std::is_trivially_copyable_v<SchedPriority<5>>, "std::bit_cast must not build a priority proof");
 static_assert(!std::is_default_constructible_v<SchedProofDoor> && !std::is_copy_constructible_v<SchedProofDoor>
                   && !std::is_move_constructible_v<SchedProofDoor>,
               "No object of the scheduling proof door exists.  Only its members build the proof key.");

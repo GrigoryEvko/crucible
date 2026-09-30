@@ -109,7 +109,11 @@ static_assert(sizeof(CyclicBuffer<std::uint32_t, 8>)
 static_assert(sizeof(CyclicBuffer<std::uint32_t, 8>) == 48);
 static_assert(sizeof(CyclicBuffer<std::uint64_t, 16>) == 144);
 static_assert(alignof(CyclicBuffer<std::uint32_t, 8>) == alignof(std::size_t));
-static_assert(std::is_trivially_copyable_v<CyclicBuffer<std::uint32_t, 8>>);
+// The copy and the destructor are trivial.  The fill count seals the ring
+// against the byte routes, so no byte image holds a count above the
+// capacity, and the ring is not trivially copyable.
+static_assert(std::is_trivially_copy_constructible_v<CyclicBuffer<std::uint32_t, 8>>);
+static_assert(!std::is_trivially_copyable_v<CyclicBuffer<std::uint32_t, 8>>);
 static_assert(std::is_trivially_destructible_v<CyclicBuffer<std::uint32_t, 8>>);
 static_assert(!std::is_same_v<CyclicBuffer<int, 8>, FixedArray<int, 8>>);
 static_assert(CB8::wrapper_kind() == "structural::CyclicBuffer");

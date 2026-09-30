@@ -29,6 +29,7 @@
 // caller reads it without an object.
 
 #include <fixy/GradedFacade.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/SchedulerPolicyLattice.h>
@@ -75,6 +76,9 @@ public:
 
 private:
     graded_type impl_;
+    // No byte route builds a proof, so no proof claims a policy that no
+    // syscall set.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     using key_ = ::foundation::algebra::grade_key<SchedClass>;
 
@@ -122,10 +126,17 @@ using OtherSc = SchedClass<SchedulerPolicy_v::Other, T>;
 template <typename T>
 using FifoSc = SchedClass<SchedulerPolicy_v::Fifo, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(OtherSc, char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(OtherSc, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FifoSc, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FifoSc, double);
+// A proof keeps the size, the alignment and the trivial destructor of its
+// value.  It is not trivially copyable on purpose, so the trivial-copy
+// parity of CRUCIBLE_GRADED_LAYOUT_INVARIANT does not hold, and the other
+// three properties are stated here one by one.
+template <typename Proof, typename T>
+concept KeepsTheValueLayout =
+    sizeof(Proof) == sizeof(T) && alignof(Proof) == alignof(T) && std::is_trivially_destructible_v<Proof>
+    && !std::is_trivially_copyable_v<Proof> && !::foundation::lifetime::ImplicitLifetimeThroughout<Proof>;
+
+static_assert(KeepsTheValueLayout<OtherSc<char>, char> && KeepsTheValueLayout<OtherSc<int>, int>
+              && KeepsTheValueLayout<FifoSc<int>, int> && KeepsTheValueLayout<FifoSc<double>, double>);
 
 }  // namespace detail::sched_class_layout
 

@@ -55,6 +55,36 @@ namespace foundation::lifetime {
 // Spell it on the class: struct [[=::foundation::lifetime::no_start_over_bytes{}]] X.
 struct no_start_over_bytes {};
 
+// A member that closes the two byte routes to the class that holds it, and
+// keeps the call ABI of that class.
+//
+// std::bit_cast builds a trivially copyable class from bytes, and the
+// checked lifetime start builds an implicit-lifetime class over bytes.
+// Neither calls a constructor, so neither meets the door of a proof.  A
+// proof that the ABI passes in a register keeps trivial copy and move
+// constructors and a trivial destructor.  GCC also counts a class whose
+// copies and moves are all deleted as trivially copyable.  Such a class
+// holds one seal:
+//
+//     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+//
+// The assignments of the seal are user-provided, so the assignments of the
+// class are not trivial, and the class is not trivially copyable.  The seal
+// carries no_start_over_bytes, so the checked lifetime start refuses the
+// class.  The copy and move constructors and the destructor of the seal are
+// trivial, so the Itanium ABI still passes the class in registers.  The
+// seal adds no byte, and a class that holds only a seal stays empty.  A
+// class that holds a sealed member is sealed through that member, and a
+// second seal in it can need a byte of its own.
+struct[[= no_start_over_bytes{}]] byte_seal {
+    constexpr byte_seal() noexcept = default;
+    constexpr byte_seal(const byte_seal&) noexcept = default;
+    constexpr byte_seal(byte_seal&&) noexcept = default;
+    constexpr byte_seal& operator=(const byte_seal&) noexcept { return *this; }
+    constexpr byte_seal& operator=(byte_seal&&) noexcept { return *this; }
+    ~byte_seal() = default;
+};
+
 namespace detail {
 
 // A class that nests deeper than this is refused, not walked.
@@ -222,6 +252,39 @@ static_assert(!can_start_as<volatile unsigned char, Plain> && !can_start_as<cons
               "volatile storage is refused, and a caller adds volatile to data()");
 static_assert(!can_start_as<unsigned char, HoldsProof> && !can_start_as<const void, ProofShape[1]>,
               "the checked start refuses a proof subobject through every storage qualifier");
+
+// A sealed class keeps a trivial copy, a trivial destructor and its size,
+// and the two byte routes refuse it.  A class that holds only a seal stays
+// empty, and a class that holds a sealed member is sealed.
+class SealedView {
+    const int* target_ = nullptr;
+    [[no_unique_address]] byte_seal seal_{};
+
+public:
+    constexpr SealedView() noexcept = default;
+};
+class SealedWitness {
+    [[no_unique_address]] byte_seal seal_{};
+
+public:
+    constexpr SealedWitness() noexcept {}
+    SealedWitness(const SealedWitness&) = delete;
+    SealedWitness& operator=(const SealedWitness&) = delete;
+};
+struct HoldsSealedView {
+    SealedView view;
+};
+static_assert(!std::is_trivially_copyable_v<byte_seal> && !ImplicitLifetimeThroughout<byte_seal>);
+static_assert(!std::is_trivially_copyable_v<SealedView> && !ImplicitLifetimeThroughout<SealedView>,
+              "std::bit_cast and the checked lifetime start refuse a sealed class");
+static_assert(std::is_trivially_copy_constructible_v<SealedView> && std::is_trivially_move_constructible_v<SealedView>
+                  && std::is_trivially_destructible_v<SealedView>,
+              "a sealed class keeps the trivial copy that passes it in registers");
+static_assert(sizeof(SealedView) == sizeof(const int*), "the seal adds no byte");
+static_assert(std::is_empty_v<SealedWitness> && !std::is_trivially_copyable_v<SealedWitness>,
+              "a pinned class that holds only a seal stays empty, and the trait stops calling it trivially copyable");
+static_assert(!std::is_trivially_copyable_v<HoldsSealedView> && !ImplicitLifetimeThroughout<HoldsSealedView>,
+              "a class that holds a sealed member is sealed through it");
 
 }  // namespace detail::lifetime_self_test
 

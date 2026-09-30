@@ -23,6 +23,7 @@
 
 #include <fixy/Qtt.h>
 #include <foundation/Brand.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/reflect/Instance.h>
 
@@ -117,6 +118,9 @@ class [[nodiscard]] ScopedView {
     // Holding a const pointer is also what lets a const member
     // function mint a view of itself.
     Carrier const* ptr_;
+    // No byte route builds a view, so a view names only a carrier that a
+    // mint checked.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     constexpr explicit ScopedView(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept : ptr_{&c} {}
 
@@ -382,14 +386,20 @@ constexpr bool view_ok(sv_branded_carrier const&, std::type_identity<sv_test_tag
 // one for another tag.
 struct sv_other_tag {};
 struct sv_no_predicate_carrier {};
+
+using sv_sealed_view = ScopedView<sv_test_carrier, sv_test_tag, sv_brand_a>;
 }  // namespace detail
 
 static_assert(sizeof(ScopedView<detail::sv_test_carrier, detail::sv_test_tag>) == sizeof(void*),
               "ScopedView<C, T> must be exactly a Carrier pointer");
 static_assert(sizeof(ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>) == sizeof(void*),
               "a branded view keeps the layout of an erased one");
-static_assert(std::is_trivially_copyable_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
-static_assert(std::is_trivially_destructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
+static_assert(!std::is_trivially_copyable_v<detail::sv_sealed_view>
+                  && !::foundation::lifetime::ImplicitLifetimeThroughout<detail::sv_sealed_view>,
+              "std::bit_cast and std::start_lifetime_as must not build a view that no mint checked");
+static_assert(std::is_trivially_copy_constructible_v<detail::sv_sealed_view>
+                  && std::is_trivially_destructible_v<detail::sv_sealed_view>,
+              "a view keeps the trivial copy that passes it in a register");
 
 static_assert(IsScopedView<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
 static_assert(IsScopedView<ScopedView<detail::sv_test_carrier, detail::sv_test_tag> const&>);
