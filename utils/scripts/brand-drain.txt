@@ -21,8 +21,6 @@ include/fixy/OwnedRegion.h	13
 include/fixy/Qtt.h	2
 include/fixy/ScopedView.h	8
 include/fixy/SharedRegion.h	1
-include/fixy/concurrent/PermissionedMpscChannel.h	6
-include/fixy/concurrent/PermissionedSpscChannel.h	8
 include/fixy/os/Mmap.h	1
 include/fixy/os/NumaPlacement.h	1
 include/fixy/session/Payload.h	14
@@ -59,10 +57,6 @@ test/fixy/neg/neg_spawn_mint_parallel_for_ctx_lacks_bg.cpp	1
 test/fixy/neg/neg_spin_lock_without_permission.cpp	1
 test/fixy/neg/neg_witness_borrowed_direct_construction.cpp	1
 test/fixy/neg/neg_witness_borrowedref_direct_construction.cpp	1
-test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction.cpp	1
-test/fixy/neg/neg_witness_concurrent_permissionedmpscchannel_producerhandle_direct_construction.cpp	1
-test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction.cpp	1
-test/fixy/neg/neg_witness_concurrent_permissionedspscchannel_producerhandle_direct_construction.cpp	1
 test/fixy/neg/neg_witness_disjoint_direct_construction.cpp	1
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp	2
 test/fixy/neg/neg_witness_ownedmmap_direct_construction.cpp	1

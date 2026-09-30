@@ -25,11 +25,18 @@
 
 namespace {
 
-struct TestMetaLogTag {};
-using PermissionedLog = ::crucible::PermissionedMetaLog<TestMetaLogTag>;
-
 namespace ms = ::crucible::metalog_session;
 namespace fp = ::foundation::permissions;
+
+struct TestMetaLogTag {};
+
+// One call site for every root of the log, so every log of this type
+// carries the brand of that site.
+[[nodiscard]] auto log_root() noexcept {
+    return fp::mint_permission_root<::crucible::metalog_tag::Whole<TestMetaLogTag>>();
+}
+
+using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 using FgCtx = ::fixy::HotFgCtx;
 using BgCtx = ::fixy::BgDrainCtx;
 
@@ -73,8 +80,8 @@ static_assert(std::is_same_v<ConsumerSession::resource_type, PermissionedLog::Co
 
 // A handle is exactly one pointer.  The permission token it carries is
 // empty and collapses into the binding.
-static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(::crucible::MetaLog*));
-static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(::crucible::MetaLog*));
+static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(void*));
+static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(void*));
 
 // The wrapper names one MetaLog for life, so it has no copy and no move.
 static_assert(std::is_same_v<PermissionedLog::value_type, ::crucible::TensorMeta>);
@@ -129,10 +136,12 @@ void run_test(const char* name, Body body) {
         && a.storage_nbytes == b.storage_nbytes && a.version == b.version;
 }
 
+[[nodiscard]] auto mint_halves() noexcept {
+    return fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(log_root());
+}
+
 [[nodiscard]] auto mint_handles(PermissionedLog& log) {
-    auto whole = fp::mint_permission_root<PermissionedLog::whole_tag>();
-    auto [pp, cp] =
-        fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(std::move(whole));
+    auto [pp, cp] = mint_halves();
     return std::pair{log.producer(std::move(pp)), log.consumer(std::move(cp))};
 }
 
@@ -359,14 +368,36 @@ void log_consumer() {
     (void)opaque_ref(consumer).try_drain_one();
 }
 
+// One call site that runs two times mints two roots of one brand.  The
+// claim of each role refuses the second live handle of that role.
+void second_live_producer() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [first_producer, first_consumer] = mint_halves();
+    auto [second_producer, second_consumer] = mint_halves();
+    [[maybe_unused]] auto held = log.producer(std::move(first_producer));
+    [[maybe_unused]] auto second = log.producer(std::move(second_producer));
+}
+
+void second_live_consumer() {
+    ::crucible::MetaLog raw_log;
+    PermissionedLog log{raw_log};
+    auto [first_producer, first_consumer] = mint_halves();
+    auto [second_producer, second_consumer] = mint_halves();
+    [[maybe_unused]] auto held = log.consumer(std::move(first_consumer));
+    [[maybe_unused]] auto second = log.consumer(std::move(second_consumer));
+}
+
 struct Attack {
     const char* name;
     void (*run)();
 };
 
 constexpr Attack kAttacks[] = {
-    {"producer", &log_producer},
-    {"consumer", &log_consumer},
+    {"moved-from producer", &log_producer},
+    {"moved-from consumer", &log_consumer},
+    {"second live producer", &second_live_producer},
+    {"second live consumer", &second_live_consumer},
 };
 
 [[nodiscard]] bool ends_the_process(void (*attack)()) {
@@ -392,7 +423,7 @@ void test_moved_from_handles_end_the_process() {
     std::fprintf(stderr, "\n  [expected] each attack prints the invariant report of a child process\n");
     for (const Attack& attack : kAttacks) {
         if (!ends_the_process(attack.run)) {
-            std::fprintf(stderr, "  a moved-from %s still acted on its log\n", attack.name);
+            std::fprintf(stderr, "  a %s still acted on its log\n", attack.name);
             ++total_failed;
         }
     }

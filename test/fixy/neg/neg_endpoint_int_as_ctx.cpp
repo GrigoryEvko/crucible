@@ -14,15 +14,18 @@
 namespace endpoint_ctx_fixture {
 namespace c = ::fixy::concurrent;
 struct Tag {};
-using Channel = c::PermissionedSpscChannel<int, 8, Tag>;
+inline auto channel_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
+}
+using Channel = c::spsc_channel_t<int, 8, decltype(channel_root())>;
 }  // namespace endpoint_ctx_fixture
 
 int main() {
     using namespace endpoint_ctx_fixture;
     namespace perm = ::foundation::permissions;
     Channel channel{};
-    auto [producer_perm, consumer_perm] = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(
-        perm::mint_permission_root<Channel::whole_tag>());
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     const int not_a_ctx = 0;
     auto endpoint =

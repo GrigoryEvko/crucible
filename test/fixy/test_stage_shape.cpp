@@ -38,9 +38,12 @@ int g_failures = 0;
 
 // ── stage bodies over a real channel's handles ──────────────────────
 
+// The shape reads the handle types only, so a named brand stands in for
+// the brand of a root site.
 struct StageShapeTag {};
-using IntSpsc = c::PermissionedSpscChannel<int, 8, StageShapeTag>;
-using FloatSpsc = c::PermissionedSpscChannel<float, 8, StageShapeTag>;
+struct StageShapeBrand {};
+using IntSpsc = c::PermissionedSpscChannel<int, 8, StageShapeTag, StageShapeBrand>;
+using FloatSpsc = c::PermissionedSpscChannel<float, 8, StageShapeTag, StageShapeBrand>;
 
 // A body that drains one real channel into another is a stage.  Nothing
 // about these two handle types was written with StageShape in view.

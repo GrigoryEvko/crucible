@@ -143,7 +143,7 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
-| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | - | Y | Y | ctx | Y | HS14: 1 ⚠ |
 
@@ -234,7 +234,7 @@ apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_endpoint` | `include/fixy/concurrent/Endpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
 | `mint_mpmc_stage_from_endpoints` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
+| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 11 |
 | `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_reader_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_recording_endpoint` | `include/fixy/concurrent/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -243,7 +243,7 @@ apply to the row.
 | `mint_substrate_session` | `include/fixy/concurrent/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_swmr_reader` | `include/fixy/concurrent/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_swmr_stage` | `include/fixy/concurrent/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_swmr_writer` | `include/fixy/concurrent/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_writer_runtime_session` | `include/fixy/concurrent/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/fixy/handle/
@@ -336,9 +336,9 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 163 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 165 |
 | `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 3 |
-| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 27 |
+| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 28 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 

@@ -39,8 +39,11 @@ constexpr auto pop_int = [](auto& handle) noexcept -> std::optional<int> { retur
 
 // ── The bridge ───────────────────────────────────────────────────────
 
+// Each channel of this file has one root site, and its type names the
+// brand of that site.
 struct BridgeTag {};
-using BridgeSpsc = c::PermissionedSpscChannel<int, 8, BridgeTag>;
+auto bridge_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<BridgeTag>>(); }
+using BridgeSpsc = c::spsc_channel_t<int, 8, decltype(bridge_root())>;
 
 // The table bridges the two directions of a channel.  A value that names
 // no direction has no handle of its pole, so the channel does not bridge it.
@@ -50,8 +53,7 @@ static_assert(!c::IsBridgeableDirection<BridgeSpsc, static_cast<c::Direction>(2)
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     BridgeSpsc channel{};
     auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<BridgeSpsc::producer_tag, BridgeSpsc::consumer_tag>(
-            perm::mint_permission_root<BridgeSpsc::whole_tag>());
+        perm::mint_permission_split<BridgeSpsc::producer_tag, BridgeSpsc::consumer_tag>(bridge_root());
 
     std::optional producer{
         c::mint_substrate_session<BridgeSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)))};
@@ -76,14 +78,14 @@ static_assert(!c::IsBridgeableDirection<BridgeSpsc, static_cast<c::Direction>(2)
 // ── The endpoint ─────────────────────────────────────────────────────
 
 struct EndpointTag {};
-using EndpointSpsc = c::PermissionedSpscChannel<int, 8, EndpointTag>;
+auto endpoint_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<EndpointTag>>(); }
+using EndpointSpsc = c::spsc_channel_t<int, 8, decltype(endpoint_root())>;
 
 [[nodiscard]] int endpoint_send_recv_and_hand_back() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     EndpointSpsc channel{};
     auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<EndpointSpsc::producer_tag, EndpointSpsc::consumer_tag>(
-            perm::mint_permission_root<EndpointSpsc::whole_tag>());
+        perm::mint_permission_split<EndpointSpsc::producer_tag, EndpointSpsc::consumer_tag>(endpoint_root());
 
     auto producer =
         c::mint_endpoint<EndpointSpsc, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)));
@@ -120,8 +122,10 @@ using EndpointSpsc = c::PermissionedSpscChannel<int, 8, EndpointTag>;
 
 struct StageInTag {};
 struct StageOutTag {};
-using StageIn = c::PermissionedSpscChannel<int, 8, StageInTag>;
-using StageOut = c::PermissionedSpscChannel<int, 8, StageOutTag>;
+auto stage_in_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<StageInTag>>(); }
+auto stage_out_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<StageOutTag>>(); }
+using StageIn = c::spsc_channel_t<int, 8, decltype(stage_in_root())>;
+using StageOut = c::spsc_channel_t<int, 8, decltype(stage_out_root())>;
 
 // The body doubles each value it drains.
 void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out) noexcept {
@@ -135,11 +139,9 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
     StageIn in_channel{};
     StageOut out_channel{};
     auto [in_producer_perm, in_consumer_perm] =
-        perm::mint_permission_split<StageIn::producer_tag, StageIn::consumer_tag>(
-            perm::mint_permission_root<StageIn::whole_tag>());
+        perm::mint_permission_split<StageIn::producer_tag, StageIn::consumer_tag>(stage_in_root());
     auto [out_producer_perm, out_consumer_perm] =
-        perm::mint_permission_split<StageOut::producer_tag, StageOut::consumer_tag>(
-            perm::mint_permission_root<StageOut::whole_tag>());
+        perm::mint_permission_split<StageOut::producer_tag, StageOut::consumer_tag>(stage_out_root());
 
     auto feeder = in_channel.producer(std::move(in_producer_perm));
     auto drain = out_channel.consumer(std::move(out_consumer_perm));
@@ -163,8 +165,10 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
 // producer pole, so the body is a stage and the endpoint mint takes it.
 struct FeedInTag {};
 struct FeedOutTag {};
-using FeedIn = c::PermissionedSpscChannel<int, 8, FeedInTag>;
-using FeedOut = c::PermissionedMpscChannel<int, 8, FeedOutTag>;
+auto feed_in_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FeedInTag>>(); }
+auto feed_out_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<FeedOutTag>>(); }
+using FeedIn = c::spsc_channel_t<int, 8, decltype(feed_in_root())>;
+using FeedOut = c::mpsc_channel_t<int, 8, decltype(feed_out_root())>;
 
 void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out) noexcept {
     while (const std::optional<int> value = in.try_pop()) {
@@ -174,11 +178,12 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
 
 [[nodiscard]] int stage_feeds_an_mpsc_channel() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
+    auto [in_producer_perm, in_consumer_perm] =
+        perm::mint_permission_split<FeedIn::producer_tag, FeedIn::consumer_tag>(feed_in_root());
+    auto [out_producer_root, out_consumer_perm] =
+        perm::mint_permission_split<FeedOut::producer_tag, FeedOut::consumer_tag>(feed_out_root());
     FeedIn in_channel{};
-    FeedOut out_channel{};
-    auto [in_producer_perm, in_consumer_perm] = perm::mint_permission_split<FeedIn::producer_tag, FeedIn::consumer_tag>(
-        perm::mint_permission_root<FeedIn::whole_tag>());
-    auto out_consumer_perm = perm::mint_permission_root<FeedOut::consumer_tag>();
+    FeedOut out_channel{std::move(out_producer_root)};
 
     auto feeder = in_channel.producer(std::move(in_producer_perm));
     auto drain = out_channel.consumer(std::move(out_consumer_perm));
@@ -201,9 +206,12 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
 struct FanLeftTag {};
 struct FanRightTag {};
 struct FanOutTag {};
-using FanLeft = c::PermissionedSpscChannel<int, 8, FanLeftTag>;
-using FanRight = c::PermissionedSpscChannel<int, 8, FanRightTag>;
-using FanOut = c::PermissionedSpscChannel<int, 8, FanOutTag>;
+auto fan_left_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FanLeftTag>>(); }
+auto fan_right_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FanRightTag>>(); }
+auto fan_out_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FanOutTag>>(); }
+using FanLeft = c::spsc_channel_t<int, 8, decltype(fan_left_root())>;
+using FanRight = c::spsc_channel_t<int, 8, decltype(fan_right_root())>;
+using FanOut = c::spsc_channel_t<int, 8, decltype(fan_out_root())>;
 
 // The body sums one value from each input.
 void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& right,
@@ -219,14 +227,11 @@ void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& ri
     FanRight right{};
     FanOut out{};
     auto [left_producer_perm, left_consumer_perm] =
-        perm::mint_permission_split<FanLeft::producer_tag, FanLeft::consumer_tag>(
-            perm::mint_permission_root<FanLeft::whole_tag>());
+        perm::mint_permission_split<FanLeft::producer_tag, FanLeft::consumer_tag>(fan_left_root());
     auto [right_producer_perm, right_consumer_perm] =
-        perm::mint_permission_split<FanRight::producer_tag, FanRight::consumer_tag>(
-            perm::mint_permission_root<FanRight::whole_tag>());
+        perm::mint_permission_split<FanRight::producer_tag, FanRight::consumer_tag>(fan_right_root());
     auto [out_producer_perm, out_consumer_perm] =
-        perm::mint_permission_split<FanOut::producer_tag, FanOut::consumer_tag>(
-            perm::mint_permission_root<FanOut::whole_tag>());
+        perm::mint_permission_split<FanOut::producer_tag, FanOut::consumer_tag>(fan_out_root());
 
     auto left_feeder = left.producer(std::move(left_producer_perm));
     auto right_feeder = right.producer(std::move(right_producer_perm));
@@ -253,7 +258,8 @@ struct LastValueWriter {
 };
 
 struct SwmrInTag {};
-using SwmrIn = c::PermissionedSpscChannel<int, 8, SwmrInTag>;
+auto swmr_in_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<SwmrInTag>>(); }
+using SwmrIn = c::spsc_channel_t<int, 8, decltype(swmr_in_root())>;
 
 void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noexcept {
     while (const std::optional<int> value = in.try_pop()) {
@@ -264,8 +270,8 @@ void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noe
 [[nodiscard]] int swmr_stage_runs_its_body() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     SwmrIn channel{};
-    auto [producer_perm, consumer_perm] = perm::mint_permission_split<SwmrIn::producer_tag, SwmrIn::consumer_tag>(
-        perm::mint_permission_root<SwmrIn::whole_tag>());
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<SwmrIn::producer_tag, SwmrIn::consumer_tag>(swmr_in_root());
     auto feeder = channel.producer(std::move(producer_perm));
     (void)feeder.try_push(5);
     (void)feeder.try_push(6);
@@ -282,14 +288,14 @@ void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noe
 // ── The recording wrapper ────────────────────────────────────────────
 
 struct RecordTag {};
-using RecordSpsc = c::PermissionedSpscChannel<int, 8, RecordTag>;
+auto record_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<RecordTag>>(); }
+using RecordSpsc = c::spsc_channel_t<int, 8, decltype(record_root())>;
 
 [[nodiscard]] int recording_endpoint_records_each_step() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     RecordSpsc channel{};
     auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<RecordSpsc::producer_tag, RecordSpsc::consumer_tag>(
-            perm::mint_permission_root<RecordSpsc::whole_tag>());
+        perm::mint_permission_split<RecordSpsc::producer_tag, RecordSpsc::consumer_tag>(record_root());
     auto consumer = channel.consumer(std::move(consumer_perm));
 
     s::SessionEventLog log;

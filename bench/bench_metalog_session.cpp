@@ -23,7 +23,14 @@
 namespace {
 
 struct BenchTag {};
-using PermissionedLog = ::crucible::PermissionedMetaLog<BenchTag>;
+
+// The one call site for the root of the log, so the log type names the
+// brand of that site.
+[[nodiscard]] auto log_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<BenchTag>>();
+}
+
+using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 
 [[nodiscard]] ::crucible::TensorMeta make_meta(std::uint32_t id) {
     ::crucible::TensorMeta meta{};
@@ -106,17 +113,15 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
 }  // namespace
 
 int main() {
-    static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(::crucible::MetaLog*));
-    static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(::crucible::MetaLog*));
+    static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(void*));
+    static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(void*));
 
     auto raw_owner = std::make_unique<::crucible::MetaLog>();
     ::crucible::MetaLog& raw = *raw_owner;
     PermissionedLog log{raw};
 
     namespace fp = ::foundation::permissions;
-    auto whole = fp::mint_permission_root<PermissionedLog::whole_tag>();
-    auto [pp, cp] =
-        fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(std::move(whole));
+    auto [pp, cp] = fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(log_root());
     auto producer = log.producer(std::move(pp));
     auto consumer = log.consumer(std::move(cp));
 

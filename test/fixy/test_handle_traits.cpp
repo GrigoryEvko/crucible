@@ -75,7 +75,8 @@ struct synth_swmr_hybrid {
 // ── the real channel ────────────────────────────────────────────────
 
 struct HandleTraitsTag {};
-using Spsc = c::PermissionedSpscChannel<int, 8, HandleTraitsTag>;
+auto handle_traits_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<HandleTraitsTag>>(); }
+using Spsc = c::spsc_channel_t<int, 8, decltype(handle_traits_root())>;
 
 // The production handles answer exactly one predicate each.  These are
 // the cells that are not circular: neither handle was written with this
@@ -101,7 +102,7 @@ static_assert(!c::is_consumer_handle_v<Spsc>);
 static_assert(!c::is_producer_handle_v<Spsc>);
 
 // A different element type carries through.
-using SpscBytes = c::PermissionedSpscChannel<unsigned char, 8, HandleTraitsTag>;
+using SpscBytes = c::spsc_channel_t<unsigned char, 8, decltype(handle_traits_root())>;
 static_assert(std::is_same_v<c::consumer_handle_value_t<SpscBytes::ConsumerHandle>, unsigned char>);
 static_assert(std::is_same_v<c::producer_handle_value_t<SpscBytes::ProducerHandle>, unsigned char>);
 
@@ -145,9 +146,8 @@ void every_predicate_reads_at_run_time() {
 // so the two halves are exercised through the members the trait named.
 void the_recognized_handles_carry_a_value() {
     Spsc channel{};
-    auto whole = perm::mint_permission_root<Spsc::whole_tag>();
     auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(whole));
+        perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(handle_traits_root());
 
     auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));

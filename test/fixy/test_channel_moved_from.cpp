@@ -36,8 +36,12 @@ struct SpscTag {};
 struct MpscTag {};
 struct ThreadedTag {};
 
-using Spsc = c::PermissionedSpscChannel<int, 8, SpscTag>;
-using Mpsc = c::PermissionedMpscChannel<int, 8, MpscTag>;
+auto spsc_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<SpscTag>>(); }
+auto mpsc_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<MpscTag>>(); }
+auto threaded_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<ThreadedTag>>(); }
+
+using Spsc = c::spsc_channel_t<int, 8, decltype(spsc_root())>;
+using Mpsc = c::mpsc_channel_t<int, 8, decltype(mpsc_root())>;
 
 // The binding costs one pointer, and it keeps the handle move-only.
 static_assert(sizeof(Spsc::ProducerHandle) == sizeof(void*));
@@ -62,9 +66,14 @@ static_assert(!std::is_move_assignable_v<Mpsc::ConsumerHandle>);
 }
 
 [[nodiscard]] auto spsc_handles(Spsc& channel) {
-    auto whole = perm::mint_permission_root<Spsc::whole_tag>();
-    auto [producer, consumer] = perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(whole));
+    auto [producer, consumer] = perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(spsc_root());
     return std::pair{channel.producer(std::move(producer)), channel.consumer(std::move(consumer))};
+}
+
+// The pool of an MPSC channel takes the producer half of the root, and
+// the caller keeps the consumer half.
+[[nodiscard]] auto mpsc_halves() {
+    return perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(mpsc_root());
 }
 
 // Each attack reaches the moved-from handle through a call that the
@@ -91,7 +100,9 @@ void spsc_consumer() {
 }
 
 void mpsc_producer() {
-    Mpsc channel{};
+    auto [producer_root, consumer_perm] = mpsc_halves();
+    (void)consumer_perm;
+    Mpsc channel{std::move(producer_root)};
     auto producer = channel.producer();
     [[maybe_unused]] auto moved = std::move(*producer);
     (void)opaque_ref(*producer).try_push(1);
@@ -100,15 +111,18 @@ void mpsc_producer() {
 // The moved-from producer holds no pool share, so the drained window opens.
 // A push from it inside that window is the push the window forbids.
 void mpsc_producer_in_drained_window() {
-    Mpsc channel{};
+    auto [producer_root, consumer_perm] = mpsc_halves();
+    (void)consumer_perm;
+    Mpsc channel{std::move(producer_root)};
     auto producer = channel.producer();
     { [[maybe_unused]] auto moved = std::move(*producer); }
     (void)channel.with_drained_access([&producer] { (void)opaque_ref(*producer).try_push(1); });
 }
 
 void mpsc_consumer() {
-    Mpsc channel{};
-    auto consumer = channel.consumer(perm::mint_permission_root<Mpsc::consumer_tag>());
+    auto [producer_root, consumer_perm] = mpsc_halves();
+    Mpsc channel{std::move(producer_root)};
+    auto consumer = channel.consumer(std::move(consumer_perm));
     [[maybe_unused]] auto moved = std::move(consumer);
     (void)opaque_ref(consumer).try_pop();
 }
@@ -166,12 +180,11 @@ constexpr Attack kAttacks[] = {
 // The producer handle is moved into the thread that pushes, and the consumer
 // stays here.  The thread sanitizer preset runs this with no report.
 [[nodiscard]] int handle_moved_into_a_thread() {
-    using Channel = c::PermissionedSpscChannel<int, 64, ThreadedTag>;
+    using Channel = c::spsc_channel_t<int, 64, decltype(threaded_root())>;
     constexpr int kItems = 2000;
     Channel channel{};
-    auto whole = perm::mint_permission_root<Channel::whole_tag>();
     auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(whole));
+        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(threaded_root());
     auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));
 

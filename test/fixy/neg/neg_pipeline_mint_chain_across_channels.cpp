@@ -17,14 +17,17 @@ namespace {
 
 namespace cc = fixy::concurrent;
 
+// The fixture builds no channel, so one named brand stands in for the
+// brand of a root site.  The tags keep the four channels apart.
 struct InTag {};
 struct ATag {};
 struct BTag {};
 struct OutTag {};
-using InChannel = cc::PermissionedSpscChannel<int, 8, InTag>;
-using AChannel = cc::PermissionedSpscChannel<int, 8, ATag>;
-using BChannel = cc::PermissionedSpscChannel<int, 8, BTag>;
-using OutChannel = cc::PermissionedSpscChannel<int, 8, OutTag>;
+struct FixtureBrand {};
+using InChannel = cc::PermissionedSpscChannel<int, 8, InTag, FixtureBrand>;
+using AChannel = cc::PermissionedSpscChannel<int, 8, ATag, FixtureBrand>;
+using BChannel = cc::PermissionedSpscChannel<int, 8, BTag, FixtureBrand>;
+using OutChannel = cc::PermissionedSpscChannel<int, 8, OutTag, FixtureBrand>;
 
 inline void writes_a(InChannel::ConsumerHandle&&, AChannel::ProducerHandle&&) noexcept {}
 inline void drains_b(BChannel::ConsumerHandle&&, OutChannel::ProducerHandle&&) noexcept {}

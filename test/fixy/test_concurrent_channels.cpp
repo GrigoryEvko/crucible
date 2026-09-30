@@ -30,15 +30,20 @@ namespace {
 struct TraceTag {};
 struct MetaTag {};
 struct OtherTag {};
-// A tag of its own for the threaded channel.  Two channels sharing a
-// UserTag share Permission types, so each would mint a second root for
-// the same tag — which is the one thing the headers say nothing checks
-// at runtime.
+// A tag of its own for the threaded channel.
 struct BulkTag {};
 
-using Spsc = c::PermissionedSpscChannel<int, 8, TraceTag>;
-using Mpsc = c::PermissionedMpscChannel<int, 8, MetaTag>;
-using OtherSpsc = c::PermissionedSpscChannel<int, 8, OtherTag>;
+// One root site for each channel.  The brand of a root names its site,
+// and a channel type names that brand, so each channel below is the
+// channel of one site.
+auto trace_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<TraceTag>>(); }
+auto meta_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<MetaTag>>(); }
+auto other_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<OtherTag>>(); }
+auto bulk_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<BulkTag>>(); }
+
+using Spsc = c::spsc_channel_t<int, 8, decltype(trace_root())>;
+using Mpsc = c::mpsc_channel_t<int, 8, decltype(meta_root())>;
+using OtherSpsc = c::spsc_channel_t<int, 8, decltype(other_root())>;
 
 // ── Ownership is in the types ────────────────────────────────────────
 
@@ -114,9 +119,9 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
 [[nodiscard]] int spsc_split_and_run() {
     Spsc channel{};
 
-    // One root per whole tag per program.  Splitting it is what creates
-    // the two endpoint tokens, and there is no other way to get one.
-    auto whole = perm::mint_permission_root<Spsc::whole_tag>();
+    // The split of the root makes the two endpoint tokens, and no other
+    // path gives a token of this brand.
+    auto whole = trace_root();
 
     // The whole permission is the proof that no handle is alive, so the
     // body reaches the ring itself.  Here it leaves one value behind.
@@ -171,8 +176,10 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
 // ── Runtime: the MPSC pool ───────────────────────────────────────────
 
 [[nodiscard]] int mpsc_pool_accounting() {
-    Mpsc channel{};
-    auto consumer = channel.consumer(perm::mint_permission_root<Mpsc::consumer_tag>());
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
+    Mpsc channel{std::move(producer_root)};
+    auto consumer = channel.consumer(std::move(consumer_perm));
 
     if (channel.outstanding_producers() != 0 || channel.is_exclusive_active()) {
         std::fprintf(stderr, "a fresh MPSC channel reported outstanding producers\n");
@@ -255,9 +262,11 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
     constexpr int kProducers = 4;
     constexpr int kPerProducer = 500;
 
-    using BulkChannel = c::PermissionedMpscChannel<int, 256, BulkTag>;
-    BulkChannel channel{};
-    auto consumer = channel.consumer(perm::mint_permission_root<BulkChannel::consumer_tag>());
+    using BulkChannel = c::mpsc_channel_t<int, 256, decltype(bulk_root())>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(bulk_root());
+    BulkChannel channel{std::move(producer_root)};
+    auto consumer = channel.consumer(std::move(consumer_perm));
 
     std::atomic<int> failures{0};
     std::atomic<int> finished{0};

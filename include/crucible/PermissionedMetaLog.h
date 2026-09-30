@@ -5,21 +5,27 @@
 // producer side does not compile, and the move-only Permission keeps the
 // log to one producer and one consumer at a time.
 //
-// Each log needs a UserTag of its own.  Two logs that share a tag share
-// Permission types, and their endpoints become interchangeable.  Mint the
-// root of each whole tag once per program: nothing checks that at run
-// time.
+// A log has the brand of the root that its permissions grow from.  The
+// caller mints the whole root, names its brand in the log type, and
+// splits the root into the producer token and the consumer token.  A root
+// of another call site has another brand, so its tokens open no endpoint
+// of this log.  One call site that runs two times mints two roots of one
+// brand, and no type tells them apart.  A claim on each role
+// (foundation/ChannelBinding.h) refuses a second live handle of one role
+// there.
 //
 // The endpoint accessors are members named producer and consumer, not
-// mint_ free functions.  Their whole admission is the parameter type: a
-// caller that cannot produce a Permission<producer_tag> cannot call
-// producer().  So there is no constraint for a negative fixture to fire,
-// and a mint_ name would claim a gate that they do not have.
+// mint_ free functions.  Their admission is the parameter type and the
+// claim: a caller that cannot produce a Permission<producer_tag, Brand>
+// cannot call producer().  So there is no constraint for a negative
+// fixture to fire, and a mint_ name would claim a gate that they do not
+// have.
 
 #include <crucible/MetaLog.h>
 
 #include <fixy/Aliases.h>
 #include <fixy/session/NetworkModel.h>
+#include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
@@ -52,11 +58,15 @@ struct Consumer {
 
 }  // namespace metalog_tag
 
-template <typename UserTag = void>
+// UserTag and Brand have no default.  A default tag would give every log
+// that omits it one set of Permission types.  The erased brand would let a
+// token of every root site open the endpoints.
+template <typename UserTag, ::foundation::brand::IsFreshBrand Brand>
 class PermissionedMetaLog {
 public:
     using value_type = ::crucible::TensorMeta;
     using user_tag = UserTag;
+    using brand_type = Brand;
     using whole_tag = metalog_tag::Whole<UserTag>;
     using producer_tag = metalog_tag::Producer<UserTag>;
     using consumer_tag = metalog_tag::Consumer<UserTag>;
@@ -74,18 +84,20 @@ public:
 
     class ProducerHandle {
         // The move clears the binding, so a moved-from handle cannot
-        // append or drain through the Permission it no longer holds.
-        ::foundation::ChannelBinding<::crucible::MetaLog> log_;
-        [[no_unique_address]] ::foundation::permissions::Permission<producer_tag> perm_;
+        // append or drain through the Permission it no longer holds.  The
+        // binding names the wrapper, which holds the log and the claims.
+        ::foundation::ChannelBinding<PermissionedMetaLog> ch_;
+        [[no_unique_address]] ::foundation::permissions::Permission<producer_tag, Brand> perm_;
 
-        constexpr ProducerHandle(::crucible::MetaLog& log,
-                                 ::foundation::permissions::Permission<producer_tag>&& perm) noexcept
-            : log_{log}, perm_{std::move(perm)} {}
+        constexpr ProducerHandle(PermissionedMetaLog& wrapper,
+                                 ::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
+            : ch_{wrapper}, perm_{std::move(perm)} {}
         friend class PermissionedMetaLog;
 
     public:
         using value_type = ::crucible::TensorMeta;
         using tag_type = producer_tag;
+        using brand_type = Brand;
 
         // The producer picks alone when it appends and when it stops, and no
         // peer reads a label, so a session over the handle states the Local
@@ -100,12 +112,18 @@ public:
         ProducerHandle& operator=(ProducerHandle&&) = delete(
             "MetaLog ProducerHandle binds to one MetaLog for life — rebinding would orphan the original Permission");
 
+        // A moved-from handle holds no claim, so only the bound one gives
+        // the role back.
+        ~ProducerHandle() {
+            if (ch_.is_bound()) ch_->producer_claim_.release();
+        }
+
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append(const value_type* metas, std::uint32_t count) {
-            return log_->try_append(metas, count);
+            return ch_->log_.try_append(metas, count);
         }
 
         [[nodiscard, gnu::hot]] bool try_append_one(const value_type& meta) {
-            return log_->try_append(&meta, 1).is_valid();
+            return ch_->log_.try_append(&meta, 1).is_valid();
         }
 
         // The row gate is this constraint.  The body calls try_append, so the
@@ -113,10 +131,10 @@ public:
         template <typename CallerRow = ::foundation::effects::Row<>>
             requires ::fixy::IsPure<CallerRow>
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(const value_type* metas, std::uint32_t count) {
-            return log_->try_append(metas, count);
+            return ch_->log_.try_append(metas, count);
         }
 
-        [[nodiscard]] std::uint32_t size_approx() const { return log_->size().peek(); }
+        [[nodiscard]] std::uint32_t size_approx() const { return ch_->log_.size().peek(); }
     };
 
     // The tail index is read relaxed.  The consumer permission is linear, so
@@ -125,17 +143,18 @@ public:
     // which acquires against the producer's release and is what makes the
     // appended records visible.
     class ConsumerHandle {
-        ::foundation::ChannelBinding<::crucible::MetaLog> log_;
-        [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag> perm_;
+        ::foundation::ChannelBinding<PermissionedMetaLog> ch_;
+        [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> perm_;
 
-        constexpr ConsumerHandle(::crucible::MetaLog& log,
-                                 ::foundation::permissions::Permission<consumer_tag>&& perm) noexcept
-            : log_{log}, perm_{std::move(perm)} {}
+        constexpr ConsumerHandle(PermissionedMetaLog& wrapper,
+                                 ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
+            : ch_{wrapper}, perm_{std::move(perm)} {}
         friend class PermissionedMetaLog;
 
     public:
         using value_type = ::crucible::TensorMeta;
         using tag_type = consumer_tag;
+        using brand_type = Brand;
 
         // The consumer picks alone when it drains and when it stops, so a
         // session over the handle states the Local network.
@@ -149,66 +168,118 @@ public:
         ConsumerHandle& operator=(ConsumerHandle&&) = delete(
             "MetaLog ConsumerHandle binds to one MetaLog for life — rebinding would orphan the original Permission");
 
+        ~ConsumerHandle() {
+            if (ch_.is_bound()) ch_->consumer_claim_.release();
+        }
+
         [[nodiscard, gnu::hot]] std::optional<value_type> try_drain_one() {
-            const std::uint32_t t = log_->tail.peek_relaxed();
-            if (t == log_->head.get()) [[unlikely]] {
+            ::crucible::MetaLog& log = ch_->log_;
+            const std::uint32_t t = log.tail.peek_relaxed();
+            if (t == log.head.get()) [[unlikely]] {
                 return std::nullopt;
             }
 
-            value_type meta = log_->at(t);
-            log_->advance_tail(t + 1);
+            value_type meta = log.at(t);
+            log.advance_tail(t + 1);
             return meta;
         }
 
         template <typename Body>
             requires std::is_invocable_v<Body&, const value_type&>
         [[nodiscard]] std::uint32_t drain(Body&& body, std::uint32_t max_items = ::crucible::MetaLog::CAPACITY) {
-            const std::uint32_t t = log_->tail.peek_relaxed();
-            const std::uint32_t available = log_->head.get() - t;
+            ::crucible::MetaLog& log = ch_->log_;
+            const std::uint32_t t = log.tail.peek_relaxed();
+            const std::uint32_t available = log.head.get() - t;
             const std::uint32_t count = std::min(available, max_items);
 
             for (std::uint32_t i = 0; i < count; ++i) {
-                std::invoke(body, log_->at(t + i));
+                std::invoke(body, log.at(t + i));
             }
             if (count != 0) {
-                log_->advance_tail(t + count);
+                log.advance_tail(t + count);
             }
             return count;
         }
 
         [[nodiscard]] const value_type& at(::crucible::MetaIndex index) const CRUCIBLE_LIFETIMEBOUND {
-            return log_->at(index);
+            return ch_->log_.at(index);
         }
 
         [[nodiscard]] value_type* try_contiguous(std::uint32_t start, std::uint32_t count) const
             CRUCIBLE_LIFETIMEBOUND {
-            return log_->try_contiguous(start, count);
+            return ch_->log_.try_contiguous(start, count);
         }
 
-        void advance_tail(std::uint32_t new_tail) { log_->advance_tail(new_tail); }
+        void advance_tail(std::uint32_t new_tail) { ch_->log_.advance_tail(new_tail); }
 
-        [[nodiscard]] std::uint32_t head_index() const { return log_->head.get(); }
+        [[nodiscard]] std::uint32_t head_index() const { return ch_->log_.head.get(); }
 
-        [[nodiscard]] std::uint32_t tail_index() const { return log_->tail.get(); }
+        [[nodiscard]] std::uint32_t tail_index() const { return ch_->log_.tail.get(); }
 
-        [[nodiscard]] std::uint32_t size_approx() const { return log_->size().peek(); }
+        [[nodiscard]] std::uint32_t size_approx() const { return ch_->log_.size().peek(); }
     };
 
-    [[nodiscard]] constexpr ProducerHandle
-    producer(::foundation::permissions::Permission<producer_tag>&& perm) noexcept {
-        return ProducerHandle{log_, std::move(perm)};
+    // Each accessor takes the claim of its role first, so a second live
+    // handle of the role ends the process here.
+    [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept {
+        producer_claim_.take("two live producer handles of one MetaLog. One call site minted the root of the log "
+                             "two times.");
+        return ProducerHandle{*this, std::move(perm)};
     }
 
-    [[nodiscard]] constexpr ConsumerHandle
-    consumer(::foundation::permissions::Permission<consumer_tag>&& perm) noexcept {
-        return ConsumerHandle{log_, std::move(perm)};
+    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
+        consumer_claim_.take("two live consumer handles of one MetaLog. One call site minted the root of the log "
+                             "two times.");
+        return ConsumerHandle{*this, std::move(perm)};
     }
 
     [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
 private:
     ::crucible::MetaLog& log_;
+    ::foundation::EndpointClaim producer_claim_;
+    ::foundation::EndpointClaim consumer_claim_;
 };
+
+namespace detail {
+
+template <typename Root>
+struct metalog_root_parts;
+
+template <typename UserTag, typename Brand>
+struct metalog_root_parts<::foundation::permissions::Permission<metalog_tag::Whole<UserTag>, Brand>> {
+    using user_tag = UserTag;
+    using brand = Brand;
+};
+
+}  // namespace detail
+
+// The log of a whole root of type Root.  The alias reads the user tag and
+// the brand off the root.
+template <typename Root>
+using permissioned_metalog_t = PermissionedMetaLog<typename detail::metalog_root_parts<Root>::user_tag,
+                                                   typename detail::metalog_root_parts<Root>::brand>;
+
+namespace detail::metalog_self_test {
+
+struct WitnessTag {};
+struct WitnessBrand {};
+
+// A log names its tag and a brand of one root.  A log that omits the tag
+// or the brand names no type, and no log is on the erased brand.
+template <template <typename, ::foundation::brand::IsFreshBrand> class Log, typename... TagAndBrand>
+concept NamesALogOf = requires { typename Log<TagAndBrand...>; };
+static_assert(NamesALogOf<PermissionedMetaLog, WitnessTag, WitnessBrand>);
+static_assert(!NamesALogOf<PermissionedMetaLog>);
+static_assert(!NamesALogOf<PermissionedMetaLog, WitnessTag>);
+static_assert(!NamesALogOf<PermissionedMetaLog, WitnessTag, ::foundation::brand::DefaultBrand>);
+
+using Witness = PermissionedMetaLog<WitnessTag, WitnessBrand>;
+static_assert(
+    std::is_same_v<permissioned_metalog_t<::foundation::permissions::Permission<Witness::whole_tag, WitnessBrand>>,
+                   Witness>);
+
+}  // namespace detail::metalog_self_test
 
 }  // namespace crucible
 

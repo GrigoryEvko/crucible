@@ -3426,6 +3426,7 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
 # authoring location in utils/scripts/check-splits-orphan.py.
 fixy_test(test_concurrent_channels)
 fixy_test(test_channel_moved_from)
+fixy_test(test_channel_identity)
 
 # A handle owns a linear token or a pool share; copying it would
 # duplicate the one and double-count the other.
@@ -3445,6 +3446,13 @@ fixy_neg_compile_test(neg_channel_foreign_tag_permission
   "cannot convert"
   "spsc_tag::Producer<.*TraceTag"
   "spsc_tag::Producer<.*MetaTag")
+
+# Two root sites of one tag give two brands.  The token of the second site
+# does not open the channel of the first, although the tag is the same.
+fixy_neg_compile_test(neg_channel_foreign_brand_permission
+  "cannot convert .*Permission<fixy::concurrent::spsc_tag::Producer<\\{anonymous\\}::TraceTag>, foundation::permissions::<lambda\\(\\)> >&&"
+  "PermissionedSpscChannel<T, Capacity, UserTag, Brand>::producer\\(foundation::permissions::Permission<fixy::concurrent::spsc_tag::Producer<UserTag>, Brand>&&\\)"
+  "UserTag = \\{anonymous\\}::TraceTag. Brand = foundation::permissions::<lambda\\(\\)>\\]")
 
 # ── The channel sessions, the endpoints and the stage bridge ──────────
 #
@@ -3719,8 +3727,17 @@ fixy_neg_compile_test(neg_pipeline_mint_chain_break
 # last regexes pin the producer on channel A and the consumer on channel B.
 fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
-  "&writes_a\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::InTag>::ConsumerHandle&&, fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::ATag>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag>::ConsumerHandle&&")
+  "&writes_a\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::InTag, <unnamed>::FixtureBrand>::ConsumerHandle&&, fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&")
+# One payload, one capacity and one tag on two channels.  The roots of the
+# two channels come from two call sites, so only the brand of each channel
+# can refuse the chain.  The two last regexes pin the tag of channel A on
+# the producer and the same tag on the consumer, each with a brand of its
+# own site.
+fixy_neg_compile_test(neg_pipeline_mint_chain_across_root_sites
+  "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
+  "PermissionedSpscChannel<int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&&")
 fixy_neg_compile_test(neg_pipeline_mint_empty_pack
   "no matching function for call to .mint_pipeline\\(const fixy::BgDrainCtx&\\)."
   "sizeof \\.\\.\\. \\(Stages \\.\\.\\.\\) >= 1 \\[with Stages = \\{\\}\\]. evaluated to .false.")
@@ -3804,8 +3821,8 @@ fixy_neg_compile_test(neg_pipeline_dag_unreachable_stage
 # the channel check can refuse it.
 fixy_neg_compile_test(neg_pipeline_dag_edge_across_channels
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
-  "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag>::ConsumerHandle&&")
+  "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&")
 
 # The dag mint's two clauses, in order: the graph is a graph at all, and
 # the supplied pack is the graph's own stage pack.  The second fixture's

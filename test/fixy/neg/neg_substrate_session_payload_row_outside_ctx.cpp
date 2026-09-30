@@ -19,7 +19,10 @@ namespace c = ::fixy::concurrent;
 namespace eff = ::foundation::effects;
 struct Tag {};
 using IoWork = eff::Computation<eff::Row<eff::Effect::IO>, int>;
-using Channel = c::PermissionedSpscChannel<IoWork, 8, Tag>;
+inline auto channel_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
+}
+using Channel = c::spsc_channel_t<IoWork, 8, decltype(channel_root())>;
 }  // namespace substrate_row_fixture
 
 int main() {
@@ -27,8 +30,8 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(
-        perm::mint_permission_root<Channel::whole_tag>());
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     auto head =
         c::mint_substrate_session<Channel, c::Direction::Producer>(ctx, channel.producer(std::move(producer_perm)));

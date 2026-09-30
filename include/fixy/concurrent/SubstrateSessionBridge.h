@@ -129,9 +129,10 @@ namespace detail::substrate_session_bridge_self_test {
 namespace proto = ::fixy::session;
 
 struct UserTag {};
+struct UserBrand {};
 
-using Spsc = PermissionedSpscChannel<int, 64, UserTag>;
-using Mpsc = PermissionedMpscChannel<int, 64, UserTag>;
+using Spsc = PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
+using Mpsc = PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
 
 static_assert(std::is_same_v<handle_for_t<Spsc, Direction::Producer>, typename Spsc::ProducerHandle>);
 static_assert(std::is_same_v<handle_for_t<Spsc, Direction::Consumer>, typename Spsc::ConsumerHandle>);

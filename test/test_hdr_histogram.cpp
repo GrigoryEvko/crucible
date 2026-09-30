@@ -284,9 +284,10 @@ int main() {
         assert(torn_observations.load(std::memory_order_relaxed) == 0);
     }
 
-    using Channel = crucible::observe::HdrRecordChannel<2, 1000000, 8, HistStreamTag>;
+    auto whole = ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<HistStreamTag>>();
+    using Channel = crucible::observe::HdrRecordChannel<2, 1000000, 8, HistStreamTag,
+                                                        ::foundation::brand::brand_of_t<decltype(whole)>>;
     Channel channel;
-    auto whole = ::foundation::permissions::mint_permission_root<typename Channel::whole_tag>();
     auto [producer_perm, consumer_perm] =
         ::foundation::permissions::mint_permission_split<typename Channel::producer_tag,
                                                          typename Channel::consumer_tag>(std::move(whole));

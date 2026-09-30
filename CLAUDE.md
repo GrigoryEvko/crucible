@@ -61,7 +61,7 @@ The first three cost `sizeof(T)`. `test/fixy/test_wrapper_verification.cpp` chec
 - `Permission<Tag, Brand>` + `mint_permission_fork` (`foundation/permissions/Permission.h`, `foundation/permissions/PermissionFork.h`) — CSL frame-rule linear tokens (misc/THREADING.md).
 - `SessionHandle<Proto, Resource, LoopCtx, Policy, PS>` (`fixy/session/Handle.h`) — type-state binary and MPST session types in `include/fixy/session/`, namespace `fixy::session` (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop). The last parameter threads a CSL `PermSet<Tags...>` through the protocol position. `Send<Transferable<T, X>, K>` consumes `Permission<X>` from the set, and `Recv<Transferable<T, X>, K>` produces it. A `Continue` must see the permission set of its loop entry. A handle at `End` closes only when the set holds no open loan. `mint_permissioned_session` mints a handle with a non-empty set.
 - `mint_substrate_session<Substrate, Direction>(ctx, handle)` and `mint_endpoint<Substrate, Direction>(ctx, handle)` (`fixy/concurrent/SubstrateSessionBridge.h`, `fixy/concurrent/Endpoint.h`) — the typed-session door over a handle of `PermissionedSpscChannel` or `PermissionedMpscChannel`. The session has the empty permission set.
-- `PermissionedMetaLog<UserTag>` + `metalog_session::{mint_metalog_producer_session,mint_metalog_consumer_session}` (`include/crucible/PermissionedMetaLog.h`, `include/crucible/MetaLogSession.h`) — role-typed foreground append / background drain façade over the production `MetaLog` TensorMeta side-channel. Each session owns its channel handle and has the empty permission set.
+- `PermissionedMetaLog<UserTag, Brand>` + `metalog_session::{mint_metalog_producer_session,mint_metalog_consumer_session}` (`include/crucible/PermissionedMetaLog.h`, `include/crucible/MetaLogSession.h`) — role-typed foreground append / background drain façade over the production `MetaLog` TensorMeta side-channel. Each session owns its channel handle and has the empty permission set.
 - `ScopedView<Carrier, Tag, Brand>` (`fixy/ScopedView.h`) — lifetime-bounded borrow for non-consuming inspection.
 - `Machine<State, Edges>` (`fixy/Machine.h`) — type-indexed state machines. An illegal transition is a compile error.
 - `OwnedRegion<T, Tag, Brand>` (`fixy/OwnedRegion.h`) — a pointer and a count over one buffer, with the `Permission` that proves exclusive ownership of those bytes.
@@ -1683,8 +1683,10 @@ Need one writer that publishes the latest value to many readers?
                                             (fixy/concurrent/SwmrSession.h, over AtomicSnapshot)
 
 Need a queue from one or many producers to one consumer?
-    → PermissionedSpscChannel<T, Capacity, UserTag> / PermissionedMpscChannel<T, Capacity, UserTag>
-                                            (fixy/concurrent/, typed sessions via mint_substrate_session)
+    → PermissionedSpscChannel<T, Capacity, UserTag, Brand> / PermissionedMpscChannel<T, Capacity, UserTag, Brand>
+                                            (fixy/concurrent/, typed sessions via mint_substrate_session;
+                                             Brand is the brand of the root site, and spsc_channel_t /
+                                             mpsc_channel_t read it off the root type)
 ```
 
 #### Anti-patterns (review-rejected)

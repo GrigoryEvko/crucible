@@ -32,8 +32,9 @@
 //     overhead claim.
 //   - Pop-side benches pre-fill enough items to never hit empty
 //     during measurement.
-//   - Consumer-handle construction takes a Permission token (linear);
-//     produced via mint_permission_root in the bench setup.
+//   - The setup splits one root into two tokens.  The pool of the
+//     channel takes the producer token, and the consumer handle takes
+//     the consumer token.
 
 #include <cstdio>
 #include <cstdint>
@@ -56,7 +57,17 @@ constexpr std::size_t kCap = 1U << 20;  // 1M slots — never fills
 // other channel in the process.
 struct MpscBenchTag {};
 
-using Channel = ::fixy::concurrent::PermissionedMpscChannel<Item, kCap, MpscBenchTag>;
+auto bench_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::mpsc_tag::Whole<MpscBenchTag>>();
+}
+
+using Channel = ::fixy::concurrent::mpsc_channel_t<Item, kCap, decltype(bench_root())>;
+
+// The two halves of the root: the producer token for the pool and the
+// consumer token for the consumer handle.
+auto bench_halves() noexcept {
+    return ::foundation::permissions::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(bench_root());
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // MpscRing pair
@@ -72,7 +83,9 @@ bench::Report bare_mpsc_push() {
 }
 
 bench::Report wrapped_mpsc_push() {
-    auto ch = std::make_unique<Channel>();
+    auto [producer_root, consumer_perm] = bench_halves();
+    (void)consumer_perm;
+    auto ch = std::make_unique<Channel>(std::move(producer_root));
     auto p_opt = ch->producer();
     if (!p_opt) std::abort();
     auto p = std::move(*p_opt);
@@ -94,7 +107,8 @@ bench::Report bare_mpsc_pop() {
 }
 
 bench::Report wrapped_mpsc_pop() {
-    auto ch = std::make_unique<Channel>();
+    auto [producer_root, consumer_perm] = bench_halves();
+    auto ch = std::make_unique<Channel>(std::move(producer_root));
     {
         auto p_opt = ch->producer();
         if (!p_opt) std::abort();
@@ -102,8 +116,7 @@ bench::Report wrapped_mpsc_pop() {
         for (Item i = 0; i < kCap / 2; ++i)
             (void)p.try_push(i);
     }
-    auto cons_perm = ::foundation::permissions::mint_permission_root<typename Channel::consumer_tag>();
-    auto c = ch->consumer(std::move(cons_perm));
+    auto c = ch->consumer(std::move(consumer_perm));
     return bench::run("wrapped Permissioned MPSC.ConsumerHandle::try_pop", [&] {
         auto v = c.try_pop();
         bench::do_not_optimize(v);

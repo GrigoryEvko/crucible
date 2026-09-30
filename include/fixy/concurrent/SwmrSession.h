@@ -16,7 +16,8 @@
 // The caller mints the writer root and the reader root and names both
 // brands in the session type, so no spelling here names the erased
 // brand, and a writer permission of another brand does not make a
-// second writer.  The handles bind their session through
+// second writer.  A claim on the writer role refuses a second live
+// writer of one brand.  The handles bind their session through
 // foundation::ChannelBinding, so a moved-from handle cannot publish or
 // load.  The read transport is a polling read over try_load, so the
 // handle waits through the watch while a write is in flight.
@@ -88,10 +89,12 @@ concept SwmrWriterHandleOf = std::same_as<Handle, typename Swmr::WriterHandle>;
 // brand that a header mints.  The writer brand is what keeps one writer:
 // a root minted at another site has another brand, and writer() refuses
 // it, so a second publisher does not compile.  One site that runs twice
-// mints two tokens of one brand, which no type can tell apart, so each
-// root is minted once per program, as foundation/permissions/Permission.h
-// says of every root.  The writer brand is never the erased brand, because
-// a token of every brand converts to that brand and would open the writer.
+// mints two tokens of one brand, which no type can tell apart.  The run-
+// time floor there is the claim of the writer role: writer() takes it,
+// and a second live writer handle ends the process at its mint, not at a
+// concurrent publish.  The writer handle gives the claim back when it
+// ends.  The writer brand is never the erased brand, because a token of
+// every brand converts to that brand and would open the writer.
 template <::fixy::concurrent::SnapshotValue T, typename WriterTag, typename ReaderTag,
           ::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsFreshBrand WriterBrand>
 class SwmrSession : public ::foundation::Pinned<SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>> {
@@ -121,6 +124,12 @@ public:
                                ::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept
             : session_{session}, perm_{std::move(perm)} {}
 
+        // A moved-from handle holds no claim, so only the bound one gives
+        // the role back.
+        void release_claim_() noexcept {
+            if (session_.is_bound()) session_->writer_claim_.release();
+        }
+
         friend class SwmrSession;
 
     public:
@@ -137,7 +146,18 @@ public:
         WriterHandle&
         operator=(WriterHandle const&) = delete("SwmrSession::WriterHandle owns the linear writer permission");
         constexpr WriterHandle(WriterHandle&&) noexcept = default;
-        constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
+        // The target gives the claim of its own session back before it
+        // takes the binding of the source, so no claim stays taken with
+        // no live holder.
+        WriterHandle& operator=(WriterHandle&& other) noexcept {
+            if (this != &other) {
+                release_claim_();
+                session_ = std::move(other.session_);
+                perm_ = std::move(other.perm_);
+            }
+            return *this;
+        }
+        ~WriterHandle() { release_claim_(); }
 
         void publish(T const& value) noexcept { session_->snapshot_.publish(value); }
 
@@ -183,8 +203,11 @@ public:
         }
     };
 
-    [[nodiscard]] constexpr WriterHandle
-    writer(::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept {
+    // Takes the claim of the writer role first, so a second live writer
+    // handle ends the process here.
+    [[nodiscard]] WriterHandle writer(::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept {
+        writer_claim_.take("two live writer handles of one SWMR session. One call site minted the writer root two "
+                           "times.");
         return WriterHandle{*this, std::move(perm)};
     }
 
@@ -217,10 +240,11 @@ public:
 private:
     ::fixy::concurrent::AtomicSnapshot<T> snapshot_;
     ::foundation::permissions::SharedPermissionPool<reader_tag, reader_brand> reader_pool_;
+    ::foundation::EndpointClaim writer_claim_;
 };
 
 template <SwmrSessionSurface Swmr>
-[[nodiscard]] constexpr auto mint_swmr_writer(
+[[nodiscard]] auto mint_swmr_writer(  // MINT-PATTERN-OK: the writer claim is an atomic exchange
     Swmr& session,
     ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& perm) noexcept {
     return session.writer(std::move(perm));

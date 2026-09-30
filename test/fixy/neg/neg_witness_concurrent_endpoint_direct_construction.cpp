@@ -2,7 +2,7 @@
 // utils/scripts/witness-roster.txt.  Edit the roster, not this file.
 // clang-format off: the generator owns this layout, and --check compares it byte for byte.
 //
-// fixy::concurrent::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_self_test::UserTag>, fixy::concurrent::Direction::Producer, fixy::concurrent::detail::endpoint_self_test::FgCtx> attests to a fact it cannot see.  The expression below is the
+// fixy::concurrent::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_self_test::UserTag, fixy::concurrent::detail::endpoint_self_test::UserBrand>, fixy::concurrent::Direction::Producer, fixy::concurrent::detail::endpoint_self_test::FgCtx> attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
 // refusal must read "is private within this context".
@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::concurrent::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_self_test::UserTag>, fixy::concurrent::Direction::Producer, fixy::concurrent::detail::endpoint_self_test::FgCtx>{forge::lvalue<fixy::concurrent::detail::endpoint_self_test::FgCtx>(), forge::rvalue<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_self_test::UserTag>::ProducerHandle>()};
+    [[maybe_unused]] auto forged = fixy::concurrent::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_self_test::UserTag, fixy::concurrent::detail::endpoint_self_test::UserBrand>, fixy::concurrent::Direction::Producer, fixy::concurrent::detail::endpoint_self_test::FgCtx>{forge::lvalue<fixy::concurrent::detail::endpoint_self_test::FgCtx>(), forge::rvalue<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::concurrent::detail::endpoint_self_test::UserTag, fixy::concurrent::detail::endpoint_self_test::UserBrand>::ProducerHandle>()};
     return 0;
 }

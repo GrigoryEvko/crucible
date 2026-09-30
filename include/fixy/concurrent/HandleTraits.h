@@ -18,6 +18,9 @@
 // which is the whole content.  A fold would parameterize over exactly
 // the part that carries the meaning.
 
+#include <foundation/ChannelBinding.h>
+
+#include <concepts>
 #include <cstddef>
 #include <optional>
 #include <type_traits>
@@ -265,9 +268,22 @@ template <typename T>
     requires NamesItsChannel<T>
 using handle_channel_t = typename std::remove_cvref_t<T>::channel_type;
 
+// A handle that reports the identity of the channel instance it acts on.
+// The type of a channel carries the brand of its root, so two channels of
+// two root sites are two types.  One root site that runs two times makes
+// two channels of one type, and only the identity tells them apart.
+template <typename T>
+concept ReportsChannelIdentity = NamesItsChannel<T> && requires(std::remove_cvref_t<T> const& handle) {
+    { handle.channel_identity() } noexcept -> std::same_as<::foundation::ChannelIdentity<handle_channel_t<T>>>;
+};
+
+// The two handles name one channel type.  Each of them reports its
+// identity, or none of them does.  A pipeline mint then compares the two
+// identities.
 template <typename Producer, typename Consumer>
 concept HandlesShareChannel = NamesItsChannel<Producer> && NamesItsChannel<Consumer>
-                           && std::is_same_v<handle_channel_t<Producer>, handle_channel_t<Consumer>>;
+                           && std::is_same_v<handle_channel_t<Producer>, handle_channel_t<Consumer>>
+                           && ReportsChannelIdentity<Producer> == ReportsChannelIdentity<Consumer>;
 
 namespace detail::handle_traits_self_test {
 
@@ -484,12 +500,28 @@ struct consumer_on_b {
     [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
 };
 
+// A consumer and a producer on channel a that report their identity.
+struct reporting_consumer_on_a {
+    using channel_type = channel_a;
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::ChannelIdentity<channel_a> channel_identity() const noexcept { return {}; }
+};
+struct reporting_producer_on_a {
+    using channel_type = channel_a;
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
+    [[nodiscard]] ::foundation::ChannelIdentity<channel_a> channel_identity() const noexcept { return {}; }
+};
+
 static_assert(NamesItsChannel<producer_on_a> && NamesItsChannel<consumer_on_b const&>);
 static_assert(!NamesItsChannel<synthetic_producer>);
 static_assert(HandlesShareChannel<producer_on_a, consumer_on_a>);
 static_assert(!HandlesShareChannel<producer_on_a, consumer_on_b>, "one payload, two channels");
 static_assert(!HandlesShareChannel<synthetic_producer, synthetic_consumer>,
               "a handle that names no channel meets none");
+static_assert(ReportsChannelIdentity<reporting_consumer_on_a> && !ReportsChannelIdentity<consumer_on_a>);
+static_assert(HandlesShareChannel<reporting_producer_on_a, reporting_consumer_on_a>);
+static_assert(!HandlesShareChannel<producer_on_a, reporting_consumer_on_a>,
+              "a handle that reports its identity meets no handle that hides it");
 
 }  // namespace detail::handle_traits_self_test
 

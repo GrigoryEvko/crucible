@@ -16,7 +16,10 @@
 namespace recording_log_fixture {
 namespace c = ::fixy::concurrent;
 struct Tag {};
-using Channel = c::PermissionedSpscChannel<int, 8, Tag>;
+inline auto channel_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
+}
+using Channel = c::spsc_channel_t<int, 8, decltype(channel_root())>;
 }  // namespace recording_log_fixture
 
 int main() {
@@ -26,8 +29,8 @@ int main() {
     namespace s = ::fixy::session;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(
-        perm::mint_permission_root<Channel::whole_tag>());
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     int not_a_log = 0;
     auto recorded = c::mint_recording_endpoint(

@@ -317,10 +317,11 @@ namespace detail::stage_endpoint_bridge_self_test {
 
 struct UTag1 {};
 struct UTag2 {};
+struct UBrand {};
 
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
-using Ch1 = PermissionedSpscChannel<int, 64, UTag1>;
-using Ch2 = PermissionedSpscChannel<int, 64, UTag2>;
+using Ch1 = PermissionedSpscChannel<int, 64, UTag1, UBrand>;
+using Ch2 = PermissionedSpscChannel<int, 64, UTag2, UBrand>;
 
 using ConsEp = Endpoint<Ch1, Direction::Consumer, FgCtx>;
 using ProdEp = Endpoint<Ch2, Direction::Producer, FgCtx>;
@@ -360,7 +361,7 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, FgCtx, ConsEp&, ProdEp
 // this header on its own rather than only the tests.
 
 struct UTagFloat {};
-using ChFloat = PermissionedSpscChannel<float, 64, UTagFloat>;
+using ChFloat = PermissionedSpscChannel<float, 64, UTagFloat, UBrand>;
 using FloatConsEp = Endpoint<ChFloat, Direction::Consumer, FgCtx>;
 using FloatProdEp = Endpoint<ChFloat, Direction::Producer, FgCtx>;
 
@@ -380,7 +381,7 @@ static_assert(StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
 // by reference to const, which is the producer pole, so the body is a
 // stage and the endpoint mint takes the MPSC producer endpoint.
 struct UTagMpsc {};
-using ChMpsc = PermissionedMpscChannel<int, 64, UTagMpsc>;
+using ChMpsc = PermissionedMpscChannel<int, 64, UTagMpsc, UBrand>;
 using MpscProdEp = Endpoint<ChMpsc, Direction::Producer, FgCtx>;
 
 inline void feed_mpsc_body(typename Ch1::ConsumerHandle&&, typename ChMpsc::ProducerHandle&&) noexcept {}

@@ -4944,11 +4944,11 @@ crucible_neg_compile_test(neg_vigil_alignment_pos_uint8_max
 # structural rather than convention-based.
 crucible_neg_compile_test(neg_metalog_producer_drain
     "has no member named .try_drain_one."
-    ".class crucible::PermissionedMetaLog<.anonymous.::Tag>::ProducerHandle. has no member")
+    ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ProducerHandle. has no member")
 
 crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named .try_append."
-    ".class crucible::PermissionedMetaLog<.anonymous.::Tag>::ConsumerHandle. has no member")
+    ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ConsumerHandle. has no member")
 
 # HS14 for the two MetaLog session mints.  Each gate is one concept, and
 # each fixture fails one clause of it: the context, the handle passed as
@@ -4960,7 +4960,7 @@ crucible_neg_compile_test(neg_metalog_session_producer_not_a_context
     "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
 crucible_neg_compile_test(neg_metalog_session_producer_lvalue_handle
     "no matching function for call to .mint_metalog_producer_session<"
-    "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_lvalue_fixture::Tag>::ProducerHandle&"
+    "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_lvalue_fixture::Tag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle&"
     "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
 crucible_neg_compile_test(neg_metalog_session_consumer_not_a_log
     "no matching function for call to .mint_metalog_consumer_session<int>"
@@ -4968,7 +4968,7 @@ crucible_neg_compile_test(neg_metalog_session_consumer_not_a_log
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
 crucible_neg_compile_test(neg_metalog_session_consumer_wrong_role
     "no matching function for call to .mint_metalog_consumer_session<"
-    "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_wrong_role_fixture::Tag>::ProducerHandle"
+    "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_wrong_role_fixture::Tag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle"
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
 crucible_neg_compile_test(neg_metalog_session_producer_not_a_log
     "no matching function for call to .mint_metalog_producer_session<int>"
@@ -4980,22 +4980,22 @@ crucible_neg_compile_test(neg_metalog_session_consumer_not_a_context
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
 crucible_neg_compile_test(neg_metalog_session_consumer_lvalue_handle
     "no matching function for call to .mint_metalog_consumer_session<"
-    "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_lvalue_fixture::Tag>::ConsumerHandle&"
+    "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_lvalue_fixture::Tag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&"
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
 crucible_neg_compile_test(neg_metalog_session_producer_wrong_role
     "no matching function for call to .mint_metalog_producer_session<"
-    "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_wrong_role_fixture::Tag>::ConsumerHandle"
+    "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_wrong_role_fixture::Tag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle"
     "satisfaction of .CtxFitsMetaLogProducerSession<Ctx, Log, Handle>.")
 
 # The accessor that makes each handle takes the Permission of its own
 # role, and that parameter type is its whole admission.  Each fixture
 # passes the Permission of the other role.
 crucible_neg_compile_test(neg_metalog_producer_wrong_permission
-    "cannot convert .*Permission<crucible::metalog_tag::Consumer<producer_wrong_permission_fixture::Tag>, .* to .foundation::permissions::Permission<crucible::metalog_tag::Producer<producer_wrong_permission_fixture::Tag>, foundation::brand::DefaultBrand>&&"
-    "initializing argument 1 of .*PermissionedMetaLog<UserTag>::producer.foundation::permissions::Permission<crucible::metalog_tag::Producer<UserTag> >&&. .with UserTag = producer_wrong_permission_fixture::Tag.")
+    "cannot convert .*Permission<crucible::metalog_tag::Consumer<producer_wrong_permission_fixture::Tag>, foundation::permissions::<lambda\\(\\)> >.* to .foundation::permissions::Permission<crucible::metalog_tag::Producer<producer_wrong_permission_fixture::Tag>, foundation::permissions::<lambda\\(\\)> >&&"
+    "initializing argument 1 of .*PermissionedMetaLog<UserTag, Brand>::producer.foundation::permissions::Permission<crucible::metalog_tag::Producer<UserTag>, Brand>&&. .with UserTag = producer_wrong_permission_fixture::Tag. Brand = foundation::permissions::<lambda\\(\\)>.")
 crucible_neg_compile_test(neg_metalog_consumer_wrong_permission
-    "cannot convert .*Permission<crucible::metalog_tag::Producer<consumer_wrong_permission_fixture::Tag>, .* to .foundation::permissions::Permission<crucible::metalog_tag::Consumer<consumer_wrong_permission_fixture::Tag>, foundation::brand::DefaultBrand>&&"
-    "initializing argument 1 of .*PermissionedMetaLog<UserTag>::consumer.foundation::permissions::Permission<crucible::metalog_tag::Consumer<UserTag> >&&. .with UserTag = consumer_wrong_permission_fixture::Tag.")
+    "cannot convert .*Permission<crucible::metalog_tag::Producer<consumer_wrong_permission_fixture::Tag>, foundation::permissions::<lambda\\(\\)> >.* to .foundation::permissions::Permission<crucible::metalog_tag::Consumer<consumer_wrong_permission_fixture::Tag>, foundation::permissions::<lambda\\(\\)> >&&"
+    "initializing argument 1 of .*PermissionedMetaLog<UserTag, Brand>::consumer.foundation::permissions::Permission<crucible::metalog_tag::Consumer<UserTag>, Brand>&&. .with UserTag = consumer_wrong_permission_fixture::Tag. Brand = foundation::permissions::<lambda\\(\\)>.")
 
 # SingletonInitGraph.h: the gate refuses a cycle, and it refuses an edge
 # to a singleton that the registry does not hold.

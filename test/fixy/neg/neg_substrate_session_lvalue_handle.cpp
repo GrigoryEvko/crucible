@@ -18,7 +18,10 @@ namespace substrate_lvalue_fixture {
 namespace c = ::fixy::concurrent;
 namespace eff = ::foundation::effects;
 struct Tag {};
-using Channel = c::PermissionedSpscChannel<int, 8, Tag>;
+inline auto channel_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
+}
+using Channel = c::spsc_channel_t<int, 8, decltype(channel_root())>;
 }  // namespace substrate_lvalue_fixture
 
 int main() {
@@ -26,8 +29,8 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(
-        perm::mint_permission_root<Channel::whole_tag>());
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     auto producer = channel.producer(std::move(producer_perm));
     auto head = c::mint_substrate_session<Channel, c::Direction::Producer>(ctx, producer);

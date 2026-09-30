@@ -13,14 +13,21 @@
 
 namespace producer_not_a_context_fixture {
 struct Tag {};
-using Log = ::crucible::PermissionedMetaLog<Tag>;
+inline auto log_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
+}
+using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace producer_not_a_context_fixture
 
 int main() {
     using Log = producer_not_a_context_fixture::Log;
     ::crucible::MetaLog raw;
     Log log{raw};
-    auto producer = log.producer(::foundation::permissions::mint_permission_root<Log::producer_tag>());
+    auto [producer_perm, consumer_perm] =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(
+            producer_not_a_context_fixture::log_root());
+    (void)consumer_perm;
+    auto producer = log.producer(std::move(producer_perm));
     auto head = ::crucible::metalog_session::mint_metalog_producer_session<Log>(0, std::move(producer));
     (void)head;
     return 0;

@@ -60,8 +60,15 @@ inline constexpr std::size_t kRingSlots = std::size_t{1} << 20;
 template <int Arm>
 struct ArmTag {};
 
+// The root site of the channel of each arm.  The channel type names the
+// brand of that site.
 template <int Arm>
-using Channel = cc::PermissionedSpscChannel<Item, kRingSlots, ArmTag<Arm>>;
+auto arm_root() noexcept {
+    return perm::mint_permission_root<cc::spsc_tag::Whole<ArmTag<Arm>>>();
+}
+
+template <int Arm>
+using Channel = cc::spsc_channel_t<Item, kRingSlots, decltype(arm_root<Arm>())>;
 
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
@@ -88,7 +95,7 @@ struct Rig {
     std::pair<typename Channel<Arm>::ProducerHandle, typename Channel<Arm>::ConsumerHandle> handles = [this] {
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<typename Channel<Arm>::producer_tag, typename Channel<Arm>::consumer_tag>(
-                perm::mint_permission_root<typename Channel<Arm>::whole_tag>());
+                arm_root<Arm>());
         return std::pair{channel->producer(std::move(producer_perm)), channel->consumer(std::move(consumer_perm))};
     }();
 };

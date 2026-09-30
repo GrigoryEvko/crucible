@@ -421,8 +421,10 @@ concept ConcurrentHdrCompatible =
 template <typename H>
 concept HdrCompatible = HdrHistogramCompatible<H> || ConcurrentHdrCompatible<H>;
 
-template <std::uint8_t Significant, std::uint64_t MaxValue, std::size_t Capacity, typename UserTag>
-using HdrRecordChannel = ::fixy::concurrent::PermissionedSpscChannel<std::uint64_t, Capacity, UserTag>;
+// The channel carries the brand of the root that its permissions grow
+// from, as fixy/concurrent/PermissionedSpscChannel.h says.
+template <std::uint8_t Significant, std::uint64_t MaxValue, std::size_t Capacity, typename UserTag, typename Brand>
+using HdrRecordChannel = ::fixy::concurrent::PermissionedSpscChannel<std::uint64_t, Capacity, UserTag, Brand>;
 
 template <HdrCompatible H, typename ConsumerHandle>
 std::size_t drain_record_stream(H& hist, ConsumerHandle& consumer,

@@ -29,6 +29,7 @@
 #include <fixy/handle/PublishCommit.h>
 #include <fixy/os/SpinLock.h>
 #include <foundation/AlignedBuffer.h>
+#include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/Saturate.h>
@@ -39,6 +40,32 @@
 #include <foundation/permissions/Permission.h>
 
 namespace crucible {
+
+namespace detail::bg_pipeline {
+
+// The user tags of the four channels of the background pipeline.
+struct StartTag {};
+struct TraceBatchTag {};
+struct BuildWorkTag {};
+struct GraphPublishTag {};
+
+// One call site for the root of each channel.  Each run of the pipeline
+// mints its four roots here, so the type of each channel names the brand
+// of one site, and the stage functions can name the channel types.
+[[nodiscard]] inline auto start_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<StartTag>>();
+}
+[[nodiscard]] inline auto trace_batch_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<TraceBatchTag>>();
+}
+[[nodiscard]] inline auto build_work_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<BuildWorkTag>>();
+}
+[[nodiscard]] inline auto graph_publish_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<GraphPublishTag>>();
+}
+
+}  // namespace detail::bg_pipeline
 
 // Drains the ring buffer, detects iteration boundaries and builds a trace
 // graph per iteration.
@@ -481,15 +508,14 @@ public:
         uint32_t epoch = 0;
     };
 
-    struct BgPipelineStartTag {};
-    struct BgTraceBatchTag {};
-    struct BgBuildWorkTag {};
-    struct BgGraphPublishTag {};
-
-    using StartChannel = ::fixy::concurrent::PermissionedSpscChannel<BgPipelineStart, 1, BgPipelineStartTag>;
-    using TraceBatchChannel = ::fixy::concurrent::PermissionedSpscChannel<BgTraceBatch*, 64, BgTraceBatchTag>;
-    using BuildWorkChannel = ::fixy::concurrent::PermissionedSpscChannel<BgBuildWork*, 64, BgBuildWorkTag>;
-    using GraphPublishChannel = ::fixy::concurrent::PermissionedSpscChannel<BgGraphPublish*, 64, BgGraphPublishTag>;
+    using StartChannel =
+        ::fixy::concurrent::spsc_channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
+    using TraceBatchChannel =
+        ::fixy::concurrent::spsc_channel_t<BgTraceBatch*, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
+    using BuildWorkChannel =
+        ::fixy::concurrent::spsc_channel_t<BgBuildWork*, 64, decltype(detail::bg_pipeline::build_work_root())>;
+    using GraphPublishChannel =
+        ::fixy::concurrent::spsc_channel_t<BgGraphPublish*, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
 
     // The consumer end of a stage, together with the thread the stage
     // serves.  Only run() builds one, from a channel end and this object.
@@ -504,9 +530,14 @@ public:
     public:
         static constexpr std::size_t per_call_working_set = Consumer::per_call_working_set;
         // The pipeline joins this input to the output before it only when
-        // the two name one channel, so the input names the channel of the
-        // consumer end that it holds.
+        // the two name one channel and bind one channel instance, so the
+        // input names and reports the channel of the consumer end that it
+        // holds.
         using channel_type = typename Consumer::channel_type;
+
+        [[nodiscard]] ::foundation::ChannelIdentity<channel_type> channel_identity() const noexcept {
+            return inner_.channel_identity();
+        }
 
         StageInput(StageInput&&) noexcept = default;
         StageInput(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
@@ -1177,38 +1208,34 @@ private:
         requires ::foundation::effects::CtxAdmits<Ctx, run_required_row>
     void run(Ctx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         namespace perm = ::foundation::permissions;
-        namespace spsc_tag = ::fixy::concurrent::spsc_tag;
 
         // Channel flow is
         //   Start → DrainTraceRing → TraceBatch → DetectIteration →
         //          BuildWork → BuildTrace → GraphPublish → MakeRegion → Sink
         // Each adjacent pair is one typed channel, and each stage's
         // permission proof comes from splitting a fresh root permission for
-        // its tag.
+        // its channel.  The root carries the brand that the channel names.
         TraceBatchChannel trace_batches;
         BuildWorkChannel build_work;
         GraphPublishChannel graph_publish;
 
         StartChannel start;
-        auto start_whole = perm::mint_permission_root<spsc_tag::Whole<BgPipelineStartTag>>();
         auto [start_prod_perm, start_cons_perm] =
-            perm::mint_permission_split<spsc_tag::Producer<BgPipelineStartTag>, spsc_tag::Consumer<BgPipelineStartTag>>(
-                std::move(start_whole));
+            perm::mint_permission_split<typename StartChannel::producer_tag, typename StartChannel::consumer_tag>(
+                detail::bg_pipeline::start_root());
 
-        auto trace_whole = perm::mint_permission_root<spsc_tag::Whole<BgTraceBatchTag>>();
-        auto [trace_prod_perm, trace_cons_perm] =
-            perm::mint_permission_split<spsc_tag::Producer<BgTraceBatchTag>, spsc_tag::Consumer<BgTraceBatchTag>>(
-                std::move(trace_whole));
+        auto [trace_prod_perm, trace_cons_perm] = perm::mint_permission_split<typename TraceBatchChannel::producer_tag,
+                                                                              typename TraceBatchChannel::consumer_tag>(
+            detail::bg_pipeline::trace_batch_root());
 
-        auto build_whole = perm::mint_permission_root<spsc_tag::Whole<BgBuildWorkTag>>();
-        auto [build_prod_perm, build_cons_perm] =
-            perm::mint_permission_split<spsc_tag::Producer<BgBuildWorkTag>, spsc_tag::Consumer<BgBuildWorkTag>>(
-                std::move(build_whole));
+        auto [build_prod_perm, build_cons_perm] = perm::mint_permission_split<typename BuildWorkChannel::producer_tag,
+                                                                              typename BuildWorkChannel::consumer_tag>(
+            detail::bg_pipeline::build_work_root());
 
-        auto publish_whole = perm::mint_permission_root<spsc_tag::Whole<BgGraphPublishTag>>();
         auto [publish_prod_perm, publish_cons_perm] =
-            perm::mint_permission_split<spsc_tag::Producer<BgGraphPublishTag>, spsc_tag::Consumer<BgGraphPublishTag>>(
-                std::move(publish_whole));
+            perm::mint_permission_split<typename GraphPublishChannel::producer_tag,
+                                        typename GraphPublishChannel::consumer_tag>(
+                detail::bg_pipeline::graph_publish_root());
 
         auto start_prod = start.producer(std::move(start_prod_perm));
         auto start_cons = StartInput{start.consumer(std::move(start_cons_perm)), *this};

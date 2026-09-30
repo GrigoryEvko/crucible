@@ -17,8 +17,12 @@ namespace stage_swap_fixture {
 namespace c = ::fixy::concurrent;
 struct InTag {};
 struct OutTag {};
-using In = c::PermissionedSpscChannel<int, 8, InTag>;
-using Out = c::PermissionedSpscChannel<int, 8, OutTag>;
+inline auto in_root() noexcept { return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<InTag>>(); }
+inline auto out_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<OutTag>>();
+}
+using In = c::spsc_channel_t<int, 8, decltype(in_root())>;
+using Out = c::spsc_channel_t<int, 8, decltype(out_root())>;
 inline void body(In::ConsumerHandle&&, Out::ProducerHandle&&) noexcept {}
 }  // namespace stage_swap_fixture
 
@@ -29,10 +33,8 @@ int main() {
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     In in{};
     Out out{};
-    auto [in_p, in_c] =
-        perm::mint_permission_split<In::producer_tag, In::consumer_tag>(perm::mint_permission_root<In::whole_tag>());
-    auto [out_p, out_c] =
-        perm::mint_permission_split<Out::producer_tag, Out::consumer_tag>(perm::mint_permission_root<Out::whole_tag>());
+    auto [in_p, in_c] = perm::mint_permission_split<In::producer_tag, In::consumer_tag>(in_root());
+    auto [out_p, out_c] = perm::mint_permission_split<Out::producer_tag, Out::consumer_tag>(out_root());
     (void)in_p;
     (void)out_c;
     auto in_ep = c::mint_endpoint<In, c::Direction::Consumer>(ctx, in.consumer(std::move(in_c)));

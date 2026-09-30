@@ -168,8 +168,9 @@ namespace detail::endpoint_self_test {
 namespace proto = ::fixy::session;
 
 struct UserTag {};
-using SmallSpsc = PermissionedSpscChannel<int, 64, UserTag>;
-using SmallMpsc = PermissionedMpscChannel<int, 64, UserTag>;
+struct UserBrand {};
+using SmallSpsc = PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
+using SmallMpsc = PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
 using ProdEp = Endpoint<SmallSpsc, Direction::Producer, FgCtx>;
 using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, FgCtx>;

@@ -47,15 +47,17 @@ using ProducerProto = ::fixy::session::Loop<
 using ConsumerProto = ::fixy::session::Loop<
     ::fixy::session::Select<::fixy::session::Recv<MetaLogRecord, ::fixy::session::Continue>, ::fixy::session::End>>;
 
-// The shape the facade needs from a permissioned log: the three tags, the
-// two role-typed handles, and the operations the transports call.
+// The shape of a permissioned log that the facade uses: the brand, the
+// three tags, the two role-typed handles, and the operations the
+// transports call.
 template <typename Log>
 concept MetaLogSessionSurface =
     requires(Log& log, typename Log::ProducerHandle& producer, typename Log::ConsumerHandle& consumer,
-             ::foundation::permissions::Permission<typename Log::producer_tag> prod_perm,
-             ::foundation::permissions::Permission<typename Log::consumer_tag> cons_perm, const MetaLogRecord* records,
-             const MetaLogRecord& record) {
+             ::foundation::permissions::Permission<typename Log::producer_tag, typename Log::brand_type> prod_perm,
+             ::foundation::permissions::Permission<typename Log::consumer_tag, typename Log::brand_type> cons_perm,
+             const MetaLogRecord* records, const MetaLogRecord& record) {
         typename Log::value_type;
+        typename Log::brand_type;
         typename Log::producer_tag;
         typename Log::consumer_tag;
         typename Log::ProducerHandle;
@@ -123,14 +125,15 @@ using ConsumerSessionHandle = decltype(mint_metalog_consumer_session<Log>(
 namespace detail::metalog_session_self_test {
 
 struct Tag {};
-using Log = ::crucible::PermissionedMetaLog<Tag>;
+struct Brand {};
+using Log = ::crucible::PermissionedMetaLog<Tag, Brand>;
 
 static_assert(MetaLogSessionSurface<Log>);
 static_assert(!MetaLogSessionSurface<int>, "an int is not a permissioned log");
 
-static_assert(sizeof(Log::ProducerHandle) == sizeof(::crucible::MetaLog*),
+static_assert(sizeof(Log::ProducerHandle) == sizeof(Log*),
               "metalog_session: ProducerHandle must stay pointer-sized; the Permission token collapses through EBO.");
-static_assert(sizeof(Log::ConsumerHandle) == sizeof(::crucible::MetaLog*),
+static_assert(sizeof(Log::ConsumerHandle) == sizeof(Log*),
               "metalog_session: ConsumerHandle must stay pointer-sized; the Permission token collapses through EBO.");
 
 static_assert(::fixy::session::AdmitsLocalChoice<Log::ProducerHandle, ProducerProto, void>);

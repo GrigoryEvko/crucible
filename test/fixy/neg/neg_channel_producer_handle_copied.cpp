@@ -15,15 +15,15 @@ namespace perm = foundation::permissions;
 
 namespace {
 struct TraceTag {};
+auto trace_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<TraceTag>>(); }
 }  // namespace
 
-using Channel = c::PermissionedSpscChannel<int, 8, TraceTag>;
+using Channel = c::spsc_channel_t<int, 8, decltype(trace_root())>;
 
 int main() {
     Channel channel{};
-    auto whole = perm::mint_permission_root<Channel::whole_tag>();
     auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(whole));
+        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(trace_root());
     (void)consumer_perm;
 
     auto producer = channel.producer(std::move(producer_perm));

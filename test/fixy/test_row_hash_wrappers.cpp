@@ -825,11 +825,13 @@ struct SwmrReaderTag {
 };
 struct SwmrReaderBrand {};
 struct SwmrWriterBrand {};
-// The tags of the two ring channel witnesses.  A channel names its tag.
+// The tags and the brand of the two ring channel witnesses.  A channel
+// names its tag and the brand of its root.
 struct SpscWitnessTag {};
 struct MpscWitnessTag {};
-using SpscWitness = ::fixy::concurrent::PermissionedSpscChannel<int, 8, SpscWitnessTag>;
-using MpscWitness = ::fixy::concurrent::PermissionedMpscChannel<int, 8, MpscWitnessTag>;
+struct ChannelWitnessBrand {};
+using SpscWitness = ::fixy::concurrent::PermissionedSpscChannel<int, 8, SpscWitnessTag, ChannelWitnessBrand>;
+using MpscWitness = ::fixy::concurrent::PermissionedMpscChannel<int, 8, MpscWitnessTag, ChannelWitnessBrand>;
 struct PureRegionBrand {};
 using SwmrWitness =
     ::fixy::concurrent::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
@@ -1007,6 +1009,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::Pinned, "a CRTP marker base: it forbids moves on its deriver and is never a value"},
     {^^::foundation::ChannelBinding,
      "a handle's binding to its channel: a member of a handle, never a kernel signature argument"},
+    {^^::foundation::ChannelIdentity,
+     "the identity of a channel instance, which a pipeline mint compares: never a kernel signature argument"},
+    {^^::foundation::EndpointClaim,
+     "the claim of one role of a channel: a member of a channel, never a kernel signature argument"},
     {^^::foundation::simd::vec, kPayload},
     {^^::foundation::simd::mask, kPayload},
     {^^::foundation::AlignedBuffer,

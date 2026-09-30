@@ -9,7 +9,8 @@
 // handles were bound to their contexts, and is deliberately not rechecked
 // here.  Whether one stage feeds the next is a property of the chain, and
 // fixy/concurrent/Pipeline.h checks it: the producer handle of one stage and
-// the consumer handle of the next name the same channel.
+// the consumer handle of the next name the same channel, and at the mint
+// they bind the same channel instance.
 //
 // MpmcStage and SwmrStage have a private constructor.  Their one friend is
 // the door of fixy/concurrent/StageEndpointBridge.h, which builds each
@@ -393,6 +394,9 @@ public:
     void run() && noexcept { FnPtr(std::move(in_), std::move(writer_)); }
 
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
+
+    [[nodiscard]] constexpr consumer_handle_type const& in() const& noexcept { return in_; }
+    [[nodiscard]] constexpr writer_handle_type const& out() const& noexcept { return writer_; }
 
 private:
     // Private because direct construction would skip the row admission and

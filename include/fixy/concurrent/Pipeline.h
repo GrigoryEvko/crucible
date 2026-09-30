@@ -24,8 +24,12 @@
 // minting thread, and run checks the context of the thread that starts the
 // stages.
 //
-// A channel is known by its type.  Two channels of one type are one channel
-// to the check, so each channel of a pipeline names a tag of its own.
+// A channel is known by its type, and the type carries the brand of the
+// root that its permissions grow from.  Two channels of two root sites are
+// two types, and the compiler refuses a link across them.  One root site
+// that runs two times makes two channels of one type.  The mint compares
+// the channel identity of each link one time, and a link across two
+// instances ends the process there.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/HandleTraits.h>
@@ -33,9 +37,11 @@
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
+#include <foundation/ChannelBinding.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/diag/Runtime.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
@@ -108,6 +114,18 @@ struct stage_ports<Stage<FnPtr, Ctx>> {
     template <std::size_t I>
         requires(I == 0)
     using output_handle_type = typename stage_type::producer_handle_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    [[nodiscard]] static constexpr auto const& input(stage_type& stage) noexcept {
+        return stage.in();
+    }
+
+    template <std::size_t I>
+        requires(I == 0)
+    [[nodiscard]] static constexpr auto const& output(stage_type& stage) noexcept {
+        return stage.out();
+    }
 };
 
 template <auto FnPtr, class Ctx, class Inputs, class Outputs>
@@ -131,6 +149,18 @@ struct stage_ports<MpmcStage<FnPtr, Ctx, Inputs, Outputs>> {
     template <std::size_t I>
         requires(I < output_count)
     using output_handle_type = typename stage_type::template output_handle_type<I>;
+
+    template <std::size_t I>
+        requires(I < input_count)
+    [[nodiscard]] static constexpr auto const& input(stage_type& stage) noexcept {
+        return stage.template input<I>();
+    }
+
+    template <std::size_t I>
+        requires(I < output_count)
+    [[nodiscard]] static constexpr auto const& output(stage_type& stage) noexcept {
+        return stage.template output<I>();
+    }
 };
 
 template <auto FnPtr, class Ctx>
@@ -154,6 +184,18 @@ struct stage_ports<SwmrStage<FnPtr, Ctx>> {
     template <std::size_t I>
         requires(I == 0)
     using output_handle_type = typename stage_type::writer_handle_type;
+
+    template <std::size_t I>
+        requires(I == 0)
+    [[nodiscard]] static constexpr auto const& input(stage_type& stage) noexcept {
+        return stage.in();
+    }
+
+    template <std::size_t I>
+        requires(I == 0)
+    [[nodiscard]] static constexpr auto const& output(stage_type& stage) noexcept {
+        return stage.out();
+    }
 };
 
 }  // namespace detail
@@ -683,6 +725,51 @@ private:
     std::tuple<Stages...> stages_;
 };
 
+// The run-time half of the link check.  The concept makes sure that the
+// two handles of a link name one channel type, and that each of them
+// reports its identity or none of them does.  A link of two handles that
+// report binds one channel instance, or the mint ends the process.  The
+// check runs one time for each link, at the mint, and costs nothing on a
+// push.
+template <class Out, class In>
+[[nodiscard]] constexpr bool link_binds_one_channel_(Out const& out, In const& in) noexcept {
+    if constexpr (ReportsChannelIdentity<Out>) {
+        auto const identity = out.channel_identity();
+        return identity.is_bound() && identity == in.channel_identity();
+    } else {
+        return true;
+    }
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void pipeline_link_across_channels_abort_() noexcept {
+    ::foundation::diag::report_violation_at_and_abort(
+        ::foundation::diag::Category::LinearityViolation,
+        "a pipeline joins two channels of one type. One call site minted the root of each channel, so the two "
+        "channels have one brand, and the producer of one stage and the consumer of the next act on two channels.");
+}
+
+template <class From, std::size_t Output, class To, std::size_t Input>
+constexpr void check_link_(From& from, To& to) noexcept {
+    using from_ports = stage_ports<std::remove_cvref_t<From>>;
+    using to_ports = stage_ports<std::remove_cvref_t<To>>;
+    if (!link_binds_one_channel_(from_ports::template output<Output>(from), to_ports::template input<Input>(to)))
+        [[unlikely]] {
+        pipeline_link_across_channels_abort_();
+    }
+}
+
+template <std::size_t... Is, class... Stages>
+constexpr void check_chain_links_(std::index_sequence<Is...>, Stages&... stages) noexcept {
+    (check_link_<Stages...[Is], 0, Stages...[Is + 1], 0>(stages...[Is], stages...[Is + 1]), ...);
+}
+
+template <class... Edges, class... Stages>
+constexpr void check_graph_links_(EdgePack<Edges...>, Stages&... stages) noexcept {
+    (check_link_<Stages...[Edges::from], Edges::from_output, Stages...[Edges::to], Edges::to_input>(
+         stages...[Edges::from], stages...[Edges::to]),
+     ...);
+}
+
 }  // namespace detail
 
 template <class... Stages>
@@ -807,8 +894,10 @@ private:
 template <::foundation::effects::IsExecCtx Ctx, class... Stages>
     requires CtxFitsPipeline<Ctx, std::remove_cvref_t<Stages>...>
 [[nodiscard]] constexpr auto mint_pipeline(Ctx const& /*ctx*/, Stages&&... stages) noexcept {
-    // The requires clause checks the row, and a refused row never reaches
-    // this body.  The compiler names the row conjunct of CtxFitsPipeline.
+    // The requires clause checks the row and the channel type of each
+    // link, and a refused row never reaches this body.  The body checks
+    // the channel instance of each link.
+    detail::check_chain_links_(std::make_index_sequence<sizeof...(Stages) - 1>{}, stages...);
     return Pipeline<std::remove_cvref_t<Stages>...>{std::forward<Stages>(stages)...};
 }
 
@@ -816,6 +905,7 @@ template <::foundation::effects::IsExecCtx Ctx, class Graph, class... Stages>
     requires CtxFitsPipelineDagMint<Ctx, Graph, Stages...>
 [[nodiscard]] constexpr auto mint_pipeline_dag(Ctx const& /*ctx*/, Graph, Stages&&... stages) noexcept {
     using graph_type = std::remove_cvref_t<Graph>;
+    detail::check_graph_links_(typename detail::stage_graph_traits<graph_type>::edge_pack_type{}, stages...);
     return PipelineDag<graph_type>{std::forward<Stages>(stages)...};
 }
 
@@ -881,6 +971,20 @@ inline void stage_into_other_channel(FakeConsumer<int>&&, OtherProducer<int>&&) 
 inline void stage_into_nameless(FakeConsumer<int>&&, NamelessProducer<int>&&) noexcept {}
 using S_into_other = Stage<&stage_into_other_channel, HotFgCtx>;
 using S_into_nameless = Stage<&stage_into_nameless, HotFgCtx>;
+
+// A producer on the channel of S_int_to_int that reports its identity.  The
+// consumer of S_int_to_int hides it, so no mint could compare the two.
+template <typename T>
+struct ReportingProducer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    [[nodiscard]] bool try_push(T const&) noexcept { return false; }
+    [[nodiscard]] ::foundation::ChannelIdentity<FakeChannel<T>> channel_identity() const noexcept { return {}; }
+};
+
+inline void stage_into_reporting(FakeConsumer<int>&&, ReportingProducer<int>&&) noexcept {}
+using S_into_reporting = Stage<&stage_into_reporting, HotFgCtx>;
+static_assert(!stages_chain<S_into_reporting, S_int_to_int>, "an identity that one side hides is not compared");
 
 static_assert(std::is_same_v<stage_output_value_t<S_into_other, 0>, stage_input_value_t<S_int_to_int, 0>>);
 static_assert(!stages_chain<S_into_other, S_int_to_int>, "one payload, two channels");

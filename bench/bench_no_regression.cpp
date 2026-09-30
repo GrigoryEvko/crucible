@@ -299,8 +299,7 @@ using PieceTable = std::array<std::uint32_t, kPieces>;
 // every piece on the calling thread.
 void run_rule(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces) noexcept {
     const BgCtx ctx{eff::testing::bg()};
-    auto region = ::fixy::OwnedRegion<std::uint32_t, PieceTableWhole>::wrap(
-        pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
+    auto region = ::fixy::mint_owned_region(pieces.data(), kPieces, perm::mint_permission_root<PieceTableWhole>());
     auto whole =
         ::fixy::spawn::mint_parallel_for<kPieces>(ctx, w.budget, std::move(region), [&w, &sink](auto& shard) noexcept {
             for (const std::uint32_t piece : shard) {

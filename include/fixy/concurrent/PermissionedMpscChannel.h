@@ -17,14 +17,19 @@
 // synchronization, so two consumers would race on the cell reads.  The
 // linear permission turns that race into a compile error.
 //
-// Each channel needs a UserTag of its own.  Two channels sharing a tag
-// share Permission types, and their endpoints become interchangeable.
-// Mint each consumer root once per program: nothing checks that at
-// runtime.
+// A channel has the brand of the root that its permissions grow from.
+// The caller mints the whole root, names its brand in the channel type,
+// and splits the root into the producer token and the consumer token.
+// The pool of the channel parks the producer token, and the caller keeps
+// the consumer token.  A root of another call site has another brand, so
+// its tokens open no endpoint of this channel.  One call site that runs
+// two times mints two roots of one brand.  A claim on the consumer role
+// (foundation/ChannelBinding.h) refuses a second live consumer there.
 
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>
 
+#include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
@@ -71,14 +76,14 @@ struct Consumer {
 
 }  // namespace mpsc_tag
 
-// UserTag has no default, for the reason fixy/concurrent/
-// PermissionedSpscChannel.h gives: two channels on one tag share their
-// Permission types.
-template <RingValue T, std::size_t Capacity, typename UserTag>
-class PermissionedMpscChannel : public ::foundation::Pinned<PermissionedMpscChannel<T, Capacity, UserTag>> {
+// UserTag and Brand have no default, for the reason fixy/concurrent/
+// PermissionedSpscChannel.h gives.
+template <RingValue T, std::size_t Capacity, typename UserTag, ::foundation::brand::IsFreshBrand Brand>
+class PermissionedMpscChannel : public ::foundation::Pinned<PermissionedMpscChannel<T, Capacity, UserTag, Brand>> {
 public:
     using value_type = T;
     using user_tag = UserTag;
+    using brand_type = Brand;
     using whole_tag = mpsc_tag::Whole<UserTag>;
     using producer_tag = mpsc_tag::Producer<UserTag>;
     using consumer_tag = mpsc_tag::Consumer<UserTag>;
@@ -87,13 +92,11 @@ public:
     using row_discipline = ::fixy::row_discipline::mpsc_channel;
     using row_payload = T;
 
-    // The producer root is minted here rather than passed in, because
-    // the pool is the root of trust for its own tag.  Accepting an
-    // external permission would let a caller park one in the wrong
-    // pool.  The caller mints and keeps the consumer permission.
-
-    PermissionedMpscChannel() noexcept
-        : producer_pool_{::foundation::permissions::mint_permission_root<producer_tag>()} {}
+    // The pool parks the producer token of the split root, and each
+    // producer handle holds one share of it.
+    explicit PermissionedMpscChannel(
+        ::foundation::permissions::Permission<producer_tag, Brand>&& producer_root) noexcept
+        : producer_pool_{std::move(producer_root)} {}
 
     // Holds a pool share for its whole lifetime and gives it back on
     // destruction.
@@ -103,10 +106,10 @@ public:
         // its channel would push with no pool share, and so would push
         // during the drained window that assumes every producer out.
         ::foundation::ChannelBinding<PermissionedMpscChannel> ch_;
-        ::foundation::permissions::SharedPermissionGuard<producer_tag> guard_;
+        ::foundation::permissions::SharedPermissionGuard<producer_tag, Brand> guard_;
 
         constexpr ProducerHandle(PermissionedMpscChannel& channel,
-                                 ::foundation::permissions::SharedPermissionGuard<producer_tag>&& guard) noexcept
+                                 ::foundation::permissions::SharedPermissionGuard<producer_tag, Brand>&& guard) noexcept
             : ch_{channel}, guard_{std::move(guard)} {}
         friend class PermissionedMpscChannel;
 
@@ -114,9 +117,10 @@ public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
         using row_discipline = ::fixy::row_discipline::mpsc_producer;
         using row_payload = T;
+        using brand_type = Brand;
         // The channel this handle acts on.  A pipeline joins two stages
         // only when the producer of one and the consumer of the next name
-        // the same channel.
+        // the same channel, and at the mint, the same channel instance.
         using channel_type = PermissionedMpscChannel;
 
         ProducerHandle(const ProducerHandle&) =
@@ -137,6 +141,11 @@ public:
         [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+        [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedMpscChannel>
+        channel_identity() const noexcept {
+            return ch_.identity();
+        }
     };
 
     class ConsumerHandle {
@@ -145,10 +154,10 @@ public:
         // a reference or a plain pointer would let the source and the
         // target both go on using the one linear token.
         ::foundation::ChannelBinding<PermissionedMpscChannel> ch_;
-        [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag> perm_;
+        [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> perm_;
 
         constexpr ConsumerHandle(PermissionedMpscChannel& channel,
-                                 ::foundation::permissions::Permission<consumer_tag>&& perm) noexcept
+                                 ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
             : ch_{channel}, perm_{std::move(perm)} {}
         friend class PermissionedMpscChannel;
 
@@ -156,6 +165,7 @@ public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
         using row_discipline = ::fixy::row_discipline::mpsc_consumer;
         using row_payload = T;
+        using brand_type = Brand;
         using channel_type = PermissionedMpscChannel;
 
         ConsumerHandle(const ConsumerHandle&) =
@@ -167,11 +177,22 @@ public:
             "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission "
             "and silently allow a second consumer to coexist (MpscRing's try_pop is single-consumer-only)");
 
+        // A moved-from handle holds no claim, so only the bound one gives
+        // the role back.
+        ~ConsumerHandle() {
+            if (ch_.is_bound()) ch_->consumer_claim_.release();
+        }
+
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
 
         [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+        [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedMpscChannel>
+        channel_identity() const noexcept {
+            return ch_.identity();
+        }
     };
 
     // Lends a pool share, and refuses while an exclusive transition is
@@ -183,7 +204,11 @@ public:
         return ProducerHandle{*this, std::move(*guard)};
     }
 
-    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag>&& perm) noexcept {
+    // Takes the claim of the consumer role first, so a second live
+    // consumer handle ends the process here.
+    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
+        consumer_claim_.take("two live consumer handles of one MPSC channel. One call site minted the root of the "
+                             "channel two times.");
         return ConsumerHandle{*this, std::move(perm)};
     }
 
@@ -213,18 +238,56 @@ public:
 
 private:
     MpscRing<T, Capacity> ring_;
-    ::foundation::permissions::SharedPermissionPool<producer_tag> producer_pool_;
+    ::foundation::permissions::SharedPermissionPool<producer_tag, Brand> producer_pool_;
+    ::foundation::EndpointClaim consumer_claim_;
 };
+
+namespace detail {
+
+template <typename Root>
+struct mpsc_root_parts;
+
+template <typename UserTag, typename Brand>
+struct mpsc_root_parts<::foundation::permissions::Permission<mpsc_tag::Whole<UserTag>, Brand>> {
+    using user_tag = UserTag;
+    using brand = Brand;
+};
+
+}  // namespace detail
+
+// The channel of a whole root of type Root.  The alias reads the user tag
+// and the brand off the root.
+template <RingValue T, std::size_t Capacity, typename Root>
+using mpsc_channel_t = PermissionedMpscChannel<T, Capacity, typename detail::mpsc_root_parts<Root>::user_tag,
+                                               typename detail::mpsc_root_parts<Root>::brand>;
 
 namespace detail::mpsc_channel_self_test {
 
-// The tag the witness roster names for this channel.
+// The tag and the brand the witness roster names for this channel.
 struct WitnessTag {};
+struct WitnessBrand {};
 
-// A channel that omits its tag does not name a type.
-template <template <RingValue, std::size_t, typename...> class Channel>
-concept NamesATypeWithoutATag = requires { typename Channel<int, 8>; };
-static_assert(!NamesATypeWithoutATag<PermissionedMpscChannel>);
+// A channel names its tag and a brand of one root.  A channel that omits
+// the tag or the brand names no type, and no channel is on the erased
+// brand or on a type that is not a brand.
+template <template <RingValue, std::size_t, typename, ::foundation::brand::IsFreshBrand> class Channel,
+          typename... TagAndBrand>
+concept NamesAChannelOf = requires { typename Channel<int, 8, TagAndBrand...>; };
+static_assert(NamesAChannelOf<PermissionedMpscChannel, WitnessTag, WitnessBrand>);
+static_assert(!NamesAChannelOf<PermissionedMpscChannel>);
+static_assert(!NamesAChannelOf<PermissionedMpscChannel, WitnessTag>);
+static_assert(!NamesAChannelOf<PermissionedMpscChannel, WitnessTag, ::foundation::brand::DefaultBrand>);
+static_assert(!NamesAChannelOf<PermissionedMpscChannel, WitnessTag, int>);
+
+using Witness = PermissionedMpscChannel<int, 8, WitnessTag, WitnessBrand>;
+static_assert(
+    std::is_same_v<mpsc_channel_t<int, 8, ::foundation::permissions::Permission<Witness::whole_tag, WitnessBrand>>,
+                   Witness>);
+
+// The producer root is the one door into the pool, and no default
+// constructor builds a channel with an empty pool.
+static_assert(!std::is_default_constructible_v<Witness>);
+static_assert(sizeof(Witness::ConsumerHandle) == sizeof(void*));
 
 }  // namespace detail::mpsc_channel_self_test
 
