@@ -98,8 +98,10 @@ static void test_ethtool_features_and_lldp() {
     assert(bits->test(cog::NicFeature::Gso));
     assert(bits->test(cog::NicFeature::Gro));
     assert(!bits->test(cog::NicFeature::Lro));
-    assert(bits->test(cog::NicFeature::KtlsOffload));
     assert(bits->test(cog::NicFeature::TcEbpf));
+    // The input also sets tls-hw-tx-offload to on.  No NicFeature names that
+    // key, so the parser sets only the four bits above.
+    assert(bits->popcount() == 4);
 
     constexpr std::string_view lldp = "Interface: eth0\n"
                                       "LineRate: 100G\n"

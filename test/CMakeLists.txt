@@ -1341,7 +1341,7 @@ crucible_neg_compile_test(neg_offload_target_feature_of_other_schema
     "no matching function for call to .validate_offload_target<crucible::cog::GpuFeature::GpuDirectRdma, crucible::cog::CogKind::NvSwitch>\\("
     "required for the satisfaction of .AdvertisesFeatureOf<Caps, Feature>. \\[with Caps = crucible::cog::NvSwitchTargetCaps")
 crucible_neg_compile_test(neg_offload_target_no_kind
-    "no matching function for call to .validate_offload_target<crucible::cog::SwitchFeature::P4>\\("
+    "no matching function for call to .validate_offload_target<crucible::cog::SwitchFeature::AdaptiveRouting>\\("
     "the expression .sizeof \\.\\.\\. \\(\\(Kinds \\.\\.\\.\\)\\) > 0 \\[with Kinds = \\{\\}\\]. evaluated to .false.")
 
 # ─── ledger/Ledger.h HS14 fixtures ────────────────────────────────

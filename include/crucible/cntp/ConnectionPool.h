@@ -22,7 +22,6 @@ enum class TransportClass : std::uint8_t {
     RdmaRcQp = 0,
     RdmaUdQp = 1,
     MtlsTcp = 2,
-    Quic = 3,
     AfXdp = 4,
     Tcp = 5,
 };
@@ -66,9 +65,8 @@ enum class PoolEventKind : std::uint8_t {
 }
 
 template <TransportClass T>
-concept PoolTransportClass =
-    T == TransportClass::RdmaRcQp || T == TransportClass::RdmaUdQp || T == TransportClass::MtlsTcp
-    || T == TransportClass::Quic || T == TransportClass::AfXdp || T == TransportClass::Tcp;
+concept PoolTransportClass = T == TransportClass::RdmaRcQp || T == TransportClass::RdmaUdQp
+                          || T == TransportClass::MtlsTcp || T == TransportClass::AfXdp || T == TransportClass::Tcp;
 
 using PositivePoolSize = ::fixy::Positive<std::uint16_t>;
 using PositiveIdleTimeoutNs = ::fixy::Positive<std::uint64_t>;

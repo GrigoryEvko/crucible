@@ -12,6 +12,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -28,13 +29,12 @@ enum class TransportProbeKind : std::uint32_t {
     RdmaSend = 1u << 1,
     RdmaRead = 1u << 2,
     AfXdp = 1u << 3,
-    Quic = 1u << 4,
-    TcpBbr3 = 1u << 5,
-    TcpCubic = 1u << 6,
-    TcpDctcp = 1u << 7,
-    CollectiveSmallAllReduce = 1u << 8,
-    CollectiveSmallAllGather = 1u << 9,
-    FederationMtls = 1u << 10,
+    TcpBbr3 = 1u << 4,
+    TcpCubic = 1u << 5,
+    TcpDctcp = 1u << 6,
+    CollectiveSmallAllReduce = 1u << 7,
+    CollectiveSmallAllGather = 1u << 8,
+    FederationMtls = 1u << 9,
 };
 
 inline constexpr std::array all_transport_probe_kinds{
@@ -42,7 +42,6 @@ inline constexpr std::array all_transport_probe_kinds{
     TransportProbeKind::RdmaSend,
     TransportProbeKind::RdmaRead,
     TransportProbeKind::AfXdp,
-    TransportProbeKind::Quic,
     TransportProbeKind::TcpBbr3,
     TransportProbeKind::TcpCubic,
     TransportProbeKind::TcpDctcp,
@@ -61,8 +60,6 @@ inline constexpr std::array all_transport_probe_kinds{
             return "RdmaRead";
         case TransportProbeKind::AfXdp:
             return "AfXdp";
-        case TransportProbeKind::Quic:
-            return "Quic";
         case TransportProbeKind::TcpBbr3:
             return "TcpBbr3";
         case TransportProbeKind::TcpCubic:
@@ -169,6 +166,23 @@ namespace detail {
     }
     return index;
 }
+
+// The stats grid and the metric ids index a kind by the position of its bit.
+// Each kind is one bit, and that bit is at the position of the kind in
+// all_transport_probe_kinds, so no index is outside the grid.  O(kinds).
+[[nodiscard]] consteval bool each_probe_bit_is_its_position() noexcept {
+    for (std::size_t position = 0; position < all_transport_probe_kinds.size(); ++position) {
+        auto const kind = all_transport_probe_kinds[position];
+        if (!std::has_single_bit(static_cast<std::uint32_t>(kind)) || transport_probe_index(kind) != position) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static_assert(each_probe_bit_is_its_position(),
+              "Each TransportProbeKind must be one bit at the position of its entry in "
+              "all_transport_probe_kinds, because the stats grid and the metric ids use that position.");
 
 [[nodiscard]] constexpr std::uint32_t metric_id_for(std::uint32_t base, std::size_t peer_index, TransportProbeKind kind,
                                                     std::uint32_t lane) noexcept {

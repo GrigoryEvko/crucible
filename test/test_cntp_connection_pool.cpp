@@ -377,6 +377,8 @@ void test_gate_cache_line_isolation() {
 int main() {
     static_assert(cntp::PoolTransportClass<cntp::TransportClass::MtlsTcp>);
     static_assert(!cntp::PoolTransportClass<static_cast<cntp::TransportClass>(255)>);
+    // No transport class has the value 3, so the pool refuses it.
+    static_assert(!cntp::PoolTransportClass<static_cast<cntp::TransportClass>(3)>);
     static_assert(sizeof(cntp::PositivePoolSize) == sizeof(std::uint16_t));
     static_assert(sizeof(cntp::PositiveIdleTimeoutNs) == sizeof(std::uint64_t));
     static_assert(sizeof(cntp::DeclaredPoolEvent) == sizeof(cntp::PoolEvent));

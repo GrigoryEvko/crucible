@@ -98,36 +98,42 @@ inline constexpr OffloadTargetRefusals<Refusal> refusals{
     return identity;
 }
 
-[[nodiscard]] constexpr NvSwitchTargetCaps p4_caps() noexcept {
+[[nodiscard]] constexpr NvSwitchTargetCaps adaptive_routing_caps() noexcept {
     NvSwitchTargetCaps caps{};
-    caps.features.set(SwitchFeature::P4);
+    caps.features.set(SwitchFeature::AdaptiveRouting);
     return caps;
 }
 
-static_assert(validate_offload_target<SwitchFeature::P4, CogKind::NvSwitch>(switch_identity(CogKind::NvSwitch),
-                                                                            p4_caps(), refusals)
+static_assert(validate_offload_target<SwitchFeature::AdaptiveRouting, CogKind::NvSwitch>(
+                  switch_identity(CogKind::NvSwitch), adaptive_routing_caps(), refusals)
                   .has_value());
-static_assert(validate_offload_target<SwitchFeature::P4, CogKind::NicCard, CogKind::NvSwitch>(
-                  switch_identity(CogKind::NicCard), p4_caps(), refusals)
+static_assert(validate_offload_target<SwitchFeature::AdaptiveRouting, CogKind::NicCard, CogKind::NvSwitch>(
+                  switch_identity(CogKind::NicCard), adaptive_routing_caps(), refusals)
                   .has_value());
-static_assert(validate_offload_target<SwitchFeature::P4, CogKind::NvSwitch>(CogIdentity{}, p4_caps(), refusals).error()
+static_assert(validate_offload_target<SwitchFeature::AdaptiveRouting, CogKind::NvSwitch>(CogIdentity{},
+                                                                                         adaptive_routing_caps(),
+                                                                                         refusals)
+                  .error()
               == Refusal::Undiscovered);
-static_assert(validate_offload_target<SwitchFeature::P4, CogKind::NvSwitch>(switch_identity(CogKind::NicPort),
-                                                                            p4_caps(), refusals)
+static_assert(validate_offload_target<SwitchFeature::AdaptiveRouting, CogKind::NvSwitch>(
+                  switch_identity(CogKind::NicPort), adaptive_routing_caps(), refusals)
                   .error()
               == Refusal::WrongKind);
 static_assert(validate_offload_target<SwitchFeature::Sharp, CogKind::NvSwitch>(switch_identity(CogKind::NvSwitch),
-                                                                               p4_caps(), refusals)
+                                                                               adaptive_routing_caps(), refusals)
                   .error()
               == Refusal::MissingFeature);
 static_assert(validate_cog_target<CogKind::NvmeNamespace, CogKind::NvmeDrive>(
                   switch_identity(CogKind::NvmeDrive),
                   CogTargetRefusals<Refusal>{.undiscovered = Refusal::Undiscovered, .wrong_kind = Refusal::WrongKind})
                   .has_value());
-static_assert(AdvertisesFeatureOf<NvSwitchTargetCaps, SwitchFeature::Doca>);
+// NicFeature and SwitchFeature each have a Tcam atom, so the two lines on
+// SwitchFeature::Tcam show that the check reads the enum of a feature and
+// not its name.
+static_assert(AdvertisesFeatureOf<NvSwitchTargetCaps, SwitchFeature::Tcam>);
 static_assert(AdvertisesFeatureOf<GpuTargetCaps, GpuFeature::GpuDirectRdma>);
 static_assert(!AdvertisesFeatureOf<NvSwitchTargetCaps, GpuFeature::GpuDirectRdma>);
-static_assert(!AdvertisesFeatureOf<NicPortTargetCaps, SwitchFeature::Doca>);
+static_assert(!AdvertisesFeatureOf<NicPortTargetCaps, SwitchFeature::Tcam>);
 static_assert(!AdvertisesFeatureOf<NvSwitchTargetCaps, 1>);
 
 }  // namespace detail::offload_target_self_test

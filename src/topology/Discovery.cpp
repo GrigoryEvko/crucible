@@ -256,8 +256,6 @@ parse_ethtool_features(ExternalDiscoveryText text) noexcept {
             bits.set(cog::NicFeature::Lro);
         } else if (contains_ci(key, "rx-vlan-offload")) {
             bits.set(cog::NicFeature::Rss);
-        } else if (contains_ci(key, "tls-hw-tx-offload")) {
-            bits.set(cog::NicFeature::KtlsOffload);
         } else if (contains_ci(key, "hw-tc-offload")) {
             bits.set(cog::NicFeature::TcEbpf);
         }

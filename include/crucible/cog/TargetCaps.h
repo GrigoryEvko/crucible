@@ -17,8 +17,10 @@ namespace crucible::cog {
 // Every enumerator below is frozen by underlying value, and the pin
 // tables at the end of this file hold each value. The values describe
 // hardware facts that are meant to outlive the process, so a renumber
-// would reinterpret a stored schema. New atoms take the next free value
-// or bit position and extend their pin table in the same change.
+// would reinterpret a stored schema. New atoms take the value or bit
+// position after the highest one and extend their pin table in the same
+// change. A deleted atom leaves its value empty, and no new atom takes
+// that value, because a stored schema can still hold it.
 //
 // ::foundation::reflect::enum_name gives the name of an enumerator, and
 // ::foundation::reflect::enum_count the number of enumerators.
@@ -95,7 +97,6 @@ enum class NicFeature : std::uint32_t {
     Rss = 1u << 4,  // Receive-side scaling
     Roce = 1u << 5,  // RDMA over Converged Ethernet
     Iwarp = 1u << 6,  // iWARP RDMA, legacy fleets only
-    KtlsOffload = 1u << 7,  // Kernel TLS offload to the NIC AES engine
     GpuDirectRdma = 1u << 8,  // Peer DMA between GPU and NIC
     XdpNative = 1u << 9,  // Driver-side eBPF
     XdpOffload = 1u << 10,  // XDP offload to the NIC ASIC
@@ -110,13 +111,11 @@ enum class NicFeature : std::uint32_t {
 
 enum class SwitchFeature : std::uint16_t {
     Sharp = 1u << 0,  // In-network reduction
-    P4 = 1u << 1,  // Programmable dataplane
     AdaptiveRouting = 1u << 2,
     Ecn = 1u << 3,  // Explicit Congestion Notification
     Pfc = 1u << 4,  // Priority Flow Control, lossless fabric
     Tcam = 1u << 5,  // Hardware ACL and flow rules
     PortMirror = 1u << 6,  // SPAN
-    Doca = 1u << 7,  // BlueField DPU offload
 };
 
 // Covers both x86-64 and AArch64.
@@ -361,14 +360,13 @@ inline constexpr std::array<enum_pin<GpuFeature>, 9> gpu_feature_pins{{{"Tma", 1
                                                                        {"Mig", 1u << 8}}};
 static_assert(pin_enum(gpu_feature_pins), "GpuFeature drifted from gpu_feature_pins.");
 
-inline constexpr std::array<enum_pin<NicFeature>, 18> nic_feature_pins{{{"Tso", 1u << 0},
+inline constexpr std::array<enum_pin<NicFeature>, 17> nic_feature_pins{{{"Tso", 1u << 0},
                                                                         {"Gso", 1u << 1},
                                                                         {"Gro", 1u << 2},
                                                                         {"Lro", 1u << 3},
                                                                         {"Rss", 1u << 4},
                                                                         {"Roce", 1u << 5},
                                                                         {"Iwarp", 1u << 6},
-                                                                        {"KtlsOffload", 1u << 7},
                                                                         {"GpuDirectRdma", 1u << 8},
                                                                         {"XdpNative", 1u << 9},
                                                                         {"XdpOffload", 1u << 10},
@@ -381,14 +379,12 @@ inline constexpr std::array<enum_pin<NicFeature>, 18> nic_feature_pins{{{"Tso", 
                                                                         {"Tcam", 1u << 17}}};
 static_assert(pin_enum(nic_feature_pins), "NicFeature drifted from nic_feature_pins.");
 
-inline constexpr std::array<enum_pin<SwitchFeature>, 8> switch_feature_pins{{{"Sharp", 1u << 0},
-                                                                             {"P4", 1u << 1},
+inline constexpr std::array<enum_pin<SwitchFeature>, 6> switch_feature_pins{{{"Sharp", 1u << 0},
                                                                              {"AdaptiveRouting", 1u << 2},
                                                                              {"Ecn", 1u << 3},
                                                                              {"Pfc", 1u << 4},
                                                                              {"Tcam", 1u << 5},
-                                                                             {"PortMirror", 1u << 6},
-                                                                             {"Doca", 1u << 7}}};
+                                                                             {"PortMirror", 1u << 6}}};
 static_assert(pin_enum(switch_feature_pins), "SwitchFeature drifted from switch_feature_pins.");
 
 inline constexpr std::array<enum_pin<CpuFeature>, 16> cpu_feature_pins{{{"Avx2", 1u << 0},

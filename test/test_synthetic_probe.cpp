@@ -21,7 +21,8 @@ static cog::CogIdentity peer(std::uint64_t lo) {
 }
 
 static void test_name_accessors() {
-    assert(observe::transport_probe_kind_name(observe::TransportProbeKind::Quic) == std::string_view{"Quic"});
+    assert(observe::transport_probe_kind_name(observe::TransportProbeKind::FederationMtls)
+           == std::string_view{"FederationMtls"});
     assert(observe::synthetic_probe_failure_name(observe::SyntheticProbeFailureClass::Completion)
            == std::string_view{"Completion"});
     std::printf("  test_name_accessors:            PASSED\n");
@@ -34,24 +35,24 @@ static void test_register_and_record_success() {
         eff::ColdInitCtx{::foundation::effects::testing::init()}, config);
 
     ::fixy::Bits<observe::TransportProbeKind> kinds{
-        observe::TransportProbeKind::Quic,
+        observe::TransportProbeKind::FederationMtls,
         observe::TransportProbeKind::TcpBbr3,
     };
     auto const p = peer(1);
     assert(runner.register_peer(p, kinds));
     assert(!runner.register_peer(p, kinds));
-    assert(runner.enabled(p, observe::TransportProbeKind::Quic));
+    assert(runner.enabled(p, observe::TransportProbeKind::FederationMtls));
 
     // The dispatch counter has to be bumped before the outcome is reported.
     // Recording an outcome does not bump it, because doing so would make the
     // lost-probe signal identically zero.
     assert(runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::TransportProbeKind::Quic));
+                                 observe::TransportProbeKind::FederationMtls));
 
     observe::ObservationSnapshot observations;
     assert(runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                  observe::ProbeOutcome{
-                                     .kind = observe::TransportProbeKind::Quic,
+                                     .kind = observe::TransportProbeKind::FederationMtls,
                                      .failure = observe::SyntheticProbeFailureClass::None,
                                      .latency_ns = 11000,
                                      .bytes_transferred = 256,
@@ -59,7 +60,7 @@ static void test_register_and_record_success() {
                                  },
                                  &observations));
 
-    auto const stats = runner.stats(p, observe::TransportProbeKind::Quic);
+    auto const stats = runner.stats(p, observe::TransportProbeKind::FederationMtls);
     assert(stats.scheduled == 1);
     assert(stats.succeeded == 1);
     assert(stats.failed == 0);
@@ -111,7 +112,7 @@ static void test_rejects_unregistered_or_disabled() {
     assert(!runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, missing,
                                   observe::ProbeOutcome{.kind = observe::TransportProbeKind::TcpCubic}));
     assert(!runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                  observe::ProbeOutcome{.kind = observe::TransportProbeKind::Quic}));
+                                  observe::ProbeOutcome{.kind = observe::TransportProbeKind::FederationMtls}));
     assert(runner.stats(missing, observe::TransportProbeKind::TcpCubic).scheduled == 0);
     std::printf("  test_rejects_unregistered_or_disabled: PASSED\n");
 }
@@ -126,28 +127,28 @@ static void test_schedule_record_separation() {
     auto runner =
         observe::mint_synthetic_probes<eff::ColdInitCtx, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()});
     auto const p = peer(5);
-    ::fixy::Bits<observe::TransportProbeKind> kinds{observe::TransportProbeKind::Quic};
+    ::fixy::Bits<observe::TransportProbeKind> kinds{observe::TransportProbeKind::FederationMtls};
     assert(runner.register_peer(p, kinds));
 
     // Recording alone.
     assert(runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                  observe::ProbeOutcome{
-                                     .kind = observe::TransportProbeKind::Quic,
+                                     .kind = observe::TransportProbeKind::FederationMtls,
                                      .failure = observe::SyntheticProbeFailureClass::None,
                                      .latency_ns = 1000,
                                      .bytes_transferred = 64,
                                      .sequence = 1,
                                  }));
-    auto stats_a = runner.stats(p, observe::TransportProbeKind::Quic);
+    auto stats_a = runner.stats(p, observe::TransportProbeKind::FederationMtls);
     assert(stats_a.scheduled == 0);
     assert(stats_a.succeeded == 1);
 
     // Dispatching alone, twice, against one recorded outcome.
     assert(runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::TransportProbeKind::Quic));
+                                 observe::TransportProbeKind::FederationMtls));
     assert(runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
-                                 observe::TransportProbeKind::Quic));
-    auto stats_b = runner.stats(p, observe::TransportProbeKind::Quic);
+                                 observe::TransportProbeKind::FederationMtls));
+    auto stats_b = runner.stats(p, observe::TransportProbeKind::FederationMtls);
     assert(stats_b.scheduled == 2);
     assert(stats_b.succeeded == 1);
     assert(stats_b.failed == 0);
@@ -161,10 +162,10 @@ static void test_schedule_record_separation() {
     assert(runner2.register_peer(q, kinds));
     for (std::uint64_t i = 0; i < 5; ++i) {
         assert(runner2.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, q,
-                                      observe::TransportProbeKind::Quic));
+                                      observe::TransportProbeKind::FederationMtls));
         assert(runner2.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, q,
                                       observe::ProbeOutcome{
-                                          .kind = observe::TransportProbeKind::Quic,
+                                          .kind = observe::TransportProbeKind::FederationMtls,
                                           .failure = (i % 2) == 0 ? observe::SyntheticProbeFailureClass::None
                                                                   : observe::SyntheticProbeFailureClass::Timeout,
                                           .latency_ns = 500,
@@ -172,7 +173,7 @@ static void test_schedule_record_separation() {
                                           .sequence = i,
                                       }));
     }
-    auto const stats_c = runner2.stats(q, observe::TransportProbeKind::Quic);
+    auto const stats_c = runner2.stats(q, observe::TransportProbeKind::FederationMtls);
     assert(stats_c.scheduled == 5);
     assert(stats_c.succeeded == 3);
     assert(stats_c.failed == 2);
@@ -182,7 +183,7 @@ static void test_schedule_record_separation() {
     // terms recording does.
     auto const missing = peer(7);
     assert(!runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, missing,
-                                  observe::TransportProbeKind::Quic));
+                                  observe::TransportProbeKind::FederationMtls));
     assert(!runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                   observe::TransportProbeKind::TcpBbr3));
     std::printf("  test_schedule_record_separation:  PASSED\n");

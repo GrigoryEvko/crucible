@@ -44,6 +44,12 @@ static void check_every_name_at_run_time() {
     });
 }
 
+// A deleted feature leaves its bit empty, because a stored schema can still
+// hold that bit.  No enumerator names the bits below.
+static_assert(fr::enum_name(static_cast<cog::NicFeature>(1u << 7)) == fr::unknown_enum_sentinel<cog::NicFeature>);
+static_assert(fr::enum_name(static_cast<cog::SwitchFeature>(1u << 1)) == fr::unknown_enum_sentinel<cog::SwitchFeature>);
+static_assert(fr::enum_name(static_cast<cog::SwitchFeature>(1u << 7)) == fr::unknown_enum_sentinel<cog::SwitchFeature>);
+
 static void test_names_at_run_time() {
     check_every_name_at_run_time<cog::LinkLayer>();
     check_every_name_at_run_time<cog::PcieGen>();

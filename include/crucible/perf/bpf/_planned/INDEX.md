@@ -103,7 +103,7 @@ BPF cross-references are listed for completeness.
 | `nvme_rq.bpf.c`        | Per-NVMe-command setup→complete latency; per-queue per-opcode histogram. |
 | `block_rq.bpf.c`       | `block_rq_*` lifecycle (insert→issue→complete) for I/O scheduler attribution (mq-deadline / kyber / bfq). |
 
-## Tier-F — networking (14, since CNTP is multi-layer over AF_XDP)
+## Tier-F — networking (12, since CNTP is multi-layer over AF_XDP)
 
 | Stub | One-liner |
 |---|---|
@@ -119,8 +119,6 @@ BPF cross-references are listed for completeness.
 | `qdisc_backlog.bpf.c`  | `qdisc/qdisc_enqueue` / `qdisc_dequeue` per-qdisc backlog depth. |
 | `nf_conntrack.bpf.c`   | netfilter conntrack tracepoints for stateful federation NAT traversal. |
 | `netfilter_hooks.bpf.c`| netfilter hook events (kernel 6.4+ BPF netfilter program type). |
-| `ktls_offload.bpf.c`   | KTLS hardware offload events (NIC AES) for federation mTLS. |
-| `quic_uprobe.bpf.c`    | QUIC library uprobe (lsquic / msquic / quiche) for federation transport. |
 
 ## Tier-G — process / lifecycle (Iter programs, 4)
 
@@ -163,7 +161,7 @@ Companions in `include/crucible/perf/_planned/`: `BpfStats.md`,
 | `error_report.bpf.c` | `error_report/error_report_end` (1, load-bearing) | KASAN/KFENCE/UBSAN/WARN bench-reliability disaster early warning. |
 | `power_amd_pstate.bpf.c` | `amd_cpu/amd_pstate_*` (2) | AMD-specific P-state EPP / performance request changes. |
 | `damon.bpf.c` | `damon/` (4) | DAMON memory-access-pattern aggregation events.  Pairs with userspace `DamonReader.md`. |
-| `handshake.bpf.c` | `handshake/` (16 events) | Kernel TLS handshake upcall + tls_alert_recv/send + handshake-daemon command interface.  SUPERSEDES partial `ktls_offload.bpf.c` coverage (corrects audit-round-2 mistake — `tls_alert_*` exists under `handshake/`, not `tls/`). |
+| `handshake.bpf.c` | `handshake/` (16 events) | Kernel TLS handshake upcall + tls_alert_recv/send + handshake-daemon command interface.  The `tls_alert_*` events are under `handshake/`, not `tls/`. |
 | `fib_lookup.bpf.c` | `fib/fib_table_lookup` + `fib6/fib6_table_lookup` | IPv4 + IPv6 routing-decision attribution.  Federation cold-start latency. |
 | `alarmtimer.bpf.c` | `alarmtimer/` (4) | POSIX alarm sleep/wake observation.  Bench-window preemption attribution. |
 | `filemap.bpf.c` | `filemap/` (5 incl. `mm_filemap_fault`) | Page cache lookup/fault/map per file.  Sample-period gated (high rate). |
