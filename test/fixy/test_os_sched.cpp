@@ -26,6 +26,10 @@
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
 
+#include <sched.h>
+
+#include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
@@ -63,6 +67,99 @@ static_assert(can_apply_affinity<BgWitness>);
 static_assert(can_apply_affinity<fixy::ColdInitCtx>);
 static_assert(!can_apply_affinity<fixy::HotFgCtx>);
 static_assert(!can_apply_affinity<int>);
+
+template <class Ctx>
+concept can_apply_mask = requires(Ctx const& ctx) { fixy::sched::apply_affinity_to_mask(ctx, kCore0); };
+static_assert(can_apply_mask<BgWitness>);
+static_assert(can_apply_mask<fixy::ColdInitCtx>);
+static_assert(!can_apply_mask<fixy::HotFgCtx>);
+static_assert(!can_apply_mask<int>);
+
+// The highest CPU in the set, or -1 for an empty set.
+[[nodiscard]] int highest_cpu_in(::cpu_set_t const& set) noexcept {
+    for (int cpu = CPU_SETSIZE - 1; cpu >= 0; --cpu) {
+        if (CPU_ISSET(static_cast<std::size_t>(cpu), &set)) return cpu;
+    }
+    return -1;
+}
+
+// The mask door names each CPU that a cpu_set_t can name.  The pin goes to
+// the highest CPU that this thread may use, and the kernel then reports
+// the mask and the CPU of the thread.  A 256-bit mask cannot name a CPU
+// past 255, so on a host with more CPUs this leg is the witness of the
+// width.  It runs first, because the later legs pin the thread to CPU 0.
+[[nodiscard]] int mask_door_pins_to_the_highest_allowed_cpu() {
+    BgWitness bg{eff::testing::bg()};
+
+    ::cpu_set_t before;
+    CPU_ZERO(&before);
+    if (::sched_getaffinity(0, sizeof(before), &before) != 0) {
+        std::fprintf(stderr, "reading the affinity of the thread failed (errno %d)\n", errno);
+        return 1;
+    }
+
+    // An empty mask asks for no pin.  The call succeeds, holds no mask and
+    // changes nothing.
+    auto no_pin = fixy::sched::apply_affinity_to_mask(bg, ml::AffinityMask{});
+    if (!no_pin || no_pin->is_held()) {
+        std::fprintf(stderr, "an empty mask did not give a result that holds no mask\n");
+        return 1;
+    }
+
+    // An index past the kernel set is refused before the system call.
+    auto past_the_set = fixy::sched::apply_affinity_to_cpu(bg, CPU_SETSIZE);
+    if (past_the_set || past_the_set.error() != EINVAL) {
+        std::fprintf(stderr, "a pin to a CPU past the kernel set was not refused with EINVAL\n");
+        return 1;
+    }
+
+    const int highest = highest_cpu_in(before);
+    if (highest <= 255) {
+        std::fprintf(stderr,
+                     "[skipped] the highest CPU this thread may use is %d, and a 256-bit mask names it too, so "
+                     "the width leg shows nothing on this host\n",
+                     highest);
+        return 0;
+    }
+
+    auto prior = fixy::sched::apply_affinity_to_mask(bg, ml::AffinityMask::single(static_cast<std::uint16_t>(highest)));
+    if (!prior || !prior->is_held()) {
+        std::fprintf(stderr, "the mask door did not pin the thread to CPU %d (errno %d)\n", highest,
+                     prior ? 0 : prior.error());
+        return 1;
+    }
+    ::cpu_set_t pinned;
+    CPU_ZERO(&pinned);
+    if (::sched_getaffinity(0, sizeof(pinned), &pinned) != 0 || CPU_COUNT(&pinned) != 1
+        || !CPU_ISSET(static_cast<std::size_t>(highest), &pinned) || ::sched_getcpu() != highest) {
+        std::fprintf(stderr, "the kernel does not report the pin to CPU %d\n", highest);
+        return 1;
+    }
+
+    // The restore gives the thread its whole set back.
+    if (!std::move(*prior).restore()) {
+        std::fprintf(stderr, "the restore of the prior mask failed\n");
+        return 1;
+    }
+    ::cpu_set_t after;
+    CPU_ZERO(&after);
+    if (::sched_getaffinity(0, sizeof(after), &after) != 0 || !CPU_EQUAL(&after, &before)) {
+        std::fprintf(stderr, "the restore did not give the thread its prior mask\n");
+        return 1;
+    }
+
+    // The one-CPU door gets to the same CPU through the mask door.
+    auto again = fixy::sched::apply_affinity_to_cpu(bg, highest);
+    if (!again || !again->is_held() || ::sched_getcpu() != highest) {
+        std::fprintf(stderr, "the one-CPU door did not pin the thread to CPU %d\n", highest);
+        return 1;
+    }
+    if (!std::move(*again).restore()) {
+        std::fprintf(stderr, "the restore after the one-CPU pin failed\n");
+        return 1;
+    }
+    return 0;
+}
 
 // Every pin here is earned.  CpuPinned has one constructor, it is
 // private, and fixy::sched::mint_affinity is its sole friend, so the
@@ -232,6 +329,7 @@ static_assert(!can_apply_affinity<int>);
 }  // namespace
 
 int main() {
+    if (const int rc = mask_door_pins_to_the_highest_allowed_cpu(); rc != 0) return rc;
     if (const int rc = pin_proof_round_trips_through_an_earned_pin(); rc != 0) return rc;
     if (const int rc = sched_class_answers_read_at_run_time(); rc != 0) return rc;
     if (const int rc = thread_name_reaches_the_kernel(); rc != 0) return rc;

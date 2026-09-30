@@ -43,8 +43,9 @@
 
 #include <foundation/effects/Effect.h>
 #include <crucible/Vigil.h>
-
-#include <sched.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/CpuPinned.h>
+#include <fixy/os/Sched.h>
 
 #include <bit>
 #include <cassert>
@@ -132,8 +133,7 @@ static_assert(RECORD_BODIES < RING_CAPACITY,
     std::fclose(f);
     if (!read_ok) return -1;
 
-    cpu_set_t set;
-    CPU_ZERO(&set);
+    ::fixy::AffinityMask set{};
     int last = -1;
     // The file is a comma-separated list of ranges: "88-95" or "4,6,88-95".
     for (const char* p = line; *p != '\0';) {
@@ -147,14 +147,17 @@ static_assert(RECORD_BODIES < RING_CAPACITY,
         if (end != nullptr && *end == '-') {
             hi = std::strtol(end + 1, &end, 10);
         }
-        for (long c = lo; c <= hi && c < CPU_SETSIZE; ++c) {
-            CPU_SET(static_cast<size_t>(c), &set);
+        for (long c = lo; c <= hi && c <= ::fixy::AffinityMask::kMaxCore; ++c) {
+            set = ::fixy::AffinityLattice::join(set, ::fixy::AffinityMask::single(static_cast<std::uint16_t>(c)));
             last = static_cast<int>(c);
         }
         p = (end != nullptr && end != p) ? end : p + 1;
     }
     if (last < 0) return -1;
-    if (sched_setaffinity(0, sizeof(set), &set) != 0) return -1;
+    // The pin goes through the door that records the pin event.  The
+    // process keeps the pin, so the prior mask in the result is dropped.
+    const ::fixy::ColdInitCtx startup{::foundation::effects::testing::init()};
+    if (!::fixy::sched::apply_affinity_to_mask(startup, set).has_value()) return -1;
     return last;
 }
 

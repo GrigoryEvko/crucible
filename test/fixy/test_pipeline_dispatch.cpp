@@ -5,6 +5,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Topology.h>
+#include <fixy/os/Sched.h>
 
 #include <algorithm>
 #include <array>
@@ -208,19 +209,17 @@ static void test_threaded_stages_stay_in_the_caller_mask() {
     const bool can_tell_apart = allowed.size() >= 3 && target >= 0;
     if (target < 0) target = allowed.front();
 
-    cpu_set_t narrow;
-    CPU_ZERO(&narrow);
-    CPU_SET(static_cast<std::size_t>(target), &narrow);
-    require(::sched_setaffinity(0, sizeof(narrow), &narrow) == 0, "cannot narrow the affinity mask of the caller");
+    const fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
+    auto prior = fixy::sched::apply_affinity_to_cpu(bg, target);
+    require(prior.has_value() && prior->is_held(), "cannot narrow the affinity mask of the caller");
 
     pinned_calls.store(0, std::memory_order_release);
-    const fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
     auto s0 = cc::mint_stage<&pinned_body>(bg, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s1 = cc::mint_stage<&pinned_body>(bg, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto p = cc::mint_pipeline(bg, std::move(s0), std::move(s1));
     std::move(p).run(bg);
 
-    require(::sched_setaffinity(0, sizeof(before), &before) == 0, "cannot restore the affinity mask of the caller");
+    require(std::move(*prior).restore().has_value(), "cannot restore the affinity mask of the caller");
     require(pinned_calls.load(std::memory_order_acquire) == kPinnedStages, "each pinned stage should run once");
     if (!can_tell_apart) return;
     for (std::size_t i = 0; i < kPinnedStages; ++i) {

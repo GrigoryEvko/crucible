@@ -4119,7 +4119,7 @@ fixy_neg_compile_test(neg_os_tsc_reader_foreground_ctx
 # ── Every scheduling door reads one gate ─────────────────────────────
 #
 # mint_affinity, mint_scheduler_policy and mint_priority read the same
-# gate as apply_affinity_to_cpu: the context must own Bg or Init.  Two
+# gate as apply_affinity_to_mask: the context must own Bg or Init.  Two
 # fixtures for each mint.  The first context is the foreground one,
 # with the empty row.  The second is a test context, with a wide row
 # that still holds neither effect.  The second regex names the gate as
@@ -4146,6 +4146,17 @@ fixy_neg_compile_test(neg_os_sched_mint_priority_foreground_ctx
   "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_os_sched_mint_priority_test_ctx
   "no matching function for call to .mint_priority<5>"
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, "
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+
+# The runtime mask door reads the same gate, and apply_affinity_to_cpu
+# calls it.  The same two contexts.
+fixy_neg_compile_test(neg_os_sched_apply_affinity_to_mask_foreground_ctx
+  "no matching function for call to .apply_affinity_to_mask."
+  "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
+  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_sched_apply_affinity_to_mask_test_ctx
+  "no matching function for call to .apply_affinity_to_mask."
   "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, "
   "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
 

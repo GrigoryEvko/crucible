@@ -5,10 +5,12 @@
 // is intersection.  bottom admits no core and top admits every core, so
 // a larger set sits higher and is the more permissive claim.
 //
-// kWords fixes the width at 256 cores, which covers every shipped server
-// part.  A fleet with a wider part bumps that one constant.
+// The mask holds every CPU that a cpu_set_t can name.  kWords fixes the
+// width at 1024 cores, which is CPU_SETSIZE of glibc, and
+// fixy/os/CpuPinned.h asserts that the two widths agree.  So a runtime pin
+// to one CPU goes through a mask with no loss.
 //
-// The backing store is a plain array of four words rather than a
+// The backing store is a plain array of words rather than a
 // std::bitset.  A bitset is functionally equivalent, but its
 // implementation is not guaranteed trivially relocatable, and this type
 // is the grade of a layout-critical carrier.
@@ -29,7 +31,7 @@
 namespace foundation::algebra::lattices {
 
 struct AffinityMask {
-    static constexpr std::size_t kWords = 4;
+    static constexpr std::size_t kWords = 16;
     static constexpr std::size_t kBits = kWords * 64;
     static constexpr std::uint16_t kMaxCore = static_cast<std::uint16_t>(kBits - 1);
 
@@ -125,8 +127,8 @@ static_assert(BoundedLattice<AffinityLattice>);
 static_assert(!UnboundedLattice<AffinityLattice>);
 static_assert(!Semiring<AffinityLattice>);
 
-static_assert(AffinityMask::kBits == 256);
-static_assert(AffinityMask::kMaxCore == 255);
+static_assert(AffinityMask::kBits == 1024);
+static_assert(AffinityMask::kMaxCore == 1023);
 static_assert(sizeof(AffinityMask) == AffinityMask::kWords * sizeof(std::uint64_t));
 static_assert(std::is_trivially_copyable_v<AffinityMask>);
 static_assert(std::is_standard_layout_v<AffinityMask>);
@@ -149,7 +151,9 @@ static_assert(AffinityMask::single(127).contains(127));
 static_assert(!AffinityMask::single(127).contains(128));
 static_assert(AffinityMask::single(192).contains(192));
 
-static_assert(AffinityMask::single(AffinityMask::kMaxCore).contains(255));
+static_assert(AffinityMask::single(383).words[5] == (std::uint64_t{1} << 63));
+static_assert(AffinityMask::single(AffinityMask::kMaxCore).contains(1023));
+static_assert(AffinityMask::single(AffinityMask::kMaxCore).words[15] == (std::uint64_t{1} << 63));
 static_assert(!AffinityMask::single(AffinityMask::kMaxCore).contains(0));
 
 static_assert(AffinityMask::range(0, 3).contains(0));

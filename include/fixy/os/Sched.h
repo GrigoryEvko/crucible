@@ -288,9 +288,9 @@ class PriorAffinity;
 
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
-[[nodiscard]] auto apply_affinity_to_cpu(Ctx const&, int cpu) noexcept -> std::expected<PriorAffinity, int>;
+[[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept -> std::expected<PriorAffinity, int>;
 
-// The affinity mask that one pin of apply_affinity_to_cpu replaced, and the
+// The affinity mask that one pin of apply_affinity_to_mask replaced, and the
 // authority to put it back.  Only that door builds one, from the mask that
 // it read before its pin, so the authority to restore is the authority of
 // the pin.  restore() goes through the recording door of fixy/os/CpuPinned.h,
@@ -338,42 +338,49 @@ private:
 
     template <eff::IsExecCtx FriendCtx>
         requires CtxFitsRuntimeAffinity<FriendCtx>
-    friend auto apply_affinity_to_cpu(FriendCtx const&, int cpu) noexcept -> std::expected<PriorAffinity, int>;
+    friend auto apply_affinity_to_mask(FriendCtx const&, AffinityMask mask) noexcept
+        -> std::expected<PriorAffinity, int>;
 
     ::cpu_set_t mask_{};
     std::thread::id owner_{};
     bool is_held_ = false;
 };
 
-// The CPU index arrives at runtime, so no compile-time pinning proof can be
+// The mask arrives at runtime, so no compile-time pinning proof can be
 // produced. This is not a mint for that reason. Its gate is the one the
 // three mints above read, CtxFitsRuntimeAffinity in fixy/os/CpuPinned.h.
 //
-// A negative index asks for no pin, and the call changes nothing.  A pin
+// An empty mask asks for no pin, and the call changes nothing.  A pin
 // goes through the same helper as mint_affinity, so it records a new pin
 // event, and a proof of an earlier pin on this thread stops being in
 // force.  The result holds the mask of the thread before the pin.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
-[[nodiscard]] auto apply_affinity_to_cpu(Ctx const&, int cpu) noexcept -> std::expected<PriorAffinity, int> {
-    if (cpu < 0) return PriorAffinity{};
-    if (static_cast<unsigned>(cpu) >= static_cast<unsigned>(CPU_SETSIZE)) [[unlikely]] {
-        return std::unexpected(EINVAL);
-    }
+[[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept -> std::expected<PriorAffinity, int> {
+    if (mask == AffinityMask{}) return PriorAffinity{};
     cpu_set_t prior;
     CPU_ZERO(&prior);
     if (::sched_getaffinity(0, sizeof(prior), &prior) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_cpu body, CtxFitsRuntimeAffinity ctx-gate
+        [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_mask body, CtxFitsRuntimeAffinity ctx-gate
         return std::unexpected(errno);
     }
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    CPU_SET(static_cast<std::size_t>(cpu), &set);
-    const auto pin_event = sf::detail::set_calling_thread_affinity(set);
+    const auto pin_event = sf::detail::pin_calling_thread(mask);
     if (!pin_event) [[unlikely]] {
         return std::unexpected(pin_event.error());
     }
     return PriorAffinity{prior};
+}
+
+// A pin to one CPU, through apply_affinity_to_mask.  A negative index asks
+// for no pin, and an index past the kernel set is EINVAL.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] auto apply_affinity_to_cpu(Ctx const& ctx, int cpu) noexcept -> std::expected<PriorAffinity, int> {
+    if (cpu < 0) return apply_affinity_to_mask(ctx, AffinityMask{});
+    if (static_cast<unsigned>(cpu) > AffinityMask::kMaxCore) [[unlikely]] {
+        return std::unexpected(EINVAL);
+    }
+    return apply_affinity_to_mask(ctx, AffinityMask::single(static_cast<std::uint16_t>(cpu)));
 }
 
 }  // namespace fixy::sched
@@ -434,13 +441,15 @@ static_assert(!CtxFitsPriorityMint<FgWitness, 5>,
 static_assert(::fixy::CtxFitsAffinityMint<BgWitness, PinningPosture::PinnedExplicit>);
 static_assert(!::fixy::CtxFitsAffinityMint<FgWitness, PinningPosture::PinnedExplicit>);
 
-// A prior mask comes only from apply_affinity_to_cpu, so no public
+// A prior mask comes only from apply_affinity_to_mask, so no public
 // constructor builds one, and no byte copy builds one either.
 static_assert(!std::is_default_constructible_v<PriorAffinity> && !std::is_copy_constructible_v<PriorAffinity>
                   && std::is_nothrow_move_constructible_v<PriorAffinity>,
-              "a prior affinity mask comes only from apply_affinity_to_cpu, and one mask is restored at most once");
+              "a prior affinity mask comes only from apply_affinity_to_mask, and one mask is restored at most once");
 static_assert(!std::is_trivially_copyable_v<PriorAffinity> && !std::is_implicit_lifetime_v<PriorAffinity>,
               "std::bit_cast and std::start_lifetime_as must not build a prior affinity mask");
+static_assert(std::is_same_v<decltype(apply_affinity_to_mask(std::declval<BgWitness const&>(), AffinityMask{})),
+                             std::expected<PriorAffinity, int>>);
 static_assert(std::is_same_v<decltype(apply_affinity_to_cpu(std::declval<BgWitness const&>(), 0)),
                              std::expected<PriorAffinity, int>>);
 

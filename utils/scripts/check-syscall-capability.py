@@ -48,6 +48,13 @@ THE DOORS
     changes the same mask, and its door is the same function, which does not
     call it, so each call of it is a violation.
 
+    The door rule also reads bench/, test/ and each test or bench directory
+    under a production root.  A benchmark or a test that pins around the
+    door leaves a pin proof in force, as production code does.  The
+    capability-claim scan stays on include/, src/ and vessel/, because a
+    claim describes production code.  A parse failure in a file that only
+    the door rule reads is a guard failure too.
+
 MACRO BODIES
     A macro body is parsed on its own (tsast.macro_bodies), with every
     fragment joined, and the guard reads the same calls in its tree, so a
@@ -77,7 +84,7 @@ import os
 import re
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -120,6 +127,10 @@ assert set(DOOR_ONLY) <= KERNEL_ONLY, "a door-only name is missing from KERNEL_O
 
 ROOTS = ("include", "src", "vessel")
 EXCLUDED = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
+# The trees that only the door rule reads, and the parts that keep a file
+# out of them.
+DOOR_ROOTS = ("bench", "test")
+DOOR_EXCLUDED = EXCLUDED - {"test", "bench"}
 ALLOWLIST = "utils/scripts/syscall-capability-allowlist.txt"
 MARKER_WORD = "SYSCALL-CAP-OK"
 MARKER = re.compile(rf"{MARKER_WORD}:\s*\S")
@@ -164,14 +175,34 @@ def in_scope(rel: Path) -> bool:
             and not any(part in EXCLUDED or part.startswith("build") for part in rel.parts[:-1]))
 
 
-def scope_files(root: Path) -> list[Path]:
-    """Return every file in scope under a scan root, sorted."""
+def in_door_scope(rel: Path) -> bool:
+    """Return True when the door rule reads a path relative to the scan root and the claim scan does not.
+
+    That is a C++ file under bench/ or test/, or under a test or bench
+    directory of a production root.
+    """
+    return (tsast.is_in_cpp_scope(rel) and bool(rel.parts) and rel.parts[0] in ROOTS + DOOR_ROOTS
+            and not in_scope(rel)
+            and not any(part in DOOR_EXCLUDED or part.startswith("build") for part in rel.parts[:-1]))
+
+
+def scope_files(root: Path, admits: Callable[[Path], bool] = in_scope, tops: tuple[str, ...] = ROOTS) -> list[Path]:
+    """Return every file under the tops of a scan root that a scope predicate admits, sorted.
+
+    The defaults give the files of the claim scan.  Complexity: linear in
+    the number of files under the tops.
+    """
     found: list[Path] = []
-    for top in ROOTS:
+    for top in tops:
         base = root / top
         if base.is_dir():
-            found.extend(p for p in base.rglob("*") if p.is_file() and in_scope(p.relative_to(root)))
+            found.extend(p for p in base.rglob("*") if p.is_file() and admits(p.relative_to(root)))
     return sorted(found)
+
+
+def door_scope_files(root: Path) -> list[Path]:
+    """Return every file that only the door rule reads under a scan root, sorted."""
+    return scope_files(root, in_door_scope, ROOTS + DOOR_ROOTS)
 
 
 def callee_name(call: tsast.Node) -> str | None:
@@ -336,7 +367,10 @@ def breached(rel: str, names: set[str], holder: tuple[str, ...]) -> list[str]:
 
 
 def scan(root: Path) -> Scan:
-    """Find every unmarked syscall site and every dead marker under a scan root.
+    """Find every unmarked syscall site, every dead marker and every call outside a door under a scan root.
+
+    The claim scan reads scope_files().  The door rule reads those files and
+    door_scope_files() too.
 
     Complexity: linear in the total size of the files in scope.
 
@@ -345,18 +379,24 @@ def scan(root: Path) -> Scan:
 
     Returns:
         The unmarked sites, each parse failure, each marker that exempts no
-        site, and the names that each file with a site spells
+        site, the names that each file with a site spells, and each call
+        of a door-only syscall outside its door
     """
     found = Scan([], [], [], {})
     trees: list[tsast.Tree] = []
+    door_trees: list[tsast.Tree] = []
+    # Only a file of the claim scan has a record, so a call in a file that
+    # only the door rule reads gives no site.
     calls: dict[str, Calls] = {}
-    for tree in tsast.parse(scope_files(root), strict=False):
+    for tree in tsast.parse(sorted(scope_files(root) + door_scope_files(root)), strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
             found.failures.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
-        trees.append(tree)
-        calls[rel] = Calls()
+        claimed = in_scope(Path(rel))
+        (trees if claimed else door_trees).append(tree)
+        if claimed:
+            calls[rel] = Calls()
         for call in tree.find("call_expression"):
             name = callee_name(call)
             if name is None:
@@ -364,11 +404,12 @@ def scan(root: Path) -> Scan:
             callee = call.child_by_field("function")
             row = callee.end[0] if callee is not None else call.start[0]
             names = (syscall_numbers(call) or {name}) if name == "syscall" else {name}
-            calls[rel].add(row, names, statement_rows(call), holder_of(call))
+            if claimed:
+                calls[rel].add(row, names, statement_rows(call), holder_of(call))
             found.breaches.extend(DoorBreach(rel, row + 1, door) for door in breached(rel, names, holder_of(call)))
-    for body in tsast.macro_bodies(trees):
+    for body in tsast.macro_bodies(trees + door_trees):
         rel = Path(body.define.tree.path).relative_to(root).as_posix()
-        record = calls[rel]
+        record = calls.get(rel)
         span = define_rows(body)
         holder = (body.name,) if body.name else ()
         if body.is_parsed:
@@ -380,11 +421,13 @@ def scan(root: Path) -> Scan:
                 anchor = callee.child_by_field("name") or callee
                 names = (syscall_numbers(call) or {name}) if name == "syscall" else {name}
                 row = body.origin(anchor)[0]
-                record.add(row, names, span, holder)
+                if record is not None:
+                    record.add(row, names, span, holder)
                 found.breaches.extend(DoorBreach(rel, row + 1, door) for door in breached(rel, names, holder))
         else:
             for row, names in token_calls(tsast.pp_tokens(body.text, body.first_row)):
-                record.add(row, names, span, holder)
+                if record is not None:
+                    record.add(row, names, span, holder)
                 found.breaches.extend(DoorBreach(rel, row + 1, door) for door in breached(rel, names, holder))
     for tree in trees:
         rel = Path(tree.path).relative_to(root).as_posix()
@@ -514,7 +557,7 @@ def check(root: Path, emit: bool = False) -> int:
         door_path, door_function = DOOR_ONLY[breach.name]
         print(f"SYSCALL-CAP door: {breach.path}:{breach.line} — a call of {breach.name} outside its door "
               f"{'::'.join(door_function)} in {door_path}.  No marker and no allowlist entry admits it.  Call the "
-              f"door, or a gated function that calls it, such as fixy::sched::apply_affinity_to_cpu.",
+              f"door, or a gated function that calls it, such as fixy::sched::apply_affinity_to_mask.",
               file=sys.stderr)
     if found.breaches:
         print(f"check-syscall-capability: {len(found.breaches)} call(s) of a door-only syscall outside the door.",
@@ -830,6 +873,51 @@ def self_test() -> int:
             code = check(root)
         expect("door: the check fails on a call outside the door",
                code == 1 and f"SYSCALL-CAP door: {door_copy}:9" in report.getvalue())
+
+    # The door rule reads bench/ and test/, and the claim scan does not.
+    bench_pin, test_pin, nested_pin = "bench/bench_pin.cpp", "test/fixy/test_pin.cpp", "src/test/Pin.cpp"
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        for rel in (door_file, bench_pin, test_pin, nested_pin):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / "utils" / "scripts").mkdir(parents=True)
+        (root / ALLOWLIST).write_text("# fixture\n", encoding="utf-8")
+        (root / door_file).write_text(
+            "namespace fixy::detail {\n"
+            "inline int set_calling_thread_affinity(int n) noexcept {\n"
+            "    return ::sched_setaffinity(0, n, nullptr);  // SYSCALL-CAP-OK: the door\n"
+            "}\n"
+            "}\n", encoding="utf-8")
+        (root / bench_pin).write_text(
+            "#include <sched.h>\n"                                                               # 1
+            "int pin(cpu_set_t const& set) { return sched_setaffinity(0, sizeof(set), &set); }\n"  # 2
+            "int open_socket() { return ::socket(1, 0, 0); }\n"                                  # 3
+            "#define PIN_ALL(s) ::sched_setaffinity(0, sizeof(s), &(s))\n", encoding="utf-8")     # 4
+        (root / test_pin).write_text(
+            "int narrow(unsigned long t) { return pthread_setaffinity_np(t, 0, 0); }\n", encoding="utf-8")
+        (root / nested_pin).write_text(
+            "int pin(int n) { return ::sched_setaffinity(0, n, nullptr); }\n", encoding="utf-8")
+        found = scan(root)
+        breaches = {(breach.path, breach.line, breach.name) for breach in found.breaches}
+        for where, line, name, label in (
+                (bench_pin, 2, "sched_setaffinity", "a raw call in a bench file"),
+                (bench_pin, 4, "sched_setaffinity", "a raw call in a macro body of a bench file"),
+                (test_pin, 1, "pthread_setaffinity_np", "the pthread call in a test file"),
+                (nested_pin, 1, "sched_setaffinity", "a raw call in a test directory of a production root")):
+            expect(f"door: caught: {label}", (where, line, name) in breaches)
+        expect("door: a syscall of no door in a bench file is no claim site",
+               all(site.path != bench_pin for site in found.sites), True)
+        expect("door: the door in a tree with bench and test files is no breach",
+               all(breach.path != door_file for breach in found.breaches), True)
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            code = check(root)
+        expect("door: the check fails on a raw call in a bench file",
+               code == 1 and f"SYSCALL-CAP door: {bench_pin}:2" in report.getvalue())
+        (root / bench_pin).write_text("int open_socket() { return ::socket(1, 0, 0); }\n", encoding="utf-8")
+        (root / test_pin).unlink()
+        (root / nested_pin).unlink()
+        with contextlib.redirect_stderr(io.StringIO()):
+            expect("door: a bench file with no call outside the door passes", check(root) == 0, True)
     if failures:
         print(f"check-syscall-capability --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

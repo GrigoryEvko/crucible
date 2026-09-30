@@ -93,8 +93,11 @@ using PinProofUnit = int;
 
 namespace detail {
 
-// AffinityMask::kBits is smaller than CPU_SETSIZE, so every set bit is a
-// valid CPU_SET index and the loop needs no bound check of its own.
+// A mask has one bit for each CPU of the kernel set, so each set bit is a
+// valid CPU_SET index, and the loop needs no bound check of its own.
+static_assert(AffinityMask::kBits == CPU_SETSIZE,
+              "an affinity mask must hold each CPU that the kernel can pin, and no more");
+
 CRUCIBLE_INLINE void fill_cpu_set(AffinityMask mask, ::cpu_set_t& set) noexcept {
     CPU_ZERO(&set);
     for (std::uint16_t core = 0; core < AffinityMask::kBits; ++core) {
@@ -133,8 +136,9 @@ CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_pin_event 
 // of affinity comes through it, so a proof of an earlier pin on this
 // thread stops being in force.  The function mints nothing.  The proof is
 // built by mint_affinity, on its success, and nowhere else.  The gated
-// callers are mint_affinity, apply_affinity_to_cpu and
-// PriorAffinity::restore in fixy/os/Sched.h.
+// callers are mint_affinity, apply_affinity_to_mask and
+// PriorAffinity::restore in fixy/os/Sched.h.  apply_affinity_to_cpu calls
+// apply_affinity_to_mask.
 [[nodiscard]] inline std::expected<std::uint64_t, int> set_calling_thread_affinity(::cpu_set_t const& set) noexcept {
     if (::sched_setaffinity(0, sizeof(set), &set) != 0)
         [[unlikely]] {  // SYSCALL-CAP-OK: the affinity door, reached through the ctx-gates CtxFitsAffinityMint and CtxFitsRuntimeAffinity
@@ -157,14 +161,14 @@ CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_pin_event 
 
 namespace sched {
 
-// The gate on each change to where and how a thread runs.  Four doors
-// read it: mint_affinity, mint_scheduler_policy and mint_priority in
-// fixy/os/Sched.h, and apply_affinity_to_cpu, which is the runtime door
-// with no proof to give back.
+// The gate on each change to where and how a thread runs.  Five doors in
+// fixy/os/Sched.h read it: mint_affinity, mint_scheduler_policy,
+// mint_priority, and the two runtime doors apply_affinity_to_mask and
+// apply_affinity_to_cpu, which give back no proof.
 //
 // A context passes when it owns Bg or Init.  A background worker pins
 // itself, sets its policy and sets its nice value at startup, and that is
-// the primary use of the four doors.  An init context prepares the
+// the primary use of the five doors.  An init context prepares the
 // threads that it starts.
 //
 // The foreground hot path owns neither effect, and the gate refuses it.
