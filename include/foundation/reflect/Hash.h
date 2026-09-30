@@ -22,8 +22,9 @@
 // definition that every translation unit shares.
 //
 // The id also holds only for a type whose printed name is a function of
-// the type. An entity with no declared name, or with internal linkage,
-// breaks that, and every id here refuses such a type at compile time.
+// the type. An entity with no declared name, with internal linkage, or
+// declared in a function body breaks that, and every id here refuses
+// such a type at compile time.
 // The section on identity below says why and how.
 
 #pragma once
@@ -35,7 +36,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <source_location>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -144,7 +144,7 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 // ── Identity ─────────────────────────────────────────────────────────
 //
 // An id is a function of the type only when the printed name is a
-// function of the type.  Two kinds of entity break that, and so does
+// function of the type.  Three kinds of entity break that, and so does
 // every type that names one of them:
 //
 //   - An entity with no declared name: a closure type, an unnamed class,
@@ -156,13 +156,21 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 //   - An entity with internal linkage, such as a class in an unnamed
 //     namespace.  Each translation unit has its own, and all of them
 //     print one name, so two different types would share one id.
+//   - An entity declared in a function body, such as a local class.  It
+//     prints the name of the function and its own name.  Two local
+//     classes of one name in two blocks of one function print one name.
+//     The name of a function template specialization does not name each
+//     type of its arguments: f<Hidden>, where Hidden has internal
+//     linkage, is one function in each translation unit, and the local
+//     classes of these functions print one name.
 //
 // A name is an identity only when it is a path of declared names from
-// the global namespace.  The walk below reads that path by reflection.
-// It opens the cv, reference, pointer, array, function and member
-// pointer parts of a type.  It reads the template that a class
-// instantiates and each template argument.  It follows each class, and
-// each function that encloses a local class, up to the global namespace.
+// the global namespace, through namespaces and classes only.  The walk
+// below reads that path by reflection.  It opens the cv, reference,
+// pointer, array, function and member pointer parts of a type.  It reads
+// the template that a class instantiates and each template argument.  It
+// follows each class up to the global namespace, and it refuses a path
+// that goes through a function.
 //
 // A template argument that is a value is read by its type.  A class value
 // arrives as its template parameter object, which prints the value, and
@@ -178,11 +186,6 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 // with no identity.  A builtin type with no declared parts, such as a
 // vector extension type, is read the same way.
 //
-// A class declared in a function body prints the function and its own
-// name, and two such classes in two blocks of one function print one
-// name.  Its line and column in the source tell them apart and are the
-// same in every translation unit, so the stable name appends them.
-//
 // A number prints without its type.  The values 1 and 1L print as 1, a
 // null data member pointer prints as -1, and a bfloat16 prints as a
 // double.  So the stable name appends the type of each value argument of
@@ -196,6 +199,7 @@ enum class identity_fault : std::uint8_t {
     none,
     no_declared_name,
     internal_linkage,
+    function_local,
     object_address,
     unreadable_argument,
     ambiguous_value,
@@ -243,7 +247,6 @@ inline constexpr std::meta::info function_named_by_v = function_named_by<Value>(
 
 // The walk takes an optional sink for the suffix of the stable name.
 // When one is given, the walk appends, in the order it meets them, the
-// line and column of each class that a function body declares and the
 // type of each value that prints without it.
 [[nodiscard]] consteval identity_verdict identity_of_type(std::meta::info type, std::string* suffix = nullptr);
 
@@ -264,25 +267,6 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
     return !(std::meta::is_class_type(type) || std::meta::is_union_type(type) || std::meta::is_enum_type(type)
              || type == ^^bool || std::meta::is_null_pointer_type(type) || std::meta::is_pointer_type(type)
              || std::meta::is_reflection_type(type));
-}
-
-// Append " @line:column" of a class that a function body declares.
-consteval void append_local_position(std::string& suffix, std::meta::info type) {
-    const std::source_location where = std::meta::source_location_of(type);
-    const auto append_number = [&suffix](std::uint_least32_t number) {
-        char digits[10]{};
-        std::size_t count = 0;
-        do {
-            digits[count++] = static_cast<char>('0' + number % 10);
-            number /= 10;
-        } while (number != 0);
-        while (count != 0)
-            suffix += digits[--count];
-    };
-    suffix += " @";
-    append_number(where.line());
-    suffix += ':';
-    append_number(where.column());
 }
 
 // True when a value of this type can hold the address of an object, a
@@ -337,18 +321,16 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
 // The scopes that enclose an entity, up to the global namespace.  An
 // enclosing class is walked as a type, so a class declared inside a
 // closure is refused with it.  A namespace with no name is an unnamed
-// namespace, whose members have internal linkage, and a function with
-// internal linkage gives its local classes the same fault.  Complexity:
+// namespace, whose members have internal linkage.  A function in the
+// chain encloses a local entity, which has no identity.  Complexity:
 // linear in the depth of the scope chain, plus the walk of each
 // enclosing class.
 [[nodiscard]] consteval identity_verdict identity_of_scope(std::meta::info scope, std::string* suffix = nullptr) {
     while (true) {
         if (std::meta::is_type(scope)) return identity_of_type(scope, suffix);
         if (scope == ^^::) return {};
+        if (std::meta::is_function(scope)) return {identity_fault::function_local, scope};
         if (std::meta::is_namespace(scope) && !std::meta::has_identifier(scope)) {
-            return {identity_fault::internal_linkage, scope};
-        }
-        if (std::meta::is_function(scope) && std::meta::has_internal_linkage(scope)) {
             return {identity_fault::internal_linkage, scope};
         }
         if (!std::meta::has_parent(scope)) return {};
@@ -356,13 +338,30 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
     }
 }
 
-// A function entity: its linkage and its name, then its scopes.  A
-// static invoker of a closure has the closure as its parent, so the
-// scope walk refuses it.
+// The scopes that enclose a declared entity.  An entity that a function
+// body declares is refused, and the verdict names the entity.
+[[nodiscard]] consteval identity_verdict identity_of_enclosing(std::meta::info entity, std::string* suffix) {
+    const std::meta::info scope = std::meta::parent_of(entity);
+    if (std::meta::is_function(scope)) return {identity_fault::function_local, entity};
+    return identity_of_scope(scope, suffix);
+}
+
+// Each template argument of a class or a function specialization.
+// Complexity: linear in the number of arguments, plus the walk of each.
+[[nodiscard]] consteval identity_verdict identity_of_template_arguments(std::meta::info specialization,
+                                                                        std::string* suffix);
+
+// A function entity: its linkage and its name, then its template
+// arguments and its scopes.  A static invoker of a closure has the
+// closure as its parent, so the scope walk refuses it.
 [[nodiscard]] consteval identity_verdict identity_of_function(std::meta::info function, std::string* suffix) {
     if (std::meta::has_internal_linkage(function)) return {identity_fault::internal_linkage, function};
     if (!std::meta::has_identifier(function)) return {identity_fault::no_declared_name, function};
-    return identity_of_scope(std::meta::parent_of(function), suffix);
+    if (std::meta::has_template_arguments(function)) {
+        const identity_verdict arguments = identity_of_template_arguments(function, suffix);
+        if (arguments.fault != identity_fault::none) return arguments;
+    }
+    return identity_of_enclosing(function, suffix);
 }
 
 // A template argument that is a value: its type, then what the value
@@ -439,10 +438,10 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
     if (std::meta::is_variable(named) || std::meta::is_template(named)) {
         if (std::meta::has_internal_linkage(named)) return {identity_fault::internal_linkage, named};
         if (!std::meta::has_identifier(named)) return {identity_fault::no_declared_name, named};
-        return identity_of_scope(std::meta::parent_of(named), suffix);
+        return identity_of_enclosing(named, suffix);
     }
     if (std::meta::is_enumerator(named) || std::meta::is_nonstatic_data_member(named)) {
-        return identity_of_scope(std::meta::parent_of(named), suffix);
+        return identity_of_enclosing(named, suffix);
     }
     if (std::meta::is_value(named)) return identity_of_value(named, suffix);
     return {identity_fault::unreadable_argument, named};
@@ -475,37 +474,40 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
         if (std::meta::has_template_arguments(type)) {
             const std::meta::info primary = std::meta::template_of(type);
             if (std::meta::has_internal_linkage(primary)) return {identity_fault::internal_linkage, primary};
-            const identity_verdict scope = identity_of_scope(std::meta::parent_of(primary), suffix);
+            const identity_verdict scope = identity_of_enclosing(primary, suffix);
             if (scope.fault != identity_fault::none) return scope;
-            for (const std::meta::info argument : std::meta::template_arguments_of(type)) {
-                identity_verdict verdict{};
-                if (std::meta::is_type(argument)) {
-                    verdict = identity_of_type(argument, suffix);
-                } else if (std::meta::is_template(argument)) {
-                    if (std::meta::has_internal_linkage(argument)) {
-                        verdict = {identity_fault::internal_linkage, argument};
-                    } else {
-                        verdict = identity_of_scope(std::meta::parent_of(argument), suffix);
-                    }
-                } else if (std::meta::is_object(argument)) {
-                    verdict = identity_of_object(argument, suffix);
-                } else if (std::meta::is_function(argument)) {
-                    verdict = identity_of_function(argument, suffix);
-                } else {
-                    verdict = identity_of_value(argument, suffix);
-                }
-                if (verdict.fault != identity_fault::none) return verdict;
-            }
-            return {};
+            return identity_of_template_arguments(type, suffix);
         }
         if (!std::meta::has_identifier(type)) return {identity_fault::no_declared_name, type};
         if (std::meta::has_internal_linkage(type)) return {identity_fault::internal_linkage, type};
-        const std::meta::info parent = std::meta::parent_of(type);
-        if (suffix != nullptr && std::meta::is_function(parent)) append_local_position(*suffix, type);
-        return identity_of_scope(parent, suffix);
+        return identity_of_enclosing(type, suffix);
     }
     if (prints_a_mark_of_no_identity(std::meta::display_string_of(type))) {
         return {identity_fault::no_declared_name, type};
+    }
+    return {};
+}
+
+[[nodiscard]] consteval identity_verdict identity_of_template_arguments(std::meta::info specialization,
+                                                                        std::string* suffix) {
+    for (const std::meta::info argument : std::meta::template_arguments_of(specialization)) {
+        identity_verdict verdict{};
+        if (std::meta::is_type(argument)) {
+            verdict = identity_of_type(argument, suffix);
+        } else if (std::meta::is_template(argument)) {
+            if (std::meta::has_internal_linkage(argument)) {
+                verdict = {identity_fault::internal_linkage, argument};
+            } else {
+                verdict = identity_of_enclosing(argument, suffix);
+            }
+        } else if (std::meta::is_object(argument)) {
+            verdict = identity_of_object(argument, suffix);
+        } else if (std::meta::is_function(argument)) {
+            verdict = identity_of_function(argument, suffix);
+        } else {
+            verdict = identity_of_value(argument, suffix);
+        }
+        if (verdict.fault != identity_fault::none) return verdict;
     }
     return {};
 }
@@ -527,6 +529,12 @@ consteval void append_local_position(std::string& suffix, std::meta::info type) 
     } else if (verdict.fault == identity_fault::internal_linkage) {
         text += " has internal linkage.  Each translation unit holds its own entity under one printed name, so "
                 "two different types would share one id.  Declare it in a named namespace.";
+    } else if (verdict.fault == identity_fault::function_local) {
+        text += " is declared in a function body.  A local entity prints the name of its function and its own "
+                "name, and two local classes of one name in one function print one name.  The name of a function "
+                "template specialization does not name each type of its arguments, so the local classes of two "
+                "different functions can print one name too.  Declare the entity at namespace scope or in a "
+                "class.";
     } else if (verdict.fault == identity_fault::ambiguous_value) {
         text += " prints a text that a different value also prints: GCC prints a NaN without its payload, and a "
                 "union value without its active member.  Pass a number that is not a NaN, or a value of a type "
@@ -806,6 +814,19 @@ inline auto shadowed_local() {
     struct Local {};
     return Local{};
 }
+struct NestsInLocal {
+    template <class T>
+    static auto nested() {
+        struct Local {
+            struct Inner {};
+        };
+        return typename Local::Inner{};
+    }
+};
+template <typename T>
+inline int templated_function(int value) {
+    return value;
+}
 static int internal_variable = 0;
 inline int external_variable = 0;
 template <int& Reference>
@@ -858,7 +879,6 @@ static_assert(HasStableIdentity<int identity_test::Named::*>);
 static_assert(HasStableIdentity<identity_test::Holds<&identity_test::named_function>>);
 static_assert(HasStableIdentity<identity_test::Holds<identity_test::Colour::red>>);
 static_assert(HasStableIdentity<identity_test::HoldsTemplate<identity_test::Box>>);
-static_assert(HasStableIdentity<decltype(identity_test::local_of_named())>);
 static_assert(HasStableIdentity<decltype(^^int)>);
 
 static_assert(!HasStableIdentity<decltype(identity_test::closure)>);
@@ -911,17 +931,22 @@ static_assert(!HasStableIdentity<identity_test::Holds<__builtin_nan("")>>);
 static_assert(!HasStableIdentity<identity_test::Holds<identity_test::Either{.first = 1}>>);
 static_assert(!HasStableIdentity<identity_test::Holds<identity_test::HoldsEither{identity_test::Either{.second = 1}}>>);
 
-// A class declared in a function body carries its line and column in
-// its stable name, so two such classes of one name do not share an id.
-consteval bool carries_a_position(std::string_view name) {
-    for (std::size_t i = 0; i + 1 < name.size(); ++i) {
-        if (name[i] == ' ' && name[i + 1] == '@') return true;
-    }
-    return false;
+// An entity that a function body declares has no identity: a local
+// class, a class nested in one, and a reflection of a local variable.  A
+// function template specialization is read with its arguments.
+consteval std::meta::info reflect_a_local_variable() {
+    int local = 0;
+    (void)local;
+    return ^^local;
 }
-static_assert(carries_a_position(stable_name_of<decltype(identity_test::local_of_named())>));
-static_assert(carries_a_position(stable_name_of<decltype(identity_test::shadowed_local())>));
-static_assert(!carries_a_position(stable_name_of<identity_test::Named>));
+static_assert(!HasStableIdentity<decltype(identity_test::local_of_named())>);
+static_assert(!HasStableIdentity<decltype(identity_test::shadowed_local())>);
+static_assert(!HasStableIdentity<decltype(identity_test::NestsInLocal::nested<int>())>);
+static_assert(!HasStableIdentity<identity_test::Holds<reflect_a_local_variable()>>);
+static_assert(!HasStableIdentity<identity_test::Holds<^^identity_test::templated_function<identity_test::Internal>>>);
+static_assert(identity_verdict_of<decltype(identity_test::local_of_named())>.fault == identity_fault::function_local);
+static_assert(identity_verdict_of<decltype(identity_test::local_of_named())>.culprit
+              == std::meta::dealias(^^decltype(identity_test::local_of_named())));
 
 static_assert(function_has_stable_identity_v<&identity_test::named_function>);
 static_assert(!function_has_stable_identity_v<identity_test::closure_invoker>);

@@ -10,6 +10,7 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
@@ -103,64 +104,63 @@ static_assert(!HasStableIdentity<Holds<payload_nan>>);
 static_assert(!HasStableIdentity<Holds<Either{.first = 1}>>);
 static_assert(!HasStableIdentity<Holds<HoldsEither{Either{.second = 1}}>>);
 
-// Two classes of one name in two blocks of one function.  The walk
-// appends the line and column of a class that a function body declares.
-struct LocalIds {
-    std::uint64_t inner = 0;
-    std::uint64_t outer = 0;
-};
-
-inline LocalIds two_classes_one_name() {
-    LocalIds ids{};
+// Two classes of one name in two blocks of one function print one name,
+// also when one macro expansion declares the two.  The walk refuses each
+// class that a function body declares.
+inline void two_classes_one_name() {
     {
         struct Shadowed {
             int field;
         };
-        ids.inner = stable_type_id<Shadowed>;
+        static_assert(!HasStableIdentity<Shadowed>);
     }
     struct Shadowed {
         double field;
     };
-    ids.outer = stable_type_id<Shadowed>;
-    return ids;
+    static_assert(!HasStableIdentity<Shadowed>);
 }
+
+#define IDENTITY_ATTACK_TWO_LOCALS               \
+    {                                            \
+        struct Twin {                            \
+            int field;                           \
+        };                                       \
+        static_assert(!HasStableIdentity<Twin>); \
+    }                                            \
+    {                                            \
+        struct Twin {                            \
+            double field;                        \
+        };                                       \
+        static_assert(!HasStableIdentity<Twin>); \
+    }
+
+inline void two_classes_one_expansion() { IDENTITY_ATTACK_TWO_LOCALS }
+
+// The local class of a function template specialization.  A class with
+// internal linkage prints one name in each translation unit, so the
+// local classes of f<Hidden> in two units print one name.
+namespace {
+struct Hidden {};
+}  // namespace
+template <class T>
+inline auto local_of() {
+    struct Local {};
+    return Local{};
+}
+static_assert(!HasStableIdentity<decltype(local_of<Hidden>())>);
+static_assert(!HasStableIdentity<decltype(local_of<Named>())>);
 
 // ── The ledger ───────────────────────────────────────────────────────
 //
 // Each entry names an attack that still succeeds and the reason that no
-// type or guard can refuse it.
+// type or guard can refuse it.  It is empty, and it only shrinks.
 
 struct KnownLimit {
     std::string_view attack;
     std::string_view reason;
 };
 
-inline constexpr KnownLimit kLedger[] = {
-    {"two classes of one name that one macro expansion declares in two blocks of one function share an id",
-     "reflection reports the expansion point as the position of both classes and gives no other discriminator, "
-     "so only a refusal of every local class could refuse this pair"},
-};
-static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
-
-#define IDENTITY_ATTACK_TWO_LOCALS(first, second) \
-    {                                             \
-        struct Twin {                             \
-            int field;                            \
-        };                                        \
-        first = stable_type_id<Twin>;             \
-    }                                             \
-    {                                             \
-        struct Twin {                             \
-            double field;                         \
-        };                                        \
-        second = stable_type_id<Twin>;            \
-    }
-
-inline LocalIds two_classes_one_expansion() {
-    LocalIds ids{};
-    IDENTITY_ATTACK_TWO_LOCALS(ids.inner, ids.outer)
-    return ids;
-}
+inline constexpr std::array<KnownLimit, 0> kLedger{};
 
 }  // namespace identity_attacks
 
@@ -174,9 +174,8 @@ int main() {
         }
     };
 
-    const LocalIds shadowed = two_classes_one_name();
-    expect(shadowed.inner != shadowed.outer, "two local classes of one name share a stable id");
-    expect(two_classes_one_name().inner == shadowed.inner, "one local class gives two ids");
+    two_classes_one_name();
+    two_classes_one_expansion();
     expect(stable_name_of<Named>.find(" @") == std::string_view::npos, "a namespace class carries a position");
     expect(internal_helper(1) == 1, "the internal helper is used");
     expect(stable_type_id<Holds<Bound{3}>> != stable_type_id<Holds<Bound{4}>>, "two class values share an id");
@@ -191,13 +190,7 @@ int main() {
            "a bfloat16 and a double of one value share an id");
     expect(stable_type_id<Holds<1>> == stable_type_id<Holds<1>>, "one value gives two ids");
 
-    // The ledger entry reproduces: when it stops reproducing, delete it.
-    const LocalIds twins = two_classes_one_expansion();
-    expect(twins.inner == twins.outer,
-           "stale ledger entry: two local classes of one macro expansion no longer share an id, delete it");
-
     if (failures != 0) return EXIT_FAILURE;
-    std::printf("test_identity_attacks: every refused attack refused, %zu ledger entry reproduces\n",
-                std::size(kLedger));
+    std::printf("test_identity_attacks: every refused attack refused, %zu ledger entries\n", kLedger.size());
     return EXIT_SUCCESS;
 }

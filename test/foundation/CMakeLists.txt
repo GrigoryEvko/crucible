@@ -1431,6 +1431,12 @@ foundation_test(test_row_hash)
 # Legal C++ that tries to give two types one stable id.  An attack that
 # still succeeds is a row of the shrink-only ledger in the file.
 foundation_test(test_identity_attacks)
+# Two translation units each build a class local to f<UnitLocal>, where
+# UnitLocal has internal linkage.  The two classes print one name and
+# hold two numbers, so a stable id refuses each of them.
+foundation_test(test_stable_id_function_local
+  test_stable_id_function_local.cpp
+  test_stable_id_function_local_second_unit.cpp)
 
 # Each host owner is defined beside its key, so a second definition is a
 # redefinition, and the foreground key is private to the producer claim.
@@ -1493,7 +1499,7 @@ foundation_neg_compile_test(neg_producer_claim_brand_internal_linkage
   "a stable id refuses the type .anonymous.::Hidden, because its part .anonymous.::Hidden has internal linkage"
   "ProducerClaim<Brand>::brand_key_\\(\\) .with Brand = .anonymous.::Hidden")
 foundation_neg_compile_test(neg_producer_claim_brand_in_closure
-  "because its part main\\(\\)::<lambda\\(\\)> has no declared name"
+  "because its part main\\(\\)::<lambda\\(\\)>::InClosure is declared in a function body"
   "ProducerClaim<Brand>::brand_key_\\(\\) .with Brand = main\\(\\)::<lambda\\(\\)>::InClosure")
 foundation_neg_compile_test(neg_branded_ctx_other_brand
   "invalid initialization of reference"
@@ -1526,6 +1532,11 @@ foundation_neg_compile_test(neg_stable_id_refuses_an_address_inside_a_class_valu
 foundation_neg_compile_test(neg_stable_id_refuses_a_reflection_of_an_internal_entity
   "a stable id refuses the type"
   "has internal linkage")
+# A class that a function body declares prints the name of its function,
+# so two local classes of one name in one function print one name.
+foundation_neg_compile_test(neg_stable_id_refuses_a_function_local_class
+  "a stable id refuses the type main\\(\\)::Local"
+  "because its part main\\(\\)::Local is declared in a function body")
 # A NaN prints without its payload and a union value without its active
 # member, so two different values print one text.
 foundation_neg_compile_test(neg_stable_id_refuses_a_nan_value
