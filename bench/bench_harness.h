@@ -22,7 +22,9 @@
 //
 // Pin-by-default: uses /sys/devices/system/cpu/isolated first (so an
 // isolcpu reserved via the kernel cmdline wins), falling back to
-// sched_getcpu() only if no CPU is isolated. Each Run also reads
+// sched_getcpu() only if no CPU is isolated. Each pin goes through the gated door of
+// fixy/os/Sched.h, which records a pin event, and a Run gives the thread
+// back its affinity when the measurement ends. Each Run also reads
 // cpufreq at the start and end of the run, and — when BPF is available
 // — reads the 96-counter sense hub on both sides of the measurement.
 // The reported deltas cover context switches, page faults, migrations,
@@ -47,6 +49,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <expected>
 #include <optional>
 #include <random>
 #include <span>
@@ -1137,6 +1140,9 @@ public:
     //                  unset → no affinity ever applied)
     //   .no_pin():     do not touch affinity
     //
+    // Each pin ends with the measurement: the thread gets back the affinity
+    // that it had before the Run.
+    //
     // [[nodiscard]] on every setter — the fluent builder is worthless if
     // the returned Run& is thrown away before .measure().
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
@@ -1207,25 +1213,52 @@ public:
         return *this;
     }
 
+    // The affinity that a pin gave the calling thread, and the affinity that
+    // the pin replaced.  cpu is the CPU of a pin to one CPU, and none for a
+    // failed pin.  prior holds the replaced affinity while a pin to one CPU
+    // holds.  restore() gives it back to the thread, and changes nothing
+    // when prior is empty or on a thread that did not pin.
+    struct PinResult {
+        CpuId cpu{};
+        std::optional<::fixy::sched::PriorAffinity> prior{};
+
+        [[nodiscard]] static PinResult one(CpuId pinned) noexcept { return PinResult{.cpu = pinned}; }
+
+        [[nodiscard]] std::expected<void, int> restore() noexcept {
+            if (!prior.has_value()) return {};
+            auto restored = std::move(*prior).restore();
+            prior.reset();
+            return restored;
+        }
+    };
+
+    // Pins the calling thread as measure() would, with no measurement.  The
+    // pin holds until the caller restores it.  A bench that builds its data
+    // while the pin holds touches the pages first from that CPU, so the
+    // kernel puts them on the NUMA node of the CPU that the default Run
+    // measures on.
+    [[nodiscard]] PinResult pin_calling_thread() const noexcept { return pin_(); }
+
     template <typename Body>
     [[nodiscard]] Report measure(Body&& body) const {
         // Resolve the policy: explicit .hardening() wins, else env var
         // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none, else the
         // direct pin_() path.
         crucible::warden::AppliedPolicy hardening_guard;
-        CpuId pinned_cpu;
+        PinResult pin{};
         // The bench applies a policy at the start of a measurement, which is
         // startup work, so it holds the startup load context.
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         if (have_hardening_) {
             hardening_guard = crucible::warden::mint_hardening(startup, hardening_);
-            pinned_cpu = CpuId{hardening_guard.pinned_cpu()};
+            pin = PinResult::one(CpuId{hardening_guard.pinned_cpu()});
         } else if (auto env = env_hardening_(); env.has_value()) {
             hardening_guard = crucible::warden::mint_hardening(startup, *env);
-            pinned_cpu = CpuId{hardening_guard.pinned_cpu()};
+            pin = PinResult::one(CpuId{hardening_guard.pinned_cpu()});
         } else {
-            pinned_cpu = pin_();
+            pin = pin_();
         }
+        const CpuId pinned_cpu = pin.cpu;
 
         const double nspc = Timer::ns_per_cycle();
         const uint64_t ovh = Timer::overhead_cycles();
@@ -1342,6 +1375,9 @@ public:
         if (sw != nullptr) sched_post_idx = sw->timeline_write_index();
 #endif
         const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
+        // The measurement ends here, and so does the pin.  A failed restore
+        // leaves the pin in place, and the next Run pins again in any case.
+        (void)pin.restore();
 
         // Drift: compare first-half vs second-half p50 as a proxy for
         // frequency or cache-state transitions during the run. Use
@@ -1544,15 +1580,22 @@ private:
     //    sched_getcpu() only if the selector returns -1 (empty
     //    allowed set).
     //
-    // After a successful sched_setaffinity, re-read sched_getcpu() — the
+    // Each pin goes through fixy::sched::apply_affinity_to_cpu, the gated
+    // door that records a pin event, so a CpuPinned proof of an earlier pin
+    // on this thread stops being in force.  The harness holds the startup
+    // load context, which owns Init, and the door admits it.  The result
+    // holds the affinity that the pin replaced, and measure() restores it.
+    //
+    // After a successful pin, re-read sched_getcpu() — the
     // scheduler is not obliged to migrate us synchronously, so the
     // value we return is the one actually executing user code. On
-    // sched_setaffinity failure we return CpuId::none() rather than
+    // a failed pin we return CpuId::none() rather than
     // the pre-call sched_getcpu(), to avoid silently pretending we
     // successfully pinned.
-    [[nodiscard]] CpuId pin_() const noexcept {
+    [[nodiscard]] PinResult pin_() const noexcept {
 #ifdef __linux__
-        if (pin_mode_ == Pin::None) return CpuId{sched_getcpu()};
+        if (pin_mode_ == Pin::None) return PinResult{.cpu = CpuId{sched_getcpu()}};
+        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
 
         int target = -1;
         const bool explicit_valid = (pin_mode_ == Pin::Explicit) && core_.is_valid();
@@ -1565,30 +1608,29 @@ private:
             // Keeper's mint_hardening() uses: isolcpu first, P-core
             // preference, avoid cpu0 and its SMT sibling (timer-tick
             // IRQ landing pad).
-            target = crucible::warden::select_hot_cpu(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
-                                                      crucible::warden::CoreSelector{});
+            target = crucible::warden::select_hot_cpu(startup, crucible::warden::CoreSelector{});
             if (target < 0) target = sched_getcpu();
         }
-        if (target < 0) return CpuId::none();
+        if (target < 0) return PinResult{};
 
-        cpu_set_t set;
-        CPU_ZERO(&set);
-        CPU_SET(static_cast<size_t>(target), &set);
-        if (sched_setaffinity(0, sizeof(set), &set) != 0) {
-            return CpuId::none();  // fail loudly, not silently
+        auto prior = ::fixy::sched::apply_affinity_to_cpu(startup, target);
+        if (!prior.has_value()) {
+            return PinResult{};  // fail loudly, not silently
         }
         // Re-read — scheduler may not have migrated us yet. This is a
         // benign race: `sched_getcpu()` reads the currently-executing
         // CPU, which, having just been restricted to {target} by
-        // sched_setaffinity, must be `target` on the next schedule
-        // boundary. On short paths (no preemption between setaffinity
+        // the pin, must be `target` on the next schedule
+        // boundary. On short paths (no preemption between the pin
         // and getcpu) we might still report the previous CPU — accept
         // that inaccuracy rather than giving the kernel scheduler a vote and
         // burning a context switch inside every .measure().
         const int actual = sched_getcpu();
-        return (actual >= 0) ? CpuId{actual} : CpuId{target};
+        PinResult pinned = PinResult::one((actual >= 0) ? CpuId{actual} : CpuId{target});
+        pinned.prior = std::move(*prior);
+        return pinned;
 #else
-        return CpuId::none();
+        return PinResult{};
 #endif
     }
 

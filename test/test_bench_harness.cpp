@@ -1,5 +1,6 @@
-// The statistical primitives the benchmark harness reports through, and
-// the saturating counter delta the performance snapshot exposes.
+// The statistical primitives the benchmark harness reports through, the
+// saturating counter delta the performance snapshot exposes, and the
+// affinity that a Run sets on the calling thread.
 //
 // Each primitive follows a published definition, and the expected values
 // below come from those definitions rather than from the current
@@ -9,11 +10,10 @@
 //   the confidence interval follows Efron's bootstrap (1979)
 //   the comparison follows the Mann-Whitney U test (1947)
 //
-// The performance header is pulled in for the snapshot type alone.  Its
-// hub class is never instantiated here, because the object file that
-// defines it is not linked into this test.  The BPF-gated paths in the
-// harness are likewise inactive, since the substrate they need is not
-// linked either.
+// The affinity checks call Run::measure, so the harness tries to load the
+// BPF sense hub when the crucible target defines CRUCIBLE_HAVE_BPF.  A host
+// without the capabilities prints a warning, and the checks do not read
+// the hub.
 
 #include <algorithm>
 #include <bit>
@@ -24,11 +24,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <span>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
+#include <sched.h>
+
 #include "bench_harness.h"
 #include <crucible/perf/SenseHub.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/CpuPinned.h>
+#include <fixy/os/Sched.h>
+#include <foundation/algebra/lattices/AffinityLattice.h>
 
 namespace {
 
@@ -503,6 +510,45 @@ void test_clobber_array_source_container_diversity() {
     }
 }
 
+// The number of CPUs in the affinity of the calling thread, or zero when
+// the kernel refuses the query.
+std::size_t affinity_cpu_count() {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (::sched_getaffinity(0, sizeof(set), &set) != 0) return 0;
+    return static_cast<std::size_t>(CPU_COUNT(&set));
+}
+
+// The body of a Run runs under the pin to one CPU, and the thread gets back
+// its affinity when the measurement ends.  The pin goes through the gated
+// door of fixy/os/Sched.h, which records a pin event, so a CpuPinned proof
+// of an earlier pin on the thread stops being in force.  The proof check
+// runs on a thread of its own, so the pin of the proof to CPU 0 does not
+// stay on the thread of the other checks.  A cpuset without CPU 0 refuses
+// the proof, and that check then does nothing.
+void test_run_pins_through_the_door_and_restores() {
+    const std::size_t unpinned_count = affinity_cpu_count();
+    std::size_t body_cpu_count = 0;
+    const bench::Report pinned = bench::Run("one cpu").samples(8).warmup(1).measure(
+        [&body_cpu_count]() noexcept { body_cpu_count = affinity_cpu_count(); });
+    if (pinned.pinned_cpu.is_valid()) CHECK(body_cpu_count == 1u);
+    CHECK(affinity_cpu_count() == unpinned_count);
+
+    bool was_proof_checked = false;
+    bool is_proof_in_force = true;
+    std::jthread proof_thread{[&was_proof_checked, &is_proof_in_force]() noexcept {
+        const ::fixy::BgLoadCtx background{::foundation::effects::testing::bg()};
+        auto proof = ::fixy::sched::mint_affinity<::foundation::algebra::lattices::AffinityMask::single(0)>(background);
+        if (!proof.has_value()) return;
+        const bench::Report report = bench::Run("pin event").samples(8).warmup(1).measure([]() noexcept {});
+        if (!report.pinned_cpu.is_valid()) return;
+        was_proof_checked = true;
+        is_proof_in_force = proof->is_in_force();
+    }};
+    proof_thread.join();
+    if (was_proof_checked) CHECK(!is_proof_in_force);
+}
+
 }  // namespace
 
 int main() {
@@ -518,8 +564,9 @@ int main() {
     test_clobber_array_various_types();
     test_clobber_array_empty_and_single();
     test_clobber_array_source_container_diversity();
+    test_run_pins_through_the_door_and_restores();
 
-    constexpr int kNumGroups = 10;
+    constexpr int kNumGroups = 11;
     if (g_failures == 0) {
         std::fprintf(stderr, "test_bench_harness: PASS (%d groups, 0 failures)\n", kNumGroups);
         return 0;

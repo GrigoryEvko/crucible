@@ -44,8 +44,9 @@
 // this probe exists to correct.
 //
 // The NUMA half is separate and simpler. The measuring thread never moves:
-// it stays on its own core for both halves of the comparison, and only the
-// MEMORY moves. A helper thread pinned to a core on the far node touches
+// it holds a pin to its own core from the first touch of the local pages to
+// the last read, for both halves of the comparison, and only the MEMORY
+// moves. A helper thread pinned to a core on the far node touches
 // the pages first, so first-touch policy places them there, and then the
 // measuring thread reads them from where it always was. Moving the thread
 // instead would fold the far node's core, its cache state and its
@@ -335,6 +336,29 @@ private:
     return current;
 }
 
+// Pins the calling thread to cpu, and then faults the region in, so
+// first-touch puts each page on the node of cpu.  The pin holds when the
+// call returns, so the reads that follow come from the same core.  The
+// caller restores the pin after its last read.  A negative cpu or a pin
+// that fails leaves the region as it was, and the result holds no prior
+// affinity.
+//
+// A thread that is not pinned can move between the read of its CPU and
+// the first touch, and first-touch then puts the pages on the node that
+// the thread moved to.
+[[nodiscard]] inline bench::Run::PinResult fault_in_from_cpu(ProbeRegion& region, int cpu) noexcept {
+    if (cpu < 0) {
+        return bench::Run::PinResult{};
+    }
+    bench::Run placement{"ledger.placement"};
+    (void)placement.core(cpu);
+    bench::Run::PinResult pin = placement.pin_calling_thread();
+    if (pin.prior.has_value()) {
+        (void)region.fault_in(1u);
+    }
+    return pin;
+}
+
 }  // namespace cache_tier_detail
 
 // ── The measurement ───────────────────────────────────────────────────
@@ -530,11 +554,21 @@ struct SweepPass {
         result.fault = region.error();
         return result;
     }
-    (void)region->fault_in(1u);
+    // The region is larger than the last-level cache, so the far end of the
+    // sweep reads DRAM.  Its pages are on the node of self_cpu, and the
+    // thread stays on self_cpu until the last pass, so that end measures
+    // local DRAM.
+    bench::Run::PinResult measuring_pin = fault_in_from_cpu(*region, self_cpu);
+    if (!measuring_pin.prior.has_value()) {
+        worker.stop();
+        result.fault = LedgerError::NotApplicableOnThisHost;
+        return result;
+    }
 
     const SweepPass first = run_one_sweep(worker, *region, self_cpu);
     const SweepPass second = run_one_sweep(worker, *region, self_cpu);
     worker.stop();
+    (void)measuring_pin.restore();
     return fold_sweeps(first, second);
 }
 
@@ -570,13 +604,20 @@ struct SweepPass {
         return result;
     }
 
-    // The measuring thread touches the local region, so first-touch places
-    // it on the measuring thread's node.
-    (void)local_region->fault_in(1u);
+    // The measuring thread pins itself to self_cpu and touches the local
+    // region, so first-touch puts it on the node of self_cpu.  The pin holds
+    // until the last read of the two regions, so each local read and each
+    // remote read comes from self_cpu.
+    bench::Run::PinResult measuring_pin = fault_in_from_cpu(*local_region, self_cpu);
+    if (!measuring_pin.prior.has_value()) {
+        result.fault = LedgerError::NotApplicableOnThisHost;
+        return result;
+    }
 
-    // A thread on the far node touches the other one, so first-touch
-    // places it there. It exists only to fault the pages; the measurement
-    // that follows runs on the original core for both regions.
+    // A thread pinned to a CPU of the farthest node touches the other
+    // region, so first-touch puts it on that node.  It exists only to fault
+    // the pages.  The measuring thread reads both regions from self_cpu, so
+    // the two reads differ only in the node of the pages.
     bool remote_placed = false;
     {
         ProbeRegion* target = &*remote_region;
@@ -590,6 +631,7 @@ struct SweepPass {
         toucher.join();
     }
     if (!remote_placed) {
+        (void)measuring_pin.restore();
         result.fault = LedgerError::NotApplicableOnThisHost;
         return result;
     }
@@ -618,6 +660,7 @@ struct SweepPass {
     const bench::Report local_second = measure_region("ledger.numa.local.run2", *local_region);
     const bench::Report remote_second = measure_region("ledger.numa.remote.run2", *remote_region);
     bench::do_not_optimize(sink);
+    (void)measuring_pin.restore();
 
     // Cost, not gain: what the remote read costs as a percentage of the
     // local one, so a host where the hop is free answers 100 and one

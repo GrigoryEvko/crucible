@@ -1034,12 +1034,13 @@ crucible_test(test_mimic_semaphore)
 # bench harness unit tests — include bench/ for bench_harness.h.
 # Snapshot lives in <crucible/perf/SenseHub.h>, and the standard
 # `crucible` include path reaches it.  The bench-local include below
-# carries only bench_harness.h itself.  CRUCIBLE_HAVE_BPF is
-# intentionally unset for this TU — the test exercises only the non-BPF
-# statistical primitives plus Snapshot::operator- (a header-only inline
-# that saturates with __builtin_sub_overflow and does not need libbpf at
-# link time).  The SYSTEM include silences -Werror diagnostics from the
-# bench headers.  The .cpp of the test still honours -Werror.
+# carries only bench_harness.h itself.  The test checks the statistical
+# primitives, Snapshot::operator- and the affinity that a Run sets on the
+# calling thread.  Each short Run::measure loads the BPF sense hub when
+# the crucible target defines CRUCIBLE_HAVE_BPF, and a host without the
+# capabilities only prints a warning.  The SYSTEM include silences
+# -Werror diagnostics from the bench headers.  The .cpp of the test still
+# honours -Werror.
 crucible_test(test_bench_harness)
 # Exercises the crucible::warden module — bounds-enforcement policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,

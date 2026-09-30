@@ -18,15 +18,24 @@
 #include <crucible/ledger/probes/HugePage.h>
 #include <crucible/ledger/probes/VectorWidth.h>
 
+#include <fixy/Ctx.h>
+#include <fixy/os/Sched.h>
+
 #include "test_assert.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <expected>
 #include <span>
+#include <thread>
 #include <vector>
+
+#include <sched.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 using namespace crucible;
 using crucible::ledger::CompetenceReport;
@@ -553,6 +562,74 @@ void test_stream_buffer_outgrows_the_reachable_cache() {
     std::printf("  test_stream_buffer_outgrows_the_reachable_cache: PASSED\n");
 }
 
+// The first touch of a probe region comes from the CPU that the probe
+// measures on, so each page is on the node of that CPU, and the pin to that
+// CPU holds until the probe restores it.  The worker starts on a CPU of the
+// second node and asks for a CPU of the first node.  A first touch from the
+// CPU of the worker puts each page on the second node.
+void test_first_touch_comes_from_the_measuring_cpu() {
+    const auto& topology = ::fixy::concurrent::Topology::instance();
+    const std::span<const int> nodes = topology.numa_node_ids();
+    if (nodes.size() < 2 || topology.cores_on_node(nodes[0]).empty() || topology.cores_on_node(nodes[1]).empty()) {
+        std::printf("  test_first_touch_comes_from_the_measuring_cpu: SKIPPED (fewer than two NUMA nodes with CPUs, "
+                    "so each page is on the node of each CPU)\n");
+        return;
+    }
+    const int measuring_node = nodes[0];
+    const int measuring_cpu = topology.cores_on_node(measuring_node).front();
+    const int worker_cpu = topology.cores_on_node(nodes[1]).front();
+
+    const char* skip_reason = nullptr;
+    std::jthread worker{[&skip_reason, measuring_node, measuring_cpu, worker_cpu] {
+        const ::fixy::BgLoadCtx background{::foundation::effects::testing::bg()};
+        const auto start = ::fixy::sched::apply_affinity_to_cpu(background, worker_cpu);
+        if (!start.has_value()) {
+            skip_reason = "the cpuset refuses the CPU of the second node";
+            return;
+        }
+        auto region = ledger::ProbeRegion::create(probe_ctx, 2u * 1024u * 1024u, ledger::PagePolicy::BasePages);
+        assert(region.has_value());
+        bench::Run::PinResult pin = ledger::probes::cache_tier_detail::fault_in_from_cpu(*region, measuring_cpu);
+        if (!pin.prior.has_value()) {
+            skip_reason = "the cpuset refuses the CPU of the first node";
+            return;
+        }
+        assert(::sched_getcpu() == measuring_cpu);
+
+        // move_pages in query mode: no target nodes, so the status of each
+        // page is the node that holds it.
+        const std::size_t page_count = region->size() / ledger::ProbeRegion::kBasePageBytes;
+        std::vector<void*> pages(page_count, nullptr);
+        std::vector<int> page_nodes(page_count, -1);
+        auto* first_byte = static_cast<unsigned char*>(region->data());
+        for (std::size_t i = 0; i < page_count; ++i) {
+            pages[i] = first_byte + (i * ledger::ProbeRegion::kBasePageBytes);
+        }
+        const long queried = ::syscall(SYS_move_pages, 0, page_count, pages.data(), nullptr, page_nodes.data(), 0);
+        if (queried != 0) {
+            (void)pin.restore();
+            skip_reason = "the kernel refuses move_pages";
+            return;
+        }
+        assert(std::all_of(page_nodes.begin(), page_nodes.end(),
+                           [measuring_node](int node) { return node == measuring_node; }));
+
+        // The restore gives the worker back its one CPU.
+        assert(pin.restore().has_value());
+        cpu_set_t affinity;
+        CPU_ZERO(&affinity);
+        assert(::sched_getaffinity(0, sizeof(affinity), &affinity) == 0);
+        assert(CPU_COUNT(&affinity) == 1 && CPU_ISSET(static_cast<std::size_t>(worker_cpu), &affinity));
+    }};
+    worker.join();
+
+    if (skip_reason != nullptr) {
+        std::printf("  test_first_touch_comes_from_the_measuring_cpu: SKIPPED (%s)\n", skip_reason);
+        return;
+    }
+    std::printf("  test_first_touch_comes_from_the_measuring_cpu: PASSED\n");
+}
+
 void test_vector_width_probe_answers_or_declines() {
     // Cheap settings: the probe is exercised for its structure — the two
     // shapes, the memo, the guard that keeps a 512-bit kernel off a host
@@ -667,8 +744,9 @@ int main() {
     test_daemon_publishes_a_view_a_reader_can_use();
     test_daemon_thread_starts_and_stops();
     test_stream_buffer_outgrows_the_reachable_cache();
+    test_first_touch_comes_from_the_measuring_cpu();
     test_vector_width_probe_answers_or_declines();
     test_every_verdict_id_has_a_name_and_a_trait();
-    std::printf("test_ledger_probes: 14 groups, all passed\n");
+    std::printf("test_ledger_probes: 15 groups, all passed\n");
     return 0;
 }
