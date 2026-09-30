@@ -9,7 +9,7 @@ int main() {
     namespace fe = ::foundation::effects;
 
     ::fixy::ColdInitCtx init{fe::testing::init()};
-    ::fixy::BgDrainCtx bg{fe::testing::bg()};
+    ::fixy::BgLoadCtx bg{fe::testing::bg()};
     auto swapper = cntp::mint_path_swapper(init);
     auto declared = cntp::mint_path_swap_plan(cntp::admit_path_id(1).value(), cntp::admit_path_id(2).value(),
                                               cntp::admit_path_id(3).value(), cntp::admit_swap_timeout_ns(9).value());

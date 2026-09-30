@@ -23,7 +23,7 @@ int main() {
     namespace sess = ::fixy::session;
 
     ::fixy::ColdInitCtx init{fe::testing::init()};
-    ::fixy::BgDrainCtx bg{fe::testing::bg()};
+    ::fixy::BgLoadCtx bg{fe::testing::bg()};
     auto swapper = cntp::mint_path_swapper(init);
     auto handle = sess::mint_session_handle<sess::Send<int, sess::End>>(Wire{.id = 1});
     int peer_state = 0;

@@ -107,8 +107,8 @@ apply to the row.
 | `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | HS14: 5 |
-| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
+| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | HS14: 6 |
+| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
 | `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | · | token | · | HS14: 7 |
 | `mint_quic_connection` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_reed_solomon` | `include/crucible/cntp/Fec.h` | Y | Y | Y | Y | token | · | HS14: 2 |

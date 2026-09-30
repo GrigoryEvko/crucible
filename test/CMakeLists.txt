@@ -3259,11 +3259,15 @@ crucible_neg_compile_test(neg_pacing_raw_config_ensure
 #   * neg_path_swapper_direct: the swapper mint is the only door to a swapper.
 #   * neg_path_swap_commit_fg_ctx, neg_path_swap_begin_init_ctx: a transition
 #     needs a context that owns Bg.
+#   * neg_path_swap_begin_drain_ctx: a transition waits on the gate of the
+#     swapper, so it needs a context that owns Block.
+#   * neg_path_swap_plan_read_hot_ctx: a read of the plan waits on the same
+#     gate, so it needs a context that owns Block.
 #   * neg_path_swap_commit_non_session_resource,
 #     neg_path_swap_commit_pointer_resource: the new resource is a
 #     SessionResource.
 crucible_neg_compile_test(neg_path_swap_raw_plan_begin
-  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::BgDrainCtx&, crucible::cntp::PathSwapPlan&, int.."
+  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::BgLoadCtx&, crucible::cntp::PathSwapPlan&, int.."
   "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
 crucible_neg_compile_test(neg_path_swap_plan_raw_path_id
   "could not convert .0. from .uint64_t."
@@ -3283,11 +3287,17 @@ crucible_neg_compile_test(neg_path_swap_commit_fg_ctx
 crucible_neg_compile_test(neg_path_swap_begin_init_ctx
   "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::ColdInitCtx&"
   "required for the satisfaction of .CtxFitsPathSwapTransition<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
+crucible_neg_compile_test(neg_path_swap_begin_drain_ctx
+  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::BgDrainCtx&"
+  "required for the satisfaction of .CtxMayBlock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
+crucible_neg_compile_test(neg_path_swap_plan_read_hot_ctx
+  "no matching function for call to .crucible::cntp::PathSwapper<>::plan.fixy::HotFgCtx&."
+  "required for the satisfaction of .CtxFitsPathSwapRead<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
-  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgDrainCtx&"
+  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgLoadCtx&"
   "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = Wire&.")
 crucible_neg_compile_test(neg_path_swap_commit_pointer_resource
-  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgDrainCtx&"
+  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgLoadCtx&"
   "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = PointerWire.")
 
 # ─── topology::CongestionTelemetry and its worker ────────────────────
