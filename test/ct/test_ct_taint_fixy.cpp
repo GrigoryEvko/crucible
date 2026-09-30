@@ -104,7 +104,8 @@ void check_mtls_private_key(Tally& tally) noexcept {
         tally.expect(admitted.has_value(), "mTLS private key admission");
         auto key = std::move(admitted).value();
         auto moved = std::move(key);
-        tally.expect(moved.size() == pem.size(), "mTLS private key length");
+        tally.expect(moved.declassify<::fixy::tags::secret_policy::LengthOnly>() == pem.size(),
+                     "mTLS private key length");
     }
 }
 

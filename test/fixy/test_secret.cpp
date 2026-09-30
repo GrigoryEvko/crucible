@@ -1,7 +1,9 @@
 // Sentinel TU for fixy/Secret.h: the classification collapses to
 // sizeof(T), the wrapper is move-only with one door, declassification is
-// the only exit and takes an rvalue, and every policy tag leaves through
-// its own edge and nothing else does.
+// the only exit, and every policy tag leaves through its own edge and
+// nothing else does.  The payload leaves only from an rvalue.  The length
+// of a container leaves only through the LengthOnly policy, and that
+// policy releases the length and never the payload.
 
 #include <fixy/Secret.h>
 
@@ -22,7 +24,9 @@ namespace ffc = ::foundation::fail_closed;
 namespace secret_policy = ::fixy::tags::secret_policy;
 using ::fixy::AdmittedDeclassification;
 using ::fixy::DeclassificationPolicy;
+using ::fixy::LengthDeclassification;
 using ::fixy::mint_secret;
+using ::fixy::PayloadDeclassification;
 using ::fixy::Secret;
 
 struct CardNumber {
@@ -78,8 +82,38 @@ constexpr int minted_and_declassified =
     std::move(mint_secret<int>(7)).template declassify<secret_policy::HashForCompare>();
 static_assert(minted_and_declassified == 7);
 constexpr std::uint64_t built_in_place =
-    std::move(mint_secret<CardNumber>(std::uint64_t{4242})).template declassify<secret_policy::LengthOnly>().digits;
+    std::move(mint_secret<CardNumber>(std::uint64_t{4242})).template declassify<secret_policy::UserDisplay>().digits;
 static_assert(built_in_place == 4242);
+
+// ── The length of a classified container ────────────────────────────
+
+using Key16 = Secret<std::array<std::uint8_t, 16>>;
+
+// No accessor gives the length out without a policy.
+template <typename W>
+concept ReleasesLengthWithoutPolicy = requires(W const& w) { w.size(); };
+static_assert(!ReleasesLengthWithoutPolicy<Key16>);
+static_assert(!ReleasesLengthWithoutPolicy<Secret<int>>);
+
+// The LengthOnly policy releases the length from an lvalue and from an
+// rvalue, and in each case the result is a count, not the payload.
+template <typename W>
+concept ReleasesLengthFromLvalue = requires(W const& w) { w.template declassify<secret_policy::LengthOnly>(); };
+static_assert(ReleasesLengthFromLvalue<Key16>);
+static_assert(std::is_same_v<decltype(std::declval<Key16 const&>().template declassify<secret_policy::LengthOnly>()),
+                             std::size_t>);
+static_assert(
+    std::is_same_v<decltype(std::declval<Key16&&>().template declassify<secret_policy::LengthOnly>()), std::size_t>,
+    "LengthOnly on an rvalue still releases the length and not the payload");
+
+// A payload with no length has nothing for LengthOnly to release, and a
+// payload policy does not release a length from an lvalue.
+static_assert(!ReleasesLengthFromLvalue<Secret<int>>);
+static_assert(!DeclassifiesLvalue<Key16>);
+
+constexpr std::size_t length_in_constant_expression =
+    mint_secret<std::array<std::uint8_t, 16>>().template declassify<secret_policy::LengthOnly>();
+static_assert(length_in_constant_expression == 16);
 
 // ── The policy relation, read out of the namespace ──────────────────
 
@@ -111,7 +145,8 @@ static_assert(count_policy_tags_in_namespace() == ::fixy::admitted_policy_count,
               "every declared policy tag has exactly one edge, and every edge names a declared tag");
 
 // Every admitted policy is a DeclassificationPolicy, is admitted, and
-// declassifies a minted value.
+// declassifies a minted value.  The LengthOnly policy releases the
+// length of a container, and each other policy releases the payload.
 [[nodiscard]] consteval bool every_policy_declassifies() noexcept {
     static constexpr auto members = std::define_static_array(
         std::meta::members_of(^^secret_policy::admitted_policies, std::meta::access_context::unchecked()));
@@ -123,12 +158,37 @@ static_assert(count_policy_tags_in_namespace() == ::fixy::admitted_policy_count,
             using Policy = typename[:ends.to:];
             static_assert(DeclassificationPolicy<Policy>);
             static_assert(AdmittedDeclassification<Policy>);
-            if (std::move(mint_secret<int>(3)).template declassify<Policy>() != 3) return false;
+            if constexpr (LengthDeclassification<Policy>) {
+                static_assert(!PayloadDeclassification<Policy>);
+                if (mint_secret<std::array<int, 3>>().template declassify<Policy>() != 3) return false;
+            } else {
+                static_assert(PayloadDeclassification<Policy>);
+                if (std::move(mint_secret<int>(3)).template declassify<Policy>() != 3) return false;
+            }
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
+
+// Exactly one admitted policy releases a length.
+[[nodiscard]] consteval std::size_t count_length_policies() noexcept {
+    std::size_t found = 0;
+    static constexpr auto members = std::define_static_array(
+        std::meta::members_of(^^secret_policy::admitted_policies, std::meta::access_context::unchecked()));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto m : members) {
+        if constexpr (ffc::is_edge(m)) {
+            constexpr auto ends = ffc::ends_of(m);
+            using Policy = typename[:ends.to:];
+            if constexpr (LengthDeclassification<Policy>) ++found;
+        }
+    }
+#pragma GCC diagnostic pop
+    return found;
+}
+static_assert(count_length_policies() == 1);
 
 static_assert(every_policy_declassifies());
 
@@ -167,12 +227,15 @@ int check_transform_and_declassify() {
     return 0;
 }
 
-int check_size_forwarder() {
-    Secret<std::array<std::uint8_t, 16>> key = mint_secret<std::array<std::uint8_t, 16>>();
-    // size() releases only the size, which is metadata, not payload.
-    if (key.size() != 16) return 20;
-    auto released = std::move(key).declassify<secret_policy::LengthOnly>();
-    if (released.size() != 16) return 21;
+int check_length_release() {
+    Secret<std::array<std::uint8_t, 16>> key =
+        mint_secret<std::array<std::uint8_t, 16>>(std::array<std::uint8_t, 16>{std::uint8_t{0xA5}});
+    // The length leaves through its policy, and the key stays classified.
+    const std::size_t length = key.declassify<secret_policy::LengthOnly>();
+    if (length != 16) return 20;
+    // The payload leaves only through a payload policy, from an rvalue.
+    auto released = std::move(key).declassify<secret_policy::AuditedLogging>();
+    if (released.size() != 16 || released[0] != 0xA5) return 21;
     return 0;
 }
 
@@ -222,7 +285,7 @@ int check_each_policy_edge() {
 int main() {
     if (int rc = check_each_policy_edge(); rc != 0) return rc;
     if (int rc = check_transform_and_declassify(); rc != 0) return rc;
-    if (int rc = check_size_forwarder(); rc != 0) return rc;
+    if (int rc = check_length_release(); rc != 0) return rc;
     if (int rc = check_zeroize(); rc != 0) return rc;
     if (int rc = check_move_transfer(); rc != 0) return rc;
 

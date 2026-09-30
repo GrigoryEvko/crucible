@@ -378,6 +378,14 @@ struct UnadmittedPolicy : ::fixy::tags::secret_policy::secret_policy_base {};
 static_assert(!ComparesByValue<sess::CTPayload<AuthTag>>, "== on a constant-time carrier is deleted");
 static_assert(!DeclassifiesUnder<int, UnadmittedPolicy>, "a policy with no admitted edge is refused");
 static_assert(DeclassifiesUnder<int, Wire>);
+static_assert(!DeclassifiesUnder<std::array<int, 2>, ::fixy::tags::secret_policy::LengthOnly>,
+              "LengthOnly releases a length, and a carrier puts the payload on the wire");
+template <class T, class Policy>
+concept ReleasesConstantTimeValueUnder =
+    requires(sess::CTPayload<T>&& carried) { std::move(carried).template declassify_ct<Policy>(); };
+static_assert(ReleasesConstantTimeValueUnder<AuthTag, Wire>);
+static_assert(!ReleasesConstantTimeValueUnder<AuthTag, ::fixy::tags::secret_policy::LengthOnly>,
+              "LengthOnly releases a length, and declassify_ct releases the value");
 static_assert(!CarriedAsCT<NotMarked>, "only a marked type travels as CTPayload");
 static_assert(!std::is_copy_constructible_v<sess::CTPayload<AuthTag>>);
 static_assert(!std::is_copy_constructible_v<sess::DeclassifyOnSend<int, Wire>>);

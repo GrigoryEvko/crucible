@@ -1233,6 +1233,15 @@ fixy_neg_compile_test(neg_secret_three_way_value
   "use of deleted function .constexpr std::strong_ordering fixy::operator<=>\\(const Secret<T>&, const U&\\) .with U = int"
   "Secret_Order. a classified value cannot be ordered with <, <=, >, >= or <=>")
 
+# The length of a classified container leaves only through the LengthOnly
+# policy, and that policy releases a count and never the payload.
+fixy_neg_compile_test(neg_secret_size_without_policy
+  "use of deleted function .std::size_t fixy::Secret<T>::size\\(\\) const .with T = std::array<unsigned char, 16>"
+  "Secret_LengthRelease. the length of a classified value is classified")
+fixy_neg_compile_test(neg_secret_length_policy_releases_payload
+  "conversion from .* to non-scalar type .std::array<unsigned char, 16>. requested"
+  "conversion from .long unsigned int. to non-scalar type")
+
 # ── Stale, OwnedRegion, Borrowed, ScopedView, Machine ─────────────────
 fixy_test(test_stale)
 fixy_test(test_versioned_budgeted)
@@ -3377,7 +3386,7 @@ fixy_neg_compile_test(neg_session_ctpayload_equality
   "use of deleted function .bool fixy::session::CTPayload<T>::operator==\\(const fixy::session::CTPayload<T>&\\) const"
   "a CTPayload compares only through fixy::session::eq")
 fixy_neg_compile_test(neg_session_declassify_unadmitted_policy
-  "template constraint failure for .template<class T, class Policy>  requires  AdmittedDeclassification<Policy> class fixy::session::DeclassifyOnSend"
+  "template constraint failure for .template<class T, class Policy>  requires  PayloadDeclassification<Policy> class fixy::session::DeclassifyOnSend"
   "required for the satisfaction of .AdmittedDeclassification<Policy>. .with Policy = <unnamed>::UnadmittedPolicy")
 
 # ── The lock-free rings ───────────────────────────────────────────────

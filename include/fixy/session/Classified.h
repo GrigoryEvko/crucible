@@ -26,8 +26,10 @@
 // check, and it cannot be separated from the type.  A trait
 // specialization or a roster entry could do both.
 //
-// The policy must be admitted, as Secret::declassify requires.  A policy
-// that only derives from the policy base is not admitted.
+// The policy must be an admitted policy that releases the payload, as
+// Secret::declassify requires for the payload.  A policy that only derives
+// from the policy base is not admitted, and the LengthOnly policy releases
+// a length and not the payload.
 
 #include <fixy/ConstantTime.h>
 #include <fixy/Secret.h>
@@ -60,7 +62,7 @@ concept ConstantTimeValue = detail::carries_constant_time_mark(^^T);
 // point where a value leaves classification on a channel, and the policy
 // says why.  The framework never calls declassify_for_wire.  The
 // transport calls it, at one named site.
-template <class T, AdmittedDeclassification Policy>
+template <class T, PayloadDeclassification Policy>
 class [[nodiscard]] DeclassifyOnSend {
 public:
     using value_type = T;
@@ -114,9 +116,9 @@ public:
         return std::as_bytes(std::span<const T, 1>{&value_, 1});
     }
 
-    // The value leaves the carrier under an admitted policy, at a named
-    // site.
-    template <AdmittedDeclassification Policy>
+    // The value leaves the carrier under an admitted policy that releases
+    // the payload, at a named site.
+    template <PayloadDeclassification Policy>
     [[nodiscard]] constexpr T declassify_ct() && noexcept {
         return value_;
     }

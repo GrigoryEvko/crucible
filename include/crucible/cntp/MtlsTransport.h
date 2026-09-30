@@ -395,7 +395,7 @@ template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = Mtl
     if (raw.ca_cert.peek().size == 0 || raw.client_cert.peek().size == 0) {
         return std::unexpected(MtlsError::EmptyCertificate);
     }
-    if (raw.client_key.size() == 0) {
+    if (raw.client_key.declassify<::fixy::tags::secret_policy::LengthOnly>() == 0) {
         return std::unexpected(MtlsError::EmptyPrivateKey);
     }
     return validate_mtls_policy(raw.policy);

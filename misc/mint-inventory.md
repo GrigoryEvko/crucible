@@ -216,7 +216,7 @@ apply to the row.
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
-| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | HS14: 14 |
+| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | HS14: 16 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |

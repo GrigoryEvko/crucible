@@ -82,6 +82,19 @@ concept AdmittedDeclassification =
     && ::foundation::fail_closed::Admitted<^^tags::secret_policy::admitted_policies,
                                            tags::secret_policy::admitted_policies::classified, Policy>;
 
+// The length of a classified container is classified too.  A length can
+// tell one kind of key from another, or give the number of records in a
+// set.  So the LengthOnly policy is the one exit for a length, and that
+// policy releases the length and never the payload.  Each other admitted
+// policy releases the payload.  A search for
+// `declassify<secret_policy::LengthOnly>` finds each release of a length.
+template <typename Policy>
+concept LengthDeclassification =
+    AdmittedDeclassification<Policy> && std::same_as<Policy, tags::secret_policy::LengthOnly>;
+
+template <typename Policy>
+concept PayloadDeclassification = AdmittedDeclassification<Policy> && !LengthDeclassification<Policy>;
+
 // The three rules transform() places on its callable.  Each is its
 // own concept, so a refusal names the rule that was broken instead of
 // the bare fact that constraints were not satisfied.
@@ -241,18 +254,20 @@ public:
         return Secret<R>{std::forward<F>(f)(std::move(impl_).consume())};
     }
 
-    [[nodiscard]] constexpr auto size() const noexcept
-        requires requires(const T& t) { t.size(); }
-    {
-        return impl_.peek().size();
-    }
+    // The length of a classified value is classified.  The deleted
+    // accessor gives the reason at a call, and a requires-expression over
+    // size() reads false.
+    std::size_t size() const = delete("[Secret_LengthRelease] the length of a classified value is classified.  "
+                                      "Release it with declassify<secret_policy::LengthOnly>(), so that a "
+                                      "search finds each release.");
 
-    // The requires-clause gates the call, and the assertion below
-    // restates the rule in words on purpose: a constraint failure
-    // reports only that constraints were not satisfied, which says
-    // nothing about what to do instead.  The named diagnostic is what
-    // a reader of this body finds.
-    template <AdmittedDeclassification Policy>
+    // The payload leaves through each admitted policy except LengthOnly,
+    // and only from an rvalue.  The requires-clause gates the call, and
+    // the assertion below restates the rule in words on purpose: a
+    // constraint failure reports only that constraints were not
+    // satisfied, which says nothing about what to do instead.  The named
+    // diagnostic is what a reader of this body finds.
+    template <PayloadDeclassification Policy>
     [[nodiscard]] constexpr T declassify() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         static_assert(std::derived_from<Policy, tags::secret_policy::secret_policy_base>,
                       "fixy::diagnostic [SecretPolicy_NotInBase]: "
@@ -267,6 +282,15 @@ public:
                       "policy structs anywhere else in the codebase would "
                       "silently bypass the audit trail.");
         return std::move(impl_).extract();
+    }
+
+    // The length leaves only through the LengthOnly policy.  The call
+    // does not consume the Secret, because the payload stays classified.
+    // An rvalue also binds here, so LengthOnly never releases the payload.
+    template <LengthDeclassification Policy>
+        requires requires(T const& payload) { payload.size(); }
+    [[nodiscard]] constexpr auto declassify() const& noexcept(noexcept(std::declval<T const&>().size())) {
+        return impl_.peek().size();
     }
 
     // Opt-in: overwrites the storage before destruction.  Reaching the
@@ -315,6 +339,8 @@ template <typename S>
 concept OffsetsPointerBy = requires(S const& s, int* p) { p + s; };
 template <typename S>
 concept IndexesContainerWith = requires(S const& s, std::array<int, 4>& table) { table[s]; };
+template <typename S>
+concept ReleasesLengthWithoutPolicy = requires(S const& s) { s.size(); };
 
 static_assert(!BranchesOn<Secret<int>> && !BranchesOn<Secret<bool>>);
 static_assert(!std::is_convertible_v<Secret<int>, bool> && !std::is_constructible_v<bool, Secret<int> const&>);
@@ -325,6 +351,13 @@ static_assert(!std::is_convertible_v<Secret<std::size_t>, std::size_t>);
 static_assert(!std::equality_comparable<Secret<int>> && !std::equality_comparable_with<Secret<int>, int>);
 static_assert(!std::three_way_comparable<Secret<int>> && !std::totally_ordered<Secret<int>>);
 static_assert(!std::totally_ordered_with<Secret<int>, int>);
+
+// A length leaves only through its policy, and that policy gives a count
+// from an rvalue too, never the payload.
+static_assert(!ReleasesLengthWithoutPolicy<Secret<std::array<int, 4>>>);
+static_assert(std::is_same_v<decltype(std::declval<Secret<std::array<int, 4>>&&>()
+                                          .template declassify<tags::secret_policy::LengthOnly>()),
+                             std::size_t>);
 
 }  // namespace detail::secret_flow_lock
 

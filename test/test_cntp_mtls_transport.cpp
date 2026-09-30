@@ -74,7 +74,7 @@ void test_material_admission() {
     auto key_bytes = material(std::byte{0x44});
     auto key = cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::Ed25519>(key_bytes);
     assert(key.has_value());
-    assert(key->size() == key_bytes.size());
+    assert(key->declassify<::fixy::tags::secret_policy::LengthOnly>() == key_bytes.size());
 
     cntp::MtlsSha256Fingerprint raw_fp{fingerprint_bytes(std::byte{0x70})};
     auto fp = cntp::admit_certificate_fingerprint(raw_fp);
