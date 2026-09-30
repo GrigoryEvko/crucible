@@ -38,20 +38,6 @@
 # Inline suppression (preferred for new code): `// NO-RESERVE-OK:
 # <reason>` on the call line exempts that single line directly.
 #
-# ── Cipher.h ────────────────────────────────────────────────────────
-# The Cipher cold-tier path constructs O(K) buffers before
-# serialization; amortization is acceptable but the guard tracks
-# them so the long-term migration to inplace_vector + Linear<bytes>
-# isn't forgotten.  Two entries (obj_relpath_ and
-# session_event_dir_relpath_) are the relative-path counterparts of
-# obj_path / session_event_dir for dirfd-anchored openat().
-include/crucible/Cipher.h:out.reserve(out.size() + decoded->size());
-include/crucible/Cipher.h:path.reserve(root.size() + OBJECT_PATH_SUFFIX_BYTES);
-include/crucible/Cipher.h:r.reserve(sizeof("objects/") - 1 + 2 + 1 + 14);
-include/crucible/Cipher.h:path.reserve(root.size() + sizeof("/session_events/") - 1 + 16);
-include/crucible/Cipher.h:path.reserve(sizeof("session_events/") - 1 + 16);
-include/crucible/Cipher.h:resident_cache_.reserve(MAX_RESIDENT_CACHE_ENTRIES);
-#
 # ── BackgroundThread.h ──────────────────────────────────────────────
 # current_trace and its parallel vectors reserve
 # kInitialTraceCapacity at iteration start.  Migration target:

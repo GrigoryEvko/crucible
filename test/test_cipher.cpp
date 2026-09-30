@@ -13,6 +13,7 @@
 #include <fstream>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -29,13 +30,15 @@ static auto g_test = ::foundation::effects::testing::test();
                                   ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
 }
 
-static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
+// The salt goes into the schema hashes, so two salts give two regions with
+// two content hashes.
+static crucible::RegionNode* make_test_region(crucible::Arena& arena, std::uint64_t salt = 0) {
     constexpr uint32_t NUM_OPS = 2;
     auto* ops = arena.alloc_array<crucible::TraceEntry>(g_test.alloc, NUM_OPS);
     std::uninitialized_value_construct_n(ops, NUM_OPS);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        ops[i].schema_hash = crucible::SchemaHash{0xCAFE0000 + i};
+        ops[i].schema_hash = crucible::SchemaHash{0xCAFE0000 + i + (salt << 8)};
         ops[i].num_inputs = 1;
         ops[i].num_outputs = 1;
 
@@ -104,6 +107,18 @@ static std::uint64_t last_log_timestamp(const char* dir) {
     const auto [stop, error] = std::from_chars(last.data() + second_comma + 1, end, timestamp);
     assert(error == std::errc{} && stop == end);
     return timestamp;
+}
+
+// The events of one session, at steps first, first + 1, ..., first + count - 1.
+static std::vector<crucible::Cipher::SessionEvent> session_batch(std::uint64_t first, std::size_t count) {
+    std::vector<crucible::Cipher::SessionEvent> events(
+        count, crucible::Cipher::SessionEvent::close(::fixy::session::RoleTagId{}, ::fixy::session::RoleTagId{}));
+    for (std::size_t i = 0; i < count; ++i) {
+        events[i] = crucible::Cipher::SessionEvent::cipher_event(
+            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{first + i},
+            ::fixy::session::StateHash{0x5E550000u + first + i}, first + i);
+    }
+    return events;
 }
 
 static_assert(
@@ -370,6 +385,64 @@ int main() {
         assert(cipher.hash_at_step(ov, 30) == crucible::ContentHash{0xdeadbeef00000001ULL});
 
         std::filesystem::remove_all(dir2);
+    }
+
+    // One batch of session events at steps 10 to 19, and one at steps 20
+    // to 24.  A load from a step inside the first batch gives the rest of
+    // that batch and all of the second, in step order.
+    {
+        char tmpl_events[] = "/tmp/crucible_cipher_events_XXXXXX";
+        char* dir_events = mkdtemp(tmpl_events);
+        assert(dir_events != nullptr);
+        auto cipher = open_cipher(dir_events);
+        auto ov = cipher.mint_open_view(store_ctx());
+        const auto first_batch = session_batch(10, 10);
+        const auto second_batch = session_batch(20, 5);
+        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, first_batch)));
+        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, second_batch)));
+
+        const ::fixy::session::SessionTagId session = first_batch.front().session();
+        const auto from_middle = cipher.load_session_events(ov, session, ::fixy::session::StepId{15});
+        assert(from_middle.size() == 10);
+        for (std::size_t i = 0; i < from_middle.size(); ++i) {
+            assert(from_middle[i].step_id().value == 15 + i);
+        }
+        const auto every_event = cipher.load_session_events(ov, session);
+        assert(every_event.size() == 15);
+        assert(every_event.front().step_id().value == 10 && every_event.back().step_id().value == 24);
+        const auto second_only = cipher.load_session_events(ov, session, ::fixy::session::StepId{20});
+        assert(second_only.size() == 5 && second_only.front().step_id().value == 20);
+
+        std::filesystem::remove_all(dir_events);
+    }
+
+    // The cache of object bytes holds at most 64 entries, and it removes the
+    // entry used least recently.  After 65 distinct stores the first object
+    // has left the cache, and the last one is still in it.  The files are
+    // deleted first, so a load finds a region only in the cache.
+    {
+        char tmpl_cache[] = "/tmp/crucible_cipher_cache_XXXXXX";
+        char* dir_cache = mkdtemp(tmpl_cache);
+        assert(dir_cache != nullptr);
+        crucible::Arena cache_arena(1 << 20);
+        auto cipher = open_cipher(dir_cache);
+        auto ov = cipher.mint_open_view(store_ctx());
+        constexpr std::size_t kStoreCount = 65;
+        std::vector<crucible::ContentHash> hashes(kStoreCount);
+        for (std::size_t i = 0; i < kStoreCount; ++i) {
+            const auto* distinct_region = make_test_region(cache_arena, i + 1);
+            hashes[i] = cipher.store(ov, crucible::Cipher::content_addressed(distinct_region), nullptr);
+            assert(static_cast<bool>(hashes[i]));
+        }
+        for (const crucible::ContentHash hash : hashes) {
+            std::filesystem::remove(object_path(dir_cache, hash));
+        }
+        crucible::Arena read_arena(1 << 16);
+        assert(cipher.load_content_addressed(ov, g_test.alloc, hashes.front(), read_arena).get() == nullptr);
+        const auto newest = cipher.load_content_addressed(ov, g_test.alloc, hashes.back(), read_arena);
+        assert(newest.cache_hit() && newest.get() != nullptr);
+
+        std::filesystem::remove_all(dir_cache);
     }
 
     std::filesystem::remove_all(dir);

@@ -52,9 +52,12 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
+#include <inplace_vector>
 #include <limits>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -144,7 +147,6 @@ concept CtxFitsCipherCommit = ::crucible::CtxFitsCipherPersistence<Ctx>
 class CRUCIBLE_OWNER Cipher {
 public:
     static constexpr std::size_t MAX_ROOT_PATH_BYTES = 4096;
-    static constexpr std::size_t OBJECT_PATH_SUFFIX_BYTES = sizeof("/objects/") - 1 + 2 + 1 + 14;
 
     using ContentAddressedRegionPayload = cipher::ContentAddressedPayload<RegionNode>;
     using LoadedContentAddressedRegionPayload = cipher::LoadedContentAddressedPayload<RegionNode>;
@@ -692,14 +694,14 @@ public:
             }
             if (!valid_batch) continue;
 
-            out.reserve(out.size() + decoded->size());
-            for (const SessionEvent& event : *decoded) {
-                if (event.step_id().value >= from_step.value) {
-                    out.push_back(event);
-                    highest_loaded = event.step_id().value;
-                    have_loaded = true;
-                }
-            }
+            // The steps of the batch are first, first + 1, ..., last, and
+            // last is at or after from_step.  So the events at from_step or
+            // after are one suffix of the batch, and it is not empty.  One
+            // range insert appends it.
+            const std::uint64_t skipped = from_step.value > first ? from_step.value - first : std::uint64_t{0};
+            out.insert(out.end(), decoded->begin() + static_cast<std::ptrdiff_t>(skipped), decoded->end());
+            highest_loaded = last;
+            have_loaded = true;
         }
         return out;
     }
@@ -829,7 +831,10 @@ private:
     }
     ::fixy::OrderedAppendOnly<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess> log_ =
         ::fixy::mint_ordered_append_only<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess>();
-    mutable std::vector<CachedObjectBytes> resident_cache_;
+    // The entries in the order of use, least recent first.  The capacity is
+    // the entry limit, so the cache holds its slots in the Cipher and a
+    // push never grows a buffer.
+    mutable std::inplace_vector<CachedObjectBytes, MAX_RESIDENT_CACHE_ENTRIES> resident_cache_;
     mutable size_t resident_cache_bytes_ = 0;
 
     [[nodiscard]] static constexpr bool commits_head_(const LogEntry& entry) noexcept {
@@ -1112,12 +1117,7 @@ private:
         if (root.size() > MAX_ROOT_PATH_BYTES) {
             std::abort();
         }
-        std::string path{root};
-        path.reserve(root.size() + OBJECT_PATH_SUFFIX_BYTES);
-        path.append("/objects/");
-        path.append(hex, 2);
-        path.push_back('/');
-        path.append(hex + 2, 14);
+        std::string path = join_({root, "/objects/", std::string_view{hex, 2}, "/", std::string_view{hex + 2, 14}});
         return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(path));
     }
 
@@ -1127,44 +1127,47 @@ private:
         -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath> {
         char hex[16];
         hex16_(hash, hex);
-        std::string r;
-        r.reserve(sizeof("objects/") - 1 + 2 + 1 + 14);
-        r.append("objects/");
-        r.append(hex, 2);
-        r.push_back('/');
-        r.append(hex + 2, 14);
-        return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(r));
+        std::string path = join_({"objects/", std::string_view{hex, 2}, "/", std::string_view{hex + 2, 14}});
+        return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(path));
     }
 
     std::string session_event_dir(::fixy::session::SessionTagId session) const {
         char hex[16];
         hex16_(session.value, hex);
-        const std::string& root = root_str();
-        std::string path{root};
-        path.reserve(root.size() + sizeof("/session_events/") - 1 + 16);
-        path.append("/session_events/");
-        path.append(hex, 16);
-        return path;
+        return join_({root_str(), "/session_events/", std::string_view{hex, 16}});
     }
 
     static std::string session_event_dir_relpath_(::fixy::session::SessionTagId session) {
         char hex[16];
         hex16_(session.value, hex);
-        std::string path;
-        path.reserve(sizeof("session_events/") - 1 + 16);
-        path.append("session_events/");
-        path.append(hex, 16);
-        return path;
+        return join_({"session_events/", std::string_view{hex, 16}});
     }
 
     std::string session_event_batch_path(::fixy::session::SessionTagId session, ContentHash hash) const {
-        char hex[16];
-        hex16_(hash.raw(), hex);
-        std::string path = session_event_dir(session);
-        path.push_back('/');
-        path.append(hex, 16);
-        path.append(".cfed");
-        return path;
+        char session_hex[16];
+        hex16_(session.value, session_hex);
+        char hash_hex[16];
+        hex16_(hash.raw(), hash_hex);
+        return join_({root_str(), "/session_events/", std::string_view{session_hex, 16}, "/",
+                      std::string_view{hash_hex, 16}, ".cfed"});
+    }
+
+    // Joins the pieces into one string of their total length.  The string
+    // gets its full size at construction, so the join allocates at most
+    // one time and never grows.  Complexity: linear in the total length.
+    [[nodiscard]] static std::string join_(std::initializer_list<std::string_view> pieces) {
+        std::size_t total = 0;
+        for (const std::string_view piece : pieces) {
+            total += piece.size();
+        }
+        std::string joined(total, '\0');
+        std::size_t offset = 0;
+        for (const std::string_view piece : pieces) {
+            if (piece.empty()) continue;  // an empty view can hold a null pointer, which memcpy refuses
+            std::memcpy(joined.data() + offset, piece.data(), piece.size());
+            offset += piece.size();
+        }
+        return joined;
     }
 
     [[nodiscard]] std::span<const uint8_t> cached_bytes(ContentHash hash) const noexcept {
@@ -1190,9 +1193,8 @@ private:
             if (entry.hash == hash) return;
         }
 
-        if (resident_cache_.capacity() < MAX_RESIDENT_CACHE_ENTRIES) {
-            resident_cache_.reserve(MAX_RESIDENT_CACHE_ENTRIES);
-        }
+        // The loop leaves at most MAX_RESIDENT_CACHE_ENTRIES - 1 entries, so
+        // the push below stays in the capacity of the cache.
         while (!resident_cache_.empty()
                && (resident_cache_.size() >= MAX_RESIDENT_CACHE_ENTRIES
                    || resident_cache_bytes_ + bytes.size() > MAX_RESIDENT_CACHE_BYTES)) {
