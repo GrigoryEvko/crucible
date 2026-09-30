@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -472,26 +473,26 @@ struct UShapeSplit {
     for (uint32_t i = 0; i < phase_idx.size(); i++)
         res[i] = blocks[phase_idx[i]].spatial_h;
 
-    std::vector<std::pair<uint32_t, int32_t>> valid_res;
-    for (uint32_t i = 0; i < res.size(); i++)
-        if (res[i] > 0) valid_res.push_back({i, res[i]});
-
-    if (valid_res.size() < 4) return {0, 0, false};
-
-    // The lowest resolution is the bottleneck.
-    int32_t min_res = valid_res[0].second;
-    for (const auto& [idx, r] : valid_res) {
-        if (r < min_res) min_res = r;
+    // The lowest resolution is the bottleneck. A U needs the highest one to be
+    // at least two times as large.
+    uint32_t num_valid = 0;
+    int32_t min_res = std::numeric_limits<int32_t>::max();
+    int32_t max_res = 0;
+    for (const int32_t resolution : res) {
+        if (resolution <= 0) continue;
+        ++num_valid;
+        min_res = std::min(min_res, resolution);
+        max_res = std::max(max_res, resolution);
     }
 
-    int32_t max_res = valid_res[0].second;
-    if (max_res < 2 * min_res) return {0, 0, false};
+    if (num_valid < 4) return {0, 0, false};
+    if (max_res / 2 < min_res) return {0, 0, false};
 
     uint32_t enc_end = 0;
     uint32_t dec_start = static_cast<uint32_t>(phase_idx.size()) - 1;
 
     for (uint32_t i = 0; i < phase_idx.size(); i++) {
-        if (res[i] == min_res || (res[i] > 0 && res[i] <= min_res)) {
+        if (res[i] == min_res) {
             enc_end = (i > 0) ? i - 1 : 0;
             break;
         }
@@ -955,7 +956,7 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
     params.node_h_gap = 32.0f;
     params.layer_v_gap = 52.0f;
     params.padding = 36.0f;
-    auto layout = sugiyama_layout(std::move(nodes), layout_edges, params);
+    auto layout = sugiyama_layout(nodes, layout_edges, params);
 
     float svg_w = std::max(240.0f, layout.total_width + 24.0f);
     float svg_h = std::max(120.0f, layout.total_height + 80.0f);
