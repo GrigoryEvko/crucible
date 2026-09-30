@@ -1031,6 +1031,11 @@ crucible_test(test_bench_harness)
 # no special capabilities required at test time (the smoke checks the
 # policy arithmetic / guard object semantics, not live scheduler calls).
 crucible_test(test_warden_policy)
+# Each affinity change outside fixy/os goes through the recording door, so
+# an older pin proof stops being in force.  ledger/ProbeSupport.h includes
+# bench_harness.h.
+crucible_test(test_pin_event_door)
+target_include_directories(test_pin_event_door PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 crucible_test(test_cntp_dataplane_tc_ebpf)
 crucible_test(test_cntp_dataplane_xdp)
 

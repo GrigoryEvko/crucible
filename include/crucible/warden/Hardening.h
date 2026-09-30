@@ -11,6 +11,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
+#include <fixy/os/Sched.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -20,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -143,9 +145,11 @@ public:
             (void)sched_setattr_sys(0, &prior_sched_, 0);
             prior_sched_set_ = false;
         }
-        if (prior_affinity_set_) {
-            (void)::sched_setaffinity(0, sizeof(prior_affinity_), &prior_affinity_);
-            prior_affinity_set_ = false;
+        // The restore goes through the affinity door, so a pin proof of the
+        // hot CPU stops being in force.
+        if (prior_affinity_) {
+            (void)std::move(*prior_affinity_).restore();
+            prior_affinity_.reset();
         }
         for (const auto& r : locked_) {
             (void)::munlock(r.addr, r.len);
@@ -162,7 +166,7 @@ public:
     }
 
     [[nodiscard]] bool scheduler_applied() const noexcept { return prior_sched_set_; }
-    [[nodiscard]] bool affinity_applied() const noexcept { return prior_affinity_set_; }
+    [[nodiscard]] bool affinity_applied() const noexcept { return prior_affinity_.has_value(); }
     [[nodiscard]] size_t regions_locked() const noexcept { return locked_.size(); }
     [[nodiscard]] int pinned_cpu() const noexcept { return pinned_cpu_; }
 
@@ -172,10 +176,7 @@ private:
         std::swap(reverted_, o.reverted_);
         std::swap(prior_sched_, o.prior_sched_);
         std::swap(prior_sched_set_, o.prior_sched_set_);
-#ifdef __linux__
         std::swap(prior_affinity_, o.prior_affinity_);
-#endif
-        std::swap(prior_affinity_set_, o.prior_affinity_set_);
         std::swap(thp_globally_disabled_, o.thp_globally_disabled_);
         std::swap(pinned_cpu_, o.pinned_cpu_);
         locked_.swap(o.locked_);
@@ -184,23 +185,22 @@ private:
     bool reverted_ = false;
 #ifdef __linux__
     sched_attr_t prior_sched_{};
-    cpu_set_t prior_affinity_{};
 #else
     int prior_sched_ = 0;
-    int prior_affinity_ = 0;
 #endif
+    // The mask that the pin of apply replaced, held while the pin stays.
+    std::optional<::fixy::sched::PriorAffinity> prior_affinity_{};
     bool prior_sched_set_ = false;
-    bool prior_affinity_set_ = false;
     bool thp_globally_disabled_ = false;
     int pinned_cpu_ = -1;
     std::vector<LockedRegion> locked_{};
 };
 
-// Applying a policy mutates process-wide state through privileged
-// system calls, which belongs to start-up only.  The choice of the hot
-// CPU reads sysfs and procfs, which can wait on the file system.  So the
-// context must own Init, IO and Block, and a hot foreground or a drain
-// context does not reach this surface.
+// A policy changes process-wide state through privileged system calls,
+// and only start-up code does that.  The choice of the hot CPU reads
+// sysfs and procfs, which can wait on the file system.  So the context
+// must own Init, IO and Block, and a hot foreground or a drain context
+// does not reach this surface.
 template <class Ctx>
 concept CtxFitsHardeningMint = ::foundation::effects::IsExecCtx<Ctx>
                             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
@@ -219,25 +219,18 @@ public:
 
 #ifdef __linux__
         {
+            // The pin goes through the affinity door of fixy/os/Sched.h,
+            // which records a new pin event, so an older pin proof of
+            // this thread stops being in force.  The door reads the prior
+            // mask first, and revert puts it back through the same door.
             const int cpu = select_hot_cpu(ctx, p.hot_core);
             if (cpu >= 0) {
-                cpu_set_t prior;
-                CPU_ZERO(&prior);
-                if (::sched_getaffinity(0, sizeof(prior), &prior) == 0) {
-                    g.prior_affinity_ = prior;
-                    g.prior_affinity_set_ = true;
-
-                    cpu_set_t set;
-                    CPU_ZERO(&set);
-                    CPU_SET(static_cast<size_t>(cpu), &set);
-                    if (::sched_setaffinity(0, sizeof(set), &set) == 0) {
-                        g.pinned_cpu_ = cpu;
-                    } else {
-                        g.prior_affinity_set_ = false;
-                        detail::warn("sched_setaffinity", errno);
-                    }
+                auto prior = ::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
+                if (prior) {
+                    g.prior_affinity_.emplace(std::move(*prior));
+                    g.pinned_cpu_ = cpu;
                 } else {
-                    detail::warn("sched_getaffinity", errno);
+                    detail::warn("sched_getaffinity or sched_setaffinity", prior.error());
                 }
             }
         }
@@ -467,6 +460,8 @@ public:
 // utils/scripts/check-syscall-grant-coverage.py derives this set from the
 // call sites in this header and fails when the two disagree, so the
 // list is checked against the code rather than against its own prose.
+// The two affinity calls come through fixy::sched::apply_affinity_to_cpu,
+// and the guard reads the body of that door to find them.
 using hardening_syscall_atoms =
     std::tuple<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setaffinity>,
                ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setattr>,

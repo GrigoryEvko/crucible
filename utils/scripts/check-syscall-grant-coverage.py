@@ -28,6 +28,12 @@ WHAT COUNTS AS ISSUING A SYSTEM CALL
         inside it cannot cut a member call away from its object.  A body
         that the parser cannot read is read from its preprocessing tokens:
         a name that `.`, `->` or `X::` does not precede counts.
+      * A name qualified from fixy that names a function of DOOR_HEADERS.
+        It stands for each system call that the body of that function
+        issues, directly or through another function of those headers.
+        The affinity of a thread changes only through the door of
+        include/fixy/os/CpuPinned.h, so the header reaches sched_setaffinity
+        through a call of that kind.
     A comment and a string literal name nothing.  A name is compared as the
     lexer spells it, after the line splices of phase 2.
 
@@ -36,9 +42,11 @@ WHAT COUNTS AS A GRANT
     hardening_syscall_atoms.
 
 WHAT THE GUARD CANNOT SEE
-    A call reached through a function of another header, through a template
-    parameter or through a name that a macro builds with `##`, and a
-    syscall number written as a literal.
+    A call reached through a function of a header outside DOOR_HEADERS,
+    through a member function or a template parameter, or through a name
+    that a macro builds with `##`, and a syscall number written as a
+    literal.  A door function is found by its unqualified name, so two
+    functions of one name in the door headers share one set.
 
 Exit 0 when the sets agree, 1 when they disagree or a helper is wrong, 2
 when the header, the catalog or either set cannot be read, on a usage error
@@ -64,6 +72,9 @@ HEADER = "include/crucible/warden/Hardening.h"
 CATALOG = "include/fixy/atoms/Syscall.h"
 TUPLE = "hardening_syscall_atoms"
 HELPER_SUFFIX = "_sys"
+# The headers whose functions the header can call in place of a system call.
+DOOR_HEADERS = ("include/fixy/os/Sched.h", "include/fixy/os/CpuPinned.h")
+DOOR_ROOT_NAMESPACE = "fixy"
 
 
 class Unreadable(Exception):
@@ -206,6 +217,66 @@ def issued(tree: tsast.Tree, names: frozenset[str]) -> tuple[set[str], list[str]
     return found, problems
 
 
+def door_issues(root: Path, names: frozenset[str]) -> dict[str, set[str]]:
+    """Return the system calls that each function of the door headers issues, through the calls of its body.
+
+    A function issues what its body names and what each function of the
+    door headers that its body calls issues.  The loop repeats until no set
+    grows.
+
+    Complexity: O(F * I) for F functions and I identifiers of the door
+    headers, times the depth of the call chain, which is small.
+
+    Args:
+        root: The scan root
+        names: The catalog names
+
+    Returns:
+        For each unqualified function name with at least one system call,
+        the system call names
+
+    Raises:
+        Unreadable: When a door header is missing or does not parse
+    """
+    direct: dict[str, set[str]] = {}
+    callees: dict[str, set[str]] = {}
+    for rel in DOOR_HEADERS:
+        tree = parse_one(root / rel)
+        for function in tree.find("function_definition"):
+            name = function_name(function)
+            body = function.child_by_field("body")
+            if name is None or body is None:
+                continue
+            short = name.split("::")[-1]
+            problems: list[str] = []
+            direct.setdefault(short, set()).update(root_issued(body, names, problems, lambda node: node.line))
+            callees.setdefault(short, set()).update(tsast.spelled(node) for node in body.descendants("identifier"))
+    closure = {name: set(calls) for name, calls in direct.items()}
+    grew = True
+    while grew:
+        grew = False
+        for name, called in callees.items():
+            for callee in called & closure.keys():
+                if not closure[callee] <= closure[name]:
+                    closure[name] |= closure[callee]
+                    grew = True
+    return {name: calls for name, calls in closure.items() if calls}
+
+
+def door_calls(tree: tsast.Tree, doors: dict[str, set[str]]) -> set[str]:
+    """Return the system calls that the header reaches through a name qualified from fixy that names a door function.
+
+    Complexity: linear in the number of identifiers of the header.
+    """
+    found: set[str] = set()
+    for node in tree.root.descendants("identifier"):
+        scopes = scopes_of(node)
+        spelled = tsast.spelled(node)
+        if scopes and scopes[0] == DOOR_ROOT_NAMESPACE and spelled in doors:
+            found |= doors[spelled]
+    return found
+
+
 def granted(tree: tsast.Tree, names: frozenset[str]) -> set[str]:
     """Return each catalog name in the type of the tuple alias."""
     for node in tree.find("alias_declaration"):
@@ -225,10 +296,12 @@ def check(root: Path) -> int:
     try:
         names = catalog_names(parse_one(root / CATALOG))
         header = parse_one(root / HEADER)
+        doors = door_issues(root, names)
     except Unreadable as exc:
         print(f"check-syscall-grant-coverage: {exc}", file=sys.stderr)
         return 2
     calls, problems = issued(header, names)
+    calls |= door_calls(header, doors)
     grants = granted(header, names)
     if not grants or not calls:
         print(f"check-syscall-grant-coverage: {HEADER} has no {'grant' if not grants else 'call'} the guard can "
@@ -295,11 +368,27 @@ def self_test() -> int:
                 f"               per<sc::SyscallId::mlock2>{grants}>;\n"
                 "}\n")
 
+    # The door headers: a door that pins through a helper, and a function
+    # that issues nothing.
+    door_sched = ("#pragma once\nnamespace fixy::sched {\n"
+                  "inline int open_door(int cpu) noexcept {\n"
+                  "    (void)::sched_getaffinity(0, 0, nullptr);\n"
+                  "    return ::fixy::detail::pin_door(cpu);\n"
+                  "}\n"
+                  "inline int quiet(int cpu) noexcept { return cpu; }\n"
+                  "}\n")
+    door_pinned = ("#pragma once\nnamespace fixy::detail {\n"
+                   "inline int pin_door(int cpu) noexcept { return ::sched_setaffinity(0, cpu, nullptr); }\n"
+                   "}\n")
+
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         (root / CATALOG).parent.mkdir(parents=True)
         (root / CATALOG).write_text(catalog, encoding="utf-8")
         (root / HEADER).parent.mkdir(parents=True)
+        (root / DOOR_HEADERS[0]).parent.mkdir(parents=True, exist_ok=True)
+        (root / DOOR_HEADERS[0]).write_text(door_sched, encoding="utf-8")
+        (root / DOOR_HEADERS[1]).write_text(door_pinned, encoding="utf-8")
 
         def run(text: str, cwd: Path | None = None) -> tuple[int, str]:
             """Plant a header, run the check from one working directory, and keep its report."""
@@ -344,6 +433,25 @@ def self_test() -> int:
                run(header("int close = 0; (void)close;"))[0] == 1)
         code, report = run(header(grants=",\n               per<SyscallId::ptrace>"))
         expect("caught: a grant with no call", code == 1 and "granted but never issued: ptrace" in report)
+        door_header = header().replace("(void)::sched_setaffinity(0, 0, nullptr);",
+                                       "(void)::fixy::sched::open_door(1);")
+        door_grants = ",\n               per<SyscallId::sched_getaffinity>"
+        expect("a call of a door stands for the system calls of its body and of its helpers",
+               run(door_header.replace("per<sc::SyscallId::mlock2>", "per<sc::SyscallId::mlock2>" + door_grants))[0]
+               == 0, True)
+        code, report = run(door_header)
+        expect("caught: a door call whose read is not granted",
+               code == 1 and "issued but not granted: sched_getaffinity" in report)
+        code, report = run(header().replace("(void)::sched_setaffinity(0, 0, nullptr);",
+                                            "(void)::fixy::sched::quiet(1);"))
+        expect("caught: a door function that issues nothing leaves the grant with no call",
+               code == 1 and "granted but never issued: sched_setaffinity" in report)
+        code, report = run(header().replace("(void)::sched_setaffinity(0, 0, nullptr);", "(void)open_door(1);"))
+        expect("not counted: a door name that is not qualified from fixy",
+               code == 1 and "granted but never issued: sched_setaffinity" in report)
+        (root / DOOR_HEADERS[1]).unlink()
+        expect("a missing door header exits 2", run(header())[0] == 2)
+        (root / DOOR_HEADERS[1]).write_text(door_pinned, encoding="utf-8")
         code, report = run(header(helper="SYS_mlock"))
         expect("caught: a helper that issues another system call", code == 1 and "wrong helper" in report)
         code, report = run(header().replace(TUPLE, "renamed_atoms"))
@@ -375,7 +483,8 @@ def main(argv: list[str]) -> int:
         if argv == ["--list"]:
             names = catalog_names(parse_one(tsast.REPO_ROOT / CATALOG))
             tree = parse_one(tsast.REPO_ROOT / HEADER)
-            print("issued:  " + " ".join(sorted(issued(tree, names)[0])))
+            reached = issued(tree, names)[0] | door_calls(tree, door_issues(tsast.REPO_ROOT, names))
+            print("issued:  " + " ".join(sorted(reached)))
             print("granted: " + " ".join(sorted(granted(tree, names))))
             return 0
         return check(tsast.REPO_ROOT)

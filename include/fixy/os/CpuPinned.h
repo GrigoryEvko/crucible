@@ -28,8 +28,11 @@
 // sched_setaffinity call, a call from another thread that names this
 // thread, and a taskset from outside the process move the thread with no
 // record, and a proof then stays in force for a mask the thread no
-// longer has.  The syscall-capability guard keeps raw calls out of the
-// tree, so the first case needs an allowlist line.
+// longer has.  utils/scripts/check-syscall-capability.py refuses the first
+// two in include/, src/ and vessel/: a sched_setaffinity or a
+// pthread_setaffinity_np outside detail::set_calling_thread_affinity is a
+// violation that no marker and no allowlist line admits.  Nothing refuses
+// the third.
 //
 // Posture is a parameter of the mint rather than a fact the syscall
 // reports, because the syscall reports only success.  Asking for
@@ -126,13 +129,15 @@ CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_pin_event 
 // pin event.  Returns the event, or the errno of a failed call.  A failed
 // call leaves the affinity as it was, so the event in force stays.
 //
-// Each change of affinity that fixy makes comes through this function,
-// so a proof of an earlier pin on this thread stops being in force.  The
-// function mints nothing.  The proof is built by mint_affinity, on its
-// success, and nowhere else.
+// This function is the one door to the affinity system call.  Each change
+// of affinity comes through it, so a proof of an earlier pin on this
+// thread stops being in force.  The function mints nothing.  The proof is
+// built by mint_affinity, on its success, and nowhere else.  The gated
+// callers are mint_affinity, apply_affinity_to_cpu and
+// PriorAffinity::restore in fixy/os/Sched.h.
 [[nodiscard]] inline std::expected<std::uint64_t, int> set_calling_thread_affinity(::cpu_set_t const& set) noexcept {
     if (::sched_setaffinity(0, sizeof(set), &set) != 0)
-        [[unlikely]] {  // SYSCALL-CAP-OK: detail helper for mint_affinity and apply_affinity_to_cpu ctx-gates (CtxFitsAffinityMint, CtxFitsRuntimeAffinity)
+        [[unlikely]] {  // SYSCALL-CAP-OK: the affinity door, reached through the ctx-gates CtxFitsAffinityMint and CtxFitsRuntimeAffinity
         return std::unexpected{errno};
     }
     const std::uint64_t event = pin_event_count.fetch_add(1, std::memory_order_acq_rel) + 1;

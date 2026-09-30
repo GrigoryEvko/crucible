@@ -22,6 +22,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <expected>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -283,6 +284,67 @@ template <int Nice, eff::IsExecCtx Ctx>
 
 using ::fixy::mint_thread_name;
 
+class PriorAffinity;
+
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] auto apply_affinity_to_cpu(Ctx const&, int cpu) noexcept -> std::expected<PriorAffinity, int>;
+
+// The affinity mask that one pin of apply_affinity_to_cpu replaced, and the
+// authority to put it back.  Only that door builds one, from the mask that
+// it read before its pin, so the authority to restore is the authority of
+// the pin.  restore() goes through the recording door of fixy/os/CpuPinned.h,
+// so a proof of the pin stops being in force.
+//
+// The mask belongs to the thread that pinned.  restore() on another thread
+// changes nothing and returns EPERM, because the recording door sets the
+// mask of the calling thread only.  A drop keeps the pin.  A move takes the
+// mask from the source, so one pin is restored at most one time.
+class [[nodiscard]] PriorAffinity final {
+public:
+    PriorAffinity(const PriorAffinity&) = delete("a copy would restore one prior mask two times");
+    PriorAffinity& operator=(const PriorAffinity&) = delete("a copy would restore one prior mask two times");
+    PriorAffinity(PriorAffinity&& other) noexcept
+        : mask_{other.mask_}, owner_{other.owner_}, is_held_{std::exchange(other.is_held_, false)} {}
+    PriorAffinity& operator=(PriorAffinity&& other) noexcept {
+        mask_ = other.mask_;
+        owner_ = other.owner_;
+        is_held_ = std::exchange(other.is_held_, false);
+        return *this;
+    }
+    ~PriorAffinity() = default;
+
+    // False for a call that asked for no pin, and after a move or a restore.
+    [[nodiscard]] bool is_held() const noexcept { return is_held_; }
+
+    [[nodiscard]] std::expected<void, int> restore() && noexcept {
+        if (!is_held_) return {};
+        if (owner_ != std::this_thread::get_id()) [[unlikely]] {
+            return std::unexpected(EPERM);
+        }
+        is_held_ = false;
+        const auto pin_event = sf::detail::set_calling_thread_affinity(mask_);
+        if (!pin_event) [[unlikely]] {
+            return std::unexpected(pin_event.error());
+        }
+        return {};
+    }
+
+private:
+    // Holds no mask: the call asked for no pin.
+    PriorAffinity() noexcept = default;
+    explicit PriorAffinity(::cpu_set_t const& mask) noexcept
+        : mask_{mask}, owner_{std::this_thread::get_id()}, is_held_{true} {}
+
+    template <eff::IsExecCtx FriendCtx>
+        requires CtxFitsRuntimeAffinity<FriendCtx>
+    friend auto apply_affinity_to_cpu(FriendCtx const&, int cpu) noexcept -> std::expected<PriorAffinity, int>;
+
+    ::cpu_set_t mask_{};
+    std::thread::id owner_{};
+    bool is_held_ = false;
+};
+
 // The CPU index arrives at runtime, so no compile-time pinning proof can be
 // produced. This is not a mint for that reason. Its gate is the one the
 // three mints above read, CtxFitsRuntimeAffinity in fixy/os/CpuPinned.h.
@@ -290,13 +352,19 @@ using ::fixy::mint_thread_name;
 // A negative index asks for no pin, and the call changes nothing.  A pin
 // goes through the same helper as mint_affinity, so it records a new pin
 // event, and a proof of an earlier pin on this thread stops being in
-// force.
+// force.  The result holds the mask of the thread before the pin.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
-[[nodiscard]] std::expected<void, int> apply_affinity_to_cpu(Ctx const&, int cpu) noexcept {
-    if (cpu < 0) return {};
+[[nodiscard]] auto apply_affinity_to_cpu(Ctx const&, int cpu) noexcept -> std::expected<PriorAffinity, int> {
+    if (cpu < 0) return PriorAffinity{};
     if (static_cast<unsigned>(cpu) >= static_cast<unsigned>(CPU_SETSIZE)) [[unlikely]] {
         return std::unexpected(EINVAL);
+    }
+    cpu_set_t prior;
+    CPU_ZERO(&prior);
+    if (::sched_getaffinity(0, sizeof(prior), &prior) != 0)
+        [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_cpu body, CtxFitsRuntimeAffinity ctx-gate
+        return std::unexpected(errno);
     }
     cpu_set_t set;
     CPU_ZERO(&set);
@@ -305,7 +373,7 @@ template <eff::IsExecCtx Ctx>
     if (!pin_event) [[unlikely]] {
         return std::unexpected(pin_event.error());
     }
-    return {};
+    return PriorAffinity{prior};
 }
 
 }  // namespace fixy::sched
@@ -365,6 +433,16 @@ static_assert(!CtxFitsPriorityMint<FgWitness, 5>,
               "the foreground hot path owns neither Bg nor Init, so it must not change a nice value.");
 static_assert(::fixy::CtxFitsAffinityMint<BgWitness, PinningPosture::PinnedExplicit>);
 static_assert(!::fixy::CtxFitsAffinityMint<FgWitness, PinningPosture::PinnedExplicit>);
+
+// A prior mask comes only from apply_affinity_to_cpu, so no public
+// constructor builds one, and no byte copy builds one either.
+static_assert(!std::is_default_constructible_v<PriorAffinity> && !std::is_copy_constructible_v<PriorAffinity>
+                  && std::is_nothrow_move_constructible_v<PriorAffinity>,
+              "a prior affinity mask comes only from apply_affinity_to_cpu, and one mask is restored at most once");
+static_assert(!std::is_trivially_copyable_v<PriorAffinity> && !std::is_implicit_lifetime_v<PriorAffinity>,
+              "std::bit_cast and std::start_lifetime_as must not build a prior affinity mask");
+static_assert(std::is_same_v<decltype(apply_affinity_to_cpu(std::declval<BgWitness const&>(), 0)),
+                             std::expected<PriorAffinity, int>>);
 
 static_assert(CtxFitsRuntimeAffinity<BgWitness>);
 static_assert(CtxFitsRuntimeAffinity<InitWitness>);

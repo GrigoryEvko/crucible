@@ -39,6 +39,15 @@ THE SITES
     a literal are not sites.  A call that spans lines is one site, keyed on
     the line of its name.
 
+THE DOORS
+    A syscall of DOOR_ONLY has one door: a function of one file.  A call of
+    that syscall outside its door is a violation that no marker and no
+    allowlist entry admits.  sched_setaffinity is one of them: the door in
+    include/fixy/os/CpuPinned.h records a pin event, and a pin proof stays
+    in force across a pin that goes around the door.  pthread_setaffinity_np
+    changes the same mask, and its door is the same function, which does not
+    call it, so each call of it is a violation.
+
 MACRO BODIES
     A macro body is parsed on its own (tsast.macro_bodies), with every
     fragment joined, and the guard reads the same calls in its tree, so a
@@ -86,7 +95,7 @@ SYSCALLS = frozenset("""
     dup2 dup3 fcntl flock poll select pselect futex bpf getrandom getrlimit setrlimit chmod chown access faccessat
     accept4 socketpair copy_file_range sendfile splice renameat renameat2 unlinkat linkat mkdirat fchmod fchown
     ftruncate fallocate statx memfd_create mbind set_mempolicy get_mempolicy membarrier timerfd_create
-    sched_setscheduler sched_getscheduler setpriority getpriority getpid gettid
+    sched_setscheduler sched_getscheduler setpriority getpriority getpid gettid pthread_setaffinity_np
 """.split())
 # The names that no C++ identifier in this tree shares.  A syscall with an
 # ambiguous name (close, read, send, socket and the like) must be spelled
@@ -100,9 +109,14 @@ KERNEL_ONLY = frozenset("""
     bpf getrandom getrlimit setrlimit chmod chown faccessat
     accept4 socketpair copy_file_range sendfile splice renameat renameat2 unlinkat linkat mkdirat fchmod fchown
     ftruncate fallocate statx memfd_create mbind set_mempolicy get_mempolicy membarrier timerfd_create
-    sched_setscheduler sched_getscheduler setpriority getpriority getpid gettid
+    sched_setscheduler sched_getscheduler setpriority getpriority getpid gettid pthread_setaffinity_np
 """.split())
 assert KERNEL_ONLY <= SYSCALLS, "a kernel-only name is missing from SYSCALLS"
+# The door of each syscall that only one function may call: the file and
+# the namespaces and name of the function.
+AFFINITY_DOOR = ("include/fixy/os/CpuPinned.h", ("fixy", "detail", "set_calling_thread_affinity"))
+DOOR_ONLY = {"sched_setaffinity": AFFINITY_DOOR, "pthread_setaffinity_np": AFFINITY_DOOR}
+assert set(DOOR_ONLY) <= KERNEL_ONLY, "a door-only name is missing from KERNEL_ONLY"
 
 ROOTS = ("include", "src", "vessel")
 EXCLUDED = frozenset({"test", "bench", "examples", "third_party", "external", "vendor"})
@@ -290,18 +304,35 @@ class Calls:
         self.holders.setdefault(row, set()).add(holder)
 
 
+@dataclass(frozen=True)
+class DoorBreach:
+    """One call of a door-only syscall outside its door."""
+
+    path: str
+    line: int
+    name: str
+
+
 @dataclass
 class Scan:
     """What one scan finds.
 
     words maps each file that holds an unmarked site to file_words() of it,
-    for the prose check.
+    for the prose check.  breaches holds each door-only call outside its
+    door, marked or not.
     """
 
     sites: list[Site]
     failures: list[str]
     dead: list[Marker]
     words: dict[str, frozenset[str]]
+    breaches: list[DoorBreach] = field(default_factory=list)
+
+
+def breached(rel: str, names: set[str], holder: tuple[str, ...]) -> list[str]:
+    """Return each door-only syscall among names that a call in a file and a function makes outside its door."""
+    return sorted(name for name in names if name in DOOR_ONLY
+                  and not (rel == DOOR_ONLY[name][0] and ends_with(holder, DOOR_ONLY[name][1])))
 
 
 def scan(root: Path) -> Scan:
@@ -334,8 +365,10 @@ def scan(root: Path) -> Scan:
             row = callee.end[0] if callee is not None else call.start[0]
             names = (syscall_numbers(call) or {name}) if name == "syscall" else {name}
             calls[rel].add(row, names, statement_rows(call), holder_of(call))
+            found.breaches.extend(DoorBreach(rel, row + 1, door) for door in breached(rel, names, holder_of(call)))
     for body in tsast.macro_bodies(trees):
-        record = calls[Path(body.define.tree.path).relative_to(root).as_posix()]
+        rel = Path(body.define.tree.path).relative_to(root).as_posix()
+        record = calls[rel]
         span = define_rows(body)
         holder = (body.name,) if body.name else ()
         if body.is_parsed:
@@ -346,10 +379,13 @@ def scan(root: Path) -> Scan:
                 callee = call.child_by_field("function")
                 anchor = callee.child_by_field("name") or callee
                 names = (syscall_numbers(call) or {name}) if name == "syscall" else {name}
-                record.add(body.origin(anchor)[0], names, span, holder)
+                row = body.origin(anchor)[0]
+                record.add(row, names, span, holder)
+                found.breaches.extend(DoorBreach(rel, row + 1, door) for door in breached(rel, names, holder))
         else:
             for row, names in token_calls(tsast.pp_tokens(body.text, body.first_row)):
                 record.add(row, names, span, holder)
+                found.breaches.extend(DoorBreach(rel, row + 1, door) for door in breached(rel, names, holder))
     for tree in trees:
         rel = Path(tree.path).relative_to(root).as_posix()
         record = calls[rel]
@@ -474,9 +510,20 @@ def check(root: Path, emit: bool = False) -> int:
         return 0
     for failure in found.failures:
         print(f"SYSCALL-CAP parse failure: {failure}", file=sys.stderr)
+    for breach in found.breaches:
+        door_path, door_function = DOOR_ONLY[breach.name]
+        print(f"SYSCALL-CAP door: {breach.path}:{breach.line} — a call of {breach.name} outside its door "
+              f"{'::'.join(door_function)} in {door_path}.  No marker and no allowlist entry admits it.  Call the "
+              f"door, or a gated function that calls it, such as fixy::sched::apply_affinity_to_cpu.",
+              file=sys.stderr)
+    if found.breaches:
+        print(f"check-syscall-capability: {len(found.breaches)} call(s) of a door-only syscall outside the door.",
+              file=sys.stderr)
     for site in unlisted:
         print(f"SYSCALL-CAP violation: {site.path}:{site.line} — bare Linux syscall site missing effects::* "
               f"capability admission.  Allowlist key: {site.key}", file=sys.stderr)
+    if found.breaches and not unlisted and not found.failures:
+        return 1
     if unlisted or found.failures:
         print(f"check-syscall-capability: {len(unlisted)} site(s) with no marker and no entry.  Route the call "
               "through a §XXI mint, mark its statement with `// SYSCALL-CAP-OK: <reason>`, or add the printed key "
@@ -739,6 +786,50 @@ def self_test() -> int:
             with contextlib.redirect_stderr(io.StringIO()) as report:
                 code = check(root)
             expect(f"prose: {label}", code == want and needle in report.getvalue(), want != 0)
+
+    door_file, door_copy = AFFINITY_DOOR[0], "src/planted/Pin.cpp"
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        (root / door_file).parent.mkdir(parents=True)
+        (root / door_copy).parent.mkdir(parents=True)
+        (root / "utils" / "scripts").mkdir(parents=True)
+        (root / door_file).write_text(
+            "namespace fixy::detail {\n"                                                              # 1
+            "inline int set_calling_thread_affinity(int n) noexcept {\n"                              # 2
+            "    return ::sched_setaffinity(0, n, nullptr);  // SYSCALL-CAP-OK: the door\n"           # 3
+            "}\n"                                                                                     # 4
+            "inline int beside_the_door(int n) noexcept {\n"                                          # 5
+            "    return ::sched_setaffinity(0, n, nullptr);  // SYSCALL-CAP-OK: beside the door\n"    # 6
+            "}\n"                                                                                     # 7
+            "}\n", encoding="utf-8")
+        (root / door_copy).write_text(
+            "namespace fixy::detail {\n"                                                              # 1
+            "inline int set_calling_thread_affinity(int n) noexcept {\n"                              # 2
+            "    return ::sched_setaffinity(0, n, nullptr);  // SYSCALL-CAP-OK: the door name\n"      # 3
+            "}\n"                                                                                     # 4
+            "}\n"                                                                                     # 5
+            "inline long raw(int n) noexcept { return ::syscall(SYS_sched_setaffinity, 0, n); }\n"    # 6
+            "inline int other(unsigned long t) noexcept { return pthread_setaffinity_np(t, 0, 0); }\n"  # 7
+            "#define PIN_IN_MACRO(n) ::sched_setaffinity(0, n, nullptr)  // SYSCALL-CAP-OK: fixture\n"  # 8
+            "inline int listed(int n) noexcept { return ::sched_setaffinity(0, n, nullptr); }\n",     # 9
+            encoding="utf-8")
+        (root / ALLOWLIST).write_text(
+            f"# fixture\n{door_copy}:inline int listed(int n) noexcept {{ return ::sched_setaffinity(0, n, nullptr); }}"
+            "  — effects::Init via listed (sched_setaffinity, fixture)\n", encoding="utf-8")
+        breaches = {(breach.path, breach.line, breach.name) for breach in scan(root).breaches}
+        expect("door: the door calls its syscall", (door_file, 3, "sched_setaffinity") not in breaches, True)
+        for where, line, name, label in (
+                (door_file, 6, "sched_setaffinity", "a marked call beside the door, in the file of the door"),
+                (door_copy, 3, "sched_setaffinity", "a function of the door's name in another file"),
+                (door_copy, 6, "sched_setaffinity", "a raw syscall number"),
+                (door_copy, 7, "pthread_setaffinity_np", "the pthread call, which the door does not make"),
+                (door_copy, 8, "sched_setaffinity", "a marked call in a macro body"),
+                (door_copy, 9, "sched_setaffinity", "an allowlisted call")):
+            expect(f"door: caught: {label}", (where, line, name) in breaches)
+        with contextlib.redirect_stderr(io.StringIO()) as report:
+            code = check(root)
+        expect("door: the check fails on a call outside the door",
+               code == 1 and f"SYSCALL-CAP door: {door_copy}:9" in report.getvalue())
     if failures:
         print(f"check-syscall-capability --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

@@ -191,6 +191,10 @@ fixy::time::BoundedSleeper<1000> | fixy/os/Time.h | fixy::time::BoundedSleeper<1
 fixy::SchedClass<foundation::algebra::lattices::SchedulerPolicy::Fifo, int> | fixy/os/SchedClass.h | fixy::SchedClass<foundation::algebra::lattices::SchedulerPolicy::Fifo, int>{0} | no-match | closed
 fixy::sched::SchedPriority<5> | fixy/os/Sched.h | fixy::sched::SchedPriority<5>{} | no-match | closed
 fixy::sched::SchedProofDoor | fixy/os/Sched.h | fixy::sched::SchedProofDoor{} | deleted | closed
+# A prior affinity mask is the authority to undo one pin.  Its constructors
+# are private, and apply_affinity_to_cpu, which makes the pin, is the sole
+# friend.
+fixy::sched::PriorAffinity | fixy/os/Sched.h | fixy::sched::PriorAffinity{} | private | closed
 fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy/OwnedMmap.h | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}} | private | closed
 # OwnedFile fcloses what it holds, so a public FILE* constructor let
 # `OwnedFile{stdin}` close standard input.  The constructor is private.

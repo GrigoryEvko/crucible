@@ -156,14 +156,15 @@ public:
 
     // Returns false when the CPU is outside the process's allowed set. The
     // caller then measures nothing rather than measuring on a core the
-    // scheduler picked and reporting it as if the placement had held.
-    [[nodiscard]] bool start(int cpu) noexcept {
+    // scheduler picked and reporting it as if the placement had held.  The
+    // worker pins itself under the context of the probe.
+    [[nodiscard]] bool start(LedgerIoCtx const& ctx, int cpu) noexcept {
         if (thread_.joinable()) {
             return false;
         }
         pinned_ok_.store(false, std::memory_order_relaxed);
         pin_reported_.store(false, std::memory_order_relaxed);
-        thread_ = std::thread([this, cpu] { run_(cpu); });
+        thread_ = std::thread([this, ctx, cpu] { run_(ctx, cpu); });
         while (!pin_reported_.load(std::memory_order_acquire)) {
             CRUCIBLE_SPIN_PAUSE;
         }
@@ -200,8 +201,8 @@ public:
     }
 
 private:
-    void run_(int cpu) noexcept {
-        const bool pinned = pin_this_thread_to(cpu);
+    void run_(LedgerIoCtx const& ctx, int cpu) noexcept {
+        const bool pinned = pin_this_thread_to(ctx, cpu);
         pinned_ok_.store(pinned, std::memory_order_release);
         pin_reported_.store(true, std::memory_order_release);
         if (!pinned) {
@@ -518,7 +519,7 @@ struct SweepPass {
     }
 
     SliceWorker worker{};
-    if (!worker.start(helpers.front())) {
+    if (!worker.start(ctx, helpers.front())) {
         result.fault = LedgerError::NotApplicableOnThisHost;
         return result;
     }
@@ -579,8 +580,8 @@ struct SweepPass {
     bool remote_placed = false;
     {
         ProbeRegion* target = &*remote_region;
-        std::thread toucher{[target, remote_cpu, &remote_placed] {
-            if (!pin_this_thread_to(remote_cpu)) {
+        std::thread toucher{[target, ctx, remote_cpu, &remote_placed] {
+            if (!pin_this_thread_to(ctx, remote_cpu)) {
                 return;
             }
             (void)target->fault_in(1u);

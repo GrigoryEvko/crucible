@@ -50,6 +50,7 @@
 
 #include <crucible/ledger/Ledger.h>
 #include <fixy/OwnedMmap.h>
+#include <fixy/os/Sched.h>
 #include <foundation/Platform.h>
 
 #include <bench_harness.h>
@@ -565,17 +566,17 @@ private:
 // a probe treats as "cannot measure this" rather than measuring on
 // whatever core the scheduler feels like and reporting the number as if
 // the placement had been honoured.
-[[nodiscard]] inline bool pin_this_thread_to(int cpu) noexcept {
+//
+// The pin goes through the affinity door of fixy/os/Sched.h, which
+// records a new pin event, so an older pin proof of this thread stops
+// being in force.  The context of the probe is the authority of the pin.
+template <class Ctx>
+    requires ::fixy::sched::CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] bool pin_this_thread_to(Ctx const& ctx, int cpu) noexcept {
     if (cpu < 0) {
         return false;
     }
-    cpu_set_t set{};
-    CPU_ZERO(&set);
-    CPU_SET(static_cast<unsigned>(cpu), &set);
-    // The capability proof is the same one ProbeRegion::create carries:
-    // the only callers are probes reached from run_refresh under a
-    // CtxFitsLedgerStore context.
-    return ::sched_setaffinity(0, sizeof(set), &set) == 0;  // SYSCALL-CAP-OK: see the proof above
+    return ::fixy::sched::apply_affinity_to_cpu(ctx, cpu).has_value();
 }
 
 namespace probe_support_detail::self_test {
