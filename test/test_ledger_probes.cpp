@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <expected>
 #include <span>
 #include <vector>
 
@@ -508,6 +509,50 @@ void test_daemon_thread_starts_and_stops() {
 
 // ── The probes themselves ─────────────────────────────────────────────
 
+// The streaming shape is bound by DRAM only when its buffer is several
+// times the last-level cache that the measuring thread can fill.  So a
+// sized buffer is at least kMinStreamCacheMultiple times that cache, and
+// a cache that the scratch ceiling cannot outgrow is refused.
+void test_stream_buffer_outgrows_the_reachable_cache() {
+    using ledger::probes::kMaxStreamBytes;
+    using ledger::probes::kMinStreamBytes;
+    using ledger::probes::kMinStreamCacheMultiple;
+    using ledger::probes::stream_bytes_for;
+    constexpr std::size_t MiB = std::size_t{1} << 20;
+
+    constexpr std::array<std::size_t, 9> reaches{0,         MiB,       32 * MiB,  96 * MiB,       128 * MiB,
+                                                 129 * MiB, 504 * MiB, 768 * MiB, ~std::size_t{0}};
+    for (const std::size_t reach : reaches) {
+        const std::expected<std::size_t, LedgerError> sized = stream_bytes_for(reach);
+        if (sized.has_value()) {
+            assert(*sized >= kMinStreamBytes && *sized <= kMaxStreamBytes);
+            assert(*sized / kMinStreamCacheMultiple >= reach);
+        } else {
+            assert(sized.error() == LedgerError::NotApplicableOnThisHost);
+            assert(reach > kMaxStreamBytes / kMinStreamCacheMultiple);
+        }
+    }
+
+    // The bench host: one L3 instance of 32 MiB, and a buffer eight times
+    // that.
+    assert(stream_bytes_for(32 * MiB) == 256 * MiB);
+
+    // Break it: a part whose one L3 is 504 MiB.  The ceiling would give a
+    // buffer of 512 MiB, which that cache holds almost whole, so the pass
+    // would measure the cache and not DRAM.
+    assert(!stream_bytes_for(504 * MiB).has_value());
+
+    // This host, through the same rule.
+    const std::size_t host_reach = ledger::probes::reachable_last_level_bytes(::fixy::concurrent::Topology::instance());
+    const std::expected<std::size_t, LedgerError> host_sized = ledger::probes::stream_bytes_for_host();
+    assert(host_sized.has_value() == stream_bytes_for(host_reach).has_value());
+    if (host_sized.has_value()) {
+        assert(*host_sized / kMinStreamCacheMultiple >= host_reach);
+    }
+
+    std::printf("  test_stream_buffer_outgrows_the_reachable_cache: PASSED\n");
+}
+
 void test_vector_width_probe_answers_or_declines() {
     // Cheap settings: the probe is exercised for its structure — the two
     // shapes, the memo, the guard that keeps a 512-bit kernel off a host
@@ -537,9 +582,12 @@ void test_vector_width_probe_answers_or_declines() {
 
     if (!preferred.has_value()) {
         // The only declines an uninstrumented host produces: no wide unit
-        // to compare against, or no memory for the streaming buffer.
+        // to compare against or a last-level cache too large for the
+        // streaming buffer, no memory for the buffer, or a streaming run
+        // whose pin failed.
         assert(preferred.error() == LedgerError::NotApplicableOnThisHost
-               || preferred.error() == LedgerError::StorePathUnavailable);
+               || preferred.error() == LedgerError::StorePathUnavailable
+               || preferred.error() == LedgerError::ConfidenceBelowBar);
         std::printf("  test_vector_width_probe_answers_or_declines: PASSED (declined)\n");
         return;
     }
@@ -618,8 +666,9 @@ int main() {
     test_backoff_grows_only_when_nothing_was_admitted();
     test_daemon_publishes_a_view_a_reader_can_use();
     test_daemon_thread_starts_and_stops();
+    test_stream_buffer_outgrows_the_reachable_cache();
     test_vector_width_probe_answers_or_declines();
     test_every_verdict_id_has_a_name_and_a_trait();
-    std::printf("test_ledger_probes: 13 groups, all passed\n");
+    std::printf("test_ledger_probes: 14 groups, all passed\n");
     return 0;
 }

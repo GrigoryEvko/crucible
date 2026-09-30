@@ -56,6 +56,7 @@
 #include <crucible/ledger/ProbeSupport.h>
 #include <fixy/concurrent/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
+#include <foundation/Saturate.h>
 
 #if defined(__x86_64__) || defined(__i386__)
 #include <immintrin.h>
@@ -82,18 +83,44 @@ inline constexpr std::size_t kComputeBytes = kComputeFloatCount * sizeof(float);
 // three orders of magnitude below the thing being timed.
 inline constexpr std::size_t kComputePassCount = 64;
 
-// The streaming buffer is sized against the measured last-level cache so
-// the pass is bandwidth-bound on any host, with a floor for a machine
-// whose cache probe failed and a ceiling so a part with a very large
-// last-level cache does not ask for a multi-gigabyte scratch region.
+// The streaming buffer is sized against the last-level cache that the
+// measuring thread can fill, so the pass is bound by DRAM.  The target
+// is kStreamCacheMultiple times that cache.  The floor serves a machine
+// whose cache probe failed.  The ceiling keeps a part with a very large
+// last-level cache from asking for a multi-gigabyte scratch region.  A
+// buffer that the ceiling holds below kMinStreamCacheMultiple times the
+// cache is not bound by DRAM, and the probe refuses the measurement.
 inline constexpr std::size_t kMinStreamBytes = 64ull * 1024ull * 1024ull;
 inline constexpr std::size_t kMaxStreamBytes = 512ull * 1024ull * 1024ull;
 inline constexpr std::size_t kStreamCacheMultiple = 8;
+inline constexpr std::size_t kMinStreamCacheMultiple = 4;
 
-[[nodiscard]] inline std::size_t stream_bytes_for_host() noexcept {
-    const std::size_t last_level = ::fixy::concurrent::Topology::instance().l3_total_bytes();
-    const std::size_t wanted = last_level * kStreamCacheMultiple;
-    return std::clamp(wanted, kMinStreamBytes, kMaxStreamBytes);
+// The last-level cache that the streaming pass can fill.  The bench
+// harness pins the measuring thread to one core, and a pinned thread
+// fills only the L3 instance of that core.  Topology reads the size of
+// one instance from sysfs, and it assumes that each instance has that
+// size.  The whole L3 of a machine is larger: 24 instances of 32 MiB on
+// the two-socket bench host.  A thread that is not pinned can fill more
+// than one instance, so measure() refuses a streaming run whose pin
+// failed.
+[[nodiscard]] inline std::size_t reachable_last_level_bytes(::fixy::concurrent::Topology const& topology) noexcept {
+    return topology.l3_total_bytes();
+}
+
+// The size of the streaming buffer for a reachable last-level cache, or
+// NotApplicableOnThisHost when the ceiling holds the buffer below
+// kMinStreamCacheMultiple times that cache.
+[[nodiscard]] constexpr std::expected<std::size_t, LedgerError> stream_bytes_for(std::size_t reachable_bytes) noexcept {
+    const std::size_t wanted = ::foundation::sat::mul_sat(reachable_bytes, kStreamCacheMultiple);
+    const std::size_t sized = std::clamp(wanted, kMinStreamBytes, kMaxStreamBytes);
+    if (sized / kMinStreamCacheMultiple < reachable_bytes) {
+        return std::unexpected(LedgerError::NotApplicableOnThisHost);
+    }
+    return sized;
+}
+
+[[nodiscard]] inline std::expected<std::size_t, LedgerError> stream_bytes_for_host() noexcept {
+    return stream_bytes_for(reachable_last_level_bytes(::fixy::concurrent::Topology::instance()));
 }
 
 // The compute shape's call is microseconds, so it takes the configured
@@ -276,7 +303,12 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
     // host's page-table coverage into the answer. Base pages are also the
     // worse case, so a tie measured here is a tie under the more
     // demanding of the two page policies.
-    const std::size_t stream_bytes = stream_bytes_for_host();
+    const std::expected<std::size_t, LedgerError> sized_stream = stream_bytes_for_host();
+    if (!sized_stream.has_value()) {
+        result.fault = sized_stream.error();
+        return result;
+    }
+    const std::size_t stream_bytes = *sized_stream;
     auto stream_region = ProbeRegion::create(ctx, stream_bytes, PagePolicy::BasePages);
     if (!stream_region.has_value()) {
         result.fault = stream_region.error();
@@ -337,6 +369,17 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
     const bench::Report memory_wide_second = stream_run("ledger.vector_width.stream.512.run2", true);
 
     bench::do_not_optimize(sink);
+
+    // The buffer is sized for the L3 instance of one core.  A run whose
+    // pin failed can move across instances and fill more than one, so its
+    // pass is not known to be bound by DRAM.
+    const bool is_every_stream_run_pinned =
+        memory_narrow_first.pinned_cpu.is_valid() && memory_wide_first.pinned_cpu.is_valid()
+        && memory_narrow_second.pinned_cpu.is_valid() && memory_wide_second.pinned_cpu.is_valid();
+    if (!is_every_stream_run_pinned) {
+        result.fault = LedgerError::ConfidenceBelowBar;
+        return result;
+    }
 
     const VariantComparison compute = compare_variants(narrow_first, wide_first);
     const VariantComparison memory = compare_variants(memory_narrow_first, memory_wide_first);
@@ -425,9 +468,14 @@ static_assert(kNarrowWidthBits < kWideWidthBits);
 // compute-bound shape is not compute-bound on that host.
 static_assert(kComputeBytes < ::fixy::concurrent::conservative_l1d_per_core);
 
-// The streaming buffer must be past any plausible last-level cache.
-static_assert(kMinStreamBytes > ::fixy::concurrent::conservative_l3_total);
+// No constant can be past each last-level cache, so the buffer is sized
+// against the measured cache at run time, and stream_bytes_for refuses a
+// cache that the ceiling cannot outgrow by kMinStreamCacheMultiple.
 static_assert(kMinStreamBytes <= kMaxStreamBytes);
+static_assert(kMinStreamCacheMultiple > 1 && kMinStreamCacheMultiple <= kStreamCacheMultiple);
+static_assert(stream_bytes_for(std::size_t{32} << 20) == std::size_t{256} << 20);
+static_assert(stream_bytes_for(kMaxStreamBytes / kMinStreamCacheMultiple) == kMaxStreamBytes);
+static_assert(!stream_bytes_for(kMaxStreamBytes / kMinStreamCacheMultiple + 1).has_value());
 
 }  // namespace vector_width_detail::self_test
 
