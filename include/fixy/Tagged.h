@@ -30,10 +30,9 @@
 // array `OpsPtr ops_[CAP]{}` of RegionCache.  Two more spell it
 // without exercising it, the NSDMIs `topic{}` and `spec_{}` of
 // GossipMulticast, which every construction overrides.  The remaining
-// members declared without an initializer (CallSiteTable::Entry,
-// KtlsOffloadRequest, the connection classes of cntp) are always
-// initialized by their aggregate or constructor.  The door stays for
-// the slot array.
+// members declared without an initializer (CallSiteTable::Entry, the
+// connection classes of cntp) are always initialized by their aggregate
+// or constructor.  The door stays for the slot array.
 //
 // mint_tagged is the named factory, but it is NOT true that one
 // `mint_` search finds every authorization point in the tree.  The

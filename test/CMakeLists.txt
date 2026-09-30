@@ -189,13 +189,10 @@ crucible_test(test_cntp_af_xdp)
 crucible_test(test_cntp_connection_pool)
 crucible_test(test_cntp_congestion_control)
 crucible_test(test_cntp_incast_control)
-crucible_test(test_cntp_ktls_offload)
 crucible_test(test_cntp_mtls_transport)
 crucible_test(test_cntp_path_swap)
 crucible_test(test_cntp_pacing)
-crucible_test(test_cntp_quic_transport)
 crucible_test(test_cntp_roce_config)
-crucible_test(test_cntp_wireguard)
 crucible_test(test_cntp_integrity)
 # test_cntp_fec and test_cntp_fountain instantiate the `#if __AVX2__` kernels of
 # cntp/Fec.h, which call std::start_lifetime_as<const __m256i>.  The writable-asm
@@ -937,8 +934,6 @@ crucible_test(test_nic_offload_audit)
 crucible_test(test_sriov)
 crucible_test(test_cntp_gpu_direct)
 crucible_test(test_cntp_sharp)
-crucible_test(test_cntp_doca)
-crucible_test(test_cntp_p4)
 crucible_test(test_cntp_tcam)
 crucible_test(test_stub_discipline)
 crucible_test(test_quarantine)
@@ -3468,68 +3463,6 @@ crucible_neg_compile_test(neg_sharp_dispatch_hot_ctx
   "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
-# cntp/_wip/Doca.h, the DPU offload scaffold.  Each fixture names the call
-# that fails and the reason.
-#   * neg_doca_zero_program_id: a program ID reserves zero.
-#   * neg_doca_zero_image_bytes: a program image is not empty.
-#   * neg_doca_zero_queue_depth: a DPU queue holds at least one entry.
-#   * neg_doca_raw_plan_deploy: a deploy takes a declared plan.
-#   * neg_doca_mint_bg_ctx, neg_doca_mint_hot_ctx: a plan is minted at
-#     initialization.
-#   * neg_doca_send_init_ctx, neg_doca_recv_hot_ctx: the channel is used
-#     from background work.
-crucible_neg_compile_test(neg_doca_zero_program_id
-  "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
-  "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_test(neg_doca_zero_image_bytes
-  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
-  "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_test(neg_doca_zero_queue_depth
-  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), short unsigned int>\\(0\\)."
-  "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_test(neg_doca_raw_plan_deploy
-  "could not convert .raw. from .const crucible::cntp::_wip::doca::DocaDeployPlan. to .crucible::cntp::_wip::doca::DeclaredDocaDeployPlan."
-  "aka .fixy::Tagged<crucible::cntp::_wip::doca::DocaDeployPlan, crucible::cntp::_wip::doca::wip_source::DocaOffload>.")
-crucible_neg_compile_test(neg_doca_mint_bg_ctx
-  "no matching function for call to .mint_doca_deploy_plan\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::doca::DocaOffloadSpec&\\)."
-  "required for the satisfaction of .CtxFitsDocaMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_test(neg_doca_mint_hot_ctx
-  "no matching function for call to .mint_doca_deploy_plan\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::doca::DocaOffloadSpec&\\)."
-  "required for the satisfaction of .CtxFitsDocaMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_test(neg_doca_send_init_ctx
-  "no matching function for call to .crucible::cntp::_wip::doca::DpuCommChannel::send_to_dpu\\(fixy::ColdInitCtx&, std::array<std::byte, 1>&\\)."
-  "required for the satisfaction of .CtxFitsDocaComm<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
-crucible_neg_compile_test(neg_doca_recv_hot_ctx
-  "no matching function for call to .crucible::cntp::_wip::doca::DpuCommChannel::recv_from_dpu\\(const fixy::HotFgCtx&, std::array<std::byte, 8>&\\)."
-  "required for the satisfaction of .CtxFitsDocaComm<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-
-# cntp/_wip/P4.h, the programmable switch scaffold.  Each fixture names the
-# call that fails and the reason.
-#   * neg_p4_zero_program_id: a program ID reserves zero.
-#   * neg_p4_zero_source_bytes: a program source is not empty.
-#   * neg_p4_zero_tcam_entries: a TCAM budget asks for an entry.
-#   * neg_p4_raw_program_deploy: a deploy takes a declared program.
-#   * neg_p4_mint_bg_ctx, neg_p4_mint_hot_ctx: a program is minted at
-#     initialization.
-crucible_neg_compile_test(neg_p4_zero_program_id
-  "in .constexpr. expansion of .fixy::mint_refined<IsNonZero\\(\\), long unsigned int>\\(0\\)."
-  "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_test(neg_p4_zero_source_bytes
-  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), long unsigned int>\\(0\\)."
-  "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_test(neg_p4_zero_tcam_entries
-  "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), unsigned int>\\(0\\)."
-  "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_test(neg_p4_raw_program_deploy
-  "could not convert .raw. from .const crucible::cntp::_wip::p4::P4ProgramSpec. to .crucible::cntp::_wip::p4::DeclaredP4Program."
-  "aka .fixy::Tagged<crucible::cntp::_wip::p4::P4ProgramSpec, crucible::cntp::_wip::p4::wip_source::P4Compiled>.")
-crucible_neg_compile_test(neg_p4_mint_bg_ctx
-  "no matching function for call to .mint_p4_program\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::p4::P4ProgramSpec&\\)."
-  "required for the satisfaction of .CtxFitsP4Mint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_test(neg_p4_mint_hot_ctx
-  "no matching function for call to .mint_p4_program\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::cog::NvSwitchTargetCaps&, const crucible::cntp::_wip::p4::P4ProgramSpec&\\)."
-  "required for the satisfaction of .CtxFitsP4Mint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-
 # cntp/Tcam.h, the hardware ACL and flow-rule substrate.
 #   * neg_tcam_zero_entry_count: a table capacity is at least one entry.
 #   * neg_tcam_static_table_zero: the in-process table holds a slot.
@@ -3572,58 +3505,6 @@ crucible_neg_compile_test(neg_tcam_mint_gpu_caps
   "required for the satisfaction of .TcamTargetCaps<Caps>. .with Caps = crucible::cog::GpuTargetCaps."
   "required for the satisfaction of .CtxFitsTcamMint<Ctx, Caps>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 
-# cntp/_wip/Wireguard.h: the WireGuard tunnel scaffold with no kernel backend.
-#   * neg_wireguard_zero_allowed_ips: a peer owns at least one allowed CIDR.
-#   * neg_wireguard_raw_public_key_peer: a peer takes a tagged public key.
-#   * neg_wireguard_key_default_slot: a public key has no empty default.
-#   * neg_wireguard_key_bad_text: a public key is 43 base64 letters and "=".
-#   * neg_wireguard_private_key_copy: a private key is a Secret, move-only.
-#   * neg_wireguard_config_zero_peers, neg_wireguard_config_too_many_peers
-#     and the two psk forms: a config holds one to sixteen peers.
-#   * neg_wireguard_tunnel_direct_ctor, neg_wireguard_handle_direct_ctor:
-#     the mint is the only door to a tunnel and to its handle.
-#   * neg_wireguard_mint_bg_ctx, neg_wireguard_mint_hot_ctx: the tunnel mint
-#     needs a context that owns Init.
-crucible_neg_compile_test(neg_wireguard_zero_allowed_ips
-  "no matching function for call to .declare_wireguard_peer\\("
-  "required for the satisfaction of .WireguardAllowedIpShape<N>. \\[with N = 0\\]")
-crucible_neg_compile_test(neg_wireguard_raw_public_key_peer
-  "no matching function for call to .declare_wireguard_peer\\(const crucible::cntp::_wip::WireguardKeyChars&, "
-  "cannot convert .raw_key. .* to type .crucible::cntp::_wip::DeclaredWireguardPublicKey.")
-crucible_neg_compile_test(neg_wireguard_key_default_slot
-  "no matching function for call to .fixy::Tagged<fixy::Refinement<crucible::cntp::_wip::IsWireguardKeyText\\(\\), std::array<char, 44>, false>, crucible::cntp::_wip::wip_source::Wireguard>::Tagged\\(<brace-enclosed initializer list>\\)."
-  "required for the satisfaction of .default_initializable<T>. \\[with T = fixy::Refinement<crucible::cntp::_wip::IsWireguardKeyText\\{\\}, std::array<char, 44>, false>\\]")
-crucible_neg_compile_test(neg_wireguard_key_bad_text
-  "in .constexpr. expansion of .fixy::mint_refined<crucible::cntp::_wip::IsWireguardKeyText\\(\\), std::array<char, 44> >\\(crucible::cntp::_wip::WireguardKeyChars\\(\\)\\)."
-  "__builtin_trap\\(\\). is not a constant expression")
-crucible_neg_compile_test(neg_wireguard_private_key_copy
-  "use of deleted function .fixy::Secret<T>::Secret\\(const fixy::Secret<T>&\\) \\[with T = crucible::cntp::_wip::WireguardSecretKeyBytes\\]."
-  "Secret<T> cannot be silently duplicated")
-crucible_neg_compile_test(neg_wireguard_config_zero_peers
-  "no matching function for call to .mint_wireguard_config\\("
-  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 0\\]")
-crucible_neg_compile_test(neg_wireguard_config_too_many_peers
-  "no matching function for call to .mint_wireguard_config\\("
-  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 17\\]")
-crucible_neg_compile_test(neg_wireguard_psk_config_zero_peers
-  "no matching function for call to .mint_wireguard_config_with_psk\\("
-  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 0\\]")
-crucible_neg_compile_test(neg_wireguard_psk_config_too_many_peers
-  "no matching function for call to .mint_wireguard_config_with_psk\\("
-  "required for the satisfaction of .WireguardPeerSetShape<PeerCount>. \\[with PeerCount = 17\\]")
-crucible_neg_compile_test(neg_wireguard_tunnel_direct_ctor
-  "converting to .crucible::cntp::_wip::WireguardTunnel<2>::MintKey. from initializer list would use explicit constructor"
-  "MintKey::MintKey\\(\\) \\[with unsigned char MaxPeers = 2\\]. is private within this context")
-crucible_neg_compile_test(neg_wireguard_handle_direct_ctor
-  ".constexpr crucible::cntp::_wip::WireguardTunnelHandle::WireguardTunnelHandle\\(crucible::cntp::NicInterfaceName, crucible::cntp::_wip::DeclaredWireguardPublicKey, uint32_t\\). is private within this context"
-  "Wireguard.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_test(neg_wireguard_mint_bg_ctx
-  "no matching function for call to .mint_wireguard_tunnel\\(fixy::BgDrainCtx&, "
-  "required for the satisfaction of .CtxFitsWireguardMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_test(neg_wireguard_mint_hot_ctx
-  "no matching function for call to .mint_wireguard_tunnel\\(const fixy::HotFgCtx&, "
-  "required for the satisfaction of .CtxFitsWireguardMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-
 # cntp/MtlsTransport.h mutual-TLS federation policy substrate.
 #   * neg_mtls_tls12_config: TLS 1.2 cannot mint a declared mTLS config.
 #   * neg_mtls_legacy_cipher_config: RSA/3DES cannot enter the cipher set.
@@ -3637,74 +3518,6 @@ crucible_neg_compile_test(neg_mtls_legacy_cipher_config
 crucible_neg_compile_test(neg_mtls_raw_config_connect
   "invalid initialization of reference of type .const crucible::cntp::DeclaredMtlsConfig&."
   ".aka .const fixy::Tagged<crucible::cntp::MtlsConfig, fixy::tags::source::Mtls>&.. from expression of type .crucible::cntp::MtlsConfig.")
-
-# cntp/_wip/QuicTransport.h: the QUIC and TLS 1.3 substrate with no backend.
-#   * neg_quic_raw_config_connect: a connect takes a tagged QUIC config.
-#   * neg_quic_raw_cc_config, neg_quic_config_raw_stream_limit: the config
-#     mint takes a tagged congestion-control choice and admitted limits.
-#   * neg_quic_connection_mint_bg_ctx: the connection mint needs a context
-#     that owns Init.
-#   * neg_quic_connection_direct: the connection mint is the only door.
-#   * neg_quic_open_stream_fg_ctx, neg_quic_datagram_init_ctx: stream and
-#     datagram work needs a context that owns Bg.
-#   * neg_quic_raw_migration_plan: a migration takes a tagged path-swap plan.
-#   * neg_quic_resumption_token_raw_length: from() is the only writer of a
-#     token length.
-crucible_neg_compile_test(neg_quic_raw_config_connect
-  "invalid initialization of reference of type .const crucible::cntp::_wip::DeclaredQuicConfig&. .aka .const fixy::Tagged<crucible::cntp::_wip::QuicConfig, crucible::cntp::_wip::wip_source::Quic>&.. from expression of type .crucible::cntp::_wip::QuicConfig."
-  "in passing argument 3 of .std::expected<void, crucible::cntp::_wip::QuicError> crucible::cntp::_wip::connect_quic")
-crucible_neg_compile_test(neg_quic_raw_cc_config
-  "could not convert .raw_cc. from .crucible::cntp::CcSelection. to .crucible::cntp::DeclaredCcChoice. .aka .fixy::Tagged<crucible::cntp::CcSelection, fixy::tags::source::CcAlgorithm>.."
-  "Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
-crucible_neg_compile_test(neg_quic_config_raw_stream_limit
-  "could not convert .0. from .uint16_t."
-  "to .crucible::cntp::_wip::PositiveQuicStreamLimit. .aka .fixy::Refinement<fixy::IsPositive.., short unsigned int, false>..")
-crucible_neg_compile_test(neg_quic_connection_mint_bg_ctx
-  "no matching function for call to .mint_quic_connection.fixy::BgDrainCtx&"
-  "required for the satisfaction of .CtxFitsQuicMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
-crucible_neg_compile_test(neg_quic_connection_direct
-  ".constexpr crucible::cntp::_wip::QuicConnection<MaxStreams>::QuicConnection.crucible::cntp::SocketFd, crucible::cntp::AuthenticatedMtlsPeer, const crucible::cntp::_wip::DeclaredQuicConfig&. .with long unsigned int MaxStreams = 4.* is private within this context"
-  "QuicTransport.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_test(neg_quic_open_stream_fg_ctx
-  "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::open_stream.fixy::HotFgCtx&.."
-  "required for the satisfaction of .CtxFitsQuicRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
-crucible_neg_compile_test(neg_quic_datagram_init_ctx
-  "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::send_datagram.fixy::ColdInitCtx&"
-  "required for the satisfaction of .CtxFitsQuicRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
-crucible_neg_compile_test(neg_quic_raw_migration_plan
-  "no matching function for call to .crucible::cntp::_wip::QuicConnection<>::plan_migration.fixy::BgDrainCtx&, crucible::cntp::PathSwapPlan&.."
-  "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
-crucible_neg_compile_test(neg_quic_resumption_token_raw_length
-  ".uint16_t crucible::cntp::_wip::QuicResumptionToken::size_. is private within this context"
-  "QuicTransport.h:[0-9]+:[0-9]+: note: declared private here")
-
-# cntp/_wip/KtlsOffload.h: the kernel TLS offload scaffold with no kernel
-# install.
-#   * neg_ktls_tls12_crypto: the crypto mint refuses TLS 1.2 secrets.
-#   * neg_ktls_chacha_crypto: the crypto mint refuses a ChaCha20 suite.
-#   * neg_ktls_raw_crypto_offload: an offload takes tagged crypto info.
-#   * neg_ktls_offload_bg_ctx: the offload mint needs a context that owns
-#     Init.
-#   * neg_ktls_socket_bg_ctx, neg_ktls_socket_hot_ctx: the socket mint needs
-#     a context that owns Init.
-crucible_neg_compile_test(neg_ktls_tls12_crypto
-  "no matching function for call to .mint_ktls_crypto_info<crucible::cntp::TlsVersion::V12>\\("
-  "required for the satisfaction of .SupportedKtlsVersion<Version>. \\[with Version = crucible::cntp::TlsVersion::V12\\]")
-crucible_neg_compile_test(neg_ktls_chacha_crypto
-  "no matching function for call to .mint_ktls_crypto_info<crucible::cntp::TlsVersion::V13, crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256>\\("
-  "required for the satisfaction of .KtlsAesGcmCipherSuite<Suite>. \\[with Suite = crucible::cntp::MtlsCipherSuite::TlsChacha20Poly1305Sha256\\]")
-crucible_neg_compile_test(neg_ktls_raw_crypto_offload
-  "no matching function for call to .mint_ktls_offload_for_socket\\(fixy::ColdInitCtx&, "
-  "cannot convert .std::move<crucible::cntp::_wip::TlsCryptoInfo&>\\(raw\\). .* to type .crucible::cntp::_wip::DeclaredTlsCryptoInfo.")
-crucible_neg_compile_test(neg_ktls_offload_bg_ctx
-  "no matching function for call to .mint_ktls_offload_for_socket\\(fixy::BgDrainCtx&, "
-  "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_test(neg_ktls_socket_bg_ctx
-  "no matching function for call to .mint_ktls_socket\\(fixy::BgDrainCtx&, "
-  "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
-crucible_neg_compile_test(neg_ktls_socket_hot_ctx
-  "no matching function for call to .mint_ktls_socket\\(const fixy::HotFgCtx&, "
-  "required for the satisfaction of .CtxFitsKtlsMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
 # cntp/Backpressure.h and cntp/BackpressureRuntime.h.  Each fixture names
 # the call that fails and the reason, so a fixture that fails for another

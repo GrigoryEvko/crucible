@@ -343,16 +343,11 @@ add_library(crucible STATIC
   src/cog/NicOffloadAudit.cpp
   src/cog/SrIov.cpp
   src/cntp/CongestionControl.cpp
-  src/cntp/_wip/Doca.cpp
   src/cntp/_wip/GpuDirect.cpp
   src/cntp/IncastControl.cpp
-  src/cntp/_wip/KtlsOffload.cpp
   src/cntp/MtlsTransport.cpp
-  src/cntp/_wip/P4.cpp
   src/cntp/Pacing.cpp
-  src/cntp/_wip/QuicTransport.cpp
   src/cntp/_wip/Sharp.cpp
-  src/cntp/_wip/Wireguard.cpp
   src/forge/recipes/Network.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SdcDetect.cpp

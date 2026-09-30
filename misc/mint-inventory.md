@@ -87,13 +87,12 @@ apply to the row.
 | `mint_af_xdp_socket` | `include/crucible/cntp/AfXdp.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_bbr_qdisc_config` | `include/crucible/cntp/Pacing.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_bpf_map_spec` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | HS14: 8 |
+| `mint_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_connection` | `include/crucible/cntp/ConnectionPool.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_connection_pool` | `include/crucible/cntp/ConnectionPoolRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_credit_flow_control` | `include/crucible/cntp/BackpressureRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_custom_cc_choice` | `include/crucible/cntp/CongestionControl.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_dctcp_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
-| `mint_doca_deploy_plan` | `include/crucible/cntp/_wip/Doca.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_fountain_decoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_fountain_encoder` | `include/crucible/cntp/Fountain.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_gossip_multicast_plan` | `include/crucible/cntp/GossipMulticast.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
@@ -101,16 +100,10 @@ apply to the row.
 | `mint_gpu_direct_storage_plan` | `include/crucible/cntp/_wip/GpuDirect.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_incast_config` | `include/crucible/cntp/IncastControl.h` | Y | Y | Y | · | token | · | HS14: 1 ⚠ |
 | `mint_incast_controller` | `include/crucible/cntp/IncastControlRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
-| `mint_ktls_crypto_info` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | token | · | HS14: 3 |
-| `mint_ktls_offload_for_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_ktls_socket` | `include/crucible/cntp/_wip/KtlsOffload.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_overlay_multicast` | `include/crucible/cntp/OverlayMulticast.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
-| `mint_p4_program` | `include/crucible/cntp/_wip/P4.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | HS14: 6 |
+| `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | HS14: 5 |
 | `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_quic_config` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | · | token | · | HS14: 7 |
-| `mint_quic_connection` | `include/crucible/cntp/_wip/QuicTransport.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_reed_solomon` | `include/crucible/cntp/Fec.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_resource_limit` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
 | `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
@@ -120,9 +113,6 @@ apply to the row.
 | `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_wireguard_config` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_wireguard_config_with_psk` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_wireguard_tunnel` | `include/crucible/cntp/_wip/Wireguard.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_xdp_program` | `include/crucible/cntp/dataplane/Xdp.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/crucible/cog/
@@ -356,5 +346,5 @@ apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 99 | 54 | 36 | 9 | 0 | 10 |
+| crucible (`include/crucible/`) | 89 | 48 | 32 | 9 | 0 | 10 |
 | substrate (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | 4 |
