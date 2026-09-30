@@ -295,13 +295,12 @@ inline constexpr bool refinement_weakens_v = false;
 template <auto P, auto Q, typename X, bool Sealed>
 inline constexpr bool refinement_weakens_v<::fixy::Refinement<P, X, Sealed>, ::fixy::Refinement<Q, X, Sealed>> =
     std::is_same_v<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>
-    || (::fixy::PredicateInvocableOn<P, X> && ::fixy::PredicateInvocableOn<Q, X>
-        && ::fixy::refined::implies_types<::fixy::refined::predicate_t<P>, ::fixy::refined::predicate_t<Q>>());
+    || (::fixy::PredicateInvocableOn<P, X> && ::fixy::PredicateInvocableOn<Q, X> && ::fixy::PredicateImplies<P, Q>);
 
 template <typename T>
 inline constexpr bool tagged_drops_v =
     tagged_parts<T>::is_tagged
-    && ::foundation::fail_closed::admits<^^::fixy::session::droppable_tags, typename tagged_parts<T>::tag, void>();
+    && ::foundation::fail_closed::admits(^^::fixy::session::droppable_tags, ^^typename tagged_parts<T>::tag, ^^void);
 
 template <typename T>
 using tagged_value_t = typename tagged_parts<T>::value_type;

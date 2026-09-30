@@ -694,7 +694,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                                 "compiler reduces, and never a value in a signature"},
     {^^::fixy::session::projection_failure, "the reasons that a projection refuses, as types that a diagnostic names"},
     {^^::fixy::refined, kMachinery},
-    {^^::fixy::refined::admitted_implications, kMachinery},
     {^^::fixy::refined_algebra, "refinement predicate combinators, which are grade vocabulary"},
     {^^::fixy::collision, kMachinery},
     {^^::fixy::corpus, kMachinery},

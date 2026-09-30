@@ -6,10 +6,10 @@
 
 namespace {
 
-static_assert(fixy::implies_v<fixy::in_range<5, 9>, fixy::bounded_above<20>>);
+static_assert(fixy::PredicateImplies<fixy::in_range<5, 9>, fixy::bounded_above<20>>);
 
 template <auto P, auto Q, class T>
-    requires fixy::implies_v<P, Q>
+    requires fixy::PredicateImplies<P, Q>
 [[nodiscard]] constexpr fixy::Refined<Q, T> weaken(fixy::Refined<P, T>&& refined) noexcept {
     return fixy::mint_refined_trusted<Q>(std::move(refined).into());
 }

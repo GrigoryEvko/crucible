@@ -861,22 +861,25 @@ template <typename T>
     requires IsRefined<T>
 inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
 
-// implies_v<P, Q> reads: every value satisfying P also satisfies Q.
-// P is therefore at least as strong as Q, and P's truth set is
-// contained in Q's. Reversing the reading inverts every axiom below.
+// PredicateImplies<P, Q> reads: every value satisfying P also satisfies
+// Q.  P is therefore at least as strong as Q, and P's truth set is
+// contained in Q's.  Reversing the reading inverts every axiom below.
 //
-// The relation is closed.  Its members are the variables declared in
-// the namespace admitted_implications and nothing else: an edge for
-// each pair of atomic predicates, and a rule for each parameterised
-// family.  There is no primary template to specialise, so a pair the
+// The relation is closed.  Its members are the variables and the
+// functions declared in the namespace admitted_implications and nothing
+// else: an edge for each pair of atomic predicates, and a rule for each
+// parameterised family.  There is no primary template to specialise.
+// Each reader of the relation is a concept or a function at namespace
+// scope that is not a template, and each rule is such a function too, so
+// no translation unit can specialise one to admit a pair.  A pair the
 // namespace does not admit stays refused wherever the check runs.
 // Declare every member before the first check against the relation,
 // which the self-test at the foot of this file performs.
 //
-// The relation is transitive. implies_types computes the closure of
-// the admitted steps at compile time. A conclusion that two admitted
-// steps reach then needs no member of its own. A path uses admitted steps
-// only: an edge or a family that the namespace does not declare does
+// The relation is transitive.  predicate_implies computes the closure of
+// the admitted steps at compile time.  A conclusion that two admitted
+// steps reach then needs no member of its own.  A path uses admitted
+// steps only: an edge or a rule that the namespace does not declare does
 // not exist for the closure either.
 //
 // Each step must be sound on every value type on which its two
@@ -898,13 +901,12 @@ inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
 // through the narrowing edge non_zero ⇒ non_null, and they differ on
 // every value type that is not a pointer.
 //
-// A family that brings a predicate to a different family names the
-// strongest predicate it reaches. A successor declaration, next_(P*)
-// -> S*, names that predicate, and holds_ still decides the step. A
-// family that only weakens the parameters of one predicate needs no
-// successor: the last step of a chain covers it. The closure reaches at
-// most closure_node_limit predicates from one premise, and a larger
-// search answers false.
+// A rule that brings a predicate to a different family names the
+// strongest predicate it reaches as its successor, and the verdict of the
+// rule on that step still decides it.  A rule that only weakens the
+// parameters of one predicate needs no successor: the last step of a
+// chain covers it.  The closure reaches at most closure_node_limit
+// predicates from one premise, and a larger search answers false.
 //
 // Reflexivity is deliberately absent. The subsort machinery already
 // supplies it from a same-type fall-through, and stating it twice
@@ -914,60 +916,113 @@ inline constexpr bool refined_is_sealed_v = std::remove_cvref_t<T>::is_sealed;
 
 namespace refined {
 
-// A parameterised family of implications.  Deriving rule_family<Self>
-// inside admitted_implications is the whole opt-in, and
-// Family::admits<P, Q>() decides each pair.  The families deduce
-// against the predicate struct templates through overload resolution on
-// a null pointer of each type, which is what keeps a family closed: an
-// overload set cannot be extended from outside its class.
-//
-// The base class is the opt-in, so a family cannot be declared and left
-// out.  With a separate marker variable beside each family, a family
-// written without its variable would be silently inert: it would
-// compile, read as admitted, and decide nothing.
-template <class Family, class P, class Q>
-concept RuleDecides = requires {
-    { Family::template admits<P, Q>() } -> std::same_as<bool>;
+// The verdict of one rule on one pair.  admits is true when the rule
+// admits premise ⇒ conclusion.  successor is the strongest predicate
+// that the rule reaches from the premise, or the null reflection when
+// the rule names none.  The closure stands on a successor only when the
+// rule also admits the step to it, so a successor can propose a
+// predicate but never admit one.
+struct rule_verdict {
+    bool admits = false;
+    std::meta::info successor{};
 };
 
-// True when T is a class with a base class.  Template argument
-// deduction converts a pointer to a derived class into a pointer to its
-// base.  A predicate that derives from BoundedAbove<9> then deduces
-// against a holds_ written for BoundedAbove<N>, and its own call
-// operator plays no part.
-template <class T>
-[[nodiscard]] consteval bool has_base_class() noexcept {
-    if constexpr (std::is_class_v<T>) {
-        return !std::meta::bases_of(^^T, std::meta::access_context::unchecked()).empty();
-    } else {
-        return false;
-    }
+// The type of a rule.  A rule is a function of this type in
+// admitted_implications.  It takes the reflections of the premise and of
+// the conclusion, each read through its aliases.  A null conclusion asks
+// for the successor alone.
+using rule_signature = rule_verdict(std::meta::info, std::meta::info);
+
+// True when type is a specialization of the class template that family
+// reflects.  A class that derives from a specialization is not one, and
+// neither is a class template of the same name in another namespace.
+[[nodiscard]] consteval bool is_specialization_of(std::meta::info type, std::meta::info family) {
+    return type != std::meta::info{} && std::meta::has_template_arguments(type)
+        && std::meta::template_of(type) == family;
 }
 
-// Each type is read once, and every family reads the stored answer.
-template <class T>
-inline constexpr bool has_base_class_v = has_base_class<T>();
+// The template argument at index of a specialization.
+[[nodiscard]] consteval std::meta::info argument_of(std::meta::info type, std::size_t index) {
+    return std::meta::template_arguments_of(type)[index];
+}
 
-// What every family shares.  A family states one holds_ overload whose
-// parameters are pointers to the predicate shapes it relates, and
-// leaves the rest here: a pair that deduces against that overload is
-// decided by its body, and a pair that does not is refused.  A pair
-// where either predicate has a base class is refused before the
-// overload is tried, because the deduction reads the base and not the
-// predicate.
-template <class Family>
-struct rule_family {
-    template <class P, class Q>
-    static consteval bool admits() noexcept {
-        if constexpr (has_base_class_v<P> || has_base_class_v<Q>) {
-            return false;
-        } else if constexpr (requires { Family::holds_(static_cast<P*>(nullptr), static_cast<Q*>(nullptr)); }) {
-            return Family::holds_(static_cast<P*>(nullptr), static_cast<Q*>(nullptr));
-        } else {
-            return false;
+// A std::size_t parameter of a predicate: an alignment, a length or a
+// size.
+[[nodiscard]] consteval std::size_t size_argument_of(std::meta::info type, std::size_t index) {
+    return std::meta::extract<std::size_t>(argument_of(type, index));
+}
+
+// The predicate type that a template argument of a combinator names,
+// stripped of const and read through its aliases, as predicate_t reads
+// it.
+[[nodiscard]] consteval std::meta::info predicate_type_of(std::meta::info argument) {
+    return std::meta::dealias(std::meta::remove_cv(std::meta::type_of(argument)));
+}
+
+// True when type is a class with a base class.  No rule takes such a
+// class as a premise or as a conclusion, so a predicate that derives from
+// BoundedAbove<9> borrows no place of its base in the relation, and its
+// own call operator decides nothing there.  Complexity: O(bases).
+[[nodiscard]] consteval bool has_base_class(std::meta::info type) {
+    return std::meta::is_class_type(type) && !std::meta::bases_of(type, std::meta::access_context::unchecked()).empty();
+}
+
+// The widest integer types that ExactInteger admits.  std::integral holds
+// for them in this dialect, so a bound of either type compares by value
+// like a bound of a standard type.
+__extension__ using widest_signed = __int128;
+__extension__ using widest_unsigned = unsigned __int128;
+
+// A bound of a predicate, read by value as its sign and its magnitude.
+// The magnitude of the most negative value fits, because it is one more
+// than the largest signed value.
+struct exact_bound {
+    bool is_exact_integer = false;
+    bool is_negative = false;
+    widest_unsigned magnitude = 0;
+};
+
+// The types that ExactInteger admits: std::integral without bool and the
+// character types.  The self-test below checks each against the concept.
+inline constexpr std::meta::info exact_integer_types[] = {
+    ^^signed char,   ^^short,          ^^int,          ^^long,          ^^long long,          ^^widest_signed,
+    ^^unsigned char, ^^unsigned short, ^^unsigned int, ^^unsigned long, ^^unsigned long long, ^^widest_unsigned};
+
+// Reads a bound of a predicate.  A bound whose type is not in
+// exact_integer_types reads as no exact integer.  Complexity: O(1).
+[[nodiscard]] consteval exact_bound read_bound(std::meta::info argument) {
+    const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(argument)));
+    exact_bound bound{};
+    // -Wshadow fires on the expansion-statement induction variable.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr std::meta::info candidate : exact_integer_types) {
+        if (type == std::meta::dealias(candidate)) {
+            using Integer = typename[:candidate:];
+            const Integer value = std::meta::extract<Integer>(argument);
+            const bool is_negative = std::cmp_less(value, 0);
+            const widest_unsigned as_unsigned = static_cast<widest_unsigned>(value);
+            bound = exact_bound{true, is_negative, is_negative ? widest_unsigned{0} - as_unsigned : as_unsigned};
         }
     }
-};
+#pragma GCC diagnostic pop
+    return bound;
+}
+
+// lower ≤ upper for two bounds of predicates.  The bounds compare by
+// value, as std::cmp_less_equal compares them, which is how each bounded
+// predicate compares a value with its bound.  An unsigned bound and a
+// negative bound then never meet through a conversion that changes a
+// sign: 9u ≤ -1 is false, as it is for the values.  A bound that is not
+// an exact integer defines its predicate on no value type, and every
+// step over it is refused.
+[[nodiscard]] consteval bool bound_at_most(std::meta::info lower, std::meta::info upper) {
+    const exact_bound left = read_bound(lower);
+    const exact_bound right = read_bound(upper);
+    if (!left.is_exact_integer || !right.is_exact_integer) return false;
+    if (left.is_negative != right.is_negative) return left.is_negative;
+    return left.is_negative ? left.magnitude >= right.magnitude : left.magnitude <= right.magnitude;
+}
 
 // An admitted step whose conclusion is defined on fewer value types
 // than its premise.  The header declares it in admitted_implications
@@ -976,31 +1031,13 @@ struct rule_family {
 template <class From, class To>
 struct narrowing_edge {};
 
-// A ≤ B for two template parameters of a predicate.  The function
-// compares two integers by value through std::cmp_less_equal, which is
-// how each bounded predicate compares a value with its bound.  An
-// unsigned bound and a negative bound then never meet through a
-// conversion that changes a sign: 9u ≤ -1 is false, as it is for the
-// values.  A bound that is not an exact integer defines its predicate on
-// no value type, and every step over it is refused.
-template <auto A, auto B>
-[[nodiscard]] consteval bool bound_less_equal() noexcept {
-    if constexpr (ExactInteger<decltype(A)> && ExactInteger<decltype(B)>) {
-        return std::cmp_less_equal(A, B);
-    } else {
-        return false;
-    }
-}
-
-// The relation over predicate types, closed under chains.  Declared
-// here because the conjunction family below reaches a conclusion
-// through what its conjuncts imply, and defined once the namespace is
-// complete.
-template <class PType, class QType>
-[[nodiscard]] consteval bool implies_types() noexcept;
+// The relation over predicate types, closed under chains.  Declared here
+// because the conjunction rule below reaches a conclusion through what
+// its conjuncts imply, and defined once the namespace is complete.
+[[nodiscard]] consteval bool predicate_implies(std::meta::info premise, std::meta::info conclusion);
 
 // The number of predicates the closure reaches from one premise before
-// it stops.  A chain of the families below reaches at most six.
+// it stops.  A chain of the rules below reaches at most six.
 inline constexpr std::size_t closure_node_limit = 64;
 
 namespace admitted_implications {
@@ -1036,84 +1073,68 @@ inline constexpr narrowing_edge<predicate_t<non_zero>, predicate_t<non_null>> no
 
 // Aligned<N> ⇒ Aligned<M> when N ≥ M and M divides N, so a
 // cache-line-aligned pointer is also word-aligned.
-struct aligned_weakens : rule_family<aligned_weakens> {
-    template <std::size_t N, std::size_t M>
-    static consteval bool holds_(Aligned<N>*, Aligned<M>*) noexcept {
-        return N >= M && M > 0 && (N % M == 0);
-    }
-};
+[[nodiscard]] consteval rule_verdict aligned_weakens(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^Aligned) || !is_specialization_of(conclusion, ^^Aligned)) return {};
+    const std::size_t strong = size_argument_of(premise, 0);
+    const std::size_t weak = size_argument_of(conclusion, 0);
+    return {.admits = strong >= weak && weak > 0 && strong % weak == 0};
+}
 
 // A smaller ceiling implies a larger one.
-struct bounded_above_weakens : rule_family<bounded_above_weakens> {
-    template <auto N, auto M>
-    static consteval bool holds_(BoundedAbove<N>*, BoundedAbove<M>*) noexcept {
-        return bound_less_equal<N, M>();
+[[nodiscard]] consteval rule_verdict bounded_above_weakens(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^BoundedAbove) || !is_specialization_of(conclusion, ^^BoundedAbove)) {
+        return {};
     }
-};
+    return {.admits = bound_at_most(argument_of(premise, 0), argument_of(conclusion, 0))};
+}
 
 // A tighter range implies a looser one.
-struct in_range_weakens : rule_family<in_range_weakens> {
-    template <auto L1, auto H1, auto L2, auto H2>
-    static consteval bool holds_(InRange<L1, H1>*, InRange<L2, H2>*) noexcept {
-        return bound_less_equal<L2, L1>() && bound_less_equal<H1, H2>();
-    }
-};
+[[nodiscard]] consteval rule_verdict in_range_weakens(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^InRange) || !is_specialization_of(conclusion, ^^InRange)) return {};
+    return {.admits = bound_at_most(argument_of(conclusion, 0), argument_of(premise, 0))
+                   && bound_at_most(argument_of(premise, 1), argument_of(conclusion, 1))};
+}
 
 // A range ceiling is an upper bound. The successor names the ceiling
 // itself, the strongest upper bound the range gives. A chain from a
 // range then reaches every looser ceiling through bounded_above_weakens.
-struct in_range_is_bounded_above : rule_family<in_range_is_bounded_above> {
-    template <auto L, auto H>
-    static consteval bool holds_(InRange<L, H>*, BoundedAbove<H>*) noexcept {
-        return true;
-    }
-    template <auto L, auto H>
-    static consteval auto next_(InRange<L, H>*) noexcept -> BoundedAbove<H>* {
-        return nullptr;
-    }
-};
+[[nodiscard]] consteval rule_verdict in_range_is_bounded_above(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^InRange)) return {};
+    const std::meta::info ceiling = std::meta::substitute(^^BoundedAbove, {argument_of(premise, 1)});
+    return {.admits = conclusion == ceiling, .successor = ceiling};
+}
 
 // A longer minimum implies a shorter one.
-struct length_ge_weakens : rule_family<length_ge_weakens> {
-    template <std::size_t N, std::size_t M>
-    static consteval bool holds_(LengthGe<N>*, LengthGe<M>*) noexcept {
-        return N >= M;
-    }
-};
+[[nodiscard]] consteval rule_verdict length_ge_weakens(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^LengthGe) || !is_specialization_of(conclusion, ^^LengthGe)) return {};
+    return {.admits = size_argument_of(premise, 0) >= size_argument_of(conclusion, 0)};
+}
 
 // A container's emptiness test equals a size of zero, so a minimum
 // length of one or more implies non-emptiness. The clause excluding
 // zero is load-bearing: a size is unsigned, so a minimum of zero is
 // vacuously true and an empty container satisfies it.
-struct length_ge_is_non_empty : rule_family<length_ge_is_non_empty> {
-    template <std::size_t N>
-    static consteval bool holds_(LengthGe<N>*, predicate_t<non_empty>*) noexcept {
-        return N >= 1;
-    }
-    template <std::size_t N>
-    static consteval auto next_(LengthGe<N>*) noexcept -> predicate_t<non_empty>* {
-        return nullptr;
-    }
-};
+[[nodiscard]] consteval rule_verdict length_ge_is_non_empty(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^LengthGe)) return {};
+    const std::meta::info non_empty_type = std::meta::dealias(^^predicate_t<non_empty>);
+    return {.admits = conclusion == non_empty_type && size_argument_of(premise, 0) >= 1, .successor = non_empty_type};
+}
 
 // non_zero is a union of two half-lines rather than one. A range whose
 // ceiling is minus one or less keeps zero out from below, and this
-// family admits it. A range whose floor is one or more keeps zero out
+// rule admits it. A range whose floor is one or more keeps zero out
 // from above, and the chain through bounded_below and positive admits
 // that one.
 //
 // A bound strictly between minus one and zero is conservatively
 // excluded, which under-asserts rather than risking a truncation.
-struct in_range_is_non_zero : rule_family<in_range_is_non_zero> {
-    template <auto L, auto H>
-    static consteval bool holds_(InRange<L, H>*, predicate_t<non_zero>*) noexcept {
-        return bound_less_equal<H, -1>();
-    }
-    template <auto L, auto H>
-    static consteval auto next_(InRange<L, H>*) noexcept -> predicate_t<non_zero>* {
-        return nullptr;
-    }
-};
+[[nodiscard]] consteval rule_verdict in_range_is_non_zero(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^InRange)) return {};
+    const std::meta::info non_zero_type = std::meta::dealias(^^predicate_t<non_zero>);
+    return {.admits =
+                conclusion == non_zero_type && bound_at_most(argument_of(premise, 1), std::meta::reflect_constant(-1)),
+            .successor = non_zero_type};
+}
 
 // A conjunction implies each of its conjuncts, and each disjunct
 // implies the disjunction.  Wiring both through the relation lets a
@@ -1123,19 +1144,22 @@ struct in_range_is_non_zero : rule_family<in_range_is_non_zero> {
 // parts already imply, rather than only through a literal match.  That
 // is what lets a composed predicate weaken to a predicate none of its
 // conjuncts spells.
-struct all_of_implies_conjunct : rule_family<all_of_implies_conjunct> {
-    template <auto... Preds, class Q>
-    static consteval bool holds_(AllOf<Preds...>*, Q*) noexcept {
-        return ((std::is_same_v<predicate_t<Preds>, Q> || implies_types<predicate_t<Preds>, Q>()) || ...);
+[[nodiscard]] consteval rule_verdict all_of_implies_conjunct(std::meta::info premise, std::meta::info conclusion) {
+    if (conclusion == std::meta::info{} || !is_specialization_of(premise, ^^refined_algebra::AllOf)) return {};
+    for (const std::meta::info argument : std::meta::template_arguments_of(premise)) {
+        const std::meta::info conjunct = predicate_type_of(argument);
+        if (conjunct == conclusion || predicate_implies(conjunct, conclusion)) return {.admits = true};
     }
-};
+    return {};
+}
 
-struct disjunct_implies_any_of : rule_family<disjunct_implies_any_of> {
-    template <class P, auto... Preds>
-    static consteval bool holds_(P*, AnyOf<Preds...>*) noexcept {
-        return (std::is_same_v<predicate_t<Preds>, P> || ...);
+[[nodiscard]] consteval rule_verdict disjunct_implies_any_of(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(conclusion, ^^refined_algebra::AnyOf)) return {};
+    for (const std::meta::info argument : std::meta::template_arguments_of(conclusion)) {
+        if (predicate_type_of(argument) == premise) return {.admits = true};
     }
-};
+    return {};
+}
 
 // The lower-bound axioms mirror the upper-bound ones but with the
 // inequality flipped: a tighter floor is a larger N, whereas a tighter
@@ -1145,68 +1169,55 @@ struct disjunct_implies_any_of : rule_family<disjunct_implies_any_of> {
 // still admits zero, so neither reaches non_negative or positive
 // respectively. A floor strictly between zero and one is
 // conservatively excluded too.
-struct bounded_below_weakens : rule_family<bounded_below_weakens> {
-    template <auto N, auto M>
-    static consteval bool holds_(BoundedBelow<N>*, BoundedBelow<M>*) noexcept {
-        return bound_less_equal<M, N>();
+[[nodiscard]] consteval rule_verdict bounded_below_weakens(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^BoundedBelow) || !is_specialization_of(conclusion, ^^BoundedBelow)) {
+        return {};
     }
-};
+    return {.admits = bound_at_most(argument_of(conclusion, 0), argument_of(premise, 0))};
+}
 
 // A range floor is a lower bound. The successor names the floor
 // itself. A chain from a range then reaches non_negative, positive and
 // non_zero through the floor.
-struct in_range_is_bounded_below : rule_family<in_range_is_bounded_below> {
-    template <auto L, auto H>
-    static consteval bool holds_(InRange<L, H>*, BoundedBelow<L>*) noexcept {
-        return true;
-    }
-    template <auto L, auto H>
-    static consteval auto next_(InRange<L, H>*) noexcept -> BoundedBelow<L>* {
-        return nullptr;
-    }
-};
+[[nodiscard]] consteval rule_verdict in_range_is_bounded_below(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^InRange)) return {};
+    const std::meta::info floor = std::meta::substitute(^^BoundedBelow, {argument_of(premise, 0)});
+    return {.admits = conclusion == floor, .successor = floor};
+}
 
-struct bounded_below_is_non_negative : rule_family<bounded_below_is_non_negative> {
-    template <auto N>
-    static consteval bool holds_(BoundedBelow<N>*, predicate_t<non_negative>*) noexcept {
-        return bound_less_equal<0, N>();
-    }
-    template <auto N>
-    static consteval auto next_(BoundedBelow<N>*) noexcept -> predicate_t<non_negative>* {
-        return nullptr;
-    }
-};
+[[nodiscard]] consteval rule_verdict bounded_below_is_non_negative(std::meta::info premise,
+                                                                   std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^BoundedBelow)) return {};
+    const std::meta::info non_negative_type = std::meta::dealias(^^predicate_t<non_negative>);
+    return {.admits = conclusion == non_negative_type
+                   && bound_at_most(std::meta::reflect_constant(0), argument_of(premise, 0)),
+            .successor = non_negative_type};
+}
 
 // A floor of one or more gives positive, and positive gives non_zero
 // through its edge. The floor is sound for both categories the
 // predicate accepts: for a number the value is at least one, and for a
 // pointer the address is. Neither can be the zero value of its type.
-struct bounded_below_is_positive : rule_family<bounded_below_is_positive> {
-    template <auto N>
-    static consteval bool holds_(BoundedBelow<N>*, predicate_t<positive>*) noexcept {
-        return bound_less_equal<1, N>();
-    }
-    template <auto N>
-    static consteval auto next_(BoundedBelow<N>*) noexcept -> predicate_t<positive>* {
-        return nullptr;
-    }
-};
+[[nodiscard]] consteval rule_verdict bounded_below_is_positive(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^BoundedBelow)) return {};
+    const std::meta::info positive_type = std::meta::dealias(^^predicate_t<positive>);
+    return {.admits =
+                conclusion == positive_type && bound_at_most(std::meta::reflect_constant(1), argument_of(premise, 0)),
+            .successor = positive_type};
+}
 
 // The same shape on the size axis. An exact size of N satisfies any
 // minimum up to N. The successor names the minimum N. A chain then
 // reaches non-emptiness through length_ge_is_non_empty once N is at
 // least one. A size of zero stops that chain, since it means the
 // container is empty, the very opposite of the conclusion.
-struct exact_size_is_length_ge : rule_family<exact_size_is_length_ge> {
-    template <std::size_t N, std::size_t M>
-    static consteval bool holds_(ExactSize<N>*, LengthGe<M>*) noexcept {
-        return N >= M;
-    }
-    template <std::size_t N>
-    static consteval auto next_(ExactSize<N>*) noexcept -> LengthGe<N>* {
-        return nullptr;
-    }
-};
+[[nodiscard]] consteval rule_verdict exact_size_is_length_ge(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^ExactSize)) return {};
+    const std::meta::info minimum = std::meta::substitute(^^LengthGe, {argument_of(premise, 0)});
+    const bool admits =
+        is_specialization_of(conclusion, ^^LengthGe) && size_argument_of(premise, 0) >= size_argument_of(conclusion, 0);
+    return {.admits = admits, .successor = minimum};
+}
 
 // The same relation as pointer alignment, on the modulo axis. If x is
 // a multiple of N and N is a multiple of M, then x is a multiple of M.
@@ -1214,20 +1225,20 @@ struct exact_size_is_length_ge : rule_family<exact_size_is_length_ge> {
 // keeping modulo by zero out before it can be evaluated. The clause
 // requiring N at least M already follows from N being a multiple of a
 // positive M, and is stated anyway so the clause reads in one pass.
-// The family compares the two bounds by value first.  Once 1 ≤ M ≤ N
-// holds, both are positive.  The family then takes the remainder on one
-// unsigned type, and no conversion changes a sign.
-struct divisible_by_weakens : rule_family<divisible_by_weakens> {
-    template <auto N, auto M>
-    static consteval bool holds_(DivisibleBy<N>*, DivisibleBy<M>*) noexcept {
-        if (!bound_less_equal<1, M>() || !bound_less_equal<M, N>()) return false;
-        return static_cast<std::uintmax_t>(N) % static_cast<std::uintmax_t>(M) == 0;
-    }
-};
+// The rule compares the two bounds by value first.  Once 1 ≤ M ≤ N
+// holds, both are positive, and the remainder of the two magnitudes is
+// the remainder of the two values.
+[[nodiscard]] consteval rule_verdict divisible_by_weakens(std::meta::info premise, std::meta::info conclusion) {
+    if (!is_specialization_of(premise, ^^DivisibleBy) || !is_specialization_of(conclusion, ^^DivisibleBy)) return {};
+    const std::meta::info strong = argument_of(premise, 0);
+    const std::meta::info weak = argument_of(conclusion, 0);
+    if (!bound_at_most(std::meta::reflect_constant(1), weak) || !bound_at_most(weak, strong)) return {};
+    return {.admits = read_bound(strong).magnitude % read_bound(weak).magnitude == 0};
+}
 
 // Every read counts the members against this seal: the edges, the
-// narrowing edges and the rule families.  A member that another file
-// adds stops the build rather than widening the relation.
+// narrowing edges and the rules.  A member that another file adds stops
+// the build rather than widening the relation.
 inline constexpr ::foundation::fail_closed::seal sealed{.members = 20};
 }  // namespace admitted_implications
 
@@ -1246,114 +1257,62 @@ inline constexpr ::foundation::fail_closed::seal sealed{.members = 20};
     return ::foundation::fail_closed::edge_ends{std::meta::dealias(args[0]), std::meta::dealias(args[1])};
 }
 
-// One admitted step: an edge, a narrowing edge, or a rule family that
-// decides the pair.  The closure below is built from this relation
-// alone.  It reads the namespace in one walk.  A variable counts when
-// its type is the step itself, and a class counts when it derives
-// rule_family<itself>, which is the same shape
-// fail_closed::every_class_in_has_edge walks for.  Every other member
-// is skipped.  Complexity: O(members of admitted_implications).
-template <class PType, class QType>
-[[nodiscard]] consteval bool implies_directly() noexcept {
+// True when m reflects a rule: a function of type rule_signature.  A
+// function template is not a function, so no rule is a template.
+[[nodiscard]] consteval bool is_rule(std::meta::info m) {
+    return std::meta::is_function(m) && std::meta::type_of(m) == std::meta::dealias(^^rule_signature);
+}
+
+// What one predicate gives the closure: whether one step admits the
+// conclusion from it, and the predicates one step past it that the
+// closure can stand on.
+struct step_view {
+    bool admits = false;
+    std::vector<std::meta::info> successors;
+};
+
+// The steps from node, read in one walk of the namespace as it stands
+// where this function is defined.  An edge admits its own pair and gives
+// its far end as a successor.  A narrowing edge admits its own pair and
+// gives no successor.  A rule takes part only where node has no base
+// class.  It admits the pair only where the conclusion has no base class
+// either, and it gives a successor only where the successor has no base
+// class and the rule admits the step to it.  Every other member is
+// skipped here, and the self-test below refuses it.  Complexity:
+// O(members of admitted_implications) rule calls.
+[[nodiscard]] consteval step_view steps_from(std::meta::info node, std::meta::info conclusion) {
     static constexpr auto members = std::define_static_array(
         std::meta::members_of(^^admitted_implications, std::meta::access_context::unchecked()));
+    step_view view{};
+    const bool node_has_base = has_base_class(node);
+    const std::meta::info asked = node_has_base || has_base_class(conclusion) ? std::meta::info{} : conclusion;
     // -Wshadow fires on the expansion-statement induction variable.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto m : members) {
-        if constexpr (std::meta::is_variable(m)) {
-            constexpr auto type = std::meta::remove_cvref(std::meta::type_of(m));
-            if constexpr (type == ^^::foundation::fail_closed::edge<PType, QType>
-                          || type == ^^narrowing_edge<PType, QType>) {
-                return true;
+    template for (constexpr std::meta::info m : members) {
+        if constexpr (::foundation::fail_closed::is_edge(m)) {
+            constexpr ::foundation::fail_closed::edge_ends ends = ::foundation::fail_closed::ends_of(m);
+            if (ends.from == node) {
+                view.admits = view.admits || ends.to == conclusion;
+                view.successors.push_back(ends.to);
             }
-        } else if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
-            using Family = [:m:];
-            if constexpr (std::is_base_of_v<rule_family<Family>, Family>) {
-                static_assert(RuleDecides<Family, PType, QType>, "a rule family in admitted_implications must "
-                                                                 "expose Family::admits<P, Q>() returning bool.");
-                if (Family::template admits<PType, QType>()) {
-                    return true;
+        } else if constexpr (is_narrowing_edge(m)) {
+            constexpr ::foundation::fail_closed::edge_ends ends = narrowing_ends_of(m);
+            view.admits = view.admits || (ends.from == node && ends.to == conclusion);
+        } else if constexpr (is_rule(m)) {
+            if (!node_has_base) {
+                const rule_verdict verdict = [:m:](node, asked);
+                view.admits = view.admits || verdict.admits;
+                const std::meta::info next = verdict.successor;
+                if (next != std::meta::info{} && !has_base_class(next) && [:m:](node, next).admits) {
+                    view.successors.push_back(next);
                 }
             }
         }
     }
 #pragma GCC diagnostic pop
-    return false;
+    return view;
 }
-
-template <class PType, class QType>
-inline constexpr bool implies_directly_v = implies_directly<PType, QType>();
-
-// The strongest predicate that Family reaches from PType, or the null
-// reflection when Family names no successor for PType or does not admit
-// the step to it.  The family's own holds_ decides the step.  A
-// successor declaration can propose a predicate but never admit one.
-template <class Family, class PType>
-[[nodiscard]] consteval std::meta::info successor_of() noexcept {
-    if constexpr (requires { Family::next_(static_cast<PType*>(nullptr)); }) {
-        using Next = std::remove_pointer_t<decltype(Family::next_(static_cast<PType*>(nullptr)))>;
-        if constexpr (Family::template admits<PType, Next>()) {
-            return std::meta::dealias(^^Next);
-        } else {
-            return std::meta::info{};
-        }
-    } else {
-        return std::meta::info{};
-    }
-}
-
-// The successors of one predicate, in a structural shape.  A search
-// reads them back from a reflection of the variable below, and only a
-// structural type can be read back that way.
-// Capacity is the most successors one predicate can have. A range has
-// three, and a fourth family that names one more still fits.
-struct successor_list {
-    static constexpr std::size_t capacity = 8;
-    std::array<std::meta::info, capacity> items{};
-    std::size_t count = 0;
-};
-
-// More successors than successor_list holds.  This function has no
-// constant definition.  A call to it stops the constant evaluation, and
-// the diagnostic names it.
-void implication_successor_list_is_full() noexcept;
-
-// The predicates one step past PType that the closure can stand on:
-// the far end of each edge that starts at PType, and the successor each
-// family names for it.  A narrowing edge is not among them.  The list
-// is a variable template.  Each predicate type pays for it once in a
-// translation unit, and every query that reaches the type reads the one
-// list.  Complexity: O(members of admitted_implications) at the first
-// use.
-template <class PType>
-[[nodiscard]] consteval successor_list successors_of() noexcept {
-    static constexpr auto members = std::define_static_array(
-        std::meta::members_of(^^admitted_implications, std::meta::access_context::unchecked()));
-    successor_list found{};
-    // -Wshadow fires on the expansion-statement induction variable.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto m : members) {
-        std::meta::info next{};
-        if constexpr (::foundation::fail_closed::is_edge(m)) {
-            constexpr auto ends = ::foundation::fail_closed::ends_of(m);
-            if constexpr (ends.from == std::meta::dealias(^^PType)) next = ends.to;
-        } else if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
-            next = successor_of<typename[:m:], PType>();
-        }
-        if (next != std::meta::info{}) {
-            if (found.count == successor_list::capacity) implication_successor_list_is_full();
-            found.items[found.count] = next;
-            ++found.count;
-        }
-    }
-#pragma GCC diagnostic pop
-    return found;
-}
-
-template <class PType>
-inline constexpr successor_list successors_v = successors_of<PType>();
 
 // A cycle of steps that do not narrow, back to the premise, means two
 // distinct predicates with one meaning.  This function has no constant
@@ -1366,19 +1325,15 @@ void implication_cycle_between_two_names_for_one_predicate() noexcept;
 // when a reached predicate implies the conclusion in one step, a
 // narrowing edge included.  The reached set holds at most
 // closure_node_limit predicates, and a larger search answers false.
-// Complexity: O(V²) comparisons and 2·V instantiations for V reached
-// predicates.
+// Complexity: O(V²) comparisons and V walks of the namespace for V
+// reached predicates.
 [[nodiscard]] consteval bool implies_closed(std::meta::info premise, std::meta::info conclusion) {
     std::vector<std::meta::info> reached{premise};
     for (std::size_t cursor = 0; cursor < reached.size(); ++cursor) {
         const std::meta::info node = reached[cursor];
-        if (std::meta::extract<bool>(std::meta::substitute(^^implies_directly_v, {node, conclusion}))) {
-            return true;
-        }
-        const successor_list successors =
-            std::meta::extract<successor_list>(std::meta::substitute(^^successors_v, {node}));
-        for (std::size_t index = 0; index < successors.count; ++index) {
-            const std::meta::info next = successors.items[index];
+        const step_view view = steps_from(node, conclusion);
+        if (view.admits) return true;
+        for (const std::meta::info next : view.successors) {
             if (next == node) continue;
             if (next == premise) implication_cycle_between_two_names_for_one_predicate();
             bool is_reached = false;
@@ -1392,22 +1347,17 @@ void implication_cycle_between_two_names_for_one_predicate() noexcept;
     return false;
 }
 
-// The walks above read the namespace where each query first stands, and a
-// member that another file adds would change the answer of a later
-// query.  Each query reads the seal after its walk, so a planted cycle is
-// named as a cycle, and every other planted member stops the build at
-// the seal.  A late member stops the build at the first pair that no
-// earlier line asked.  A pair that an earlier line asked keeps the answer
-// it got from the sealed members, so a late member never changes an
-// answer.
-template <class PType, class QType>
-[[nodiscard]] consteval bool implies_types() noexcept {
-    bool is_implied = false;
-    if constexpr (std::is_same_v<PType, QType>) {
-        is_implied = implies_directly<PType, QType>();
-    } else {
-        is_implied = implies_closed(std::meta::dealias(^^PType), std::meta::dealias(^^QType));
-    }
+// The walk above reads the namespace where steps_from is defined, so a
+// member that another file adds later takes no part in a step.  Each
+// query reads the seal after its walk, so a planted cycle is named as a
+// cycle, and every other planted member stops the build at the seal.  A
+// late member stops the build at the first query that reads the seal
+// after it, so a late member never changes an answer.  The closure
+// answers a query of a predicate against itself with one step.
+[[nodiscard]] consteval bool predicate_implies(std::meta::info premise, std::meta::info conclusion) {
+    const std::meta::info from = std::meta::dealias(premise);
+    const std::meta::info to = std::meta::dealias(conclusion);
+    const bool is_implied = from == to ? steps_from(from, to).admits : implies_closed(from, to);
     ::foundation::fail_closed::require_seal_holds(^^admitted_implications);
     return is_implied;
 }
@@ -1415,7 +1365,7 @@ template <class PType, class QType>
 }  // namespace refined
 
 template <auto P, auto Q>
-inline constexpr bool implies_v = refined::implies_types<refined::predicate_t<P>, refined::predicate_t<Q>>();
+concept PredicateImplies = refined::predicate_implies(^^refined::predicate_t<P>, ^^refined::predicate_t<Q>);
 
 // Each axiom above is witnessed here, positively and at the boundary
 // where its soundness clause bites.  Several conclusions below hold
@@ -1423,111 +1373,138 @@ inline constexpr bool implies_v = refined::implies_types<refined::predicate_t<P>
 // cannot be enumerated from the namespace, which is why these stay
 // written by hand.
 
-static_assert(implies_v<non_null, non_zero>, "non_null ⇒ non_zero: a non-null pointer is a non-zero pointer.");
-static_assert(implies_v<non_zero, non_null>, "non_zero ⇒ non_null: the implication is bidirectional for a pointer.");
-static_assert(implies_v<positive, non_null>, "positive ⇒ non_zero ⇒ non_null: a chain can end on a narrowing edge.");
-static_assert(!implies_v<non_null, positive>, "non_null reaches non_zero and nothing past it.");
-static_assert(!implies_v<non_zero, non_zero>, "the closure adds no reflexive answer through the non_null cycle.");
+static_assert(PredicateImplies<non_null, non_zero>, "non_null ⇒ non_zero: a non-null pointer is a non-zero pointer.");
+static_assert(PredicateImplies<non_zero, non_null>,
+              "non_zero ⇒ non_null: the implication is bidirectional for a pointer.");
+static_assert(PredicateImplies<positive, non_null>,
+              "positive ⇒ non_zero ⇒ non_null: a chain can end on a narrowing edge.");
+static_assert(!PredicateImplies<non_null, positive>, "non_null reaches non_zero and nothing past it.");
+static_assert(!PredicateImplies<non_zero, non_zero>,
+              "the closure adds no reflexive answer through the non_null cycle.");
 
-static_assert(implies_v<in_range<5, 9>, bounded_above<20>>,
+static_assert(PredicateImplies<in_range<5, 9>, bounded_above<20>>,
               "in_range<5, 9> ⇒ bounded_above<9> ⇒ bounded_above<20>: the ceiling family chains into its weakening.");
-static_assert(!implies_v<bounded_above<20>, in_range<5, 9>>, "a chain runs one way: a ceiling gives no range.");
-static_assert(!implies_v<in_range<5, 9>, bounded_above<8>>, "the chain keeps the ceiling: nine is above eight.");
-static_assert(implies_v<in_range<5, 9>, bounded_below<1>>,
+static_assert(!PredicateImplies<bounded_above<20>, in_range<5, 9>>, "a chain runs one way: a ceiling gives no range.");
+static_assert(!PredicateImplies<in_range<5, 9>, bounded_above<8>>, "the chain keeps the ceiling: nine is above eight.");
+static_assert(PredicateImplies<in_range<5, 9>, bounded_below<1>>,
               "in_range<5, 9> ⇒ bounded_below<5> ⇒ bounded_below<1>: the floor family chains too.");
-static_assert(implies_v<all_of<in_range<5, 9>, non_negative>, bounded_above<20>>,
+static_assert(PredicateImplies<all_of<in_range<5, 9>, non_negative>, bounded_above<20>>,
               "a conjunct reaches its conclusion through the closure.");
-static_assert(implies_v<length_ge<1>, non_empty>, "length_ge<1> ⇒ non_empty: a size of at least one is not empty.");
-static_assert(implies_v<length_ge<8>, non_empty>, "length_ge<N> ⇒ non_empty for every N of at least one.");
-static_assert(!implies_v<length_ge<0>, non_empty>, "length_ge<0> is vacuous and must NOT imply non_empty: an empty "
-                                                   "container satisfies it.");
+static_assert(PredicateImplies<length_ge<1>, non_empty>,
+              "length_ge<1> ⇒ non_empty: a size of at least one is not empty.");
+static_assert(PredicateImplies<length_ge<8>, non_empty>, "length_ge<N> ⇒ non_empty for every N of at least one.");
+static_assert(!PredicateImplies<length_ge<0>, non_empty>,
+              "length_ge<0> is vacuous and must NOT imply non_empty: an empty "
+              "container satisfies it.");
 
-static_assert(implies_v<length_ge<8>, length_ge<1>>, "length_ge<8> ⇒ length_ge<1>: the longer minimum is stronger.");
+static_assert(PredicateImplies<length_ge<8>, length_ge<1>>,
+              "length_ge<8> ⇒ length_ge<1>: the longer minimum is stronger.");
 
-static_assert(implies_v<in_range<0, 100>, non_negative>, "in_range<0, 100> ⇒ non_negative: the lower bound is zero.");
-static_assert(implies_v<in_range<5, 100>, non_negative>,
+static_assert(PredicateImplies<in_range<0, 100>, non_negative>,
+              "in_range<0, 100> ⇒ non_negative: the lower bound is zero.");
+static_assert(PredicateImplies<in_range<5, 100>, non_negative>,
               "in_range<5, 100> ⇒ non_negative: the lower bound is positive.");
-static_assert(implies_v<in_range<0u, 255u>, non_negative>, "An unsigned bound carries non_negative trivially.");
-static_assert(!implies_v<in_range<-5, 100>, non_negative>,
+static_assert(PredicateImplies<in_range<0u, 255u>, non_negative>, "An unsigned bound carries non_negative trivially.");
+static_assert(!PredicateImplies<in_range<-5, 100>, non_negative>,
               "in_range<-5, 100> admits negative values and must NOT imply "
               "non_negative: the lower-bound clause is load-bearing.");
 
-static_assert(implies_v<in_range<5, 100>, in_range<0, 200>>,
+static_assert(PredicateImplies<in_range<5, 100>, in_range<0, 200>>,
               "in_range<5, 100> ⇒ in_range<0, 200>: a tighter range implies a looser one.");
 
-static_assert(implies_v<in_range<1, 100>, positive>, "in_range<1, 100> ⇒ positive at the boundary lower bound.");
-static_assert(implies_v<in_range<5, 100>, positive>, "in_range<5, 100> ⇒ positive at an interior lower bound.");
-static_assert(!implies_v<in_range<0, 100>, positive>, "in_range<0, 100> must NOT imply positive: it admits zero, "
-                                                      "which is why the lower-bound clause is load-bearing.");
-static_assert(!implies_v<in_range<-5, 100>, positive>, "in_range<-5, 100> must NOT imply positive: it admits negative "
-                                                       "values.");
+static_assert(PredicateImplies<in_range<1, 100>, positive>, "in_range<1, 100> ⇒ positive at the boundary lower bound.");
+static_assert(PredicateImplies<in_range<5, 100>, positive>, "in_range<5, 100> ⇒ positive at an interior lower bound.");
+static_assert(!PredicateImplies<in_range<0, 100>, positive>,
+              "in_range<0, 100> must NOT imply positive: it admits zero, "
+              "which is why the lower-bound clause is load-bearing.");
+static_assert(!PredicateImplies<in_range<-5, 100>, positive>,
+              "in_range<-5, 100> must NOT imply positive: it admits negative "
+              "values.");
 
-static_assert(implies_v<in_range<1, 100>, non_zero>, "in_range<1, 100> ⇒ non_zero at the boundary lower bound.");
-static_assert(implies_v<in_range<5, 100>, non_zero>, "in_range<5, 100> ⇒ non_zero at an interior lower bound.");
+static_assert(PredicateImplies<in_range<1, 100>, non_zero>, "in_range<1, 100> ⇒ non_zero at the boundary lower bound.");
+static_assert(PredicateImplies<in_range<5, 100>, non_zero>, "in_range<5, 100> ⇒ non_zero at an interior lower bound.");
 
-static_assert(implies_v<in_range<-100, -1>, non_zero>, "in_range<-100, -1> ⇒ non_zero at the boundary upper bound.");
-static_assert(implies_v<in_range<-100, -5>, non_zero>, "in_range<-100, -5> ⇒ non_zero at an interior upper bound.");
+static_assert(PredicateImplies<in_range<-100, -1>, non_zero>,
+              "in_range<-100, -1> ⇒ non_zero at the boundary upper bound.");
+static_assert(PredicateImplies<in_range<-100, -5>, non_zero>,
+              "in_range<-100, -5> ⇒ non_zero at an interior upper bound.");
 
-static_assert(!implies_v<in_range<0, 100>, non_zero>, "in_range<0, 100> must NOT imply non_zero: it admits zero, and "
-                                                      "neither branch of the disjunctive clause holds.");
-static_assert(!implies_v<in_range<-5, 5>, non_zero>, "in_range<-5, 5> must NOT imply non_zero: the range straddles "
-                                                     "zero.");
-static_assert(!implies_v<in_range<-100, 0>, non_zero>,
+static_assert(!PredicateImplies<in_range<0, 100>, non_zero>,
+              "in_range<0, 100> must NOT imply non_zero: it admits zero, and "
+              "neither branch of the disjunctive clause holds.");
+static_assert(!PredicateImplies<in_range<-5, 5>, non_zero>,
+              "in_range<-5, 5> must NOT imply non_zero: the range straddles "
+              "zero.");
+static_assert(!PredicateImplies<in_range<-100, 0>, non_zero>,
               "in_range<-100, 0> must NOT imply non_zero: it admits zero at the "
               "upper bound.");
 
-static_assert(implies_v<bounded_below<10>, bounded_below<5>>,
+static_assert(PredicateImplies<bounded_below<10>, bounded_below<5>>,
               "bounded_below<10> ⇒ bounded_below<5>: a tighter floor implies a looser one.");
-static_assert(implies_v<bounded_below<5>, bounded_below<5>>, "bounded_below<N> ⇒ bounded_below<N>.");
-static_assert(!implies_v<bounded_below<5>, bounded_below<10>>,
+static_assert(PredicateImplies<bounded_below<5>, bounded_below<5>>, "bounded_below<N> ⇒ bounded_below<N>.");
+static_assert(!PredicateImplies<bounded_below<5>, bounded_below<10>>,
               "bounded_below<5> must NOT imply bounded_below<10>: a looser floor "
               "does not imply a tighter one.");
-static_assert(implies_v<in_range<5, 100>, bounded_below<5>>,
+static_assert(PredicateImplies<in_range<5, 100>, bounded_below<5>>,
               "in_range<5, 100> ⇒ bounded_below<5>: a range floor is a lower bound.");
-static_assert(implies_v<in_range<0, 200>, bounded_below<0>>, "in_range<0, 200> ⇒ bounded_below<0> at a zero floor.");
-static_assert(implies_v<bounded_below<0>, non_negative>,
+static_assert(PredicateImplies<in_range<0, 200>, bounded_below<0>>,
+              "in_range<0, 200> ⇒ bounded_below<0> at a zero floor.");
+static_assert(PredicateImplies<bounded_below<0>, non_negative>,
               "bounded_below<0> ⇒ non_negative: the two predicates coincide at a zero floor.");
-static_assert(implies_v<bounded_below<5>, non_negative>, "bounded_below<5> ⇒ non_negative: the floor is positive.");
-static_assert(!implies_v<bounded_below<-5>, non_negative>,
+static_assert(PredicateImplies<bounded_below<5>, non_negative>,
+              "bounded_below<5> ⇒ non_negative: the floor is positive.");
+static_assert(!PredicateImplies<bounded_below<-5>, non_negative>,
               "bounded_below<-5> must NOT imply non_negative: it admits negative "
               "values, which is why the floor clause is load-bearing.");
-static_assert(implies_v<bounded_below<1>, positive>, "bounded_below<1> ⇒ positive at the boundary floor.");
-static_assert(implies_v<bounded_below<10>, positive>, "bounded_below<10> ⇒ positive at a tighter floor.");
-static_assert(!implies_v<bounded_below<0>, positive>, "bounded_below<0> must NOT imply positive: it admits zero, "
-                                                      "which is why the floor clause is load-bearing.");
+static_assert(PredicateImplies<bounded_below<1>, positive>, "bounded_below<1> ⇒ positive at the boundary floor.");
+static_assert(PredicateImplies<bounded_below<10>, positive>, "bounded_below<10> ⇒ positive at a tighter floor.");
+static_assert(!PredicateImplies<bounded_below<0>, positive>,
+              "bounded_below<0> must NOT imply positive: it admits zero, "
+              "which is why the floor clause is load-bearing.");
 
-static_assert(implies_v<bounded_below<1>, non_zero>, "bounded_below<1> ⇒ non_zero at the boundary floor.");
-static_assert(implies_v<bounded_below<10>, non_zero>, "bounded_below<10> ⇒ non_zero at a tighter floor.");
-static_assert(!implies_v<bounded_below<0>, non_zero>, "bounded_below<0> must NOT imply non_zero: it admits zero.");
+static_assert(PredicateImplies<bounded_below<1>, non_zero>, "bounded_below<1> ⇒ non_zero at the boundary floor.");
+static_assert(PredicateImplies<bounded_below<10>, non_zero>, "bounded_below<10> ⇒ non_zero at a tighter floor.");
+static_assert(!PredicateImplies<bounded_below<0>, non_zero>,
+              "bounded_below<0> must NOT imply non_zero: it admits zero.");
 
-static_assert(implies_v<exact_size<8>, length_ge<8>>, "exact_size<8> ⇒ length_ge<8>: an exact size satisfies its own "
-                                                      "minimum.");
-static_assert(implies_v<exact_size<8>, length_ge<4>>, "exact_size<8> ⇒ length_ge<4>: the exact size exceeds a looser "
-                                                      "minimum.");
-static_assert(implies_v<exact_size<1>, length_ge<0>>, "exact_size<1> ⇒ length_ge<0>: a size is never below zero.");
-static_assert(!implies_v<exact_size<4>, length_ge<8>>, "exact_size<4> must NOT imply length_ge<8>: a size of four is "
-                                                       "not at least eight.");
+static_assert(PredicateImplies<exact_size<8>, length_ge<8>>,
+              "exact_size<8> ⇒ length_ge<8>: an exact size satisfies its own "
+              "minimum.");
+static_assert(PredicateImplies<exact_size<8>, length_ge<4>>,
+              "exact_size<8> ⇒ length_ge<4>: the exact size exceeds a looser "
+              "minimum.");
+static_assert(PredicateImplies<exact_size<1>, length_ge<0>>,
+              "exact_size<1> ⇒ length_ge<0>: a size is never below zero.");
+static_assert(!PredicateImplies<exact_size<4>, length_ge<8>>,
+              "exact_size<4> must NOT imply length_ge<8>: a size of four is "
+              "not at least eight.");
 
-static_assert(implies_v<exact_size<1>, non_empty>, "exact_size<1> ⇒ non_empty at the boundary size.");
-static_assert(implies_v<exact_size<8>, non_empty>, "exact_size<8> ⇒ non_empty at a larger size.");
-static_assert(!implies_v<exact_size<0>, non_empty>, "exact_size<0> must NOT imply non_empty: a size of zero means the "
-                                                    "container is empty.");
+static_assert(PredicateImplies<exact_size<1>, non_empty>, "exact_size<1> ⇒ non_empty at the boundary size.");
+static_assert(PredicateImplies<exact_size<8>, non_empty>, "exact_size<8> ⇒ non_empty at a larger size.");
+static_assert(!PredicateImplies<exact_size<0>, non_empty>,
+              "exact_size<0> must NOT imply non_empty: a size of zero means the "
+              "container is empty.");
 
-static_assert(implies_v<divisible_by<4>, divisible_by<4>>, "divisible_by<N> ⇒ divisible_by<N>.");
-static_assert(implies_v<divisible_by<8>, divisible_by<4>>,
+static_assert(PredicateImplies<divisible_by<4>, divisible_by<4>>, "divisible_by<N> ⇒ divisible_by<N>.");
+static_assert(PredicateImplies<divisible_by<8>, divisible_by<4>>,
               "divisible_by<8> ⇒ divisible_by<4>: a multiple of eight is a "
               "multiple of four.");
-static_assert(implies_v<divisible_by<16>, divisible_by<4>>,
+static_assert(PredicateImplies<divisible_by<16>, divisible_by<4>>,
               "divisible_by<16> ⇒ divisible_by<4>: a wider lane count implies a "
               "narrower one.");
-static_assert(implies_v<divisible_by<16>, divisible_by<8>>,
+static_assert(PredicateImplies<divisible_by<16>, divisible_by<8>>,
               "divisible_by<16> ⇒ divisible_by<8>: a wider lane count implies a "
               "narrower one.");
 
-static_assert(!implies_v<divisible_by<6>, divisible_by<4>>,
+static_assert(!PredicateImplies<divisible_by<6>, divisible_by<4>>,
               "divisible_by<6> must NOT imply divisible_by<4>: six is not a "
               "multiple of four, and six itself is a counterexample.");
-static_assert(!implies_v<divisible_by<4>, divisible_by<8>>,
+static_assert(PredicateImplies<divisible_by<(refined::widest_unsigned{1} << 90)>,
+                               divisible_by<(refined::widest_unsigned{1} << 70)>>
+                  && !PredicateImplies<divisible_by<(refined::widest_unsigned{1} << 70)>,
+                                       divisible_by<(refined::widest_unsigned{1} << 90)>>,
+              "divisible_by compares divisors wider than std::uintmax_t by value, and no divisor narrows to zero.");
+static_assert(!PredicateImplies<divisible_by<4>, divisible_by<8>>,
               "divisible_by<4> must NOT imply divisible_by<8>: a looser divisor "
               "does not imply a tighter one, and four itself is a "
               "counterexample.");
@@ -1582,23 +1559,22 @@ struct unreachable_conclusion {};
 // is where a cycle between two names for one predicate is refused.
 template <class From, class To>
 [[nodiscard]] consteval bool atomic_step_holds() noexcept {
-    static_assert(refined::implies_types<From, To>(), "a step declared in admitted_implications must be admitted "
-                                                      "by the relation");
+    static_assert(refined::predicate_implies(^^From, ^^To), "a step declared in admitted_implications must be "
+                                                            "admitted by the relation");
     static_assert(!std::is_same_v<From, To>, "a reflexive edge is never stated, because the subsort machinery "
                                              "supplies reflexivity");
     static_assert(std::is_empty_v<From> && std::is_empty_v<To>, "an edge names two stateless predicates");
     static_assert(edge_sound<From, To>(), "an admitted edge is unsound on the sample roster: a value "
                                           "satisfies the source predicate and fails the target");
-    static_assert(!refined::implies_types<From, unreachable_conclusion>()
-                  && !refined::implies_types<To, unreachable_conclusion>());
+    static_assert(!refined::predicate_implies(^^From, ^^unreachable_conclusion)
+                  && !refined::predicate_implies(^^To, ^^unreachable_conclusion));
     return true;
 }
 
 // Walks admitted_implications once.  is_edge and ends_of are the
 // relation's own readers, so an edge is whatever the relation calls
-// one.  A member that is neither an edge, a narrowing edge nor a rule
-// is refused, because a stray variable there is a member the relation
-// ignores.
+// one.  A member that is neither an edge, a narrowing edge, a rule nor
+// the seal is refused, because the relation would ignore it.
 [[nodiscard]] consteval bool every_edge_holds() noexcept {
     static constexpr auto members = std::define_static_array(
         std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked()));
@@ -1611,19 +1587,28 @@ template <class From, class To>
         } else if constexpr (refined::is_narrowing_edge(m)) {
             constexpr auto ends = refined::narrowing_ends_of(m);
             static_assert(atomic_step_holds<typename[:ends.from:], typename[:ends.to:]>());
-        } else if constexpr (std::meta::is_type(m) && !std::meta::is_type_alias(m) && std::meta::is_class_type(m)) {
-            using Family = [:m:];
-            static_assert(std::is_base_of_v<refined::rule_family<Family>, Family>,
-                          "a class declared in admitted_implications is a rule family, which it says by "
-                          "deriving rule_family<itself>");
-        } else if constexpr (std::meta::is_variable(m) && !::foundation::fail_closed::is_seal(m)) {
-            static_assert(::foundation::fail_closed::is_edge(m), "a variable declared in admitted_implications "
-                                                                 "is an edge");
+        } else if constexpr (!::foundation::fail_closed::is_seal(m)) {
+            static_assert(refined::is_rule(m), "a member of admitted_implications is an edge, a narrowing edge, "
+                                               "the seal, or a rule of type refined::rule_signature.  A class, a "
+                                               "template or a function of another type decides nothing there");
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
+
+// Each type in exact_integer_types is one that ExactInteger admits.
+[[nodiscard]] consteval bool every_bound_type_is_exact() noexcept {
+    bool is_exact = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr std::meta::info type : refined::exact_integer_types) {
+        is_exact = is_exact && refined::ExactInteger<typename[:type:]>;
+    }
+#pragma GCC diagnostic pop
+    return is_exact;
+}
+static_assert(every_bound_type_is_exact());
 
 static_assert(every_edge_holds());
 
@@ -1848,26 +1833,26 @@ using AlignedNonNullPtr = Refined<all_of<non_null, aligned<64>>, void*>;
 [[maybe_unused]] constexpr auto pc1_witness = mint_refined_trusted<all_of<positive, bounded_above<100>>, int>(42);
 [[maybe_unused]] constexpr auto pc2_witness = mint_refined_trusted<all_of<positive, bounded_above<100>>, int>(1);
 
-static_assert(implies_v<all_of<positive, bounded_above<100>>, positive>);
-static_assert(implies_v<all_of<positive, bounded_above<100>>, bounded_above<100>>);
-static_assert(implies_v<all_of<non_null, aligned<64>>, non_null>);
-static_assert(implies_v<all_of<non_null, aligned<64>>, aligned<64>>);
+static_assert(PredicateImplies<all_of<positive, bounded_above<100>>, positive>);
+static_assert(PredicateImplies<all_of<positive, bounded_above<100>>, bounded_above<100>>);
+static_assert(PredicateImplies<all_of<non_null, aligned<64>>, non_null>);
+static_assert(PredicateImplies<all_of<non_null, aligned<64>>, aligned<64>>);
 
-static_assert(implies_v<positive, any_of<positive, non_zero>>);
-static_assert(implies_v<non_zero, any_of<positive, non_zero>>);
+static_assert(PredicateImplies<positive, any_of<positive, non_zero>>);
+static_assert(PredicateImplies<non_zero, any_of<positive, non_zero>>);
 
-static_assert(!implies_v<all_of<positive, bounded_above<100>>, non_empty>);
+static_assert(!PredicateImplies<all_of<positive, bounded_above<100>>, non_empty>);
 // positive reaches non_null through non_zero, and the chain ends on the
 // narrowing edge.  The conjunction reaches non_null too.
-static_assert(implies_v<all_of<positive, bounded_above<100>>, non_null>);
+static_assert(PredicateImplies<all_of<positive, bounded_above<100>>, non_null>);
 
 // The conclusions below hold through a conjunct's own implications,
 // not through a literal match against a conjunct.
-static_assert(implies_v<all_of<positive, bounded_above<100>>, non_negative>);
-static_assert(implies_v<all_of<positive>, non_zero>);
-static_assert(implies_v<all_of<power_of_two, bounded_above<1024u>>, non_zero>);
+static_assert(PredicateImplies<all_of<positive, bounded_above<100>>, non_negative>);
+static_assert(PredicateImplies<all_of<positive>, non_zero>);
+static_assert(PredicateImplies<all_of<power_of_two, bounded_above<1024u>>, non_zero>);
 // A disjunction entails none of its branches.
-static_assert(!implies_v<any_of<positive, non_zero>, positive>);
+static_assert(!PredicateImplies<any_of<positive, non_zero>, positive>);
 
 static_assert(divisible_by<1>(0));
 static_assert(divisible_by<8>(64));

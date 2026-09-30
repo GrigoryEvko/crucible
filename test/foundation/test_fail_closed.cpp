@@ -251,8 +251,8 @@ static_assert(ffc::Sealed<^^sealed_ingest>);
 static_assert(!ffc::Sealed<^^ingest>, "a relation with no seal is open");
 static_assert(ffc::read_seal(^^sealed_ingest).found == 2, "the alias counts as a member, and the seal does not");
 static_assert(ffc::read_seal(^^sealed_ingest).fault == ffc::seal_fault::none);
-static_assert(ffc::admits<^^sealed_ingest, Raw, Checked>());
-static_assert(!ffc::admits<^^sealed_ingest, Checked, Raw>());
+static_assert(ffc::admits(^^sealed_ingest, ^^Raw, ^^Checked));
+static_assert(!ffc::admits(^^sealed_ingest, ^^Checked, ^^Raw));
 static_assert(ffc::edge_count<^^sealed_ingest>() == 1);
 
 // A relation whose count differs from its seal holds a seal but is not
@@ -277,11 +277,11 @@ static_assert(!ffc::Sealed<^^late_sealed>, "a seal whose count is wrong does not
 }  // namespace
 
 int main() {
-    const bool admitted = as_runtime(ffc::admits<^^ingest, Raw, Checked>());
-    const bool refused = as_runtime(ffc::admits<^^ingest, Checked, Raw>());
+    const bool admitted = as_runtime(ffc::admits(^^ingest, ^^Raw, ^^Checked));
+    const bool refused = as_runtime(ffc::admits(^^ingest, ^^Checked, ^^Raw));
     if (!admitted || refused) std::abort();
     if (!as_runtime(transition(Raw{}, Checked{}))) std::abort();
-    if (!as_runtime(ffc::admits<^^sealed_ingest, Raw, Checked>())) std::abort();
+    if (!as_runtime(ffc::admits(^^sealed_ingest, ^^Raw, ^^Checked))) std::abort();
     constexpr bool is_sealed = ffc::Sealed<^^sealed_ingest>;
     constexpr bool is_open_sealed = ffc::Sealed<^^ingest>;
     if (!as_runtime(is_sealed) || as_runtime(is_open_sealed)) std::abort();

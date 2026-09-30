@@ -676,10 +676,17 @@ foundation_neg_compile_test(neg_fail_closed_edge_outside_the_namespace
 
 # A struct named edge declared inside the relation's namespace is not
 # foundation::fail_closed::edge, so a variable of that type is skipped.
-# The evaluation note shows admits<> answering false for the pair.
+# The evaluation note shows admits answering false for the pair.
 foundation_neg_compile_test(neg_fail_closed_foreign_edge_type
   "constraints not satisfied"
-  "admits<Ns, From, To>.*\\[with Ns = \\^\\^ namespace .*ingest.*From = .*Raw; To = .*Checked\\].*evaluated to .false.")
+  "the expression .admits\\(.*\\[with Ns = \\^\\^ namespace .*ingest.*From = .*Raw; To = .*Checked\\]. evaluated to .false.")
+
+# admits is a function at namespace scope that is not a template, so an
+# explicit specialization that admits a pair of the caller matches no
+# template.
+foundation_neg_compile_test(neg_fail_closed_admits_specialized
+  "template-id .admits<>. for .consteval bool foundation::fail_closed::admits\\(std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_fail_closed_admits_specialized\\.cpp:12:[0-9]+: error:")
 
 # A derived permission tag has the row of its parent.  An edge in
 # permission_rows, or a permission_row member, that gives a shard a row of
@@ -705,8 +712,8 @@ foundation_neg_compile_test(neg_fail_closed_relation_sealed_twice
 # class that holds a static member of type edge is not one, and each
 # query refuses it on its own.
 foundation_neg_compile_test(neg_fail_closed_admits_of_a_class
-  "static assertion failed: fail_closed::admits<Ns, From, To>: Ns must be the reflection of a namespace"
-  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+  "call to non-.constexpr. function .void foundation::fail_closed::detail::admits_reads_the_reflection_of_a_namespace\\(\\)."
+  "in .constexpr. expansion of .foundation::fail_closed::admits\\(\\^\\^\\{anonymous\\}::NotARelation, \\^\\^\\{anonymous\\}::Raw, \\^\\^\\{anonymous\\}::Checked\\).")
 foundation_neg_compile_test(neg_fail_closed_edge_count_of_a_class
   "static assertion failed: fail_closed::edge_count<Ns>: Ns must be the reflection of a namespace"
   "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")

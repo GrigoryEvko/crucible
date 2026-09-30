@@ -17,7 +17,7 @@ static_assert(::foundation::fail_closed::Admitted<^^elsewhere, fixy::refined::pr
                                                   fixy::refined::predicate_t<fixy::positive>>);
 
 template <auto P, auto Q, class T>
-    requires fixy::implies_v<P, Q>
+    requires fixy::PredicateImplies<P, Q>
 [[nodiscard]] constexpr fixy::Refined<Q, T> weaken(fixy::Refined<P, T>&& r) noexcept {
     return fixy::mint_refined_trusted<Q>(std::move(r).into());
 }

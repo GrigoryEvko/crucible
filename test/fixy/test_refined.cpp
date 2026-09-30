@@ -212,44 +212,45 @@ namespace rel = ::fixy::refined;
 static_assert(ffc::edge_count<^^rel::admitted_implications>() == 4);
 static_assert(
     !ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::non_zero>, rel::predicate_t<fixy::non_null>>);
-static_assert(fixy::implies_v<fixy::non_zero, fixy::non_null>, "the narrowing edge is a step of the relation");
+static_assert(fixy::PredicateImplies<fixy::non_zero, fixy::non_null>, "the narrowing edge is a step of the relation");
 static_assert(ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::positive>,
                             rel::predicate_t<fixy::non_negative>>);
 static_assert(!ffc::Admitted<^^rel::admitted_implications, rel::predicate_t<fixy::non_negative>,
                              rel::predicate_t<fixy::positive>>);
-static_assert(fixy::implies_v<fixy::positive, fixy::non_negative>);
-static_assert(fixy::implies_v<fixy::positive, fixy::non_zero>);
-static_assert(fixy::implies_v<fixy::power_of_two, fixy::non_zero>);
-static_assert(!fixy::implies_v<fixy::non_negative, fixy::positive>);
-static_assert(!fixy::implies_v<fixy::non_zero, fixy::positive>);
-static_assert(!fixy::implies_v<fixy::positive, fixy::positive>, "reflexivity is supplied by the subsort machinery");
-static_assert(!fixy::implies_v<fixy::is_zero, fixy::non_negative>, "is_zero takes part in no implication");
+static_assert(fixy::PredicateImplies<fixy::positive, fixy::non_negative>);
+static_assert(fixy::PredicateImplies<fixy::positive, fixy::non_zero>);
+static_assert(fixy::PredicateImplies<fixy::power_of_two, fixy::non_zero>);
+static_assert(!fixy::PredicateImplies<fixy::non_negative, fixy::positive>);
+static_assert(!fixy::PredicateImplies<fixy::non_zero, fixy::positive>);
+static_assert(!fixy::PredicateImplies<fixy::positive, fixy::positive>,
+              "reflexivity is supplied by the subsort machinery");
+static_assert(!fixy::PredicateImplies<fixy::is_zero, fixy::non_negative>, "is_zero takes part in no implication");
 
 // A parameterised family answers through its rule, and a rule declared
 // anywhere but in the namespace is inert.
-static_assert(fixy::implies_v<fixy::aligned<64>, fixy::aligned<8>>);
-static_assert(!fixy::implies_v<fixy::aligned<8>, fixy::aligned<64>>);
-static_assert(!fixy::implies_v<fixy::aligned<48>, fixy::aligned<32>>, "48 is not a multiple of 32");
-static_assert(fixy::implies_v<fixy::bounded_above<10>, fixy::bounded_above<20>>);
-static_assert(!fixy::implies_v<fixy::bounded_above<20>, fixy::bounded_above<10>>);
-static_assert(fixy::implies_v<fixy::in_range<3, 7>, fixy::bounded_above<7>>);
-static_assert(fixy::implies_v<fixy::in_range<3, 7>, fixy::bounded_above<8>>,
+static_assert(fixy::PredicateImplies<fixy::aligned<64>, fixy::aligned<8>>);
+static_assert(!fixy::PredicateImplies<fixy::aligned<8>, fixy::aligned<64>>);
+static_assert(!fixy::PredicateImplies<fixy::aligned<48>, fixy::aligned<32>>, "48 is not a multiple of 32");
+static_assert(fixy::PredicateImplies<fixy::bounded_above<10>, fixy::bounded_above<20>>);
+static_assert(!fixy::PredicateImplies<fixy::bounded_above<20>, fixy::bounded_above<10>>);
+static_assert(fixy::PredicateImplies<fixy::in_range<3, 7>, fixy::bounded_above<7>>);
+static_assert(fixy::PredicateImplies<fixy::in_range<3, 7>, fixy::bounded_above<8>>,
               "the relation chains: in_range<3, 7> ⇒ bounded_above<7> ⇒ bounded_above<8>");
-static_assert(!fixy::implies_v<fixy::in_range<3, 9>, fixy::bounded_above<8>>, "the chain keeps the ceiling");
-static_assert(!fixy::implies_v<fixy::bounded_above<8>, fixy::in_range<3, 7>>, "a chain runs one way");
+static_assert(!fixy::PredicateImplies<fixy::in_range<3, 9>, fixy::bounded_above<8>>, "the chain keeps the ceiling");
+static_assert(!fixy::PredicateImplies<fixy::bounded_above<8>, fixy::in_range<3, 7>>, "a chain runs one way");
 
 // The families compare bounds of different signedness by value.  A
 // conversion turns -1 into the largest unsigned value, and then admits
 // each refusal below.
-static_assert(!fixy::implies_v<fixy::bounded_above<9u>, fixy::bounded_above<-1>>);
-static_assert(!fixy::implies_v<fixy::bounded_below<-1>, fixy::bounded_below<9u>>);
-static_assert(!fixy::implies_v<fixy::in_range<-5, 5>, fixy::in_range<0u, 10u>>);
-static_assert(!fixy::implies_v<fixy::divisible_by<-8>, fixy::divisible_by<4>>);
-static_assert(!fixy::implies_v<fixy::in_range<0u, 255u>, fixy::non_zero>);
-static_assert(fixy::implies_v<fixy::in_range<5u, 9u>, fixy::bounded_above<20>>);
-static_assert(fixy::implies_v<fixy::bounded_above<9>, fixy::bounded_above<20u>>);
-static_assert(fixy::implies_v<fixy::divisible_by<8u>, fixy::divisible_by<4>>);
-static_assert(fixy::implies_v<fixy::in_range<1u, 255u>, fixy::non_zero>);
+static_assert(!fixy::PredicateImplies<fixy::bounded_above<9u>, fixy::bounded_above<-1>>);
+static_assert(!fixy::PredicateImplies<fixy::bounded_below<-1>, fixy::bounded_below<9u>>);
+static_assert(!fixy::PredicateImplies<fixy::in_range<-5, 5>, fixy::in_range<0u, 10u>>);
+static_assert(!fixy::PredicateImplies<fixy::divisible_by<-8>, fixy::divisible_by<4>>);
+static_assert(!fixy::PredicateImplies<fixy::in_range<0u, 255u>, fixy::non_zero>);
+static_assert(fixy::PredicateImplies<fixy::in_range<5u, 9u>, fixy::bounded_above<20>>);
+static_assert(fixy::PredicateImplies<fixy::bounded_above<9>, fixy::bounded_above<20u>>);
+static_assert(fixy::PredicateImplies<fixy::divisible_by<8u>, fixy::divisible_by<4>>);
+static_assert(fixy::PredicateImplies<fixy::in_range<1u, 255u>, fixy::non_zero>);
 
 inline constexpr auto even = [](auto x) constexpr noexcept { return x % 2 == 0; };
 
@@ -258,20 +259,18 @@ inline constexpr ffc::edge<rel::predicate_t<even>, rel::predicate_t<fixy::non_ne
 }  // namespace not_the_relation
 
 static_assert(ffc::Admitted<^^not_the_relation, rel::predicate_t<even>, rel::predicate_t<fixy::non_negative>>);
-static_assert(!fixy::implies_v<even, fixy::non_negative>, "an edge outside admitted_implications is inert");
+static_assert(!fixy::PredicateImplies<even, fixy::non_negative>, "an edge outside admitted_implications is inert");
 
 // Every member of the namespace is an edge or a rule, and the fold the
 // header runs over them is reachable from here.
 static_assert(fixy::detail::refined_self_test::every_edge_holds());
 
-// A family says it is one by deriving rule_family<itself>, so the
-// count reads classes and not marker variables.  No family can be inert
-// because a separate marker variable is missing.
+// A rule is a function of type rule_signature, and the walk calls each
+// one.  No rule can be inert because a separate marker is missing.
 [[nodiscard]] consteval std::size_t rule_count() noexcept {
     std::size_t count = 0;
     for (auto const m : std::meta::members_of(^^rel::admitted_implications, std::meta::access_context::unchecked())) {
-        if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
-        ++count;
+        if (rel::is_rule(m)) ++count;
     }
     return count;
 }
@@ -508,7 +507,7 @@ void instantiate_every_combinator_at_runtime() noexcept {
 // The weakening does not evaluate the predicate again, because the
 // relation proves it.
 template <auto P, auto Q, class T>
-    requires fixy::implies_v<P, Q>
+    requires fixy::PredicateImplies<P, Q>
 [[nodiscard]] constexpr Refined<Q, T> weaken_along_the_relation(Refined<P, T>&& refined) noexcept {
     return fixy::mint_refined_trusted<Q>(std::move(refined).into());
 }

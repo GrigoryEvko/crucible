@@ -8,6 +8,7 @@
 #include <fixy/session/Subtype.h>
 
 #include <cstdio>
+#include <meta>
 #include <utility>
 
 namespace {
@@ -17,29 +18,29 @@ namespace ffc = ::foundation::fail_closed;
 
 // A weakening constrained on the relation, the shape a caller writes.
 template <auto P, auto Q, class T>
-concept Weakens = fixy::implies_v<P, Q>
+concept Weakens = fixy::PredicateImplies<P, Q>
                && requires(fixy::Refined<P, T> refined) { fixy::mint_refined_trusted<Q>(std::move(refined).into()); };
 
-// ── Attack 1: a rule family outside the namespace ────────────────────
+// ── Attack 1: a rule outside the namespace ───────────────────────────
 //
-// A class outside admitted_implications that derives rule_family and
-// admits non_negative ⇒ positive decides nothing.
+// A function of the rule type outside admitted_implications that admits
+// non_negative ⇒ positive decides nothing.
 
 namespace elsewhere {
-struct non_negative_is_positive : rel::rule_family<non_negative_is_positive> {
-    static consteval bool holds_(rel::predicate_t<fixy::non_negative>*, rel::predicate_t<fixy::positive>*) noexcept {
-        return true;
-    }
-    static consteval auto next_(rel::predicate_t<fixy::non_negative>*) noexcept -> rel::predicate_t<fixy::positive>* {
-        return nullptr;
-    }
-};
+consteval rel::rule_verdict non_negative_is_positive(std::meta::info premise, std::meta::info conclusion) {
+    const std::meta::info positive_type = std::meta::dealias(^^rel::predicate_t<fixy::positive>);
+    return {.admits = std::meta::dealias(premise) == std::meta::dealias(^^rel::predicate_t<fixy::non_negative>)
+                   && std::meta::dealias(conclusion) == positive_type,
+            .successor = positive_type};
+}
 }  // namespace elsewhere
 
-static_assert(elsewhere::non_negative_is_positive::admits<rel::predicate_t<fixy::non_negative>,
-                                                          rel::predicate_t<fixy::positive>>(),
-              "the family itself decides the pair");
-static_assert(!fixy::implies_v<fixy::non_negative, fixy::positive>, "a family outside the namespace is inert");
+static_assert(rel::is_rule(^^elsewhere::non_negative_is_positive), "the function has the type of a rule");
+static_assert(elsewhere::non_negative_is_positive(^^rel::predicate_t<fixy::non_negative>,
+                                                  ^^rel::predicate_t<fixy::positive>)
+                  .admits,
+              "the rule itself decides the pair");
+static_assert(!fixy::PredicateImplies<fixy::non_negative, fixy::positive>, "a rule outside the namespace is inert");
 
 // ── Attack 2: a derived predicate borrows a base's parameters ────────
 //
@@ -66,12 +67,13 @@ inline constexpr AcceptsNothing accepts_nothing{};
 inline constexpr LooseConjunction loose_conjunction{};
 inline constexpr NarrowRange narrow_range{};
 
-static_assert(!fixy::implies_v<accepts_everything, fixy::bounded_above<20>>, "a derived premise borrows nothing");
-static_assert(!fixy::implies_v<fixy::in_range<5, 9>, accepts_nothing>, "a derived conclusion borrows nothing");
-static_assert(!fixy::implies_v<fixy::bounded_above<9>, accepts_nothing>, "a derived conclusion borrows nothing");
-static_assert(!fixy::implies_v<loose_conjunction, fixy::non_zero>, "a derived conjunction borrows nothing");
-static_assert(!fixy::implies_v<narrow_range, fixy::positive>, "a derived range reaches no chain");
-static_assert(!fixy::implies_v<fixy::all_of<accepts_everything>, fixy::bounded_above<20>>,
+static_assert(!fixy::PredicateImplies<accepts_everything, fixy::bounded_above<20>>,
+              "a derived premise borrows nothing");
+static_assert(!fixy::PredicateImplies<fixy::in_range<5, 9>, accepts_nothing>, "a derived conclusion borrows nothing");
+static_assert(!fixy::PredicateImplies<fixy::bounded_above<9>, accepts_nothing>, "a derived conclusion borrows nothing");
+static_assert(!fixy::PredicateImplies<loose_conjunction, fixy::non_zero>, "a derived conjunction borrows nothing");
+static_assert(!fixy::PredicateImplies<narrow_range, fixy::positive>, "a derived range reaches no chain");
+static_assert(!fixy::PredicateImplies<fixy::all_of<accepts_everything>, fixy::bounded_above<20>>,
               "a derived conjunct borrows nothing through a conjunction");
 
 // ── Attack 3: the same name in another namespace ─────────────────────
@@ -85,9 +87,9 @@ template <auto Max>
 inline constexpr BoundedAbove<Max> bounded_above{};
 }  // namespace impostor
 
-static_assert(!fixy::implies_v<impostor::bounded_above<9>, fixy::bounded_above<20>>);
-static_assert(!fixy::implies_v<fixy::in_range<5, 9>, impostor::bounded_above<20>>);
-static_assert(!fixy::implies_v<impostor::bounded_above<9>, impostor::bounded_above<20>>,
+static_assert(!fixy::PredicateImplies<impostor::bounded_above<9>, fixy::bounded_above<20>>);
+static_assert(!fixy::PredicateImplies<fixy::in_range<5, 9>, impostor::bounded_above<20>>);
+static_assert(!fixy::PredicateImplies<impostor::bounded_above<9>, impostor::bounded_above<20>>,
               "the impostor families were never admitted");
 
 // ── Attack 4: aliases ────────────────────────────────────────────────
@@ -100,30 +102,34 @@ inline constexpr auto positive_again = fixy::positive;
 inline constexpr auto positive_rewritten = [](auto x) constexpr noexcept { return x > decltype(x){0}; };
 using ceiling_alias = rel::predicate_t<fixy::bounded_above<9>>;
 
-static_assert(fixy::implies_v<positive_again, fixy::non_zero> && fixy::implies_v<positive_again, fixy::non_null>);
-static_assert(!fixy::implies_v<positive_rewritten, fixy::non_zero>
-              && !fixy::implies_v<positive_rewritten, fixy::positive>);
-static_assert(rel::implies_types<ceiling_alias, rel::predicate_t<fixy::bounded_above<20>>>());
+static_assert(fixy::PredicateImplies<positive_again, fixy::non_zero>
+              && fixy::PredicateImplies<positive_again, fixy::non_null>);
+static_assert(!fixy::PredicateImplies<positive_rewritten, fixy::non_zero>
+              && !fixy::PredicateImplies<positive_rewritten, fixy::positive>);
+static_assert(rel::predicate_implies(^^ceiling_alias, ^^rel::predicate_t<fixy::bounded_above<20>>));
 
 // ── Attack 5: bounds of mixed signedness ─────────────────────────────
 
-static_assert(!fixy::implies_v<fixy::bounded_above<9u>, fixy::bounded_above<-1>>);
-static_assert(!fixy::implies_v<fixy::in_range<5u, 9u>, fixy::bounded_above<-1>>, "no chain turns -1 into a ceiling");
-static_assert(!fixy::implies_v<fixy::bounded_below<-1>, fixy::bounded_below<9u>>);
-static_assert(!fixy::implies_v<fixy::in_range<-1, 9>, fixy::non_negative>, "a negative floor reaches nothing");
-static_assert(!fixy::implies_v<fixy::in_range<-1, 9>, fixy::in_range<0u, 9u>>);
-static_assert(!fixy::implies_v<fixy::divisible_by<-8>, fixy::divisible_by<4u>>);
-static_assert(fixy::implies_v<fixy::in_range<0u, 9u>, fixy::in_range<-1, 9>>, "the sound direction still holds");
+static_assert(!fixy::PredicateImplies<fixy::bounded_above<9u>, fixy::bounded_above<-1>>);
+static_assert(!fixy::PredicateImplies<fixy::in_range<5u, 9u>, fixy::bounded_above<-1>>,
+              "no chain turns -1 into a ceiling");
+static_assert(!fixy::PredicateImplies<fixy::bounded_below<-1>, fixy::bounded_below<9u>>);
+static_assert(!fixy::PredicateImplies<fixy::in_range<-1, 9>, fixy::non_negative>, "a negative floor reaches nothing");
+static_assert(!fixy::PredicateImplies<fixy::in_range<-1, 9>, fixy::in_range<0u, 9u>>);
+static_assert(!fixy::PredicateImplies<fixy::divisible_by<-8>, fixy::divisible_by<4u>>);
+static_assert(fixy::PredicateImplies<fixy::in_range<0u, 9u>, fixy::in_range<-1, 9>>, "the sound direction still holds");
 
 // ── Attack 6: a chain past the narrowing edge ────────────────────────
 //
 // non_zero ⇒ non_null narrows the domain, and a chain ends there.
 // non_null reaches non_zero and nothing past it.
 
-static_assert(fixy::implies_v<fixy::non_null, fixy::non_zero>);
-static_assert(!fixy::implies_v<fixy::non_null, fixy::non_negative> && !fixy::implies_v<fixy::non_null, fixy::positive>);
-static_assert(!fixy::implies_v<fixy::non_zero, fixy::non_zero>, "the cycle through non_null adds no reflexive answer");
-static_assert(fixy::implies_v<fixy::in_range<1, 9>, fixy::non_null>,
+static_assert(fixy::PredicateImplies<fixy::non_null, fixy::non_zero>);
+static_assert(!fixy::PredicateImplies<fixy::non_null, fixy::non_negative>
+              && !fixy::PredicateImplies<fixy::non_null, fixy::positive>);
+static_assert(!fixy::PredicateImplies<fixy::non_zero, fixy::non_zero>,
+              "the cycle through non_null adds no reflexive answer");
+static_assert(fixy::PredicateImplies<fixy::in_range<1, 9>, fixy::non_null>,
               "a range ends on the narrowing edge after three steps that keep the domain");
 
 // ── Attack 7: declarations after the header ──────────────────────────
@@ -139,6 +145,19 @@ static_assert(ffc::Sealed<^^rel::admitted_implications>);
 static_assert(ffc::read_seal(^^rel::admitted_implications).sealed == 20);
 static_assert(ffc::edge_count<^^rel::admitted_implications>() == 4,
               "the header states four plain edges beside its narrowing edges and rule families");
+
+// ── Attack 8: an explicit specialization of a reader ─────────────────
+//
+// An explicit specialization changes the answer of a template in any
+// file.  The closure, each rule and fail_closed::admits are functions at
+// namespace scope that are not templates, and the two gates are concepts.
+// The fixtures neg_refined_implies_specialized,
+// neg_refined_rule_specialized and neg_fail_closed_admits_specialized
+// show each specialization refused.
+
+static_assert(std::meta::is_function(^^rel::predicate_implies) && std::meta::is_function(^^ffc::admits));
+static_assert(std::meta::is_concept(^^fixy::PredicateImplies) && std::meta::is_concept(^^ffc::Admitted));
+static_assert(rel::is_rule(^^rel::admitted_implications::bounded_above_weakens));
 
 // The payload order of fixy/session/Subtype.h is this relation, so the
 // late edge does not make a non-negative payload a subtype of a positive

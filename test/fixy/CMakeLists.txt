@@ -969,20 +969,31 @@ fixy_neg_compile_test(neg_refined_predicate_fails_at_consteval_mint
 
 # non_negative ⇒ positive is not a member of admitted_implications, and
 # the edge the fixture declares elsewhere is inert, so the constrained
-# weakening fails its constraint and the note shows implies_v false.
+# weakening fails its constraint and the note shows PredicateImplies false.
 fixy_neg_compile_test(neg_refined_implication_not_admitted
   "constraints not satisfied"
-  "the expression .implies_v<P, Q> \\[with P = .*; Q = .*\\]. evaluated to .false.")
+  "required for the satisfaction of .PredicateImplies<P, Q>. \\[with P = fixy::IsNonNegative\\{\\}; Q = fixy::IsPositive\\{\\}\\]"
+  "the expression .predicate_implies\\(.* evaluated to .false.")
 
 # The relation holds a seal that counts every member at the foot of the
-# header.  An edge or a rule family added after it stops the build at the
-# first implication query that no earlier line asked.
+# header.  An edge or a rule added after it stops the build at the first
+# implication query that reads the seal after it.
 fixy_neg_compile_test(neg_refined_edge_after_the_header
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::implies_types<fixy::InRange<0, 7>, fixy::IsPositive>\\(\\).")
-fixy_neg_compile_test(neg_refined_family_after_the_header
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^fixy::refined::predicate_t<fixy::InRange<0, 7>\\(\\)>, \\^\\^fixy::refined::predicate_t<fixy::IsPositive\\(\\)>\\).")
+fixy_neg_compile_test(neg_refined_rule_after_the_header
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::implies_types<fixy::BoundedBelow<2>, fixy::IsNonZero>\\(\\).")
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^fixy::refined::predicate_t<fixy::BoundedBelow<2>\\(\\)>, \\^\\^fixy::refined::predicate_t<fixy::IsNonZero\\(\\)>\\).")
+
+# The closure and each rule are functions at namespace scope that are not
+# templates, so an explicit specialization that forges an implication
+# matches no template.
+fixy_neg_compile_test(neg_refined_implies_specialized
+  "template-id .predicate_implies<>. for .consteval bool fixy::refined::predicate_implies\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_refined_implies_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_refined_rule_specialized
+  "template-id .bounded_above_weakens<>. for .consteval fixy::refined::rule_verdict fixy::refined::admitted_implications::bounded_above_weakens\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_refined_rule_specialized\\.cpp:12:[0-9]+: error:")
 
 # No public constructor takes a bare value; the candidates the compiler
 # lists are the copy, the move and the two private doors.
@@ -1021,12 +1032,16 @@ fixy_neg_compile_test(neg_refined_sealed_into_unreachable
   "constraints not satisfied"
   "the expression .!Sealed \\[with Sealed = true\\]. evaluated to .false.")
 
-# A rule family opts in by deriving rule_family<itself>, which replaced
-# a marker variable that could be forgotten.  A class in the namespace
-# that derives nothing is refused where the namespace is walked.
-fixy_neg_compile_test(neg_refined_rule_family_without_base
-  "static assertion failed: a class declared in admitted_implications is a rule family, which it says by deriving rule_family<itself>"
-  ".fixy::refined::rule_family<fixy::refined::admitted_implications::not_a_rule_family>. is not a base of .fixy::refined::admitted_implications::not_a_rule_family.")
+# A rule is a function of type rule_signature, and the walk calls each
+# one.  A class, or a function of another type, in the namespace would
+# decide nothing, so the self-test refuses each where it walks the
+# namespace.
+fixy_neg_compile_test(neg_refined_class_in_the_relation
+  "static assertion failed: a member of admitted_implications is an edge, a narrowing edge, the seal, or a rule of type refined::rule_signature"
+  ".fixy::refined::is_rule\\(\\(\\(std::meta::info\\)m\\)\\). evaluates to false")
+fixy_neg_compile_test(neg_refined_rule_of_the_wrong_type
+  "static assertion failed: a member of admitted_implications is an edge, a narrowing edge, the seal, or a rule of type refined::rule_signature"
+  ".fixy::refined::is_rule\\(\\(\\(std::meta::info\\)m\\)\\). evaluates to false")
 
 # DivisibleBy<0> and Bounded<10, 5, int> are refused where the type is
 # named, before any value is minted.
@@ -1042,10 +1057,10 @@ fixy_neg_compile_test(neg_refined_bounded_inverted
 # extend a chain, and a chain runs one way.
 fixy_neg_compile_test(neg_refined_chain_through_unadmitted_edge
   "constraints not satisfied"
-  "the expression .implies_v<P, Q> \\[with P = fixy::InRange<5, 9>\\{\\}; Q = .*\\]. evaluated to .false.")
+  "the expression .predicate_implies\\(.*\\[with P = fixy::InRange<5, 9>\\{\\}; Q = .*\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_refined_chain_wrong_direction
   "constraints not satisfied"
-  "the expression .implies_v<P, Q> \\[with P = fixy::BoundedAbove<20>\\{\\}; Q = fixy::InRange<5, 9>\\{\\}\\]. evaluated to .false.")
+  "the expression .predicate_implies\\(.*\\[with P = fixy::BoundedAbove<20>\\{\\}; Q = fixy::InRange<5, 9>\\{\\}\\]. evaluated to .false.")
 
 # Two distinct predicates that imply each other through steps that do
 # not narrow are two names for one predicate.  The walk at the foot of
@@ -1053,28 +1068,28 @@ fixy_neg_compile_test(neg_refined_chain_wrong_direction
 # the cycle, of two steps or of three.
 fixy_neg_compile_test(neg_refined_implication_cycle_edges
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::implies_types<planted::<lambda\\(auto:[0-9]+\\)>, fixy::detail::refined_self_test::unreachable_conclusion>\\(\\).")
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_self_test::unreachable_conclusion\\).")
 fixy_neg_compile_test(neg_refined_implication_cycle_ring
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::implies_types<planted::<lambda\\(auto:[0-9]+\\)>, fixy::detail::refined_self_test::unreachable_conclusion>\\(\\).")
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_self_test::unreachable_conclusion\\).")
 
 # A predicate with a base class borrows none of its base's places in
 # the relation, as a premise or as a conclusion.
 fixy_neg_compile_test(neg_refined_derived_predicate_premise
   "constraints not satisfied"
-  "the expression .implies_v<P, Q> \\[with P = <unnamed>::AcceptsEverything\\{\\}; Q = fixy::BoundedAbove<20>\\{\\}\\]. evaluated to .false.")
+  "the expression .predicate_implies\\(.*\\[with P = <unnamed>::AcceptsEverything\\{\\}; Q = fixy::BoundedAbove<20>\\{\\}\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_refined_derived_predicate_conclusion
   "constraints not satisfied"
-  "the expression .implies_v<P, Q> \\[with P = fixy::InRange<5, 9>\\{\\}; Q = <unnamed>::AcceptsNothing\\{\\}\\]. evaluated to .false.")
+  "the expression .predicate_implies\\(.*\\[with P = fixy::InRange<5, 9>\\{\\}; Q = <unnamed>::AcceptsNothing\\{\\}\\]. evaluated to .false.")
 
 # Bounds of different signedness are compared by value, so -1 never
 # becomes the largest unsigned value inside a step.
 fixy_neg_compile_test(neg_refined_mixed_sign_ceiling
   "constraints not satisfied"
-  "the expression .implies_v<P, Q> \\[with P = fixy::BoundedAbove<9>\\{\\}; Q = fixy::BoundedAbove<-1>\\{\\}\\]. evaluated to .false.")
+  "the expression .predicate_implies\\(.*\\[with P = fixy::BoundedAbove<9>\\{\\}; Q = fixy::BoundedAbove<-1>\\{\\}\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_refined_mixed_sign_floor
   "constraints not satisfied"
-  "the expression .implies_v<P, Q> \\[with P = fixy::BoundedBelow<-1>\\{\\}; Q = fixy::BoundedBelow<9>\\{\\}\\]. evaluated to .false.")
+  "the expression .predicate_implies\\(.*\\[with P = fixy::BoundedBelow<-1>\\{\\}; Q = fixy::BoundedBelow<9>\\{\\}\\]. evaluated to .false.")
 
 # A bounded predicate compares a value with its bound by value, and it is
 # defined only on a value type that holds the bound.  The checked mint
@@ -1195,7 +1210,7 @@ fixy_neg_compile_test(neg_tagged_forge_by_constructor
 fixy_neg_compile_test(neg_secret_declassify_unlisted_policy
   "constraints not satisfied"
   "satisfaction of .AdmittedDeclassification<Policy>."
-  "the expression .\\(admits<Ns, From, To>\\)\\(\\).*evaluated to .false.")
+  "the expression .admits\\(.*evaluated to .false.")
 
 # The copy constructor of Secret is deleted with a reason; the compiler
 # names the constructor and repeats the reason.

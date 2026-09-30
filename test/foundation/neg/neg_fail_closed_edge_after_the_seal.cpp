@@ -26,7 +26,7 @@ namespace ingest {
 inline constexpr ffc::edge<Raw, Checked> raw_to_checked{};
 }  // namespace ingest
 
-static_assert(ffc::admits<^^ingest, Raw, Checked>());
+static_assert(ffc::admits(^^ingest, ^^Raw, ^^Checked));
 
 }  // namespace
 

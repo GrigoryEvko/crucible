@@ -12,7 +12,7 @@
 fixy::ClockSource::satisfies | 1
 fixy::CpuPinned::meets_posture | 1
 fixy::SchedClass::runnable_on | 1
-fixy::admits | 3
+fixy::admits | 2
 fixy::atom::detail::atom_refusal_v | 1
 fixy::atom::detail::effect_grade_row_ | 1
 fixy::atom::fp::detail::settings_from_ | 1
@@ -61,7 +61,7 @@ fixy::detail::earned_tag::is_earned | 1
 fixy::detail::reject::first_duplicated_axis_ | 1
 fixy::detail::role::is_accepted_fn | 1
 fixy::detail::thread_name_extract::is_thread_named_v | 1
-fixy::federation::policy::admit_orgs::admits | 3
+fixy::federation::policy::admit_orgs::admits | 2
 fixy::fs::detail::all_atom_tags_known_v | 1
 fixy::io::detail::all_ring_flags_known_v | 1
 fixy::io::detail::cq_entries_is_pow2_or_default_v | 1
@@ -83,7 +83,6 @@ fixy::mmap::detail::is_primary_with_share_v | 1
 fixy::mmap::detail::pack_has_anonymous_v | 1
 fixy::mmap::detail::region_mint_admits_v | 1
 fixy::refined::bound_fits | 1
-fixy::refined::rule_family::admits | 3
 fixy::relax | 1
 fixy::sanitize::path_traversal::sanitize_path_no_dotdot | 1
 fixy::select_fresher | 2
@@ -125,8 +124,8 @@ fixy::session::resource_is_copyable_v | 1
 fixy::session::session_priority_v | 1
 fixy::session::type_display_name_v | 1
 fixy::spawn::detail::can_ctx_fit_spawn | 1
-fixy::witness::AtProtocol::admits | 3
-fixy::witness::UnderRow::admits | 3
+fixy::witness::AtProtocol::admits | 2
+fixy::witness::UnderRow::admits | 2
 foundation::AlignedBuffer | 2
 foundation::algebra::Graded::can_regrade_ | 2
 foundation::algebra::Graded::inject | 3
@@ -162,7 +161,6 @@ foundation::effects::is_effect_row_v | 1
 foundation::effects::is_subrow_v | 3
 foundation::effects::row_contains_v | 5
 foundation::effects::row_size_v | 6
-foundation::fail_closed::admits | 4
 foundation::lifetime::start_as_array | 1
 foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
 foundation::permissions::detail::can_each_body_take_its_child_v | 7

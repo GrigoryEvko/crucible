@@ -23,9 +23,12 @@
 //     }  // namespace retag
 //     static_assert(foundation::fail_closed::Admitted<^^retag, FromUser, Sanitized>);
 //
-// The namespace is read when a pair is first checked, and that answer
-// holds for the rest of the translation unit.  Declare every edge of a
-// relation before the first check against it.
+// The check reads the namespace where the check stands.  Declare every
+// edge of a relation before the first check against it.
+//
+// The check is the function admits, which is not a template, and the
+// concept Admitted reads it.  A translation unit cannot specialize either
+// one to admit a pair that the namespace does not declare.
 //
 // ── The seal ──────────────────────────────────────────────────────────
 //
@@ -115,6 +118,7 @@ namespace detail {
 // the constant evaluation, and the diagnostic names it.
 void a_member_stands_outside_the_seal_of_its_relation() noexcept;
 void a_relation_holds_two_seals() noexcept;
+void admits_reads_the_reflection_of_a_namespace() noexcept;
 
 }  // namespace detail
 
@@ -133,35 +137,25 @@ consteval void require_seal_holds(std::meta::info ns) {
 template <std::meta::info Ns>
 concept Sealed = read_seal(Ns).is_sealed && read_seal(Ns).fault == seal_fault::none;
 
-// True when Ns declares a variable of type edge<From, To>.  Every other
-// member of Ns is skipped: a function, a nested type, a nested
-// namespace, a template, or a variable of any other type.  A nested
-// namespace is not opened, so an edge one level down does not count.
-template <std::meta::info Ns, class From, class To>
-[[nodiscard]] consteval bool admits() noexcept {
-    static_assert(std::meta::is_namespace(Ns), "fail_closed::admits<Ns, From, To>: Ns must be the reflection of "
-                                               "a namespace, written ^^name.");
-    require_seal_holds(Ns);
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
-    // -Wshadow fires on the expansion-statement induction variable.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto m : members) {
-        // type_of is defined for a variable and not for every member
-        // kind, so the kind is settled before the type is read.
-        if constexpr (std::meta::is_variable(m)) {
-            if constexpr (std::meta::remove_cvref(std::meta::type_of(m)) == ^^edge<From, To>) {
-                return true;
-            }
-        }
+// True when ns declares a variable of type edge<from, to>.  Every other
+// member of ns is skipped: a function, a nested type, a nested namespace,
+// a template, or a variable of any other type.  A nested namespace is not
+// opened, so an edge one level down does not count.  Complexity: linear
+// in the members of ns.
+[[nodiscard]] consteval bool admits(std::meta::info ns, std::meta::info from, std::meta::info to) {
+    if (!std::meta::is_namespace(ns)) detail::admits_reads_the_reflection_of_a_namespace();
+    require_seal_holds(ns);
+    const std::meta::info admitted = std::meta::substitute(^^edge, {from, to});
+    for (const std::meta::info m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        // type_of is defined for a variable and not for every member kind,
+        // so the kind is settled before the type is read.
+        if (std::meta::is_variable(m) && std::meta::remove_cvref(std::meta::type_of(m)) == admitted) return true;
     }
-#pragma GCC diagnostic pop
     return false;
 }
 
 template <std::meta::info Ns, class From, class To>
-concept Admitted = admits<Ns, From, To>();
+concept Admitted = admits(Ns, ^^From, ^^To);
 
 // ── Properties of a whole relation ──────────────────────────────────
 //
@@ -368,18 +362,11 @@ template <std::meta::info Ns>
     static_assert(std::meta::is_namespace(Ns), "fail_closed::every_edge_is_admitted<Ns>: Ns must be the "
                                                "reflection of a namespace, written ^^name.");
     require_seal_holds(Ns);
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
-    // -Wshadow fires on the expansion-statement induction variable.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto m : members) {
-        if constexpr (is_edge(m)) {
-            constexpr auto ends = ends_of(m);
-            if (!admits<Ns, typename[:ends.from:], typename[:ends.to:]>()) return false;
-        }
+    for (const std::meta::info m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
+        if (!is_edge(m)) continue;
+        const edge_ends ends = ends_of(m);
+        if (!admits(Ns, ends.from, ends.to)) return false;
     }
-#pragma GCC diagnostic pop
     return true;
 }
 

@@ -14,7 +14,7 @@ struct AcceptsNothing : fixy::BoundedAbove<20> {
 inline constexpr AcceptsNothing accepts_nothing{};
 
 template <auto P, auto Q, class T>
-    requires fixy::implies_v<P, Q>
+    requires fixy::PredicateImplies<P, Q>
 [[nodiscard]] constexpr fixy::Refined<Q, T> weaken(fixy::Refined<P, T>&& refined) noexcept {
     return fixy::mint_refined_trusted<Q>(std::move(refined).into());
 }

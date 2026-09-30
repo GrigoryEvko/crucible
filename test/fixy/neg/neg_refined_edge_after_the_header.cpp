@@ -17,6 +17,6 @@ inline constexpr ::foundation::fail_closed::edge<predicate_t<::fixy::non_negativ
 
 }  // namespace fixy::refined::admitted_implications
 
-static_assert(fixy::implies_v<fixy::in_range<0, 7>, fixy::positive>);
+static_assert(fixy::PredicateImplies<fixy::in_range<0, 7>, fixy::positive>);
 
 int main() { return 0; }
