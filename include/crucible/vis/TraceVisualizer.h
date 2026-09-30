@@ -932,19 +932,17 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
     const auto& blocks = view.detection.blocks;
     if (blocks.empty()) return {};
 
-    std::vector<LayoutNode> nodes;
-    nodes.reserve(blocks.size());
-    for (const auto& block : blocks) {
-        const float width = std::min(260.0f, std::max(104.0f, static_cast<float>(block.label.size()) * 7.0f + 28.0f));
-        LayoutNode node;
-        node.lw = width * 0.5f;
-        node.rw = width * 0.5f;
-        node.min_height = 32.0f;
-        nodes.push_back(node);
+    std::vector<LayoutNode> nodes(blocks.size());
+    for (size_t index = 0; index < blocks.size(); ++index) {
+        const float label_width = static_cast<float>(blocks[index].label.size()) * 7.0f + 28.0f;
+        const float width = std::min(260.0f, std::max(104.0f, label_width));
+        nodes[index].lw = width * 0.5f;
+        nodes[index].rw = width * 0.5f;
+        nodes[index].min_height = 32.0f;
     }
 
+    // The filter below drops some edges, so the count is not known here.
     std::vector<LayoutEdge> layout_edges;
-    layout_edges.reserve(view.edges.size());
     for (const auto& edge : view.edges) {
         if (edge.src_block >= blocks.size() || edge.dst_block >= blocks.size()) continue;
         if (edge.kind == DagEdgeKind::LOOP_FEEDBACK) continue;
