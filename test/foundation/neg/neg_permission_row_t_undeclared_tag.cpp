@@ -5,8 +5,8 @@
 // it rather than read as void.  A consumer that folds the rows of its
 // tags then cannot fold an undeclared tag in as an empty row.
 //
-// Expected diagnostic: the static_assert in permission_row_lookup that
-// names the two ways to declare a row.
+// Expected diagnostic: the refusal in permission_row_of that names the
+// two ways to declare a row.
 
 #include <foundation/permissions/Permission.h>
 
@@ -16,7 +16,4 @@ namespace {
 struct Undeclared {};
 }  // namespace
 
-int main() {
-    using Row = ::foundation::permissions::permission_row_t<Undeclared>;
-    return static_cast<int>(std::is_void_v<Row>);
-}
+int main() { return static_cast<int>(std::is_void_v<::foundation::permissions::permission_row_t<Undeclared>>); }

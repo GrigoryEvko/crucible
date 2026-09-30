@@ -2,11 +2,11 @@
 //
 // A relation is read from the members of a namespace.  A class is not a
 // namespace, even when it holds a static member of type edge, and the
-// static_assert in has_edge_from refuses it.  Without that check,
+// check at the start of has_edge_from refuses it.  Without that check,
 // has_edge_from reads the class as a relation and answers.
 //
-// Expected diagnostic: the static_assert in has_edge_from that asks for
-// the reflection of a namespace.
+// Expected diagnostic: the refusal in has_edge_from that asks for the
+// reflection of a namespace.
 
 #include <foundation/diag/FailClosed.h>
 
@@ -18,10 +18,10 @@ struct Raw {};
 struct Checked {};
 
 struct NotARelation {
-    static constexpr ffc::edge<Raw, Checked> raw_to_checked{};
+    [[maybe_unused]] static constexpr ffc::edge<Raw, Checked> raw_to_checked{};
 };
 
-[[maybe_unused]] constexpr auto answer = ffc::has_edge_from<^^NotARelation, Raw>();
+[[maybe_unused]] constexpr auto answer = ffc::has_edge_from(^^NotARelation, ^^Raw);
 
 }  // namespace
 

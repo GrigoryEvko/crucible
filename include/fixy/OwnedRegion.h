@@ -529,7 +529,7 @@ static_assert(std::is_empty_v<Slice<detail::owned_region_test_tag, 0>>);
 static_assert(!std::is_same_v<Slice<detail::owned_region_test_tag, 0>, Slice<detail::owned_region_test_tag, 1>>);
 static_assert(std::is_same_v<Slice<detail::owned_region_test_tag, 5>::parent_type, detail::owned_region_test_tag>);
 static_assert(Slice<detail::owned_region_test_tag, 5>::index == 5);
-static_assert(::foundation::permissions::has_permission_row_v<Slice<detail::owned_region_test_tag, 3>>,
+static_assert(::foundation::permissions::has_permission_row(^^Slice<detail::owned_region_test_tag, 3>),
               "a shard has its parent's row");
 
 static_assert(

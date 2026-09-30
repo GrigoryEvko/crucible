@@ -5,8 +5,8 @@
 // refused where the row is read, so no consumer of permission_row_t
 // sees a type that is not a row.
 //
-// Expected diagnostic: the static_assert in permission_row_lookup that
-// asks for a foundation::effects::Row.
+// Expected diagnostic: the refusal in permission_row_of that asks for a
+// foundation::effects::Row.
 
 #include <foundation/permissions/Permission.h>
 
@@ -18,7 +18,4 @@ struct RowIsAnInt {
 };
 }  // namespace
 
-int main() {
-    using Row = ::foundation::permissions::permission_row_t<RowIsAnInt>;
-    return static_cast<int>(std::is_same_v<Row, int>);
-}
+int main() { return static_cast<int>(std::is_same_v<::foundation::permissions::permission_row_t<RowIsAnInt>, int>); }

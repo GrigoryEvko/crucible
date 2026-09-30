@@ -1105,77 +1105,49 @@ namespace detail {
 // that leaves a loan open, or sends a region that the set does not hold,
 // is refused at the mint even when the program never selects that arm.
 //
-// LoopPS is the set at the entry of the innermost Loop, or void outside
-// every Loop.  A head that the walk does not know is refused.
+// loop_ps is the set at the entry of the innermost Loop, or void outside
+// every Loop.  A head that the walk does not know is refused.  The walk is
+// a function at namespace scope that is not a template, so no translation
+// unit can specialize a step to close a flow that leaves a loan open.
 //
 // Complexity: one visit for each node of the protocol tree.
-template <typename P, typename PS, typename LoopPS>
-struct permission_flow_ {
-    static consteval bool closes() noexcept { return false; }
-};
-
-template <typename T, typename R, typename PS, typename LoopPS>
-struct permission_flow_<Send<T, R>, PS, LoopPS> {
-    static consteval bool closes() noexcept {
-        if constexpr (handle_admits_send_v<PS, T>) {
-            return permission_flow_<R, perm_set_after_send_t<PS, T>, LoopPS>::closes();
-        } else {
-            return false;
-        }
+[[nodiscard]] consteval bool permission_flow_closes(std::meta::info protocol, std::meta::info ps,
+                                                    std::meta::info loop_ps) {
+    const std::meta::info node = std::meta::dealias(protocol);
+    if (node == ^^End) return std::meta::extract<bool>(std::meta::substitute(^^perm_set_admits_close_v, {ps}));
+    if (node == ^^Continue) {
+        if (std::meta::dealias(loop_ps) == (^^void)) return false;
+        return ::foundation::permissions::perm_set_equal(ps, loop_ps);
     }
-};
-
-template <typename T, typename R, typename PS, typename LoopPS>
-struct permission_flow_<Recv<T, R>, PS, LoopPS> {
-    static consteval bool closes() noexcept {
-        if constexpr (handle_admits_recv_v<PS, T>) {
-            return permission_flow_<R, perm_set_after_recv_t<PS, T>, LoopPS>::closes();
-        } else {
-            return false;
-        }
+    if (!std::meta::has_template_arguments(node)) return false;
+    const std::meta::info head = std::meta::template_of(node);
+    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(node);
+    if (head == ^^Send) {
+        if (!std::meta::extract<bool>(std::meta::substitute(^^handle_admits_send_v, {ps, arguments[0]}))) return false;
+        return permission_flow_closes(arguments[1], std::meta::substitute(^^perm_set_after_send_t, {ps, arguments[0]}),
+                                      loop_ps);
     }
-};
-
-template <typename... Branches, typename PS, typename LoopPS>
-struct permission_flow_<Select<Branches...>, PS, LoopPS> {
-    static consteval bool closes() noexcept { return (permission_flow_<Branches, PS, LoopPS>::closes() && ...); }
-};
-
-template <typename... Branches, typename PS, typename LoopPS>
-struct permission_flow_<Offer<Branches...>, PS, LoopPS> {
-    static consteval bool closes() noexcept { return (permission_flow_<Branches, PS, LoopPS>::closes() && ...); }
-};
-
-template <typename Role, typename... Branches, typename PS, typename LoopPS>
-struct permission_flow_<Offer<Sender<Role>, Branches...>, PS, LoopPS> {
-    static consteval bool closes() noexcept { return (permission_flow_<Branches, PS, LoopPS>::closes() && ...); }
-};
-
-template <typename Body, typename PS, typename LoopPS>
-struct permission_flow_<Loop<Body>, PS, LoopPS> {
-    static consteval bool closes() noexcept { return permission_flow_<Body, PS, PS>::closes(); }
-};
-
-template <typename PS, typename LoopPS>
-struct permission_flow_<Continue, PS, LoopPS> {
-    static consteval bool closes() noexcept {
-        if constexpr (std::is_void_v<LoopPS>) {
-            return false;
-        } else {
-            return ::foundation::permissions::perm_set_equal_v<PS, LoopPS>;
-        }
+    if (head == ^^Recv) {
+        if (!std::meta::extract<bool>(std::meta::substitute(^^handle_admits_recv_v, {ps, arguments[0]}))) return false;
+        return permission_flow_closes(arguments[1], std::meta::substitute(^^perm_set_after_recv_t, {ps, arguments[0]}),
+                                      loop_ps);
     }
-};
-
-template <typename PS, typename LoopPS>
-struct permission_flow_<End, PS, LoopPS> {
-    static consteval bool closes() noexcept { return perm_set_admits_close_v<PS>; }
-};
-
-template <VendorBackend V, typename P, typename PS, typename LoopPS>
-struct permission_flow_<VendorPinned<V, P>, PS, LoopPS> {
-    static consteval bool closes() noexcept { return permission_flow_<P, PS, LoopPS>::closes(); }
-};
+    if (head == ^^Select || head == ^^Offer) {
+        const bool is_offer = head == ^^Offer;
+        bool is_first = true;
+        for (const std::meta::info branch : arguments) {
+            // The Sender note of an Offer names a role, and it is no branch.
+            const bool is_sender_note = is_first && is_offer && std::meta::has_template_arguments(branch)
+                                     && std::meta::template_of(branch) == ^^Sender;
+            is_first = false;
+            if (!is_sender_note && !permission_flow_closes(branch, ps, loop_ps)) return false;
+        }
+        return true;
+    }
+    if (head == ^^Loop) return permission_flow_closes(arguments[0], ps, ps);
+    if (head == ^^VendorPinned) return permission_flow_closes(arguments[1], ps, loop_ps);
+    return false;
+}
 
 }  // namespace detail
 
@@ -1183,7 +1155,7 @@ struct permission_flow_<VendorPinned<V, P>, PS, LoopPS> {
 // holds, receives no second owner of a region, returns each loop to the
 // set of its entry, and reaches End with no open loan.
 template <typename Proto, typename PS>
-concept PermissionFlowCloses = detail::permission_flow_<Proto, PS, void>::closes();
+concept PermissionFlowCloses = detail::permission_flow_closes(^^Proto, ^^PS, ^^void);
 
 // ── Rewinding a session ──────────────────────────────────────────────
 //
@@ -2083,7 +2055,7 @@ constexpr auto HandleFactory::step_(Resource r, watch::session_ref session, std:
         static_assert(!std::is_void_v<ActiveLoopCtx>, "fixy::session::diagnostic [Continue_Without_Loop]: "
                                                       "Continue appears outside a Loop context.  "
                                                       "Every Continue must have an enclosing Loop<Body>.");
-        static_assert(::foundation::permissions::perm_set_equal_v<PS, detail::loop_entry_perm_set_t<ActiveLoopCtx>>,
+        static_assert(::foundation::permissions::perm_set_equal(^^PS, ^^detail::loop_entry_perm_set_t<ActiveLoopCtx>),
                       "fixy::session::diagnostic [PermissionImbalance]: one iteration of the loop changes the "
                       "permission set, so a Continue would start the next iteration with a different set.  Each "
                       "permission that the body receives, it must send back before the Continue, and each "
@@ -2655,37 +2627,23 @@ namespace detail {
     return std::define_static_string(text);
 }
 
-// The row of a delivered region, or the empty row when its tag declares
-// none.  The primary does not name permission_row_t, so a tag with no row
-// gives one diagnostic, from union_of_permission_rows below.
-template <class Region, bool = ::foundation::permissions::has_permission_row_v<Region>>
-struct declared_permission_row {
-    using type = ::foundation::effects::Row<>;
-};
-
-template <class Region>
-struct declared_permission_row<Region, true> {
-    using type = ::foundation::permissions::permission_row_t<Region>;
-};
-
-template <class Row, class... Regions>
-struct union_of_permission_rows {
-    using type = Row;
-};
-
-template <class Row, class First, class... Rest>
-struct union_of_permission_rows<Row, First, Rest...> {
-    static_assert(::foundation::permissions::has_permission_row_v<First>, delivered_region_without_row_text(^^First));
-    using type = typename union_of_permission_rows<
-        ::foundation::effects::row_union_t<Row, typename declared_permission_row<First>::type>, Rest...>::type;
-};
-
-template <class Regions>
-struct permission_rows_of_set;
-
-template <class... Regions>
-struct permission_rows_of_set<::foundation::permissions::PermSet<Regions...>>
-    : union_of_permission_rows<::foundation::effects::Row<>, Regions...> {};
+// The union of the permission rows of the regions of the set.  A region
+// whose tag declares no row stops the build here, with one diagnostic.
+// The union is a function at namespace scope that is not a template, so no
+// translation unit can specialize it to give a region a lighter row.
+// Complexity: linear in the regions of the set.
+[[nodiscard]] consteval std::meta::info permission_rows_of_set(std::meta::info set) {
+    std::meta::info row = ^^::foundation::effects::Row<>;
+    for (const std::meta::info region : std::meta::template_arguments_of(std::meta::dealias(set))) {
+        if (!::foundation::permissions::has_permission_row(region)) {
+            throw std::meta::exception(refusal_text(delivered_region_without_row_text(region)), region);
+        }
+        row = std::meta::dealias(std::meta::substitute(
+            ^^::foundation::effects::row_union_t,
+            {row, std::meta::substitute(^^::foundation::permissions::permission_row_t, {region})}));
+    }
+    return row;
+}
 
 }  // namespace detail
 
@@ -2694,8 +2652,7 @@ struct permission_rows_of_set<::foundation::permissions::PermSet<Regions...>>
 // fixy/session/Payload.h).  A delivered tag that declares no row stops
 // the build, because no program can mint a token for it.
 template <class Proto>
-using protocol_delivered_permission_row_t =
-    typename detail::permission_rows_of_set<protocol_delivered_regions_t<Proto>>::type;
+using protocol_delivered_permission_row_t = [:detail::permission_rows_of_set(^^protocol_delivered_regions_t<Proto>):];
 
 // The context admits the effect row of Proto: the row of each payload,
 // and the permission row of each region that Proto delivers to the
@@ -2729,7 +2686,7 @@ concept RecoverAdmitted = ::foundation::reflect::IsInstanceOf<Choice, ^^Offer> &
 
 template <typename Ctx, typename Proto, typename Resource, typename... Tags>
 concept CtxFitsSessionFrom =
-    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::permissions::detail::perm_tags_unique_v<Tags...>
+    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::permissions::DistinctTags<Tags...>
     && (::foundation::permissions::CtxAdmitsPermission<Tags, Ctx> && ...)
     && WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
     && PermissionFlowCloses<Proto, ::foundation::permissions::PermSet<Tags...>> && CtxAdmitsProtocolRow<Ctx, Proto>;

@@ -66,11 +66,11 @@ class LentPermission;
 // bounded by who may hold that region.  A door that reads no context is
 // sound only for the empty row, which is the rule that
 // SharedPermissionPool::lend states for the pooled share of the same
-// region.  permission_row_empty_v answers false for a tag that declares
-// no row, so an undeclared tag is refused and not admitted by omission.
-// An effectful region borrows through SharedPermissionPool::lend(ctx).
+// region.  permission_row_empty answers false for a tag that declares no
+// row, so an undeclared tag is refused and not admitted by omission.  An
+// effectful region borrows through SharedPermissionPool::lend(ctx).
 template <typename Tag>
-concept ReadViewNeedsNoCtx = permission_row_empty_v<Tag>;
+concept ReadViewNeedsNoCtx = permission_row_empty(^^Tag);
 
 // ── The loan mints ───────────────────────────────────────────────────
 

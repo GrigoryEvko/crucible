@@ -66,10 +66,12 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <meta>
 #include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 // The three atoms that put a non-default spawn engagement in the type,
 // per design note 2.  Each routes to Axis::Protocol, because a spawn
@@ -162,14 +164,24 @@ namespace perm = ::foundation::permissions;
 
 namespace detail {
 
-template <typename Ctx, typename Parent, typename Brand, typename ChildrenTuple, typename CallablesTuple>
-struct can_ctx_fit_spawn : std::false_type {};
-
-template <typename Ctx, typename Parent, typename Brand, typename... Children, typename... Callables>
-struct can_ctx_fit_spawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple<Callables...>>
-    : std::bool_constant<perm::CtxFitsPermissionFork<Ctx, Parent, Children...>
-                         && perm::detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>,
-                                                                         std::tuple<Callables...>>> {};
+// True when the two tuples are std::tuple, the fork admits the context, the
+// parent and the children, and each body takes the view of its own child.
+// The test is a function at namespace scope that is not a template, so no
+// translation unit can specialize it to spawn a body that the fork refuses.
+[[nodiscard]] consteval bool spawn_fits(std::meta::info ctx, std::meta::info parent, std::meta::info brand,
+                                        std::meta::info children_tuple, std::meta::info callables_tuple) {
+    const std::meta::info children = std::meta::dealias(children_tuple);
+    const std::meta::info callables = std::meta::dealias(callables_tuple);
+    const bool are_tuples = std::meta::has_template_arguments(children) && std::meta::has_template_arguments(callables)
+                         && std::meta::template_of(children) == (^^std::tuple)
+                         && std::meta::template_of(callables) == (^^std::tuple);
+    if (!are_tuples) return false;
+    const std::vector<std::meta::info> child_tags = std::meta::template_arguments_of(children);
+    std::vector<std::meta::info> fork_arguments{ctx, parent};
+    fork_arguments.insert(fork_arguments.end(), child_tags.begin(), child_tags.end());
+    return std::meta::extract<bool>(std::meta::substitute(^^perm::CtxFitsPermissionFork, fork_arguments))
+        && perm::detail::each_body_takes_its_child(ctx, brand, children, callables);
+}
 
 // True when no callable's type carries the throws atom anywhere in its
 // type tree.  Read by the mint's body, per design note 1.
@@ -181,7 +193,7 @@ inline constexpr bool no_callable_throws_v = !(::fixy::type_tree_contains_throws
 // The two substrate gates are folded into one concept so the declaration
 // below carries a single requires clause.
 template <typename Ctx, typename Parent, typename Brand, typename ChildrenTuple, typename CallablesTuple>
-concept CtxFitsSpawn = detail::can_ctx_fit_spawn<Ctx, Parent, Brand, ChildrenTuple, CallablesTuple>::value;
+concept CtxFitsSpawn = detail::spawn_fits(^^Ctx, ^^Parent, ^^Brand, ^^ChildrenTuple, ^^CallablesTuple);
 
 // The call returns once every child has joined.  The budget states the
 // bytes the children touch together, and the parallelism rule chooses

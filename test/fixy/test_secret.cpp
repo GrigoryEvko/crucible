@@ -126,8 +126,8 @@ static_assert(ffc::every_class_in_has_edge<^^secret_policy::admitted_policies, ^
 
 // The From end of every edge is the lattice position Secret<T> sits at.
 static_assert(std::is_same_v<secret_policy::admitted_policies::classified, Secret<int>::lattice_type>);
-static_assert(ffc::has_edge_from<^^secret_policy::admitted_policies, Secret<int>::lattice_type>());
-static_assert(!ffc::has_edge_from<^^secret_policy::admitted_policies, fa::lattices::conf::PublicTier>());
+static_assert(ffc::has_edge_from(^^secret_policy::admitted_policies, ^^Secret<int>::lattice_type));
+static_assert(!ffc::has_edge_from(^^secret_policy::admitted_policies, ^^fa::lattices::conf::PublicTier));
 
 // The count of policy tags declared in the namespace.  A policy tag is a
 // class derived from the marker base, other than the base itself.

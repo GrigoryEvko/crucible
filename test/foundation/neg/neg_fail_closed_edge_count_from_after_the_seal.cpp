@@ -28,7 +28,7 @@ namespace ingest {
 inline constexpr ffc::edge<Checked, Stored> checked_to_stored{};
 }  // namespace ingest
 
-[[maybe_unused]] constexpr auto answer = ffc::edge_count_from<^^ingest, Raw>();
+[[maybe_unused]] constexpr auto answer = ffc::edge_count_from(^^ingest, ^^Raw);
 
 }  // namespace
 

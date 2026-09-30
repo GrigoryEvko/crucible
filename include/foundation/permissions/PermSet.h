@@ -1,8 +1,9 @@
 #pragma once
 
 // PermSet<Tags...> is the set of permission tags that a session handle
-// holds at one position of its protocol.  The traits below ask set
-// questions of it: contains, insert, remove, subset, union, difference.
+// holds at one position of its protocol.  The functions and aliases below
+// ask set questions of it: contains, insert, remove, subset, union,
+// difference.
 
 #include <foundation/Platform.h>
 #include <foundation/diag/RowHash.h>
@@ -18,23 +19,15 @@
 
 namespace foundation::permissions {
 
-namespace detail {
-
-// The same question the split manifests ask of a child pack, so the
-// same answer: Permission.h's pairwise-distinct fold.
-template <typename... Tags>
-inline constexpr bool perm_tags_unique_v = all_distinct_tags_v<Tags...>;
-
-}  // namespace detail
-
+// The unique-tag test is the one the split manifests ask of a child pack:
+// DistinctTags in Permission.h.
 template <typename... Tags>
 struct PermSet {
-    static_assert(detail::perm_tags_unique_v<Tags...>,
-                  "foundation::permissions [PermissionImbalance]: "
-                  "PermSet<Tags...> requires unique Tags.  A duplicate permission "
-                  "tag means the same CSL authority was inserted twice, usually by "
-                  "passing the same Permission<Tag> token through a mint boundary "
-                  "more than once.");
+    static_assert(DistinctTags<Tags...>, "foundation::permissions [PermissionImbalance]: "
+                                         "PermSet<Tags...> requires unique Tags.  A duplicate permission "
+                                         "tag means the same CSL authority was inserted twice, usually by "
+                                         "passing the same Permission<Tag> token through a mint boundary "
+                                         "more than once.");
 
     static constexpr std::size_t size = sizeof...(Tags);
 };
@@ -43,7 +36,10 @@ using EmptyPermSet = PermSet<>;
 
 // Every question this header asks of a PermSet is a question about its
 // tag list, and the template arguments are that list.  The helpers below
-// destructure the list by reflection, and each public trait is one call.
+// destructure the list by reflection.  Each public question is a function
+// at namespace scope that is not a template, and each public operation is
+// an alias over one call, so no translation unit can specialize either to
+// give a handle a permission it does not hold.
 //
 // A reflection is compared after dealias, so a tag written against
 // `using Alias = Concrete;` is the tag Concrete.  An empty PermSet
@@ -52,9 +48,15 @@ using EmptyPermSet = PermSet<>;
 
 namespace detail {
 
+// The tags of set, the reflection of a PermSet, read through the aliases
+// of the set.
+[[nodiscard]] consteval std::vector<std::meta::info> perm_set_tags_(std::meta::info set) {
+    return std::meta::template_arguments_of(std::meta::dealias(set));
+}
+
 // True when set, the reflection of a PermSet, names tag.
 [[nodiscard]] consteval bool perm_set_names_(std::meta::info set, std::meta::info tag) noexcept {
-    for (std::meta::info member : std::meta::template_arguments_of(set)) {
+    for (std::meta::info member : perm_set_tags_(set)) {
         if (std::meta::dealias(member) == std::meta::dealias(tag)) return true;
     }
     return false;
@@ -63,7 +65,7 @@ namespace detail {
 // Every tag of sub is a tag of super.  An empty sub is a subset of
 // every set.
 [[nodiscard]] consteval bool perm_set_subset_(std::meta::info sub, std::meta::info super) noexcept {
-    for (std::meta::info tag : std::meta::template_arguments_of(sub)) {
+    for (std::meta::info tag : perm_set_tags_(sub)) {
         if (!perm_set_names_(super, tag)) return false;
     }
     return true;
@@ -72,7 +74,7 @@ namespace detail {
 // No tag of lhs is a tag of rhs.  An empty operand makes the two
 // disjoint.
 [[nodiscard]] consteval bool perm_set_disjoint_(std::meta::info lhs, std::meta::info rhs) noexcept {
-    for (std::meta::info tag : std::meta::template_arguments_of(lhs)) {
+    for (std::meta::info tag : perm_set_tags_(lhs)) {
         if (perm_set_names_(rhs, tag)) return false;
     }
     return true;
@@ -84,32 +86,50 @@ namespace detail {
 [[nodiscard]] consteval std::meta::info perm_set_insert_(std::meta::info set, std::meta::info tag) {
     if (perm_set_names_(set, tag)) return set;
     std::vector<std::meta::info> tags{tag};
-    for (std::meta::info member : std::meta::template_arguments_of(set)) {
+    for (std::meta::info member : perm_set_tags_(set)) {
         tags.push_back(member);
     }
     return std::meta::substitute(^^PermSet, tags);
 }
 
-// The reflection of PermSet<kept...>, where kept is every tag of PS that
-// keep admits, in the order PS lists them.  remove and difference are
-// this one filter under two predicates.
-template <typename PS, typename Keep>
-[[nodiscard]] consteval std::meta::info perm_set_filter_(Keep keep) {
+// The reflection of PermSet<kept...>, where kept is every tag of set that
+// other does not name, in the order set lists them.  remove and difference
+// are this one filter, with other a set of one tag or a set of many.
+[[nodiscard]] consteval std::meta::info perm_set_without_(std::meta::info set, std::meta::info other) {
     std::vector<std::meta::info> kept;
-    for (std::meta::info tag : std::meta::template_arguments_of(^^PS)) {
-        if (keep(tag)) kept.push_back(tag);
+    for (std::meta::info tag : perm_set_tags_(set)) {
+        if (!perm_set_names_(other, tag)) kept.push_back(tag);
     }
     return std::meta::substitute(^^PermSet, kept);
 }
 
-// The tags of lhs followed by the tags of rhs.  The caller states the
-// disjointness this relies on.
-[[nodiscard]] consteval std::meta::info perm_set_concat_(std::meta::info lhs, std::meta::info rhs) {
+// The reflection of set with tag removed, or of set itself when set does
+// not name tag.
+[[nodiscard]] consteval std::meta::info perm_set_remove_(std::meta::info set, std::meta::info tag) {
+    return perm_set_without_(set, std::meta::substitute(^^PermSet, {tag}));
+}
+
+// The tags of lhs followed by the tags of rhs.  The two sets must be
+// disjoint, and a union of two sets that share a tag stops the build.
+//
+// The message spells its classification prefix as a literal rather than
+// pulling it from the session diagnostic catalog, which would cost this
+// header that whole dependency.  The literal has to match the catalog's
+// tag.
+[[nodiscard]] consteval std::meta::info perm_set_union_(std::meta::info lhs, std::meta::info rhs) {
+    if (!perm_set_disjoint_(lhs, rhs)) {
+        throw std::meta::exception(u8"foundation::permissions [PermissionImbalance]: perm_set_union_t requires "
+                                   u8"disjoint operands.  A permission tag appears in both PermSets, and a CSL "
+                                   u8"permission cannot be held by two participants at the same time.  Make sure "
+                                   u8"that the call site does not insert a tag twice, and that the children of "
+                                   u8"mint_permission_split stay disjoint along the session protocol.",
+                                   lhs);
+    }
     std::vector<std::meta::info> tags;
-    for (std::meta::info tag : std::meta::template_arguments_of(lhs)) {
+    for (std::meta::info tag : perm_set_tags_(lhs)) {
         tags.push_back(tag);
     }
-    for (std::meta::info tag : std::meta::template_arguments_of(rhs)) {
+    for (std::meta::info tag : perm_set_tags_(rhs)) {
         tags.push_back(tag);
     }
     return std::meta::substitute(^^PermSet, tags);
@@ -117,88 +137,49 @@ template <typename PS, typename Keep>
 
 }  // namespace detail
 
-template <typename PS, typename Q>
-inline constexpr bool perm_set_contains_v = detail::perm_set_names_(^^PS, ^^Q);
+// True when the set names the tag.
+[[nodiscard]] consteval bool perm_set_contains(std::meta::info set, std::meta::info tag) {
+    return detail::perm_set_names_(set, tag);
+}
 
-template <typename PS, typename Q>
-struct perm_set_insert {
-    using type = [:detail::perm_set_insert_(^^PS, ^^Q):];
-};
+// True when each tag of sub is a tag of super.
+[[nodiscard]] consteval bool perm_set_subset(std::meta::info sub, std::meta::info super) {
+    return detail::perm_set_subset_(sub, super);
+}
 
-template <typename PS, typename Q>
-using perm_set_insert_t = typename perm_set_insert<PS, Q>::type;
-
-template <typename PS, typename Q>
-struct perm_set_remove {
-    using type = [:detail::perm_set_filter_<PS>(
-                       [](std::meta::info tag) { return std::meta::dealias(tag) != std::meta::dealias(^^Q); }):];
-};
-
-template <typename PS, typename Q>
-using perm_set_remove_t = typename perm_set_remove<PS, Q>::type;
-
-template <typename PS1, typename PS2>
-inline constexpr bool perm_set_subset_v = detail::perm_set_subset_(^^PS1, ^^PS2);
-
-template <typename PS1, typename PS2>
-inline constexpr bool perm_set_disjoint_v = detail::perm_set_disjoint_(^^PS1, ^^PS2);
+// True when no tag of lhs is a tag of rhs.
+[[nodiscard]] consteval bool perm_set_disjoint(std::meta::info lhs, std::meta::info rhs) {
+    return detail::perm_set_disjoint_(lhs, rhs);
+}
 
 // Bidirectional containment, so the comparison is insensitive to the
 // order of the packs.  Sorting both packs into a canonical form would
 // reduce this to one type comparison, but a permission set holds a
 // handful of tags, so the quadratic form costs nothing and needs no sort
 // machinery.
+[[nodiscard]] consteval bool perm_set_equal(std::meta::info lhs, std::meta::info rhs) {
+    return detail::perm_set_tags_(lhs).size() == detail::perm_set_tags_(rhs).size()
+        && detail::perm_set_subset_(lhs, rhs) && detail::perm_set_subset_(rhs, lhs);
+}
+
+template <typename PS, typename Q>
+using perm_set_insert_t = [:detail::perm_set_insert_(^^PS, ^^Q):];
+
+template <typename PS, typename Q>
+using perm_set_remove_t = [:detail::perm_set_remove_(^^PS, ^^Q):];
 
 template <typename PS1, typename PS2>
-inline constexpr bool perm_set_equal_v =
-    PS1::size == PS2::size && perm_set_subset_v<PS1, PS2> && perm_set_subset_v<PS2, PS1>;
-
-// The diagnostic below spells its classification prefix as a literal
-// rather than pulling it from the session diagnostic catalog, which
-// would cost this header that whole dependency.  The literal has to
-// match the catalog's tag.
-//
-// The assertion sits in the class the call site names, so the compiler
-// reports it with that call site in the backtrace.  Moving it into a
-// helper the class calls would report the helper instead.
+using perm_set_union_t = [:detail::perm_set_union_(^^PS1, ^^PS2):];
 
 template <typename PS1, typename PS2>
-struct perm_set_union {
-    static_assert(detail::perm_set_disjoint_(^^PS1, ^^PS2),
-                  "foundation::permissions [PermissionImbalance]: "
-                  "perm_set_union_t requires disjoint operands — a permission "
-                  "tag appears in both PermSets.  A CSL permission cannot be "
-                  "held by two participants simultaneously.  Verify the call "
-                  "site does not double-insert a tag, and check that "
-                  "mint_permission_split's children remain disjoint along the "
-                  "session protocol.");
-    using type = [:detail::perm_set_concat_(^^PS1, ^^PS2):];
-};
-
-template <typename PS1, typename PS2>
-using perm_set_union_t = typename perm_set_union<PS1, PS2>::type;
-
-template <typename PS1, typename PS2>
-struct perm_set_difference {
-    using type = [:detail::perm_set_filter_<PS1>(
-                       [](std::meta::info tag) { return !detail::perm_set_names_(^^PS2, tag); }):];
-};
-
-template <typename PS1, typename PS2>
-using perm_set_difference_t = typename perm_set_difference<PS1, PS2>::type;
+using perm_set_difference_t = [:detail::perm_set_without_(^^PS1, ^^PS2):];
 
 // Identity suffices for equality, which compares by containment rather
 // than by canonical form.  A consumer that wants a hashable canonical
 // form needs a real sort here.  The row hash at the foot of this header
 // sorts for itself, so it does not depend on this.
-
 template <typename PS>
-struct perm_set_canonicalize {
-    using type = PS;
-};
-
-template <typename PS>
-using perm_set_canonicalize_t = typename perm_set_canonicalize<PS>::type;
+using perm_set_canonicalize_t = PS;
 
 // The string a reflected display name produces depends on the including
 // translation unit's context, so an assertion over it matches a suffix
@@ -222,22 +203,20 @@ static_assert(EmptyPermSet::size == 0);
 static_assert(PermSet<A_tag>::size == 1);
 static_assert(PermSet<A_tag, B_tag, C_tag>::size == 3);
 
-static_assert(!perm_set_contains_v<EmptyPermSet, A_tag>);
-static_assert(perm_set_contains_v<PermSet<A_tag>, A_tag>);
-static_assert(!perm_set_contains_v<PermSet<A_tag>, B_tag>);
-static_assert(perm_set_contains_v<PermSet<A_tag, B_tag, C_tag>, B_tag>);
-static_assert(!perm_set_contains_v<PermSet<A_tag, B_tag, C_tag>, D_tag>);
+static_assert(!perm_set_contains(^^EmptyPermSet, ^^A_tag));
+static_assert(perm_set_contains(^^PermSet<A_tag>, ^^A_tag));
+static_assert(!perm_set_contains(^^PermSet<A_tag>, ^^B_tag));
+static_assert(perm_set_contains(^^PermSet<A_tag, B_tag, C_tag>, ^^B_tag));
+static_assert(!perm_set_contains(^^PermSet<A_tag, B_tag, C_tag>, ^^D_tag));
 
 // The reflection compares after dealias, so a tag reached through an
-// alias is the tag itself.  The is_same_v fold these traits replace read
-// through an alias as well, and these pins hold the new spelling to that
-// behavior.
+// alias is the tag itself, and these pins hold the functions to that.
 using A_alias = A_tag;
 
-static_assert(perm_set_contains_v<PermSet<A_tag>, A_alias>);
-static_assert(perm_set_contains_v<PermSet<A_alias>, A_tag>);
-static_assert(perm_set_subset_v<PermSet<A_alias>, PermSet<A_tag>>);
-static_assert(!perm_set_disjoint_v<PermSet<A_alias>, PermSet<A_tag>>);
+static_assert(perm_set_contains(^^PermSet<A_tag>, ^^A_alias));
+static_assert(perm_set_contains(^^PermSet<A_alias>, ^^A_tag));
+static_assert(perm_set_subset(^^PermSet<A_alias>, ^^PermSet<A_tag>));
+static_assert(!perm_set_disjoint(^^PermSet<A_alias>, ^^PermSet<A_tag>));
 static_assert(std::is_same_v<perm_set_insert_t<PermSet<A_alias>, A_tag>, PermSet<A_tag>>);
 static_assert(std::is_same_v<perm_set_remove_t<PermSet<A_alias, B_tag>, A_tag>, PermSet<B_tag>>);
 static_assert(std::is_same_v<perm_set_difference_t<PermSet<A_alias, B_tag>, PermSet<A_tag>>, PermSet<B_tag>>);
@@ -253,27 +232,27 @@ static_assert(std::is_same_v<perm_set_remove_t<PermSet<A_tag>, B_tag>, PermSet<A
 static_assert(std::is_same_v<perm_set_remove_t<PermSet<A_tag, B_tag>, A_tag>, PermSet<B_tag>>);
 static_assert(std::is_same_v<perm_set_remove_t<PermSet<A_tag, B_tag, C_tag>, B_tag>, PermSet<A_tag, C_tag>>);
 
-static_assert(perm_set_subset_v<EmptyPermSet, EmptyPermSet>);
-static_assert(perm_set_subset_v<EmptyPermSet, PermSet<A_tag>>);
-static_assert(perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag>>);
-static_assert(perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag, B_tag>>);
-static_assert(!perm_set_subset_v<PermSet<A_tag, C_tag>, PermSet<A_tag, B_tag>>);
-static_assert(!perm_set_subset_v<PermSet<A_tag>, EmptyPermSet>);
+static_assert(perm_set_subset(^^EmptyPermSet, ^^EmptyPermSet));
+static_assert(perm_set_subset(^^EmptyPermSet, ^^PermSet<A_tag>));
+static_assert(perm_set_subset(^^PermSet<A_tag>, ^^PermSet<A_tag>));
+static_assert(perm_set_subset(^^PermSet<A_tag>, ^^PermSet<A_tag, B_tag>));
+static_assert(!perm_set_subset(^^PermSet<A_tag, C_tag>, ^^PermSet<A_tag, B_tag>));
+static_assert(!perm_set_subset(^^PermSet<A_tag>, ^^EmptyPermSet));
 
-static_assert(perm_set_disjoint_v<EmptyPermSet, EmptyPermSet>);
-static_assert(perm_set_disjoint_v<EmptyPermSet, PermSet<A_tag>>);
-static_assert(perm_set_disjoint_v<PermSet<A_tag>, EmptyPermSet>);
-static_assert(perm_set_disjoint_v<PermSet<A_tag>, PermSet<B_tag, C_tag>>);
-static_assert(!perm_set_disjoint_v<PermSet<A_tag>, PermSet<A_tag>>);
-static_assert(!perm_set_disjoint_v<PermSet<A_tag, B_tag>, PermSet<C_tag, B_tag>>);
+static_assert(perm_set_disjoint(^^EmptyPermSet, ^^EmptyPermSet));
+static_assert(perm_set_disjoint(^^EmptyPermSet, ^^PermSet<A_tag>));
+static_assert(perm_set_disjoint(^^PermSet<A_tag>, ^^EmptyPermSet));
+static_assert(perm_set_disjoint(^^PermSet<A_tag>, ^^PermSet<B_tag, C_tag>));
+static_assert(!perm_set_disjoint(^^PermSet<A_tag>, ^^PermSet<A_tag>));
+static_assert(!perm_set_disjoint(^^PermSet<A_tag, B_tag>, ^^PermSet<C_tag, B_tag>));
 
-static_assert(perm_set_equal_v<EmptyPermSet, EmptyPermSet>);
-static_assert(perm_set_equal_v<PermSet<A_tag>, PermSet<A_tag>>);
-static_assert(perm_set_equal_v<PermSet<A_tag, B_tag>, PermSet<B_tag, A_tag>>);
-static_assert(perm_set_equal_v<PermSet<A_tag, B_tag, C_tag>, PermSet<C_tag, A_tag, B_tag>>);
-static_assert(!perm_set_equal_v<PermSet<A_tag>, PermSet<B_tag>>);
-static_assert(!perm_set_equal_v<PermSet<A_tag>, PermSet<A_tag, B_tag>>);
-static_assert(!perm_set_equal_v<PermSet<A_tag, B_tag>, PermSet<A_tag, C_tag>>);
+static_assert(perm_set_equal(^^EmptyPermSet, ^^EmptyPermSet));
+static_assert(perm_set_equal(^^PermSet<A_tag>, ^^PermSet<A_tag>));
+static_assert(perm_set_equal(^^PermSet<A_tag, B_tag>, ^^PermSet<B_tag, A_tag>));
+static_assert(perm_set_equal(^^PermSet<A_tag, B_tag, C_tag>, ^^PermSet<C_tag, A_tag, B_tag>));
+static_assert(!perm_set_equal(^^PermSet<A_tag>, ^^PermSet<B_tag>));
+static_assert(!perm_set_equal(^^PermSet<A_tag>, ^^PermSet<A_tag, B_tag>));
+static_assert(!perm_set_equal(^^PermSet<A_tag, B_tag>, ^^PermSet<A_tag, C_tag>));
 
 static_assert(std::is_same_v<perm_set_union_t<EmptyPermSet, EmptyPermSet>, PermSet<>>);
 static_assert(std::is_same_v<perm_set_union_t<EmptyPermSet, PermSet<A_tag>>, PermSet<A_tag>>);

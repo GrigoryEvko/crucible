@@ -424,13 +424,13 @@ foundation_neg_compile_test(neg_permission_forged_without_key
 # view of another region of the tag is refused at the door.
 foundation_neg_compile_test(neg_permission_fork_body_takes_the_token
   "constraints not satisfied"
-  "can_each_body_take_its_child_v<Ctx, Brand, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
+  "each_body_takes_its_child\\(.*\\^\\^ std::tuple<Callables \\.\\.\\.>\\) \\[with .*evaluated to .false.")
 foundation_neg_compile_test(neg_permission_fork_body_keeps_its_view
   "use of deleted function"
   "a WriteView lives in the frame of its body. A copy could outlive the join")
 foundation_neg_compile_test(neg_permission_fork_body_of_another_region
   "constraints not satisfied"
-  "can_each_body_take_its_child_v<Ctx, Brand, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
+  "each_body_takes_its_child\\(.*\\^\\^ std::tuple<Callables \\.\\.\\.>\\) \\[with .*evaluated to .false.")
 
 # Route one: a context is not evidence of a capability, so naming a
 # specialization and building it from nothing is refused.  The
@@ -732,11 +732,11 @@ foundation_neg_compile_test(neg_fail_closed_admits_specialized
 # permission_rows, or a permission_row member, that gives a shard a row of
 # its own is refused, so a shard of an IO region cannot claim the empty row.
 foundation_neg_compile_test(neg_permission_row_edge_for_a_derived_tag
-  "static assertion failed: permission_row: a derived tag declares a row of its own"
-  "required from .struct foundation::permissions::detail::permission_row_lookup<user_code::shard>.")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: a derived tag declares a row of its own"
+  "using foundation::permissions::permission_row_t = .* \\[with Tag = user_code::shard\\]")
 foundation_neg_compile_test(neg_permission_row_member_for_a_derived_tag
-  "static assertion failed: permission_row: a derived tag declares a row of its own"
-  "required from .struct foundation::permissions::detail::permission_row_lookup<user_code::shard>.")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: a derived tag declares a row of its own"
+  "using foundation::permissions::permission_row_t = .* \\[with Tag = user_code::shard\\]")
 
 # A sealed relation counts its members at every read.  An edge added from
 # another file, and a second seal that tries to widen the count, each stop
@@ -764,14 +764,14 @@ foundation_neg_compile_test(neg_fail_closed_is_intra_namespace_of_a_class
   "static assertion failed: fail_closed::is_intra_namespace<Ns>: Ns must be the reflection of a namespace"
   "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
 foundation_neg_compile_test(neg_fail_closed_has_edge_from_of_a_class
-  "static assertion failed: fail_closed::has_edge_from<Ns, T>: Ns must be the reflection of a namespace"
-  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fail_closed::has_edge_from: the first argument must be the reflection of a namespace"
+  "neg_fail_closed_has_edge_from_of_a_class\\.cpp:24:[0-9]+: error: uncaught exception")
 foundation_neg_compile_test(neg_fail_closed_has_edge_to_of_a_class
-  "static assertion failed: fail_closed::has_edge_to<Ns, T>: Ns must be the reflection of a namespace"
-  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fail_closed::has_edge_to: the first argument must be the reflection of a namespace"
+  "neg_fail_closed_has_edge_to_of_a_class\\.cpp:24:[0-9]+: error: uncaught exception")
 foundation_neg_compile_test(neg_fail_closed_edge_count_from_of_a_class
-  "static assertion failed: fail_closed::edge_count_from<Ns, T>: Ns must be the reflection of a namespace"
-  "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\). evaluates to false")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fail_closed::edge_count_from: the first argument must be the reflection of a namespace"
+  "neg_fail_closed_edge_count_from_of_a_class\\.cpp:24:[0-9]+: error: uncaught exception")
 foundation_neg_compile_test(neg_fail_closed_every_class_in_has_edge_of_a_class
   "static assertion failed: fail_closed::every_class_in_has_edge<Ns, TagNs, End, Excluded\\.\\.\\.>: Ns and TagNs must be reflections of namespaces"
   "is_namespace\\(\\^\\^\\{anonymous\\}::NotARelation\\)")
@@ -792,13 +792,13 @@ foundation_neg_compile_test(neg_fail_closed_is_intra_namespace_after_the_seal
   "in .constexpr. expansion of .foundation::fail_closed::is_intra_namespace<\\^\\^\\{anonymous\\}::ingest>\\(\\).")
 foundation_neg_compile_test(neg_fail_closed_has_edge_from_after_the_seal
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
-  "in .constexpr. expansion of .foundation::fail_closed::has_edge_from<\\^\\^\\{anonymous\\}::ingest, \\{anonymous\\}::Raw>\\(\\).")
+  "in .constexpr. expansion of .foundation::fail_closed::has_edge_from\\(\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::Raw\\).")
 foundation_neg_compile_test(neg_fail_closed_has_edge_to_after_the_seal
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
-  "in .constexpr. expansion of .foundation::fail_closed::has_edge_to<\\^\\^\\{anonymous\\}::ingest, \\{anonymous\\}::Checked>\\(\\).")
+  "in .constexpr. expansion of .foundation::fail_closed::has_edge_to\\(\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::Checked\\).")
 foundation_neg_compile_test(neg_fail_closed_edge_count_from_after_the_seal
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
-  "in .constexpr. expansion of .foundation::fail_closed::edge_count_from<\\^\\^\\{anonymous\\}::ingest, \\{anonymous\\}::Raw>\\(\\).")
+  "in .constexpr. expansion of .foundation::fail_closed::edge_count_from\\(\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::Raw\\).")
 foundation_neg_compile_test(neg_fail_closed_every_class_in_has_edge_after_the_seal
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_member_stands_outside_the_seal_of_its_relation\\(\\)."
   "in .constexpr. expansion of .foundation::fail_closed::every_class_in_has_edge<\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::vacant")
@@ -809,11 +809,60 @@ foundation_neg_compile_test(neg_fail_closed_every_edge_is_admitted_after_the_sea
 # unique_target reads a relation as a function of its From, so it
 # refuses a From with no edge and a From with two.
 foundation_neg_compile_test(neg_fail_closed_unique_target_without_an_edge
-  "static assertion failed: fail_closed::unique_target<Ns, T>: the relation declares no edge from T"
-  "unique_target\\(\\) \\[with std::meta::info Ns = \\^\\^\\{anonymous\\}::ingest; T = \\{anonymous\\}::Stored")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fail_closed::unique_target: the relation declares no edge from the type"
+  "using foundation::fail_closed::unique_target_t = .* \\[with std::meta::info Ns = \\^\\^\\{anonymous\\}::ingest. T = \\{anonymous\\}::Stored\\]")
 foundation_neg_compile_test(neg_fail_closed_unique_target_of_two_edges
-  "static assertion failed: fail_closed::unique_target<Ns, T>: the relation declares more than one edge from T"
-  "unique_target\\(\\) \\[with std::meta::info Ns = \\^\\^\\{anonymous\\}::ingest; T = \\{anonymous\\}::Raw")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fail_closed::unique_target: the relation declares more than one edge from the type"
+  "using foundation::fail_closed::unique_target_t = .* \\[with std::meta::info Ns = \\^\\^\\{anonymous\\}::ingest. T = \\{anonymous\\}::Raw\\]")
+
+# Each answer of the permission layer that a mint reads is a function at
+# namespace scope that is not a template, or an alias over one call, so no
+# specialization matches it.
+foundation_neg_compile_test(neg_permission_tags_are_distinct_specialized
+  "template-id .tags_are_distinct<>. for .consteval bool foundation::permissions::tags_are_distinct\\(std::initializer_list<std::meta::info>\\). does not match any template declaration"
+  "neg_permission_tags_are_distinct_specialized\\.cpp:13:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_has_row_specialized
+  "template-id .has_permission_row<>. for .consteval bool foundation::permissions::has_permission_row\\(std::meta::info\\). does not match any template declaration"
+  "neg_permission_has_row_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_row_empty_specialized
+  "template-id .permission_row_empty<>. for .consteval bool foundation::permissions::permission_row_empty\\(std::meta::info\\). does not match any template declaration"
+  "neg_permission_row_empty_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_mint_args_shaped_specialized
+  "template-id .permission_mint_args_shaped<>. for .consteval bool foundation::permissions::detail::permission_mint_args_shaped\\(std::size_t, std::size_t, std::initializer_list<std::meta::info>\\). does not match any template declaration"
+  "neg_permission_mint_args_shaped_specialized\\.cpp:14:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_brands_agree_specialized
+  "template-id .perm_brands_agree<>. for .consteval bool foundation::permissions::detail::perm_brands_agree\\(std::initializer_list<std::meta::info>\\). does not match any template declaration"
+  "neg_permission_brands_agree_specialized\\.cpp:13:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_ctx_admits_each_tag_of_specialized
+  "template-id .ctx_admits_each_tag_of<>. for .consteval bool foundation::permissions::detail::ctx_admits_each_tag_of\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_permission_ctx_admits_each_tag_of_specialized\\.cpp:13:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_combine_n_facts_specialized
+  "template-id .combine_n_facts<>. for .consteval foundation::permissions::detail::combine_n_manifest foundation::permissions::detail::combine_n_facts\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_permission_combine_n_facts_specialized\\.cpp:13:[0-9]+: error:")
+foundation_neg_compile_test(neg_shared_read_shaped_specialized
+  "template-id .with_shared_read_shaped<>. for .consteval bool foundation::permissions::detail::with_shared_read_shaped\\(std::initializer_list<std::meta::info>\\). does not match any template declaration"
+  "neg_shared_read_shaped_specialized\\.cpp:13:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_fork_each_body_specialized
+  "template-id .each_body_takes_its_child<>. for .consteval bool foundation::permissions::detail::each_body_takes_its_child\\(std::meta::info, std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_permission_fork_each_body_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_perm_set_contains_specialized
+  "template-id .perm_set_contains<>. for .consteval bool foundation::permissions::perm_set_contains\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_perm_set_contains_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_perm_set_subset_specialized
+  "template-id .perm_set_subset<>. for .consteval bool foundation::permissions::perm_set_subset\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_perm_set_subset_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_perm_set_equal_specialized
+  "template-id .perm_set_equal<>. for .consteval bool foundation::permissions::perm_set_equal\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_perm_set_equal_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_perm_set_union_alias_specialized
+  "specialization of alias template .template<class PS1, class PS2> using foundation::permissions::perm_set_union_t = "
+  "neg_perm_set_union_alias_specialized\\.cpp:15:[0-9]+: error:")
+foundation_neg_compile_test(neg_fail_closed_has_edge_from_specialized
+  "template-id .has_edge_from<>. for .consteval bool foundation::fail_closed::has_edge_from\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_fail_closed_has_edge_from_specialized\\.cpp:12:[0-9]+: error:")
+foundation_neg_compile_test(neg_fail_closed_unique_target_specialized
+  "template-id .unique_target<>. for .consteval std::meta::info foundation::fail_closed::unique_target\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_fail_closed_unique_target_specialized\\.cpp:12:[0-9]+: error:")
 
 foundation_test(test_permissions_compile)
 foundation_test(test_permission_shared)
@@ -831,10 +880,10 @@ foundation_neg_compile_test(neg_permission_split_undeclared_subregion
   "foundation/permissions/Permission\\.h:[0-9]+:[0-9]+: error: static assertion failed: mint_permission_split<L, R>\\(Permission<In>&&\\) requires can_split_into<In, L, R>::value")
 
 # A union of two permission sets that share a tag.  The location regex
-# proves the refusal came from the union's own class in PermSet.h.
+# proves the refusal came from the union alias in PermSet.h.
 foundation_neg_compile_test(neg_perm_set_union_shared_tag
-  "foundation/permissions/PermSet\\.h:[0-9]+:[0-9]+: error: static assertion failed: foundation::permissions \\[PermissionImbalance\\]: perm_set_union_t requires disjoint operands"
-  "In instantiation of .struct foundation::permissions::perm_set_union<foundation::permissions::PermSet<user_code::Alpha, user_code::Beta>, foundation::permissions::PermSet<user_code::Alpha> >.")
+  "foundation/permissions/PermSet\\.h:[0-9]+:[0-9]+: error: uncaught exception of type .std::meta::exception.. .what\\(\\).: .foundation::permissions \\[PermissionImbalance\\]: perm_set_union_t requires disjoint operands"
+  "using foundation::permissions::perm_set_union_t = .* \\[with PS1 = foundation::permissions::PermSet<user_code::Alpha, user_code::Beta>. PS2 = foundation::permissions::PermSet<user_code::Alpha>\\]")
 
 # A fork whose child pack is not a declared partition of the parent.
 # The satisfaction notes name the fork's fit concept and the pack trait
@@ -866,7 +915,7 @@ foundation_neg_compile_test(neg_permission_fork_split_witness_missing
   "has_split_pack_authoring_witness_v<Parent, Children \\.\\.\\.>.*evaluated to .false.")
 foundation_neg_compile_test(neg_permission_fork_body_may_throw
   "constraints not satisfied"
-  "can_each_body_take_its_child_v<Ctx, Brand, std::tuple<[A-Za-z_]+ \\.\\.\\.>, std::tuple<Callables \\.\\.\\.> >.*evaluated to .false.")
+  "each_body_takes_its_child\\(.*\\^\\^ std::tuple<Callables \\.\\.\\.>\\) \\[with .*evaluated to .false.")
 
 # A manifest that lists one child twice passes the door, and the fork's
 # own check refuses it with a message that names the arm.
@@ -899,7 +948,7 @@ foundation_test(test_lift)
 foundation_neg_compile_test(neg_permission_split_lvalue_token
   "constraints not satisfied"
   "satisfaction of .PermissionSplitArgs<L, R, Args \\.\\.\\.>."
-  "mint_args_shaped_<MaxCtx, NPerms, Args \\.\\.\\.>.*evaluated to .false.")
+  "permission_mint_args_shaped\\(std::size_t, std::size_t, std::initializer_list<std::meta::info>\\)\\(MaxCtx, NPerms, \\{\\^\\^ Args \\.\\.\\.\\}\\) \\[with MaxCtx = 2. NPerms = 1. .*evaluated to .false.")
 
 # The ctx-bound root mint in a context whose row does not cover the
 # tag's row: the one root template's fit concept names the tag and the
@@ -1223,7 +1272,7 @@ foundation_test(test_read_view_lend_needs_a_share)
 foundation_neg_compile_test(neg_brand_combine_children_of_two_regions
   "static assertion failed"
   "the two children carry different brands, so they were split from two different regions of one tag"
-  "perm_brands_agree_<foundation::permissions::Permission<\\{anonymous\\}::Left")
+  "detail::perm_brands_agree\\(std::initializer_list<std::meta::info>\\{.*\\^\\^foundation::permissions::Permission<\\{anonymous\\}::Left")
 
 # The fresh brand sits after the argument pack, so a spelled brand is
 # read as a context and refused by the root's fit concept.
@@ -1242,23 +1291,21 @@ foundation_neg_compile_test(neg_brand_erased_token_does_not_rebrand
 # A tag with no declared row has none, and the root mint says so.
 foundation_neg_compile_test(neg_permission_row_undeclared_tag
   "static assertion failed: mint_permission_root<Tag>: no effect row is declared for Tag"
-  "has_permission_row_v<\\{anonymous\\}::Undeclared>. evaluates to false")
+  "foundation::permissions::has_permission_row\\(\\^\\^\\{anonymous\\}::Undeclared\\). evaluates to false")
 
 # One row has one source.
 foundation_neg_compile_test(neg_permission_row_declared_twice
-  "static assertion failed: permission_row: a tag declares its row twice"
-  "\\(\\(!\\(bool\\)by_edge\\) \\|\\| \\(!\\(bool\\)by_member\\)\\). evaluates to false")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: a tag declares its row twice"
+  "neg_permission_row_declared_twice\\.cpp:17:[0-9]+: error: non-constant condition for static assertion")
 
 # The public row alias refuses a tag with no row, rather than read as
 # void, and it refuses a member that names a type which is not a row.
 foundation_neg_compile_test(neg_permission_row_t_undeclared_tag
-  "static assertion failed: permission_row: no effect row is declared for this permission tag"
-  "permission_row_lookup<\\{anonymous\\}::Undeclared>"
-  "the comparison reduces to .\\(\\^\\^void != \\^\\^void\\).")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: no effect row is declared for this permission tag"
+  "using foundation::permissions::permission_row_t = .* \\[with Tag = \\{anonymous\\}::Undeclared\\]")
 foundation_neg_compile_test(neg_permission_row_not_a_row
-  "static assertion failed: permission_row: the row declared for this permission tag is not a foundation::effects::Row"
-  "permission_row_lookup<\\{anonymous\\}::RowIsAnInt>"
-  "IsInstanceOf<int, \\^\\^foundation::effects::Row>\\)?. evaluates to false")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: the row declared for this permission tag is not a foundation::effects::Row"
+  "using foundation::permissions::permission_row_t = .* \\[with Tag = \\{anonymous\\}::RowIsAnInt\\]")
 
 # ── The tag, the context and the token concepts ───────────────────────
 
@@ -1279,10 +1326,12 @@ foundation_neg_compile_test(neg_permission_root_ctx_forged
 # for a shared token only.
 foundation_neg_compile_test(neg_permission_is_permission_refuses_plain
   "no matching function for call to .takes_a_token\\(int\\)."
-  "is_permission_v<T> \\[with T = int\\]. evaluated to .false.")
+  "required for the satisfaction of .IsPermission<T>. \\[with T = int\\]"
+  "required for the satisfaction of .IsInstanceOf<T, \\^\\^foundation::permissions::Permission>. \\[with T = int\\]")
 foundation_neg_compile_test(neg_permission_is_shared_permission_refuses_exclusive
   "no matching function for call to .takes_a_shared_token"
-  "is_shared_permission_v<T> \\[with T = foundation::permissions::Permission<<unnamed>::Region, .*\\]. evaluated to .false.")
+  "required for the satisfaction of .IsSharedPermission<T>. \\[with T = foundation::permissions::Permission<<unnamed>::Region, .*\\]"
+  "template_of\\(.*\\) == Template \\[with T = foundation::permissions::Permission<<unnamed>::Region, .*evaluated to .false.")
 
 # ── The fit of a combine and of the n-ary mints ───────────────────────
 
@@ -1296,10 +1345,10 @@ foundation_neg_compile_test(neg_permission_combine_ctx_refuses_row
 # live beside what the mint returns.  The shape check refuses it.
 foundation_neg_compile_test(neg_permission_split_n_lvalue_token
   "satisfaction of .PermissionSplitNArgs<std::tuple<[A-Za-z_]+ \\.\\.\\.>, Args \\.\\.\\.>."
-  "mint_args_shaped_<MaxCtx, NPerms, Args \\.\\.\\.>\\)\\(\\) \\[with MaxCtx = 1. NPerms = 1. Args = \\{foundation::permissions::Permission<<unnamed>::Whole, [^}]*>&\\}\\]. evaluated to .false.")
+  "permission_mint_args_shaped\\(.*\\)\\(MaxCtx, NPerms, \\{\\^\\^ Args \\.\\.\\.\\}\\) \\[with MaxCtx = 1. NPerms = 1. Args = \\{foundation::permissions::Permission<<unnamed>::Whole, [^}]*>&\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_permission_combine_n_lvalue_token
   "satisfaction of .PermissionCombineNArgs<Parent, Args \\.\\.\\.>."
-  "mint_args_shaped_<MaxCtx, NPerms, Args \\.\\.\\.>\\)\\(\\) \\[with MaxCtx = 1. NPerms = 0. Args = \\{foundation::permissions::Permission<<unnamed>::Left, [^}]*>&, ")
+  "permission_mint_args_shaped\\(.*\\)\\(MaxCtx, NPerms, \\{\\^\\^ Args \\.\\.\\.\\}\\) \\[with MaxCtx = 1. NPerms = 0. Args = \\{foundation::permissions::Permission<<unnamed>::Left, [^}]*>&, ")
 
 # ── The brand, the root and the admission doors ───────────────────────
 
@@ -1313,18 +1362,18 @@ foundation_neg_compile_test(neg_permission_brand_not_empty
 # against, so the static_assert in its body refuses an effectful tag.
 foundation_neg_compile_test(neg_permission_root_without_ctx_refuses_row
   "static assertion failed: mint_permission_root<Tag>\\(\\) without an ExecCtx is only valid"
-  "permission_row_empty_v<foundation::permissions::tag::HugePageTag>\\)\\). evaluates to false")
+  "foundation::permissions::permission_row_empty\\(\\^\\^foundation::permissions::tag::HugePageTag\\)\\). evaluates to false")
 
 # A federation peer token comes only from a verified handshake.  The root
 # mint refuses the tag without a context and with one.
 foundation_neg_compile_test(neg_permission_root_refuses_federated_peer
   "no matching function for call to .mint_permission_root<foundation::permissions::tag::FederatedPeer<\\{anonymous\\}::PeerOrg> >\\(\\)."
   "required for the satisfaction of .RootMintableTag<Tag>. \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]"
-  "the expression .!\\(is_federated_peer_tag_v<Tag>\\)")
+  "the expression .!\\(IsFederatedPeerTag<Tag>\\) \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_permission_root_ctx_refuses_federated_peer
   "no matching function for call to .mint_permission_root<foundation::permissions::tag::FederatedPeer<\\{anonymous\\}::PeerOrg> >\\(\\{anonymous\\}::IoCtx&\\)."
   "required for the satisfaction of .RootMintableTag<Tag>. \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]"
-  "the expression .!\\(is_federated_peer_tag_v<Tag>\\)")
+  "the expression .!\\(IsFederatedPeerTag<Tag>\\) \\[with Tag = foundation::permissions::tag::FederatedPeer<<unnamed>::PeerOrg>\\]. evaluated to .false.")
 
 # Only an admission builds the key of the federation peer token.
 foundation_neg_compile_test(neg_federation_admission_key_outside_admission
@@ -1346,19 +1395,20 @@ foundation_neg_compile_test(neg_permission_handoff_ctx_refuses_row
 # below is the only one that refuses its program.
 foundation_neg_compile_test(neg_permission_split_child_row_undeclared
   "static assertion failed: mint_permission_split<L, R>: a tag named here declares no effect row"
-  "has_permission_row_v<.anonymous.::RowlessRight>. evaluates to false")
+  "foundation::permissions::has_permission_row\\(\\^\\^.anonymous.::RowlessRight\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_split_without_ctx_refuses_row
   "static assertion failed: mint_permission_split<L, R>\\(Permission<In>&&\\) without ExecCtx is only valid"
-  "has_permission_row_v<.anonymous.::Whole>\\)")
+  "mint_permission_split\\(Args&& \\.\\.\\.\\) .with L = .anonymous.::Left. R = .anonymous.::Right. Args = \\{Permission<.anonymous.::Whole, "
+  "foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::Left\\)\\) && foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::Right\\)\\)\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_split_witness_missing
   "static assertion failed: can_split_into<In, L, R> is true but the accompanying has_split_authoring_witness"
   "has_split_authoring_witness_v<.anonymous.::Whole, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
 foundation_neg_compile_test(neg_permission_split_duplicate_child
   "static assertion failed: mint_permission_split<L, R> requires L and R to be DISTINCT region tags"
-  "all_distinct_tags_v<.anonymous.::Half, .anonymous.::Half>. evaluates to false")
+  "foundation::permissions::tags_are_distinct\\(std::initializer_list<std::meta::info>\\{.*\\{\\^\\^.anonymous.::Half, \\^\\^.anonymous.::Half\\}.*\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_combine_child_row_undeclared
   "static assertion failed: mint_permission_combine<In>: a tag named here declares no effect row"
-  "has_permission_row_v<.anonymous.::RowlessWhole>. evaluates to false")
+  "foundation::permissions::has_permission_row\\(\\^\\^.anonymous.::RowlessWhole\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_combine_without_ctx_refuses_row
   "static assertion failed: mint_permission_combine<In>\\(Permission<L>&&, Permission<R>&&\\) without ExecCtx is only valid"
   "mint_permission_combine\\(Args&& \\.\\.\\.\\) \\[with In = .anonymous.::Whole")
@@ -1375,10 +1425,11 @@ foundation_neg_compile_test(neg_permission_combine_witness_missing
 # of combine_n.
 foundation_neg_compile_test(neg_permission_split_n_child_row_undeclared
   "static assertion failed: mint_permission_split_n<Children\\.\\.\\.>: a tag named here declares no effect row"
-  "has_permission_row_v<.anonymous.::RowlessRight>. evaluates to false")
+  "foundation::permissions::has_permission_row\\(\\^\\^.anonymous.::RowlessRight\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_split_n_without_ctx_refuses_row
   "static assertion failed: mint_permission_split_n<Children\\.\\.\\.>\\(Permission<In>&&\\) without ExecCtx is only valid"
-  "has_permission_row_v<.anonymous.::Whole>\\)")
+  "mint_permission_split_n\\(Args&& \\.\\.\\.\\) .with Children = \\{.anonymous.::Left, .anonymous.::Right\\}. Args = \\{Permission<.anonymous.::Whole, "
+  "foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::Left\\) && foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::Right\\)\\)\\)\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_split_n_undeclared_pack
   "static assertion failed: mint_permission_split_n<Children\\.\\.\\.>\\(Permission<In>&&\\) requires can_split_into_pack"
   "can_split_into_pack_v<.anonymous.::Whole, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
@@ -1387,28 +1438,33 @@ foundation_neg_compile_test(neg_permission_split_n_witness_missing
   "has_split_pack_authoring_witness_v<.anonymous.::Whole, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
 foundation_neg_compile_test(neg_permission_split_n_duplicate_child
   "static assertion failed: mint_permission_split_n<Children\\.\\.\\.> requires the child tags to be PAIRWISE DISTINCT"
-  "all_distinct_tags_v<.anonymous.::Half, .anonymous.::Half>. evaluates to false")
+  "foundation::permissions::tags_are_distinct\\(std::initializer_list<std::meta::info>\\{.*\\{\\^\\^.anonymous.::Half, \\^\\^.anonymous.::Half\\}.*\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_combine_n_parent_row_undeclared
   "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>: a tag named here declares no effect row"
-  "combine_n_manifest<.anonymous.::RowlessWhole, std::tuple<.anonymous.::Left, .anonymous.::Right> >::rows_declared. evaluates to false")
+  "mint_permission_combine_n\\(Args&& \\.\\.\\.\\) .with Parent = .anonymous.::RowlessWhole. Args = \\{Permission<.anonymous.::Left, "
+  "manifest.foundation::permissions::detail::combine_n_manifest::rows_declared. evaluates to false")
 foundation_neg_compile_test(neg_permission_combine_n_without_ctx_refuses_row
   "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>\\(\\.\\.\\.\\) without ExecCtx is only valid"
-  "combine_n_manifest<.anonymous.::Whole, std::tuple<.anonymous.::Left, .anonymous.::Right> >::rows_declared\\)")
+  "mint_permission_combine_n\\(Args&& \\.\\.\\.\\) .with Parent = .anonymous.::Whole. Args = \\{Permission<.anonymous.::Left, "
+  "\\(\\(\\(!\\(bool\\)manifest.foundation::permissions::detail::combine_n_manifest::rows_declared\\) \\|\\| ")
 foundation_neg_compile_test(neg_permission_combine_n_undeclared_parent
   "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>\\(Permission<Children>&&\\.\\.\\.\\) requires can_split_into_pack"
-  "combine_n_manifest<.anonymous.::Other, std::tuple<.anonymous.::Left, .anonymous.::Right> >::declared. evaluates to false")
+  "mint_permission_combine_n\\(Args&& \\.\\.\\.\\) .with Parent = .anonymous.::Other. Args = \\{Permission<.anonymous.::Left, "
+  "manifest.foundation::permissions::detail::combine_n_manifest::declared. evaluates to false")
 foundation_neg_compile_test(neg_permission_combine_n_witness_missing
   "static assertion failed: has_split_pack_authoring_witness<Parent, Children\\.\\.\\.> missing for combine_n"
-  "combine_n_manifest<.anonymous.::Other, std::tuple<.anonymous.::Left, .anonymous.::Right> >::witnessed. evaluates to false")
+  "mint_permission_combine_n\\(Args&& \\.\\.\\.\\) .with Parent = .anonymous.::Other. Args = \\{Permission<.anonymous.::Left, "
+  "manifest.foundation::permissions::detail::combine_n_manifest::witnessed. evaluates to false")
 foundation_neg_compile_test(neg_permission_combine_n_children_of_two_regions
   "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.>\\(\\.\\.\\.\\): the children carry different brands"
-  "perm_brands_agree_<foundation::permissions::Permission<.anonymous.::Left")
+  "detail::perm_brands_agree\\(std::initializer_list<std::meta::info>\\{.*\\^\\^foundation::permissions::Permission<.anonymous.::Left")
 # A brand names a mint site, so two root mints through one site are two
 # tokens of one tag that the brand agreement admits.  The distinctness
 # check is what refuses them.
 foundation_neg_compile_test(neg_permission_combine_n_duplicate_child
   "static assertion failed: mint_permission_combine_n<Parent, Children\\.\\.\\.> requires the child tags to be PAIRWISE DISTINCT"
-  "combine_n_manifest<.anonymous.::Whole, std::tuple<.anonymous.::Half, .anonymous.::Half> >::distinct. evaluates to false")
+  "mint_permission_combine_n\\(Args&& \\.\\.\\.\\) .with Parent = .anonymous.::Whole. Args = \\{Permission<.anonymous.::Half, "
+  "manifest.foundation::permissions::detail::combine_n_manifest::distinct. evaluates to false")
 
 # ── The share, the guard and the pool ─────────────────────────────────
 
@@ -1421,10 +1477,12 @@ foundation_neg_compile_test(neg_shared_permission_brand_not_empty
 # two checks in its body are the only ones that refuse a row.
 foundation_neg_compile_test(neg_permission_share_row_undeclared
   "static assertion failed: mint_permission_share: the tag declares no effect row"
-  "has_permission_row_v<.anonymous.::RowlessRegion>. evaluates to false")
+  "mint_permission_share\\(Args&& \\.\\.\\.\\) .with Args = \\{Permission<.anonymous.::RowlessRegion, "
+  "foundation::permissions::has_permission_row\\(\\^\\^Tag\\). evaluates to false")
 foundation_neg_compile_test(neg_permission_share_without_ctx_refuses_row
   "static assertion failed: mint_permission_share\\(Permission<Tag>&&\\) without ExecCtx is only valid"
-  "permission_row_empty_v<.anonymous.::NeedsIo>\\)\\). evaluates to false")
+  "mint_permission_share\\(Args&& \\.\\.\\.\\) .with Args = \\{Permission<.anonymous.::NeedsIo, "
+  "foundation::permissions::permission_row_empty\\(\\^\\^Tag\\)\\). evaluates to false")
 # A token minted from a guard that dies at the end of the statement
 # proves a share that is gone.  Only the deleted const&& twin refuses it.
 foundation_neg_compile_test(neg_share_token_from_temporary_guard
@@ -1441,10 +1499,10 @@ foundation_neg_compile_test(neg_share_pool_upgrade_ctx_refuses_row
   "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo")
 foundation_neg_compile_test(neg_share_pool_lend_without_ctx_refuses_row
   "static assertion failed: SharedPermissionPool<Tag>::lend\\(\\) without ExecCtx is only valid"
-  "permission_row_empty_v<.anonymous.::NeedsIo>\\)\\). evaluates to false")
+  "foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::NeedsIo\\)\\). evaluates to false")
 foundation_neg_compile_test(neg_share_pool_upgrade_without_ctx_refuses_row
   "static assertion failed: SharedPermissionPool<Tag>::try_upgrade\\(\\) without ExecCtx is only valid"
-  "permission_row_empty_v<.anonymous.::NeedsIo>\\)\\). evaluates to false")
+  "foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::NeedsIo\\)\\). evaluates to false")
 # with_shared_read lends from an lvalue pool only, in its value form and
 # in its void form.
 foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool

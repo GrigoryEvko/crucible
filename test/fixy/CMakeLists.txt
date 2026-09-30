@@ -2092,6 +2092,15 @@ fixy_neg_compile_test(neg_sess_recover_admits_specialized
 fixy_neg_compile_test(neg_sess_delegatable_handle_specialized
   "template-id .is_delegatable_handle<>. for .consteval bool fixy::session::detail::is_delegatable_handle\\(std::meta::info\\). does not match any template declaration"
   "neg_sess_delegatable_handle_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_permission_flow_closes_specialized
+  "template-id .permission_flow_closes<>. for .consteval bool fixy::session::detail::permission_flow_closes\\(std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_permission_flow_closes_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_permission_rows_of_set_specialized
+  "template-id .permission_rows_of_set<>. for .consteval std::meta::info fixy::session::detail::permission_rows_of_set\\(std::meta::info\\). does not match any template declaration"
+  "neg_sess_permission_rows_of_set_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_spawn_fits_specialized
+  "template-id .spawn_fits<>. for .consteval bool fixy::spawn::detail::spawn_fits\\(std::meta::info, std::meta::info, std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_spawn_fits_specialized\\.cpp:12:[0-9]+: error:")
 
 # Commit is a marker that the registry marks as not plain.  The
 # well-formedness algebra refuses it at every depth, so a plain mint
@@ -2444,15 +2453,15 @@ fixy_neg_compile_test(neg_sess_mint_unselected_arm_sends_unheld_permission
 fixy_neg_compile_test(neg_sess_loop_iteration_sends_permission
   "no matching function for call to .mint_permissioned_session<loop_iteration_fixture::Forever>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Loop<fixy::session::Send<"
-  "permission_flow_<Proto, PS, void>::closes")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Loop<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_unselected_arm_leaves_loan_open
   "no matching function for call to .mint_permissioned_session<unselected_arm_fixture::Proto>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<fixy::session::Borrowed<int, unselected_arm_fixture::Region>"
-  "permission_flow_<Proto, PS, void>::closes")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Select<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_flow_open
   "no matching function for call to .mint_permissioned_session<flow_open_fixture::SendsTwice>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<foundation::permissions::Permission<flow_open_fixture::Region"
-  "permission_flow_<Proto, PS, void>::closes")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_row_refused
   "no matching function for call to .mint_permissioned_session<row_refused_fixture::SendsRegion>"
   "CtxAdmitsPermission<Tags, Ctx> && \\.\\.\\.\\) .with Tags = \\{row_refused_fixture::DiskRegion\\}"
@@ -2475,7 +2484,7 @@ fixy_neg_compile_test(neg_sess_mint_session_not_a_context
 fixy_neg_compile_test(neg_sess_mint_session_flow_open
   "no matching function for call to .mint_session<flow_open_fixture::SendsRegion>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<fixy::session::Transferable<int, flow_open_fixture::Region>, fixy::session::End>. Tags = \\{\\}"
-  "permission_flow_<Proto, PS, void>::closes")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*PS = foundation::permissions::PermSet<>.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_session_pointer_resource
   "no matching function for call to .mint_session<pointer_resource_fixture::Proto>"
   "satisfaction of .SessionResource<Resource>. .with Resource = pointer_resource_fixture::Channel\\*."
@@ -2503,14 +2512,14 @@ fixy_neg_compile_test(neg_sess_mint_session_payload_unclassified
 fixy_neg_compile_test(neg_sess_mint_session_receives_region_outside_ctx
   "no matching function for call to .mint_session<receives_region_fixture::Proto>"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>."
-  "is_subrow\\(.*\\(\\^\\^ typename fixy::session::detail::permission_rows_of_set<.*>::type, \\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
+  "is_subrow\\(.*\\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::Transferable<int, receives_region_fixture::IoRegion>, fixy::session::End>")
 fixy_neg_compile_test(neg_sess_mint_session_delegated_region_outside_ctx
   "no matching function for call to .mint_session<delegated_region_fixture::Proto>"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*Proto = fixy::session::Recv<fixy::session::DelegatedSession<fixy::session::End, delegated_region_fixture::Wire, "
-  "is_subrow\\(.*\\(\\^\\^ typename fixy::session::detail::permission_rows_of_set<.*>::type, \\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
+  "is_subrow\\(.*\\^\\^ typename Ctx::row_type\\) .with Proto = fixy::session::Recv<fixy::session::DelegatedSession<")
 fixy_neg_compile_test(neg_sess_mint_session_delivered_region_without_row
-  "static assertion failed: fixy::session::diagnostic \\[Delivered_Region_Without_Row\\]: a receive of the protocol delivers a permission of the region region_without_row_fixture::BareRegion, and its tag declares no permission row"
-  "In instantiation of .struct fixy::session::detail::union_of_permission_rows<foundation::effects::Row<>, region_without_row_fixture::BareRegion>.")
+  "uncaught exception of type .std::meta::exception.. .what\\(\\).: .fixy::session::diagnostic \\[Delivered_Region_Without_Row\\]: a receive of the protocol delivers a permission of the region region_without_row_fixture::BareRegion, and its tag declares no permission row"
+  "using fixy::session::protocol_delivered_permission_row_t = .* \\[with Proto = fixy::session::Recv<fixy::session::Transferable<int, region_without_row_fixture::BareRegion>, fixy::session::End>\\]")
 # The context-bound with_session lends its Resource for the body only.
 # A body that returns before End, keeps the handle, or returns the End
 # handle of another session fails the body gate, and a Resource passed as
@@ -3384,7 +3393,7 @@ fixy_neg_compile_test(neg_session_hold_lvalue_token
   "Permission<Tag>: linear")
 fixy_neg_compile_test(neg_session_hold_duplicate_tag
   "no matching function for call to .mint_permission_hold\\("
-  "perm_tags_unique_v<Tags ...> .with Tags = .<unnamed>::Region, <unnamed>::Region.*evaluated to .false")
+  "tags_are_distinct\\(std::initializer_list<std::meta::info>\\)\\(\\{\\^\\^ Tags \\.\\.\\.\\}\\) .with Tags = .<unnamed>::Region, <unnamed>::Region.*evaluated to .false")
 
 # A hold and the loan markers befriend only HoldFactory, which the header
 # defines and which is not a template.  A specialization of PermHold reads
@@ -3425,7 +3434,7 @@ fixy_neg_compile_test(neg_session_hold_read_by_name
 # A read of a region the hold does not borrow.  read is gated by the set.
 fixy_neg_compile_test(neg_session_hold_read_without_borrow
   "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Region> >::read<.anonymous.::Region>"
-  "perm_set_contains_v<foundation::permissions::PermSet<Tags \\.\\.\\.>, fixy::session::BorrowedIn<Tag> >")
+  "perm_set_contains\\(.*\\)\\(\\^\\^ foundation::permissions::Set, \\^\\^ fixy::session::BorrowedIn<Tag>\\) .with Elems = .<unnamed>::Region.. Tag = <unnamed>::Region.*evaluated to .false.")
 
 # A release with no loan.  The release carries the loan back, and the
 # lender gets its token only with that loan.
@@ -5076,7 +5085,7 @@ fixy_neg_compile_test(neg_shared_read_without_a_share
 fixy_neg_compile_test(neg_shared_read_ctx_refuses_the_row
   "required for the satisfaction of .CtxAdmitsPermission<Tag, Ctx>."
   "required for the satisfaction of .CtxFitsSharedRead<T, Tag, Brand, Ctx>."
-  "is_subrow\\(.*\\(\\^\\^ typename foundation::permissions::detail::permission_row_lookup<Tag>::type, \\^\\^ typename Ctx::row_type\\)")
+  "is_subrow\\(.*\\^\\^ typename Ctx::row_type\\) .with Tag = <unnamed>::Spilled. Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, .*evaluated to .false.")
 
 # The share a read stands on has to outlive it.
 fixy_neg_compile_test(neg_shared_read_from_a_temporary_share
@@ -5154,8 +5163,7 @@ fixy_neg_compile_test(neg_witness_discharges_specialized
 # a witness every context discharges.
 fixy_neg_compile_test(neg_witnessed_under_a_tag_with_no_row
   "no matching function for call to .mint_witnessed_under\\("
-  "has_permission_row_v<typename UBorrow::source_type>"
-  "evaluated to .false.")
+  "has_permission_row\\(.*\\)\\(\\^\\^ typename UBorrow::source_type\\) .with UBorrow = fixy::Borrowed<long unsigned int, <unnamed>::Unrowed, .*evaluated to .false.")
 
 # The position a borrow names has to outlive the borrow.
 fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle

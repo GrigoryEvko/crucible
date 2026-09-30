@@ -1,10 +1,6 @@
 // A union of two permission sets that share a tag.  One CSL authority
-// cannot have two holders, so perm_set_union refuses the overlap in its
-// own class, before a handle holds the joined set.
-//
-// The alias names the result type and does not complete it.  The joined
-// set lists the shared tag two times, so its completion would give a
-// second error.
+// cannot have two holders, so the union refuses the overlap before it
+// builds the joined set, and no handle holds that set.
 
 #include <foundation/permissions/PermSet.h>
 

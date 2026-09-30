@@ -214,17 +214,11 @@ struct foundation::contracts::armed_cell<fe::is_cap_type> {
     using refuses = witnesses<int, Row<>, w::BgCtx>;
 };
 
-template <>
-struct foundation::contracts::armed_cell<fp::detail::is_permission_impl> {
-    using accepts = witnesses<fp::Permission<w::RegionTag>>;
-    using refuses = witnesses<int, fp::SharedPermission<w::RegionTag>>;
-};
-
-template <>
-struct foundation::contracts::armed_cell<fp::detail::is_shared_permission_impl> {
-    using accepts = witnesses<fp::SharedPermission<w::RegionTag>>;
-    using refuses = witnesses<int, fp::Permission<w::RegionTag>>;
-};
+// A token test answers for a token of its kind and for no other type.
+static_assert(fp::IsPermission<fp::Permission<w::RegionTag>> && !fp::IsPermission<int>
+              && !fp::IsPermission<fp::SharedPermission<w::RegionTag>>);
+static_assert(fp::IsSharedPermission<fp::SharedPermission<w::RegionTag>> && !fp::IsSharedPermission<int>
+              && !fp::IsSharedPermission<fp::Permission<w::RegionTag>>);
 
 template <>
 struct foundation::contracts::armed_cell<::foundation::diag::is_diagnostic> {
@@ -234,13 +228,10 @@ struct foundation::contracts::armed_cell<::foundation::diag::is_diagnostic> {
 
 // A context admits a tuple of permission tags when its row holds the row
 // of each tag.  HugePageTag carries the IO row.
-template <>
-struct foundation::contracts::armed_instances<^^fp::detail::ctx_admits_tuple> {
-    using accepts = witnesses<fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<w::RegionTag>>,
-                              fp::detail::ctx_admits_tuple<w::BgIoCtx, std::tuple<w::RegionTag, fp::tag::HugePageTag>>>;
-    using refuses = witnesses<fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<fp::tag::HugePageTag>>,
-                              fp::detail::ctx_admits_tuple<w::BgCtx, std::tuple<w::RegionTag, fp::tag::HugePageTag>>>;
-};
+static_assert(fp::detail::ctx_admits_each_tag_of(^^w::BgCtx, ^^std::tuple<w::RegionTag>)
+              && fp::detail::ctx_admits_each_tag_of(^^w::BgIoCtx, ^^std::tuple<w::RegionTag, fp::tag::HugePageTag>));
+static_assert(!fp::detail::ctx_admits_each_tag_of(^^w::BgCtx, ^^std::tuple<fp::tag::HugePageTag>)
+              && !fp::detail::ctx_admits_each_tag_of(^^w::BgCtx, ^^std::tuple<w::RegionTag, fp::tag::HugePageTag>));
 
 // A split manifest and its authoring witness hold only for the parent
 // and the children in the order that the author declared.  A reversed
@@ -274,30 +265,25 @@ struct foundation::contracts::armed_instances<^^fp::has_split_pack_authoring_wit
 };
 
 // A tag pack is distinct when no tag occurs twice in it.
-template <>
-struct foundation::contracts::armed_instances<^^fp::detail::is_each_tag_distinct> {
-    using accepts =
-        witnesses<fp::detail::is_each_tag_distinct<>, fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight>>;
-    using refuses = witnesses<fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnLeft>,
-                              fp::detail::is_each_tag_distinct<w::SpawnLeft, w::SpawnRight, w::SpawnLeft>>;
-};
+static_assert(fp::tags_are_distinct({}) && fp::tags_are_distinct({^^w::SpawnLeft, ^^w::SpawnRight}));
+static_assert(!fp::tags_are_distinct({^^w::SpawnLeft, ^^w::SpawnLeft})
+              && !fp::tags_are_distinct({^^w::SpawnLeft, ^^w::SpawnRight, ^^w::SpawnLeft}));
 
 // A fork body takes the view of its own child, under the parent's brand,
 // and the context without throwing.  Bodies in the wrong order, too few
 // bodies, or a shape that is not two tuples take nothing.  A body of
 // another brand and a body that asks for its token have fixtures of their
 // own in test/foundation/neg.
-template <>
-struct foundation::contracts::armed_instances<^^fp::detail::can_each_body_take_its_child> {
-    using accepts = witnesses<fp::detail::can_each_body_take_its_child<
-        w::BgCtx, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>, std::tuple<w::LeftBody, w::RightBody>>>;
-    using refuses = witnesses<
-        fp::detail::can_each_body_take_its_child<w::BgCtx, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
-                                                 std::tuple<w::RightBody, w::LeftBody>>,
-        fp::detail::can_each_body_take_its_child<w::BgCtx, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
-                                                 std::tuple<w::LeftBody>>,
-        fp::detail::can_each_body_take_its_child<w::BgCtx, w::SpawnBrand, int, int>>;
-};
+static_assert(fp::detail::each_body_takes_its_child(^^w::BgCtx, ^^w::SpawnBrand,
+                                                    ^^std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                    ^^std::tuple<w::LeftBody, w::RightBody>));
+static_assert(!fp::detail::each_body_takes_its_child(^^w::BgCtx, ^^w::SpawnBrand,
+                                                     ^^std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                     ^^std::tuple<w::RightBody, w::LeftBody>));
+static_assert(!fp::detail::each_body_takes_its_child(^^w::BgCtx, ^^w::SpawnBrand,
+                                                     ^^std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                                     ^^std::tuple<w::LeftBody>));
+static_assert(!fp::detail::each_body_takes_its_child(^^w::BgCtx, ^^w::SpawnBrand, ^^int, ^^int));
 
 // ── fixy: the throws atom ───────────────────────────────────────────
 
@@ -806,23 +792,19 @@ struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_
 
 // The spawn fit needs a context that owns Bg, a declared split, and one
 // nothrow body per child.
-template <>
-struct foundation::contracts::armed_instances<^^::fixy::spawn::detail::can_ctx_fit_spawn> {
-    using accepts = witnesses<::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                                                       std::tuple<w::SpawnLeft, w::SpawnRight>,
-                                                                       std::tuple<w::LeftBody, w::RightBody>>>;
-    using refuses =
-        witnesses<::fixy::spawn::detail::can_ctx_fit_spawn<fe::ExecCtx<>, w::SpawnWhole, w::SpawnBrand,
-                                                           std::tuple<w::SpawnLeft, w::SpawnRight>,
-                                                           std::tuple<w::LeftBody, w::RightBody>>,
-                  ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                                           std::tuple<w::SpawnLeft, w::SpawnRight>,
-                                                           std::tuple<w::LeftBody, w::LeftBody>>,
-                  ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                                           std::tuple<w::SpawnRight, w::SpawnLeft>,
-                                                           std::tuple<w::RightBody, w::LeftBody>>,
-                  ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, int, int>>;
-};
+static_assert(
+    ::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                std::tuple<w::LeftBody, w::RightBody>>);
+static_assert(
+    !::fixy::spawn::CtxFitsSpawn<fe::ExecCtx<>, w::SpawnWhole, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                 std::tuple<w::LeftBody, w::RightBody>>);
+static_assert(
+    !::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,
+                                 std::tuple<w::LeftBody, w::LeftBody>>);
+static_assert(
+    !::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, std::tuple<w::SpawnRight, w::SpawnLeft>,
+                                 std::tuple<w::RightBody, w::LeftBody>>);
+static_assert(!::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, int, int>);
 
 // The third argument says whether the first is a machine.  A machine
 // admits its declared edge and the diagonal, and no other move.

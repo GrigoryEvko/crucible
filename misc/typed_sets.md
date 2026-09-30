@@ -68,13 +68,13 @@ The three primitives use different operation names:
 
 | Operation | Bits<E> | Row<Es...> | PermSet<Tags...> |
 |---|---|---|---|
-| size | `popcount()` | `row_size_v<R>` | `perm_set_size_v<S>` (planned) |
-| contains | `test(e)` | `row_contains_v<R, E>` | `perm_set_contains_v<S, T>` |
+| size | `popcount()` | `row_size(^^R)` | `perm_set_size_v<S>` (planned) |
+| contains | `test(e)` | `row_contains(^^R, E)` | `perm_set_contains(^^S, ^^T)` |
 | insert | `set(e)` | `row_union_t<R, Row<E>>` | `perm_set_insert_t<S, T>` |
 | remove | `unset(e)` | `row_difference_t<R, Row<E>>` | `perm_set_remove_t<S, T>` |
-| subset | (none) | `Subrow<R1, R2>` concept | `perm_set_subset_v<A, B>` |
+| subset | (none) | `Subrow<R1, R2>` concept | `perm_set_subset(^^A, ^^B)` |
 | union | `\|` | `row_union_t<R1, R2>` | `perm_set_union_t<A, B>` |
-| equality | `==` | `std::is_same_v<R1, R2>` | `perm_set_equal_v<A, B>` |
+| equality | `==` | `std::is_same_v<R1, R2>` | `perm_set_equal(^^A, ^^B)` |
 
 A unified vocabulary (`set_contains_v` / `set_insert_t` / `set_subset_v`) would let generic algorithms work over "any typed set" without per-primitive adapters. Cost: ~50 sites touched across Crucible. Benefit: when somebody writes such a generic algorithm, no friction.
 

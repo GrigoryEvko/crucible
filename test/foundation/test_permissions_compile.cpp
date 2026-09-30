@@ -189,11 +189,11 @@ void test_permission_row_compile() {
     using MmapRegion = perm::tag::MmapRegionTag;
     using NetworkBuffer = perm::tag::NetworkBufferTag;
 
-    static_assert(perm::permission_row_empty_v<PlainTag>);
+    static_assert(perm::permission_row_empty(^^PlainTag));
     // The relation is closed: a tag with no declared row has none, is
     // not empty-rowed, and is admitted by no context.
-    static_assert(!perm::has_permission_row_v<UndeclaredTag>);
-    static_assert(!perm::permission_row_empty_v<UndeclaredTag>);
+    static_assert(!perm::has_permission_row(^^UndeclaredTag));
+    static_assert(!perm::permission_row_empty(^^UndeclaredTag));
     static_assert(!perm::CtxAdmitsPermission<UndeclaredTag, TestRunnerCtx>);
     // A token over such a tag can be named, and its row hash folds no row
     // rather than stopping the build, so the hash of a type that is only
@@ -261,8 +261,8 @@ void test_perm_set_compile() {
     constexpr auto name = perm_set_name<PermSet<A_tag, B_tag>>();
     static_assert(!name.empty());
 
-    static_assert(perm_set_equal_v<perm_set_canonicalize_t<PermSet<A_tag, B_tag>>,
-                                   perm_set_canonicalize_t<PermSet<B_tag, A_tag>>>);
+    static_assert(perm_set_equal(^^perm_set_canonicalize_t<PermSet<A_tag, B_tag>>,
+                                 ^^perm_set_canonicalize_t<PermSet<B_tag, A_tag>>));
 }
 void test_read_view_compile() {}
 

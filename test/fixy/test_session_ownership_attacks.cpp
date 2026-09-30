@@ -68,11 +68,11 @@ inline constexpr Refusal refusal_of = sess::detail::payload_facts_of(^^P).refusa
 
 template <class P, class... Tags>
 inline constexpr bool sender_requires_exactly =
-    fp::perm_set_equal_v<typename sess::payload_perm_delta<P>::sender_requires, fp::PermSet<Tags...>>;
+    fp::perm_set_equal(^^typename sess::payload_perm_delta<P>::sender_requires, ^^fp::PermSet<Tags...>);
 
 template <class P, class... Tags>
 inline constexpr bool receiver_gains_exactly =
-    fp::perm_set_equal_v<typename sess::payload_perm_delta<P>::receiver_gains, fp::PermSet<Tags...>>;
+    fp::perm_set_equal(^^typename sess::payload_perm_delta<P>::receiver_gains, ^^fp::PermSet<Tags...>);
 
 // ── Laundering a token through a container or a wrapper ─────────────
 //
@@ -429,10 +429,10 @@ using LenderAfterLend = sess::perm_set_after_send_t<PS<X>, BX>;
 using BorrowerAfterLoan = sess::perm_set_after_recv_t<PS<>, BX>;
 using BorrowerAfterRelease = sess::perm_set_after_send_t<BorrowerAfterLoan, RX>;
 using LenderAfterRelease = sess::perm_set_after_recv_t<LenderAfterLend, RX>;
-static_assert(fp::perm_set_equal_v<LenderAfterLend, PS<LentOut<X>>>);
-static_assert(fp::perm_set_equal_v<BorrowerAfterLoan, PS<BorrowedIn<X>>>);
-static_assert(fp::perm_set_equal_v<BorrowerAfterRelease, PS<>>);
-static_assert(fp::perm_set_equal_v<LenderAfterRelease, PS<X>>);
+static_assert(fp::perm_set_equal(^^LenderAfterLend, ^^PS<LentOut<X>>));
+static_assert(fp::perm_set_equal(^^BorrowerAfterLoan, ^^PS<BorrowedIn<X>>));
+static_assert(fp::perm_set_equal(^^BorrowerAfterRelease, ^^PS<>));
+static_assert(fp::perm_set_equal(^^LenderAfterRelease, ^^PS<X>));
 static_assert(!sess::SendablePayload<RX, BorrowerAfterRelease>, "a loan is released once");
 static_assert(!sess::ReceivablePayload<RX, LenderAfterRelease>, "a loan is closed once");
 static_assert(sess::perm_set_has_open_loan_v<LenderAfterLend>);
@@ -441,8 +441,8 @@ static_assert(!sess::perm_set_has_open_loan_v<LenderAfterRelease>);
 
 // A move and a loan in one message.
 using Mixed = std::pair<TX, sess::Borrowed<int, Y>>;
-static_assert(fp::perm_set_equal_v<sess::perm_set_after_send_t<PS<X, Y>, Mixed>, PS<LentOut<Y>>>);
-static_assert(fp::perm_set_equal_v<sess::perm_set_after_recv_t<PS<>, Mixed>, PS<X, BorrowedIn<Y>>>);
+static_assert(fp::perm_set_equal(^^sess::perm_set_after_send_t<PS<X, Y>, Mixed>, ^^PS<LentOut<Y>>));
+static_assert(fp::perm_set_equal(^^sess::perm_set_after_recv_t<PS<>, Mixed>, ^^PS<X, BorrowedIn<Y>>));
 
 // ── Forging a token or a proof with no constructor ──────────────────
 

@@ -473,7 +473,7 @@ static_assert(CtxFitsQuarantineOverride<::fixy::TestRunnerCtx>);
 static_assert(!CtxFitsQuarantineOverride<::fixy::BgDrainCtx>);
 // Only a context that owns Init mints the operator authority.  A test
 // runner can use a token in an override, but it cannot make one.
-static_assert(!::foundation::permissions::permission_row_empty_v<quarantine_tag::OperatorOverride>);
+static_assert(!::foundation::permissions::permission_row_empty(^^quarantine_tag::OperatorOverride));
 static_assert(::foundation::permissions::PermissionRootArgs<quarantine_tag::OperatorOverride, ::fixy::ColdInitCtx>);
 static_assert(!::foundation::permissions::PermissionRootArgs<quarantine_tag::OperatorOverride, ::fixy::BgDrainCtx>);
 static_assert(!::foundation::permissions::PermissionRootArgs<quarantine_tag::OperatorOverride, ::fixy::HotFgCtx>);

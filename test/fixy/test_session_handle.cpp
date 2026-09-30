@@ -251,11 +251,11 @@ static_assert(
 // refuses an open loan and admits an owned tag.
 using Token = ::foundation::permissions::Permission<Region>;
 using LendsRegion = ::foundation::permissions::PermSet<s::LentOut<Region>>;
-static_assert(
-    ::foundation::permissions::perm_set_equal_v<s::detail::perm_set_after_send_t<HoldsRegion, Token>, NoPerms>);
-static_assert(
-    ::foundation::permissions::perm_set_equal_v<s::detail::perm_set_after_recv_t<NoPerms, Token>, HoldsRegion>);
-static_assert(::foundation::permissions::perm_set_equal_v<s::detail::perm_set_after_send_t<NoPerms, Ping>, NoPerms>);
+static_assert(::foundation::permissions::perm_set_equal(^^s::detail::perm_set_after_send_t<HoldsRegion, Token>,
+                                                        ^^NoPerms));
+static_assert(::foundation::permissions::perm_set_equal(^^s::detail::perm_set_after_recv_t<NoPerms, Token>,
+                                                        ^^HoldsRegion));
+static_assert(::foundation::permissions::perm_set_equal(^^s::detail::perm_set_after_send_t<NoPerms, Ping>, ^^NoPerms));
 static_assert(s::detail::handle_admits_send_v<HoldsRegion, Token>);
 static_assert(!s::detail::handle_admits_send_v<NoPerms, Token>);
 static_assert(s::detail::handle_admits_recv_v<NoPerms, Token>);
@@ -737,7 +737,8 @@ struct TokenWire {
         wire_slot.reset();
         return taken;
     });
-    static_assert(::foundation::permissions::perm_set_equal_v<typename decltype(receiver_done)::perm_set, HoldsRegion>);
+    static_assert(
+        ::foundation::permissions::perm_set_equal(^^typename decltype(receiver_done)::perm_set, ^^HoldsRegion));
     (void)std::move(receiver_done).close();
     if (slot.has_value()) {
         std::fprintf(stderr, "the receive left the token on the wire\n");

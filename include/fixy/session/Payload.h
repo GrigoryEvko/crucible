@@ -1555,7 +1555,7 @@ using perm_set_after_recv_t = ::foundation::permissions::perm_set_union_t<
 // still holds in another state.
 template <class P, class PS>
 concept SendablePayload =
-    is_permission_classified_v<P> && ::foundation::permissions::perm_set_subset_v<detail::sender_requires_t<P>, PS>
+    is_permission_classified_v<P> && ::foundation::permissions::perm_set_subset(^^detail::sender_requires_t<P>, ^^PS)
     && detail::regions_disjoint(^^::foundation::permissions::perm_set_difference_t<PS, detail::sender_requires_t<P>>,
                                 ^^detail::sender_gains_t<P>);
 
@@ -1565,7 +1565,7 @@ concept SendablePayload =
 // in one set are two owners of it.
 template <class P, class PS>
 concept ReceivablePayload =
-    is_permission_classified_v<P> && ::foundation::permissions::perm_set_subset_v<detail::receiver_requires_t<P>, PS>
+    is_permission_classified_v<P> && ::foundation::permissions::perm_set_subset(^^detail::receiver_requires_t<P>, ^^PS)
     && detail::regions_disjoint(^^::foundation::permissions::perm_set_difference_t<PS, detail::receiver_requires_t<P>>,
                                 ^^detail::receiver_gains_t<P>);
 
@@ -1695,7 +1695,7 @@ class HoldFactory final {
     template <class Element, class Set, class Incoming>
     [[nodiscard]] static constexpr detail::hold_slot_t<Element> pick_(PermHold<Set>& from,
                                                                       Incoming&& incoming) noexcept {
-        if constexpr (::foundation::permissions::perm_set_contains_v<Set, Element>) {
+        if constexpr (::foundation::permissions::perm_set_contains(^^Set, ^^Element)) {
             return std::move(slot_<Element>(from));
         } else {
             return detail::hold_slot_t<Element>{std::forward<Incoming>(incoming)};
@@ -1717,7 +1717,7 @@ public:
     // Consumes the tokens and builds the hold of their set.  The gate is
     // the gate of mint_permission_hold.
     template <class... Tags, class... Brands>
-        requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
+        requires ::foundation::permissions::DistinctTags<Tags...>
     [[nodiscard]] static constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
     from_tokens(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
         return PermHold<::foundation::permissions::PermSet<Tags...>>{
@@ -1725,7 +1725,7 @@ public:
     }
 
     template <class Tag, class Set>
-        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::PlainTag<Tag>)
+        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
     [[nodiscard]] static constexpr auto take(PermHold<Set>&& hold) noexcept
         -> std::pair<::foundation::permissions::Permission<Tag>,
                      PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
@@ -1814,7 +1814,7 @@ public:
 // refused, because a set holds each tag once.  The brand of each token is
 // erased, so the hold names regions by tag, as a permission set does.
 template <class... Tags, class... Brands>
-    requires(::foundation::permissions::detail::perm_tags_unique_v<Tags...>)
+    requires ::foundation::permissions::DistinctTags<Tags...>
 [[nodiscard]] constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
 mint_permission_hold(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
     return HoldFactory::from_tokens(std::move(tokens)...);
@@ -1844,7 +1844,7 @@ public:
     // ── A token leaves or enters the hold ──────────────────────────
 
     template <class Tag>
-        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::PlainTag<Tag>)
+        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
     [[nodiscard]] constexpr auto take() && noexcept {
         return HoldFactory::take<Tag>(std::move(*this));
     }
@@ -1858,7 +1858,7 @@ public:
     // ── Moves inside a message ─────────────────────────────────────
 
     template <class Tag, class T>
-        requires(::foundation::permissions::perm_set_contains_v<Set, Tag> && detail::PlainTag<Tag>)
+        requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
     [[nodiscard]] constexpr auto pack(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<Transferable<T, Tag>, PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
         auto [token, rest] = std::move(*this).template take<Tag>();
@@ -1904,7 +1904,7 @@ public:
     // hold back, and a body that returns a value gives a pair of that
     // value and the hold.
     template <class Tag, class Body>
-        requires(::foundation::permissions::perm_set_contains_v<Set, BorrowedIn<Tag>>)
+        requires(::foundation::permissions::perm_set_contains(^^Set, ^^BorrowedIn<Tag>))
              && ::foundation::permissions::ReadViewBody<Body, Tag, ::foundation::brand::DefaultBrand>
     [[nodiscard]] constexpr auto read(Body&& body) && noexcept(
         ::foundation::permissions::detail::read_view_door_nothrow_v<::foundation::permissions::ReadLoan<Tag>, Body>) {

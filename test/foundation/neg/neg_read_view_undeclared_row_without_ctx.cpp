@@ -3,7 +3,7 @@
 // Fixture 2 of 2 for the row gate of foundation::permissions::with_read_view.
 //
 // A tag that declares no row says nothing about who may hold its region.
-// permission_row_empty_v answers false for it, so the gate refuses the
+// permission_row_empty answers false for it, so the gate refuses the
 // tag and does not admit it by omission.
 //
 // A different class from neg_read_view_effectful_row_without_ctx.cpp:

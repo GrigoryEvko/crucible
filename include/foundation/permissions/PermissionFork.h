@@ -53,12 +53,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <meta>
 #include <new>
 #include <string_view>
 #include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace foundation::permissions {
 
@@ -138,21 +140,33 @@ concept PermissionForkBody =
     std::is_invocable_v<std::decay_t<Callable>&, WriteView<Child, Brand> const&, Ctx const&>
     && std::is_nothrow_invocable_v<std::decay_t<Callable>&, WriteView<Child, Brand> const&, Ctx const&>;
 
-// Each body borrows the view of its own child, of the parent's brand,
-// with the context, without throwing.  A pack of bodies whose length is
-// not the length of the children, or a shape that is not two tuples,
-// takes nothing.
-template <typename Ctx, typename Brand, typename ChildrenTuple, typename CallablesTuple>
-struct can_each_body_take_its_child : std::false_type {};
-
-template <typename Ctx, typename Brand, typename... Children, typename... Callables>
-    requires(sizeof...(Children) == sizeof...(Callables))
-struct can_each_body_take_its_child<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
-    : std::bool_constant<(PermissionForkBody<Callables, Children, Brand, Ctx> && ...)> {};
-
-template <typename Ctx, typename Brand, typename ChildrenTuple, typename CallablesTuple>
-inline constexpr bool can_each_body_take_its_child_v =
-    can_each_body_take_its_child<Ctx, Brand, ChildrenTuple, CallablesTuple>::value;
+// True when the two tuples are std::tuple, and each body borrows the view
+// of its own child, of the parent's brand, with the context, without
+// throwing.  A pack of bodies whose length is not the length of the
+// children takes nothing.  The test is a function that is not a template,
+// so no translation unit can specialize it to start a body that cannot
+// take its child.
+[[nodiscard]] consteval bool each_body_takes_its_child(std::meta::info ctx, std::meta::info brand,
+                                                       std::meta::info children_tuple,
+                                                       std::meta::info callables_tuple) {
+    const std::meta::info children_type = std::meta::dealias(children_tuple);
+    const std::meta::info callables_type = std::meta::dealias(callables_tuple);
+    const bool are_tuples = std::meta::has_template_arguments(children_type)
+                         && std::meta::has_template_arguments(callables_type)
+                         && std::meta::template_of(children_type) == (^^std::tuple)
+                         && std::meta::template_of(callables_type) == (^^std::tuple);
+    if (!are_tuples) return false;
+    const std::vector<std::meta::info> children = std::meta::template_arguments_of(children_type);
+    const std::vector<std::meta::info> callables = std::meta::template_arguments_of(callables_type);
+    if (children.size() != callables.size()) return false;
+    for (std::size_t index = 0; index < children.size(); ++index) {
+        if (!std::meta::extract<bool>(
+                std::meta::substitute(^^PermissionForkBody, {callables[index], children[index], brand, ctx}))) {
+            return false;
+        }
+    }
+    return true;
+}
 
 // A static_assert message assembled at compile time, so one check can
 // name the arm it fires for.  The buffer is sized for the longest
@@ -184,7 +198,7 @@ consteval void permission_fork_check_() noexcept {
     []<typename... Children, typename... Callables>(std::tuple<Children...>*, std::tuple<Callables...>*) {
         static_assert(sizeof...(Children) == sizeof...(Callables),
                       fork_diagnostic(Spawn, ": number of Child tags must match number of callables."));
-        static_assert(all_distinct_tags_v<Children...>,
+        static_assert(tags_are_distinct({^^Children...}),
                       fork_diagnostic(Spawn, Spawn ? ": Child region tags must be PAIRWISE DISTINCT — "
                                                      "forking two threads with Permission<A> each would alias "
                                                      "region A and produce a data race."
@@ -214,13 +228,13 @@ concept CtxFitsPermissionForkArm = (Spawn && CtxFitsPermissionFork<Ctx, Parent, 
 // declarations name them and nothing else.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionFork<Ctx, Parent, Children...>
-          && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
+          && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
 [[nodiscard]] Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
                                                              Callables&&... callables) noexcept;
 
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
-          && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
+          && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
 [[nodiscard]] constexpr Permission<Parent, Brand>
 mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept;
 
@@ -255,13 +269,15 @@ class PermissionForkRunner final {
 
     template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
         requires CtxFitsPermissionFork<Ctx, Parent, Children...>
-              && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
+              && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>,
+                                                    ^^std::tuple<Callables...>))
     friend Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
                                                           Callables&&... callables) noexcept;
 
     template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
         requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
-              && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
+              && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>,
+                                                    ^^std::tuple<Callables...>))
     friend constexpr Permission<Parent, Brand>
     mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept;
 
@@ -308,7 +324,8 @@ class PermissionForkRunner final {
     // returns is the one that went in.
     template <bool Spawn, typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
         requires detail::CtxFitsPermissionForkArm<Spawn, Ctx, Parent, Children...>
-              && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
+              && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>,
+                                                    ^^std::tuple<Callables...>))
     static constexpr Permission<Parent, Brand> run_(Ctx const& ctx, Permission<Parent, Brand>&& parent,
                                                     Callables&&... callables) noexcept {
         detail::permission_fork_check_<Spawn, Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>();
@@ -340,7 +357,7 @@ class PermissionForkRunner final {
 // named a tuple wrapper instead.  Both halves stay spelled here.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionFork<Ctx, Parent, Children...>
-          && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
+          && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
 [[nodiscard]] Permission<Parent, Brand> mint_permission_fork(Ctx const& ctx, Permission<Parent, Brand>&& parent,
                                                              Callables&&... callables) noexcept {
     return PermissionForkRunner::run_<true, Children...>(ctx, std::move(parent), std::forward<Callables>(callables)...);
@@ -354,7 +371,7 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
 // capability, because it starts no thread.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
     requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
-          && detail::can_each_body_take_its_child_v<Ctx, Brand, std::tuple<Children...>, std::tuple<Callables...>>
+          && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
 [[nodiscard]] constexpr Permission<Parent, Brand>
 mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
     return PermissionForkRunner::run_<false, Children...>(ctx, std::move(parent),

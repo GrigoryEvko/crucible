@@ -1036,11 +1036,6 @@ inline constexpr StatedZero kZeros[] = {
                                 "the peer tokens that it admits fold, and it is never a value in a signature"},
     {^^fp::PermissionForkRunner,
      "the holder of the fork body: it has static members only, no object of it exists, and it is never a value"},
-    {^^fp::perm_set_insert, kMetafunction},
-    {^^fp::perm_set_remove, kMetafunction},
-    {^^fp::perm_set_union, kMetafunction},
-    {^^fp::perm_set_difference, kMetafunction},
-    {^^fp::perm_set_canonicalize, kMetafunction},
 
     {^^fe::canonical_row, kMetafunction},
     {^^fe::EffectRowLattice, "the lattice over effect rows: a grade, where the row it grades is what folds"},

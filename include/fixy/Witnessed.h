@@ -118,7 +118,7 @@ concept IsWitnessKind = ::foundation::reflect::IsInstanceOfAny<W, ^^witness::AtP
 // parameter of the witness.  An UnderRow witness takes an execution
 // context whose row admits the row of its tag, the same test a lend from
 // the permission pool applies.  A tag with no row declared is refused,
-// because permission_row_lookup answers only for a tag that declares one.
+// because has_permission_row answers false for it.
 // The answer is a function at namespace scope that is not a template, so
 // no translation unit can specialize it.
 [[nodiscard]] consteval bool witness_discharges(std::meta::info witness, std::meta::info presented) {
@@ -190,7 +190,7 @@ private:
                       UBorrow borrow) noexcept;
 
     template <typename UBorrow>
-        requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row_v<typename UBorrow::source_type>)
+        requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row(^^typename UBorrow::source_type))
     friend constexpr Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>
     mint_witnessed_under(UBorrow borrow) noexcept;
 
@@ -250,7 +250,7 @@ constexpr auto mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource,
 // EFFECT.  The tag is the borrow's own source, so there is nothing for
 // the caller to spell and nothing to spell wrongly.
 template <typename UBorrow>
-    requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row_v<typename UBorrow::source_type>)
+    requires(IsBorrowed<UBorrow> && ::foundation::permissions::has_permission_row(^^typename UBorrow::source_type))
 [[nodiscard]] constexpr Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>
 mint_witnessed_under(UBorrow borrow) noexcept {
     return Witnessed<UBorrow, witness::UnderRow<typename UBorrow::source_type>>{detail::witnessed_mint_t{}, borrow};

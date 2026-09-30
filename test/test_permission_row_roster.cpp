@@ -94,9 +94,9 @@ consteval std::vector<TagRow> every_tag() {
     template for (constexpr std::meta::info member : classes) {
         using Class = [:member:];
         if constexpr (std::is_empty_v<Class>) {
-            if constexpr (fp::has_permission_row_v<Class>) {
+            if constexpr (fp::has_permission_row(member)) {
                 tags.push_back(
-                    TagRow{std::define_static_string(qualified_name(member)), fp::permission_row_empty_v<Class>});
+                    TagRow{std::define_static_string(qualified_name(member)), fp::permission_row_empty(member)});
             }
         }
     }

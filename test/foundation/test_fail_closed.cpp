@@ -186,15 +186,15 @@ static_assert(!ffc::is_intra_namespace<^^across_families>());
 static_assert(ffc::is_intra_namespace<^^vacant>());
 
 // has_edge_from and has_edge_to ask for one end and any other.
-static_assert(ffc::has_edge_from<^^ingest, Raw>());
-static_assert(ffc::has_edge_from<^^ingest, Checked>());
-static_assert(!ffc::has_edge_from<^^ingest, Stored>());
-static_assert(ffc::has_edge_to<^^ingest, Checked>());
-static_assert(ffc::has_edge_to<^^ingest, Stored>());
-static_assert(!ffc::has_edge_to<^^ingest, Raw>());
-static_assert(ffc::has_edge_to<^^within_family, family_a::Pinned<2>>());
-static_assert(ffc::has_edge_from<^^within_family, family_a::Pinned<1>>());
-static_assert(!ffc::has_edge_from<^^vacant, Raw>());
+static_assert(ffc::has_edge_from(^^ingest, ^^Raw));
+static_assert(ffc::has_edge_from(^^ingest, ^^Checked));
+static_assert(!ffc::has_edge_from(^^ingest, ^^Stored));
+static_assert(ffc::has_edge_to(^^ingest, ^^Checked));
+static_assert(ffc::has_edge_to(^^ingest, ^^Stored));
+static_assert(!ffc::has_edge_to(^^ingest, ^^Raw));
+static_assert(ffc::has_edge_to(^^within_family, ^^family_a::Pinned<2>));
+static_assert(ffc::has_edge_from(^^within_family, ^^family_a::Pinned<1>));
+static_assert(!ffc::has_edge_from(^^vacant, ^^Raw));
 
 // every_class_in_has_edge: each class declared directly in the tag
 // namespace must sit at the named end of some edge, the excluded ones

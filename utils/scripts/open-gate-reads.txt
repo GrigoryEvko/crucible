@@ -87,7 +87,6 @@ fixy::session::config::detail::entry_of | 1
 fixy::session::config::is_configuration_v | 5
 fixy::session::detail::delegation_readable_gate | 1
 fixy::session::detail::payload_readable_gate | 2
-fixy::session::detail::permission_flow_ | 1
 fixy::session::detail::recording::wire_protocol | 1
 fixy::session::detail::vendor_view | 1
 fixy::session::global::detail::is_crashed_v | 25
@@ -101,7 +100,6 @@ fixy::session::is_content_addressed_v | 1
 fixy::session::is_implementable_on | 1
 fixy::session::protocol_is_at_v | 1
 fixy::session::type_display_name_v | 1
-fixy::spawn::detail::can_ctx_fit_spawn | 1
 foundation::AlignedBuffer | 2
 foundation::algebra::Graded::can_regrade_ | 2
 foundation::algebra::Graded::inject | 3
@@ -129,25 +127,9 @@ foundation::effects::detail::sums_fit_pairwise_ | 1
 foundation::effects::extract_bare | 1
 foundation::lifetime::start_as_array | 1
 foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
-foundation::permissions::detail::can_each_body_take_its_child_v | 7
-foundation::permissions::detail::ctx_admits_all_v | 6
-foundation::permissions::detail::ctx_admits_tuple_v | 2
-foundation::permissions::detail::is_permission_impl | 1
-foundation::permissions::detail::is_shared_permission_impl | 1
-foundation::permissions::detail::leading_ctx_count | 5
-foundation::permissions::detail::mint_args_shaped_ | 1
-foundation::permissions::detail::perm_tags_unique_v | 3
-foundation::permissions::detail::with_shared_read_shaped | 1
-foundation::permissions::has_permission_row_v | 4
 foundation::permissions::has_split_pack_authoring_witness_v | open | the witness of a split manifest, an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
-foundation::permissions::is_federated_peer_tag_v | 3
-foundation::permissions::is_permission_v | 3
-foundation::permissions::is_shared_permission_v | 1
-foundation::permissions::mint_read_loan | 1
-foundation::permissions::perm_set_contains_v | 4
-foundation::permissions::perm_set_subset_v | 2
-foundation::permissions::permission_row_empty_v | 1
-foundation::permissions::with_read_view | 4
+foundation::permissions::mint_read_loan | open | the reads are self-test concepts in ReadView.h that ask whether a call of the loan mint compiles; no mint reads them, and the mint is the door that they probe
+foundation::permissions::with_read_view | open | the reads are self-test concepts in ReadView.h that ask whether a call of the read door compiles; no mint reads them, and the door is what they probe
 foundation::reflect::any_component_satisfies | 1
 foundation::reflect::arity_v | 2
 foundation::reflect::bits_to_string | 1

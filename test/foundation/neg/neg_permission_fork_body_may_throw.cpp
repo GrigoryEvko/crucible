@@ -4,7 +4,7 @@
 // would terminate the program instead of reporting.  The body below can
 // be called with the view of its child and the context, but it is not
 // noexcept.  The inline arm refuses the call at its door, because
-// can_each_body_take_its_child asks for a nothrow call.
+// each_body_takes_its_child asks for a nothrow call.
 //
 // Without the nothrow conjunct the call passes the door and fails later,
 // at the fork's own static assertion inside the body.  The regexes below

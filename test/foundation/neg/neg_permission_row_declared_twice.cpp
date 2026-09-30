@@ -14,6 +14,6 @@ namespace foundation::permissions::permission_rows {
 inline constexpr ::foundation::fail_closed::edge<Twice, ::foundation::effects::Row<>> twice{};
 }  // namespace foundation::permissions::permission_rows
 
-static_assert(::foundation::permissions::has_permission_row_v<Twice>);
+static_assert(::foundation::permissions::has_permission_row(^^Twice));
 
 int main() { return 0; }

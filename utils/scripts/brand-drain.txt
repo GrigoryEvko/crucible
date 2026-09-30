@@ -25,7 +25,7 @@ include/fixy/os/Mmap.h	1
 include/fixy/os/NumaPlacement.h	1
 include/fixy/session/Payload.h	14
 include/foundation/effects/Computation.h	3
-include/foundation/permissions/Permission.h	55
+include/foundation/permissions/Permission.h	53
 include/foundation/permissions/ReadView.h	29
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp	1
 test/fixy/neg/neg_borrowed_of_a_braced_list.cpp	1

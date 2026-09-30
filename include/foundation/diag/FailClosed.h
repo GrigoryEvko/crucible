@@ -57,6 +57,8 @@
 
 #include <cstddef>
 #include <meta>
+#include <string>
+#include <string_view>
 
 namespace foundation::fail_closed {
 
@@ -256,66 +258,78 @@ template <std::meta::info Ns>
     return true;
 }
 
-// True when Ns holds an edge whose From is T, for any To.
-template <std::meta::info Ns, class T>
-[[nodiscard]] consteval bool has_edge_from() noexcept {
-    static_assert(std::meta::is_namespace(Ns), "fail_closed::has_edge_from<Ns, T>: Ns must be the reflection of "
-                                               "a namespace, written ^^name.");
-    require_seal_holds(Ns);
-    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).from == std::meta::dealias(^^T)) return true;
+// The queries below about one type are functions at namespace scope that
+// are not templates, so no translation unit can specialize an answer.  A
+// read that the author must see refuses by a throw: the constant
+// evaluation that asked stops, and the diagnostic prints the message.
+namespace detail {
+
+consteval void require_a_namespace(std::meta::info ns, std::string_view query) {
+    if (std::meta::is_namespace(ns)) return;
+    std::string text{"fail_closed::"};
+    text += query;
+    text += ": the first argument must be the reflection of a namespace, written ^^name.";
+    throw std::meta::exception(text, ns);
+}
+
+}  // namespace detail
+
+// True when ns holds an edge whose From is type, for any To.
+[[nodiscard]] consteval bool has_edge_from(std::meta::info ns, std::meta::info type) {
+    detail::require_a_namespace(ns, "has_edge_from");
+    require_seal_holds(ns);
+    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        if (is_edge(m) && ends_of(m).from == std::meta::dealias(type)) return true;
     }
     return false;
 }
 
-// True when Ns holds an edge whose To is T, for any From.
-template <std::meta::info Ns, class T>
-[[nodiscard]] consteval bool has_edge_to() noexcept {
-    static_assert(std::meta::is_namespace(Ns), "fail_closed::has_edge_to<Ns, T>: Ns must be the reflection of a "
-                                               "namespace, written ^^name.");
-    require_seal_holds(Ns);
-    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).to == std::meta::dealias(^^T)) return true;
+// True when ns holds an edge whose To is type, for any From.
+[[nodiscard]] consteval bool has_edge_to(std::meta::info ns, std::meta::info type) {
+    detail::require_a_namespace(ns, "has_edge_to");
+    require_seal_holds(ns);
+    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        if (is_edge(m) && ends_of(m).to == std::meta::dealias(type)) return true;
     }
     return false;
 }
 
-// The number of edges in Ns whose From is T.
-template <std::meta::info Ns, class T>
-[[nodiscard]] consteval std::size_t edge_count_from() noexcept {
-    static_assert(std::meta::is_namespace(Ns), "fail_closed::edge_count_from<Ns, T>: Ns must be the reflection "
-                                               "of a namespace, written ^^name.");
-    require_seal_holds(Ns);
+// The number of edges in ns whose From is type.
+[[nodiscard]] consteval std::size_t edge_count_from(std::meta::info ns, std::meta::info type) {
+    detail::require_a_namespace(ns, "edge_count_from");
+    require_seal_holds(ns);
     std::size_t count = 0;
-    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).from == std::meta::dealias(^^T)) ++count;
+    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        if (is_edge(m) && ends_of(m).from == std::meta::dealias(type)) ++count;
     }
     return count;
 }
 
-// The To of the one edge in Ns whose From is T, for a relation that is
-// a function of its From.  Exactly one such edge must exist.  None is
-// an undeclared pair, and two is a relation that answers twice; both
-// are hard errors here rather than a primary template answering for
-// the author.
-template <std::meta::info Ns, class T>
-[[nodiscard]] consteval std::meta::info unique_target() noexcept {
-    static_assert(std::meta::is_namespace(Ns), "fail_closed::unique_target<Ns, T>: Ns must be the reflection of "
-                                               "a namespace, written ^^name.");
-    static_assert(edge_count_from<Ns, T>() != 0, "fail_closed::unique_target<Ns, T>: the relation declares no "
-                                                 "edge from T.  Declare `inline constexpr edge<T, To> name{};` "
-                                                 "in the relation's namespace before the first check against it.");
-    static_assert(edge_count_from<Ns, T>() < 2, "fail_closed::unique_target<Ns, T>: the relation declares more "
-                                                "than one edge from T, so it is not a function of T.  Remove "
-                                                "all but one.");
-    for (const auto m : std::meta::members_of(Ns, std::meta::access_context::unchecked())) {
-        if (is_edge(m) && ends_of(m).from == std::meta::dealias(^^T)) return ends_of(m).to;
+// The To of the one edge in ns whose From is type, for a relation that is
+// a function of its From.  Exactly one such edge must exist.  None is an
+// undeclared pair, and two is a relation that answers twice.  Each one
+// stops the build here, and no primary template answers for the author.
+[[nodiscard]] consteval std::meta::info unique_target(std::meta::info ns, std::meta::info type) {
+    const std::size_t count = edge_count_from(ns, type);
+    if (count == 0) {
+        throw std::meta::exception(u8"fail_closed::unique_target: the relation declares no edge from the type.  "
+                                   u8"Declare `inline constexpr edge<T, To> name{};` in the namespace of the "
+                                   u8"relation before the first check against it.",
+                                   type);
+    }
+    if (count > 1) {
+        throw std::meta::exception(u8"fail_closed::unique_target: the relation declares more than one edge from "
+                                   u8"the type, so it is not a function of the type.  Remove all but one.",
+                                   type);
+    }
+    for (const auto m : std::meta::members_of(ns, std::meta::access_context::unchecked())) {
+        if (is_edge(m) && ends_of(m).from == std::meta::dealias(type)) return ends_of(m).to;
     }
     return ^^void;
 }
 
 template <std::meta::info Ns, class T>
-using unique_target_t = typename[:unique_target<Ns, T>():];
+using unique_target_t = typename[:unique_target(Ns, ^^T):];
 
 // Which end of an edge a type must occupy for every_class_in_has_edge.
 enum class EdgeEnd : unsigned char {

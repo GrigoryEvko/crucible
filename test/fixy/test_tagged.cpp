@@ -149,8 +149,8 @@ static_assert(!RetagAllowed<source::Sanitized, source::FromUserPath>);
 static_assert(!RetagAllowed<source::FromUserPath, source::FromEnvPath>);
 static_assert(!RetagAllowed<source::External, source::FromUserPath>);
 static_assert(!RetagAllowed<source::FromUserPath, source::External>);
-static_assert(!ffc::has_edge_from<^^tags::admitted_retags, source::CipherPath>());
-static_assert(!ffc::has_edge_to<^^tags::admitted_retags, source::CipherPath>());
+static_assert(!ffc::has_edge_from(^^tags::admitted_retags, ^^source::CipherPath));
+static_assert(!ffc::has_edge_to(^^tags::admitted_retags, ^^source::CipherPath));
 
 // The architecture pins: Portable weakens into a concrete trunk, a
 // concrete trunk never widens back or relabels.
