@@ -1,9 +1,9 @@
-// A Security grade that the closed relation security_class_of_ does not
-// name.
+// A Security grade that the closed relation security_class_answer_of_
+// does not name.
 //
-// Every reader of the Security grade asks that relation, and its primary
-// is declared without a definition.  So a grade on the axis with no class
-// stops the build at the reader, rather than reading as public and
+// Every reader of the Security grade asks that relation, and it gives no
+// class for a type that it does not name.  So a grade on the axis with no
+// class stops the build at the reader, rather than reading as public and
 // letting the binding through.
 //
 // The atom catalog is closed, so no binding can carry such a grade: an

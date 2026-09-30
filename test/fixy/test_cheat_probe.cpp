@@ -24,6 +24,12 @@
 // neg/neg_cheat_graded_modality_injection.cpp: the primary is
 // constrained, so the specialization is a constraint failure.
 //
+// The instance query of foundation/reflect/Instance.h has no value
+// spelling, so the cheats that injected one have no target.  Each keeps
+// its lookalike class and its refusal, and the negative-compile fixture
+// foundation/neg/neg_instance_of_specialized_trait.cpp shows that the
+// specialization has no name.
+//
 // Two cheats stay admitted, and neither reopens a namespace:
 //
 //   - Cheat 4, raw storage beside a correct diagnostic surface.  The
@@ -355,15 +361,11 @@ static_assert(!fixy::IsBand<::Cheat20_FakeGraded>, "[CHEAT 20 ADMITTED] is_grade
 static_assert(!fixy::IsBandOf<fixy::DetSafeLattice, ::Cheat20_FakeGraded>,
               "[CHEAT 20 ADMITTED] is_graded_v injection reached IsBandOf");
 
+// The instance query has no value spelling to inject.
 struct Cheat21_FakeInstance {};
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat21_FakeInstance, ^^::foundation::algebra::Graded> = true;
-}  // namespace foundation::reflect
-static_assert(fr::is_instance_of_v<::Cheat21_FakeInstance, ^^fa::Graded>, "the injection did not take");
 static_assert(!fr::IsInstanceOf<::Cheat21_FakeInstance, ^^fa::Graded>,
-              "[CHEAT 21 ADMITTED] is_instance_of_v injection reached IsInstanceOf");
-static_assert(!fa::IsGraded<::Cheat21_FakeInstance>, "[CHEAT 21 ADMITTED] is_instance_of_v injection reached IsGraded");
+              "[CHEAT 21 ADMITTED] an unrelated class passed IsInstanceOf");
+static_assert(!fa::IsGraded<::Cheat21_FakeInstance>, "[CHEAT 21 ADMITTED] an unrelated class passed IsGraded");
 
 struct Cheat22_DerivedFromGraded : SubstrateInt {};
 static_assert(!fa::IsGraded<Cheat22_DerivedFromGraded>, "[CHEAT 22 ADMITTED] derived-from-Graded passed IsGraded");
@@ -394,9 +396,9 @@ static_assert(!fixy::IsBand<::Cheat23_FakeBand>, "[CHEAT 23 ADMITTED] is_band_v 
 //   - an unrelated class with the wrapper's is_*_v specialized for it,
 //     which must be REJECTED: the value is derived from the concept and
 //     read by no gate.
-//   - the same class with is_instance_of_v specialized for it against
-//     the wrapper's template, which must be REJECTED for the same
-//     reason.
+//   - an unrelated class with the shape of the wrapper, which must be
+//     REJECTED by the instance query.  The query has no value spelling,
+//     so no specialization can mark the class.
 
 struct FakeSource {};
 struct FakeOwnedTag {};
@@ -409,13 +411,8 @@ static_assert(!fr::IsInstanceOf<Cheat24_DerivedFromLinear, ^^fixy::Qtt>,
 struct Cheat25_FakeLinear {
     int payload{0};
 };
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat25_FakeLinear, ^^::fixy::Qtt> = true;
-}  // namespace foundation::reflect
-static_assert(fr::is_instance_of_v<::Cheat25_FakeLinear, ^^fixy::Qtt>, "the injection did not take");
 static_assert(!fr::IsInstanceOf<::Cheat25_FakeLinear, ^^fixy::Qtt>,
-              "[CHEAT 25 ADMITTED] is_instance_of_v injection passed the Qtt query");
+              "[CHEAT 25 ADMITTED] a lookalike passed the Qtt query");
 
 // Refined and SealedRefined share Refinement.  The predicate is a
 // stateless class, because the lattice is keyed by its type.
@@ -436,13 +433,7 @@ static_assert(!fixy::IsRefined<::Cheat27_FakeRefined>, "[CHEAT 27 ADMITTED] is_r
 struct Cheat28_FakeRefinedInstance {
     int payload{0};
 };
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat28_FakeRefinedInstance, ^^::fixy::Refinement> = true;
-}  // namespace foundation::reflect
-static_assert(fr::is_instance_of_v<::Cheat28_FakeRefinedInstance, ^^fixy::Refinement>, "the injection did not take");
-static_assert(!fixy::IsRefined<::Cheat28_FakeRefinedInstance>,
-              "[CHEAT 28 ADMITTED] is_instance_of_v injection reached IsRefined");
+static_assert(!fixy::IsRefined<::Cheat28_FakeRefinedInstance>, "[CHEAT 28 ADMITTED] a lookalike passed IsRefined");
 
 struct Cheat29_DerivedFromTagged : fixy::Tagged<int, fixy::tags::source::FromUser> {};
 static_assert(!fixy::IsTagged<Cheat29_DerivedFromTagged>, "[CHEAT 29 ADMITTED] derived-from-Tagged passed IsTagged");
@@ -460,12 +451,7 @@ static_assert(!fixy::IsTagged<::Cheat30_FakeTagged>, "[CHEAT 30 ADMITTED] is_tag
 struct Cheat31_FakeTaggedInstance {
     int payload{0};
 };
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat31_FakeTaggedInstance, ^^::fixy::Tagged> = true;
-}  // namespace foundation::reflect
-static_assert(!fixy::IsTagged<::Cheat31_FakeTaggedInstance>,
-              "[CHEAT 31 ADMITTED] is_instance_of_v injection reached IsTagged");
+static_assert(!fixy::IsTagged<::Cheat31_FakeTaggedInstance>, "[CHEAT 31 ADMITTED] a lookalike passed IsTagged");
 
 struct Cheat32_DerivedFromSecret : fixy::Secret<int> {};
 static_assert(!fixy::IsSecret<Cheat32_DerivedFromSecret>, "[CHEAT 32 ADMITTED] derived-from-Secret passed IsSecret");
@@ -483,12 +469,7 @@ static_assert(!fixy::IsSecret<::Cheat33_FakeSecret>, "[CHEAT 33 ADMITTED] is_sec
 struct Cheat34_FakeSecretInstance {
     int payload{0};
 };
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat34_FakeSecretInstance, ^^::fixy::Secret> = true;
-}  // namespace foundation::reflect
-static_assert(!fixy::IsSecret<::Cheat34_FakeSecretInstance>,
-              "[CHEAT 34 ADMITTED] is_instance_of_v injection reached IsSecret");
+static_assert(!fixy::IsSecret<::Cheat34_FakeSecretInstance>, "[CHEAT 34 ADMITTED] a lookalike passed IsSecret");
 
 struct Cheat35_DerivedFromStale : fixy::Stale<int> {};
 static_assert(!fixy::IsStale<Cheat35_DerivedFromStale>, "[CHEAT 35 ADMITTED] derived-from-Stale passed IsStale");
@@ -506,12 +487,7 @@ static_assert(!fixy::IsStale<::Cheat36_FakeStale>, "[CHEAT 36 ADMITTED] is_stale
 struct Cheat37_FakeStaleInstance {
     int payload{0};
 };
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat37_FakeStaleInstance, ^^::fixy::Stale> = true;
-}  // namespace foundation::reflect
-static_assert(!fixy::IsStale<::Cheat37_FakeStaleInstance>,
-              "[CHEAT 37 ADMITTED] is_instance_of_v injection reached IsStale");
+static_assert(!fixy::IsStale<::Cheat37_FakeStaleInstance>, "[CHEAT 37 ADMITTED] a lookalike passed IsStale");
 
 struct Cheat38_DerivedFromBorrowed : fixy::Borrowed<int, FakeSource> {};
 static_assert(!fixy::IsBorrowed<Cheat38_DerivedFromBorrowed>,
@@ -531,12 +507,7 @@ static_assert(!fixy::IsBorrowed<::Cheat39_FakeBorrowed>,
 struct Cheat40_FakeBorrowedInstance {
     int payload{0};
 };
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat40_FakeBorrowedInstance, ^^::fixy::Borrowed> = true;
-}  // namespace foundation::reflect
-static_assert(!fixy::IsBorrowed<::Cheat40_FakeBorrowedInstance>,
-              "[CHEAT 40 ADMITTED] is_instance_of_v injection reached IsBorrowed");
+static_assert(!fixy::IsBorrowed<::Cheat40_FakeBorrowedInstance>, "[CHEAT 40 ADMITTED] a lookalike passed IsBorrowed");
 
 struct Cheat41_DerivedFromOwnedRegion : fixy::OwnedRegion<int, FakeOwnedTag> {};
 static_assert(!fixy::IsOwnedRegion<Cheat41_DerivedFromOwnedRegion>,
@@ -556,12 +527,8 @@ static_assert(!fixy::IsOwnedRegion<::Cheat42_FakeOwnedRegion>,
 struct Cheat43_FakeOwnedRegionInstance {
     int payload{0};
 };
-namespace foundation::reflect {
-template <>
-inline constexpr bool is_instance_of_v<::Cheat43_FakeOwnedRegionInstance, ^^::fixy::OwnedRegion> = true;
-}  // namespace foundation::reflect
 static_assert(!fixy::IsOwnedRegion<::Cheat43_FakeOwnedRegionInstance>,
-              "[CHEAT 43 ADMITTED] is_instance_of_v injection reached IsOwnedRegion");
+              "[CHEAT 43 ADMITTED] a lookalike passed IsOwnedRegion");
 
 // WriteOnce and Machine publish a value and a struct, both derived from
 // the query; a specialization of either changes only its own readers.

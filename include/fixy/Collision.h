@@ -1336,19 +1336,19 @@ struct thrown_failure_<::fixy::atom::ctrl::throws<ExceptionFamily>> {
 
 // The class of the Security grade, read so that a grade the closed
 // relation in fixy/Atom.h does not name stops the build with one message.
-// The relation's primary has no definition, so a direct read would also
-// stop the build, but with one error at each use and more in fn's tier
-// walk.  After the assertion the answer is Classified, which is the
+// The relation gives no class for such a grade, so a direct read would
+// also stop the build, but with one error at each use and more in fn's
+// tier walk.  After the assertion the answer is Classified, which is the
 // answer that refuses, so nothing downstream reads the unnamed grade as
 // public.
 template <class G>
 [[nodiscard]] consteval ::fixy::atom::SecurityClass security_class_or_refuse_() noexcept {
     static_assert(::fixy::atom::IsSecurityGrade<G>,
                   "fixy/Collision.h: the Security grade of this binding has no entry in "
-                  "fixy::atom::detail::security_class_of_, so no rule can tell whether the binding is classified. "
-                  "Give the atom a SecurityClass beside the others in fixy/Atom.h.");
+                  "fixy::atom::detail::security_class_answer_of_, so no rule can tell whether the binding is "
+                  "classified. Give the atom a SecurityClass beside the others in fixy/Atom.h.");
     if constexpr (::fixy::atom::IsSecurityGrade<G>) {
-        return ::fixy::atom::security_class_of_v<G>;
+        return ::fixy::atom::security_class_of(^^G);
     } else {
         return ::fixy::atom::SecurityClass::Classified;
     }

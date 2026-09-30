@@ -136,7 +136,7 @@ static_assert(
                    ::fixy::atom::with<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>);
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Effect>, ::fixy::atom::with<>>);
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>, ::fixy::atom::constant_time>);
-static_assert(::fixy::atom::is_constant_time_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>>,
+static_assert(::fixy::atom::IsConstantTime<::fixy::role::CtCrypto<int>::grade_on<Axis::Security>>,
               "CtCrypto must state the timing claim, or no constant-time rule reads the role");
 static_assert(std::is_same_v<::fixy::role::CtCrypto<int>::grade_on<Axis::Usage>,
                              typename ::fixy::axis_traits<Axis::Usage>::strict>);

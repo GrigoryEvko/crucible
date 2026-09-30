@@ -840,12 +840,6 @@ struct foundation::contracts::armed_instances<^^::fixy::spawn::detail::can_ctx_f
                   ::fixy::spawn::detail::can_ctx_fit_spawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, int, int>>;
 };
 
-template <>
-struct foundation::contracts::armed_cell<::fixy::is_scoped_view> {
-    using accepts = witnesses<::fixy::ScopedView<w::Plain, w::GlobalTag>>;
-    using refuses = witnesses<int, w::Plain>;
-};
-
 // The third argument says whether the first is a machine.  A machine
 // admits its declared edge and the diagonal, and no other move.
 template <>

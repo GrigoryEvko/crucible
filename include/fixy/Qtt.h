@@ -457,14 +457,14 @@ static_assert(std::is_same_v<Affine<int>::lattice_type, ::foundation::algebra::l
 // Qtt carries a non-type parameter, which is the case the reflection
 // form in foundation/reflect/Instance.h exists for.  The cv-ref strip
 // and the non-template rejection are pinned beside it.
-static_assert(::foundation::reflect::is_instance_of_v<Linear<int>, ^^Qtt>);
-static_assert(::foundation::reflect::is_instance_of_v<Affine<int>, ^^Qtt>);
-static_assert(::foundation::reflect::is_instance_of_v<Linear<int> const&, ^^Qtt>);
-static_assert(::foundation::reflect::is_instance_of_v<Linear<int>&&, ^^Qtt>);
-static_assert(!::foundation::reflect::is_instance_of_v<int, ^^Qtt>);
-static_assert(!::foundation::reflect::is_instance_of_v<void, ^^Qtt>);
-static_assert(!::foundation::reflect::is_instance_of_v<std::unique_ptr<int>, ^^Qtt>);
-static_assert(!::foundation::reflect::is_instance_of_v<Linear<int>, ^^std::unique_ptr>);
+static_assert(::foundation::reflect::IsInstanceOf<Linear<int>, ^^Qtt>);
+static_assert(::foundation::reflect::IsInstanceOf<Affine<int>, ^^Qtt>);
+static_assert(::foundation::reflect::IsInstanceOf<Linear<int> const&, ^^Qtt>);
+static_assert(::foundation::reflect::IsInstanceOf<Linear<int>&&, ^^Qtt>);
+static_assert(!::foundation::reflect::IsInstanceOf<int, ^^Qtt>);
+static_assert(!::foundation::reflect::IsInstanceOf<void, ^^Qtt>);
+static_assert(!::foundation::reflect::IsInstanceOf<std::unique_ptr<int>, ^^Qtt>);
+static_assert(!::foundation::reflect::IsInstanceOf<Linear<int>, ^^std::unique_ptr>);
 
 // The grade is readable off the wrapper, which is what tells the
 // exactly-once half of the family from the at-most-once half.

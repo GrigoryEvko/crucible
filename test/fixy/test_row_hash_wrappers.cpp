@@ -1097,7 +1097,6 @@ inline constexpr StatedZero kZeros[] = {
                                 "and it is never a template argument of a kernel signature"},
     {^^::fixy::BudgetStamp, "a proof of one budget that an authority granted: the constructor of a Budgeted "
                             "spends it and folds the budget, and it is never a value in a signature"},
-    {^^::fixy::is_scoped_view, kMetafunction},
 
     {^^::fixy::session::Send, kProtocol},
     {^^::fixy::session::Recv, kProtocol},

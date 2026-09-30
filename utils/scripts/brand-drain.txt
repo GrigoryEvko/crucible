@@ -77,7 +77,7 @@ test/fixy/neg/neg_witness_permissions_sharedpermissionpool_direct_construction.c
 test/fixy/neg/neg_witness_scopedview_direct_construction.cpp	1
 test/fixy/neg/neg_witness_session_permhold_direct_construction.cpp	1
 test/fixy/neg/neg_witness_sharedread_direct_construction.cpp	1
-test/fixy/test_armed_roster.cpp	7
+test/fixy/test_armed_roster.cpp	6
 test/fixy/test_borrowed.cpp	20
 test/fixy/test_cheat_probe.cpp	2
 test/fixy/test_forgeable_proofs.cpp	10

@@ -116,58 +116,49 @@ template <Effect E, class Source>
 // `template <class...> class` form of a hand-written detector cannot
 // name.  The reflection query answers for it directly.  That query also
 // strips cv and reference, so a reference to a Capability answers as the
-// Capability does, and the three helpers below inherit the same strip.
+// Capability does, and the readers below inherit the same strip.
+//
+// Each reader is a concept or a function that is not a template.  No
+// translation unit can specialize one.  A variable template that a gate
+// reads is a door: a specialization would add a class of the caller to
+// the capabilities, or give a capability another effect.
 template <class T>
-inline constexpr bool is_capability_v = ::foundation::reflect::is_instance_of_v<T, ^^Capability>;
-template <class T>
-concept IsCapability = is_capability_v<T>;
+concept IsCapability = ::foundation::reflect::IsInstanceOf<T, ^^Capability>;
 
 namespace detail {
 
-// The template argument of T at `index`, read off the Capability.  The
-// assertion is what keeps cap_of_v and source_of_t a hard error for
-// anything else, in place of the undefined primary templates they
-// replace.  It also names the reason, which an incomplete type could
-// not.
-template <class T>
-[[nodiscard]] consteval std::meta::info cap_argument_(std::size_t index) noexcept {
-    static_assert(is_capability_v<T>,
-                  "cap_of_v and source_of_t answer for a Capability specialization only.  Asking either "
-                  "about another type is a compile error on purpose, so that a missing capability cannot "
-                  "read as a default effect or as a default source.");
-    return std::meta::template_arguments_of(std::meta::dealias(^^std::remove_cvref_t<T>))[index];
-}
+// Declared and not defined, and not constexpr.  A constant evaluation that
+// calls it fails, and the diagnostic gives its name as the reason.  A
+// missing capability then cannot read as a default effect or as a default
+// source.
+void type_is_not_a_capability() noexcept;
 
-}  // namespace detail
-
-template <class T>
-inline constexpr Effect cap_of_v = std::meta::extract<Effect>(detail::cap_argument_<T>(0));
-
-template <class T>
-using source_of_t = [:detail::cap_argument_<T>(1):];
-
-namespace detail {
-
-// The guard is what keeps cap_of_v out of the reach of a type that is
-// not a Capability.  Naming it there would be the hard error above, and
-// a trait that answers a question must not abort the translation.
-template <class T, Effect E>
-[[nodiscard]] consteval bool cap_matches_() noexcept {
-    if constexpr (is_capability_v<T>) {
-        return cap_of_v<T> == E;
-    } else {
-        return false;
+// The template argument at `index` of the Capability that the reflection
+// names.
+[[nodiscard]] consteval std::meta::info capability_argument_(std::meta::info capability, std::size_t index) {
+    const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(capability));
+    if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^Capability) {
+        type_is_not_a_capability();
     }
+    return std::meta::template_arguments_of(type)[index];
 }
 
 }  // namespace detail
 
-// cap_matches_v ignores the source.  HasCapAndSource pins both, for a
+// The effect of a Capability, written cap_of(^^T).
+[[nodiscard]] consteval Effect cap_of(std::meta::info capability) {
+    return std::meta::extract<Effect>(detail::capability_argument_(capability, 0));
+}
+
+template <class T>
+using source_of_t = [:detail::capability_argument_(^^T, 1):];
+
+// CapMatches ignores the source.  HasCapAndSource pins both, for a
 // function that needs a capability from one specific source.  That
 // concept keeps the exact-type test: it is the one place that means the
 // type itself and not a reference to it.
 template <class T, Effect E>
-inline constexpr bool cap_matches_v = detail::cap_matches_<T, E>();
+concept CapMatches = IsCapability<T> && cap_of(^^T) == E;
 
 template <class T, Effect E, class S>
 concept HasCapAndSource = std::is_same_v<T, Capability<E, S>>;
@@ -187,7 +178,7 @@ template <Effect E, IsExecCtx Ctx>
 // The capability may have been minted in another scope.  This says the
 // surrounding context is still authorized for that effect.
 template <class Cap, class Ctx>
-concept CapMatchesCtx = IsCapability<Cap> && IsExecCtx<Ctx> && row_contains_v<row_type_of_t<Ctx>, cap_of_v<Cap>>;
+concept CapMatchesCtx = IsCapability<Cap> && IsExecCtx<Ctx> && row_contains_v<row_type_of_t<Ctx>, cap_of(^^Cap)>;
 
 // The bare tag of an atom is the type in namespace cap whose identifier
 // is the enumerator's own, which is how Alloc, IO and Block each reach
@@ -357,35 +348,35 @@ static_assert(!CanMintCap<Effect::Test, ctx_cap::Fg>);
 static_assert(!CanMintCap<Effect::Alloc, int>);
 static_assert(!CanMintCap<Effect::Alloc, void>);
 
-static_assert(is_capability_v<Capability<Effect::Alloc, Bg>>);
-static_assert(!is_capability_v<int>);
-static_assert(!is_capability_v<Bg>);
-static_assert(!is_capability_v<cap::Alloc>);
+static_assert(IsCapability<Capability<Effect::Alloc, Bg>>);
+static_assert(!IsCapability<int>);
+static_assert(!IsCapability<Bg>);
+static_assert(!IsCapability<cap::Alloc>);
 
-static_assert(cap_of_v<Capability<Effect::Alloc, Bg>> == Effect::Alloc);
-static_assert(cap_of_v<Capability<Effect::IO, Init>> == Effect::IO);
-static_assert(cap_of_v<Capability<Effect::Block, Test>> == Effect::Block);
+static_assert(cap_of(^^Capability<Effect::Alloc, Bg>) == Effect::Alloc);
+static_assert(cap_of(^^Capability<Effect::IO, Init>) == Effect::IO);
+static_assert(cap_of(^^Capability<Effect::Block, Test>) == Effect::Block);
 
 static_assert(std::is_same_v<source_of_t<Capability<Effect::Alloc, Bg>>, Bg>);
 static_assert(std::is_same_v<source_of_t<Capability<Effect::IO, Init>>, Init>);
 static_assert(std::is_same_v<source_of_t<Capability<Effect::Block, Test>>, Test>);
 
-static_assert(cap_matches_v<Capability<Effect::Alloc, Bg>, Effect::Alloc>);
-static_assert(!cap_matches_v<Capability<Effect::Alloc, Bg>, Effect::IO>);
-static_assert(cap_matches_v<Capability<Effect::Alloc, Init>, Effect::Alloc>);
-static_assert(!cap_matches_v<int, Effect::Alloc>);
+static_assert(CapMatches<Capability<Effect::Alloc, Bg>, Effect::Alloc>);
+static_assert(!CapMatches<Capability<Effect::Alloc, Bg>, Effect::IO>);
+static_assert(CapMatches<Capability<Effect::Alloc, Init>, Effect::Alloc>);
+static_assert(!CapMatches<int, Effect::Alloc>);
 
 // The reflection query strips cv and reference, which the partial
 // specializations it replaces did not.  A function template that
-// deduces its parameter as Cap&& can now ask these three about the
+// deduces its parameter as Cap&& can now ask these readers about the
 // deduced type without spelling the strip itself.  Nothing is admitted
 // that was rejected on its merits: a type that is not a Capability
 // still answers no, and the mint passkey is the gate on authority.
-static_assert(is_capability_v<Capability<Effect::Alloc, Bg> const&>);
-static_assert(is_capability_v<Capability<Effect::Alloc, Bg>&&>);
-static_assert(cap_of_v<Capability<Effect::IO, Init> const&> == Effect::IO);
+static_assert(IsCapability<Capability<Effect::Alloc, Bg> const&>);
+static_assert(IsCapability<Capability<Effect::Alloc, Bg>&&>);
+static_assert(cap_of(^^Capability<Effect::IO, Init> const&) == Effect::IO);
 static_assert(std::is_same_v<source_of_t<Capability<Effect::IO, Init>&&>, Init>);
-static_assert(cap_matches_v<Capability<Effect::Alloc, Bg> const&, Effect::Alloc>);
+static_assert(CapMatches<Capability<Effect::Alloc, Bg> const&, Effect::Alloc>);
 
 // Exactly the three value atoms carry a bare tag.  The three thread
 // atoms leave the constraint unsatisfied, which is what keeps

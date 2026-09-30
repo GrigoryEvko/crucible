@@ -88,8 +88,8 @@ static_assert(!fah::at_or_above(InstructionTier::tier, fah::HwInstruction::NonDe
 
 // A vector arm loads one control-byte group into one register, so the group
 // is exactly one register wide.  The portable arm has no register to match.
-static_assert(fas::register_bits_v<ActiveSimdIsa::isa> == 0
-                  || group_width() * 8U == fas::register_bits_v<ActiveSimdIsa::isa>,
+static_assert(fas::register_bits(ActiveSimdIsa::isa) == 0
+                  || group_width() * 8U == fas::register_bits(ActiveSimdIsa::isa),
               "the control-byte group must be exactly one vector register of the active ISA");
 
 }  // namespace swiss_hw

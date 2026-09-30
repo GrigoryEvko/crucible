@@ -46,13 +46,12 @@ struct scoped_view;
 template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class ScopedView;
 
-// The struct form stays because callers read `::value` off it. The
-// answer is the one reflection query in foundation/reflect/Instance.h.
+// The one reflection query in foundation/reflect/Instance.h.  It is a
+// concept, so no translation unit can specialize it.  The field audit
+// below reads it, and a class template or a variable template in its
+// place would let a specialization hide a stored view from the audit.
 template <typename T>
-struct is_scoped_view : std::bool_constant<::foundation::reflect::is_instance_of_v<T, ^^ScopedView>> {};
-
-template <typename T>
-inline constexpr bool is_scoped_view_v = is_scoped_view<std::remove_cvref_t<T>>::value;
+concept IsScopedView = ::foundation::reflect::IsInstanceOf<T, ^^ScopedView>;
 
 // The brand a view of Carrier takes.
 template <typename Carrier, typename Fresh>
@@ -335,7 +334,7 @@ consteval bool contains_scoped_view_() {
     using U = std::remove_cvref_t<T>;
     if constexpr ((std::is_same_v<U, Visited> || ...)) {
         return false;
-    } else if constexpr (is_scoped_view_v<U>) {
+    } else if constexpr (IsScopedView<U>) {
         return true;
     } else if constexpr (std::is_array_v<U>) {
         return contains_scoped_view_<std::remove_all_extents_t<U>, Visited...>();
@@ -392,11 +391,11 @@ static_assert(sizeof(ScopedView<detail::sv_test_carrier, detail::sv_test_tag, de
 static_assert(std::is_trivially_copyable_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
 static_assert(std::is_trivially_destructible_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
 
-static_assert(is_scoped_view_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
-static_assert(is_scoped_view_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag> const&>);
-static_assert(is_scoped_view_v<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>>);
-static_assert(!is_scoped_view_v<detail::sv_test_carrier>);
-static_assert(!is_scoped_view_v<void>);
+static_assert(IsScopedView<ScopedView<detail::sv_test_carrier, detail::sv_test_tag>>);
+static_assert(IsScopedView<ScopedView<detail::sv_test_carrier, detail::sv_test_tag> const&>);
+static_assert(IsScopedView<ScopedView<detail::sv_test_carrier, detail::sv_test_tag, detail::sv_brand_a>>);
+static_assert(!IsScopedView<detail::sv_test_carrier>);
+static_assert(!IsScopedView<void>);
 
 // The erasure runs one way, and a view of one brand is not a view of
 // another.

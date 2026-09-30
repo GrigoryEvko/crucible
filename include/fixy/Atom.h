@@ -479,15 +479,21 @@ struct constant_time final : atom_of<Axis::Security> {};
 //
 // A rule asks one of three questions of the Security grade: is the data
 // classified, is it in constant time, is it declassified under a policy.
-// A reader with its own partial specialisation and a false primary would
-// read a new point on the axis as "public" until somebody updated it.
-// On this axis "public" is the answer that lets a binding through, so
-// that default fails open.
+// A reader with its own table and a default of "public" would read a new
+// point on the axis as public until somebody updated it.  On this axis
+// "public" is the answer that lets a binding through, so that default
+// fails open.
 //
-// So the primary is declared and not defined.  A grade this relation
-// does not name fails at the use with its own name in the diagnostic, and
-// the walk in the self-test below makes sure every Security atom in the
-// roster has an answer.
+// So the relation names each grade and gives no answer for any other
+// type.  A grade that it does not name fails at the use with its own name
+// in the diagnostic, and the walk in the self-test below makes sure every
+// Security atom in the roster has an answer.
+//
+// The relation is one function over reflections, and each reading is a
+// concept over it.  No translation unit can specialize a function that is
+// not a template, or a concept.  A class template or a variable template
+// that a rule reads is a door: a specialization for a class of a caller
+// would give that class the public answer.
 enum class SecurityClass : std::uint8_t {
     Public = 0,  // as_public, as_unclassified: the data was never classified
     Internal = 1,  // as_internal: below the classified carrier, above public
@@ -498,47 +504,61 @@ enum class SecurityClass : std::uint8_t {
 
 namespace detail {
 
-template <class Grade>
-struct security_class_of_;
+// The answer of the relation for one type: whether the type is a Security
+// grade, and its class when it is one.
+struct security_class_answer {
+    bool is_grade = false;
+    SecurityClass security_class = SecurityClass::Classified;
+};
 
-template <>
-struct security_class_of_<as_unclassified> : std::integral_constant<SecurityClass, SecurityClass::Public> {};
-template <>
-struct security_class_of_<as_public> : std::integral_constant<SecurityClass, SecurityClass::Public> {};
-template <>
-struct security_class_of_<as_internal> : std::integral_constant<SecurityClass, SecurityClass::Internal> {};
-template <>
-struct security_class_of_<as_classified> : std::integral_constant<SecurityClass, SecurityClass::Classified> {};
-template <>
-struct security_class_of_<as_secret> : std::integral_constant<SecurityClass, SecurityClass::Classified> {};
-template <>
-struct security_class_of_<constant_time> : std::integral_constant<SecurityClass, SecurityClass::ConstantTime> {};
-template <typename Policy>
-struct security_class_of_<declassify<Policy>> : std::integral_constant<SecurityClass, SecurityClass::Declassified> {};
-// The strict pole: a binding that says nothing about Security is
-// classified.  That is what reject-by-default means on this axis.
-template <>
-struct security_class_of_<axis_traits<Axis::Security>::strict>
-    : std::integral_constant<SecurityClass, SecurityClass::Classified> {};
+// The strict pole is a binding that says nothing about Security, and it is
+// classified.  That is what reject-by-default means on this axis.  A
+// qualified atom is not a grade, because the relation does not strip it.
+[[nodiscard]] consteval security_class_answer security_class_answer_of_(std::meta::info grade) {
+    const std::meta::info type = std::meta::dealias(grade);
+    if (type == ^^as_unclassified || type == ^^as_public) return {true, SecurityClass::Public};
+    if (type == ^^as_internal) return {true, SecurityClass::Internal};
+    if (type == ^^as_classified || type == ^^as_secret
+        || type == std::meta::dealias(^^axis_traits<Axis::Security>::strict)) {
+        return {true, SecurityClass::Classified};
+    }
+    if (type == ^^constant_time) return {true, SecurityClass::ConstantTime};
+    if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^declassify) {
+        return {true, SecurityClass::Declassified};
+    }
+    return {};
+}
+
+// Declared and not defined, and not constexpr.  A constant evaluation that
+// calls it fails, and the diagnostic gives its name as the reason.
+void type_is_not_a_security_grade() noexcept;
 
 }  // namespace detail
 
 template <class Grade>
-concept IsSecurityGrade = requires { detail::security_class_of_<Grade>::value; };
+concept IsSecurityGrade = detail::security_class_answer_of_(^^Grade).is_grade;
 
-template <IsSecurityGrade Grade>
-inline constexpr SecurityClass security_class_of_v = detail::security_class_of_<Grade>::value;
+// The class of a Security grade, written security_class_of(^^Grade).  A
+// type that is not a Security grade has no class, and a call for one is
+// not a constant expression.
+[[nodiscard]] consteval SecurityClass security_class_of(std::meta::info grade) {
+    const detail::security_class_answer answer = detail::security_class_answer_of_(grade);
+    if (!answer.is_grade) detail::type_is_not_a_security_grade();
+    return answer.security_class;
+}
 
 // The two readings every rule shares.  A carrier holds classified data,
 // with or without the timing claim.  A declassified grade is not a
 // carrier.  fixy/Corpus.h reads its policy for each channel, because a
-// policy licenses only the channels of its mask.
-template <IsSecurityGrade Grade>
-inline constexpr bool is_classified_carrier_v = security_class_of_v<Grade> == SecurityClass::Classified
-                                             || security_class_of_v<Grade> == SecurityClass::ConstantTime;
+// policy licenses only the channels of its mask.  A type that is not a
+// Security grade satisfies neither.
+template <class Grade>
+concept IsClassifiedCarrier = IsSecurityGrade<Grade>
+                           && (security_class_of(^^Grade) == SecurityClass::Classified
+                               || security_class_of(^^Grade) == SecurityClass::ConstantTime);
 
-template <IsSecurityGrade Grade>
-inline constexpr bool is_constant_time_v = security_class_of_v<Grade> == SecurityClass::ConstantTime;
+template <class Grade>
+concept IsConstantTime = IsSecurityGrade<Grade> && security_class_of(^^Grade) == SecurityClass::ConstantTime;
 
 template <typename Proto>
     requires IsSessionProtocol<Proto>
@@ -1011,26 +1031,28 @@ static_assert(security_atoms_rostered_() > 0, "fixy/Atom.h: the roster holds no 
                                               "proves nothing.  Either the atoms left core_atom_roster, or they "
                                               "stopped naming Axis::Security.");
 static_assert(security_atoms_classified_() == security_atoms_rostered_(),
-              "fixy/Atom.h: a Security atom in core_atom_roster has no entry in security_class_of_.  Every "
-              "reader of the Security grade asks that relation, so an atom without an entry cannot be "
+              "fixy/Atom.h: a Security atom in core_atom_roster has no entry in security_class_answer_of_.  "
+              "Every reader of the Security grade asks that relation, so an atom without an entry cannot be "
               "used in a binding.  Give it a SecurityClass, next to the others.");
 static_assert(IsSecurityGrade<typename axis_traits<Axis::Security>::strict>,
               "fixy/Atom.h: the strict Security pole must have a class, because a binding that names no "
               "Security atom resolves to it.");
 
 // The relation answers what it must and refuses what it must.
-static_assert(security_class_of_v<typename axis_traits<Axis::Security>::strict> == SecurityClass::Classified);
-static_assert(security_class_of_v<constant_time> == SecurityClass::ConstantTime);
-static_assert(security_class_of_v<as_secret> == SecurityClass::Classified);
-static_assert(security_class_of_v<as_public> == SecurityClass::Public);
-static_assert(security_class_of_v<as_internal> == SecurityClass::Internal);
-static_assert(security_class_of_v<declassify<::fixy::tags::secret_policy::AuditedLogging>>
+static_assert(security_class_of(^^axis_traits<Axis::Security>::strict) == SecurityClass::Classified);
+static_assert(security_class_of(^^constant_time) == SecurityClass::ConstantTime);
+static_assert(security_class_of(^^as_secret) == SecurityClass::Classified);
+static_assert(security_class_of(^^as_public) == SecurityClass::Public);
+static_assert(security_class_of(^^as_unclassified) == SecurityClass::Public);
+static_assert(security_class_of(^^as_internal) == SecurityClass::Internal);
+static_assert(security_class_of(^^declassify<::fixy::tags::secret_policy::AuditedLogging>)
               == SecurityClass::Declassified);
-static_assert(is_classified_carrier_v<constant_time> && is_constant_time_v<constant_time>);
-static_assert(is_classified_carrier_v<as_classified> && !is_constant_time_v<as_classified>);
-static_assert(!is_classified_carrier_v<as_internal> && !is_classified_carrier_v<as_public>);
-static_assert(!is_classified_carrier_v<declassify<::fixy::tags::secret_policy::AuditedLogging>>,
+static_assert(IsClassifiedCarrier<constant_time> && IsConstantTime<constant_time>);
+static_assert(IsClassifiedCarrier<as_classified> && !IsConstantTime<as_classified>);
+static_assert(!IsClassifiedCarrier<as_internal> && !IsClassifiedCarrier<as_public>);
+static_assert(!IsClassifiedCarrier<declassify<::fixy::tags::secret_policy::AuditedLogging>>,
               "a declassified grade is not a carrier. fixy/Corpus.h reads its policy for each channel");
+static_assert(!IsClassifiedCarrier<int> && !IsConstantTime<int>, "a type that is not a grade makes no claim");
 static_assert(!IsSecurityGrade<int>, "a type that is not a Security grade has no class");
 static_assert(!IsSecurityGrade<affine>, "an atom on another axis has no Security class");
 static_assert(!IsSecurityGrade<const as_public>, "a qualified atom is refused rather than stripped");

@@ -1102,6 +1102,19 @@ foundation_neg_compile_test(neg_capability_forged_by_bit_cast
 foundation_neg_compile_test(neg_capability_forged_by_start_lifetime_as
   "static assertion failed"
   ".foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg.* is not an implicit-lifetime type")
+# IsCapability, the effect of a capability and the instance query read no
+# variable template, so a specialization that adds a class of the caller
+# to the capabilities, or gives a capability another effect, has no
+# template to name.
+foundation_neg_compile_test(neg_capability_specialized_trait
+  "expected initializer before .<. token"
+  "neg_capability_specialized_trait\\.cpp:17:[0-9]+: error:")
+foundation_neg_compile_test(neg_capability_effect_specialized_trait
+  "expected initializer before .<. token"
+  "neg_capability_effect_specialized_trait\\.cpp:11:[0-9]+: error:")
+foundation_neg_compile_test(neg_instance_of_specialized_trait
+  "expected initializer before .<. token"
+  "neg_instance_of_specialized_trait\\.cpp:18:[0-9]+: error:")
 foundation_neg_compile_test(neg_bg_exec_ctx_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<"
   "is_trivially_copyable_v<_To> .with _To = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<")

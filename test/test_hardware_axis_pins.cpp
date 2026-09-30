@@ -60,7 +60,7 @@ static_assert(fas::is_trunk_pinned(sw::ActiveSimdIsa::isa) || std::is_same_v<sw:
 
 // The group width is in bytes and the register width is in bits.
 static_assert(!fas::is_trunk_pinned(sw::ActiveSimdIsa::isa)
-                  || ::crucible::detail::group_width() * 8U == fas::register_bits_v<sw::ActiveSimdIsa::isa>,
+                  || ::crucible::detail::group_width() * 8U == fas::register_bits(sw::ActiveSimdIsa::isa),
               "the control-byte group must be exactly one vector register of the active ISA.");
 
 // ── TraceRing: the append ────────────────────────────────────────────

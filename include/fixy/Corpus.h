@@ -204,8 +204,8 @@ template <DischargeAxis Channel, class G>
 struct is_classified_on_ : std::false_type {};
 template <DischargeAxis Channel, ::fixy::atom::IsSecurityGrade G>
 struct is_classified_on_<Channel, G>
-    : std::bool_constant<::fixy::atom::is_classified_carrier_v<G>
-                         || (::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Declassified
+    : std::bool_constant<::fixy::atom::IsClassifiedCarrier<G>
+                         || (::fixy::atom::security_class_of(^^G) == ::fixy::atom::SecurityClass::Declassified
                              && !can_discharge_<Channel, G>::value)> {};
 
 // The Internal tier sits below the strict pole, so a binding reaches it
@@ -215,7 +215,7 @@ template <class G>
 struct is_internal_ : std::false_type {};
 template <::fixy::atom::IsSecurityGrade G>
 struct is_internal_<G>
-    : std::bool_constant<::fixy::atom::security_class_of_v<G> == ::fixy::atom::SecurityClass::Internal> {};
+    : std::bool_constant<::fixy::atom::security_class_of(^^G) == ::fixy::atom::SecurityClass::Internal> {};
 
 // Which effects count as observable is decided where the effect atoms
 // are declared, not here.  Deferring keeps a newly added atom from

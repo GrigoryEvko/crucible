@@ -238,15 +238,20 @@ fixy_neg_compile_test(neg_hw_pins_row_without_axis
   "static assertion failed: the row of the hardware-axis block planted::site_hw lists no axis, so it states nothing\\."
   "hw_axis_pins::pinned_row<\\^\\^planted::site_hw>::report")
 
-# register_bits_v names a width only for an ISA with a fixed register
-# width.  SVE is scalable and Portable names no register, so the
-# constraint refuses both.
+# register_bits gives a width only for an ISA with a fixed register
+# width.  SVE is scalable and Portable names no register, so a call for
+# either is not a constant expression.
 fixy_neg_compile_test(neg_simd_register_bits_of_a_scalable_isa
-  "use of invalid variable template .register_bits_v<fixy::atom::simd::SimdIsa::Sve>."
-  "the expression .has_fixed_register_width\\(fixy::atom::simd::SimdIsa\\)\\(Isa\\) \\[with Isa = fixy::atom::simd::SimdIsa::Sve\\]. evaluated to .false.")
+  "call to consteval function .fixy::atom::simd::register_bits\\(fixy::atom::simd::SimdIsa::Sve\\). is not a constant expression"
+  "call to non-.constexpr. function .void fixy::atom::detail::simd_isa_has_no_fixed_register_width\\(\\).")
 fixy_neg_compile_test(neg_simd_register_bits_of_portable
-  "use of invalid variable template .register_bits_v<fixy::atom::simd::SimdIsa::Portable>."
-  "the expression .has_fixed_register_width\\(fixy::atom::simd::SimdIsa\\)\\(Isa\\) \\[with Isa = fixy::atom::simd::SimdIsa::Portable\\]. evaluated to .false.")
+  "call to consteval function .fixy::atom::simd::register_bits\\(fixy::atom::simd::SimdIsa::Portable\\). is not a constant expression"
+  "call to non-.constexpr. function .void fixy::atom::detail::simd_isa_has_no_fixed_register_width\\(\\).")
+# The register width is a function, so a specialization that gives one
+# ISA another width has no template to name.
+fixy_neg_compile_test(neg_simd_register_bits_specialized_trait
+  "expected initializer before .<. token"
+  "neg_simd_register_bits_specialized_trait\\.cpp:14:[0-9]+: error:")
 
 # ── The fn gate ───────────────────────────────────────────────────────
 # The resolver, the silent strict defaults and what the gate refuses.
@@ -676,12 +681,28 @@ fixy_neg_compile_test(neg_rule_w003_hot_session_payload_unstated_wait
   "Collision rule\\(s\\) W003:"
   "${_fixy_tier5_member}")
 
-# The Security grade is read through one closed relation, and its primary
-# has no definition.  An atom on the axis that the relation does not name
-# stops the build with one message, rather than reading as public.
+# The Security grade is read through one closed relation, which gives no
+# class for a type that it does not name.  An atom on the axis that the
+# relation does not name stops the build with one message, rather than
+# reading as public.
 fixy_neg_compile_test(neg_security_grade_without_class
-  "the Security grade of this binding has no entry in fixy::atom::detail::security_class_of_"
+  "the Security grade of this binding has no entry in fixy::atom::detail::security_class_answer_of_"
   "security_class_or_refuse_.+unlisted_level")
+# The relation and its readings are one function and two concepts, so a
+# specialization that gives a class of the caller an answer has no
+# template to name.
+fixy_neg_compile_test(neg_security_class_specialized_trait
+  ".security_class_of_. is not a class template"
+  "neg_security_class_specialized_trait\\.cpp:20:[0-9]+: error:")
+fixy_neg_compile_test(neg_security_class_value_specialized_trait
+  "expected initializer before .<. token"
+  "neg_security_class_value_specialized_trait\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_security_carrier_specialized_trait
+  "expected initializer before .<. token"
+  "neg_security_carrier_specialized_trait\\.cpp:10:[0-9]+: error:")
+fixy_neg_compile_test(neg_security_constant_time_specialized_trait
+  "expected initializer before .<. token"
+  "neg_security_constant_time_specialized_trait\\.cpp:10:[0-9]+: error:")
 
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
@@ -1234,6 +1255,11 @@ fixy_neg_compile_test(neg_scoped_view_escapes_through_private_member
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "fixy/ScopedView\\.h:[0-9]+:[0-9]+: error"
   "fixy::contains_scoped_view<Holder>\\(\\). evaluates to false")
+# The audit reads a concept, so a specialization that hides a stored view
+# from it has no template to name.
+fixy_neg_compile_test(neg_scoped_view_specialized_trait
+  ".is_scoped_view. is not a class template"
+  "neg_scoped_view_specialized_trait\\.cpp:20:[0-9]+: error:")
 
 # A transition whose edge is not declared in the namespace the machine
 # names fails the MachineTransition constraint on transition_to.
@@ -4478,7 +4504,8 @@ fixy_test(test_wrapper_verification)
 # Any translation unit can specialize a detection trait.  Here the
 # detection is a concept over a reflection query and the opt-in is a
 # member, so a specialization reaches no gate, and the concept refuses
-# each of the seventeen trait injections that has a target.
+# each of the twelve trait injections that has a target.  The instance
+# query has no value spelling, so eight lookalikes have no injection.
 fixy_test(test_cheat_probe)
 
 # An injection that does not compile: the primary of graded_modality is

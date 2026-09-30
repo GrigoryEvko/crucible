@@ -183,6 +183,10 @@ inline constexpr std::array<std::pair<simd::SimdIsa, std::uint16_t>, 12> simd_re
     return bits;
 }
 
+// Declared and not defined, and not constexpr.  A constant evaluation that
+// calls it fails, and the diagnostic gives its name as the reason.
+void simd_isa_has_no_fixed_register_width() noexcept;
+
 }  // namespace fixy::atom::detail
 
 namespace fixy::atom::simd {
@@ -190,10 +194,16 @@ namespace fixy::atom::simd {
 // The width of one vector register, in bits.  Scalar has no vector
 // register, so its width is 0.  A kernel that steps one register per
 // iteration checks its stride against this value.  An ISA without a fixed
-// width has no value here, and naming one does not compile.
-template <SimdIsa Isa>
-    requires(has_fixed_register_width(Isa))
-inline constexpr std::uint16_t register_bits_v = ::fixy::atom::detail::simd_register_bits_of_(Isa);
+// width has no value here, and a call for one does not compile.
+//
+// It is a function and not a template, so no translation unit can give an
+// ISA a width of its own.  A variable template can be explicitly
+// specialized, and a specialization for one ISA changes the stride check
+// of each kernel that reads it.
+[[nodiscard]] consteval std::uint16_t register_bits(SimdIsa isa) noexcept {
+    if (!has_fixed_register_width(isa)) ::fixy::atom::detail::simd_isa_has_no_fixed_register_width();
+    return ::fixy::atom::detail::simd_register_bits_of_(isa);
+}
 
 }  // namespace fixy::atom::simd
 
@@ -252,9 +262,6 @@ static_assert(every_roster_member_on_axis_<simd_atom_roster, Axis::SimdIsa>(),
     return matched;
 }
 
-template <simd::SimdIsa I>
-concept names_register_bits_ = requires { simd::register_bits_v<I>; };
-
 #pragma GCC diagnostic pop
 
 static_assert(register_bits_table_partitions_the_enum_(),
@@ -262,15 +269,15 @@ static_assert(register_bits_table_partitions_the_enum_(),
               "simd_register_bits_table, and every other SimdIsa none.");
 static_assert(register_bits_match_the_rung_(),
               "fixy/atoms/Simd.h: a trunk-pinned ISA has a 128, 256 or 512-bit register, and Scalar has 0.");
-static_assert(simd::register_bits_v<simd::SimdIsa::Scalar> == 0);
-static_assert(simd::register_bits_v<simd::SimdIsa::Sse2> == 128);
-static_assert(simd::register_bits_v<simd::SimdIsa::Avx2> == 256);
-static_assert(simd::register_bits_v<simd::SimdIsa::Avx512Bw> == 512);
-static_assert(simd::register_bits_v<simd::SimdIsa::Neon> == 128);
-static_assert(names_register_bits_<simd::SimdIsa::Sse42>);
-static_assert(!names_register_bits_<simd::SimdIsa::Sve>);
-static_assert(!names_register_bits_<simd::SimdIsa::Sve2>);
-static_assert(!names_register_bits_<simd::SimdIsa::Portable>);
+static_assert(simd::register_bits(simd::SimdIsa::Scalar) == 0);
+static_assert(simd::register_bits(simd::SimdIsa::Sse2) == 128);
+static_assert(simd::register_bits(simd::SimdIsa::Sse42) == 128);
+static_assert(simd::register_bits(simd::SimdIsa::Avx2) == 256);
+static_assert(simd::register_bits(simd::SimdIsa::Avx512Bw) == 512);
+static_assert(simd::register_bits(simd::SimdIsa::Neon) == 128);
+static_assert(!simd::has_fixed_register_width(simd::SimdIsa::Sve)
+              && !simd::has_fixed_register_width(simd::SimdIsa::Sve2)
+              && !simd::has_fixed_register_width(simd::SimdIsa::Portable));
 
 static_assert(every_enumerator_has_exactly_one_atom_<simd_atom_roster, simd::SimdIsa>(),
               "fixy/atoms/Simd.h: every SimdIsa enumerator must be claimed by exactly one atom in "

@@ -23,7 +23,7 @@
 #include <vector>
 
 using fixy::contains_scoped_view;
-using fixy::is_scoped_view_v;
+using fixy::IsScopedView;
 using fixy::LinearScopedView;
 using fixy::mint_linear_view;
 using fixy::mint_view;
@@ -119,9 +119,9 @@ struct SelfReferentialEscape {
 static_assert(!contains_scoped_view<SelfReferentialClean>());
 static_assert(contains_scoped_view<SelfReferentialEscape>());
 
-static_assert(is_scoped_view_v<ActiveView>);
-static_assert(!is_scoped_view_v<int>);
-static_assert(!is_scoped_view_v<DummyCarrier>);
+static_assert(IsScopedView<ActiveView>);
+static_assert(!IsScopedView<int>);
+static_assert(!IsScopedView<DummyCarrier>);
 
 // Every shape a view can hide in, and every shape it cannot.  A shape
 // added to either roster is audited by the walk below without a new
