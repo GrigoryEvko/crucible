@@ -57,6 +57,7 @@
 #include <fixy/Throws.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/concurrent/ParallelismRule.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -272,19 +273,7 @@ template <std::size_t N>
 // A free function in a detail namespace is not a place for this
 // fan-out, because any translation unit can call it with no context at
 // all.
-class ParallelForRunner final {
-    // No object of the runner exists.  Every constructor is deleted and
-    // the destructor is user-provided, so the class is neither trivially
-    // copyable nor an implicit-lifetime type, and no byte route
-    // (std::bit_cast, std::start_lifetime_as) can make one either.
-    ParallelForRunner() = delete("the parallel-for runner holds static members only; no object of it exists");
-    ParallelForRunner(const ParallelForRunner&) = delete("the parallel-for runner holds static members only");
-    ParallelForRunner&
-    operator=(const ParallelForRunner&) = delete("the parallel-for runner holds static members only");
-    ParallelForRunner(ParallelForRunner&&) = delete("the parallel-for runner holds static members only");
-    ParallelForRunner& operator=(ParallelForRunner&&) = delete("the parallel-for runner holds static members only");
-    constexpr ~ParallelForRunner() noexcept {}
-
+class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
         requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
     friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,

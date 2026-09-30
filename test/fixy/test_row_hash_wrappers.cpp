@@ -174,6 +174,7 @@
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Resources.h>
 #include <foundation/effects/Row.h>
+#include <foundation/NoObject.h>
 #include <foundation/permissions/Fwd.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
@@ -1006,6 +1007,9 @@ inline constexpr std::string_view kDescriptorDoor =
 
 inline constexpr StatedZero kZeros[] = {
     {^^::foundation::Pinned, "a CRTP marker base: it forbids moves on its deriver and is never a value"},
+    {^^::foundation::NoObject,
+     "a CRTP base of a class that holds static members only: no object of its deriver exists, so it is never a "
+     "value"},
     {^^::foundation::ChannelBinding,
      "a handle's binding to its channel: a member of a handle, never a kernel signature argument"},
     {^^::foundation::ChannelIdentity,

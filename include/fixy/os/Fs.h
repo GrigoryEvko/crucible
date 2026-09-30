@@ -49,6 +49,7 @@
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -389,14 +390,7 @@ mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t per
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
-class FileDoor final {
-    FileDoor() = delete("the file door holds static members only, and no object of it exists");
-    FileDoor(const FileDoor&) = delete("the file door holds static members only");
-    FileDoor& operator=(const FileDoor&) = delete("the file door holds static members only");
-    FileDoor(FileDoor&&) = delete("the file door holds static members only");
-    FileDoor& operator=(FileDoor&&) = delete("the file door holds static members only");
-    constexpr ~FileDoor() noexcept {}
-
+class FileDoor final : ::foundation::NoObject<FileDoor> {
     template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
         requires CtxFitsFileMint<FriendCtx, FriendAtoms...>
     friend auto mint_file(FriendCtx const&, Path<tags::source::Sanitized>, ::mode_t) noexcept

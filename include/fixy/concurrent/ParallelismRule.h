@@ -53,6 +53,7 @@
 //     callers ask, so no caller writes its own comparison.
 
 #include <fixy/concurrent/Topology.h>
+#include <foundation/NoObject.h>
 #include <foundation/Saturate.h>
 
 #include <algorithm>
@@ -141,20 +142,12 @@ inline constexpr std::size_t kL3ResidentMaxFactor = 4;
 // Stateless.  The cache sizes are read at decision time, by which point
 // the topology has already probed them.
 //
-// No object of the rule exists.  Every constructor is deleted and the
-// destructor is user-provided, so the class is neither trivially copyable
-// nor an implicit-lifetime type, and no byte route (std::bit_cast,
-// std::start_lifetime_as) can make one either.
+// No object of the rule exists.  foundation/NoObject.h tells why no
+// constructor and no byte route (std::bit_cast, std::start_lifetime_as)
+// makes one.
 
-class ParallelismRule final {
+class ParallelismRule final : ::foundation::NoObject<ParallelismRule> {
 public:
-    ParallelismRule() = delete("the parallelism rule holds static members only; no object of it exists");
-    ParallelismRule(const ParallelismRule&) = delete("the parallelism rule holds static members only");
-    ParallelismRule& operator=(const ParallelismRule&) = delete("the parallelism rule holds static members only");
-    ParallelismRule(ParallelismRule&&) = delete("the parallelism rule holds static members only");
-    ParallelismRule& operator=(ParallelismRule&&) = delete("the parallelism rule holds static members only");
-    constexpr ~ParallelismRule() noexcept {}
-
     // The boundaries come from the host, so one byte count classifies
     // differently on two machines.
     [[nodiscard, gnu::pure]] static Tier classify(std::size_t ws_bytes) noexcept {

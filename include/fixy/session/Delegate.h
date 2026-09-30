@@ -64,6 +64,7 @@
 #include <fixy/session/Handle.h>
 #include <fixy/session/Payload.h>
 #include <fixy/session/Subtype.h>
+#include <foundation/NoObject.h>
 #include <foundation/contracts/Armed.h>
 
 #include <cstdio>
@@ -212,14 +213,7 @@ concept HoldsTokensOf = std::is_same_v<Hold, PermHold<typename H::perm_set>>;
 // DelegationKey.  Each public member states the whole gate of a form of
 // mint_delegated_session, so a direct call is no weaker than the mint.
 // The class is final, and no object of it exists.
-class DelegationDoor final {
-    DelegationDoor() = delete("the delegation door holds static members only; no object of it exists");
-    DelegationDoor(const DelegationDoor&) = delete("the delegation door holds static members only");
-    DelegationDoor& operator=(const DelegationDoor&) = delete("the delegation door holds static members only");
-    DelegationDoor(DelegationDoor&&) = delete("the delegation door holds static members only");
-    DelegationDoor& operator=(DelegationDoor&&) = delete("the delegation door holds static members only");
-    constexpr ~DelegationDoor() noexcept {}
-
+class DelegationDoor final : ::foundation::NoObject<DelegationDoor> {
 public:
     // Moves the live handle and the hold of its tokens into the payload.  A
     // consumed handle aborts here, as at every operation.

@@ -108,6 +108,7 @@
 #include <fixy/session/Stepping.h>
 #include <fixy/session/Subtype.h>
 
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -1273,17 +1274,9 @@ class handle_core;
 //   - rewind takes a handle at End and opens a new session on its
 //     Resource at a position that the gate of rewind admits.
 //
-// No object of the class exists.  Every constructor is deleted and the
-// destructor is user-provided.  The class is neither trivially copyable
-// nor an implicit-lifetime type, and no byte route makes one.
-class HandleFactory final {
-    HandleFactory() = delete("the handle factory holds static members only; no object of it exists");
-    HandleFactory(const HandleFactory&) = delete("the handle factory holds static members only");
-    HandleFactory& operator=(const HandleFactory&) = delete("the handle factory holds static members only");
-    HandleFactory(HandleFactory&&) = delete("the handle factory holds static members only");
-    HandleFactory& operator=(HandleFactory&&) = delete("the handle factory holds static members only");
-    constexpr ~HandleFactory() noexcept {}
-
+// No object of the class exists, and foundation/NoObject.h tells why no
+// constructor and no byte route makes one.
+class HandleFactory final : ::foundation::NoObject<HandleFactory> {
     // Builds the handle at Proto as it stands.
     template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS = ::foundation::permissions::EmptyPermSet>
@@ -2903,14 +2896,7 @@ concept CtxFitsForkedSides =
 // forward here for their names and their default arguments, through
 // detail::late_door_t, because the class stands after them.  No object of
 // the class exists.
-class SessionMintDoor final {
-    SessionMintDoor() = delete("the mint door holds static members only; no object of it exists");
-    SessionMintDoor(const SessionMintDoor&) = delete("the mint door holds static members only");
-    SessionMintDoor& operator=(const SessionMintDoor&) = delete("the mint door holds static members only");
-    SessionMintDoor(SessionMintDoor&&) = delete("the mint door holds static members only");
-    SessionMintDoor& operator=(SessionMintDoor&&) = delete("the mint door holds static members only");
-    constexpr ~SessionMintDoor() noexcept {}
-
+class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
     // One side of a forked channel.  It builds the endpoint in the thread
     // that runs it, gives the endpoint and the fork's view of its child
     // permission to the body, and closes the handle that the body returns.

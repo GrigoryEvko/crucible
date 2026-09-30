@@ -77,6 +77,7 @@
 #include <fixy/session/Handle.h>
 #include <fixy/session/Payload.h>
 
+#include <foundation/NoObject.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/permissions/PermSet.h>
 
@@ -579,14 +580,7 @@ class CheckpointHandle;
 // handle through the rewind of fixy/session/Handle.h.  The handle forwards
 // each step here, so a direct call is the same operation as the method.
 // No object of the class exists.
-class CheckpointDoor final {
-    CheckpointDoor() = delete("the checkpoint door holds static members only, and no object of it exists");
-    CheckpointDoor(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
-    CheckpointDoor& operator=(const CheckpointDoor&) = delete("the checkpoint door holds static members only");
-    CheckpointDoor(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
-    CheckpointDoor& operator=(CheckpointDoor&&) = delete("the checkpoint door holds static members only");
-    constexpr ~CheckpointDoor() noexcept {}
-
+class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
     template <typename R, typename Loop, typename NewFrame, typename Next>
     [[nodiscard]] static constexpr auto wrap_(Next next) noexcept {
         using Resolved = detail::checkpoint::resolve<R, Loop>;

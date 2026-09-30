@@ -19,6 +19,7 @@
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/StageShape.h>
 
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/effects/Ctx.h>
@@ -263,14 +264,7 @@ template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class ConsumerEp, cl
 // the two mints, which do the check of the body, the context and the
 // endpoints before they call a member.  Each member does its check again
 // and builds the stage.  The class is final, and no object of it exists.
-class StageEndpointDoor final {
-    StageEndpointDoor() = delete("the stage door holds static members only, and no object of it exists");
-    StageEndpointDoor(const StageEndpointDoor&) = delete("the stage door holds static members only");
-    StageEndpointDoor& operator=(const StageEndpointDoor&) = delete("the stage door holds static members only");
-    StageEndpointDoor(StageEndpointDoor&&) = delete("the stage door holds static members only");
-    StageEndpointDoor& operator=(StageEndpointDoor&&) = delete("the stage door holds static members only");
-    constexpr ~StageEndpointDoor() noexcept {}
-
+class StageEndpointDoor final : ::foundation::NoObject<StageEndpointDoor> {
     template <auto FnPtr, ::foundation::effects::IsExecCtx Ctx, class... Endpoints>
         requires CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>
     friend constexpr auto mint_mpmc_stage_from_endpoints(Ctx const& ctx, Endpoints&&... endpoints) noexcept;

@@ -10,6 +10,7 @@
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
 #include <foundation/Lifetime.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/diag/RowHash.h>
@@ -228,14 +229,7 @@ template <int Nice, eff::IsExecCtx Ctx>
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
-class SchedProofDoor final {
-    SchedProofDoor() = delete("the scheduling proof door holds static members only, and no object of it exists");
-    SchedProofDoor(const SchedProofDoor&) = delete("the scheduling proof door holds static members only");
-    SchedProofDoor& operator=(const SchedProofDoor&) = delete("the scheduling proof door holds static members only");
-    SchedProofDoor(SchedProofDoor&&) = delete("the scheduling proof door holds static members only");
-    SchedProofDoor& operator=(SchedProofDoor&&) = delete("the scheduling proof door holds static members only");
-    constexpr ~SchedProofDoor() noexcept {}
-
+class SchedProofDoor final : ::foundation::NoObject<SchedProofDoor> {
     template <SchedulerPolicy_v FriendPolicy, std::uint64_t FriendRuntimeNs, std::uint64_t FriendDeadlineNs,
               std::uint64_t FriendPeriodNs, eff::IsExecCtx FriendCtx>
         requires CtxFitsSchedPolicyMint<FriendCtx, FriendPolicy>

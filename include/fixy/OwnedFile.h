@@ -37,6 +37,7 @@
 // they carry no allowlist line.
 
 #include <fixy/atoms/Os.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -126,14 +127,7 @@ static_assert(sizeof(OwnedFile) == sizeof(std::FILE*), "OwnedFile must be a zero
 
 // The two opens.  No object of the door exists, and its members are
 // private, so the mints below are the only callers.
-class OwnedFileDoor final {
-    OwnedFileDoor() = delete("the file door holds static members only, and no object of it exists");
-    OwnedFileDoor(const OwnedFileDoor&) = delete("the file door holds static members only");
-    OwnedFileDoor& operator=(const OwnedFileDoor&) = delete("the file door holds static members only");
-    OwnedFileDoor(OwnedFileDoor&&) = delete("the file door holds static members only");
-    OwnedFileDoor& operator=(OwnedFileDoor&&) = delete("the file door holds static members only");
-    constexpr ~OwnedFileDoor() noexcept {}
-
+class OwnedFileDoor final : ::foundation::NoObject<OwnedFileDoor> {
     // The mode string is std::fopen's own, passed through unchanged.
     [[nodiscard]] static std::expected<OwnedFile, int> open_path_(const char* path, const char* mode) noexcept {
         std::FILE* const fp = std::fopen(path, mode);

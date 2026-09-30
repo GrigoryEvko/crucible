@@ -55,6 +55,7 @@
 #include <fixy/session/Handle.h>
 #include <fixy/session/Payload.h>
 
+#include <foundation/NoObject.h>
 #include <foundation/reflect/Hash.h>
 
 #include <cstddef>
@@ -232,14 +233,7 @@ concept RecordableHandle = requires {
 // and wraps the successor.  The recorder forwards each step here, so a
 // direct call is the same operation as the method.  No object of the
 // class exists.
-class RecordingDoor final {
-    RecordingDoor() = delete("the recording door holds static members only, and no object of it exists");
-    RecordingDoor(const RecordingDoor&) = delete("the recording door holds static members only");
-    RecordingDoor& operator=(const RecordingDoor&) = delete("the recording door holds static members only");
-    RecordingDoor(RecordingDoor&&) = delete("the recording door holds static members only");
-    RecordingDoor& operator=(RecordingDoor&&) = delete("the recording door holds static members only");
-    constexpr ~RecordingDoor() noexcept {}
-
+class RecordingDoor final : ::foundation::NoObject<RecordingDoor> {
     template <typename Inner, typename Next>
     [[nodiscard]] static constexpr Recorded<Next> wrap_(const Recorded<Inner>& from, Next next) noexcept {
         return Recorded<Next>{std::move(next), *from.log_, from.self_, from.peer_};

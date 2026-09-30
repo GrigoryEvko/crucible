@@ -16,6 +16,7 @@
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fs.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Lift.h>
@@ -99,14 +100,7 @@ template <typename Kind, eff::IsExecCtx Ctx>
 // socket handle comes only from mint_socket, after its gate.  The door
 // reads the triple of the kind, so no caller gives it a domain, a type or
 // a protocol.
-class SocketDoor final {
-    SocketDoor() = delete("the socket door holds static members only, and no object of it exists");
-    SocketDoor(const SocketDoor&) = delete("the socket door holds static members only");
-    SocketDoor& operator=(const SocketDoor&) = delete("the socket door holds static members only");
-    SocketDoor(SocketDoor&&) = delete("the socket door holds static members only");
-    SocketDoor& operator=(SocketDoor&&) = delete("the socket door holds static members only");
-    constexpr ~SocketDoor() noexcept {}
-
+class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     template <typename FriendKind, eff::IsExecCtx FriendCtx>
         requires CtxFitsSocketMint<FriendCtx, FriendKind>
     friend auto mint_socket(FriendCtx const&) noexcept -> std::expected<Linear<::fixy::fs::OwnedFd>, std::error_code>;

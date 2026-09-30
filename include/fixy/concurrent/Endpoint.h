@@ -22,6 +22,7 @@
 #include <fixy/concurrent/SubstrateSessionBridge.h>
 #include <fixy/session/Handle.h>
 
+#include <foundation/NoObject.h>
 #include <foundation/effects/Ctx.h>
 
 #include <concepts>
@@ -141,14 +142,7 @@ template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
 // which does the check of the context and the handle before it calls the
 // member.  The member does that check again and builds the endpoint.  The
 // class is final, and no object of it exists.
-class EndpointDoor final {
-    EndpointDoor() = delete("the endpoint door holds static members only, and no object of it exists");
-    EndpointDoor(const EndpointDoor&) = delete("the endpoint door holds static members only");
-    EndpointDoor& operator=(const EndpointDoor&) = delete("the endpoint door holds static members only");
-    EndpointDoor(EndpointDoor&&) = delete("the endpoint door holds static members only");
-    EndpointDoor& operator=(EndpointDoor&&) = delete("the endpoint door holds static members only");
-    constexpr ~EndpointDoor() noexcept {}
-
+class EndpointDoor final : ::foundation::NoObject<EndpointDoor> {
     template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsEndpointMint<Substr, Dir, Ctx>
     friend constexpr auto mint_endpoint(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept;

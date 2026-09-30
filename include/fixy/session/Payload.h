@@ -183,6 +183,7 @@
 // The crash attack campaign pins each of these on its ledger.
 
 #include <foundation/Brand.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
@@ -1669,17 +1670,9 @@ struct hold_from_slots {};
 // The door that builds every hold.  Each public member takes live tokens
 // or a live hold and does one complete transition, with the gate of the
 // member of the hold that calls it, so a direct call is no weaker than
-// that member.  The class is final, and no object of it exists.  Every
-// constructor is deleted and the destructor is user-provided, so no byte
-// route makes one.
-class HoldFactory final {
-    HoldFactory() = delete("the hold factory holds static members only; no object of it exists");
-    HoldFactory(const HoldFactory&) = delete("the hold factory holds static members only");
-    HoldFactory& operator=(const HoldFactory&) = delete("the hold factory holds static members only");
-    HoldFactory(HoldFactory&&) = delete("the hold factory holds static members only");
-    HoldFactory& operator=(HoldFactory&&) = delete("the hold factory holds static members only");
-    constexpr ~HoldFactory() noexcept {}
-
+// that member.  The class is final, and no object of it exists.
+// foundation/NoObject.h tells why no byte route makes one.
+class HoldFactory final : ::foundation::NoObject<HoldFactory> {
     struct no_incoming {};
 
     // The slot that a hold keeps for one element of its set.

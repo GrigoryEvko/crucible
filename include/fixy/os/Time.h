@@ -18,6 +18,7 @@
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Fs.h>
 #include <foundation/Lifetime.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
@@ -494,14 +495,7 @@ private:
 // comes only from that mint, after its gate.  The door builds the device
 // path from the index itself, so a caller cannot point it at a file that
 // is not a PTP device node.
-class PtpDeviceDoor final {
-    PtpDeviceDoor() = delete("the PTP device door holds static members only, and no object of it exists");
-    PtpDeviceDoor(const PtpDeviceDoor&) = delete("the PTP device door holds static members only");
-    PtpDeviceDoor& operator=(const PtpDeviceDoor&) = delete("the PTP device door holds static members only");
-    PtpDeviceDoor(PtpDeviceDoor&&) = delete("the PTP device door holds static members only");
-    PtpDeviceDoor& operator=(PtpDeviceDoor&&) = delete("the PTP device door holds static members only");
-    constexpr ~PtpDeviceDoor() noexcept {}
-
+class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
     template <eff::IsExecCtx Ctx>
         requires CtxFitsPtpClockReaderMint<Ctx>
     friend std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex) noexcept;

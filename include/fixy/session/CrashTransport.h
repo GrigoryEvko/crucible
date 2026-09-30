@@ -111,6 +111,7 @@
 #include <fixy/session/Crash.h>
 #include <fixy/session/Handle.h>
 
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
@@ -627,14 +628,7 @@ template <typename Resource, typename Transport>
 // moves the message through the inner handle, and it wraps the successor.
 // The decorator forwards each step here, so a direct call is the same
 // operation as the method.  No object of the class exists.
-class CrashSessionDoor final {
-    CrashSessionDoor() = delete("the crash door holds static members only, and no object of it exists");
-    CrashSessionDoor(const CrashSessionDoor&) = delete("the crash door holds static members only");
-    CrashSessionDoor& operator=(const CrashSessionDoor&) = delete("the crash door holds static members only");
-    CrashSessionDoor(CrashSessionDoor&&) = delete("the crash door holds static members only");
-    CrashSessionDoor& operator=(CrashSessionDoor&&) = delete("the crash door holds static members only");
-    constexpr ~CrashSessionDoor() noexcept {}
-
+class CrashSessionDoor final : ::foundation::NoObject<CrashSessionDoor> {
     // Wraps the successor of `from` with the counts after the step, and
     // records where it stands inside a message.
     template <typename NextPosition = detail::crash_transport::between_messages, typename Next, typename Handle,
