@@ -9,12 +9,12 @@
 #include <foundation/permissions/Permission.h>
 
 int main() {
-    auto policy =
-        crucible::warden::mint_quarantine_policy<2>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    ::fixy::ColdInitCtx const startup{::foundation::effects::testing::init()};
+    auto policy = crucible::warden::mint_quarantine_policy<2>(startup);
     crucible::cog::CogIdentity cog{};
     cog.uuid = crucible::cog::Uuid{0x118, 0x1};
     auto authority =
-        ::foundation::permissions::mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>();
+        ::foundation::permissions::mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>(startup);
     authority = policy.operator_override(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, std::move(authority),
                                          cog, crucible::warden::QuarantineState::Permanent, 1, 1);
     ::foundation::permissions::permission_drop(std::move(authority));

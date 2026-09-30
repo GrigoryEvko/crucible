@@ -937,6 +937,25 @@ crucible_test(test_cntp_sharp)
 crucible_test(test_cntp_tcam)
 crucible_test(test_stub_discipline)
 crucible_test(test_quarantine)
+# The roster test reads each permission tag of include/ by reflection.  It
+# includes each header that declares a permission row, or a parent tag that
+# gives a row, found here, so a new header joins the walk with no hand edit.
+file(GLOB_RECURSE _permission_row_candidates CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}/include"
+     "${CMAKE_SOURCE_DIR}/include/*.h")
+set(_permission_row_includes "")
+foreach(_candidate IN LISTS _permission_row_candidates)
+  file(STRINGS "${CMAKE_SOURCE_DIR}/include/${_candidate}" _row_lines
+       REGEX "using permission_row = |using parent_type = |namespace permission_rows")
+  if(_row_lines)
+    string(APPEND _permission_row_includes "#include <${_candidate}>\n")
+  endif()
+endforeach()
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/permission_row/permission_row_headers.h"
+     CONTENT "#pragma once\n@_permission_row_includes@" @ONLY)
+crucible_test(test_permission_row_roster)
+# crucible/ledger/ProbeSupport.h declares a tag and includes bench_harness.h.
+target_include_directories(test_permission_row_roster PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/permission_row"
+                           ${CMAKE_SOURCE_DIR}/bench)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_ledger)
@@ -1514,6 +1533,12 @@ crucible_neg_compile_test(neg_quarantine_override_hot_fg_ctx
 crucible_neg_compile_test(neg_quarantine_override_missing_permission
     "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::warden::QuarantineState, int, int\\)."
     "candidate expects 6 arguments, 5 provided")
+crucible_neg_compile_test(neg_quarantine_operator_authority_no_ctx
+    "static assertion failed: mint_permission_root<Tag>\\(\\) without an ExecCtx is only valid for permission_row<Tag> == Row<>"
+    "In instantiation of .constexpr foundation::permissions::Permission<Tag, Brand> foundation::permissions::mint_permission_root\\(const Args& \\.\\.\\.\\) .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{\\}")
+crucible_neg_compile_test(neg_quarantine_operator_authority_bg_ctx
+    "no matching function for call to .mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>\\(const fixy::BgDrainCtx&\\)."
+    "required for the satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{foundation::effects::ExecCtx<foundation::effects::Bg, ")
 crucible_neg_compile_test(neg_quarantine_zero_slots
     "In instantiation of .class crucible::warden::QuarantinePolicy<0, 4>."
     "static assertion failed: QuarantinePolicy requires Cog slots")

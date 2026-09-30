@@ -66,10 +66,13 @@ struct QuarantineTransition : ::foundation::diag::tag_base {
 
 namespace quarantine_tag {
 
-// The authority of an operator to force a state.  The token itself does
-// no effect, so its row is empty.
+// The authority of an operator to force a state.  A root of this tag is
+// that authority, so the row names Init.  Only a startup context mints
+// the root, and each split, share and handoff of the token needs a
+// context that owns Init.  The hot foreground, a background drain and a
+// test runner cannot mint it.
 struct OperatorOverride {
-    using permission_row = ::foundation::effects::Row<>;
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::Init>;
 };
 
 }  // namespace quarantine_tag
@@ -468,5 +471,12 @@ static_assert(!CtxFitsQuarantineRecord<::fixy::ColdInitCtx>);
 static_assert(CtxFitsQuarantineOverride<::fixy::ColdInitCtx>);
 static_assert(CtxFitsQuarantineOverride<::fixy::TestRunnerCtx>);
 static_assert(!CtxFitsQuarantineOverride<::fixy::BgDrainCtx>);
+// Only a context that owns Init mints the operator authority.  A test
+// runner can use a token in an override, but it cannot make one.
+static_assert(!::foundation::permissions::permission_row_empty_v<quarantine_tag::OperatorOverride>);
+static_assert(::foundation::permissions::PermissionRootArgs<quarantine_tag::OperatorOverride, ::fixy::ColdInitCtx>);
+static_assert(!::foundation::permissions::PermissionRootArgs<quarantine_tag::OperatorOverride, ::fixy::BgDrainCtx>);
+static_assert(!::foundation::permissions::PermissionRootArgs<quarantine_tag::OperatorOverride, ::fixy::HotFgCtx>);
+static_assert(!::foundation::permissions::PermissionRootArgs<quarantine_tag::OperatorOverride, ::fixy::TestRunnerCtx>);
 
 }  // namespace crucible::warden

@@ -134,7 +134,7 @@ static void test_permanent_requires_operator_permission() {
     assert(blocked.state == warden::QuarantineState::Quarantined);
     assert(blocked.signals.test(warden::QuarantineSignal::PermanentRequiresOperator));
 
-    auto authority = perm::mint_permission_root<warden::quarantine_tag::OperatorOverride>();
+    auto authority = perm::mint_permission_root<warden::quarantine_tag::OperatorOverride>(init_ctx());
     authority =
         policy.operator_override(init_ctx(), std::move(authority), target, warden::QuarantineState::Permanent, 1300, 3);
     assert(policy.state(target) == warden::QuarantineState::Permanent);
@@ -151,7 +151,7 @@ static void test_event_ring_wrap_chronological_order() {
     // zero.  The alternating states make each event distinguishable.
     auto policy = warden::mint_quarantine_policy<2, 4>(init_ctx(), test_config());
     auto target = peer(99);
-    auto authority = perm::mint_permission_root<warden::quarantine_tag::OperatorOverride>();
+    auto authority = perm::mint_permission_root<warden::quarantine_tag::OperatorOverride>(init_ctx());
 
     for (std::uint64_t seq = 1; seq <= 6; ++seq) {
         auto next = (seq % 2 == 1) ? warden::QuarantineState::Quarantined : warden::QuarantineState::Healthy;
@@ -194,6 +194,9 @@ int main() {
     static_assert(!warden::CtxFitsQuarantineRecord<::fixy::HotFgCtx>);
     static_assert(warden::CtxFitsQuarantineOverride<::fixy::ColdInitCtx>);
     static_assert(!warden::CtxFitsQuarantineOverride<::fixy::BgDrainCtx>);
+    static_assert(perm::PermissionRootArgs<warden::quarantine_tag::OperatorOverride, ::fixy::ColdInitCtx>);
+    static_assert(!perm::PermissionRootArgs<warden::quarantine_tag::OperatorOverride, ::fixy::BgDrainCtx>);
+    static_assert(!perm::PermissionRootArgs<warden::quarantine_tag::OperatorOverride, ::fixy::TestRunnerCtx>);
     static_assert(!std::is_default_constructible_v<warden::QuarantinePolicy<4>>);
     static_assert(std::is_trivially_copyable_v<warden::QuarantineSnapshot>);
     static_assert(sizeof(warden::QuarantineEvent) <= 64);
