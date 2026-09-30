@@ -884,11 +884,13 @@ public:
         // semantic, and the project's violation handler is noreturn and ends
         // in std::abort, so a violation stops the process either way.
         //
-        // The repeat below is not therefore redundant. The semantic is a
-        // per-target build option, and one target in this tree already sets
-        // `ignore` — every contract in a header compiled into crucible_perf
-        // evaluates to nothing. This check does not depend on that option,
-        // and the whole probe sequence rests on the property it states:
+        // The repeat that follows is not redundant. A translation unit can
+        // take the `ignore` semantic through CRUCIBLE_CONTRACT_IGNORE_OPTIONS,
+        // and then no contract in the headers it includes checks anything. In
+        // a Release build with CRUCIBLE_BENCH, bench/bench_pool_allocator.cpp
+        // is one such unit, and it includes this header. This check does not
+        // depend on the semantic, and the whole probe sequence rests on the
+        // property it states:
         // `(slot + probe) & mask` only wraps back into the table when the
         // capacity is a power of two, so a capacity that is not one makes
         // every probe past the first read and write outside the allocation.

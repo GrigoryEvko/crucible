@@ -209,10 +209,11 @@ public:
 //     Under inlining this leaves v's slot whatever it was at function
 //     entry (uninitialized stack), and downstream lambda value-expr
 //     substitutions that look up v by stack offset read the wrong bytes.
-//     We hit this as a hard SIGSEGV in bench_pool_allocator's via-pointer
-//     workload and minimized it to bugs/gcc-modref-miscompile/. Filed as
-//     PR124958, closed INVALID by Andrew Pinski 2026-04-21: the asm is
-//     wrong, not GCC.
+//     This form caused a SIGSEGV in the via-pointer workload of
+//     bench_pool_allocator. GCC PR124958 reports it, and Andrew Pinski
+//     closed the report as INVALID on 2026-04-21: the fault is in the
+//     inline asm, not in GCC. The do_not_optimize functions that follow
+//     are empty [[gnu::noipa]] functions with no inline asm.
 //
 //   * "r,m"(v) on a value: when GCC picks `r`, the asm sees a register
 //     copy and the original storage is invisible. Earlier writes to v's

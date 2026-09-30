@@ -805,7 +805,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 - `std::unique_ptr` for long-lived owned buffers (TraceRing, MetaLog).
 - `bg_` thread member declared LAST in containing struct — destroyed first, joins before other members die.
 - No Rc cycles (we don't use Rc anyway).
-- Cipher tiers have explicit eviction: hot (LRU), warm (age), cold (S3 lifecycle policy).
+- The Cipher (`include/crucible/Cipher.h`) is a content-addressed object store in one local directory, and it deletes no stored object. Only its in-process cache of object bytes has a limit: at most 64 entries and 8 MB. When the cache is full, it removes the entry that was used least recently. Three tiers with their own eviction are planned: hot (LRU), warm (by age) and cold (an S3 lifecycle policy).
 
 ### 8. DetSafe — `same(inputs) ⇒ same(outputs)`
 
@@ -818,7 +818,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 - Memory plan fixes addresses (pool_base + offset, content-addressed).
 - Philox4x32 RNG: counter-based, platform-independent. Zero RNG state anywhere.
 - KernelCache keyed on `(content_hash, row_hash)` (`include/crucible/MerkleDag.h`).
-- Reduction topology: pinned binary tree sorted by UUID for BITEXACT recipes.
+- Reduction topology (planned): a pinned binary tree sorted by UUID for BITEXACT recipes. No reduction code exists at this time, because no compute backend exists.
 - No hash-table iteration order dependencies. Sort keys before iterating.
 - No pointer-based ordering. Events have `(cycle, kind, sequence_number)`.
 
@@ -953,7 +953,7 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 | `std::thread` raw | Use `std::jthread` (C++20) |
 | `std::endl` | Flushes; use `'\n'` |
 | `std::vector<bool>` | Proxy iterators, not really a container; use `std::bitset<N>` |
-| `std::vector::reserve` (anywhere) | **Banned** (enforced by CI: the AST guard `utils/scripts/check-banned-calls.py`, with a content-keyed allowlist in `utils/scripts/no-reserve-allowlist.txt`) — signals wrong container choice. `vector::push_back` past capacity is **O(n)** (copies every existing element to the new buffer); reserve only delays the first O(n) spike, doesn't eliminate it. The "amortized O(1)" story hides three real costs: (1) **tail-latency**: each individual growth event is O(n), fatal for p99 budgets; (2) **silent perf cliff**: move-during-growth requires `noexcept` move ctors or falls back to **copy** without warning; (3) **heap churn**: every growth allocates new + frees old, fragments the allocator. Replacements: known max → `std::inplace_vector<T, N>` (compile-time bound, zero heap, true O(1) push_back, contract-checked overflow); known exact size at construction → `vector<T> v(N)` and fill by index (one allocation, no growth); truly unbounded → plain `vector<T>` and accept amortization (rare in practice; usually means you should have used arena-backed storage). Hot path: arena, never vector at all (per §X.10) |
+| `std::vector::reserve` (anywhere) | **Banned** (enforced by CI: the AST guard `utils/scripts/check-banned-calls.py`, with a content-keyed allowlist in `utils/scripts/no-reserve-allowlist.txt`) — signals wrong container choice. `vector::push_back` past capacity is **O(n)** (copies every existing element to the new buffer); reserve only delays the first O(n) spike, doesn't eliminate it. The "amortized O(1)" story hides three real costs: (1) **tail-latency**: each individual growth event is O(n), fatal for p99 budgets; (2) **silent perf cliff**: move-during-growth requires `noexcept` move ctors or falls back to **copy** without warning; (3) **heap churn**: every growth allocates new + frees old, fragments the allocator. Replacements: known max → `std::inplace_vector<T, N>` (compile-time bound, zero heap, true O(1) push_back, contract-checked overflow); known exact size at construction → `vector<T> v(N)` and fill by index (one allocation, no growth); truly unbounded → plain `vector<T>` and accept amortization (rare in practice; usually means you should have used arena-backed storage). Hot path: arena, never vector at all (HS10 in §XVIII) |
 | `std::vector::push_back` on growth-uncertain hot paths | Same root cause as the reserve ban — growth event is O(n) with hidden allocator interaction. Use `std::inplace_vector<T, N>` for type-encoded bounds or arena allocation for unbounded cold growth |
 | `std::cout` / `std::cerr` on hot path | Synced with stdio; use `fprintf(stderr, ...)` for debug |
 | `std::printf` / `std::format` on hot path | Formatting cost; reserve for debug paths |
@@ -1487,9 +1487,11 @@ Note: `relaxed` is OK for a thread reading its OWN atomic. Only cross-thread rea
 |---|---|---|---|
 | TraceRing entries | fg | bg | SPSC acquire/release |
 | MetaLog entries | fg | bg | SPSC acquire/release |
-| KernelCache slots | bg | fg | CAS on atomic slot, fg reads acquire |
-| RegionNode::compiled | bg | fg | atomic pointer swap (release/acquire) |
-| Cipher warm writes | bg | (read by any peer) | Raft-committed |
+| KernelCache slots (planned use) | bg | fg | CAS claim of the content hash, release publish, acquire read |
+| RegionNode::compiled (planned use) | bg | fg | one release publish (`PublishOnce`), acquire read |
+| Cipher warm writes (planned) | bg | peers | Raft commit (planned) |
+
+Three rows describe planned use. `KernelCache` (`include/crucible/MerkleDag.h`) has the synchronization of its row, but only tests and benches write or read its slots at this time. The one publish of `RegionNode::compiled` is in `add_branch`, which nothing calls, and no code reads the field. The Cipher has no replication and no Raft. A `Cipher` is not thread-safe, and one thread owns it. Only tests call `Vigil::persist`, which writes to the Cipher, and nothing calls `Vigil::load`.
 
 ### Async event waiting — the latency hierarchy
 
@@ -1576,7 +1578,7 @@ The `alignas(64)` is not decoration. It turns a 40× slowdown into optimal throu
 
 #### `std::atomic_ref` for element-wise atomic access
 
-For atomic CAS on an element of a plain array (e.g. SwissCtrl bytes, KernelCache slots) without paying `std::atomic<T>` per-element overhead:
+For atomic CAS on an element of a plain array, without the per-element cost of `std::atomic<T>`, use `std::atomic_ref`. No file in the tree uses it at this time, and the KernelCache slots hold `std::atomic` fields. This example shows the pattern:
 
 ```cpp
 uint64_t slots[N];                             // plain array, one cache line per slot
@@ -2133,12 +2135,12 @@ These tests ARE the design guarantee. If they red, the guarantee is broken — s
 | `bit_exact_replay_invariant` — `test_bit_exact_replay_invariant`, label `determinism` | DetSafe | Every PR |
 | `cross_vendor_step_invariant` — not buildable until two compute backends exist; no compute backend exists at this time, and the CPU oracle is planned too | DetSafe | Release gate (multi-backend) |
 | `fleet_reshard_replay` — not buildable until a fleet exists | DetSafe + BorrowSafe | Release gate |
-| `bit_exact_recovery_invariant` | DetSafe + MemSafe | Release gate |
+| `bit_exact_recovery_invariant` — planned. No test reloads a stored region into a Vigil and compares a replay. `test_cipher` stores and loads one region, and it compares the content hash and the op count | DetSafe + MemSafe | Release gate |
 | `checkpoint_format_stability` — `test_serialize` and `test_serialize_release_gate`, label `determinism`; no `TrainingCheckpoint` type exists, so the DAG wire format is the checkpoint format | DetSafe + LeakSafe | Every PR |
-| `tsan_spsc_ring_*` | ThreadSafe + BorrowSafe | Every PR (tsan preset) |
-| `asan_arena_lifetime_*` | MemSafe + LeakSafe | Every PR (default preset) |
-| `ubsan_numeric_*` | TypeSafe + InitSafe | Every PR (default preset) |
-| `stress_repeat_50x` | ThreadSafe (race detector) | Nightly |
+| SPSC rings under ThreadSanitizer — the `tsan` preset runs the full suite. The ring and channel tests that start threads are `test_trace_ring`, `test_trace_ring_pop_batch`, `test_meta_log`, `test_concurrent_rings` and `test_concurrent_channels` | ThreadSafe + BorrowSafe | Every PR (tsan preset) |
+| Arena lifetime under ASan — the `default` preset puts ASan on every target of the Debug build. The arena tests are `test_arena`, `test_arena_alloc_class` and, with `CRUCIBLE_FUZZ=ON`, `prop_arena_alloc_invariants` | MemSafe + LeakSafe | Every PR (default preset) |
+| Numeric checks under UBSan — the `default` preset puts UBSan on each test executable. The `ubsan-strict` preset puts the full UBSan set on every target, with signed overflow undefined. The numeric tests are `test_saturate_foundation`, `test_saturate_fixy`, `test_saturated`, `test_checked` and, with `CRUCIBLE_FUZZ=ON`, `prop_checked_arith` and `prop_saturate_math_invariants` | TypeSafe + InitSafe | Every PR (default and ubsan-strict presets) |
+| Repeat until failure — the `stress` test preset runs the `default` suite with `repeat until-fail:50`. No CI job runs it, and the CI has no nightly schedule | ThreadSafe (race detector) | Manual (nightly run planned) |
 
 If `bit_exact_replay_invariant` reddens — STOP. Hidden state was introduced. Never merge.
 
@@ -2179,7 +2181,7 @@ TEST(Axiom_TypeSafe, OpIndexSlotIdNotInterchangeable) {
 ### Sanitizer preset matrix
 
 ```bash
-# ASan + UBSan + analyzer: MemSafe, NullSafe, TypeSafe, InitSafe
+# ASan on every target, UBSan on the tests (the analyzer preset is separate): MemSafe, NullSafe, TypeSafe, InitSafe
 cmake --preset default && cmake --build --preset default && ctest --preset default
 
 # TSan: ThreadSafe, BorrowSafe
@@ -2254,8 +2256,15 @@ Hardcoded values. Changing any requires an audit sweep of the affected macros an
 
 ### Platform checks at build time
 
+Two checks in the code refuse a platform that this section excludes:
+
+- `include/crucible/TraceLoader.h` refuses a big-endian host with `static_assert(std::endian::native == std::endian::little, ...)`, because the `.crtrace` format is little-endian.
+- `include/fixy/os/Time.h` stops the build with `#error` on an architecture other than x86_64 and aarch64. The check is in the two functions that read the time-stamp counter, and it fires in each translation unit that includes the header.
+
+No file has a check of the pointer size itself, and no file refuses an Apple Silicon target. The block that follows is a recommended set of checks, and no file holds it at this time:
+
 ```cpp
-// In Platform.h or a dedicated Assumptions.h
+// A recommended location: include/foundation/Platform.h
 static_assert(sizeof(void*) == 8, "64-bit required");
 static_assert(std::endian::native == std::endian::little, "little-endian required");
 
@@ -2282,7 +2291,7 @@ Under `BITEXACT_STRICT`, the same IR + same seed produces byte-identical output 
 - IEEE 754 + `RN` rounding + `-fno-fast-math` = deterministic FP
 - Philox4x32 is platform-independent (counter-based, bit-exact spec)
 - Memory plan offsets are content-addressed (no alloc-order dependency)
-- Canonical reduction topology (UUID-sorted binary tree)
+- Canonical reduction topology (a UUID-sorted binary tree, planned: no reduction code exists at this time)
 - `std::bit_cast` for serialization — no endian-dependent `reinterpret_cast`
 
 The CI test for this property, `cross_vendor_step_invariant`, is planned. It cannot be built until two compute backends exist (§XIII). When it exists, a new platform must pass this test before shipping.
