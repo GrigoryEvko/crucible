@@ -423,9 +423,11 @@ public:
 
     // Serializes the active region to the store and advances its head.
     // A no-op when no store path was configured.  The store writes and
-    // flushes files, so the caller's context must admit IO and Block.
+    // flushes files, and the head commit reads the monotonic clock, so the
+    // caller's context must fit a Cipher commit.  False when the store or
+    // the clock read of the commit failed.
     template <class Ctx>
-        requires ::foundation::effects::CtxAdmits<Ctx, Cipher::open_view_required_row>
+        requires ::crucible::cipher::CtxFitsCipherCommit<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
         if (!cipher_.has_value()) return false;
         const RegionNode* region = active_region();
@@ -435,8 +437,7 @@ public:
         auto open_view = cipher_->mint_open_view(ctx);
         const ContentHash hash = cipher_->store(open_view, Cipher::content_addressed(region), meta_log_.get());
         if (!hash) return false;
-        cipher_->advance_head(open_view, hash, step_.get());
-        return true;
+        return cipher_->record_event(ctx, open_view, hash, step_.get()).has_value();
     }
 
     // Loads the most recent stored region and makes it active, activating

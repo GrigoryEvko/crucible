@@ -3771,35 +3771,27 @@ crucible_neg_compile_test(neg_storage_nbytes_det_cross_tier
   "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
   "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::MonotonicClockRead>,\\[\\.\\.\\.\\]>. requested")
 
-# ─── Non-zero head invariant on advance_head ──────────────────────
+# ─── Non-zero head invariant ──────────────────────────────────────
 #
-# ValidCipherHead is fixy::Refined<fixy::non_zero, ContentHash> and
-# gates the parameter to Cipher::advance_head.
-# ContentHash{0} is the structural sentinel for "no commit yet" —
-# advancing HEAD to it would corrupt the log invariant (a step with
-# hash=0 is indistinguishable from "before first commit"), break
-# hash_at_step()'s binary search, and lose the federation round-trip
-# key for that step.
+# ValidCipherHead is fixy::Refined<fixy::non_zero, ContentHash>.
+# ContentHash{0} is the structural sentinel for "no commit yet".  A head
+# at zero corrupts the log invariant (a step with hash 0 looks the same
+# as "before the first commit"), breaks the binary search of
+# hash_at_step(), and loses the federation round-trip key for that step.
 #
-# Two fixtures per HS14 mandate, demonstrating distinct mismatch
-# classes:
-#   * neg_cipher_head_zero_literal — explicit-literal mismatch
-#     (= ContentHash{uint64_t{0}}).  Catches drift where a caller
-#     silently passes a zero-init value from a corrupt-source path.
-#   * neg_cipher_head_default_construct — NSDMI-default wide miss
-#     (= ContentHash{}).  Catches drift where a caller forgets to
-#     initialize a local ContentHash variable and forwards it
-#     directly to advance_head (whose old signature took bare
-#     ContentHash and silently accepted the default).
+# Two fixtures (HS14) build a ValidCipherHead from a zero hash, and
+# mint_refined refuses each one at compile time:
+#   * neg_cipher_head_zero_literal: the explicit literal
+#     ContentHash{uint64_t{0}}
+#   * neg_cipher_head_default_construct: a default-constructed
+#     ContentHash{}, which a caller gets when it does not set a local.
 #
-# The two failure modes look identical at the byte level (raw == 0)
-# but originate from different source-level mistakes; rejecting both
-# makes the gate watertight.
+# The two failure modes have the same bytes (raw == 0) and different
+# causes in the source, so each one has its fixture.
 #
-# Defense-in-depth: the existing runtime check inside advance_head's
-# body is retained.  ValidCipherHead catches the value at the call
-# site at compile-time via the typed alias path; the existing body
-# guard catches it at runtime if a caller bypasses the typed path.
+# The precondition of Cipher::record_event checks the same invariant at
+# run time.  A caller that passes a bare ContentHash, and not a
+# ValidCipherHead, meets that check.
 crucible_neg_compile_test(neg_cipher_head_zero_literal
   "__builtin_trap... is not a constant expression"
   "in .constexpr. expansion of .fixy::mint_refined<IsNonZero.., crucible::ContentHash>.crucible::ContentHash.0..")
@@ -4493,6 +4485,15 @@ crucible_neg_compile_test(neg_cipher_record_event_alloc_only
 crucible_neg_compile_test(neg_cipher_record_event_bg_only
   "no matching function for call to .crucible::Cipher::record_event."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >")
+# A commit also stamps the log with a reading of the monotonic clock, so
+# record_event and Vigil::persist refuse a row that fits the store and
+# owns none of Bg, Init and Test.
+crucible_neg_compile_test(neg_cipher_record_event_store_only_row
+  "no matching function for call to .crucible::Cipher::record_event."
+  "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >")
+crucible_neg_compile_test(neg_vigil_persist_store_only_row
+  "no matching function for call to .crucible::Vigil::persist."
+  "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >")
 crucible_neg_compile_test(neg_cipher_open_view_hot_fg_ctx
   "no matching function for call to .crucible::Cipher::mint_open_view.foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. const."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")

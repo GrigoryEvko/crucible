@@ -1,20 +1,29 @@
-// Recording an event writes a file and blocks on a syscall, so the
-// caller has to hand in a context whose row says as much.  A caller on
-// the foreground path holds no such context, and the call does not
-// compile for it.  Everything here is the accepting side of that fence.
-// The negative-compile fixtures hold the rejecting side.
+// Recording an event writes a file and blocks on a syscall, and it stamps
+// the log entry with a reading of the monotonic clock.  So the caller has
+// to hand in a context whose row admits IO and Block, and whose row owns
+// Bg, Init or Test.  A caller on the foreground path holds no such
+// context, and the call does not compile for it.  Everything here is the
+// accepting side of that fence.  The negative-compile fixtures hold the
+// rejecting side.
 
 #include <crucible/Cipher.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Time.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include "test_assert.h"
 
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
+#include <fstream>
+#include <string>
+#include <system_error>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -28,6 +37,45 @@ namespace eff = ::foundation::effects;
 
 [[nodiscard]] static Cipher open_cipher(const std::string& dir) {
     return Cipher::open(store_ctx(), ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+}
+
+// Records one event and requires that the commit happened.
+template <typename Ctx>
+static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view, ContentHash hash, std::uint64_t step) {
+    const auto recorded = cipher.record_event(ctx, view, hash, step);
+    assert(recorded.has_value() && "record_event must commit when the clock read succeeds");
+}
+
+// The whole content of a file, or an empty string when it does not open.
+[[nodiscard]] static std::string read_file(const std::string& path) {
+    std::ifstream file(path);
+    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+// The third field of each line of the log: the time of each commit, in
+// the order of the commits.
+[[nodiscard]] static std::vector<std::uint64_t> log_timestamps(const std::string& dir) {
+    std::vector<std::uint64_t> timestamps;
+    std::ifstream log(dir + "/log");
+    std::string line;
+    while (std::getline(log, line)) {
+        const std::size_t second_comma = line.find(',', line.find(',') + 1);
+        assert(second_comma != std::string::npos);
+        std::uint64_t timestamp = 0;
+        const char* const end = line.data() + line.size();
+        const auto [stop, error] = std::from_chars(line.data() + second_comma + 1, end, timestamp);
+        assert(error == std::errc{} && stop == end);
+        timestamps.push_back(timestamp);
+    }
+    return timestamps;
+}
+
+// A reading of CLOCK_MONOTONIC in nanoseconds.
+[[nodiscard]] static std::uint64_t monotonic_now_ns() {
+    const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(store_ctx());
+    const auto reading = clock.read();
+    assert(reading.has_value());
+    return reading->peek();
 }
 
 static void test_t01_required_row_pinned() {
@@ -68,6 +116,12 @@ static void test_t02_subrow_accepted_shapes() {
     static_assert(crucible::CtxFitsCipherPersistence<::fixy::BgLoadCtx>);
     static_assert(crucible::CtxFitsCipherPersistence<::fixy::InitLoadCtx>);
 
+    // The same three rows also own Test, Bg or Init, so each one also fits
+    // the clock reader and the commit.
+    static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::TestRunnerCtx>);
+    static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::BgLoadCtx>);
+    static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::InitLoadCtx>);
+
     std::printf("  T02 subrow_accepted_shapes:              PASSED\n");
 }
 
@@ -98,42 +152,42 @@ static void test_t03_subrow_rejected_shapes() {
     static_assert(!crucible::CtxFitsCipherPersistence<Required>);
     static_assert(!crucible::CtxFitsCipherPersistence<int>);
 
+    // A context narrowed to IO and Block fits the store and not the
+    // commit: its row owns none of Bg, Init and Test, so it cannot mint
+    // the clock reader that stamps the log entry.
+    using StoreOnly = decltype(store_ctx().in_row<Required>());
+    static_assert(crucible::CtxFitsCipherPersistence<StoreOnly>);
+    static_assert(!crucible::cipher::CtxFitsCipherCommit<StoreOnly>);
+    static_assert(!crucible::cipher::CtxFitsCipherCommit<::fixy::HotFgCtx>);
+    static_assert(!crucible::cipher::CtxFitsCipherCommit<::fixy::BgDrainCtx>);
+
     std::printf("  T03 subrow_rejected_shapes:              PASSED\n");
 }
 
-// The fenced call must write what the unfenced one writes.  Two
-// ciphers on separate directories take the same arguments by the two
-// routes, and their files are then compared.
+// The commit is durable: a Cipher opened again on the same directory
+// reads the head and the step from the files that record_event wrote.
 
-static void test_t04_record_event_matches_advance_head(const char* base_dir) {
-    const std::string dir_a = std::string(base_dir) + "/t04_a";
-    const std::string dir_b = std::string(base_dir) + "/t04_b";
-    std::filesystem::create_directories(dir_a);
-    std::filesystem::create_directories(dir_b);
-
-    auto cipher_a = open_cipher(dir_a);
-    auto cipher_b = open_cipher(dir_b);
-    auto view_a = cipher_a.mint_open_view(store_ctx());
-    auto view_b = cipher_b.mint_open_view(store_ctx());
+static void test_t04_record_event_is_durable(const char* base_dir) {
+    const std::string dir = std::string(base_dir) + "/t04";
+    std::filesystem::create_directories(dir);
 
     constexpr ContentHash kHash{0xC0FFEEBA12345678ULL};
     constexpr std::uint64_t kStep = 42u;
-
-    cipher_a.advance_head(view_a, kHash, kStep);
-    cipher_b.record_event(store_ctx(), view_b, kHash, kStep);
+    {
+        auto cipher = open_cipher(dir);
+        auto view = cipher.mint_open_view(store_ctx());
+        record(cipher, store_ctx(), view, kHash, kStep);
+    }
 
     // The head file holds sixteen hex digits and a newline.
-    auto read_head = [](const std::string& dir) {
-        std::ifstream f(dir + "/HEAD");
-        std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-        return s;
-    };
-    assert(read_head(dir_a) == read_head(dir_b));
+    assert(read_file(dir + "/HEAD") == "c0ffeeba12345678\n");
 
-    assert(cipher_a.head() == cipher_b.head());
-    assert(cipher_a.head() == kHash);
+    auto reopened = open_cipher(dir);
+    auto view = reopened.mint_open_view(store_ctx());
+    assert(reopened.head() == kHash);
+    assert(reopened.hash_at_step(view, kStep) == kHash);
 
-    std::printf("  T04 record_event_matches_advance_head:   PASSED\n");
+    std::printf("  T04 record_event_is_durable:             PASSED\n");
 }
 
 static void test_t05_round_trip(const char* base_dir) {
@@ -145,7 +199,7 @@ static void test_t05_round_trip(const char* base_dir) {
     constexpr ContentHash kHash{0xDEADBEEFCAFEBABEULL};
     constexpr std::uint64_t kStep = 7u;
 
-    cipher.record_event(store_ctx(), view, kHash, kStep);
+    record(cipher, store_ctx(), view, kHash, kStep);
 
     assert(cipher.head() == kHash);
     assert(cipher.hash_at_step(view, kStep) == kHash);
@@ -170,7 +224,7 @@ static void test_t06_bg_superset_row(const char* base_dir) {
                                  eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>);
 
     constexpr ContentHash kHash{0x123456789ABCDEF0ULL};
-    cipher.record_event(bg_ctx, view, kHash, 1u);
+    record(cipher, bg_ctx, view, kHash, 1u);
 
     assert(cipher.head() == kHash);
     std::printf("  T06 bg_superset_row:                     PASSED\n");
@@ -187,15 +241,14 @@ static void test_t07_startup_superset_row(const char* base_dir) {
     const ::fixy::InitLoadCtx init_ctx{::foundation::effects::testing::init()};
 
     constexpr ContentHash kHash{0xFEDCBA9876543210ULL};
-    cipher.record_event(init_ctx, view, kHash, 1u);
+    record(cipher, init_ctx, view, kHash, 1u);
 
     assert(cipher.head() == kHash);
     std::printf("  T07 startup_superset_row:                PASSED\n");
 }
 
-// The precondition on step order comes from the unfenced call and is
-// restated by the fenced one.  Recording an ordered sequence and
-// querying it back is what shows the restatement is intact.
+// Recording an ordered sequence and querying it back shows that the
+// precondition on step order holds on the recorded log.
 
 static void test_t08_monotonic_steps(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t08";
@@ -204,9 +257,9 @@ static void test_t08_monotonic_steps(const char* base_dir) {
     auto view = cipher.mint_open_view(store_ctx());
     const auto ctx = store_ctx();
 
-    cipher.record_event(ctx, view, ContentHash{0xAA}, 1u);
-    cipher.record_event(ctx, view, ContentHash{0xBB}, 5u);
-    cipher.record_event(ctx, view, ContentHash{0xCC}, 10u);
+    record(cipher, ctx, view, ContentHash{0xAA}, 1u);
+    record(cipher, ctx, view, ContentHash{0xBB}, 5u);
+    record(cipher, ctx, view, ContentHash{0xCC}, 10u);
 
     // The query answers with the last entry at or before the step
     // asked for.
@@ -230,8 +283,8 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
 
     constexpr int N = 32;
     for (int i = 0; i < N; ++i) {
-        cipher.record_event(ctx, view, ContentHash{std::uint64_t{0x1000u} + static_cast<std::uint64_t>(i)},
-                            static_cast<std::uint64_t>(i));
+        record(cipher, ctx, view, ContentHash{std::uint64_t{0x1000u} + static_cast<std::uint64_t>(i)},
+               static_cast<std::uint64_t>(i));
     }
 
     assert(cipher.head() == ContentHash{0x1000ULL + (N - 1)});
@@ -244,9 +297,10 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
     std::printf("  T09 multiple_events_monotonic:           PASSED\n");
 }
 
-// The context travels as the first argument.  Dropping it would keep
-// every call site compiling for a caller who holds no evidence and lose
-// the fence, so the argument list is pinned here.
+// The context travels as the first argument, and the result says whether
+// the commit happened.  Dropping the context would keep every call site
+// compiling for a caller who holds no evidence and lose the fence, so the
+// argument list and the result type are pinned here.
 
 static void test_t10_api_surface_pinned(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t10";
@@ -256,18 +310,49 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
 
     using Ctx = ::fixy::TestRunnerCtx;
     using Result = decltype(cipher.record_event(std::declval<Ctx const&>(), view, ContentHash{1u}, std::uint64_t{1u}));
-    static_assert(std::is_same_v<Result, void>);
+    static_assert(std::is_same_v<Result, std::expected<void, std::error_code>>);
 
     // A context, the view and two runtime arguments.
-    static_assert(std::is_invocable_r_v<void,
+    static_assert(std::is_invocable_r_v<std::expected<void, std::error_code>,
                                         decltype([](Cipher& c, Ctx const& ctx, Cipher::OpenView const& v, ContentHash h,
-                                                    std::uint64_t s) { c.record_event(ctx, v, h, s); }),
+                                                    std::uint64_t s) { return c.record_event(ctx, v, h, s); }),
                                         Cipher&, Ctx const&, Cipher::OpenView const&, ContentHash, std::uint64_t>);
 
-    cipher.record_event(store_ctx(), view, ContentHash{42u}, 0u);
+    record(cipher, store_ctx(), view, ContentHash{42u}, 0u);
     assert(cipher.head() == ContentHash{42u});
 
     std::printf("  T10 api_surface_pinned:                  PASSED\n");
+}
+
+// Each log line holds a reading of CLOCK_MONOTONIC.  So every recorded
+// time lies between two readings taken before and after the records, and
+// the times do not decrease from one commit to the next.
+
+static void test_t11_log_holds_monotonic_readings(const char* base_dir) {
+    const std::string dir = std::string(base_dir) + "/t11";
+    std::filesystem::create_directories(dir);
+    auto cipher = open_cipher(dir);
+    auto view = cipher.mint_open_view(store_ctx());
+    const auto ctx = store_ctx();
+
+    constexpr int N = 8;
+    const std::uint64_t before_ns = monotonic_now_ns();
+    for (int i = 0; i < N; ++i) {
+        record(cipher, ctx, view, ContentHash{std::uint64_t{0x2000u} + static_cast<std::uint64_t>(i)},
+               static_cast<std::uint64_t>(i));
+    }
+    const std::uint64_t after_ns = monotonic_now_ns();
+
+    const std::vector<std::uint64_t> timestamps = log_timestamps(dir);
+    assert(timestamps.size() == static_cast<std::size_t>(N));
+    for (std::size_t i = 0; i < timestamps.size(); ++i) {
+        assert(before_ns <= timestamps[i] && timestamps[i] <= after_ns);
+        if (i != 0) {
+            assert(timestamps[i - 1] <= timestamps[i]);
+        }
+    }
+
+    std::printf("  T11 log_holds_monotonic_readings:        PASSED\n");
 }
 
 // The header asserts the content of the required row where it
@@ -288,21 +373,13 @@ static void test_required_row_header_fence() {
     std::printf("  required_row_header_fence:              PASSED\n");
 }
 
-// The earlier comparison recorded one event.  A drift between the two
-// routes that only shows after several, or only on certain hash
-// values, needs a longer and more varied sequence than that.
+// One record is not enough to show that the files read back.  A defect
+// that shows only after several records, or only on some hash values,
+// needs a longer and more varied sequence than that.
 
-static void test_multi_event_byte_equivalence(const char* base_dir) {
-    const std::string dir_a = std::string(base_dir) + "/multi_event_a";
-    const std::string dir_b = std::string(base_dir) + "/multi_event_b";
-    std::filesystem::create_directories(dir_a);
-    std::filesystem::create_directories(dir_b);
-
-    auto cipher_a = open_cipher(dir_a);
-    auto cipher_b = open_cipher(dir_b);
-    auto view_a = cipher_a.mint_open_view(store_ctx());
-    auto view_b = cipher_b.mint_open_view(store_ctx());
-    const auto ctx = store_ctx();
+static void test_multi_event_durability(const char* base_dir) {
+    const std::string dir = std::string(base_dir) + "/multi_event";
+    std::filesystem::create_directories(dir);
 
     constexpr int N = 16;
     constexpr std::uint64_t kHashes[N] = {
@@ -312,47 +389,26 @@ static void test_multi_event_byte_equivalence(const char* base_dir) {
         0x8000000000000001ULL, 0x7FFFFFFFFFFFFFFEULL, 0x0123456789ABCDEFULL, 0xFEDCBA9876543211ULL,
     };
 
-    for (int i = 0; i < N; ++i) {
-        cipher_a.advance_head(view_a, ContentHash{kHashes[i]}, static_cast<std::uint64_t>(i));
-        cipher_b.record_event(ctx, view_b, ContentHash{kHashes[i]}, static_cast<std::uint64_t>(i));
-    }
-
-    auto read_file = [](const std::string& path) {
-        std::ifstream f(path);
-        return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    };
-    assert(read_file(dir_a + "/HEAD") == read_file(dir_b + "/HEAD"));
-
-    // A log line is a step, a hash and a timestamp, comma separated.
-    // The timestamps differ between the two runs by construction, so
-    // the comparison stops at the second comma.
-    const auto log_a = read_file(dir_a + "/log");
-    const auto log_b = read_file(dir_b + "/log");
-    auto strip_ts = [](const std::string& s) {
-        std::string out;
-        std::size_t pos = 0;
-        while (pos < s.size()) {
-            std::size_t eol = s.find('\n', pos);
-            if (eol == std::string::npos) eol = s.size();
-            const auto line = s.substr(pos, eol - pos);
-            std::size_t c1 = line.find(',');
-            std::size_t c2 = line.find(',', c1 + 1);
-            if (c1 != std::string::npos && c2 != std::string::npos) {
-                out.append(line, 0, c2);
-                out.push_back('\n');
-            }
-            pos = eol + 1;
+    {
+        auto cipher = open_cipher(dir);
+        auto view = cipher.mint_open_view(store_ctx());
+        const auto ctx = store_ctx();
+        for (int i = 0; i < N; ++i) {
+            record(cipher, ctx, view, ContentHash{kHashes[i]}, static_cast<std::uint64_t>(i));
         }
-        return out;
-    };
-    assert(strip_ts(log_a) == strip_ts(log_b));
-
-    for (int i = 0; i < N; ++i) {
-        assert(cipher_a.hash_at_step(view_a, static_cast<std::uint64_t>(i))
-               == cipher_b.hash_at_step(view_b, static_cast<std::uint64_t>(i)));
     }
 
-    std::printf("  multi_event_byte_equivalence:           PASSED\n");
+    assert(read_file(dir + "/HEAD") == "fedcba9876543211\n");
+    assert(log_timestamps(dir).size() == static_cast<std::size_t>(N));
+
+    auto reopened = open_cipher(dir);
+    auto view = reopened.mint_open_view(store_ctx());
+    assert(reopened.head() == ContentHash{kHashes[N - 1]});
+    for (int i = 0; i < N; ++i) {
+        assert(reopened.hash_at_step(view, static_cast<std::uint64_t>(i)) == ContentHash{kHashes[i]});
+    }
+
+    std::printf("  multi_event_durability:                 PASSED\n");
 }
 
 // Every other use of the required row in this file is inside a
@@ -374,8 +430,9 @@ static void test_external_visibility() {
     std::printf("  external_visibility:                    PASSED\n");
 }
 
-// Each context that admits the row is interchangeable at a call site,
-// including a context narrowed to exactly the two required atoms.
+// Each context that fits the commit is interchangeable at a call site,
+// including a context narrowed to the two required atoms and the Test
+// atom that admits the clock reader.
 
 static void test_canonical_row_acceptance(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/canonical_row";
@@ -383,17 +440,17 @@ static void test_canonical_row_acceptance(const char* base_dir) {
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
 
-    cipher.record_event(store_ctx(), view, ContentHash{0xAAAA}, 1u);
+    record(cipher, store_ctx(), view, ContentHash{0xAAAA}, 1u);
     assert(cipher.head() == ContentHash{0xAAAA});
 
-    const auto narrowed = store_ctx().in_row<Cipher::record_event_required_row>();
-    cipher.record_event(narrowed, view, ContentHash{0xBBBB}, 2u);
+    const auto narrowed = store_ctx().in_row<eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>();
+    record(cipher, narrowed, view, ContentHash{0xBBBB}, 2u);
     assert(cipher.head() == ContentHash{0xBBBB});
 
-    // The same two atoms the other way round, which containment by
+    // The same three atoms in another order, which containment by
     // membership accepts.
-    const auto reordered = store_ctx().in_row<eff::Row<eff::Effect::Block, eff::Effect::IO>>();
-    cipher.record_event(reordered, view, ContentHash{0xCCCC}, 3u);
+    const auto reordered = store_ctx().in_row<eff::Row<eff::Effect::Block, eff::Effect::IO, eff::Effect::Test>>();
+    record(cipher, reordered, view, ContentHash{0xCCCC}, 3u);
     assert(cipher.head() == ContentHash{0xCCCC});
 
     std::printf("  canonical_row_acceptance:               PASSED\n");
@@ -412,10 +469,10 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
     auto view = cipher.mint_open_view(store_ctx());
     const auto ctx = store_ctx();
 
-    cipher.record_event(ctx, view, ContentHash{1u}, 0u);
-    cipher.record_event(ctx, view, ContentHash{2u}, 1u);
-    cipher.record_event(ctx, view, ContentHash{3u}, 1u);  // a repeated step is allowed
-    cipher.record_event(ctx, view, ContentHash{4u}, 5u);
+    record(cipher, ctx, view, ContentHash{1u}, 0u);
+    record(cipher, ctx, view, ContentHash{2u}, 1u);
+    record(cipher, ctx, view, ContentHash{3u}, 1u);  // a repeated step is allowed
+    record(cipher, ctx, view, ContentHash{4u}, 5u);
 
     assert(cipher.head() == ContentHash{4u});
     assert(cipher.hash_at_step(view, 0u) == ContentHash{1u});
@@ -436,16 +493,17 @@ int main() {
     test_t01_required_row_pinned();
     test_t02_subrow_accepted_shapes();
     test_t03_subrow_rejected_shapes();
-    test_t04_record_event_matches_advance_head(base.c_str());
+    test_t04_record_event_is_durable(base.c_str());
     test_t05_round_trip(base.c_str());
     test_t06_bg_superset_row(base.c_str());
     test_t07_startup_superset_row(base.c_str());
     test_t08_monotonic_steps(base.c_str());
     test_t09_multiple_events_monotonic(base.c_str());
     test_t10_api_surface_pinned(base.c_str());
+    test_t11_log_holds_monotonic_readings(base.c_str());
 
     test_required_row_header_fence();
-    test_multi_event_byte_equivalence(base.c_str());
+    test_multi_event_durability(base.c_str());
     test_external_visibility();
     test_canonical_row_acceptance(base.c_str());
     test_pre_clause_orthogonal(base.c_str());
@@ -453,6 +511,6 @@ int main() {
     std::error_code ec;
     std::filesystem::remove_all(tmpl, ec);
 
-    std::printf("test_cipher_record_event: 15 groups, all passed\n");
+    std::printf("test_cipher_record_event: 16 groups, all passed\n");
     return 0;
 }

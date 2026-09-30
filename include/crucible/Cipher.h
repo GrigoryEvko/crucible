@@ -7,6 +7,8 @@
 //   $root/HEAD                                  — hex string: current active hash + "\n"
 //   $root/log                                   — append-only: "step_id,hash_hex,ts_ns\n"
 //
+// ts_ns is a reading of CLOCK_MONOTONIC in nanoseconds.
+//
 // A Cipher is not thread-safe.  One thread owns it.
 
 #include <crucible/Arena.h>
@@ -23,7 +25,9 @@
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/os/ClockSource.h>
 #include <fixy/os/Fs.h>
+#include <fixy/os/Time.h>
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/EventLog.h>
 #include <foundation/Platform.h>
@@ -40,7 +44,6 @@
 
 #include <array>
 #include <charconv>
-#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -126,6 +129,15 @@ template <typename T>
 template <typename W, ::fixy::Lifetime_v Scope>
 concept LifetimePinnedRegion = ::fixy::is_band_of_v<::fixy::LifetimeLattice, W> && ::fixy::satisfies_v<W, Scope>
                             && std::convertible_to<::fixy::band_value_t<W>, const RegionNode*>;
+
+// The gate of a commit to the head log.  The commit writes and flushes
+// files, so the context must fit the store.  The commit also stamps the
+// log entry with a reading of the monotonic clock, so the context must
+// fit the clock reader: its row owns Bg, Init or Test.  A clock read on
+// the replay-bound foreground path makes replay diverge across machines.
+template <typename Ctx>
+concept CtxFitsCipherCommit = ::crucible::CtxFitsCipherPersistence<Ctx>
+                           && ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy::ClockSource_v::Monotonic>;
 
 }  // namespace cipher
 
@@ -429,73 +441,11 @@ public:
         return LoadedContentAddressedRegionPayload{loaded_region->value(), false};
     }
 
-    // content_hash must be non-zero.  Zero is the sentinel for "no content",
-    // so a step recorded with hash zero is indistinguishable from "before
-    // the first commit" and corrupts the binary search in hash_at_step.
-    void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id)
-        pre(::foundation::decide::is_non_zero(content_hash)) {
-        // Weakly increasing, not strictly: duplicate step ids are accepted
-        // at this gate.  The strict consecutive-by-one check belongs to the
-        // session-event batch invariant, not to the head log.
-        if (!log_.empty()) {
-            uint64_t const ordering[2] = {log_.back().step_id().value, step_id};
-            CRUCIBLE_PRE(
-                ::foundation::decide::weakly_increasing<std::uint64_t>(std::span<const std::uint64_t>{ordering, 2}));
-        }
-        head_ = content_hash;
-
-        // Ignoring the helper's result is deliberate.  A failed HEAD write
-        // leaves the cached head_ set and the log append below as the
-        // recovery anchor: the next open() recovers the committed pointer
-        // by scanning the log even when HEAD is stale or missing.
-        {
-            char hex[16];
-            hex16_(content_hash.raw(), hex);
-            std::uint8_t buf[17];
-            std::memcpy(buf, hex, 16);
-            buf[16] = static_cast<std::uint8_t>('\n');
-            (void)atomic_write_at_(root_dirfd_.get(), "HEAD", std::span<const std::uint8_t>{buf, sizeof(buf)});
-        }
-
-        const uint64_t ts = now_ns();
-        log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
-                                               ::fixy::session::StepId{step_id},
-                                               ::fixy::session::StateHash{content_hash.raw()}, ts));
-        {
-            // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".
-            // Longest form is 20 decimal digits + 1 + 16 + 1 + 20 decimal
-            // digits + 1 = 59 bytes, so 64 bytes suffices.  That is well
-            // under the 4096-byte window in which POSIX makes a single
-            // O_APPEND write to a regular file atomic.
-            char rec[64];
-            std::size_t off = 0;
-            auto [p1, ec1] = std::to_chars(rec + off, rec + sizeof(rec), step_id);
-            if (ec1 != std::errc{}) std::abort();
-            off = static_cast<std::size_t>(p1 - rec);
-            rec[off++] = ',';
-            char hex[16];
-            hex16_(content_hash.raw(), hex);
-            std::memcpy(rec + off, hex, 16);
-            off += 16;
-            rec[off++] = ',';
-            auto [p2, ec2] = std::to_chars(rec + off, rec + sizeof(rec), ts);
-            if (ec2 != std::errc{}) std::abort();
-            off = static_cast<std::size_t>(p2 - rec);
-            rec[off++] = '\n';
-            (void)atomic_append_at_(
-                root_dirfd_.get(), "log",
-                std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(static_cast<const void*>(rec)), off});
-        }
-
-        CRUCIBLE_POST(0, head_ == content_hash);
-        CRUCIBLE_POST(0, !log_.empty());
-        CRUCIBLE_POST(0, log_.back().step_id().value == step_id);
-    }
-
     // The context is what keeps a foreground caller out.  record_event
     // writes HEAD and appends to the log, so it needs IO and Block.  A
     // hot-path context holds neither, and performing file I/O there would
-    // break replay determinism.
+    // break replay determinism.  The row names the effects of the commit.
+    // The clock read of the commit is a second gate, in CtxFitsCipherCommit.
     using record_event_required_row =
         ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
@@ -526,10 +476,28 @@ public:
                   "Session-event persistence uses the same IO+Block row fence "
                   "as Cipher::record_event.");
 
+    // Moves the head to content_hash at step_id, and appends the commit to
+    // the log with a reading of the monotonic clock.  The reader comes from
+    // the context, so the reading keeps its clock type until the log entry
+    // encodes it.  A failed clock read changes nothing and gives the error
+    // of the read.
+    //
+    // content_hash must be non-zero.  Zero is the sentinel for "no content",
+    // so a step recorded with hash zero is indistinguishable from "before
+    // the first commit" and corrupts the binary search in hash_at_step.
     template <typename Ctx>
-        requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    void record_event(Ctx const&, OpenView const& view, ContentHash content_hash, uint64_t step_id) {
-        advance_head(view, content_hash, step_id);
+        requires cipher::CtxFitsCipherCommit<Ctx>
+    [[nodiscard]] std::expected<void, std::error_code> record_event(Ctx const& ctx, OpenView const& view,
+                                                                    ContentHash content_hash, uint64_t step_id)
+        pre(::foundation::decide::is_non_zero(content_hash)) {
+        const ::fixy::time::MonotonicClock clock =
+            ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
+        auto committed_at = clock.read();
+        if (!committed_at) [[unlikely]] {
+            return std::unexpected{committed_at.error()};
+        }
+        advance_head(view, content_hash, step_id, *committed_at);
+        return {};
     }
 
     template <typename Ctx>
@@ -882,6 +850,70 @@ private:
             }
         }
         return ContentHash{};
+    }
+
+    // The commit that record_event starts.  The reading is the time of the
+    // commit, and a clock reader is the only source of one.  The in-memory
+    // event and the log line are the two wire forms, and each takes the
+    // nanosecond count of the reading.
+    void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id,
+                      ::fixy::MonotonicClockBytes<std::uint64_t> committed_at) {
+        // Weakly increasing, not strictly: duplicate step ids are accepted
+        // at this gate.  The strict consecutive-by-one check belongs to the
+        // session-event batch invariant, not to the head log.
+        if (!log_.empty()) {
+            uint64_t const ordering[2] = {log_.back().step_id().value, step_id};
+            CRUCIBLE_PRE(
+                ::foundation::decide::weakly_increasing<std::uint64_t>(std::span<const std::uint64_t>{ordering, 2}));
+        }
+        head_ = content_hash;
+
+        // Ignoring the helper's result is deliberate.  A failed HEAD write
+        // leaves the cached head_ set and the log append below as the
+        // recovery anchor: the next open() recovers the committed pointer
+        // by scanning the log even when HEAD is stale or missing.
+        {
+            char hex[16];
+            hex16_(content_hash.raw(), hex);
+            std::uint8_t buf[17];
+            std::memcpy(buf, hex, 16);
+            buf[16] = static_cast<std::uint8_t>('\n');
+            (void)atomic_write_at_(root_dirfd_.get(), "HEAD", std::span<const std::uint8_t>{buf, sizeof(buf)});
+        }
+
+        const std::uint64_t committed_at_ns = committed_at.peek();
+        log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
+                                               ::fixy::session::StepId{step_id},
+                                               ::fixy::session::StateHash{content_hash.raw()}, committed_at_ns));
+        {
+            // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".
+            // Longest form is 20 decimal digits + 1 + 16 + 1 + 20 decimal
+            // digits + 1 = 59 bytes, so 64 bytes suffices.  That is well
+            // under the 4096-byte window in which POSIX makes a single
+            // O_APPEND write to a regular file atomic.
+            char rec[64];
+            std::size_t off = 0;
+            auto [p1, ec1] = std::to_chars(rec + off, rec + sizeof(rec), step_id);
+            if (ec1 != std::errc{}) std::abort();
+            off = static_cast<std::size_t>(p1 - rec);
+            rec[off++] = ',';
+            char hex[16];
+            hex16_(content_hash.raw(), hex);
+            std::memcpy(rec + off, hex, 16);
+            off += 16;
+            rec[off++] = ',';
+            auto [p2, ec2] = std::to_chars(rec + off, rec + sizeof(rec), committed_at_ns);
+            if (ec2 != std::errc{}) std::abort();
+            off = static_cast<std::size_t>(p2 - rec);
+            rec[off++] = '\n';
+            (void)atomic_append_at_(
+                root_dirfd_.get(), "log",
+                std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(static_cast<const void*>(rec)), off});
+        }
+
+        CRUCIBLE_POST(0, head_ == content_hash);
+        CRUCIBLE_POST(0, !log_.empty());
+        CRUCIBLE_POST(0, log_.back().step_id().value == step_id);
     }
 
     [[nodiscard]] static AnchoredFd open_at_(int parent_dirfd, const char* relpath, int flags,
@@ -1293,17 +1325,6 @@ private:
         }
         return ::fixy::mint_refined<::fixy::positive>(sz + 256);  // headroom
     }
-
-    // steady_clock on Linux is CLOCK_MONOTONIC, which is the right source
-    // for ordering commit events within one process run.  It freezes through
-    // suspend and is immune to the NTP back-jumps that would scramble the
-    // log's ordering invariant.  The value goes into the log line and the
-    // in-memory event, and nothing downstream reads it as a clock.
-    [[nodiscard]] static std::uint64_t now_ns() noexcept {
-        const auto tp = std::chrono::steady_clock::now();
-        return static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count());
-    }
 };
 
 // Type-level witness that a caller validated a head hash at its source.
@@ -1312,7 +1333,7 @@ private:
 // binary search in hash_at_step.
 //
 // This catches the value where it is produced.  The precondition on
-// advance_head catches it at the function boundary.  Both layers stay,
+// record_event catches it at the function boundary.  Both layers stay,
 // because either alone can be bypassed.
 using ValidCipherHead = ::fixy::Refined<::fixy::non_zero, ContentHash>;
 

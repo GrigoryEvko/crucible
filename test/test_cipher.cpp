@@ -2,8 +2,10 @@
 
 #include <memory>
 #include <fixy/Ctx.h>
+#include <fixy/os/Time.h>
 #include <fixy/session/Subtype.h>
 #include "test_assert.h"
+#include <charconv>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
@@ -68,6 +70,40 @@ static std::string object_path(const char* dir, crucible::ContentHash hash) {
     char hex[17];
     std::snprintf(hex, sizeof(hex), "%016" PRIx64, hash.raw());
     return std::string(dir) + "/objects/" + std::string(hex, 2) + "/" + (hex + 2);
+}
+
+// Commits a head and requires that the commit happened.
+static void commit_head(crucible::Cipher& cipher, crucible::Cipher::OpenView const& view, crucible::ContentHash hash,
+                        std::uint64_t step) {
+    const auto committed = cipher.record_event(store_ctx(), view, hash, step);
+    assert(committed.has_value() && "record_event must commit when the clock read succeeds");
+}
+
+// A reading of CLOCK_MONOTONIC in nanoseconds, from the reader that the
+// test context mints.
+static std::uint64_t monotonic_now_ns() {
+    const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(store_ctx());
+    const auto reading = clock.read();
+    assert(reading.has_value());
+    return reading->peek();
+}
+
+// The third field of the last line of the log, the time of the last
+// commit.
+static std::uint64_t last_log_timestamp(const char* dir) {
+    std::ifstream log(std::string(dir) + "/log");
+    std::string line;
+    std::string last;
+    while (std::getline(log, line)) {
+        if (!line.empty()) last = line;
+    }
+    const std::size_t second_comma = last.find(',', last.find(',') + 1);
+    assert(second_comma != std::string::npos);
+    std::uint64_t timestamp = 0;
+    const char* const end = last.data() + last.size();
+    const auto [stop, error] = std::from_chars(last.data() + second_comma + 1, end, timestamp);
+    assert(error == std::errc{} && stop == end);
+    return timestamp;
 }
 
 static_assert(
@@ -140,8 +176,14 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         (void)cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
 
-        cipher.advance_head(ov, expected_hash, 10);
+        // The log line of the commit holds a reading of CLOCK_MONOTONIC,
+        // so it lies between two readings taken around the commit.
+        const std::uint64_t before_commit_ns = monotonic_now_ns();
+        commit_head(cipher, ov, expected_hash, 10);
+        const std::uint64_t after_commit_ns = monotonic_now_ns();
         assert(cipher.head() == expected_hash);
+        const std::uint64_t committed_at_ns = last_log_timestamp(dir);
+        assert(before_commit_ns <= committed_at_ns && committed_at_ns <= after_commit_ns);
 
         // The HEAD file holds the hash as sixteen lowercase hex digits
         // on one line, and that spelling is what another reader parses.
@@ -156,8 +198,9 @@ int main() {
         // still succeeds, because the head names a commit rather than
         // an object that has to be resident.
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
-        cipher.advance_head(ov, hash2, 50);
+        commit_head(cipher, ov, hash2, 50);
         assert(cipher.head() == hash2);
+        assert(last_log_timestamp(dir) >= committed_at_ns && "the second commit must not read an earlier time");
     }
 
     {
@@ -284,7 +327,7 @@ int main() {
         auto* region2 = make_test_region(arena);
         const auto hash = cipher.store(ov, crucible::Cipher::content_addressed(region2), nullptr);
         assert(static_cast<bool>(hash));
-        cipher.advance_head(ov, hash, 100);
+        commit_head(cipher, ov, hash, 100);
         assert(cipher.head() == hash);
         assert(cipher.hash_at_step(ov, 100) == hash);
     }

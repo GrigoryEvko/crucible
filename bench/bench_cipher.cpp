@@ -151,8 +151,8 @@ int main() {
         reports.push_back(bench::run(label_record_event, [&] {
             const uint64_t step = ++record_step;
             const ContentHash event_hash{warm_h.raw() ^ step};
-            cipher.record_event(ctx, open_view, event_hash, step);
-            bench::do_not_optimize(event_hash);
+            const bool recorded = cipher.record_event(ctx, open_view, event_hash, step).has_value();
+            bench::do_not_optimize(recorded);
         }));
 
         if (num_ops == 256u) {

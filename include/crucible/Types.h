@@ -327,7 +327,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RowHash);
 // Every consumer of this type puts a key on the federation wire:
 //   - ComputationCacheFederation.h:130 builds one from a function and a row
 //   - FederationProtocol.h:226 writes one, and :303 reads one back
-//   - Cipher.h:524 builds one for a session event.
+//   - Cipher::persist_session_events (Cipher.h) builds one for a session event.
 //
 // The in-process cache and the wire want opposite properties from the row
 // half. The difference decides the effect of a row collision.
