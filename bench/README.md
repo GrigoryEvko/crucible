@@ -43,6 +43,7 @@ sensory grid is omitted — see **How to enable BPF** below.
 | `@X.YYGHz` | sysfs `scaling_cur_freq` at run start. |
 | `n` | Sample count. |
 | `cpuN` | CPU the bench was actually pinned to (post `sched_setaffinity` + `sched_getcpu`). |
+| `cpus=N` | Shown in place of `cpuN` for a `Run::fan_out` measurement: the number of CPUs that isolcpus did not isolate. The threads of the body can use each of them. The JSON report gives the same number as `cpu_count`. |
 
 ### Flags
 

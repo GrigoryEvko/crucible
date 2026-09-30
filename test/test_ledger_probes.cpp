@@ -614,11 +614,14 @@ void test_first_touch_comes_from_the_measuring_cpu() {
         assert(std::all_of(page_nodes.begin(), page_nodes.end(),
                            [measuring_node](int node) { return node == measuring_node; }));
 
-        // The restore gives the worker back its one CPU.
-        assert(pin.restore().has_value());
+        // The restore gives the worker back its one CPU.  The calls stay
+        // outside assert, so a build with NDEBUG still makes them.
+        [[maybe_unused]] const bool was_restored = pin.restore().has_value();
+        assert(was_restored);
         cpu_set_t affinity;
         CPU_ZERO(&affinity);
-        assert(::sched_getaffinity(0, sizeof(affinity), &affinity) == 0);
+        [[maybe_unused]] const int affinity_status = ::sched_getaffinity(0, sizeof(affinity), &affinity);
+        assert(affinity_status == 0);
         assert(CPU_COUNT(&affinity) == 1 && CPU_ISSET(static_cast<std::size_t>(worker_cpu), &affinity));
     }};
     worker.join();

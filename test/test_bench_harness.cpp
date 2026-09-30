@@ -519,6 +519,15 @@ std::size_t affinity_cpu_count() {
     return static_cast<std::size_t>(CPU_COUNT(&set));
 }
 
+// The affinity count that a worker thread started from the calling thread
+// sees.  A new thread inherits the affinity of the thread that starts it.
+std::size_t worker_affinity_cpu_count() {
+    std::size_t worker_count = 0;
+    std::jthread worker{[&worker_count] { worker_count = affinity_cpu_count(); }};
+    worker.join();
+    return worker_count;
+}
+
 // The body of a Run runs under the pin to one CPU, and the thread gets back
 // its affinity when the measurement ends.  The pin goes through the gated
 // door of fixy/os/Sched.h, which records a pin event, so a CpuPinned proof
@@ -549,6 +558,47 @@ void test_run_pins_through_the_door_and_restores() {
     if (was_proof_checked) CHECK(!is_proof_in_force);
 }
 
+// Run::fan_out starts the measuring thread on a CPU that isolcpus did not
+// isolate, and keeps the affinity of the thread, so a worker that the body
+// starts can use each CPU of that affinity.  Under the default pin each
+// worker gets the one CPU of the pin.  A pin from pin_calling_thread holds
+// until restore() gives the affinity back.
+void test_fan_out_keeps_the_worker_affinity() {
+    constexpr ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    const std::vector<int> allowed = crucible::warden::allowed_cpus(startup);
+    const std::vector<int> isolated = crucible::warden::isolated_cpus(startup);
+    const auto is_free = [&isolated](int cpu) {
+        return cpu >= 0 && !std::binary_search(isolated.begin(), isolated.end(), cpu);
+    };
+    const auto free_cpus = static_cast<std::size_t>(std::count_if(allowed.begin(), allowed.end(), is_free));
+    const std::size_t unpinned_count = affinity_cpu_count();
+
+    std::size_t fanned_worker_count = 0;
+    const bench::Report fanned = bench::Run("fan out").fan_out().samples(8).warmup(1).measure(
+        [&fanned_worker_count]() noexcept { fanned_worker_count = worker_affinity_cpu_count(); });
+    CHECK(fanned.pinned_cpu_count == free_cpus);
+    if (free_cpus > 0) {
+        CHECK(!fanned.pinned_cpu.is_valid());
+        CHECK(fanned_worker_count == unpinned_count);
+    }
+    CHECK(affinity_cpu_count() == unpinned_count);
+
+    std::size_t pinned_worker_count = 0;
+    const bench::Report pinned = bench::Run("one cpu").samples(8).warmup(1).measure(
+        [&pinned_worker_count]() noexcept { pinned_worker_count = worker_affinity_cpu_count(); });
+    if (pinned.pinned_cpu.is_valid()) {
+        CHECK(pinned.pinned_cpu_count == 1u);
+        CHECK(pinned_worker_count == 1u);
+    }
+
+    bench::Run::PinResult held = bench::Run("held pin").pin_calling_thread();
+    if (held.cpu.is_valid()) {
+        CHECK(affinity_cpu_count() == 1u);
+        CHECK(held.restore().has_value());
+    }
+    CHECK(affinity_cpu_count() == unpinned_count);
+}
+
 }  // namespace
 
 int main() {
@@ -565,8 +615,9 @@ int main() {
     test_clobber_array_empty_and_single();
     test_clobber_array_source_container_diversity();
     test_run_pins_through_the_door_and_restores();
+    test_fan_out_keeps_the_worker_affinity();
 
-    constexpr int kNumGroups = 11;
+    constexpr int kNumGroups = 12;
     if (g_failures == 0) {
         std::fprintf(stderr, "test_bench_harness: PASS (%d groups, 0 failures)\n", kNumGroups);
         return 0;

@@ -22,7 +22,9 @@
 //
 // Pin-by-default: uses /sys/devices/system/cpu/isolated first (so an
 // isolcpu reserved via the kernel cmdline wins), falling back to
-// sched_getcpu() only if no CPU is isolated. Each pin goes through the gated door of
+// sched_getcpu() only if no CPU is isolated. A body that starts threads
+// asks for Run::fan_out instead, because its threads take the one-CPU
+// pin of the measuring thread. Each pin goes through the gated door of
 // fixy/os/Sched.h, which records a pin event, and a Run gives the thread
 // back its affinity when the measurement ends. Each Run also reads
 // cpufreq at the start and end of the run, and — when BPF is available
@@ -78,6 +80,7 @@
 #include <crucible/perf/Senses.h>
 #endif
 
+#include <crucible/warden/CpuTopology.h>
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Policy.h>
 #include <fixy/Ctx.h>
@@ -569,7 +572,11 @@ struct CI {
 struct Report {
     std::string name;
     size_t batch = 1;  // > 1 → pct over batch means  // TODO: strong type
-    CpuId pinned_cpu{};  // CpuId::none() = -1 / no pin
+    CpuId pinned_cpu{};  // CpuId::none() = -1 / no pin, or a Run::fan_out measurement
+    // The CPUs that the measuring thread and the threads of its body could
+    // use: 1 for a pin to one CPU, the CPUs that isolcpus did not isolate
+    // for Run::fan_out, 0 when the harness set no affinity.
+    size_t pinned_cpu_count = 0;
     double wall_ns = 0;  // total measurement wall time
     double drift_pct = 0;  // |first-half - second-half p50| / p50
     bool drift_flag = false;  // drift_pct > 10 %
@@ -724,7 +731,11 @@ struct Report {
             std::fprintf(out, "  @%.2fGHz", static_cast<double>(freq_start_hz) / 1e9);
         }
         std::fprintf(out, "  n=%zu", pct.n);
-        if (pinned_cpu.is_valid()) std::fprintf(out, "  cpu%d", pinned_cpu.raw());
+        if (pinned_cpu_count > 1) {
+            std::fprintf(out, "  cpus=%zu", pinned_cpu_count);
+        } else if (pinned_cpu.is_valid()) {
+            std::fprintf(out, "  cpu%d", pinned_cpu.raw());
+        }
         if (batch > 1) std::fprintf(out, "  [batch-avg]");
         if (noisy()) std::fprintf(out, "  [noisy]");
         if (drift_flag) std::fprintf(out, "  [drift]");
@@ -790,16 +801,16 @@ struct Report {
         std::fputs("\"name\":", out);
         fprint_json_string(out, name);
         std::fprintf(out,
-                     ",\"batch\":%zu,\"n\":%zu,\"cpu\":%d,"
+                     ",\"batch\":%zu,\"n\":%zu,\"cpu\":%d,\"cpu_count\":%zu,"
                      "\"p50\":%.3f,\"p75\":%.3f,\"p90\":%.3f,\"p95\":%.3f,"
                      "\"p99\":%.3f,\"p99_9\":%.3f,\"p99_99\":%.3f,"
                      "\"min\":%.3f,\"max\":%.3f,\"mean\":%.3f,\"stddev\":%.3f,"
                      "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
                      "\"cycles_per_op\":%.3f,"
                      "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu",
-                     batch, pct.n, pinned_cpu.raw(), pct.p50, pct.p75, pct.p90, pct.p95, pct.p99, pct.p99_9, pct.p99_99,
-                     pct.min, pct.max, pct.mean, pct.stddev, pct.cv, wall_ns, drift_pct, cycles_per_op,
-                     static_cast<unsigned long>(freq_start_hz), static_cast<unsigned long>(freq_end_hz));
+                     batch, pct.n, pinned_cpu.raw(), pinned_cpu_count, pct.p50, pct.p75, pct.p90, pct.p95, pct.p99,
+                     pct.p99_9, pct.p99_99, pct.min, pct.max, pct.mean, pct.stddev, pct.cv, wall_ns, drift_pct,
+                     cycles_per_op, static_cast<unsigned long>(freq_start_hz), static_cast<unsigned long>(freq_end_hz));
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         print_bpf_json_(out);
 #endif
@@ -1139,6 +1150,9 @@ public:
     //                  returned without pinning, so env CRUCIBLE_BENCH_CORE
     //                  unset → no affinity ever applied)
     //   .no_pin():     do not touch affinity
+    //   .fan_out():    start on a CPU that isolcpus did not isolate, and
+    //                  keep the affinity of the thread, for a body that
+    //                  starts threads
     //
     // Each pin ends with the measurement: the thread gets back the affinity
     // that it had before the Run.
@@ -1169,6 +1183,24 @@ public:
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
     Run& no_pin() noexcept {
         pin_mode_ = Pin::None;
+        return *this;
+    }
+
+    // For a body that starts threads.  A new thread takes the affinity set
+    // of the thread that starts it.  So under a pin to one CPU, every
+    // thread of the body runs on that CPU, and a parallel body measures no
+    // parallel work.  A thread that starts on an isolated CPU gives the
+    // same result: the load balancer does not reach an isolated CPU, so
+    // the thread stays there.  This mode moves the measuring thread to one
+    // allowed CPU that the kernel command line did not isolate, and then
+    // gives the thread back its affinity.  The threads of the body start
+    // on that CPU, and the scheduler spreads them over the CPUs that are
+    // not isolated.  The measuring thread can move too.  The two readings
+    // of a sample still agree on a host with an invariant TSC, and a body
+    // that starts threads runs far longer than a move costs.
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& fan_out() noexcept {
+        pin_mode_ = Pin::FanOut;
         return *this;
     }
 
@@ -1215,14 +1247,19 @@ public:
 
     // The affinity that a pin gave the calling thread, and the affinity that
     // the pin replaced.  cpu is the CPU of a pin to one CPU, and none for a
-    // failed pin.  prior holds the replaced affinity while a pin to one CPU
-    // holds.  restore() gives it back to the thread, and changes nothing
-    // when prior is empty or on a thread that did not pin.
+    // fan-out or a failed pin.  cpu_count is the number of CPUs that the
+    // thread and its workers could use, and 0 when no affinity was set.
+    // prior holds the replaced affinity while a pin to one CPU holds.
+    // restore() gives it back to the thread, and changes nothing when
+    // prior is empty or on a thread that did not pin.
     struct PinResult {
         CpuId cpu{};
+        size_t cpu_count = 0;
         std::optional<::fixy::sched::PriorAffinity> prior{};
 
-        [[nodiscard]] static PinResult one(CpuId pinned) noexcept { return PinResult{.cpu = pinned}; }
+        [[nodiscard]] static PinResult one(CpuId pinned) noexcept {
+            return PinResult{.cpu = pinned, .cpu_count = pinned.is_valid() ? size_t{1} : size_t{0}};
+        }
 
         [[nodiscard]] std::expected<void, int> restore() noexcept {
             if (!prior.has_value()) return {};
@@ -1409,6 +1446,7 @@ public:
         r.name = name_;
         r.batch = batch;
         r.pinned_cpu = pinned_cpu;
+        r.pinned_cpu_count = pin.cpu_count;
         r.drift_pct = drift;
         r.drift_flag = drift_flag;
         r.wall_ns = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(wall1 - wall0).count());
@@ -1503,7 +1541,8 @@ private:
     enum class Pin : uint8_t {
         Auto,
         Explicit,
-        None
+        None,
+        FanOut
     };
 
     std::string name_;
@@ -1594,8 +1633,9 @@ private:
     // successfully pinned.
     [[nodiscard]] PinResult pin_() const noexcept {
 #ifdef __linux__
-        if (pin_mode_ == Pin::None) return PinResult{.cpu = CpuId{sched_getcpu()}};
+        if (pin_mode_ == Pin::None) return PinResult{.cpu = CpuId{sched_getcpu()}, .cpu_count = 0};
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+        if (pin_mode_ == Pin::FanOut) return fan_out_(startup);
 
         int target = -1;
         const bool explicit_valid = (pin_mode_ == Pin::Explicit) && core_.is_valid();
@@ -1630,6 +1670,51 @@ private:
         pinned.prior = std::move(*prior);
         return pinned;
 #else
+        return PinResult{};
+#endif
+    }
+
+    // Moves the measuring thread to a CPU of its affinity that isolcpus did
+    // not isolate, and gives the thread back its affinity at once.  A pin
+    // migrates the calling thread before the system call returns, so the
+    // thread then runs on that CPU with its whole affinity.  The load
+    // balancer never moves a thread to an isolated CPU, so the thread and
+    // each thread of the body stay on the CPUs that are not isolated.  The
+    // current CPU is the choice when it is not isolated.  Else the choice is
+    // the CPU that warden::select_hot_cpu gives with the isolated CPUs left
+    // out, and that selector keeps away from cpu0 and its interrupts.
+    // Returns the number of CPUs that are not isolated.  A thread whose CPUs
+    // are all isolated gets no pin and a count of zero.  Complexity: linear
+    // in the number of allowed CPUs, times the cost of one sysfs read.
+    [[nodiscard]] static PinResult fan_out_(const ::fixy::InitLoadCtx& startup) noexcept {
+#ifdef __linux__
+        const std::vector<int> allowed = crucible::warden::allowed_cpus(startup);
+        const std::vector<int> isolated = crucible::warden::isolated_cpus(startup);
+        const auto is_free = [&isolated](int cpu) noexcept {
+            return cpu >= 0 && !std::binary_search(isolated.begin(), isolated.end(), cpu);
+        };
+        const auto free_count = static_cast<size_t>(std::count_if(allowed.begin(), allowed.end(), is_free));
+        if (free_count == 0) return PinResult{};
+
+        int start_cpu = sched_getcpu();
+        const bool is_current_allowed = std::binary_search(allowed.begin(), allowed.end(), start_cpu);
+        if (!is_current_allowed || !is_free(start_cpu)) {
+            crucible::warden::CoreSelector selector{};
+            selector.prefer_isolcpu = false;
+            selector.avoid_smt_sibling = false;
+            start_cpu = crucible::warden::select_hot_cpu(startup, selector, isolated);
+            if (!is_free(start_cpu)) return PinResult{};
+        }
+        auto prior = ::fixy::sched::apply_affinity_to_cpu(startup, start_cpu);
+        if (!prior.has_value()) return PinResult{};
+        if (!std::move(*prior).restore().has_value()) {
+            // The thread keeps the pin to the start CPU, and the body runs
+            // on that one CPU.
+            return PinResult::one(CpuId{start_cpu});
+        }
+        return PinResult{.cpu = CpuId::none(), .cpu_count = free_count};
+#else
+        (void)startup;
         return PinResult{};
 #endif
     }

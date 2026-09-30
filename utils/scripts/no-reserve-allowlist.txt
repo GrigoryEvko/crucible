@@ -84,6 +84,3 @@ include/crucible/BackgroundThread.h:current_callsite_hashes.reserve(kInitialTrac
 bench/bench_expr_pool.cpp:pool.reserve(n_inserts);
 bench/bench_mpsc_contention.cpp:producers.reserve(producer_count);
 bench/bench_mpsc_contention.cpp:reports.reserve(12);
-bench/bench_no_regression.cpp:reports.reserve(workloads.size() * 3);
-bench/bench_no_regression.cpp:threads.reserve(w.forced_workers);
-bench/bench_no_regression.cpp:workloads.reserve(4);

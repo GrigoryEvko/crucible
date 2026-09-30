@@ -1,8 +1,8 @@
 // No-regression bench for the cache-tier rule.
 //
 // L1/L2 workloads must stay on the inline path, while L3/DRAM
-// workloads must go parallel without losing to the sequential
-// baseline.  The "rule" arm runs the work through
+// workloads must go parallel and beat the sequential baseline by
+// kParallelWinFactor.  The "rule" arm runs the work through
 // fixy::spawn::mint_parallel_for, which asks
 // fixy::concurrent::ParallelismRule for a decision and runs at the
 // factor of that decision.  The "forced" baseline intentionally
@@ -61,6 +61,12 @@ constexpr std::size_t GiB = 1024 * MiB;
 constexpr std::size_t kL3GraphPasses = 16;
 constexpr double kGateTolerance = 1.05;
 constexpr double kInlineAbsoluteToleranceNs = 500.0;
+// A parallel decision must earn its threads: at an L3 or DRAM tier the
+// rule arm runs at least this many times faster than the sequential arm.
+// The bound is stricter than rule <= sequential * kGateTolerance, so the
+// large tiers keep the no-regression bound too.
+constexpr double kParallelWinFactor = 1.5;
+static_assert(1.0 / kParallelWinFactor < kGateTolerance);
 
 enum class WorkloadKind : std::uint8_t {
     L1ArraySum,
@@ -310,21 +316,42 @@ void run_rule(Workload& w, std::atomic<std::uint64_t>& sink, PieceTable& pieces)
 }
 
 void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
-    std::vector<std::jthread> threads;
-    threads.reserve(w.forced_workers);
+    std::vector<std::jthread> threads(w.forced_workers);
     for (std::size_t worker = 0; worker < w.forced_workers; ++worker) {
-        threads.emplace_back([&, worker](std::stop_token) noexcept {
+        threads[worker] = std::jthread{[&, worker](std::stop_token) noexcept {
             const Range r = split_range(w.units, worker, w.forced_workers);
             w.run_range(r, sink);
-        });
+        }};
     }
 }
 
+// True when the arm starts threads for this workload.  The rule arm starts
+// them only for a parallel decision, and the forced arm always does.
+[[nodiscard]] bool starts_threads(Strategy strategy, const Workload& w) noexcept {
+    switch (strategy) {
+        case Strategy::Sequential:
+            return false;
+        case Strategy::Rule:
+            return fc::ParallelismRule::recommend(w.budget).is_parallel();
+        case Strategy::ForcedParallel:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// An arm that starts threads runs under Run::fan_out, so its threads can
+// spread over the CPUs that isolcpus did not isolate.  Under the pin to
+// one CPU they would all run on that CPU.  An arm that runs on the calling
+// thread pins to one CPU, the CPU on which main built the data, so a
+// parallel arm is compared against the best sequential time.
 [[nodiscard]] bench::Report measure_once(std::string name, Strategy strategy, Workload& w, PieceTable& pieces,
                                          std::size_t samples) {
     std::atomic<std::uint64_t> sink{0};
     bench::Run run{std::move(name)};
-    if (const int core = bench::env_core(); core >= 0) {
+    if (starts_threads(strategy, w)) {
+        (void)run.fan_out();
+    } else if (const int core = bench::env_core(); core >= 0) {
         (void)run.core(core);
     }
     return run.samples(samples).warmup(std::max<std::size_t>(2, samples / 6)).batch(1).max_wall_ms(8000).measure([&] {
@@ -390,6 +417,11 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
+    // The first call to Topology::instance() probes the host one time, and
+    // it counts the usable CPUs from the affinity of the calling thread.  A
+    // thread that holds a pin to one CPU gives a count of 1, and the rule
+    // then decides sequential for each tier.  So this call comes before the
+    // placement pin and before the first Run.
     const auto& topo = fc::Topology::instance();
     const std::size_t default_forced_workers =
         std::max<std::size_t>(2, std::min<std::size_t>(1024, topo.process_cpu_count() * 32));
@@ -401,29 +433,42 @@ int main() {
     std::printf("  gates: small tiers forced>=sequential/1.05, "
                 "rule<=forced*1.05, and inline overhead<=5%% or %.0fns\n",
                 kInlineAbsoluteToleranceNs);
-    std::printf("         large tiers rule<=sequential*1.05 and "
-                "rule<=forced*0.50\n\n");
+    std::printf("         large tiers rule<=sequential/%.1f and "
+                "rule<=forced*0.50\n\n",
+                kParallelWinFactor);
 
     PieceTable pieces = make_piece_table();
 
-    std::vector<Workload> workloads;
-    workloads.reserve(4);
-    workloads.push_back(make_l1(forced_workers));
-    workloads.push_back(make_l2(forced_workers));
-    workloads.push_back(make_l3(forced_workers));
-    workloads.push_back(make_dram(forced_workers));
+    // The data is built from the CPU that the sequential arm measures on,
+    // so its pages are on the NUMA node of that CPU.  The sequential arm
+    // then reads local memory, its best placement.
+    bench::Run placement{"no_regression.placement"};
+    if (const int core = bench::env_core(); core >= 0) {
+        (void)placement.core(core);
+    }
+    bench::Run::PinResult placement_pin = placement.pin_calling_thread();
+    std::printf("  data built on cpu%d\n\n", placement_pin.cpu.raw());
 
-    std::vector<bench::Report> reports;
-    reports.reserve(workloads.size() * 3);
+    std::array<Workload, 4> workloads{make_l1(forced_workers), make_l2(forced_workers), make_l3(forced_workers),
+                                      make_dram(forced_workers)};
+
+    // The data is in place, so the pin ends.  Each Run pins again, and a
+    // fan-out Run starts from the whole affinity of the thread.
+    if (const auto restored = placement_pin.restore(); !restored.has_value()) {
+        std::fprintf(stderr, "  warning: the placement pin stays (errno %d), so a fan-out arm runs on one CPU\n",
+                     restored.error());
+    }
+
+    std::vector<bench::Report> reports(workloads.size() * 3);
 
     int failures = 0;
     std::printf("=== measuring ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
         Workload& w = workloads[i];
         Trio trio = run_workload(w, pieces, samples);
-        reports.push_back(std::move(trio.sequential));
-        reports.push_back(std::move(trio.rule));
-        reports.push_back(std::move(trio.forced));
+        reports[i * 3 + 0] = std::move(trio.sequential);
+        reports[i * 3 + 1] = std::move(trio.rule);
+        reports[i * 3 + 2] = std::move(trio.forced);
     }
 
     bench::emit_reports_text(reports);
@@ -486,8 +531,9 @@ int main() {
                 ++failures;
             }
         } else {
-            if (rul_p50 > seq_p50 * kGateTolerance) {
-                std::printf("  FAIL %-26s rule regressed vs sequential: %.3fx\n", w.name, ratio(rul_p50, seq_p50));
+            if (rul_p50 * kParallelWinFactor > seq_p50) {
+                std::printf("  FAIL %-26s rule did not beat sequential by %.1fx: %.3fx\n", w.name, kParallelWinFactor,
+                            ratio(rul_p50, seq_p50));
                 ++failures;
             }
             if (rul_p50 > frc_p50 * 0.50) {
