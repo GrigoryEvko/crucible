@@ -301,7 +301,8 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 
 1. **The session oracle.** The generated files in `test/session_oracle/` come out of their generator as shards. Choose the shard size so that each shard compiles in at most 30 s. The shards of one family are source files of the one executable of that family, so the ctest names do not change. The number of rows and each answer stay the same.
 2. **Heavy test files.** Split `test/fixy/test_session_global_attack.cpp` and each other test file that compiles for more than 60 s mostly in the front end, by subject, into several source files of the same executable. The ctest names and every case stay the same. Files whose back end is the cause go to unit 0e.
-3. **Witnesses.** The ctest list is the same before and after. The row counts of the oracle are the same. The clean build wall time falls, and the ninja log shows no translation unit above 60 s.
+3. **The oracle self-test.** `session_oracle_self_test` (`utils/scripts/session-oracle.sh --self-test`) takes 192 s. Make it take at most 45 s with the same verdicts.
+4. **Witnesses.** The ctest list is the same before and after. The row counts of the oracle are the same. The clean build wall time falls, and the ninja log shows no translation unit above 60 s.
 
 ### 7.5 Unit 0e: the back-end outliers
 
@@ -329,7 +330,7 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 
 **Goal.** The tests other than the fixtures finish in at most 60 s wall at `-j48`, and no guard takes more than 45 s.
 
-1. Measure each of `session_oracle_self_test`, `no_unchecked_access`, `proof_routes`, `start_lifetime`, `federation_admission`, `atom_roster_joined_self_test` (125 s to 192 s at the baseline). Find where the time goes.
+1. Measure each of `no_unchecked_access`, `proof_routes`, `start_lifetime`, `federation_admission`, `atom_roster_joined_self_test` (125 s to 163 s at the baseline). Find where the time goes. `session_oracle_self_test` (192 s) belongs to unit 0d, which owns the oracle scripts.
 2. `utils/scripts/preprocessed.py`: one shared, content-keyed store in `~/.cache/crucible/preprocessed/`, with a size limit and an age limit, shared by every guard and every worktree. Scan each distinct (file, content hash) chunk one time, not one time for each translation unit that includes it.
 3. Keep what each guard covers. Each guard gives the same verdict on the same tree, and each self-test and plant still passes.
 
@@ -357,10 +358,10 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 | 0a | `CMakeLists.txt` (sections 3.13 and 5), `include/foundation/Platform.h`, `include/fixy/os/Time.h`, the files that need their own intrinsics include, `utils/scripts/build-gauge.sh`, `utils/scripts/tu-sample.py`, CLAUDE.md §V |
 | 0b | `test/layer/`, `utils/scripts/check-header-checks.py`, `utils/scripts/header-checks-ledger.txt`, the guard registration, the three pilot headers, CLAUDE.md §XV |
 | 0c-* | the headers of its row in 7.3, their check files, their ledger rows |
-| 0d | `test/session_oracle/`, the oracle generator, the split test files and their CMake rows |
+| 0d | `test/session_oracle/`, `utils/tools/session_oracle/`, `utils/scripts/session-oracle.sh`, the split test files and their CMake rows |
 | 0e | `include/crucible/ledger/`, `bench/bench_harness.h`, `utils/tools/crucible_hwprobe.cpp`, `test/test_ledger.cpp`, `test/test_ledger_probes.cpp` |
 | 0f | `test/neg_compile_driver.py` |
-| 0g | the six guard scripts, `utils/scripts/preprocessed.py` |
+| 0g | the five guard scripts of 7.7, `utils/scripts/preprocessed.py` |
 | 0h-* | header bodies of its layer, not their checks |
 
 Shared files (`CMakeLists.txt`, `test/*/CMakeLists.txt`, CLAUDE.md, the ledger) go in through `--replace` pairs (section 5.5).
