@@ -46,6 +46,9 @@ foundation::effects::host::ProducerClaim<forge::brand> | foundation/effects/Ctx.
 
 # -- Permissions -----------------------------------------------------
 foundation::permissions::perm_mint_key | foundation/permissions/Permission.h | foundation::permissions::perm_mint_key{} | private | closed
+# Only permission_erase_brand builds the key that drops the brand of a
+# permission token.
+foundation::permissions::erase_brand_key | foundation/permissions/Permission.h | foundation::permissions::erase_brand_key{} | private | closed
 foundation::permissions::Permission<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>{} | no-match | closed
 # Only the fork builds the view that it lends a body.  Any empty class is
 # a brand, so a second canonical tag stands in for one here.

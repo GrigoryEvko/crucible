@@ -287,6 +287,11 @@
       "constructor": "\\bOwnedRegion\\("
     },
     {
+      "name": "neg_witness_permissions_erase_brand_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\berase_brand_key\\("
+    },
+    {
       "name": "neg_witness_permissions_federation_admission_key_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bfederation_admission_key\\("

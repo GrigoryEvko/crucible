@@ -123,6 +123,7 @@ concept LendsByMove = requires(P&& p) { perm::with_read_view(std::move(p), [](au
     auto erased = perm::permission_erase_brand(std::move(branded));
     static_assert(brand::IsErased<decltype(erased)>);
     static_assert(!std::is_constructible_v<decltype(branded), decltype(erased)&&>, "no brand from the erased spelling");
+    static_assert(!std::is_constructible_v<decltype(erased), decltype(branded)&&>, "no erasure outside the door");
     perm::permission_drop(std::move(erased));
     return 0;
 }

@@ -417,9 +417,12 @@ public:
         // The context owns IO and Block, the row of a mapping, and the
         // mapping door does the mmap itself, so the region owns only an
         // address the kernel returned.  The region is on the erased
-        // identity of its tag, because nothing discards its pages.
+        // identity of its tag, because the mapping member of a header class
+        // cannot name the brand of a root, and nothing discards its pages.
+        // The root drops its brand through the one door that drops a brand.
         const ::foundation::permissions::Permission<probe_detail::ProbeRegionTag> owner =
-            ::foundation::permissions::mint_permission_root<probe_detail::ProbeRegionTag>();
+            ::foundation::permissions::permission_erase_brand(
+                ::foundation::permissions::mint_permission_root<probe_detail::ProbeRegionTag>());
         auto mapped = probe_detail::ProbeMapping::mint_region(ctx, owner, -1, mapped_bytes, 0);
         if (!mapped.has_value()) {
             return std::unexpected(LedgerError::StorePathUnavailable);

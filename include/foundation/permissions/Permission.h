@@ -16,8 +16,9 @@
 // exclusive's.  foundation/Brand.h states the three facts a brand
 // rests on.  A spelling that names no brand is the erased identity
 // DefaultBrand.  permission_erase_brand drops the brand of a token where
-// its holder cannot name the brand, and utils/scripts/check-brand-drain.py
-// lists every spelling on the erased identity.
+// its holder cannot name the brand, and no conversion drops it.
+// utils/scripts/check-brand-drain.py lists every spelling on the erased
+// identity.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
 // holder's writes to that memory.  Both are obligations on the code
@@ -652,6 +653,22 @@ private:
     friend class FederationAdmission;
 };
 
+// The key of the one door that drops a brand.  Only permission_erase_brand
+// makes one, so no other expression converts a branded token to the
+// erased identity.  Both constructors are user-provided, for the reason
+// perm_mint_key gives.  The friend declaration declares the door in this
+// namespace, and the definition below the class Permission matches it.
+class erase_brand_key {
+    constexpr erase_brand_key() noexcept {}
+
+public:
+    constexpr erase_brand_key(const erase_brand_key&) noexcept {}
+
+private:
+    template <typename Tag, typename Brand>
+    friend constexpr auto permission_erase_brand(Permission<Tag, Brand>&&) noexcept;
+};
+
 // The tag constraint is a class-body static_assert rather than a
 // requires-clause on the primary template.  A requires-clause would
 // force every forward declaration of Permission to repeat it, which
@@ -690,15 +707,15 @@ public:
     {}
 
     // Erasure.  A token of one instance becomes a token on the erased
-    // identity, and the branded one is consumed.  permission_erase_brand
-    // is the door that names each site.  The handles of the channels use
-    // this conversion directly.  It runs in one direction only: nothing
-    // makes a branded token out of an erased one, and nothing rebrands
-    // a token, because either would mint an identity the caller does
-    // not hold.
+    // identity, and the conversion consumes the branded token.  Only
+    // permission_erase_brand makes the key, so a search for that name
+    // lists each site that drops a brand.  The erasure runs in one
+    // direction only.  Nothing makes a branded token out of an erased one,
+    // and nothing rebrands a token.  Either one mints an identity that the
+    // caller does not hold.
     template <typename Other>
         requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr Permission(Permission<Tag, Other>&&) noexcept {}
+    constexpr Permission(Permission<Tag, Other>&&, erase_brand_key) noexcept {}
 
     Permission(const Permission&) = delete(
         "Permission<Tag>: linear — duplicating creates two simultaneous owners of the same region, breaking CSL's frame rule.  Use std::move to transfer.");
@@ -748,8 +765,12 @@ constexpr void permission_drop(Permission<Tag, Brand>&&) noexcept {}
 // Every other site carries the brand.  A search for this name lists each
 // site that drops one.
 template <typename Tag, typename Brand>
-[[nodiscard]] constexpr Permission<Tag> permission_erase_brand(Permission<Tag, Brand>&& token) noexcept {
-    return Permission<Tag>{std::move(token)};
+[[nodiscard]] constexpr auto permission_erase_brand(Permission<Tag, Brand>&& token) noexcept {
+    if constexpr (std::is_same_v<Brand, ::foundation::brand::DefaultBrand>) {
+        return token;
+    } else {
+        return Permission<Tag>{std::move(token), erase_brand_key{}};
+    }
 }
 
 // Reentrant by design.  The contract is a fresh token per call, not one
@@ -1458,13 +1479,15 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
         && !heap_new_reaches_v<Token> && std::is_nothrow_constructible_v<std::optional<Token>, Token&&>;
 }
 
-// The erasure runs one way.  A branded token converts to the erased
-// spelling; nothing converts an erased token to a brand, and nothing
-// converts one brand to another.
+// No conversion drops or changes a brand.  permission_erase_brand is the
+// one door to the erased spelling (erasure_keeps_the_tag below).  Nothing
+// converts an erased token to a brand, and nothing converts one brand to
+// another.
 struct brand_a {};
 struct brand_b {};
-static_assert(std::is_convertible_v<Permission<seplog_test_tag, brand_a>&&, Permission<seplog_test_tag>>,
-              "a branded token erases to the unbranded spelling");
+static_assert(!std::is_constructible_v<Permission<seplog_test_tag>, Permission<seplog_test_tag, brand_a>&&>,
+              "only permission_erase_brand drops a brand, and no conversion does");
+static_assert(!std::is_default_constructible_v<erase_brand_key>, "only permission_erase_brand makes the erasure key");
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag>&&>,
               "an erased token does not acquire a brand");
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Permission<seplog_test_tag, brand_b>&&>,

@@ -25,7 +25,7 @@ include/fixy/os/Mmap.h	1
 include/fixy/os/NumaPlacement.h	1
 include/fixy/session/Payload.h	14
 include/foundation/effects/Computation.h	3
-include/foundation/permissions/Permission.h	56
+include/foundation/permissions/Permission.h	55
 include/foundation/permissions/ReadView.h	29
 test/fixy/neg/neg_borrowed_from_a_temporary.cpp	1
 test/fixy/neg/neg_borrowed_of_a_braced_list.cpp	1
@@ -92,7 +92,6 @@ test/foundation/neg/neg_lent_permission_forged_by_bit_cast.cpp	1
 test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp	2
 test/foundation/neg/neg_lifetime_start_as_array_proof_holder.cpp	1
 test/foundation/neg/neg_lifetime_start_as_proof_array.cpp	3
-test/foundation/neg/neg_loan_end_with_the_loan_of_another_tag.cpp	2
 test/foundation/neg/neg_permission_forged_by_bit_cast.cpp	1
 test/foundation/neg/neg_permission_forged_by_start_lifetime_as.cpp	2
 test/foundation/neg/neg_permission_forged_without_key.cpp	1

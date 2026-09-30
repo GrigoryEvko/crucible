@@ -31,8 +31,8 @@ struct Other {
 
 int main() {
     namespace fp = ::foundation::permissions;
-    auto region_loan = fp::mint_read_loan(fp::Permission<Region>{fp::mint_permission_root<Region>()});
-    auto other_loan = fp::mint_read_loan(fp::Permission<Other>{fp::mint_permission_root<Other>()});
+    auto region_loan = fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Region>()));
+    auto other_loan = fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Other>()));
     auto token = fp::mint_permission_after_loan(std::move(region_loan.second), std::move(other_loan.first));
     (void)token;
     return 0;

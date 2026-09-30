@@ -41,7 +41,7 @@ using RegionToken = fp::Permission<RegionTag>;
 using PureOverPermission = fe::Computation<fe::Row<>, RegionToken>;
 
 int main() {
-    RegionToken token = fp::mint_permission_root<RegionTag>();
+    RegionToken token = fp::permission_erase_brand(fp::mint_permission_root<RegionTag>());
     PureOverPermission pure = PureOverPermission::mint_computation(std::move(token));
 
     // THE LOAD-BEARING LINE: must FAIL to compile.  A pure-typed carrier

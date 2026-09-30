@@ -49,12 +49,11 @@
 // brand, `Permission<Tag>` and the like, is on it, and under it every
 // token of one tag is one type.  A share, a read loan, a parked token and
 // an owned region never drop their brand.  A permission token drops its
-// brand through permission_erase_brand, where the holder cannot name
-// the brand, and through an implicit conversion that the handles of the
-// channels and some tests use.  A borrow (Borrowed, BorrowedRef, ScopedView)
-// converts to its erased spelling implicitly.  Nothing converts an erased
-// value back to a brand, so code that holds a brand cannot be handed an
-// erased value in its place.  utils/scripts/check-brand-drain.py lists
+// brand only through permission_erase_brand, where the holder cannot name
+// the brand.  A borrow (Borrowed, BorrowedRef, ScopedView) converts to its
+// erased spelling implicitly.  Nothing converts an erased value back to a
+// brand, so no caller can give an erased value to code that asks for a
+// brand.  utils/scripts/check-brand-drain.py lists
 // each spelling on DefaultBrand, and the count of those sites can only
 // decrease.
 
