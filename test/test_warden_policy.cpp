@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #ifdef __linux__
@@ -21,6 +22,7 @@
 #include <crucible/warden/Registry.h>
 #include <crucible/warden/CpuTopology.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Sched.h>
 
 namespace {
 
@@ -73,6 +75,35 @@ void test_topology_basic() {
     }
 }
 
+// allowed_cpus gives the affinity of the calling thread.  A worker that
+// narrowed its own affinity to one CPU gets that one CPU back, and not the
+// affinity of the main thread.
+void test_allowed_cpus_reads_the_calling_thread() {
+    using namespace crucible::warden;
+
+#ifdef __linux__
+    const auto allowed = allowed_cpus(kStartup);
+    // With one CPU, the worker and the main thread have the same affinity.
+    if (allowed.size() < 2) return;
+
+    // The worker narrows its affinity through the gated door.  It ends
+    // after the read, so it drops the prior affinity and does not restore.
+    const int chosen_cpu = allowed.back();
+    bool is_narrowed = false;
+    std::vector<int> worker_allowed;
+    std::jthread worker{[&is_narrowed, &worker_allowed, chosen_cpu] {
+        const auto prior = ::fixy::sched::apply_affinity_to_cpu(kStartup, chosen_cpu);
+        is_narrowed = prior.has_value();
+        worker_allowed = allowed_cpus(kStartup);
+    }};
+    worker.join();
+
+    CHECK(is_narrowed, "the worker narrows its own affinity");
+    CHECK(worker_allowed == std::vector<int>({chosen_cpu}), "allowed_cpus gives the affinity of the calling thread");
+    CHECK(allowed_cpus(kStartup) == allowed, "the worker leaves the affinity of the main thread as it was");
+#endif
+}
+
 // The input strings are the shapes the kernel writes into the sysfs and
 // procfs cpulist files: a range, an explicit list, several ranges, and
 // an empty file.
@@ -95,7 +126,7 @@ void test_cpulist_parser() {
     CHECK(v == std::vector<int>({0, 1, 2, 3}), "dedupe + sort");
     CHECK(parse_cpulist("\t0-1 , 3 ") == std::vector<int>({0, 1, 3}), "spaces and tabs around an entry");
     CHECK(parse_cpus_allowed_list("Name:\tx\nCpus_allowed_list:\t0-2\nMems:\t0\n") == std::vector<int>({0, 1, 2}),
-          "the list is read from its line of /proc/self/status");
+          "the list is read from its line of /proc/thread-self/status");
 }
 
 // Text that is not a CPU list gives an empty list, and no text can make
@@ -377,6 +408,7 @@ void test_registry_applies_on_mint_hardening() {
 
 int main() {
     test_topology_basic();
+    test_allowed_cpus_reads_the_calling_thread();
     test_cpulist_parser();
     test_cpulist_parser_refuses_malformed_text();
     test_core_selector();

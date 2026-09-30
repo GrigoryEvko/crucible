@@ -129,8 +129,8 @@ inline constexpr std::size_t kMaxCpuCount = 8192;
     return out;
 }
 
-// /proc/self/status carries one line per field. The line of interest
-// reads "Cpus_allowed_list:" followed by a tab and a CPU list.
+// /proc/thread-self/status carries one line per field. The line of
+// interest reads "Cpus_allowed_list:" followed by a tab and a CPU list.
 //
 // Pure: the caller hands in the already-read text, so this reads only
 // the bytes behind status and opens no file.
@@ -195,11 +195,14 @@ template <::fixy::CtxFitsFileOpen Ctx>
 
 }  // namespace detail
 
-// The CPUs this task may run on, as granted by whatever placed it.
-// Procfs is the authoritative source and is consulted first.
+// The CPUs the calling thread may run on, as granted by whatever placed
+// it. Procfs is the authoritative source and is consulted first. The file
+// is the status of the calling thread. /proc/self/status gives the
+// affinity of the main thread of the process, and the fallback below
+// gives the affinity of the calling thread, so the two would not agree.
 template <::fixy::CtxFitsFileOpen Ctx>
 [[nodiscard]] inline std::vector<int> allowed_cpus(Ctx const& ctx) noexcept {
-    const auto status = detail::read_small_file(ctx, "/proc/self/status");
+    const auto status = detail::read_small_file(ctx, "/proc/thread-self/status");
     if (auto v = detail::parse_cpus_allowed_list(status); !v.empty()) return v;
     return detail::allowed_cpus_fallback(ctx);
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-// A CPU list from sysfs or from /proc/self/status, such as "0-3,8,10-11".
+// A CPU list from sysfs or from /proc/thread-self/status, such as "0-3,8,10-11".
 // The parsers must survive any text, and a parsed list stays small: a range
 // such as "0-4294967295" that expands to billions of entries would take the
 // memory of the host.  The list is sorted, holds no duplicate, and names
