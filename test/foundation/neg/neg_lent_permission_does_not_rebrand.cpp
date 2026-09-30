@@ -1,18 +1,16 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // A LentPermission holds the token of one instance while its read loan is
-// out.  Erasure runs one way only, to the erased brand.  If a parked token
-// of instance B took the brand of instance A, the loan of A could bring
-// back B's token while the loan of B is still out, and a writer would
-// hold a token that a reader still reads.
+// out, and no conversion changes its brand.  If a parked token of instance
+// B took the brand of instance A, the loan of A can end B's parked token
+// while the loan of B is out.  A writer can then hold a token of a region
+// that a reader reads at the same time.
 //
-// The parked Permission refuses the rebrand too, but only in the body of
-// the constructor.  The constraint of the erasure constructor refuses it
-// at overload resolution, so std::is_constructible and every concept see
-// the refusal.
+// The refusal is at overload resolution, so std::is_constructible and
+// every concept see it.
 //
-// Expected diagnostic: no matching constructor of LentPermission, whose
-// erasure constructor asks for the erased brand as its target.
+// Expected diagnostic: no matching constructor of LentPermission.  The
+// move constructor takes a parked token of the target brand only.
 
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>

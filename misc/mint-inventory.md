@@ -217,7 +217,7 @@ apply to the row.
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
 | `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | HS14: 16 |
-| `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
+| `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_temporary_file` | `include/fixy/OwnedFile.h` | Y | - (alloc) | Y | Y | ctx | Y | HS14: 2 |
@@ -336,11 +336,11 @@ apply to the row.
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork` | `include/foundation/permissions/PermissionFork.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 165 |
-| `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 168 |
+| `mint_permission_share` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 28 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
-| `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 7 |
+| `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 
 ## Summary
 

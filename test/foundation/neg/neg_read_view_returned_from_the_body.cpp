@@ -20,9 +20,8 @@ struct Region {
 }  // namespace
 
 int main() {
-    auto lent = ::foundation::permissions::with_read_view(
-        ::foundation::permissions::mint_permission_root<Region>(),
-        [](::foundation::permissions::ReadView<Region> const& view) noexcept { return &view; });
+    auto lent = ::foundation::permissions::with_read_view(::foundation::permissions::mint_permission_root<Region>(),
+                                                          [](auto const& view) noexcept { return &view; });
     (void)lent;
     return 0;
 }

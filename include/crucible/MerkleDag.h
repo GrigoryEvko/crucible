@@ -974,7 +974,7 @@ public:
             uint64_t expected = 0;
             // A successful CAS claims the slot for this thread.
             if (entry.try_claim_content_hash(expected, lookup_hash)) {
-                auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
+                auto writer = entry.writer(fresh_writer_permission_());
                 writer.publish(KernelCacheSlotSnapshot{
                     .content_hash = lookup_hash,
                     .row_hash = lookup_row,
@@ -1001,7 +1001,7 @@ public:
                         // Variant update: the row stays pinned and only the
                         // kernel changes, so a concurrent reader observes one
                         // kernel or the other and both are valid.
-                        auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
+                        auto writer = entry.writer(fresh_writer_permission_());
                         writer.publish_kernel_variant(kernel);
                         return {};
                     }
@@ -1137,6 +1137,16 @@ private:
             if (kernel_ptr != nullptr) return kernel_ptr;
         }
         return nullptr;
+    }
+
+    // A writer token for one slot write.  The handle names its token type
+    // before a root exists, so the root drops its brand through the one
+    // door that drops a brand.  A brand gives no protection here, because
+    // the token writes only the slot that the content-hash claim gives it.
+    [[nodiscard]] static constexpr ::foundation::permissions::Permission<KernelCompileTag>
+    fresh_writer_permission_() noexcept {
+        return ::foundation::permissions::permission_erase_brand(
+            ::foundation::permissions::mint_permission_root<KernelCompileTag>());
     }
 
     KernelCacheSlot* table_;

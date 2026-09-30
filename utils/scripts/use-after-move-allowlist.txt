@@ -40,8 +40,7 @@ test/fixy/test_owned_file.cpp:check_move_transfers_ownership:src
 test/fixy/test_owned_file.cpp:check_release_hands_the_handle_back:f
 
 # Probe: a consumed region is empty, whether the move, the move assignment,
-# the erasure, the split, the recombine or the shared door consumed it.
-test/fixy/test_owned_region.cpp:test_brand_travels_through_split_and_recombine:whole
+# the split, the recombine or the shared door consumed it.
 test/fixy/test_owned_region.cpp:test_every_consuming_door_empties_the_region:source
 test/fixy/test_owned_region.cpp:test_every_consuming_door_empties_the_region:moved_into
 test/fixy/test_owned_region.cpp:test_every_consuming_door_empties_the_region:assigned

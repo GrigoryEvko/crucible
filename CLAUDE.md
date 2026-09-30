@@ -1623,7 +1623,7 @@ Crucible encodes **Concurrent Separation Logic** (O'Hearn 2007) as a family of z
 | Frame rule | Linearity (move-only `Permission<Tag>`) | `foundation/permissions/Permission.h` | Every exclusive ownership claim |
 | Parallel composition rule | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `foundation/permissions/PermissionFork.h` | Spawning N threads with disjoint sub-permissions |
 | Fractional permissions `e ↦_p v` | `SharedPermission<Tag>` + `SharedPermissionPool` (atomic refcount) | `foundation/permissions/Permission.h` | Multi-reader / single-writer with mode upgrade |
-| Lifetime-bound borrow | `with_read_view(source, body)` gives the body a `ReadView<Tag> const&`; `mint_read_loan` parks the token while a `ReadLoan` travels | `foundation/permissions/ReadView.h` | Scoped read borrow: the view exists only for the body's call |
+| Lifetime-bound borrow | `with_read_view(source, body)` gives the body a `ReadView<Tag, Brand> const&` of the brand of the source. `mint_read_loan` parks the token while a `ReadLoan` travels | `foundation/permissions/ReadView.h` | Scoped read borrow: the view exists only for the body's call |
 | Resource invariants (Brookes) | DEFERRED — needs `LockedResource<T, Inv>` | (future) | Mutex-protected shared state |
 | Logical atomicity (TaDA) | Implicit — every consume-and-return cycle | (free) | All Permission-typed operations |
 
@@ -1666,9 +1666,10 @@ Need exclusive single-thread ownership?
     → Permission<Tag>                       (linear, move-only, sizeof = 1)
 
 Need shared-read scoped to a function call (lifetime fits inside the caller's stack)?
-    → with_read_view(std::move(source), body)  (the body gets a ReadView<Tag> const&; the view
-                                             cannot be copied, moved or stored, and the source
-                                             comes back after the body; foundation/permissions/ReadView.h)
+    → with_read_view(std::move(source), body)  (the body gets a ReadView<Tag, Brand> const& of the
+                                             brand of the source. No code can copy, move or store
+                                             the view, and the caller gets the source again after
+                                             the body. foundation/permissions/ReadView.h)
 
 Need shared-read across threads (lifetime escapes)?
     → SharedPermission<Tag> via SharedPermissionPool::lend()

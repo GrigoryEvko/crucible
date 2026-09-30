@@ -327,15 +327,9 @@ public:
     }
     ~OwnedRegion() = default;
 
-    // Erasure, one way only: a region of one instance becomes a region
-    // on the erased identity, consuming the branded one.  Nothing gives
-    // an erased region a brand.
-    template <typename Other>
-        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr OwnedRegion(OwnedRegion<T, Tag, Other>&& other) noexcept
-        : base_{std::exchange(other.base_, nullptr)},
-          count_{std::exchange(other.count_, 0)},
-          perm_{std::move(other.perm_)} {}
+    // No conversion drops the brand of a region.  A region of one instance
+    // never becomes a region of the erased identity, which every region of
+    // the tag shares.
 
     // The caller proves exclusive ownership by surrendering the
     // Permission token.  The body is the allocating mint, so the two
@@ -623,12 +617,11 @@ static_assert(std::is_same_v<owned_region_tag_t<OR_int_a&&>, test_tag_a>);
 static_assert(std::is_same_v<owned_region_value_t<OR_int_a>, owned_region_value_t<OR_int_b>>);
 static_assert(!std::is_same_v<owned_region_tag_t<OR_int_a>, owned_region_tag_t<OR_int_b>>);
 
-// A branded region keeps the erased layout, erases one way, and does
-// not rebrand.
+// A branded region keeps the erased layout, and no conversion drops or
+// adds a brand.
 static_assert(sizeof(OR_int_a_branded) == sizeof(OR_int_a));
-static_assert(std::is_convertible_v<OR_int_a_branded&&, OR_int_a>, "a branded region erases to the unbranded spelling");
+static_assert(!std::is_constructible_v<OR_int_a, OR_int_a_branded&&>, "a branded region does not erase");
 static_assert(!std::is_constructible_v<OR_int_a_branded, OR_int_a&&>, "an erased region does not acquire a brand");
-static_assert(!std::is_constructible_v<OR_int_a, OR_int_a_branded const&>, "erasure consumes the branded region");
 
 // The smallest thing adopt asks of an arena: one bump pointer over a
 // fixed block.  This layer cannot name the crucible Arena, so the self

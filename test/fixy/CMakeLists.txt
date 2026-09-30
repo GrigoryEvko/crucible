@@ -3345,7 +3345,7 @@ fixy_neg_compile_test(neg_session_borrowed_without_proof
   "candidate expects 2 arguments, 1 provided")
 fixy_neg_compile_test(neg_session_borrowed_proof_of_another_region
   "no matching function for call to .fixy::session::Borrowed<int, .anonymous.::Region>::Borrowed\\("
-  "mismatched types ..anonymous.::Region. and ..anonymous.::Other.")
+  "ReadLoan<.anonymous.::Other, foundation::brand::DefaultBrand>.\\} to .foundation::permissions::ReadLoan<.anonymous.::Region, foundation::brand::DefaultBrand>&&.")
 fixy_neg_compile_test(neg_session_hold_lend_without_token
   "no matching function for call to .fixy::session::PermHold<foundation::permissions::PermSet<.anonymous.::Other> >::lend<.anonymous.::Region>"
   "required for the satisfaction of .SendablePayload<fixy::session::Borrowed<T, Tag>")
@@ -4976,16 +4976,17 @@ fixy_neg_compile_test(neg_shared_read_of_another_region
   "deduced conflicting types for parameter .Brand.")
 
 # The erased brand reads nothing.  On the erased brand every region of
-# the tag is one type, so the gate asks for a fresh brand.  One fixture
-# builds the region through the erased door, the other erases a branded
-# region.
+# the tag is one type, so the gate asks for a fresh brand.  The fixture
+# builds the region through the erased door.
 fixy_neg_compile_test(neg_shared_read_on_the_erased_brand
   "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"
   "required for the satisfaction of .IsFreshBrand<Brand>. \\[with Brand = foundation::brand::DefaultBrand\\]")
 
-fixy_neg_compile_test(neg_shared_read_of_an_erased_region
-  "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"
-  "required for the satisfaction of .IsFreshBrand<Brand>. \\[with Brand = foundation::brand::DefaultBrand\\]")
+# A branded region does not erase, so no region of one instance becomes a
+# region of the erased identity.
+fixy_neg_compile_test(neg_owned_region_does_not_erase_its_brand
+  "conversion from .OwnedRegion<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::permissions::<lambda\\(\\)>>."
+  "to non-scalar type .OwnedRegion<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested")
 
 # The fractional axis: no guard, no read.
 fixy_neg_compile_test(neg_shared_read_without_a_share

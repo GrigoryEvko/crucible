@@ -87,13 +87,13 @@ int main() {
 
     // A plain value leaves the door, and the source comes back.
     auto [value, source] =
-        fp::with_read_view(fp::mint_permission_root<Region>(), [](View const&) noexcept { return Plain{3, 1.5}; });
+        fp::with_read_view(fp::mint_permission_root<Region>(), [](auto const&) noexcept { return Plain{3, 1.5}; });
     expect(value.count == 3, "the body's value did not leave the door");
 
     // The ledger entry reproduces: the address escapes through a capture.
     // It is never used after the door returns.
     void const* leaked = nullptr;
-    auto back = fp::with_read_view(std::move(source), [&leaked](View const& view) noexcept { leaked = &view; });
+    auto back = fp::with_read_view(std::move(source), [&leaked](auto const& view) noexcept { leaked = &view; });
     expect(leaked != nullptr,
            "stale ledger entry: a body no longer stores the address of its view through a capture, delete it");
     (void)back;

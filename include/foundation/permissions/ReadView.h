@@ -27,8 +27,8 @@
 // parked token comes back when the loan ends.
 //
 // A view carries the brand of its source, so it proves something about
-// that region and no other region of the same tag.  A body that asks for
-// the erased spelling gets an erased view instead.
+// that region and no other region of the same tag.  No door gives a view,
+// a loan or a parked token on the erased identity for a branded source.
 //
 // What stays open, stated rather than implied: a body can store a
 // pointer or a reference to its view in an object outside the frame.
@@ -129,21 +129,17 @@ template <typename Source>
 concept ReadViewSource =
     !std::is_reference_v<Source> && !std::is_const_v<Source> && detail::is_read_view_source(^^Source);
 
-// A body takes the view by const reference, either the branded view of
-// the source or the erased view.  A body that takes the view by value
-// asks for a copy, and the view has none.
+// A body takes the view of the source, with the brand of the source, by
+// const reference.  A body that takes the view by value asks for a copy,
+// and the view has none.  A body that takes a view of another brand, the
+// erased one too, asks for a proof about another region.
 template <typename Body, typename Tag, typename Brand>
-concept ReadViewBody =
-    std::is_invocable_v<Body, ReadView<Tag, Brand> const&> || std::is_invocable_v<Body, ReadView<Tag> const&>;
+concept ReadViewBody = std::is_invocable_v<Body, ReadView<Tag, Brand> const&>;
 
 namespace detail {
 
 template <typename Body, typename Tag, typename Brand>
-using read_view_for_body_t =
-    std::conditional_t<std::is_invocable_v<Body, ReadView<Tag, Brand> const&>, ReadView<Tag, Brand>, ReadView<Tag>>;
-
-template <typename Body, typename Tag, typename Brand>
-using read_view_result_t = std::invoke_result_t<Body, read_view_for_body_t<Body, Tag, Brand> const&>;
+using read_view_result_t = std::invoke_result_t<Body, ReadView<Tag, Brand> const&>;
 
 // True for a node that names a ReadView, for an address whose target the
 // walk cannot read, and for a class whose state the walk cannot read.
@@ -189,7 +185,7 @@ namespace detail {
 template <typename Source, typename Body>
 inline constexpr bool read_view_door_nothrow_v = [] {
     using Result = read_view_result_t<Body, typename Source::tag_type, typename Source::brand_type>;
-    using View = read_view_for_body_t<Body, typename Source::tag_type, typename Source::brand_type>;
+    using View = ReadView<typename Source::tag_type, typename Source::brand_type>;
     if constexpr (std::is_void_v<Result>) {
         return std::is_nothrow_invocable_v<Body, View const&>;
     } else {
@@ -205,7 +201,7 @@ struct read_view_door {
                                              Body&& body) noexcept(read_view_door_nothrow_v<Source, Body>) {
         using Tag = typename Source::tag_type;
         using Brand = typename Source::brand_type;
-        using View = read_view_for_body_t<Body, Tag, Brand>;
+        using View = ReadView<Tag, Brand>;
         using Result = read_view_result_t<Body, Tag, Brand>;
         static_assert(ReadViewResultStaysInside<Result>,
                       "with_read_view: the body returns a reference, a type that names a ReadView, a type that "
@@ -317,12 +313,8 @@ public:
     using tag_type = Tag;
     using brand_type = Brand;
 
-    // Erasure, one way only, as on Permission.  It consumes the branded
-    // loan.
-    template <typename Other>
-        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr ReadLoan(ReadLoan<Tag, Other>&&) noexcept {}
-
+    // No conversion drops the brand of a loan.  A loan of one region ends
+    // only the parked token of that region.
     ReadLoan(const ReadLoan&) = delete("a ReadLoan is one read right. A copy is a second right that the parked "
                                        "token does not wait for");
     ReadLoan& operator=(const ReadLoan&) = delete("a ReadLoan is one read right. A copy is a second right that "
@@ -352,11 +344,8 @@ public:
     using tag_type = Tag;
     using brand_type = Brand;
 
-    // Erasure, one way only, as on Permission.
-    template <typename Other>
-        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr LentPermission(LentPermission<Tag, Other>&& other) noexcept : parked_{std::move(other.parked_)} {}
-
+    // No conversion drops the brand of a parked token, as no conversion
+    // drops the brand of its loan.
     LentPermission(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
     LentPermission&
     operator=(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
@@ -369,9 +358,6 @@ private:
     constexpr explicit LentPermission(Permission<Tag, Brand>&& token) noexcept : parked_{std::move(token)} {}
 
     [[no_unique_address]] Permission<Tag, Brand> parked_;
-
-    template <typename, typename>
-    friend class LentPermission;
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
@@ -452,14 +438,16 @@ static_assert(!std::is_copy_constructible_v<LentPermission<detail::read_view_tes
 static_assert(std::is_move_constructible_v<LentPermission<detail::read_view_test_tag>>);
 static_assert(!std::is_move_assignable_v<LentPermission<detail::read_view_test_tag>>);
 
-// The erasure runs one way, and a loan of one brand is not a loan of
-// another.
-static_assert(std::is_constructible_v<ReadLoan<detail::read_view_test_tag>,
-                                      ReadLoan<detail::read_view_test_tag, detail::read_view_brand_a>&&>);
+// A loan of one brand is a loan of no other brand, the erased one too,
+// and neither is its parked token.
+static_assert(!std::is_constructible_v<ReadLoan<detail::read_view_test_tag>,
+                                       ReadLoan<detail::read_view_test_tag, detail::read_view_brand_a>&&>);
 static_assert(!std::is_constructible_v<ReadLoan<detail::read_view_test_tag, detail::read_view_brand_a>,
                                        ReadLoan<detail::read_view_test_tag>&&>);
 static_assert(!std::is_constructible_v<ReadLoan<detail::read_view_test_tag, detail::read_view_brand_a>,
                                        ReadLoan<detail::read_view_test_tag, detail::read_view_brand_b>&&>);
+static_assert(!std::is_constructible_v<LentPermission<detail::read_view_test_tag>,
+                                       LentPermission<detail::read_view_test_tag, detail::read_view_brand_a>&&>);
 
 namespace detail::read_view_self_test {
 
@@ -474,14 +462,17 @@ namespace detail::read_view_self_test {
 }
 static_assert(door_hands_the_source_back());
 
-// A loan opens a view, and the token comes back only with the loan.
+// A loan opens a view of the brand of its token, and the token comes back
+// only with the loan.
 [[nodiscard]] consteval bool loan_round_trip() noexcept {
-    auto [loan, lent] = mint_read_loan(Permission<read_view_test_tag>{mint_permission_root<read_view_test_tag>()});
+    auto [loan, lent] = mint_read_loan(mint_permission_root<read_view_test_tag>());
+    using Brand = ::foundation::brand::brand_of_t<decltype(loan)>;
     auto [value, loan_back] =
-        with_read_view(std::move(loan), [](ReadView<read_view_test_tag> const&) noexcept { return 7; });
+        with_read_view(std::move(loan), [](ReadView<read_view_test_tag, Brand> const&) noexcept { return 7; });
     auto token = mint_permission_after_loan(std::move(lent), std::move(loan_back));
+    constexpr bool keeps_the_brand = std::is_same_v<::foundation::brand::brand_of_t<decltype(token)>, Brand>;
     permission_drop(std::move(token));
-    return value == 7;
+    return value == 7 && keeps_the_brand && ::foundation::brand::IsFreshBrand<Brand>;
 }
 static_assert(loan_round_trip());
 
@@ -496,11 +487,25 @@ concept LendableByName = requires(Permission<Tag>& p) { with_read_view(p, [](aut
 template <typename Tag>
 concept Loanable = requires(Permission<Tag>&& p) { mint_read_loan(std::move(p)); };
 
+// A body that asks for the erased view of a branded source asks for a
+// proof about another region.
+template <typename Tag>
+concept LendsTheErasedView = requires(Permission<Tag, read_view_brand_a>&& p) {
+    with_read_view(std::move(p), [](ReadView<Tag> const&) noexcept {});
+};
+
+template <typename Tag>
+concept LendsItsOwnView = requires(Permission<Tag, read_view_brand_a>&& p) {
+    with_read_view(std::move(p), [](ReadView<Tag, read_view_brand_a> const&) noexcept {});
+};
+
 static_assert(Lendable<read_view_test_tag>, "a pure region lends with no context");
 static_assert(!Lendable<read_view_effectful_tag>, "a region whose row names an effect needs a context");
 static_assert(!Lendable<read_view_rowless_tag>, "a region that declares no row is refused, not admitted");
 static_assert(!LendableByName<read_view_test_tag>, "a named source stays with the caller, so the door refuses it");
 static_assert(Loanable<read_view_test_tag>);
+static_assert(LendsItsOwnView<read_view_test_tag>);
+static_assert(!LendsTheErasedView<read_view_test_tag>, "a branded source lends only the view of its own brand");
 static_assert(!Loanable<read_view_effectful_tag>, "a loan has the row gate of the door");
 static_assert(!Loanable<read_view_rowless_tag>);
 

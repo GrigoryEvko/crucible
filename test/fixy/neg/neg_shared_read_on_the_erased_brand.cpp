@@ -1,6 +1,7 @@
-// A read of a region built through the erased door.  On the erased brand
-// every region of the tag is one type, so the deduction would pair a guard
-// with any region of the tag.  The gate asks for a fresh brand.
+// A read of a region built through the erased door, from a root that drops
+// its brand through permission_erase_brand.  On the erased brand every
+// region of the tag is one type, so the deduction can pair a guard with
+// any region of the tag.  The gate asks for a fresh brand.
 
 #include <fixy/SharedRegion.h>
 #include <foundation/effects/Effect.h>
@@ -21,7 +22,8 @@ int main() {
     BgCtx ctx{::foundation::effects::testing::bg()};
 
     ::fixy::SharedRegion<int, Cache> shared{::fixy::OwnedRegion<int, Cache>::wrap(
-        storage, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>())};
+        storage, std::size_t{2},
+        ::foundation::permissions::permission_erase_brand(::foundation::permissions::mint_permission_root<Cache>()))};
     auto guard = shared.lend(ctx);
     auto read = ::fixy::mint_shared_read(ctx, *guard, shared);
     (void)read;

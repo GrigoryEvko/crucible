@@ -60,7 +60,7 @@ void test_compile_time_properties() {
 
 void test_pool_lend_basic() {
     auto exc = mint_permission_root<ConfigRegion>();
-    SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
     CRUCIBLE_TEST_REQUIRE(!pool.is_exclusive_out());
@@ -73,7 +73,9 @@ void test_pool_lend_basic() {
 
         // The token is a copyable proof, so taking one does not change
         // the count.
-        SharedPermission<ConfigRegion> token = guard1->token();
+        auto token = guard1->token();
+        static_assert(::foundation::brand::SameBrand<decltype(token), decltype(pool)>,
+                      "a share proof carries the brand of its pool");
         (void)token;
         CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
 
@@ -88,13 +90,13 @@ void test_pool_lend_basic() {
 
 void test_guard_move_semantics() {
     auto exc = mint_permission_root<ConfigRegion>();
-    SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
     {
         auto g1 = pool.lend();
         CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
 
-        SharedPermissionGuard<ConfigRegion> g2{std::move(*g1)};
+        auto g2{std::move(*g1)};
         CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
         CRUCIBLE_TEST_REQUIRE(g2.holds_share());
         CRUCIBLE_TEST_REQUIRE(!g1->holds_share());
@@ -105,7 +107,7 @@ void test_guard_move_semantics() {
 
 void test_try_upgrade_succeeds_when_idle() {
     auto exc = mint_permission_root<ConfigRegion>();
-    SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
     auto recovered = pool.try_upgrade();
     CRUCIBLE_TEST_REQUIRE(recovered.has_value());
@@ -122,7 +124,7 @@ void test_try_upgrade_succeeds_when_idle() {
 
 void test_try_upgrade_fails_when_outstanding() {
     auto exc = mint_permission_root<ConfigRegion>();
-    SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
     auto guard = pool.lend();
     CRUCIBLE_TEST_REQUIRE(guard.has_value());
@@ -142,7 +144,7 @@ void test_lend_vs_upgrade_no_simultaneity() {
     constexpr int ITERATIONS = 5000;
 
     auto exc = mint_permission_root<MetricsRegion>();
-    SharedPermissionPool<MetricsRegion> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
     // Never exceeds 1.  A plain int is safe because it is only touched
     // inside exclusive sections.
@@ -232,7 +234,7 @@ void test_swmr_sees_consistent_state() {
     constexpr int MIN_READER_ITERS = 32;
 
     auto exc = mint_permission_root<MetricsRegion>();
-    SharedPermissionPool<MetricsRegion> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
     GuardedCounter counter;
 
     std::atomic<bool> writer_done{false};
@@ -316,23 +318,23 @@ void test_swmr_sees_consistent_state() {
 
 void test_with_shared_read_helper() {
     auto exc = mint_permission_root<ConfigRegion>();
-    SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
-    auto result_opt = with_shared_read(pool, [](SharedPermission<ConfigRegion>) noexcept { return 42; });
+    auto result_opt = with_shared_read(pool, [](auto) noexcept { return 42; });
     CRUCIBLE_TEST_REQUIRE(result_opt.has_value());
     CRUCIBLE_TEST_REQUIRE(*result_opt == 42);
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
 
     // A void body makes the helper return bool.
     bool ran = false;
-    bool ok = with_shared_read(pool, [&ran](SharedPermission<ConfigRegion>) noexcept { ran = true; });
+    bool ok = with_shared_read(pool, [&ran](auto) noexcept { ran = true; });
     CRUCIBLE_TEST_REQUIRE(ok);
     CRUCIBLE_TEST_REQUIRE(ran);
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
 
     auto upgrade = pool.try_upgrade();
     CRUCIBLE_TEST_REQUIRE(upgrade.has_value());
-    auto failed_opt = with_shared_read(pool, [](SharedPermission<ConfigRegion>) noexcept { return 99; });
+    auto failed_opt = with_shared_read(pool, [](auto) noexcept { return 99; });
     CRUCIBLE_TEST_REQUIRE(!failed_opt.has_value());
     pool.deposit_exclusive(std::move(*upgrade));
 }
@@ -344,9 +346,11 @@ void test_mint_permission_share() {
     // The share carries the exclusive's tag and brand.
     static_assert(IsSharedPermissionFor<decltype(shared), ConfigRegion>);
     static_assert(::foundation::brand::IsBranded<decltype(shared)>);
-    // Copyable now, and erasable one way.
-    SharedPermission<ConfigRegion> shared2 = shared;
-    SharedPermission<ConfigRegion> shared3 = shared2;
+    // Copyable, and a copy keeps the brand.  No conversion drops it.
+    auto shared2 = shared;
+    auto shared3 = shared2;
+    static_assert(std::is_same_v<decltype(shared3), decltype(shared)>);
+    static_assert(!std::is_constructible_v<SharedPermission<ConfigRegion>, decltype(shared) const&>);
     (void)shared3;
 }
 

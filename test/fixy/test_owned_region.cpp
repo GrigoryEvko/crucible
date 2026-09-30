@@ -165,7 +165,8 @@ void test_compile_time_properties() {
 void test_adopt_and_view() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    auto region = OwnedRegion<float, DataA>::adopt(test_alloc_token(), arena, 64, std::move(perm));
+    using Brand = decltype(perm)::brand_type;
+    auto region = OwnedRegion<float, DataA, Brand>::adopt(test_alloc_token(), arena, 64, std::move(perm));
 
     CRUCIBLE_TEST_REQUIRE(region.size() == 64);
     CRUCIBLE_TEST_REQUIRE(!region.empty());
@@ -186,7 +187,9 @@ void test_adopt_and_view() {
 
 void test_wrap_borrows_storage() {
     std::uint64_t storage[6] = {1, 2, 3, 4, 5, 6};
-    auto region = OwnedRegion<std::uint64_t, DataB>::wrap(storage, 6, mint_permission_root<DataB>());
+    auto perm = mint_permission_root<DataB>();
+    using Brand = decltype(perm)::brand_type;
+    auto region = OwnedRegion<std::uint64_t, DataB, Brand>::wrap(storage, 6, std::move(perm));
 
     // The region proves ownership of the bytes but does not own the
     // storage, so a write through it lands in the caller's array.
@@ -203,7 +206,8 @@ void test_wrap_borrows_storage() {
 void test_split_into_chunk_math() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, 1000, std::move(perm));
+    using Brand = decltype(perm)::brand_type;
+    auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 1000, std::move(perm));
 
     // Each element holds its own index, so a shard's contents identify
     // the offset it was cut from.
@@ -234,7 +238,8 @@ void test_split_into_chunk_math() {
 void test_split_uneven() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, 1001, std::move(perm));
+    using Brand = decltype(perm)::brand_type;
+    auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 1001, std::move(perm));
 
     auto parts = ::fixy::mint_split<8>(std::move(region));
     auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
@@ -252,7 +257,8 @@ void test_split_uneven() {
 void test_split_smaller_than_n() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, 5, std::move(perm));
+    using Brand = decltype(perm)::brand_type;
+    auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 5, std::move(perm));
 
     auto parts = ::fixy::mint_split<8>(std::move(region));
     auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
@@ -346,7 +352,9 @@ void test_split_and_recombine_every_total_and_count() {
 void test_split_then_rebuild_through_recombine() {
     Arena arena;
     constexpr std::size_t N = 800;  // 8 × 100, exact division
-    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, N, mint_permission_root<DataA>());
+    auto perm = mint_permission_root<DataA>();
+    using Whole = OwnedRegion<std::uint64_t, DataA, decltype(perm)::brand_type>;
+    auto region = Whole::adopt(test_alloc_token(), arena, N, std::move(perm));
 
     // A value no shard index can produce, so an untouched element is
     // distinguishable from a written one.
@@ -372,7 +380,7 @@ void test_split_then_rebuild_through_recombine() {
 
     // The receipt the split wrote is surrendered beside the shards, and
     // it is what tells recombine that one split produced them.
-    auto recombined = OwnedRegion<std::uint64_t, DataA>::recombine(std::move(parts.witness), std::move(parts.shards));
+    auto recombined = Whole::recombine(std::move(parts.witness), std::move(parts.shards));
 
     // recombine derives both from the shards rather than being told, so
     // check it recovered the extent the split started from.
@@ -388,8 +396,8 @@ void test_split_then_rebuild_through_recombine() {
 
 // The brand travels with the region: a region minted from a branded
 // permission carries that brand, so do the shards of its split, so does
-// a borrow of it, and the recombined whole carries it back out.  The
-// erased spelling is reachable from each, one way.
+// a borrow of it, and the recombined whole carries it back out.  No
+// conversion reaches the erased spelling from any of them.
 void test_brand_travels_through_split_and_recombine() {
     static std::uint64_t storage[8] = {};
     auto perm = mint_permission_root<DataA>();
@@ -416,21 +424,19 @@ void test_brand_travels_through_split_and_recombine() {
     static_assert(::foundation::brand::SameBrand<decltype(whole), decltype(borrow)>);
     CRUCIBLE_TEST_REQUIRE(whole.size() == 8);
     CRUCIBLE_TEST_REQUIRE(whole.data() == storage);
-
-    // The erasure consumes the branded region, so the branded region is
-    // empty afterwards.
-    OwnedRegion<std::uint64_t, DataA> erased = std::move(whole);
-    CRUCIBLE_TEST_REQUIRE(erased.data() == storage);
-    CRUCIBLE_TEST_REQUIRE(whole.empty() && whole.data() == nullptr);
+    static_assert(!std::is_constructible_v<OwnedRegion<std::uint64_t, DataA>, decltype(whole)&&>,
+                  "a branded region does not erase");
 }
 
 // A split inside one function is one split site, so every call gives
 // shards and a receipt of one type.  On the erased brand every region of
 // the tag is also one type.  A rebuild from shard 0 of one region and
 // shard 1 of another is well typed, and recombine aborts on it, because
-// shard 1 does not start where shard 0 ends.
+// shard 1 does not start where shard 0 ends.  The root drops its brand
+// through the one door that drops a brand.
 auto split_erased_in_two(std::uint64_t* storage) {
-    return ::fixy::mint_split<2>(OwnedRegion<std::uint64_t, DataA>::wrap(storage, 4, mint_permission_root<DataA>()));
+    return ::fixy::mint_split<2>(OwnedRegion<std::uint64_t, DataA>::wrap(
+        storage, 4, ::foundation::permissions::permission_erase_brand(mint_permission_root<DataA>())));
 }
 
 auto split_branded_in_two(std::uint64_t* storage) {
@@ -491,9 +497,8 @@ auto branded_at_one_site(std::uint64_t* storage, std::size_t count) {
 }
 
 // Each door that consumes a region leaves it empty: the move, the move
-// assignment, the split and the recombine.  The erasure to the unbranded
-// spelling is pinned in test_brand_travels_through_split_and_recombine.
-// No consumed region keeps the bytes that its successor owns.
+// assignment, the split and the recombine.  No consumed region keeps the
+// bytes that its successor owns.
 void test_every_consuming_door_empties_the_region() {
     static std::uint64_t storage[4] = {1, 2, 3, 4};
     auto source = branded_at_one_site(storage, 4);
@@ -525,7 +530,9 @@ void test_recombine_refuses_shards_of_two_regions_of_one_site() { require_mixed_
 // live region.
 void test_adopt_zero_length() {
     Arena arena;
-    auto region = OwnedRegion<int, DataA>::adopt(test_alloc_token(), arena, 0, mint_permission_root<DataA>());
+    auto perm = mint_permission_root<DataA>();
+    using Brand = decltype(perm)::brand_type;
+    auto region = OwnedRegion<int, DataA, Brand>::adopt(test_alloc_token(), arena, 0, std::move(perm));
 
     CRUCIBLE_TEST_REQUIRE(region.empty());
     CRUCIBLE_TEST_REQUIRE(region.size() == 0);

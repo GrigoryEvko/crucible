@@ -15,8 +15,9 @@
 // combine demands that its children agree, and a share carries the
 // exclusive's.  foundation/Brand.h states the three facts a brand
 // rests on.  A spelling that names no brand is the erased identity
-// DefaultBrand, kept so that code written before brands means what it
-// meant; utils/scripts/check-brand-drain.py lists every such spelling.
+// DefaultBrand.  permission_erase_brand drops the brand of a token where
+// its holder cannot name the brand, and utils/scripts/check-brand-drain.py
+// lists every spelling on the erased identity.
 //
 // Nothing ties a tag to the memory it names, and nothing confines the
 // holder's writes to that memory.  Both are obligations on the code
@@ -689,8 +690,9 @@ public:
     {}
 
     // Erasure.  A token of one instance becomes a token on the erased
-    // identity, consuming the branded one, so code written before
-    // brands keeps compiling.  It runs in one direction only: nothing
+    // identity, and the branded one is consumed.  permission_erase_brand
+    // is the door that names each site.  The handles of the channels use
+    // this conversion directly.  It runs in one direction only: nothing
     // makes a branded token out of an erased one, and nothing rebrands
     // a token, because either would mint an identity the caller does
     // not hold.
@@ -737,6 +739,18 @@ public:
 
 template <typename Tag, typename Brand>
 constexpr void permission_drop(Permission<Tag, Brand>&&) noexcept {}
+
+// The one door that drops a brand.  It consumes the token of one instance
+// and gives a token on the erased identity DefaultBrand, which each erased
+// token of the tag shares.  Nothing gives a brand back.  Call it only where
+// the holder cannot name the brand: a session permission set keys a region
+// by its tag, and a class member names its type before the root exists.
+// Every other site carries the brand.  A search for this name lists each
+// site that drops one.
+template <typename Tag, typename Brand>
+[[nodiscard]] constexpr Permission<Tag> permission_erase_brand(Permission<Tag, Brand>&& token) noexcept {
+    return Permission<Tag>{std::move(token)};
+}
 
 // Reentrant by design.  The contract is a fresh token per call, not one
 // token per tag per program.  Soundness rides on each token's move-only
@@ -980,11 +994,9 @@ public:
     static constexpr ::foundation::algebra::ModalityKind modality = ::foundation::algebra::ModalityKind::Absolute;
     using graded_type = ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, lattice_type, Tag>;
 
-    // Erasure, one way only, as on Permission.
-    template <typename Other>
-        requires(std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && ::foundation::brand::IsFreshBrand<Other>)
-    constexpr SharedPermission(SharedPermission<Tag, Other> const&) noexcept {}
-
+    // No conversion drops the brand of a share.  A share of one region is
+    // never a share of the erased identity, which every region of the tag
+    // shares.
     constexpr SharedPermission(const SharedPermission&) noexcept = default;
     constexpr SharedPermission(SharedPermission&&) noexcept = default;
     constexpr SharedPermission& operator=(const SharedPermission&) noexcept = default;
@@ -1460,7 +1472,8 @@ static_assert(!std::is_constructible_v<Permission<seplog_test_tag, brand_a>, Per
 static_assert(!std::is_constructible_v<Permission<seplog_test_tag>, Permission<seplog_test_tag, brand_a> const&>,
               "erasure consumes the branded token; a copy would leave two");
 static_assert(
-    std::is_convertible_v<SharedPermission<seplog_test_tag, brand_a> const&, SharedPermission<seplog_test_tag>>);
+    !std::is_constructible_v<SharedPermission<seplog_test_tag>, SharedPermission<seplog_test_tag, brand_a> const&>,
+    "a branded share does not erase to the unbranded spelling");
 static_assert(!std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a>, SharedPermission<seplog_test_tag>>);
 static_assert(
     !std::is_constructible_v<SharedPermission<seplog_test_tag, brand_a>, SharedPermission<seplog_test_tag, brand_b>>);
@@ -1527,6 +1540,15 @@ static_assert(token_is_sound<seplog_test_tag, brand_a>(), "a branded token keeps
     constexpr bool branded = ::foundation::brand::IsBranded<decltype(first)>;
     constexpr bool same_tag = IsPermissionFor<decltype(first), seplog_test_tag>;
     return distinct && branded && same_tag;
+}
+
+// The one door that drops a brand keeps the tag, and an erased token
+// passes through it unchanged.
+[[nodiscard]] consteval bool erasure_keeps_the_tag() noexcept {
+    auto branded = mint_permission_root<seplog_test_tag>();
+    auto erased = permission_erase_brand(std::move(branded));
+    auto again = permission_erase_brand(std::move(erased));
+    return IsPermissionFor<decltype(again), seplog_test_tag> && ::foundation::brand::IsErased<decltype(again)>;
 }
 
 }  // namespace detail::seplog_roster
@@ -1697,6 +1719,7 @@ constexpr bool combine_n_round_trip() noexcept {
 }
 static_assert(combine_n_round_trip());
 static_assert(seplog_roster::root_brands_are_fresh());
+static_assert(seplog_roster::erasure_keeps_the_tag());
 }  // namespace detail
 
 // ── Row-hash identities ─────────────────────────────────────────────

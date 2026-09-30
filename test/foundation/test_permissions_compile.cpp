@@ -221,12 +221,14 @@ void test_permission_row_compile() {
     (void)huge_shared;
 
     auto huge_for_pool = perm::mint_permission_root<HugePage>(bg_compile);
-    perm::SharedPermissionPool<HugePage> pool{std::move(huge_for_pool)};
+    perm::SharedPermissionPool pool{std::move(huge_for_pool)};
     {
         auto guard = pool.lend(bg_compile);
         if (!guard) std::abort();
     }
-    auto value = perm::with_shared_read(bg_compile, pool, [](perm::SharedPermission<HugePage>) noexcept { return 7; });
+    using PoolBrand = decltype(pool)::brand_type;
+    auto value = perm::with_shared_read(bg_compile, pool,
+                                        [](perm::SharedPermission<HugePage, PoolBrand>) noexcept { return 7; });
     if (!value || *value != 7) std::abort();
 
     TestRunnerCtx test_ctx{::foundation::effects::testing::test()};

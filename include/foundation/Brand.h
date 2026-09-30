@@ -45,15 +45,18 @@
 // token of the same identity: the pack absorbs the argument first.
 // Measured on GCC 16.2.1 in this dialect, in test/foundation/test_brand.cpp.
 //
-// DefaultBrand is the erased identity, and it exists for one reason:
-// every spelling that names no brand, `Permission<Tag>` and the like,
-// must keep meaning what it meant before brands.  Under DefaultBrand
-// every token of one tag is one type, which is the behaviour the tree
-// had.  A branded value converts to its erased spelling implicitly and
-// never back, so old code compiles and new code that holds a brand
-// cannot be handed an erased value in its place.  Every spelling still
-// on DefaultBrand is a site utils/scripts/check-brand-drain.py lists, and
-// that list only shrinks.
+// DefaultBrand is the erased identity.  Every spelling that names no
+// brand, `Permission<Tag>` and the like, is on it, and under it every
+// token of one tag is one type.  A share, a read loan, a parked token and
+// an owned region never drop their brand.  A permission token drops its
+// brand through permission_erase_brand, where the holder cannot name
+// the brand, and through an implicit conversion that the handles of the
+// channels and some tests use.  A borrow (Borrowed, BorrowedRef, ScopedView)
+// converts to its erased spelling implicitly.  Nothing converts an erased
+// value back to a brand, so code that holds a brand cannot be handed an
+// erased value in its place.  utils/scripts/check-brand-drain.py lists
+// each spelling on DefaultBrand, and the count of those sites can only
+// decrease.
 
 #include <foundation/Platform.h>
 

@@ -116,11 +116,11 @@ concept LendsByMove = requires(P&& p) { perm::with_read_view(std::move(p), [](au
     return 0;
 }
 
-// The erasure runs one way and costs nothing.
+// The erasure goes through one named door, runs one way and costs nothing.
 [[nodiscard]] int erasure_one_way_and_free() {
     auto branded = perm::mint_permission_root<Region>();
     static_assert(sizeof(branded) == 1, "a brand costs no bytes");
-    perm::Permission<Region> erased = std::move(branded);
+    auto erased = perm::permission_erase_brand(std::move(branded));
     static_assert(brand::IsErased<decltype(erased)>);
     static_assert(!std::is_constructible_v<decltype(branded), decltype(erased)&&>, "no brand from the erased spelling");
     perm::permission_drop(std::move(erased));

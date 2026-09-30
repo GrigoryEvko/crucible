@@ -83,9 +83,10 @@ void test_compile_time_properties() {
 // A body that returns nothing gives the source back.
 void test_door_void_body_hands_the_source_back() {
     auto perm = mint_permission_root<ConfigData>();
+    using Brand = decltype(perm)::brand_type;
     bool ran = false;
 
-    auto back = with_read_view(std::move(perm), [&ran](ReadView<ConfigData> const&) noexcept { ran = true; });
+    auto back = with_read_view(std::move(perm), [&ran](ReadView<ConfigData, Brand> const&) noexcept { ran = true; });
 
     CRUCIBLE_TEST_REQUIRE(ran);
     static_assert(std::is_same_v<decltype(back), decltype(perm)>, "the source comes back with its own brand");
@@ -95,10 +96,11 @@ void test_door_void_body_hands_the_source_back() {
 // A body that returns a value gives the value and the source.
 void test_door_value_body() {
     auto perm = mint_permission_root<LoopBounds>();
+    using Brand = decltype(perm)::brand_type;
     constexpr int sentinel = 12345;
 
     auto [observed, back] =
-        with_read_view(std::move(perm), [](ReadView<LoopBounds> const&) noexcept { return sentinel; });
+        with_read_view(std::move(perm), [](ReadView<LoopBounds, Brand> const&) noexcept { return sentinel; });
 
     CRUCIBLE_TEST_REQUIRE(observed == sentinel);
     permission_drop(std::move(back));
@@ -111,27 +113,31 @@ void test_door_struct_body() {
     };
 
     auto perm = mint_permission_root<LoopBounds>();
+    using Brand = decltype(perm)::brand_type;
     auto [result, back] =
-        with_read_view(std::move(perm), [](ReadView<LoopBounds> const&) noexcept { return Result{42, 99}; });
+        with_read_view(std::move(perm), [](ReadView<LoopBounds, Brand> const&) noexcept { return Result{42, 99}; });
 
     CRUCIBLE_TEST_REQUIRE(result.lo == 42);
     CRUCIBLE_TEST_REQUIRE(result.hi == 99);
     permission_drop(std::move(back));
 }
 
-// A generic body sees the branded view.  A body that names the erased
-// view gets the erased view.
-void test_door_picks_the_view_the_body_asks_for() {
+// A generic body sees the view of the brand of the source, and an erased
+// source lends an erased view.  A branded source lends no erased view,
+// which neg_brand_read_view_body_asks_the_erased_view shows.
+void test_door_lends_the_view_of_the_source_brand() {
     auto perm = mint_permission_root<ConfigData>();
-    auto [branded, again] = with_read_view(std::move(perm), [](auto const& view) noexcept {
-        return ::foundation::brand::IsBranded<std::remove_cvref_t<decltype(view)>>;
+    using Brand = decltype(perm)::brand_type;
+    auto [branded, back] = with_read_view(std::move(perm), [](auto const& view) noexcept {
+        return std::is_same_v<std::remove_cvref_t<decltype(view)>, ReadView<ConfigData, Brand>>;
     });
-    auto [erased, back] = with_read_view(std::move(again), [](ReadView<ConfigData> const& view) noexcept {
+    auto erased_token = permission_erase_brand(std::move(back));
+    auto [erased, erased_back] = with_read_view(std::move(erased_token), [](auto const& view) noexcept {
         return ::foundation::brand::IsErased<std::remove_cvref_t<decltype(view)>>;
     });
     CRUCIBLE_TEST_REQUIRE(branded);
     CRUCIBLE_TEST_REQUIRE(erased);
-    permission_drop(std::move(back));
+    permission_drop(std::move(erased_back));
 }
 
 namespace fork_tags {
@@ -196,7 +202,7 @@ void test_fork_inside_the_door() {
     auto whole = mint_permission_root<fork_tags::Whole>();
     using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
 
-    auto [rebuilt, config_back] = with_read_view(std::move(config_perm), [&](ReadView<ConfigData> const& cv) {
+    auto [rebuilt, config_back] = with_read_view(std::move(config_perm), [&](auto const& cv) {
         return mint_permission_fork<fork_tags::Left, fork_tags::Right>(
             BgDrainCtx{::foundation::effects::testing::bg()}, std::move(whole),
             [&cv, &left_done](WriteView<fork_tags::Left, WholeBrand> const&, BgDrainCtx const&) noexcept {
@@ -229,7 +235,7 @@ void test_fork_inline_inside_the_door() {
     auto whole = mint_permission_root<fork_tags::Whole>();
     using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
 
-    auto [rebuilt, config_back] = with_read_view(std::move(config_perm), [&](ReadView<ConfigData> const& cv) {
+    auto [rebuilt, config_back] = with_read_view(std::move(config_perm), [&](auto const& cv) {
         return mint_permission_fork_inline<fork_tags::Left, fork_tags::Right>(
             eff::testing::foreground(), std::move(whole),
             [&cv, &order, &left_seen_at](WriteView<fork_tags::Left, WholeBrand> const&, HotFgCtx const&) noexcept {
@@ -298,21 +304,21 @@ void test_loan_across_threads() {
     permission_drop(std::move(back));
 }
 
-// A handle keeps a write token and a read loan.  Both are empty and
-// collapse, so the handle carries no payload.
+// A handle keeps a write token and a read loan, each with the brand of its
+// region.  Both are empty and collapse, so the handle carries no payload.
+template <typename SliceBrand, typename ConfigBrand>
 struct WorkerHandle {
-    [[no_unique_address]] Permission<WorkerSlice> write_perm;
-    [[no_unique_address]] ReadLoan<ConfigData> config_loan;
+    [[no_unique_address]] Permission<WorkerSlice, SliceBrand> write_perm;
+    [[no_unique_address]] ReadLoan<ConfigData, ConfigBrand> config_loan;
 
-    constexpr WorkerHandle(Permission<WorkerSlice>&& wp, ReadLoan<ConfigData>&& loan) noexcept
+    constexpr WorkerHandle(Permission<WorkerSlice, SliceBrand>&& wp, ReadLoan<ConfigData, ConfigBrand>&& loan) noexcept
         : write_perm{std::move(wp)}, config_loan{std::move(loan)} {}
 };
 
 void test_handle_composition_zero_cost() {
-    static_assert(sizeof(WorkerHandle) <= 2, "a handle of two empty proof tokens must be at most 2 bytes");
-
-    auto [loan, lent] = mint_read_loan(Permission<ConfigData>{mint_permission_root<ConfigData>()});
-    WorkerHandle handle{Permission<WorkerSlice>{mint_permission_root<WorkerSlice>()}, std::move(loan)};
+    auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+    WorkerHandle handle{mint_permission_root<WorkerSlice>(), std::move(loan)};
+    static_assert(sizeof(handle) <= 2, "a handle of two empty proof tokens must be at most 2 bytes");
     auto config = mint_permission_after_loan(std::move(lent), std::move(handle.config_loan));
     permission_drop(std::move(config));
     permission_drop(std::move(handle.write_perm));
@@ -329,7 +335,7 @@ int main() {
     run_test("test_door_void_body_hands_the_source_back", test_door_void_body_hands_the_source_back);
     run_test("test_door_value_body", test_door_value_body);
     run_test("test_door_struct_body", test_door_struct_body);
-    run_test("test_door_picks_the_view_the_body_asks_for", test_door_picks_the_view_the_body_asks_for);
+    run_test("test_door_lends_the_view_of_the_source_brand", test_door_lends_the_view_of_the_source_brand);
     run_test("test_fork_inside_the_door", test_fork_inside_the_door);
     run_test("test_fork_inline_inside_the_door", test_fork_inline_inside_the_door);
     run_test("test_door_over_a_share_guard", test_door_over_a_share_guard);

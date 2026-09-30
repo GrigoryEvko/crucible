@@ -56,12 +56,12 @@ static_assert(SharedPermission<Region>::confers_runtime_access == false,
 // many tokens were copied out and stashed.
 void test_stashed_token_does_not_unblock_upgrade() {
     auto exc = mint_permission_root<Region>();
-    SharedPermissionPool<Region> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
     CRUCIBLE_TEST_REQUIRE(!pool.is_exclusive_out());
 
-    std::optional<SharedPermission<Region>> stashed_token;
+    std::optional<SharedPermission<Region, decltype(pool)::brand_type>> stashed_token;
     {
         auto guard = pool.lend();
         CRUCIBLE_TEST_REQUIRE(guard.has_value());
@@ -99,7 +99,7 @@ void test_stashed_token_does_not_unblock_upgrade() {
 
 void test_multiple_guards_block_upgrade() {
     auto exc = mint_permission_root<Region>();
-    SharedPermissionPool<Region> pool{std::move(exc)};
+    SharedPermissionPool pool{std::move(exc)};
 
     auto g1 = pool.lend();
     auto g2 = pool.lend();

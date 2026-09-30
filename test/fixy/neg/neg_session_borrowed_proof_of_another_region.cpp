@@ -1,5 +1,6 @@
 // A Borrowed built from the read loan of a different region.  The loan
-// of Other says nothing about Region, so the constructor has no match.
+// of Other says nothing about Region, so the loan does not convert to the
+// loan that the constructor takes.
 
 #include <fixy/session/Payload.h>
 #include <foundation/permissions/Permission.h>
@@ -22,7 +23,7 @@ struct Other {
 }  // namespace
 
 int main() {
-    auto loans = fp::mint_read_loan(fp::Permission<Other>{fp::mint_permission_root<Other>()});
+    auto loans = fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Other>()));
     sess::Borrowed<int, Region> message{1, std::move(loans.first)};
     return message.value;
 }

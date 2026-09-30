@@ -240,10 +240,12 @@ struct [[nodiscard]] Transferable {
     T value;
     [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm;
 
+    // A protocol names the tag and not the instance, so the message drops
+    // the brand of the token through the one door that drops a brand.
     template <class Brand>
     constexpr Transferable(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value{std::move(v)}, perm{std::move(p)} {}
+        : value{std::move(v)}, perm{::foundation::permissions::permission_erase_brand(std::move(p))} {}
 
     Transferable(const Transferable&) = delete("Transferable carries a linear token. A copy is a second owner");
     Transferable&
@@ -261,10 +263,11 @@ struct [[nodiscard]] Returned {
     T value;
     [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm;
 
+    // The brand drops as it does for Transferable.
     template <class Brand>
     constexpr Returned(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value{std::move(v)}, perm{std::move(p)} {}
+        : value{std::move(v)}, perm{::foundation::permissions::permission_erase_brand(std::move(p))} {}
 
     Returned(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
     Returned& operator=(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
@@ -284,8 +287,9 @@ struct [[nodiscard]] Borrowed {
 
     T value;
 
-    template <class Brand>
-    constexpr Borrowed(T v, ::foundation::permissions::ReadLoan<Tag, Brand>&& loan) noexcept(
+    // The loan is on the erased identity, because the hold that lends it
+    // keeps each token on the erased identity of its tag.
+    constexpr Borrowed(T v, ::foundation::permissions::ReadLoan<Tag>&& loan) noexcept(
         std::is_nothrow_move_constructible_v<T>)
         : value{std::move(v)}, loan_{std::move(loan)} {}
 
@@ -313,8 +317,8 @@ struct [[nodiscard]] Released {
 
     T value;
 
-    template <class Brand>
-    constexpr Released(T v, ::foundation::permissions::ReadLoan<Tag, Brand>&& loan) noexcept(
+    // The loan is on the erased identity, as the loan of Borrowed is.
+    constexpr Released(T v, ::foundation::permissions::ReadLoan<Tag>&& loan) noexcept(
         std::is_nothrow_move_constructible_v<T>)
         : value{std::move(v)}, loan_{std::move(loan)} {}
 
@@ -1717,7 +1721,7 @@ public:
     [[nodiscard]] static constexpr PermHold<::foundation::permissions::PermSet<Tags...>>
     from_tokens(::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
         return PermHold<::foundation::permissions::PermSet<Tags...>>{
-            detail::hold_from_slots{}, ::foundation::permissions::Permission<Tags>{std::move(tokens)}...};
+            detail::hold_from_slots{}, ::foundation::permissions::permission_erase_brand(std::move(tokens))...};
     }
 
     template <class Tag, class Set>
@@ -1738,7 +1742,7 @@ public:
         -> PermHold<::foundation::permissions::perm_set_insert_t<Set, Tag>> {
         hold.require_live_();
         return transition_<::foundation::permissions::perm_set_insert_t<Set, Tag>>(
-            hold, ::foundation::permissions::Permission<Tag>{std::move(token)});
+            hold, ::foundation::permissions::permission_erase_brand(std::move(token)));
     }
 
     template <class Set, class Message>

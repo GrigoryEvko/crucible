@@ -278,10 +278,14 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
     }
     const auto page = static_cast<std::size_t>(page_raw);
     const std::size_t length = (bytes + page - 1) & ~(page - 1);
-    // The mapping is on the erased identity of its tag.  Nothing discards
-    // its pages, so no advise_release_aware asks for its brand.
+    // The mapping is on the erased identity of its tag, because a facade
+    // names the type of its mapping member before the root exists.  The
+    // root drops its brand through the one door that drops a brand.
+    // Nothing discards the pages of the mapping, so no advise_release_aware
+    // asks for its brand.
     const ::foundation::permissions::Permission<bpf_map_region<Tag>> owner =
-        ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>();
+        ::foundation::permissions::permission_erase_brand(
+            ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>());
     auto mapped = ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_fd(map).value(), length, 0);
     if (!mapped) {
         report_unavailable(facade, map_name,

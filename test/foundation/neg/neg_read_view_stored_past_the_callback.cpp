@@ -24,7 +24,7 @@ struct Region {
 int main() {
     std::optional<::foundation::permissions::ReadView<Region>> kept;
     auto back = ::foundation::permissions::with_read_view(
-        ::foundation::permissions::mint_permission_root<Region>(),
+        ::foundation::permissions::permission_erase_brand(::foundation::permissions::mint_permission_root<Region>()),
         [&kept](::foundation::permissions::ReadView<Region> const& view) noexcept { kept.emplace(view); });
     (void)back;
     return 0;

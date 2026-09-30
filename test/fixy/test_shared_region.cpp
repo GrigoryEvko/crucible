@@ -189,8 +189,8 @@ void test_the_erased_brand_reads_nothing() {
     static std::uint64_t storage[2] = {5, 6};
     BgCtx ctx{eff::testing::bg()};
 
-    ::fixy::SharedRegion<std::uint64_t, Cache> shared{
-        ::fixy::OwnedRegion<std::uint64_t, Cache>::wrap(storage, std::size_t{2}, perm::mint_permission_root<Cache>())};
+    ::fixy::SharedRegion<std::uint64_t, Cache> shared{::fixy::OwnedRegion<std::uint64_t, Cache>::wrap(
+        storage, std::size_t{2}, perm::permission_erase_brand(perm::mint_permission_root<Cache>()))};
     auto guard = shared.lend(ctx);
     CRUCIBLE_TEST_REQUIRE(guard.has_value());
 

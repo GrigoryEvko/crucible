@@ -140,8 +140,7 @@ namespace {
     static std::array<int, kCount> storage{};
     storage.fill(0);
 
-    auto region =
-        fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
+    auto region = fixy::mint_owned_region(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
 
     // The body takes its shard by mutable reference, so the shard stays in
     // the tuple and recombine can consume it.
@@ -188,8 +187,7 @@ namespace {
     static std::array<int, kCount> storage{};
     storage.fill(7);
 
-    auto region =
-        fixy::OwnedRegion<int, RegionWhole>::wrap(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
+    auto region = fixy::mint_owned_region(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
     auto whole = spawn::mint_parallel_for<1>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
         for (int& element : shard) {
             element = 9;

@@ -932,7 +932,7 @@ foundation_neg_compile_test(neg_read_view_named_effectful_source_refused
   "no matching function for call to .*with_read_view"
   "ReadViewNeedsNoCtx")
 # A read loan names a region and a brand, as a Permission does, and a parked
-# token keeps its brand: erasure runs one way only.
+# token keeps its brand: no conversion drops or changes it.
 foundation_neg_compile_test(neg_read_loan_tag_not_empty
   "static assertion failed"
   "ReadLoan<Tag>: Tag must be an empty non-union class type")
@@ -941,7 +941,7 @@ foundation_neg_compile_test(neg_read_loan_brand_not_empty
   "ReadLoan<Tag, Brand>: Brand must be an empty class type")
 foundation_neg_compile_test(neg_lent_permission_does_not_rebrand
   "no matching function for call to .foundation::permissions::LentPermission<"
-  "is_same_v<Brand, foundation::brand::DefaultBrand>")
+  "no known conversion for argument 1 from .* to .foundation::permissions::LentPermission<neg_lent_permission_does_not_rebrand::Region, foundation::permissions::<lambda\\(\\)> >&&.")
 foundation_neg_compile_test(neg_read_view_body_by_value
   "no matching function for call to .with_read_view\\("
   "required for the satisfaction of .ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>.")
@@ -989,6 +989,18 @@ foundation_neg_compile_test(neg_brand_permission_cross_brand
 foundation_neg_compile_test(neg_brand_shared_permission_cross_brand
   "no matching function for call to .same_region\\("
   "deduced conflicting types for parameter .Brand. \\(.foundation::permissions::<lambda\\(\\)>. and .foundation::permissions::<lambda\\(\\)>.\\)")
+
+# A share, a loan and a view of one region are not a share, a loan and a
+# view of the erased identity: no conversion drops the brand.
+foundation_neg_compile_test(neg_brand_shared_permission_does_not_erase
+  "could not convert .branded. from .SharedPermission<"
+  ",foundation::permissions::<lambda\\(\\)>>. to .SharedPermission<\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>.")
+foundation_neg_compile_test(neg_brand_read_loan_does_not_erase
+  "conversion from .ReadLoan<\\[\\.\\.\\.\\],foundation::permissions::<lambda\\(\\)>>."
+  "to non-scalar type .ReadLoan<\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested")
+foundation_neg_compile_test(neg_brand_read_view_body_asks_the_erased_view
+  "no matching function for call to .with_read_view\\("
+  "no known conversion for argument 1 from .const foundation::permissions::ReadView<\\{anonymous\\}::Region, foundation::permissions::<lambda\\(\\)> >. to .const foundation::permissions::ReadView<\\{anonymous\\}::Region>&.")
 
 # A borrow proof is about the region it was borrowed from: the refusal
 # by identity.
