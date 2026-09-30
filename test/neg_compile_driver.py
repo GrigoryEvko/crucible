@@ -201,6 +201,14 @@ def main() -> int:
     if any(arg.startswith("-fcontract") for arg in argv):
         argv.append("-fcontract-evaluation-semantic=enforce")
 
+    # A fixture that refuses a target other than the host gets the flags of
+    # that target from CRUCIBLE_NEG_EXTRA_FLAGS, which the test sets.  The
+    # flags do not go on the fixture target, because they can make the
+    # preprocessor fail.  Each guard that preprocesses every unit of the
+    # compile database refuses a unit that it cannot read.  The database
+    # entry of the fixture then stays a unit of the host.
+    argv.extend(shlex.split(os.environ.get("CRUCIBLE_NEG_EXTRA_FLAGS", "")))
+
     # `strip_source_echo` recognises the caret display by its left
     # gutter, which exists only while line numbers are shown.  That is
     # GCC's default, but a preset (or a future default change) could

@@ -105,8 +105,9 @@ struct LoadedTrace {
     uint32_t num_metas = 0;
 };
 
-// The file is written and read as raw struct bytes.
-static_assert(std::endian::native == std::endian::little, ".crtrace format requires little-endian host");
+// The file is written and read as raw struct bytes, with no byte swap.  The
+// little-endian rule of the platform floor in foundation/Platform.h makes
+// that read correct.
 
 // A metadata record is read field by field from its bytes, at the offsets
 // of TensorMeta.  The shortest historical record carries every field up to

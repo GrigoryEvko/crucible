@@ -1,14 +1,35 @@
 #pragma once
 
-// The compiler floor, the attribute vocabulary and the invariant macros for
-// the foundation layer.  This header names nothing above foundation:: and
-// std::, so every foundation header can include it.
+// The compiler floor, the platform floor, the attribute vocabulary and the
+// invariant macros for the foundation layer.  This header names nothing above
+// foundation:: and std::, so every foundation header can include it.
 //
 // The macro prefix stays CRUCIBLE_ on purpose.  Macros have no namespace, the
 // repository is crucible, and the layer rule (utils/scripts/check-layer-boundary.py)
 // is stated over namespace roots and include roots, not over macro names.  A
 // crucible/ consumer that flips to this header keeps every spelling it has.
 
+// The platform floor.  The tree assumes a 64-bit, little-endian x86_64 or
+// aarch64 target with 64-byte cache lines.  These checks refuse a target that
+// breaks one of these assumptions.  Each message states the rule and the code
+// to audit before the rule changes.  The two #error checks come before the
+// first include.  On a target outside the floor, a system header can fail
+// first, with a message that names no rule.
+
+#if !defined(__x86_64__) && !defined(__aarch64__)
+#error \
+    "foundation supports x86_64 and aarch64 only. Before you add an architecture, audit each alignas(64), CRUCIBLE_SPIN_PAUSE, each counter read in fixy/os/Time.h, and each SIMD path and intrinsic."
+#endif
+
+// Apple aarch64 cores have 128-byte cache lines.  No macro identifies an
+// Apple core under Linux.  This check refuses only a target that defines
+// __APPLE__.
+#if defined(__APPLE__) && defined(__aarch64__)
+#error \
+    "Apple aarch64 cores have 128-byte cache lines, and the tree assumes 64-byte lines. Before you add this target, audit each alignas(64) and each struct whose size is one cache line."
+#endif
+
+#include <bit>
 #include <contracts>
 #include <cstdio>
 #include <cstdlib>
@@ -24,6 +45,33 @@ static_assert(__cplusplus >= 202400L, "foundation requires C++26 (-std=c++26)");
 
 #if !defined(__clang__)
 static_assert(__GNUC__ >= 16, "foundation requires GCC 16 for -fcontracts and -freflection");
+#endif
+
+static_assert(sizeof(void*) == 8,
+              "foundation supports 64-bit targets only. Before you add a 32-bit target, audit each size and offset "
+              "calculation, each struct with a fixed size, and each tag in the bits of a pointer.");
+
+static_assert(std::endian::native == std::endian::little,
+              "foundation supports little-endian targets only. Before you add a big-endian target, audit each file "
+              "format and wire format that the tree reads or writes as raw bytes, and each hash of raw bytes.");
+
+// GCC gives two interference sizes as predefined macros.  For each x86
+// target, GCC sets the two sizes to 64.  For an aarch64 core whose GCC tuning
+// gives an L1 line, GCC sets the two sizes to that line.  For each other
+// aarch64 target, GCC sets the constructive size to 64 and the destructive
+// size to 256, which covers the range of aarch64 lines and names no line.
+// Only a tuned core with a longer line gives a constructive size other than
+// 64.  The checks read the macros and not
+// std::hardware_destructive_interference_size, because -Winterference-size
+// refuses a use of that constant in a header.
+static_assert(__GCC_CONSTRUCTIVE_SIZE == 64,
+              "the tree assumes 64-byte cache lines, and GCC gives a longer line for the target core. Before you "
+              "add this target, audit each alignas(64) and each struct whose size is one cache line.");
+
+#if defined(__x86_64__)
+static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
+              "the tree separates two shared atomics by 64 bytes, and --param destructive-interference-size gives "
+              "GCC another distance. Before you change the distance, audit each alignas(64).");
 #endif
 
 #define CRUCIBLE_INLINE [[gnu::always_inline]] inline
@@ -68,16 +116,14 @@ static_assert(__GNUC__ >= 16, "foundation requires GCC 16 for -fcontracts and -f
 #define CRUCIBLE_PROCESS_WIDE [[gnu::visibility("default")]]
 
 // The pause hint tells the core that the loop it is in is a spin. It changes
-// power draw and the pipeline-flush penalty on loop exit, not the wait itself,
-// so an architecture with no such hint spins correctly without one.
+// power draw and the pipeline-flush penalty on loop exit, not the wait itself.
+// The platform floor admits x86_64 and aarch64 only, and each has a hint.
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if defined(__x86_64__)
 #include <immintrin.h>
 #define CRUCIBLE_SPIN_PAUSE _mm_pause()
-#elif defined(__aarch64__) || defined(_M_ARM64)
+#elif defined(__aarch64__)
 #define CRUCIBLE_SPIN_PAUSE __asm__ volatile("yield")
-#else
-#define CRUCIBLE_SPIN_PAUSE ((void)0)
 #endif
 
 #if defined(__clang__)

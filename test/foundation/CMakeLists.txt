@@ -110,6 +110,41 @@ foundation_neg_compile_test(neg_constraint_failure_names_the_concept
   "constraints not satisfied"
   "satisfaction of .HalvesEvenly<T>.")
 
+# The platform floor of foundation/Platform.h refuses a target that breaks
+# one of its assumptions.  Each fixture includes the header, and the test
+# gives the compiler the flags of the refused target in
+# CRUCIBLE_NEG_EXTRA_FLAGS.  The flags do not go on the fixture target: the
+# compile database then holds a unit of the host, which each guard that
+# preprocesses the database can read.
+#
+# GCC lets -U remove a predefined macro.  The first two fixtures set the
+# architecture macros of an unsupported architecture and of an Apple aarch64
+# target.  The first regex names the #error of the header, and the second
+# names its rule.
+foundation_neg_compile_test(neg_platform_unsupported_architecture
+  "Platform\\.h:[0-9]+:[0-9]+: error: #error"
+  "foundation supports x86_64 and aarch64 only")
+set_property(TEST neg_platform_unsupported_architecture APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-U__x86_64__ -U__aarch64__")
+foundation_neg_compile_test(neg_platform_apple_aarch64
+  "Platform\\.h:[0-9]+:[0-9]+: error: #error"
+  "Apple aarch64 cores have 128-byte cache lines")
+set_property(TEST neg_platform_apple_aarch64 APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-U__x86_64__ -D__aarch64__ -D__APPLE__")
+# The floor also reads the interference sizes that GCC gives the target, and
+# a --param option sets each of them.  The first regex names the static
+# assertion of the header, and the second names its rule.
+foundation_neg_compile_test(neg_platform_destructive_interference_size
+  "Platform\\.h:[0-9]+:[0-9]+: error: static assertion failed"
+  "the tree separates two shared atomics by 64 bytes")
+set_property(TEST neg_platform_destructive_interference_size APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=--param=destructive-interference-size=128")
+foundation_neg_compile_test(neg_platform_longer_cache_line
+  "Platform\\.h:[0-9]+:[0-9]+: error: static assertion failed"
+  "the tree assumes 64-byte cache lines, and GCC gives a longer line")
+set_property(TEST neg_platform_longer_cache_line APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=--param=l1-cache-line-size=128 --param=constructive-interference-size=128")
+
 # Two lattices that pass every law comparing elements through leq alone.
 # The first has a leq that runs against its join, the second has bottom()
 # above top().  The laws that tie the order to join, meet and the bounds

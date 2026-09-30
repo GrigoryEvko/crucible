@@ -2247,7 +2247,7 @@ Hardcoded values. Changing any requires an audit sweep of the affected macros an
 | Word size | **64-bit** | No 32-bit support |
 | Min x86 baseline | **AVX2 + FMA + BMI2** | Haswell-and-later |
 | Optional x86 uplift | AVX-512, AMX | Opt-in per build via `-march=`; never assumed at the source level |
-| Min ARM baseline | **ARMv8.2-A + NEON** | Graviton 2+, Apple M1+ |
+| Min ARM baseline | **ARMv8.2-A + NEON** | Graviton 2+. Apple cores have 128-byte cache lines, and the build refuses an Apple target (below) |
 | Float representation | **IEEE 754** | `-fno-fast-math` enforces |
 | Stack size | **8 MB** (Linux default) | Large arrays → arena, not stack |
 | Canonical VA bits | **48** (x86-64 without LA57) | Pointer-tagging schemes assume this |
@@ -2256,26 +2256,34 @@ Hardcoded values. Changing any requires an audit sweep of the affected macros an
 
 ### Platform checks at build time
 
-Two checks in the code refuse a platform that this section excludes:
-
-- `include/crucible/TraceLoader.h` refuses a big-endian host with `static_assert(std::endian::native == std::endian::little, ...)`, because the `.crtrace` format is little-endian.
-- `include/fixy/os/Time.h` stops the build with `#error` on an architecture other than x86_64 and aarch64. The check is in the two functions that read the time-stamp counter, and it fires in each translation unit that includes the header.
-
-No file has a check of the pointer size itself, and no file refuses an Apple Silicon target. The block that follows is a recommended set of checks, and no file holds it at this time:
+`include/foundation/Platform.h` holds the platform floor, and each translation unit of the tree includes that header. Each check stops the build on a target that this section excludes. Its message states the rule and the code to audit before the rule changes. The block that follows shows the checks, with the messages shortened:
 
 ```cpp
-// A recommended location: include/foundation/Platform.h
-static_assert(sizeof(void*) == 8, "64-bit required");
-static_assert(std::endian::native == std::endian::little, "little-endian required");
-
-#if defined(__aarch64__) && defined(__APPLE__)
-  #error "Apple Silicon has 128-byte cache lines — alignas(64) is insufficient. Audit before enabling."
+// Before the first include. On a target outside the floor, a system header can fail first.
+#if !defined(__x86_64__) && !defined(__aarch64__)
+#error "foundation supports x86_64 and aarch64 only. Before you add an architecture, audit ..."
 #endif
 
-#if !defined(__x86_64__) && !defined(__aarch64__)
-  #error "Crucible targets x86-64 and aarch64 only."
+#if defined(__APPLE__) && defined(__aarch64__)
+#error "Apple aarch64 cores have 128-byte cache lines, and the tree assumes 64-byte lines. ..."
+#endif
+
+// After the includes.
+static_assert(sizeof(void*) == 8, "foundation supports 64-bit targets only. ...");
+static_assert(std::endian::native == std::endian::little, "foundation supports little-endian targets only. ...");
+static_assert(__GCC_CONSTRUCTIVE_SIZE == 64, "the tree assumes 64-byte cache lines, and GCC gives a longer line ...");
+#if defined(__x86_64__)
+static_assert(__GCC_DESTRUCTIVE_SIZE == 64, "the tree separates two shared atomics by 64 bytes, ...");
 #endif
 ```
+
+The two cache-line checks read the interference sizes that GCC gives the target. For each x86 target, GCC sets the two sizes to 64. For an aarch64 core whose GCC tuning gives an L1 line, GCC sets the two sizes to that line. For each other aarch64 target, GCC sets the constructive size to 64 and the destructive size to 256, which names no line. For that reason, the destructive check applies only on x86_64. The checks read the macros, because `-Winterference-size` refuses a use of `std::hardware_destructive_interference_size` in a header.
+
+No macro identifies an Apple core under Linux, and GCC gives no longer line for an Apple core. A Linux build for an Apple core passes the floor, although its cache lines have 128 bytes.
+
+Four negative-compile fixtures in `test/foundation/neg/` show that the checks fire. `neg_platform_unsupported_architecture` and `neg_platform_apple_aarch64` set the architecture macros with `-U` and `-D`. `neg_platform_destructive_interference_size` and `neg_platform_longer_cache_line` set the interference sizes with `--param`. The test gives these flags to the compiler through `CRUCIBLE_NEG_EXTRA_FLAGS` (`test/neg_compile_driver.py`). The compile database then holds a unit of the host, which each guard that preprocesses the database can read. No fixture makes the pointer-size check or the endian check fail, because the host compiler has no 32-bit multilib and no big-endian target.
+
+The two counter reads in `include/fixy/os/Time.h` each keep an `#error` arm. The arm marks the code that must get a counter read for a new architecture.
 
 ### When the assumptions change
 
