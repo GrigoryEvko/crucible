@@ -756,7 +756,7 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | Layer | Directories | May include |
 |---|---|---|
 | F0 floor | `foundation/Platform.h`, `foundation/Pinned.h`, `foundation/Quarantine.h` | the base allowance (R2) |
-| F0 core | `foundation/reflect/`, `foundation/contracts/`, `foundation/Brand.h`, `foundation/Lifetime.h`, `foundation/diag/FailClosed.h` | the base allowance |
+| F0 core | `foundation/reflect/`, `foundation/contracts/`, `foundation/Brand.h`, `foundation/Lifetime.h`, `foundation/ByteSeal.h`, `foundation/diag/FailClosed.h` | the base allowance |
 | F0 primitives | `foundation/core/` (the families), `foundation/Simd.h`, `foundation/Saturate.h`, `foundation/AlignedBuffer.h`, `foundation/SwissTableBuffer.h`, `foundation/ThreadLocalRef.h` | the base allowance. No system header in a header. Cold code goes to `src/foundation/` |
 | F1 algebra | `foundation/algebra/`, `foundation/effects/`, `foundation/diag/` (other files), `foundation/permissions/` | the base allowance. Runtime std names only in `consteval` context |
 | X1 wrappers | `fixy/` top-level wrapper headers, `fixy/fp/` | the base allowance |
