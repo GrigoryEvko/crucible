@@ -42,26 +42,34 @@ THE FOUR KINDS
       * function static_assert.  A static_assert in the body of a function
         or a lambda that is not in a template context.  The compiler
         evaluates it when it reads the body, in each includer.
-      * eager evaluation.  A constant evaluation outside each template
+      * eager evaluation.  A reflection walk outside each template
         context, of one of these forms:
           - a variable at namespace scope, or a static data member, that
             is constexpr, constinit or const, and whose initializer holds
-            an evaluated call
-          - an alias whose type holds an evaluated call, for example in a
-            splice
+            a reflection query
+          - an alias whose type holds a reflection query, for example in
+            a splice
           - in the body of a function or a lambda: a constexpr or
-            constinit variable whose initializer holds an evaluated call,
+            constinit variable whose initializer holds a reflection query,
             or an expansion statement (`template for`), which the compiler
             expands when it reads the body.
-        A call is evaluated when no sizeof, alignof, decltype, noexcept,
-        requires-expression or lambda body holds it.  A cast is not a call:
-        static_cast, const_cast, reinterpret_cast, dynamic_cast, bit_cast,
-        and a functional cast through a type name such as `unsigned(3)`.
-        A literal, an enumerator, sizeof, an arithmetic expression, a
-        reflection `^^X` and a braced initializer with no call in it hold
-        no call.  A const variable counts only when the object itself is
-        const: `const char* p` does not count, and `const char* const p`
-        does.
+        A reflection query is one of these:
+          - a call of a function of std::meta, or of a std::define_static_*
+            function, also with no qualifier through argument-dependent
+            lookup: members_of, enumerators_of, substitute and the others
+          - a call that takes a reflection `^^X` as an argument or as a
+            template argument, because such a call walks reflection
+          - a splice inside a loop.
+        The walk reads the evaluated operands only: no sizeof, alignof,
+        decltype, noexcept, requires-expression or lambda body holds the
+        query, except the body of a lambda that the initializer calls.  A
+        plain call, a cast, a cheap constructor and a `^^X` alone are no
+        reflection query.  The compiler form sees the cost of a plain call
+        exactly (WHAT THE GUARD CANNOT SEE), so this kind reads only the
+        work that the operation count of GCC does not see: template
+        instantiation and reflection queries.  A const variable counts
+        only when the object itself is const: `const char* p` does not
+        count, and `const char* const p` does.
     A template context is an enclosing template declaration with
     parameters, an enclosing generic lambda (a lambda with a template
     parameter list or a parameter of a placeholder type), an enclosing
@@ -130,9 +138,11 @@ WHAT THE GUARD CANNOT SEE
     an #if counts, because the kit does not preprocess.  The syntax cannot
     tell a cheap call from an expensive one, and it cannot see an eager
     instantiation, for example a non-template function that reads a
-    variable template.  The build gives the exact form: test/layer compiles
-    each header alone at a low -fconstexpr-ops-limit, and the test
-    header_constexpr_ops holds the list of the higher limits.
+    variable template, or a plain call into a function that walks
+    reflection.  The build gives the exact form for the operations of a
+    constant evaluation: test/layer compiles each header alone at a low
+    -fconstexpr-ops-limit, and the test header_constexpr_ops holds the list
+    of the higher limits.
 
 Usage
     check-header-checks.py [--warnings-dir DIR]    compare the tree with the ledger
@@ -201,9 +211,17 @@ UNEVALUATED = frozenset({
     "sizeof_expression", "alignof_expression", "decltype", "noexcept_expression", "requires_expression",
     "requires_clause", "lambda_expression",
 })
-CAST_NAMES = frozenset({"static_cast", "const_cast", "reinterpret_cast", "dynamic_cast", "bit_cast"})
-# A call through a type name is a functional cast or a constructor of a literal type.
-TYPE_CALLEES = frozenset({"primitive_type", "sized_type_specifier", "type_identifier", "template_type"})
+# The reflection functions that a header can call with no qualifier, through
+# argument-dependent lookup on std::meta::info or a using-directive.  A call
+# with the qualifier std::meta counts for any name.
+REFLECTION_FUNCTIONS = frozenset({
+    "members_of", "static_data_members_of", "nonstatic_data_members_of", "enumerators_of", "bases_of",
+    "define_static_array", "define_static_string", "define_static_object", "substitute", "can_substitute",
+    "template_arguments_of", "template_of", "parameters_of", "annotations_of", "annotations_of_with_type",
+    "reflect_constant", "reflect_object", "reflect_function", "reflect_constant_array", "reflect_constant_string",
+    "extract", "identifier_of", "display_string_of", "type_of", "parent_of", "dealias", "constant_of",
+})
+LOOPS = frozenset({"for_statement", "for_range_loop", "while_statement", "do_statement"})
 CLASS_SPECIFIERS = ("class_specifier", "struct_specifier", "union_specifier")
 LEDGER_HEADER = (
     "# utils/scripts/header-checks-ledger.txt — the compile-time work that each header under include/\n"
@@ -214,7 +232,7 @@ LEDGER_HEADER = (
     "# in the body of a function that is not a template.  Such a check belongs in the check file of the\n"
     "# header, which one translation unit compiles one time: test/layer/checks/<layer>/<path>.cpp for\n"
     "# include/<layer>/<path>.h.  The first line of code of a check file includes its header.  A\n"
-    "# constant evaluation outside each template is lazy: a variable template, or a member of a template.\n"
+    "# reflection walk outside each template is lazy: a variable template, or a member of a template.\n"
     "#\n"
     "# A count row:  path | self-test namespaces | namespace-scope static_asserts\n"
     "#               function static_assert | path | count\n"
@@ -235,7 +253,8 @@ class Check:
     """One item of compile-time work that a header does in each includer.
 
     via names the macro whose invocation makes the item, or is empty for an
-    item that the header writes itself.
+    item that the header writes itself.  detail tells what makes an eager
+    evaluation a reflection walk, and it is not part of the identity.
     """
 
     path: str
@@ -243,6 +262,7 @@ class Check:
     kind: str
     key: str
     via: str = ""
+    detail: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True)
@@ -399,42 +419,81 @@ def is_in_function_body(node: tsast.Node) -> bool:
     return node.ancestor_of_type(*FUNCTION_BODIES) is not None
 
 
-def is_cast(call: tsast.Node) -> bool:
-    """Say whether a call_expression is a cast and not a call.
+def reflection_function(call: tsast.Node) -> str:
+    """Return the name of the reflection function that a call calls, or "" for any other call.
 
     Args:
         call: A call_expression
 
     Returns:
-        True for a named cast, for bit_cast and for a call through a type name
+        The spelled name, for a callee qualified with std::meta, for a
+        std::define_static_* function, and for a name of REFLECTION_FUNCTIONS
+        with no qualifier
     """
     callee = call.child_by_field("function")
-    if callee is None:
-        return False
-    return callee.type in TYPE_CALLEES or tsast.leaf_name(callee) in CAST_NAMES
+    parts = None if callee is None else tsast.qualified_parts(callee)
+    if parts is None or not parts[1]:
+        return ""
+    names = parts[1]
+    is_reflection = "meta" in names[:-1] or (names[-1] in REFLECTION_FUNCTIONS and names[:-1] in ((), ("std",)))
+    return "::".join(names) if is_reflection else ""
 
 
-def evaluated_calls(node: tsast.Node) -> list[tsast.Node]:
-    """Return each call under a node that a constant evaluation of the node runs.
+def takes_reflection(call: tsast.Node) -> bool:
+    """Say whether a call takes a reflection `^^X` as an argument or as a template argument.
+
+    The body of a lambda that the call calls is not an argument, and the
+    object of a member call is not one either: in `members_of(^^T).size()`
+    the inner call takes the reflection.
+
+    Args:
+        call: A call_expression
+    """
+    callee = call.child_by_field("function")
+    if callee is not None and callee.type == "field_expression":
+        callee = callee.child_by_field("field")
+    holders = [call.child_by_field("arguments"), callee]
+    return any(holder is not None and holder.type != "lambda_expression"
+               and next(holder.descendants("reflect_expression"), None) is not None for holder in holders)
+
+
+def reflection_work(node: tsast.Node) -> str:
+    """Return what makes the constant evaluation of a node a reflection walk, or "" when nothing does.
+
+    The walk reads the evaluated operands only.  It enters the body of a
+    lambda that the node calls, and no other lambda body.  An expansion
+    statement inside the node is an item of its own, so the walk does not
+    enter it.
 
     Complexity: linear in the size of the subtree.
 
     Args:
-        node: An initializer, a type or a range expression
+        node: An initializer, a default member value or the type of an alias
 
     Returns:
-        Each call_expression that no unevaluated operand holds and that is not a cast
+        A short phrase that names the first reflection query, or ""
     """
-    found: list[tsast.Node] = []
-    stack = [node]
+    stack = [(node, False)]
     while stack:
-        current = stack.pop()
-        if current.type in UNEVALUATED:
+        current, is_in_loop = stack.pop()
+        kind = current.type
+        if kind in UNEVALUATED or kind == "expansion_statement":
             continue
-        if current.type == "call_expression" and not is_cast(current):
-            found.append(current)
-        stack.extend(current.children)
-    return found
+        if kind == "call_expression":
+            name = reflection_function(current)
+            if name:
+                return f"a call of {name}"
+            if takes_reflection(current):
+                return "a call that takes a reflection"
+            callee = current.child_by_field("function")
+            body = None if callee is None or callee.type != "lambda_expression" else callee.child_by_field("body")
+            if body is not None:
+                stack.append((body, is_in_loop))
+        elif kind == "splice_specifier" and is_in_loop:
+            return "a splice in a loop"
+        loop = is_in_loop or kind in LOOPS
+        stack.extend((child, loop) for child in current.children)
+    return ""
 
 
 def has_qualifier(declaration: tsast.Node, *words: str) -> bool:
@@ -505,8 +564,11 @@ def is_at_eager_scope(node: tsast.Node) -> bool:
     return True
 
 
-def eager_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str]]:
-    """Return each eager evaluation of a header, with its key.
+def eager_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str, str]]:
+    """Return each reflection walk of a header that runs where the header stands, with its key and its query.
+
+    A declaration inside an expansion statement belongs to the walk of that
+    statement, so it is not a site of its own.
 
     Complexity: linear in the number of nodes of the file, times the depth of each candidate.
 
@@ -514,9 +576,9 @@ def eager_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str]]:
         tree: The parse tree of a header
 
     Returns:
-        (the node, the key) for each site, in source order
+        (the node, the key, the reflection query) for each site, in source order
     """
-    sites: list[tuple[tsast.Node, str]] = []
+    sites: list[tuple[tsast.Node, str, str]] = []
     for declaration in tree.find("declaration"):
         is_constant = has_qualifier(declaration, "constexpr", "constinit")
         if not is_constant and not has_qualifier(declaration, "const"):
@@ -528,12 +590,14 @@ def eager_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str]]:
             continue
         is_local = is_in_function_body(declaration)
         if (is_local and not is_constant) or (not is_local and not is_at_eager_scope(declaration)) \
+                or declaration.ancestor_of_type("expansion_statement") is not None \
                 or is_in_template_context(declaration):
             continue
         for target, value in items:
-            if (is_constant or is_const_object(declaration, target)) and evaluated_calls(value):
+            query = reflection_work(value) if is_constant or is_const_object(declaration, target) else ""
+            if query:
                 name = tsast.leaf_name(target) or tsast.spelled(target)
-                sites.append((target, "::".join((*owner_parts(declaration), name))))
+                sites.append((target, "::".join((*owner_parts(declaration), name)), query))
     for member in tree.find("field_declaration"):
         if not has_qualifier(member, "static"):
             continue
@@ -544,23 +608,26 @@ def eager_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str]]:
             if item.field == "declarator":
                 declared = item
                 counts = is_constant or is_const_object(member, item)
-            elif item.field == "default_value" and declared is not None and counts and evaluated_calls(item) \
-                    and not is_in_template_context(member):
-                name = tsast.leaf_name(declared) or tsast.spelled(declared)
-                sites.append((declared, "::".join((*owner_parts(member), name))))
+            elif item.field == "default_value" and declared is not None and counts:
+                query = reflection_work(item)
+                if query and not is_in_template_context(member):
+                    name = tsast.leaf_name(declared) or tsast.spelled(declared)
+                    sites.append((declared, "::".join((*owner_parts(member), name)), query))
     for alias in tree.find("alias_declaration", "type_definition"):
         written = alias.child_by_field("type")
-        if written is None or not evaluated_calls(written) or is_in_template_context(alias):
+        query = "" if written is None else reflection_work(written)
+        if not query or alias.ancestor_of_type("expansion_statement") is not None or is_in_template_context(alias):
             continue
         named = alias.child_by_field("name") if alias.type == "alias_declaration" else alias.child_by_field("declarator")
         name = "" if named is None else tsast.leaf_name(named) or tsast.spelled(named)
-        sites.append((alias, "::".join((*owner_parts(alias), name))))
+        sites.append((alias, "::".join((*owner_parts(alias), name)), query))
     for expansion in tree.find("expansion_statement"):
         if is_in_template_context(expansion):
             continue
         source = expansion.child_by_field("right")
         shown = tsast.spelled(source) if source is not None else tsast.spelled(expansion)
-        sites.append((expansion, "::".join(owner_parts(expansion)) + f"::template for({shown})"))
+        sites.append((expansion, "::".join(owner_parts(expansion)) + f"::template for({shown})",
+                      "an expansion statement"))
     sites.sort(key=lambda site: site[0].start)
     return sites
 
@@ -789,9 +856,9 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
         key = tsast.spelled(site).removesuffix(";")
         checks.extend([Check(rel, site.line, NAMESPACE, key, name)] * made.namespaces)
         checks.extend([Check(rel, site.line, ASSERT, key, name)] * made.asserts)
-    for site, key in eager_sites(tree):
+    for site, key, query in eager_sites(tree):
         if not any(is_self_test_segment(segment) for segment in tsast.namespace_path(site)):
-            checks.append(Check(rel, site.line, EAGER, key))
+            checks.append(Check(rel, site.line, EAGER, key, detail=query))
     checks.sort(key=lambda check: (check.row, KINDS.index(check.kind)))
     return checks, unread
 
@@ -1003,8 +1070,9 @@ def describe(check: Check, count: int = 1) -> str:
     if check.kind == FUNCTION_ASSERT:
         return (f"the static_assert({check.key}) in the body of a function that is not a template runs again in each "
                 f"translation unit that includes this header.  Move it to {target}, or make the function a template")
-    return (f"the constant evaluation of {check.key} runs again in each translation unit that includes this header.  "
-            f"Make it a variable template or a member of a template, or move it to {target}")
+    query = f" ({check.detail})" if check.detail else ""
+    return (f"the reflection walk of {check.key}{query} runs again in each translation unit that includes this "
+            f"header.  Make it a variable template or a member of a template, or move it to {target}")
 
 
 def check(root: Path, ledger_path: Path, warnings_dir: Path | None = None) -> int:
@@ -1279,7 +1347,8 @@ PLANTED: list[tuple[str, str | None, str]] = [
     ("static_assert(5 == 5);", None, "a static_assert inside a self-test namespace"),
     ("namespace inner_self_test { static_assert(6 == 6); }", None,
      "a self-test namespace inside a self-test namespace"),
-    ("inline constexpr int inside_self_test = compute();", None, "an eager evaluation inside a self-test namespace"),
+    ("inline constexpr auto inside_self_test = std::meta::members_of(^^Probe, ctx).size();", None,
+     "a reflection walk inside a self-test namespace"),
     ("}  // namespace detail::planted_self_test", None, ""),
     ("namespace self_test { struct Probe {}; }", NAMESPACE, "a namespace named self_test"),
     ("namespace fn_test { inline void f0() {} }", NAMESPACE, "a namespace whose name ends in _test"),
@@ -1303,41 +1372,62 @@ PLANTED: list[tuple[str, str | None, str]] = [
      "a static_assert in an abbreviated function template"),
     ("inline void constrained() requires true { static_assert(18 == 18); }", None,
      "a static_assert in a function with a requires-clause"),
-    ("inline constexpr int eager_call = compute();", EAGER, "a constexpr variable whose initializer calls"),
-    ("inline constexpr unsigned members = std::meta::members_of(^^Holder, ctx).size();", EAGER,
-     "a constexpr variable whose initializer walks reflection"),
-    ("constinit int bound = compute();", EAGER, "a constinit variable whose initializer calls"),
-    ("const int table_size = compute();", EAGER, "a const variable whose initializer calls"),
-    ("inline const char* const fixed_name = name_of();", EAGER, "a const pointer whose initializer calls"),
-    ("inline const char* moving_name = name_of();", None, "a pointer to const whose initializer calls"),
-    ("struct Counted { static constexpr int count = compute(); static constexpr int plain = 3; };", EAGER,
-     "a static data member whose initializer calls"),
-    ("using Spliced = [:pick_type():];", EAGER, "an alias whose splice calls"),
-    ("inline void local_walk() { constexpr auto total = compute(); (void)total; }", EAGER,
-     "a constexpr local of a function whose initializer calls"),
+    ("inline constexpr unsigned walked = std::meta::members_of(^^Holder, ctx).size();", EAGER,
+     "a constexpr variable whose initializer calls a function of std::meta"),
+    ("inline constexpr unsigned adl_walked = nonstatic_data_members_of(^^Holder, ctx).size();", EAGER,
+     "a call of a reflection function with no qualifier"),
+    ("constinit unsigned bound = std::define_static_array(enumerators_of(^^Kind)).size();", EAGER,
+     "a constinit variable whose initializer calls std::define_static_array"),
+    ("const unsigned table_size = edge_count<^^Holder>();", EAGER,
+     "a const variable whose initializer calls a function that takes a reflection"),
+    ("inline const char* const fixed_name = name_of(^^Holder);", EAGER,
+     "a const pointer whose initializer takes a reflection"),
+    ("inline const char* moving_name = name_of(^^Holder);", None,
+     "a pointer to const whose initializer takes a reflection"),
+    ("struct Counted { static constexpr auto count = std::meta::bases_of(^^Holder, ctx).size(); "
+     "static constexpr int plain = compute(); };", EAGER, "a static data member whose initializer walks reflection"),
+    ("using Spliced = [:std::meta::substitute(^^Box, {^^int}):];", EAGER, "an alias whose splice calls substitute"),
+    ("inline void local_walk() { static constexpr auto members = std::define_static_array(std::meta::members_of("
+     "^^Holder, ctx)); (void)members; }", EAGER, "a constexpr local of a function that walks reflection"),
     ("consteval bool expand() { template for (constexpr auto item : items) { (void)item; } return true; }", EAGER,
      "an expansion statement in a function body"),
-    ("template <> inline constexpr int lazy<int> = compute();", EAGER,
-     "an explicit specialization of a variable template whose initializer calls"),
+    ("template <> inline constexpr int lazy<int> = enum_count(^^Kind);", EAGER,
+     "an explicit specialization of a variable template whose initializer takes a reflection"),
+    ("inline constexpr int looped = [] { int total = 0; for (auto item : items) total += [:item:]; return total; }();",
+     EAGER, "a splice in a loop of a lambda that the initializer calls"),
+    ("inline constexpr auto called_walk = [] { return std::meta::members_of(^^Holder, ctx).size(); }();", EAGER,
+     "a reflection query in the body of a lambda that the initializer calls"),
+    ("consteval bool expand_locals() { template for (constexpr auto item : items) { constexpr auto inner = "
+     "std::meta::members_of(item, ctx).size(); (void)inner; } return true; }", EAGER,
+     "an expansion statement whose body holds a reflection query, which counts one time"),
+    ("inline constexpr int eager_call = compute();", None, "a plain call in a constexpr variable"),
+    ("constinit int plain_bound = compute();", None, "a plain call in a constinit variable"),
+    ("inline constexpr Color red = Color::hex(0xff0000);", None, "a cheap constexpr constructor"),
+    ("using Plain = [:pick_type():];", None, "a splice of a plain call outside a loop"),
+    ("inline void plain_local() { constexpr auto total = compute(); (void)total; }", None,
+     "a constexpr local of a function with a plain call"),
     ("inline constexpr int literal = 3 + 4 * 2;", None, "an arithmetic expression on literals"),
     ("inline constexpr int casts = static_cast<int>(Kind::one) + int(2) + unsigned(3) + sizeof(Holder);", None,
      "a cast, a functional cast, an enumerator and sizeof"),
     ("inline constexpr auto bits = std::bit_cast<unsigned>(1.0f);", None, "a bit_cast"),
-    ("inline constexpr bool unevaluated = noexcept(compute()) && sizeof(decltype(compute())) > 0;", None,
-     "a call in noexcept, decltype and sizeof"),
-    ("inline constexpr bool required = requires { compute(); };", None, "a call in a requires-expression"),
-    ("inline constexpr auto deferred = [] { return compute(); };", None, "a call in a lambda that no code calls"),
+    ("inline constexpr bool unevaluated = noexcept(compute()) && sizeof(std::meta::members_of(^^Holder, ctx)) > 0;",
+     None, "a reflection query in noexcept and sizeof"),
+    ("inline constexpr bool required = requires { std::meta::members_of(^^Holder, ctx); };", None,
+     "a reflection query in a requires-expression"),
+    ("inline constexpr auto deferred = [] { return std::meta::members_of(^^Holder, ctx).size(); };", None,
+     "a reflection query in a lambda that no code calls"),
     ("inline constexpr auto reflected = ^^Holder;", None, "a reflection with no call"),
     ("inline constexpr Box<int> braced{1, 2};", None, "a braced initializer with no call"),
-    ("template <class T> inline constexpr int lazy = compute<T>();", None, "a variable template"),
-    ("template <class T> struct Lazy { static constexpr int count = compute<T>(); };", None,
-     "a static data member of a class template"),
-    ("template <class T> void lazy_local() { constexpr auto total = compute<T>(); (void)total; }", None,
-     "a constexpr local of a function template"),
+    ("template <class T> inline constexpr auto lazy = std::meta::members_of(^^T, ctx).size();", None,
+     "a reflection walk in a variable template"),
+    ("template <class T> struct Lazy { static constexpr auto count = std::meta::members_of(^^T, ctx).size(); };",
+     None, "a reflection walk in a static data member of a class template"),
+    ("template <class T> void lazy_local() { constexpr auto total = std::meta::members_of(^^T, ctx).size(); "
+     "(void)total; }", None, "a reflection walk in a constexpr local of a function template"),
     ("inline auto lazy_expand = [](auto pack) { template for (constexpr auto item : pack) { (void)item; } };", None,
      "an expansion statement in a generic lambda"),
-    ("inline void runtime_local() { const int value = compute(); (void)value; }", None,
-     "a const local of a function, which needs no constant evaluation"),
+    ("inline void runtime_local() { const auto value = std::meta::members_of(^^Holder, ctx).size(); (void)value; }",
+     None, "a const local of a function, which needs no constant evaluation"),
     ("}  // namespace foundation", None, ""),
     ('static_assert(7 == 7, "global scope");', ASSERT, "a static_assert at global scope"),
     ("#define PLANTED_CHECK static_assert(8 == 8)", None, "a static_assert in a macro body"),
@@ -1384,13 +1474,13 @@ def self_test() -> int:
             failures.append(name)
 
     kept_header = ("#pragma once\nnamespace crucible {\nstatic_assert(sizeof(long) == 8);\n"
-                   "static_assert(sizeof(char) == 1);\ninline constexpr int kept_value = read_unit();\n"
-                   "}  // namespace crucible\n")
+                   "static_assert(sizeof(char) == 1);\ninline constexpr auto kept_value = "
+                   "std::meta::members_of(^^crucible, ctx).size();\n}  // namespace crucible\n")
     keep_row = "keep | include/crucible/Kept.h | static_assert | sizeof(long)==8 | the planted reason"
     eager_keep_row = "keep | include/crucible/Kept.h | eager evaluation | crucible::kept_value | the planted reason"
     planted_rows = ("include/foundation/Planted.h | 5 | 9\n"
                     "function static_assert | include/foundation/Planted.h | 5\n"
-                    "eager evaluation | include/foundation/Planted.h | 11\n")
+                    "eager evaluation | include/foundation/Planted.h | 13\n")
     matching = "include/crucible/Kept.h | 0 | 1\n" + planted_rows + keep_row + "\n" + eager_keep_row + "\n"
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
@@ -1435,11 +1525,18 @@ def self_test() -> int:
                    "foundation::detail::planted_self_test", "foundation::self_test", "foundation::fn_test",
                    "sizeof(int)==4", "3==3", "4==4", "7==7", "PLANTED_CHECK", "PLANTED_PAIR(int)",
                    "PLANTED_NESTED(long)", "PLANTED_SELF_TEST", "foundation::detail::macro_self_test",
-                   "1==1", "2==2", "10==10", "11==11", "12==12", "foundation::probe", "foundation::eager_call",
-                   "foundation::members",
+                   "1==1", "2==2", "10==10", "11==11", "12==12", "foundation::walked", "foundation::adl_walked",
                    "foundation::bound", "foundation::table_size", "foundation::fixed_name",
-                   "foundation::Counted::count", "foundation::Spliced", "foundation::local_walk::total",
-                   "foundation::expand::template for(items)", "foundation::lazy"})
+                   "foundation::Counted::count", "foundation::Spliced", "foundation::local_walk::members",
+                   "foundation::expand::template for(items)", "foundation::lazy", "foundation::looped",
+                   "foundation::called_walk", "foundation::expand_locals::template for(items)"})
+        queries = {item.key: item.detail for item in found.checks if item.kind == EAGER}
+        expect("each eager evaluation names its reflection query",
+               queries.get("foundation::walked") == "a call of std::meta::members_of"
+               and queries.get("foundation::adl_walked") == "a call of nonstatic_data_members_of"
+               and queries.get("foundation::table_size") == "a call that takes a reflection"
+               and queries.get("foundation::looped") == "a splice in a loop"
+               and queries.get("foundation::expand::template for(items)") == "an expansion statement")
         made = [(item.key, item.kind, item.via) for item in found.checks if item.via]
         expect("an invocation counts each check of one expansion, through a macro that it names too",
                sorted(made) == sorted([("PLANTED_CHECK", ASSERT, "PLANTED_CHECK"),
@@ -1458,8 +1555,9 @@ def self_test() -> int:
         expect("a ledger that agrees with the tree passes, with a warning for each held item",
                code == 0 and "error:" not in report
                and "include/foundation/Planted.h:6: warning: [header-checks] the static_assert(1==1)" in report
-               and "include/foundation/Planted.h:32: warning: [header-checks] the constant evaluation of "
-                   "foundation::eager_call" in report)
+               and "include/foundation/Planted.h:32: warning: [header-checks] the reflection walk of "
+                   "foundation::walked (a call of std::meta::members_of)" in report
+               and "eager_call" not in report and "foundation::red" not in report)
         written = warnings_file.read_text(encoding="utf-8") if warnings_file.is_file() else ""
         expect("the warnings file holds one line in the format for each warning, and nothing else",
                written.count("\n") == report.count(": warning: [header-checks]")
@@ -1472,7 +1570,8 @@ def self_test() -> int:
                 ("namespace fixy::detail::clean_self_test { struct Probe {}; }", "a self-test namespace", NAMESPACE),
                 ("inline void clean_body() { static_assert(sizeof(int) == 4); }", "a function static_assert",
                  FUNCTION_ASSERT),
-                ("inline constexpr int clean_eager = compute();", "an eager evaluation", EAGER)):
+                ("inline constexpr auto clean_eager = std::meta::members_of(^^Clean, ctx).size();",
+                 "a reflection walk", EAGER)):
             (root / "include/fixy/Clean.h").write_text(clean_planted + planted_line + "\n", encoding="utf-8")
             code, report = verdict()
             expect(f"{label} planted in a clean header is an error",
@@ -1480,9 +1579,16 @@ def self_test() -> int:
                    and f"of the kind {kind}, and the ledger permits 0" in report)
         (root / "include/fixy/Clean.h").write_text(clean_planted + "template <class T> inline void clean_body() "
                                                    "{ static_assert(sizeof(T) > 0); }\ntemplate <class T> inline "
-                                                   "constexpr int clean_eager = compute<T>();\n", encoding="utf-8")
+                                                   "constexpr auto clean_eager = std::meta::members_of(^^T, ctx)"
+                                                   ".size();\n", encoding="utf-8")
         code, report = verdict()
-        expect("the same function static_assert and evaluation in templates are no finding",
+        expect("the same function static_assert and reflection walk in templates are no finding",
+               code == 0 and "include/fixy/Clean.h" not in report, True)
+        (root / "include/fixy/Clean.h").write_text(clean_planted + "inline constexpr Color clean_red = "
+                                                   "Color::hex(0xff0000);\ninline constexpr int clean_count = "
+                                                   "compute();\n", encoding="utf-8")
+        code, report = verdict()
+        expect("a cheap constexpr constant and a plain call, planted in a clean header, are no finding",
                code == 0 and "include/fixy/Clean.h" not in report, True)
         (root / "include/fixy/Clean.h").write_text(clean_planted + "PLANTED_PAIR(Clean);\n", encoding="utf-8")
         code, report = verdict()
@@ -1493,7 +1599,7 @@ def self_test() -> int:
         for row, label in (("include/foundation/Planted.h | 5 | 8", "static_assert"),
                            ("include/foundation/Planted.h | 4 | 9", "self-test namespace"),
                            ("function static_assert | include/foundation/Planted.h | 4", "function static_assert"),
-                           ("eager evaluation | include/foundation/Planted.h | 10", "eager evaluation")):
+                           ("eager evaluation | include/foundation/Planted.h | 12", "eager evaluation")):
             first = row.split(SEPARATOR)[0]
             original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
             ledger.write_text(matching.replace(original, row), encoding="utf-8")
@@ -1502,7 +1608,7 @@ def self_test() -> int:
                    code == 1 and ": error: [header-checks]" in report and "include/foundation/Planted.h:" in report)
         for row, label in (("include/foundation/Planted.h | 5 | 10", "static_assert"),
                            ("function static_assert | include/foundation/Planted.h | 6", "function static_assert"),
-                           ("eager evaluation | include/foundation/Planted.h | 12", "eager evaluation")):
+                           ("eager evaluation | include/foundation/Planted.h | 14", "eager evaluation")):
             first = row.split(SEPARATOR)[0]
             original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
             ledger.write_text(matching.replace(original, row), encoding="utf-8")
@@ -1523,7 +1629,7 @@ def self_test() -> int:
         for extra, label in (("include/fixy/Clean.h | 0 | 0", "a row that counts no item"),
                              ("eager evaluation | include/fixy/Clean.h | 0", "an eager row that counts no item"),
                              ("include/foundation/Planted.h | 9 | 9", "a second count row for one header"),
-                             ("eager evaluation | include/foundation/Planted.h | 11", "a second eager row"),
+                             ("eager evaluation | include/foundation/Planted.h | 13", "a second eager row"),
                              ("include/fixy/Clean.h 1 1", "a row without its separators"),
                              ("eager evaluation | include/fixy/Clean.h | many", "an eager row with no number"),
                              ("function static_assert | fixy/Clean.h | 1", "a row with a path outside include/"),

@@ -5227,10 +5227,10 @@ endif()
 #                    operand; a literal pinned to itself cannot fire.
 #   header_checks  — a header holds no self-test namespace, no
 #                    namespace-scope static_assert, no static_assert in a
-#                    function that is not a template, and no constant
-#                    evaluation outside a template that calls a function.
-#                    Each check lives in the check file of its header under
-#                    test/layer/checks, each such evaluation is lazy, and
+#                    function that is not a template, and no reflection
+#                    walk outside a template.  Each check lives in the
+#                    check file of its header under test/layer/checks,
+#                    each such walk is lazy, and
 #                    utils/scripts/header-checks-ledger.txt holds the items
 #                    that remain.  Each item of the ledger gives a warning,
 #                    and the counts can only decrease.
