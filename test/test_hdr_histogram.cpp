@@ -9,6 +9,101 @@
 
 namespace {
 struct HistStreamTag {};
+
+// When the reader thread starts, relative to the producer threads.  The
+// scheduler selects the order, so each check of the reader must hold in
+// each order.
+enum class ReaderStart : std::uint8_t {
+    WithProducers,
+    AfterProducers,
+};
+
+// The producers' update of the total both publishes their own
+// bucket writes and acquires the previous producer's, which is what
+// chains the publications together.  A release without the acquire
+// half breaks that chain: a reader who sees the second producer's
+// total is not thereby guaranteed to see the first producer's
+// buckets, and it reads a total larger than the counts it can find.
+//
+// On the machine this usually runs on, the read-modify-write is a
+// full barrier whichever ordering is written, so a run that passes
+// is confidence rather than proof.  The guard is still worth having
+// because it fails on a target where the distinction is real.
+void check_published_buckets(ReaderStart reader_start) {
+    crucible::observe::HdrHistogram<2, 1000000> shared;
+    std::atomic<bool> ready_flag{false};
+    std::atomic<bool> stop_flag{false};
+    std::atomic<std::uint64_t> torn_observations{0};
+    std::uint64_t last_total_seen = 0;
+
+    constexpr std::size_t kProducerCount = 4;
+    constexpr std::size_t kSamplesPerProducer = 8192;
+    using HRegress = decltype(shared);
+
+    auto read_until_stopped = [&shared, &ready_flag, &stop_flag, &torn_observations, &last_total_seen] {
+        while (!ready_flag.load(std::memory_order_acquire)) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        // The reader reads the stop flag before each iteration.  The first
+        // iteration that finds the flag set is the last one.  It starts
+        // after each producer thread stopped, so it sees every sample.
+        // When the reader starts after the producers stop, that iteration
+        // is the only one.
+        bool was_stopped = false;
+        while (!was_stopped) {
+            was_stopped = stop_flag.load(std::memory_order_acquire);
+            const std::uint64_t total = shared.total_count();
+            if (total == 0) {
+                continue;
+            }
+            std::uint64_t bucket_sum = 0;
+            shared.for_each_nonzero(
+                [&](const HRegress::EncodedBucket& bucket) noexcept { bucket_sum += bucket.count; });
+            // The comparison is deliberately one-sided.  Counting
+            // more than the total is normal, because a producer
+            // writes its bucket before it raises the total.  The
+            // other direction is the defect.
+            if (bucket_sum < total) {
+                torn_observations.fetch_add(1, std::memory_order_relaxed);
+            }
+            last_total_seen = total;
+        }
+    };
+
+    std::array<std::jthread, kProducerCount> producers{};
+    for (std::size_t p = 0; p < kProducerCount; ++p) {
+        producers[p] = std::jthread{[&shared, &ready_flag, p] {
+            while (!ready_flag.load(std::memory_order_acquire)) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+            for (std::size_t i = 0; i < kSamplesPerProducer; ++i) {
+                const std::uint64_t sample_value = (static_cast<std::uint64_t>(p) * 1000) + ((i % 90) + 10);
+                shared.record(HRegress::checked_value(sample_value));
+            }
+        }};
+    }
+
+    std::jthread reader;
+    if (reader_start == ReaderStart::WithProducers) {
+        reader = std::jthread{read_until_stopped};
+    }
+    ready_flag.store(true, std::memory_order_release);
+    for (auto& producer : producers) {
+        producer.join();
+    }
+    stop_flag.store(true, std::memory_order_release);
+    if (reader_start == ReaderStart::AfterProducers) {
+        reader = std::jthread{read_until_stopped};
+    }
+    reader.join();
+
+    assert(shared.total_count() == kProducerCount * kSamplesPerProducer);
+    // The last iteration of the reader read the buckets of the full
+    // histogram.  A reader that stops at the empty-histogram check reads
+    // no bucket, and it finds no torn state for that reason.
+    assert(last_total_seen == kProducerCount * kSamplesPerProducer);
+    assert(torn_observations.load(std::memory_order_relaxed) == 0);
+}
 }  // namespace
 
 int main() {
@@ -212,77 +307,8 @@ int main() {
         assert(drain.total_count() == 32);
     }
 
-    // The producers' update of the total both publishes their own
-    // bucket writes and acquires the previous producer's, which is what
-    // chains the publications together.  A release without the acquire
-    // half breaks that chain: a reader who sees the second producer's
-    // total is not thereby guaranteed to see the first producer's
-    // buckets, and it reads a total larger than the counts it can find.
-    //
-    // On the machine this usually runs on, the read-modify-write is a
-    // full barrier whichever ordering is written, so a run that passes
-    // is confidence rather than proof.  The guard is still worth having
-    // because it fails on a target where the distinction is real.
-    {
-        crucible::observe::HdrHistogram<2, 1000000> shared;
-        std::atomic<bool> ready_flag{false};
-        std::atomic<bool> stop_flag{false};
-        std::atomic<std::uint64_t> torn_observations{0};
-        std::atomic<std::uint64_t> reader_iterations{0};
-
-        constexpr std::size_t kProducerCount = 4;
-        constexpr std::size_t kSamplesPerProducer = 8192;
-        using HRegress = decltype(shared);
-
-        std::array<std::jthread, kProducerCount> producers{};
-        for (std::size_t p = 0; p < kProducerCount; ++p) {
-            producers[p] = std::jthread{[&shared, &ready_flag, p] {
-                while (!ready_flag.load(std::memory_order_acquire)) {
-                    CRUCIBLE_SPIN_PAUSE;
-                }
-                for (std::size_t i = 0; i < kSamplesPerProducer; ++i) {
-                    const std::uint64_t v = (static_cast<std::uint64_t>(p) * 1000) + ((i % 90) + 10);
-                    shared.record(HRegress::checked_value(v));
-                }
-            }};
-        }
-
-        std::jthread reader{[&shared, &ready_flag, &stop_flag, &torn_observations, &reader_iterations] {
-            while (!ready_flag.load(std::memory_order_acquire)) {
-                CRUCIBLE_SPIN_PAUSE;
-            }
-            while (!stop_flag.load(std::memory_order_acquire)) {
-                const std::uint64_t total = shared.total_count();
-                if (total == 0) {
-                    continue;
-                }
-                std::uint64_t bucket_sum = 0;
-                shared.for_each_nonzero(
-                    [&](const HRegress::EncodedBucket& bucket) noexcept { bucket_sum += bucket.count; });
-                // The comparison is deliberately one-sided.  Counting
-                // more than the total is normal, because a producer
-                // writes its bucket before it raises the total.  The
-                // other direction is the defect.
-                if (bucket_sum < total) {
-                    torn_observations.fetch_add(1, std::memory_order_relaxed);
-                }
-                reader_iterations.fetch_add(1, std::memory_order_relaxed);
-            }
-        }};
-
-        ready_flag.store(true, std::memory_order_release);
-        for (auto& t : producers) {
-            t.join();
-        }
-        stop_flag.store(true, std::memory_order_release);
-        reader.join();
-
-        assert(shared.total_count() == kProducerCount * kSamplesPerProducer);
-        // A reader that never got past the empty-histogram check would
-        // report zero violations without having looked at anything.
-        assert(reader_iterations.load(std::memory_order_relaxed) > 0);
-        assert(torn_observations.load(std::memory_order_relaxed) == 0);
-    }
+    check_published_buckets(ReaderStart::WithProducers);
+    check_published_buckets(ReaderStart::AfterProducers);
 
     auto whole = ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<HistStreamTag>>();
     using Channel = crucible::observe::HdrRecordChannel<2, 1000000, 8, HistStreamTag,
