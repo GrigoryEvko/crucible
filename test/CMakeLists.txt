@@ -245,7 +245,9 @@ crucible_test(test_transaction)
 # The executable has its own clock_gettime, so a case can make a clock read fail.
 crucible_test(test_clock_failed_read)
 crucible_test(test_transaction_owner)
-crucible_test(test_vigil)
+# Each group of tests is a source file of its own, so that no translation
+# unit compiles all of them.
+crucible_test(test_vigil test_vigil.cpp test_vigil_divergence.cpp test_vigil_producer.cpp)
 crucible_test(test_ckernel)
 # Each process-wide object, written in one shared library and read in
 # another.  The test loads the two libraries with dlopen and RTLD_LOCAL, as
@@ -265,13 +267,21 @@ crucible_test(test_reflect)
 crucible_test(test_pool_allocator)
 crucible_test(test_replay_engine)
 crucible_test(test_crucible_context)
-crucible_test(test_vigil_dispatch)
-crucible_test(test_mlp_trace)
-crucible_test(test_resnet)
-crucible_test(test_vit)
+# Each group of tests is a source file of its own, so that no translation
+# unit compiles all of them.
+crucible_test(test_vigil_dispatch test_vigil_dispatch.cpp test_vigil_dispatch_threads.cpp
+  test_vigil_dispatch_replay.cpp test_vigil_dispatch_pool.cpp test_vigil_dispatch_pure.cpp
+  test_vigil_dispatch_pure_recovery.cpp)
+# The run of each model test is in several source files: the op packets,
+# the compiled replay, and the run up to the memory plan with main.
+crucible_test(test_mlp_trace test_mlp_trace.cpp test_mlp_trace_ops.cpp test_mlp_trace_replay.cpp)
+crucible_test(test_resnet test_resnet.cpp test_resnet_model.cpp test_resnet_replay.cpp)
+crucible_test(test_vit test_vit.cpp test_vit_ops.cpp test_vit_replay.cpp)
 crucible_test(test_compute)
-crucible_test(test_compute_vit)
-crucible_test(test_end_to_end)
+crucible_test(test_compute_vit test_compute_vit.cpp test_compute_vit_reference.cpp test_compute_vit_attention.cpp
+  test_compute_vit_head.cpp)
+crucible_test(test_end_to_end test_end_to_end.cpp test_end_to_end_replay.cpp test_end_to_end_pool.cpp
+  test_end_to_end_multi_iteration.cpp)
 crucible_test(test_philox)
 crucible_test(test_philox_simd)
 crucible_test(test_philox_det)
@@ -980,7 +990,8 @@ crucible_test(test_computation_cache_integration)
 crucible_test(test_computation_cache_invalidation)
 crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
-crucible_test(test_background_thread_run_in_row)
+crucible_test(test_background_thread_run_in_row test_background_thread_run_in_row.cpp
+  test_background_thread_run_in_row_drain.cpp test_background_thread_run_in_row_publish.cpp)
 crucible_test(test_computation_cache_federation)
 
 # A specialization of a split trait, or of one of its variables, is legal
@@ -1017,7 +1028,10 @@ crucible_test(test_vessel_api_typed)
 crucible_test(test_storage_nbytes_simd)
 crucible_test(test_trace_ring_pop_batch)
 crucible_test(test_expr_pool_fast_symbol)
-crucible_test(test_region_cache)
+# Each group of tests that drives a Vigil is a source file of its own, so
+# that no translation unit compiles all of them.
+crucible_test(test_region_cache test_region_cache.cpp test_region_cache_switch.cpp test_region_cache_migration.cpp
+  test_region_cache_repeated.cpp)
 crucible_test(test_numerical_recipe)
 crucible_test(test_recipe_pool)
 crucible_test(test_recipe_registry)

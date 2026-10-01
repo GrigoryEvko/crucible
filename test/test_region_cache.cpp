@@ -1,3 +1,19 @@
+// The region cache, alone and behind a Vigil that switches between two
+// cached variants of one op stream.
+//
+// The test is several source files of one executable, so that no
+// translation unit holds every test:
+//
+//   region_cache.h                the shared part
+//   this file                     the helpers, the tests of the cache
+//                                 alone and main
+//   ..._switch.cpp                a switch between two cached variants,
+//                                 and a lookup that misses
+//   ..._migration.cpp             the data that crosses a switch
+//   ..._repeated.cpp              switches back and forth
+
+#include "region_cache.h"
+
 #include <crucible/Vigil.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
@@ -5,40 +21,27 @@
 #include <bit>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 
 using namespace crucible;
 
-static constexpr uint32_t NUM_OPS = 8;
-static constexpr uint32_t K = Vigil::ALIGNMENT_K;  // 5
+namespace test_region_cache {
 
-// Both variants share one set of schemas, so only the shapes diverge.
-static constexpr SchemaHash SCHEMA[NUM_OPS] = {SchemaHash{0x100}, SchemaHash{0x101}, SchemaHash{0x102},
-                                               SchemaHash{0x103}, SchemaHash{0x104}, SchemaHash{0x105},
-                                               SchemaHash{0x106}, SchemaHash{0x107}};
-
-// Variant A holds every tensor at 1024 elements, which is 4096 bytes.
-static constexpr ShapeHash SHAPE_A[NUM_OPS] = {ShapeHash{0x200}, ShapeHash{0x201}, ShapeHash{0x202}, ShapeHash{0x203},
-                                               ShapeHash{0x204}, ShapeHash{0x205}, ShapeHash{0x206}, ShapeHash{0x207}};
-
-// Variant B keeps A's first three shapes and changes the rest to 2048
-// elements.  Both the shape hash and the tensor shapes differ there, so
-// the two variants get different content hashes while sharing a prefix.
-static constexpr ShapeHash SHAPE_B[NUM_OPS] = {ShapeHash{0x200}, ShapeHash{0x201}, ShapeHash{0x202}, ShapeHash{0x303},
-                                               ShapeHash{0x304}, ShapeHash{0x305}, ShapeHash{0x306}, ShapeHash{0x307}};
-
-static void* fake_ptr(uint32_t variant, uint32_t iter, uint32_t op) {
+void* fake_ptr(uint32_t variant, uint32_t iter, uint32_t op) {
     return std::bit_cast<void*>(
         static_cast<std::uintptr_t>((variant + 1) * 0x10000000ULL + (iter + 1) * 0x100000 + (op + 1) * 0x1000));
 }
 
+namespace {
+
 // Variant 0 is A and variant 1 is B.
-static int64_t tensor_size(uint32_t variant, uint32_t op_idx) {
+int64_t tensor_size(uint32_t variant, uint32_t op_idx) {
     if (variant == 0) return 1024;
     return (op_idx < 3) ? 1024 : 2048;
 }
 
-static TensorMeta make_meta(void* data_ptr, int64_t size) {
+}  // namespace
+
+TensorMeta make_meta(void* data_ptr, int64_t size) {
     TensorMeta m{};
     m.ndim = 1;
     m.sizes[0] = ::crucible::tensor_dim(size);
@@ -51,13 +54,7 @@ static TensorMeta make_meta(void* data_ptr, int64_t size) {
     return m;
 }
 
-struct OpData {
-    TraceRing::Entry entry{};
-    TensorMeta metas[2]{};
-    uint16_t n_metas = 0;
-};
-
-static OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_t op_idx) {
+OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_t op_idx) {
     OpData d;
     d.entry.schema_hash = SCHEMA[op_idx];
     d.entry.shape_hash = shapes[op_idx];
@@ -75,23 +72,21 @@ static OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, 
     return d;
 }
 
-static void feed_record(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
+void feed_record(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
         (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
-static void feed_trigger(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
+void feed_trigger(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(shapes, variant, iter, i);
         (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
     }
 }
 
-using test::flush_and_wait_region_published;
-
-static void align_and_activate(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
+void align_and_activate(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(shapes, variant, iter, i);
         auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
@@ -106,160 +101,9 @@ static void align_and_activate(Vigil& vigil, const ShapeHash* shapes, uint32_t v
     }
 }
 
-// Once both variants are cached, a switch between them at the first
-// diverging op must come out of the cache.
-static void test_cache_switch_mid_iter() {
-    Vigil vigil;
+namespace {
 
-    feed_record(vigil, SHAPE_A, 0, 0);
-    feed_record(vigil, SHAPE_A, 0, 1);
-    feed_trigger(vigil, SHAPE_A, 0, 2);
-
-    flush_and_wait_region_published(vigil);
-    align_and_activate(vigil, SHAPE_A, 0, 3);
-
-    assert(vigil.region_cache().size() == 1);
-
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto d = make_op(SHAPE_A, 0, 4, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-    }
-
-    for (uint32_t i = 0; i < 3; i++) {
-        auto d = make_op(SHAPE_A, 0, 5, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-    }
-    auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    auto r_div = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
-    assert(r_div.action == DispatchResult::Action::RECORD);
-    assert(r_div.status == ReplayStatus::DIVERGED);
-
-    for (uint32_t iter = 10; iter < 16; iter++)
-        feed_record(vigil, SHAPE_B, 1, iter);
-    feed_trigger(vigil, SHAPE_B, 1, 16);
-
-    flush_and_wait_region_published(vigil);
-    align_and_activate(vigil, SHAPE_B, 1, 17);
-
-    assert(vigil.region_cache().size() == 2);
-
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto d = make_op(SHAPE_B, 1, 18, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-    }
-
-    // Ops 0 to 2 are the shared prefix, so the switch back to A can only
-    // show up at op 3.
-    for (uint32_t i = 0; i < 3; i++) {
-        auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-    }
-
-    auto dA3 = make_op(SHAPE_A, 0, 19, 3);
-    auto r_switch = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dA3.entry), dA3.metas, dA3.n_metas);
-
-    assert(r_switch.action == DispatchResult::Action::COMPILED && "Expected instant cache switch to variant A");
-
-    for (uint32_t i = 4; i < NUM_OPS; i++) {
-        auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-    }
-
-    std::printf("  test_cache_switch_mid_iter: PASSED\n");
-}
-
-// Output written before a switch must survive the move to the other
-// region's pool.
-static void test_cache_data_migration() {
-    Vigil vigil;
-
-    feed_record(vigil, SHAPE_A, 0, 0);
-    feed_record(vigil, SHAPE_A, 0, 1);
-    feed_trigger(vigil, SHAPE_A, 0, 2);
-
-    flush_and_wait_region_published(vigil);
-    align_and_activate(vigil, SHAPE_A, 0, 3);
-
-    for (uint32_t i = 0; i < 3; i++) {
-        auto d = make_op(SHAPE_A, 0, 4, i);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-    }
-    auto dB3 = make_op(SHAPE_B, 1, 4, 3);
-    auto r_div = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
-    assert(r_div.action == DispatchResult::Action::RECORD);
-
-    for (uint32_t iter = 10; iter < 16; iter++)
-        feed_record(vigil, SHAPE_B, 1, iter);
-    feed_trigger(vigil, SHAPE_B, 1, 16);
-
-    flush_and_wait_region_published(vigil);
-    align_and_activate(vigil, SHAPE_B, 1, 17);
-
-    assert(vigil.region_cache().size() == 2);
-
-    for (uint32_t i = 0; i < 3; i++) {
-        auto d = make_op(SHAPE_B, 1, 18, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-        // A prefix output holds 1024 floats, which is 4096 bytes.
-        std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), static_cast<int>(0xA0 + i), 4096);
-    }
-
-    auto dA3 = make_op(SHAPE_A, 0, 18, 3);
-    auto r_switch = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dA3.entry), dA3.metas, dA3.n_metas);
-    assert(r_switch.action == DispatchResult::Action::COMPILED && "Expected cache switch from B to A at pos 3");
-
-    // Op 3's input is op 2's output, so it must still carry the pattern
-    // written for i equal to two.
-    auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
-    for (uint32_t b = 0; b < 4096; b++) {
-        assert(in_data[b] == 0xA2 && "Data migration failed: op 2's output not preserved");
-    }
-
-    for (uint32_t i = 4; i < NUM_OPS; i++) {
-        auto d = make_op(SHAPE_A, 0, 18, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-        assert(r.action == DispatchResult::Action::COMPILED);
-    }
-
-    std::printf("  test_cache_data_migration: PASSED\n");
-}
-
-static void test_cache_miss_fallback() {
-    Vigil vigil;
-
-    feed_record(vigil, SHAPE_A, 0, 0);
-    feed_record(vigil, SHAPE_A, 0, 1);
-    feed_trigger(vigil, SHAPE_A, 0, 2);
-
-    flush_and_wait_region_published(vigil);
-    align_and_activate(vigil, SHAPE_A, 0, 3);
-
-    // A schema no cached region carries, so the lookup must miss.
-    TraceRing::Entry bad{};
-    bad.schema_hash = SchemaHash{0xDEAD};
-    bad.shape_hash = ShapeHash{0xBEEF};
-    bad.num_inputs = 0;
-    bad.num_outputs = 1;
-    TensorMeta bad_meta = make_meta(fake_ptr(99, 99, 0), 512);
-
-    auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
-    assert(r.action == DispatchResult::Action::RECORD);
-    assert(r.status == ReplayStatus::DIVERGED);
-    assert(!vigil.context().is_compiled());
-    assert(vigil.diverged_count() == 1);
-
-    assert(vigil.region_cache().size() == 1);
-
-    std::printf("  test_cache_miss_fallback: PASSED\n");
-}
-
-static void test_cache_dedup_and_cap() {
+void test_cache_dedup_and_cap() {
     auto test = ::foundation::effects::testing::test();
     RegionCache cache;
 
@@ -299,70 +143,6 @@ static void test_cache_dedup_and_cap() {
     std::printf("  test_cache_dedup_and_cap: PASSED\n");
 }
 
-// This is the alternating-batch-size case.  Once both regions are
-// cached, every switch must come from the cache and none may fall back
-// to recording.
-static void test_cache_repeated_switching() {
-    Vigil vigil;
-
-    feed_record(vigil, SHAPE_A, 0, 0);
-    feed_record(vigil, SHAPE_A, 0, 1);
-    feed_trigger(vigil, SHAPE_A, 0, 2);
-
-    flush_and_wait_region_published(vigil);
-    align_and_activate(vigil, SHAPE_A, 0, 3);
-
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto d = make_op(SHAPE_A, 0, 4, i);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-    }
-
-    for (uint32_t i = 0; i < 3; i++) {
-        auto d = make_op(SHAPE_A, 0, 5, i);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-    }
-    auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
-
-    for (uint32_t iter = 10; iter < 16; iter++)
-        feed_record(vigil, SHAPE_B, 1, iter);
-    feed_trigger(vigil, SHAPE_B, 1, 16);
-
-    flush_and_wait_region_published(vigil);
-    align_and_activate(vigil, SHAPE_B, 1, 17);
-
-    assert(vigil.region_cache().size() == 2);
-
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto d = make_op(SHAPE_B, 1, 18, i);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-    }
-
-    for (uint32_t cycle = 0; cycle < 4; cycle++) {
-        const ShapeHash* active_shapes = (cycle % 2 == 0) ? SHAPE_A : SHAPE_B;
-        uint32_t variant = (cycle % 2 == 0) ? 0 : 1;
-        uint32_t iter = 20 + cycle;
-
-        for (uint32_t i = 0; i < 3; i++) {
-            auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
-        }
-
-        auto d3 = make_op(active_shapes, variant, iter, 3);
-        auto r3 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d3.entry), d3.metas, d3.n_metas);
-        assert(r3.action == DispatchResult::Action::COMPILED && "Cache switch failed during repeated alternation");
-
-        for (uint32_t i = 4; i < NUM_OPS; i++) {
-            auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
-            assert(r.action == DispatchResult::Action::COMPILED);
-        }
-    }
-
-    std::printf("  test_cache_repeated_switching: PASSED\n");
-}
-
 // find_alternate reads the plan off the region, not off a snapshot taken
 // when the region was inserted.
 //
@@ -378,7 +158,7 @@ static void test_cache_repeated_switching() {
 // from the runtime and the repair path had nothing to repair. That is an
 // argument for deleting the repair path, not for keeping a cache whose
 // entries can be silently unfindable: insert is public and takes any region.
-static void test_find_alternate_tracks_live_plan() {
+void test_find_alternate_tracks_live_plan() {
     auto test = ::foundation::effects::testing::test();
     RegionCache cache;
     Arena arena(1 << 14);
@@ -431,7 +211,12 @@ static void test_find_alternate_tracks_live_plan() {
     std::printf("  test_find_alternate_tracks_live_plan: PASSED\n");
 }
 
+}  // namespace
+
+}  // namespace test_region_cache
+
 int main() {
+    using namespace test_region_cache;
     std::printf("test_region_cache:\n");
     test_cache_dedup_and_cap();
     test_find_alternate_tracks_live_plan();

@@ -10,154 +10,42 @@
 // consumer are not adjacent, two activation widths, and a gather. Q, K and
 // V are all alive at once during SDPA, and the slots freed after attention
 // have to be reused for the FFN activations.
+//
+// The test is several source files of one executable, so that no
+// translation unit holds the whole run:
+//
+//   compute_vit.h                 the shared part
+//   this file                     the plan, the replay loop, the checks
+//                                 and main
+//   ..._reference.cpp             the weights and the CPU reference pass
+//   ..._attention.cpp             ops 0 to 6 of one compiled iteration
+//   ..._head.cpp                  ops 7 to 14 of one compiled iteration
 
-#include "cpu_kernels.h"
+#include "compute_vit.h"
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
 #include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <random>
 
 using namespace crucible;
+using namespace test_compute_vit;
 
 // The views of the replay chain are minted on the thread that holds a
 // Vigil's producer claim.  This test drives the context without a Vigil,
 // so it takes that context from the test door.
 static constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
 
-// The dimensions are small so the reference pass stays cheap, but still
-// differ from each other so that equal-sized slots cannot mask an offset
-// assignment bug: D and D_FF differ, and [B,S,D], [B,D] and [B,N_CLS] are
-// three distinct activation footprints.
-static constexpr int B = 2;
-static constexpr int S = 4;
-static constexpr int D = 8;
-static constexpr int D_FF = 16;
-static constexpr int N_CLS = 3;
-
-static constexpr uint32_t N_OPS = 15;
-
-static constexpr SchemaHash H_LN1{0x100};
-static constexpr SchemaHash H_MMQ{0x200};
-static constexpr SchemaHash H_MMK{0x300};
-static constexpr SchemaHash H_MMV{0x400};
-static constexpr SchemaHash H_SDPA{0x500};
-static constexpr SchemaHash H_MMOUT{0x600};
-static constexpr SchemaHash H_ADD1{0x700};
-static constexpr SchemaHash H_LN2{0x800};
-static constexpr SchemaHash H_MMFF1{0x900};
-static constexpr SchemaHash H_RELU{0xA00};
-static constexpr SchemaHash H_MMFF2{0xB00};
-static constexpr SchemaHash H_ADD2{0xC00};
-static constexpr SchemaHash H_IDXSEL{0xD00};
-static constexpr SchemaHash H_MMHEAD{0xE00};
-static constexpr SchemaHash H_SOFTMAX{0xF00};
-
-static constexpr ShapeHash S_LN1{0x1100};
-static constexpr ShapeHash S_MMQ{0x1200};
-static constexpr ShapeHash S_MMK{0x1300};
-static constexpr ShapeHash S_MMV{0x1400};
-static constexpr ShapeHash S_SDPA{0x1500};
-static constexpr ShapeHash S_MMOUT{0x1600};
-static constexpr ShapeHash S_ADD1{0x1700};
-static constexpr ShapeHash S_LN2{0x1800};
-static constexpr ShapeHash S_MMFF1{0x1900};
-static constexpr ShapeHash S_RELU{0x1A00};
-static constexpr ShapeHash S_MMFF2{0x1B00};
-static constexpr ShapeHash S_ADD2{0x1C00};
-static constexpr ShapeHash S_IDXSEL{0x1D00};
-static constexpr ShapeHash S_MMHEAD{0x1E00};
-static constexpr ShapeHash S_SOFTMAX{0x1F00};
-
-static constexpr uint32_t SL_X = 0;
-static constexpr uint32_t SL_G1 = 1;
-static constexpr uint32_t SL_B1 = 2;
-static constexpr uint32_t SL_WQ = 3;
-static constexpr uint32_t SL_WK = 4;
-static constexpr uint32_t SL_WV = 5;
-static constexpr uint32_t SL_WOUT = 6;
-static constexpr uint32_t SL_G2 = 7;
-static constexpr uint32_t SL_B2 = 8;
-static constexpr uint32_t SL_WFF1 = 9;
-static constexpr uint32_t SL_WFF2 = 10;
-static constexpr uint32_t SL_WHEAD = 11;
-
-static constexpr uint32_t SL_NORM1 = 12;
-static constexpr uint32_t SL_Q = 13;
-static constexpr uint32_t SL_K = 14;
-static constexpr uint32_t SL_V = 15;
-static constexpr uint32_t SL_ATTN = 16;
-static constexpr uint32_t SL_PROJ = 17;
-static constexpr uint32_t SL_RES1 = 18;
-static constexpr uint32_t SL_NORM2 = 19;
-static constexpr uint32_t SL_FF1 = 20;
-static constexpr uint32_t SL_RELU = 21;
-static constexpr uint32_t SL_FF2 = 22;
-static constexpr uint32_t SL_RES2 = 23;
-static constexpr uint32_t SL_CLS = 24;
-static constexpr uint32_t SL_LOGITS = 25;
-static constexpr uint32_t SL_PROBS = 26;
-
-static constexpr uint32_t N_SLOTS = 27;
-[[maybe_unused]] static constexpr uint32_t N_EXT = 12;
-
-static constexpr uint64_t SZ_BSD = B * S * D * 4;
-static constexpr uint64_t SZ_D = D * 4;
-static constexpr uint64_t SZ_DD = D * D * 4;
-static constexpr uint64_t SZ_DFF = D * D_FF * 4;
-static constexpr uint64_t SZ_FFD = D_FF * D * 4;
-static constexpr uint64_t SZ_DNCLS = D * N_CLS * 4;
-static constexpr uint64_t SZ_BSDFF = B * S * D_FF * 4;
-static constexpr uint64_t SZ_BD = B * D * 4;
-static constexpr uint64_t SZ_BNCLS = B * N_CLS * 4;
-
 int main() {
     auto test = ::foundation::effects::testing::test();
     std::printf("test_compute_vit:\n");
 
-    std::mt19937 rng(7);
-    std::uniform_real_distribution<float> dist(-0.3f, 0.3f);
-
-    alignas(64) float X[B * S * D];
-    alignas(64) float gamma1[D];
-    alignas(64) float beta1[D];
-    alignas(64) float W_q[D * D];
-    alignas(64) float W_k[D * D];
-    alignas(64) float W_v[D * D];
-    alignas(64) float W_out[D * D];
-    alignas(64) float gamma2[D];
-    alignas(64) float beta2[D];
-    alignas(64) float W_ff1[D * D_FF];
-    alignas(64) float W_ff2[D_FF * D];
-    alignas(64) float W_head[D * N_CLS];
-
-    for (auto& v : X)
-        v = dist(rng);
-    for (auto& v : W_q)
-        v = dist(rng);
-    for (auto& v : W_k)
-        v = dist(rng);
-    for (auto& v : W_v)
-        v = dist(rng);
-    for (auto& v : W_out)
-        v = dist(rng);
-    for (auto& v : W_ff1)
-        v = dist(rng);
-    for (auto& v : W_ff2)
-        v = dist(rng);
-    for (auto& v : W_head)
-        v = dist(rng);
-
-    for (int i = 0; i < D; i++) {
-        gamma1[i] = 1.0f + dist(rng) * 0.1f;
-        beta1[i] = dist(rng) * 0.1f;
-        gamma2[i] = 1.0f + dist(rng) * 0.1f;
-        beta2[i] = dist(rng) * 0.1f;
-    }
+    Weights weights;
+    fill_weights(weights);
 
     TensorSlot slots[N_SLOTS]{};
 
@@ -325,141 +213,36 @@ int main() {
         ctx.register_external(SlotId{slot}, ::fixy::mint_refined<::fixy::non_null>(ptr), cv);
     };
 
-    bind(SL_X, X);
-    bind(SL_G1, gamma1);
-    bind(SL_B1, beta1);
-    bind(SL_WQ, W_q);
-    bind(SL_WK, W_k);
-    bind(SL_WV, W_v);
-    bind(SL_WOUT, W_out);
-    bind(SL_G2, gamma2);
-    bind(SL_B2, beta2);
-    bind(SL_WFF1, W_ff1);
-    bind(SL_WFF2, W_ff2);
-    bind(SL_WHEAD, W_head);
+    bind(SL_X, weights.X);
+    bind(SL_G1, weights.gamma1);
+    bind(SL_B1, weights.beta1);
+    bind(SL_WQ, weights.W_q);
+    bind(SL_WK, weights.W_k);
+    bind(SL_WV, weights.W_v);
+    bind(SL_WOUT, weights.W_out);
+    bind(SL_G2, weights.gamma2);
+    bind(SL_B2, weights.beta2);
+    bind(SL_WFF1, weights.W_ff1);
+    bind(SL_WFF2, weights.W_ff2);
+    bind(SL_WHEAD, weights.W_head);
 
     for (int iter = 0; iter < 50; iter++) {
-        ReplayStatus s;
-
-        s = ctx.advance(H_LN1, S_LN1, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::layer_norm(
-            static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-            static_cast<const float*>(ctx.input_ptr(2, cv)), static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D);
-
-        s = ctx.advance(H_MMQ, S_MMQ, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D, D);
-
-        s = ctx.advance(H_MMK, S_MMK, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D, D);
-
-        s = ctx.advance(H_MMV, S_MMV, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D, D);
-
-        s = ctx.advance(H_SDPA, S_SDPA, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::sdpa(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                  static_cast<const float*>(ctx.input_ptr(2, cv)), static_cast<float*>(ctx.output_ptr(0, cv)), B, S, D);
-
-        s = ctx.advance(H_MMOUT, S_MMOUT, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D, D);
-
-        s = ctx.advance(H_ADD1, S_ADD1, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::add(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                 static_cast<float*>(ctx.output_ptr(0, cv)), B * S * D);
-
-        s = ctx.advance(H_LN2, S_LN2, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::layer_norm(
-            static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-            static_cast<const float*>(ctx.input_ptr(2, cv)), static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D);
-
-        s = ctx.advance(H_MMFF1, S_MMFF1, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D_FF, D);
-
-        s = ctx.advance(H_RELU, S_RELU, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::relu(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<float*>(ctx.output_ptr(0, cv)),
-                  B * S * D_FF);
-
-        s = ctx.advance(H_MMFF2, S_MMFF2, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                static_cast<float*>(ctx.output_ptr(0, cv)), B * S, D, D_FF);
-
-        s = ctx.advance(H_ADD2, S_ADD2, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::add(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                 static_cast<float*>(ctx.output_ptr(0, cv)), B * S * D);
-
-        s = ctx.advance(H_IDXSEL, S_IDXSEL, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::index_select(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<float*>(ctx.output_ptr(0, cv)),
-                          B, S, D, 0);
-
-        s = ctx.advance(H_MMHEAD, S_MMHEAD, cv);
-        assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<const float*>(ctx.input_ptr(1, cv)),
-                static_cast<float*>(ctx.output_ptr(0, cv)), B, N_CLS, D);
-
-        s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv);
-        assert(s == ReplayStatus::COMPLETE);
-        cpu::softmax(static_cast<const float*>(ctx.input_ptr(0, cv)), static_cast<float*>(ctx.output_ptr(0, cv)), B,
-                     N_CLS);
+        run_attention_ops(ctx, cv);
+        run_ffn_and_head_ops(ctx, cv);
     }
 
     assert(ctx.compiled_iterations() == 50);
     assert(ctx.diverged_count() == 0);
 
-    float ref_norm1[B * S * D]{};
-    float ref_Q[B * S * D]{};
-    float ref_K[B * S * D]{};
-    float ref_V[B * S * D]{};
-    float ref_attn[B * S * D]{};
-    float ref_proj[B * S * D]{};
-    float ref_res1[B * S * D]{};
-    float ref_norm2[B * S * D]{};
-    float ref_ff1[B * S * D_FF]{};
-    float ref_relu[B * S * D_FF]{};
-    float ref_ff2[B * S * D]{};
-    float ref_res2[B * S * D]{};
-    float ref_cls[B * D]{};
-    float ref_logits[B * N_CLS]{};
-    float ref_probs[B * N_CLS]{};
-
-    cpu::layer_norm(X, gamma1, beta1, ref_norm1, B * S, D);
-    cpu::mm(ref_norm1, W_q, ref_Q, B * S, D, D);
-    cpu::mm(ref_norm1, W_k, ref_K, B * S, D, D);
-    cpu::mm(ref_norm1, W_v, ref_V, B * S, D, D);
-    cpu::sdpa(ref_Q, ref_K, ref_V, ref_attn, B, S, D);
-    cpu::mm(ref_attn, W_out, ref_proj, B * S, D, D);
-    cpu::add(ref_proj, X, ref_res1, B * S * D);
-    cpu::layer_norm(ref_res1, gamma2, beta2, ref_norm2, B * S, D);
-    cpu::mm(ref_norm2, W_ff1, ref_ff1, B * S, D_FF, D);
-    cpu::relu(ref_ff1, ref_relu, B * S * D_FF);
-    cpu::mm(ref_relu, W_ff2, ref_ff2, B * S, D, D_FF);
-    cpu::add(ref_ff2, ref_res1, ref_res2, B * S * D);
-    cpu::index_select(ref_res2, ref_cls, B, S, D, 0);
-    cpu::mm(ref_cls, W_head, ref_logits, B, N_CLS, D);
-    cpu::softmax(ref_logits, ref_probs, B, N_CLS);
+    Reference reference;
+    compute_reference(weights, reference);
 
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     auto* pool_probs = static_cast<const float*>(ctx.pool().slot_ptr(SlotId{SL_PROBS}, pv));
 
     float max_err = 0.0f;
     for (int i = 0; i < B * N_CLS; i++) {
-        float err = std::abs(pool_probs[i] - ref_probs[i]);
+        float err = std::abs(pool_probs[i] - reference.probs[i]);
         max_err = std::max(max_err, err);
     }
 
@@ -479,7 +262,7 @@ int main() {
     auto* pool_res2 = static_cast<const float*>(ctx.pool().slot_ptr(SlotId{SL_RES2}, pv));
     float max_res2_err = 0.0f;
     for (int i = 0; i < B * S * D; i++) {
-        float err = std::abs(pool_res2[i] - ref_res2[i]);
+        float err = std::abs(pool_res2[i] - reference.res2[i]);
         max_res2_err = std::max(max_res2_err, err);
     }
     std::printf("  resid2 max_error: %.2e\n", static_cast<double>(max_res2_err));
