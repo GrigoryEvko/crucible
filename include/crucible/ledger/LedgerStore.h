@@ -81,22 +81,12 @@ namespace crucible::ledger {
 // door's call sites are listed in utils/scripts/ctx-bg-door-allowlist.txt.
 using LedgerIoCtx = ::fixy::BgLoadCtx;
 
-static_assert(sizeof(LedgerIoCtx) == 1, "an execution context must stay a tag");
-
 // Every store entry point takes a context admitting both IO and Block,
 // because every one of them opens a file and waits on a disk.  That is the
 // gate of every fixy::fs call the store makes, so the store states it once
 // under its own name.
 template <class Ctx>
 concept CtxFitsLedgerStore = ::fixy::fs::CtxAdmitsFs<Ctx>;
-
-static_assert(CtxFitsLedgerStore<LedgerIoCtx>);
-static_assert(CtxFitsLedgerStore<::fixy::TestRunnerCtx>);
-// A foreground context claims nothing, so it cannot open a file.
-static_assert(!CtxFitsLedgerStore<::fixy::HotFgCtx>);
-// An initialization context claims IO but not Block, so it cannot wait on
-// one either.
-static_assert(!CtxFitsLedgerStore<::fixy::ColdInitCtx>);
 
 // ── Bounds ────────────────────────────────────────────────────────────
 
@@ -737,21 +727,5 @@ template <::foundation::effects::IsExecCtx Ctx>
     }
     return {};
 }
-
-namespace store_detail::self_test {
-
-static_assert(kMaxLedgerEntries >= kVerdictIdCount);
-static_assert(confidence_from_name("high") == Confidence::High);
-static_assert(confidence_from_name("low") == Confidence::Low);
-static_assert(confidence_from_name("unknown") == Confidence::Unknown);
-static_assert(confidence_from_name("HIGH") == Confidence::Unknown, "the parse is exact, not case-folding");
-static_assert(confidence_from_name("") == Confidence::Unknown);
-
-// Confidence must order Unknown < Low < High for the read-back clamp in
-// deserialize_ledger to mean what it says.
-static_assert(Confidence::Unknown < Confidence::Low);
-static_assert(Confidence::Low < Confidence::High);
-
-}  // namespace store_detail::self_test
 
 }  // namespace crucible::ledger

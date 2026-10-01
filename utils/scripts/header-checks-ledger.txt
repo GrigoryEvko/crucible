@@ -14,43 +14,11 @@
 #   One check that stays in its header, because its result depends on the translation unit that
 #   includes the header.  The key of a namespace is its full name.  The key of a static_assert is
 #   the spelling of its condition, as --list prints it.  The reason is mandatory.
-include/crucible/cipher/CipherTierPromotion.h | 1 | 0
-include/crucible/cipher/ComputationCache.h | 1 | 0
-include/crucible/cipher/ComputationCacheFederation.h | 1 | 0
-include/crucible/cipher/FederationProtocol.h | 0 | 36
-include/crucible/cog/AuditFindings.h | 1 | 0
-include/crucible/cog/Calibrate.h | 0 | 16
-include/crucible/cog/CogIdentity.h | 1 | 5
-include/crucible/cog/FitsCog.h | 1 | 0
-include/crucible/cog/NicConfig.h | 0 | 13
-include/crucible/cog/NumaNic.h | 0 | 1
-include/crucible/cog/OffloadTarget.h | 1 | 0
-include/crucible/cog/OpcodeLatencyTable.h | 1 | 4
-include/crucible/cog/SrIov.h | 0 | 16
-include/crucible/cog/TargetCaps.h | 1 | 4
-include/crucible/forge/Ir001/Comm.h | 0 | 8
-include/crucible/forge/_wip/Phases/Comm.h | 0 | 2
-include/crucible/forge/recipes/Network.h | 0 | 3
-include/crucible/ledger/Competence.h | 1 | 1
-include/crucible/ledger/HostFingerprint.h | 1 | 4
-include/crucible/ledger/Ledger.h | 1 | 0
-include/crucible/ledger/LedgerStore.h | 1 | 5
 include/crucible/ledger/ProbeSupport.h | 1 | 2
 include/crucible/ledger/RefreshDaemon.h | 1 | 5
-include/crucible/ledger/Verdict.h | 1 | 4
 include/crucible/ledger/probes/CacheTier.h | 1 | 0
 include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
-include/crucible/mimic/CogMimic.h | 1 | 0
-include/crucible/mimic/Fence.h | 1 | 2
-include/crucible/mimic/Semaphore.h | 1 | 1
-include/crucible/mimic/_wip/am/network/Backend.h | 0 | 1
-include/crucible/mimic/_wip/broadcom/network/Backend.h | 0 | 1
-include/crucible/mimic/_wip/cpu/network/Backend.h | 0 | 1
-include/crucible/mimic/_wip/intel/network/Backend.h | 0 | 1
-include/crucible/mimic/_wip/mellanox/network/Backend.h | 0 | 1
-include/crucible/mimic/_wip/network/Backend.h | 0 | 5
-include/crucible/mimic/_wip/nv/network/Backend.h | 0 | 1
 include/fixy/Aliases.h | 1 | 8
 include/fixy/Atom.h | 1 | 2
 include/fixy/Axis.h | 0 | 19

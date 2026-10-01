@@ -40,8 +40,6 @@ public:
     constexpr auto operator<=>(NumaNodeId const&) const noexcept = default;
 };
 
-static_assert(sizeof(NumaNodeId) == sizeof(std::uint16_t));
-
 // The query reads a sysfs file, so it takes a context that owns IO and
 // Block.
 template <::fixy::CtxFitsFileOpen Ctx>

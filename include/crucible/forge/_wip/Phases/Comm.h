@@ -217,7 +217,4 @@ admit_comm_fusion(ir::DeclaredIr001Node<ComputeNode> producer, ir::DeclaredIr001
     });
 }
 
-static_assert(sizeof(DeclaredFusedCommDecision) == sizeof(FusedCommDecision));
-static_assert(std::is_trivially_copyable_v<FusedCommDecision>);
-
 }  // namespace crucible::forge::_wip::phases::comm

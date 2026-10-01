@@ -162,8 +162,6 @@ struct NetworkKernelArtifact {
     std::uint16_t participants = 1;
 };
 
-static_assert(std::is_trivially_copyable_v<NetworkKernelArtifact>);
-
 template <NetworkBackendVendor Vendor>
 using DeclaredNetworkKernel = ::fixy::Tagged<NetworkKernelArtifact, typename NetworkBackendTraits<Vendor>::source>;
 
@@ -258,10 +256,5 @@ template <NetworkBackendVendor Vendor>
 emit_network_kernel(DeclaredNetworkKernel<Vendor> const&) noexcept {
     return std::unexpected(NetworkBackendError::BackendUnavailable);
 }
-
-static_assert(sizeof(DeclaredNetworkKernel<NetworkBackendVendor::Cpu>) == sizeof(NetworkKernelArtifact));
-static_assert(NetworkBackendCanPlan<NetworkBackendVendor::Cpu, cog::CogKind::CpuSocket, ir::AllReduceOp>);
-static_assert(NetworkBackendCanPlan<NetworkBackendVendor::Nv, cog::CogKind::Gpu, ir::SendOp>);
-static_assert(!BackendAcceptsCog<NetworkBackendVendor::Mellanox, cog::CogKind::Gpu>);
 
 }  // namespace crucible::mimic::_wip::network
