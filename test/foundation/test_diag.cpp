@@ -1,4 +1,4 @@
-// Sentinel TU for foundation/diag: the catalog's own checks compile under
+// Sentinel TU for foundation/diag: the diag headers compile together under
 // the project warning set, the accessors run with non-constant arguments,
 // the three insight registration forms expand the way a consumer writes
 // them, and the runtime sink is driven in both output shapes.
@@ -50,9 +50,9 @@ static_assert(diag::category_of_v<LeadingTag> == diag::categories_v.front());
 static_assert(diag::category_of_v<TrailingTag> == diag::categories_v.back());
 static_assert(std::is_same_v<diag::tag_of_t<diag::categories_v.back()>, TrailingTag>);
 
-// The enum is walked by reflection in the header; the count it derives
-// is the tuple's size, and it is in scope here as the header's own witness.
-static_assert(diag::detail::diag_self_test::category_count == diag::catalog_size);
+// The enum is walked by reflection here.  The count of its enumerators is
+// the size of the tuple.
+static_assert(std::meta::enumerators_of(^^diag::Category).size() == diag::catalog_size);
 
 static_assert(diag::category_of_v<diag::EffectRowMismatch> == diag::Category::EffectRowMismatch);
 static_assert(diag::category_of_v<diag::DetSafeLeak> == diag::Category::DetSafeLeak);
@@ -126,7 +126,7 @@ struct smoke_local_tag : diag::tag_base {
 
 }  // namespace smoke
 
-// The header's own checks are all constant-evaluated.  This one runs
+// The checks of the header are all constant-evaluated.  This one runs
 // the same accessors with non-constant arguments, which is where an
 // inline-body defect in an accessor would surface.  The body names
 // foundation::diag without a qualifier, so it opens that namespace with

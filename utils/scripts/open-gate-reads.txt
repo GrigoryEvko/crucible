@@ -87,7 +87,6 @@ fixy::session::is_content_addressed_v | 1
 fixy::session::is_implementable_on | 1
 fixy::session::protocol_is_at_v | 1
 fixy::session::type_display_name_v | 1
-foundation::AlignedBuffer | 2
 foundation::algebra::Graded::can_regrade_ | 2
 foundation::algebra::Graded::inject | 2
 foundation::algebra::claim_orientation_v | 2
@@ -112,6 +111,5 @@ foundation::permissions::can_split_into_pack_v | open | a split manifest is an e
 foundation::permissions::has_split_pack_authoring_witness_v | open | the witness of a split manifest, an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
 foundation::reflect::any_component_satisfies | 1
 foundation::reflect::arity_v | 2
-foundation::reflect::bits_to_string | 1
 foundation::reflect::detail::identity_verdict_of | 1
 foundation::reflect::enumerator_name | 1

@@ -18,8 +18,6 @@ include/crucible/ledger/probes/HugePage.h | crucible::ledger::probes::huge_page_
 include/crucible/ledger/probes/VectorWidth.h | crucible::ledger::probes::vector_width_detail::g_memo | a cache of one measurement: a second library measures again and stores its own result
 
 include/foundation/ThreadLocalRef.h | foundation::ThreadLocalRef::storage_()::storage | a template, so the marker cannot reach it. Its one user, observe/HdrHistogram.h, keeps a shard choice for each thread, and a second library can only pick a second shard for the thread, which changes how the writes spread and nothing else
-include/foundation/reflect/Hash.h | foundation::reflect::detail::stable_name_self_test::identity_test::internal_variable | a fixture of the stable-identity self-test: only its address is used, in a static_assert
-include/foundation/reflect/Hash.h | foundation::reflect::detail::stable_name_self_test::identity_test::external_variable | a fixture of the stable-identity self-test: only its address is used, in a static_assert
 
 src/foundation/DiagRuntime.cpp | foundation::diag::(anonymous namespace)::g_default_sink_format | a cache of CRUCIBLE_DIAG_FORMAT: each library reads the same environment and caches the same answer
 src/foundation/DiagRuntime.cpp | foundation::diag::(anonymous namespace)::tls_loc_buf | scratch for one formatted location on one thread: nothing reads it after the call that fills it returns

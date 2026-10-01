@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Sentinel TU for foundation/reflect.  Enumerate.h and Hash.h carry their
-// own static_asserts.  This file includes both and runs a run-time body
-// for each.  It drives the enumerate helpers and pin_enum
+// Sentinel TU for foundation/reflect.  The check files of Enumerate.h and
+// Hash.h carry their static_asserts.  This file includes both headers and
+// runs a run-time body for each.  It drives the enumerate helpers and pin_enum
 // over a local enum and pins the two id properties that a cache key rests
 // on.  It also makes sure that the Murmur3 finalizer maps a non-zero seed
 // to a non-zero hash, which the zero-means-empty slot conventions need.
@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <initializer_list>
 #include <string_view>
 #include <type_traits>
 
@@ -168,16 +169,34 @@ static_assert(make_non_zero_hash(0xDEADBEEFCAFEBABEULL) != 0);
 static_assert(make_non_zero_hash(0x9E3779B97F4A7C15ULL) != 0);
 static_assert(make_non_zero_hash(0xFFFFFFFFFFFFFFFFULL) != 0);
 
-// The function-scope using-directives give each body below the name
-// lookup of its header.  The static_assert walls stay in the headers.
-//
-// A self test follows the code it tests, not the file it started in.
-// A header split out of another header needs a caller for its self
-// test, or the body compiles everywhere and runs nowhere.
+// The flag enum of the two run-time bodies below, with the shape of the
+// flag enums in the check files of EnumName.h and Enumerate.h: four
+// single-bit enumerators, one composite and one zero enumerator.  The
+// check files hold the static_assert walls, and these bodies run the same
+// helpers at run time.
+enum class TestFlags : std::uint8_t {
+    Alpha = 0x01,
+    Beta = 0x02,
+    Gamma = 0x04,
+    Delta = 0x08,
+    AlphaBeta = 0x03,
+    None = 0x00,
+};
+
+using TF = TestFlags;
+using U = std::underlying_type_t<TF>;
+
+// The word that a Bits<TF>{flags...} held: the enumerators' values ORed.
+[[nodiscard]] constexpr U mask_of(std::initializer_list<TF> flags) noexcept {
+    U acc = 0;
+    for (TF flag : flags) {
+        acc = static_cast<U>(acc | static_cast<U>(flag));
+    }
+    return acc;
+}
 
 void enumerate_runs_at_run_time() {
     using namespace ::foundation::reflect;
-    using namespace ::foundation::reflect::detail::reflected_self_test;
     char buf[64] = {};
 
     U empty = 0;
@@ -226,7 +245,6 @@ void enumerate_runs_at_run_time() {
 
 void enum_name_runs_at_run_time() {
     using namespace ::foundation::reflect;
-    using namespace ::foundation::reflect::detail::enum_name_self_test;
     if (enumerator_name(TF::None) != "None") std::abort();
     if (enumerator_name(TF::Alpha) != "Alpha") std::abort();
     if (enumerator_name(TF::Delta) != "Delta") std::abort();

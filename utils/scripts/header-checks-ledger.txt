@@ -19,27 +19,6 @@ include/crucible/ledger/RefreshDaemon.h | 1 | 5
 include/crucible/ledger/probes/CacheTier.h | 1 | 0
 include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
-include/foundation/AlignedBuffer.h | 1 | 0
-include/foundation/Brand.h | 1 | 0
-include/foundation/ChannelBinding.h | 0 | 12
-include/foundation/NoObject.h | 1 | 0
-include/foundation/Platform.h | 0 | 6
-include/foundation/Saturate.h | 1 | 0
-include/foundation/Simd.h | 1 | 0
-include/foundation/SwissTableBuffer.h | 1 | 0
-include/foundation/ThreadLocalRef.h | 1 | 0
-include/foundation/contracts/Armed.h | 3 | 0
-include/foundation/diag/Catalog.h | 1 | 2
-include/foundation/diag/Insights.h | 4 | 0
-include/foundation/diag/JsonEmitter.h | 1 | 2
-include/foundation/diag/RowMismatch.h | 1 | 0
-include/foundation/reflect/EnumName.h | 1 | 0
-include/foundation/reflect/EnumPins.h | 1 | 0
-include/foundation/reflect/Enumerate.h | 1 | 0
-include/foundation/reflect/Hash.h | 1 | 0
-include/foundation/reflect/Instance.h | 1 | 0
-include/foundation/reflect/Signature.h | 1 | 0
-include/foundation/reflect/TypeComponents.h | 1 | 0
 
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Linear<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
@@ -60,3 +39,9 @@ keep | include/fixy/os/Socket.h | static_assert | ::fixy::atom_pack::every_tag_i
 keep | include/fixy/session/Protocol.h | static_assert | ::foundation::algebra::transition::read_seal(detail::protocol_registry,^^::foundation::algebra::transition::combinator).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the registrations that the includer wrote before the end of the header, so a combinator that an includer registers before the header changes the result (test/fixy/neg/neg_sess_combinator_registered_twice.cpp)
 keep | include/fixy/session/Protocol.h | static_assert | ::foundation::algebra::transition::read_seal(detail::protocol_registry,^^::foundation::algebra::transition::payload_rule).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the payload rules that the includer wrote before the end of the header, so a rule that an includer writes before the header changes the result (test/fixy/neg/neg_sess_payload_rule_before_seal.cpp)
 keep | include/fixy/session/Subtype.h | static_assert | ::foundation::algebra::transition::read_seal(^^::fixy::session::payload_axioms,^^::foundation::algebra::transition::subsort_axiom).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the axioms that the includer wrote before the end of the header, so an axiom that an includer writes before the header changes the result
+keep | include/foundation/Platform.h | static_assert | __GCC_CONSTRUCTIVE_SIZE==64 | the check reads the interference size of the unit that includes the header, and that unit can set the size (test/foundation/neg/neg_platform_longer_cache_line.cpp)
+keep | include/foundation/Platform.h | static_assert | __GCC_DESTRUCTIVE_SIZE==64 | the check reads the interference size of the unit that includes the header, and that unit can set the size (test/foundation/neg/neg_platform_destructive_interference_size.cpp)
+keep | include/foundation/Platform.h | static_assert | __GNUC__>=16 | the check reads the compiler of the unit that includes the header, so each unit that an older compiler reads must stop at this line
+keep | include/foundation/Platform.h | static_assert | __cplusplus>=202400L | the check reads the language mode of the unit that includes the header, so each unit that has an older -std must stop at this line
+keep | include/foundation/Platform.h | static_assert | sizeof(void*)==8 | the check reads the target of the unit that includes the header, so each unit of a build for a 32-bit target must stop at this line
+keep | include/foundation/Platform.h | static_assert | std::endian::native==std::endian::little | the check reads the target of the unit that includes the header, so each unit of a build for a big-endian target must stop at this line

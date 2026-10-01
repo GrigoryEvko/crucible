@@ -15,8 +15,8 @@ test/layer/checks/fixy/SelfContained.cpp:union:EitherValue
 # Unions of scalars in the stable-id tests.  GCC prints a union value
 # without its active member, so the stable id refuses a union value.  These
 # unions prove that refusal.  No member is a proof type.
-include/foundation/reflect/Hash.h:union:Either
 test/foundation/test_identity_attacks.cpp:union:Either
+test/layer/checks/foundation/reflect/Hash.cpp:union:Either
 
 # Probe unions of the checked lifetime start.  Each one is local to a
 # consteval self-test and proves that the walk refuses a union member, and

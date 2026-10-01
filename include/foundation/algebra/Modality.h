@@ -7,7 +7,8 @@
 //
 // A new enumerator has to reach the enum, the concept gates, the
 // exclusivity predicates and the tag types together.  The cardinality
-// guard in the self-test fires if any of them is missed.  The name and
+// guard in the check file of this header fires if any of them is
+// missed.  The name and
 // IsModality come from the enumerators by reflection, so they need no
 // edit.
 //
