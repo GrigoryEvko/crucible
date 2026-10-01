@@ -829,6 +829,25 @@ set_target_properties(crucible_cipher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible_vigil PUBLIC crucible_cipher)
 target_link_libraries(crucible PUBLIC crucible_cipher)
 
+# ── The trace visualizer: src/vis/ ──
+#
+# The block detector, the graph layout and the SVG renderer of
+# include/crucible/vis/.  A translation unit that includes a vis header then
+# compiles no layout and no renderer.  The bodies build std::string and
+# std::vector values, so they reference __cxa_throw, and the library stays
+# out of libcrucible.a for the reason that the Vigil runtime above gives.
+add_library(crucible_vis STATIC
+  src/vis/BlockDetector.cpp
+  src/vis/NetworkSimplex.cpp
+  src/vis/SugiyamaLayout.cpp
+  src/vis/SvgRenderer.cpp
+  src/vis/TraceVisualizer.cpp)
+target_include_directories(crucible_vis PUBLIC include/)
+target_compile_definitions(crucible_vis PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+target_link_libraries(crucible_vis PUBLIC foundation)
+set_target_properties(crucible_vis PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(crucible PUBLIC crucible_vis)
+
 # `libstdc++exp.a` holds the parts of libstdc++ 16 that libstdc++.so does
 # not have: the contract runtime, and parts of <print>, <debugging>,
 # <stacktrace> and <text_encoding>.  Each consumer of the dialect links it,

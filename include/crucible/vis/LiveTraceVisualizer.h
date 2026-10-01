@@ -1,5 +1,6 @@
 #pragma once
 
+#include <crucible/MerkleDag.h>
 #include <crucible/observe/MetricsSample.h>
 #include <crucible/vis/TraceVisualizer.h>
 
