@@ -5225,12 +5225,15 @@ endif()
 #                    own layer and the layers below it.  No allowlist.
 #   derived_pins   — a cardinality static_assert must have a derived
 #                    operand; a literal pinned to itself cannot fire.
-#   header_checks  — a header holds no self-test namespace and no
-#                    namespace-scope static_assert.  Each check lives in
-#                    the check file of its header under test/layer/checks,
-#                    and utils/scripts/header-checks-ledger.txt holds the
-#                    checks that have not moved.  The counts can only
-#                    decrease.
+#   header_checks  — a header holds no self-test namespace, no
+#                    namespace-scope static_assert, no static_assert in a
+#                    function that is not a template, and no constant
+#                    evaluation outside a template that calls a function.
+#                    Each check lives in the check file of its header under
+#                    test/layer/checks, each such evaluation is lazy, and
+#                    utils/scripts/header-checks-ledger.txt holds the items
+#                    that remain.  Each item of the ledger gives a warning,
+#                    and the counts can only decrease.
 add_test(NAME layer_boundary_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-layer-boundary.py --self-test)
 add_test(NAME layer_boundary
@@ -5248,7 +5251,8 @@ set_tests_properties(derived_pins derived_pins_self_test PROPERTIES
 add_test(NAME header_checks_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-checks.py --self-test)
 add_test(NAME header_checks
-  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-checks.py)
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-checks.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(header_checks header_checks_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)

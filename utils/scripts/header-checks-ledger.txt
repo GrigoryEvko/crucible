@@ -1,19 +1,24 @@
-# utils/scripts/header-checks-ledger.txt — the compile-time checks that each header under include/
-# still holds.  utils/scripts/check-header-checks.py reads this ledger.
+# utils/scripts/header-checks-ledger.txt — the compile-time work that each header under include/
+# still does in each translation unit that includes it.  utils/scripts/check-header-checks.py
+# reads this ledger.
 #
-# A header holds no self-test namespace and no static_assert at namespace scope.  Such a check
-# runs again in each translation unit that includes the header.  It belongs in the check file of
-# the header, which one translation unit compiles one time: test/layer/checks/<layer>/<path>.cpp
-# for include/<layer>/<path>.h.  The first line of code of a check file includes its header.
+# A header holds no self-test namespace, no static_assert at namespace scope and no static_assert
+# in the body of a function that is not a template.  Such a check belongs in the check file of the
+# header, which one translation unit compiles one time: test/layer/checks/<layer>/<path>.cpp for
+# include/<layer>/<path>.h.  The first line of code of a check file includes its header.  A
+# constant evaluation outside each template is lazy: a variable template, or a member of a template.
 #
 # A count row:  path | self-test namespaces | namespace-scope static_asserts
-#   The counts can only decrease.  A header with no check has no row.  When you move a check, run
+#               function static_assert | path | count
+#               eager evaluation | path | count
+#   Each item of a row gives a warning on each run.  The counts can only decrease.  A header with no
+#   item of a kind has no row of that kind.  When you move a check or make an evaluation lazy, run
 #   python3 utils/scripts/check-header-checks.py --write in the same commit.
 #
-# A keep row:   keep | path | namespace or static_assert | key | reason
-#   One check that stays in its header, because its result depends on the translation unit that
-#   includes the header.  The key of a namespace is its full name.  The key of a static_assert is
-#   the spelling of its condition, as --list prints it.  The reason is mandatory.
+# A keep row:   keep | path | kind | key | reason
+#   One item that stays in its header, because its result depends on the translation unit that
+#   includes the header.  The kind is namespace, static_assert, function static_assert or eager
+#   evaluation.  The key is the one that --list prints.  The reason is mandatory.
 include/crucible/CKernel.h | 0 | 1
 include/crucible/Graph.h | 0 | 2
 include/crucible/MerkleDag.h | 0 | 10
@@ -29,6 +34,40 @@ include/crucible/ledger/probes/CacheTier.h | 1 | 0
 include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
 include/fixy/Insights.h | 0 | 24
+function static_assert | include/crucible/Graph.h | 1
+function static_assert | include/foundation/effects/Ctx.h | 1
+function static_assert | include/foundation/effects/Effect.h | 1
+eager evaluation | include/crucible/RecipeRegistry.h | 1
+eager evaluation | include/crucible/Serialize.h | 3
+eager evaluation | include/crucible/SwissTable.h | 4
+eager evaluation | include/crucible/TensorMeta.h | 1
+eager evaluation | include/crucible/cntp/Fec.h | 1
+eager evaluation | include/crucible/cog/NicConfig.h | 2
+eager evaluation | include/crucible/cog/NicOffloadAudit.h | 2
+eager evaluation | include/crucible/cog/NumaNic.h | 1
+eager evaluation | include/crucible/cog/SrIov.h | 2
+eager evaluation | include/crucible/observe/Health.h | 1
+eager evaluation | include/crucible/vis/SvgRenderer.h | 36
+eager evaluation | include/fixy/Atom.h | 2
+eager evaluation | include/fixy/Axis.h | 1
+eager evaluation | include/fixy/Collision.h | 3
+eager evaluation | include/fixy/Refined.h | 5
+eager evaluation | include/fixy/Secret.h | 1
+eager evaluation | include/fixy/Tagged.h | 1
+eager evaluation | include/fixy/atoms/Syscall.h | 4
+eager evaluation | include/fixy/concurrent/WorkingSet.h | 1
+eager evaluation | include/fixy/os/Time.h | 2
+eager evaluation | include/fixy/session/Handle.h | 1
+eager evaluation | include/foundation/algebra/Modality.h | 1
+eager evaluation | include/foundation/algebra/lattices/MemoryScopeLattice.h | 2
+eager evaluation | include/foundation/algebra/lattices/NumaNodeLattice.h | 1
+eager evaluation | include/foundation/algebra/lattices/StalenessSemiring.h | 2
+eager evaluation | include/foundation/diag/Catalog.h | 5
+eager evaluation | include/foundation/diag/RowHash.h | 2
+eager evaluation | include/foundation/diag/RowMismatch.h | 2
+eager evaluation | include/foundation/effects/Effect.h | 7
+eager evaluation | include/foundation/effects/Resources.h | 2
+eager evaluation | include/foundation/effects/Row.h | 4
 
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Linear<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads

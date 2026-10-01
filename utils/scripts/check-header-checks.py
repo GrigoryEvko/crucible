@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""check-header-checks — a header does not check itself again in each translation unit that includes it.
+"""check-header-checks — a header does no compile-time work again in each translation unit that includes it.
 
-A self-test namespace and a static_assert at namespace scope run again in
-each translation unit that includes their header.  On the tree of
-2026-10-01 they cost about half of the front-end time of a file.  Such a
+A self-test namespace, a static_assert at namespace scope, a static_assert
+in the body of a function that is not a template, and a constant
+evaluation that runs where the header defines it all run again in each
+translation unit that includes their header.  On the tree of 2026-10-01
+the checks alone cost about half of the front-end time of a file.  Such a
 check lives in the check file of its header, which one translation unit
-compiles one time.  A static_assert inside a class or a template stays in
-the header, because it applies to each instantiation.
+compiles one time.  Such an evaluation is lazy: a variable template, or a
+member of a template, so that only a translation unit that reads it
+evaluates it.  A static_assert inside a class or a template stays in the
+header, because it applies to each instantiation.
 
 THE CHECK FILE
     The check file of include/<layer>/<path>.h is
@@ -19,46 +23,90 @@ THE CHECK FILE
     one-line sentinel of its header, against the include root of its
     layer, in each build.
 
-WHAT THE GUARD READS
-    The parse tree of the pinned tree-sitter kit (utils/scripts/tsast.py),
-    for each header under include/ and each file under test/layer/checks/.
-      * A self-test namespace is a namespace definition whose name has a
-        segment with the word `test` in it, when the segment is split at
-        `_`: x_self_test, self_test and fn_test are self-test namespaces.
-        `testing` is a different word, so foundation::effects::testing is
-        not one.  A self-test namespace inside another one counts with
-        the outer one.
-      * A namespace-scope static_assert is a static_assert declaration
-        that no class, function, lambda or other block holds.  A namespace
-        body, an extern "C++" body and an arm of a preprocessor
-        conditional are namespace scope.  A static_assert inside a
-        self-test namespace counts with that namespace, not alone.
-      * A macro that makes a check.  The guard reads the replacement list
-        of each #define of each header under include/ as preprocessing
-        tokens, and counts the self-test namespaces and the static_asserts
-        that it writes outside each brace that is not a namespace or an
-        extern "C++" body.  A macro that names such a macro makes its
-        checks too.  An invocation of such a macro at namespace scope in a
-        header, outside a self-test namespace, counts each check of one
-        expansion.  The key of each one is the spelling of the invocation.
-      * A static_assert whose condition is the literal `true` checks
-        nothing.  It is the device that makes a macro end in a semicolon at
-        its call site, and it does not count.
+THE FOUR KINDS
+    The guard reads the parse tree of the pinned tree-sitter kit
+    (utils/scripts/tsast.py) for each header under include/ and each file
+    under test/layer/checks/.
+      * namespace.  A self-test namespace is a namespace definition whose
+        name has a segment with the word `test` in it, when the segment is
+        split at `_`: x_self_test, self_test and fn_test are self-test
+        namespaces.  `testing` is a different word, so
+        foundation::effects::testing is not one.  A self-test namespace
+        inside another one counts with the outer one.
+      * static_assert.  A namespace-scope static_assert is a static_assert
+        declaration that no class, function, lambda or other block holds.
+        A namespace body, an extern "C++" body and an arm of a
+        preprocessor conditional are namespace scope.  A static_assert
+        inside a self-test namespace counts with that namespace, not
+        alone.
+      * function static_assert.  A static_assert in the body of a function
+        or a lambda that is not in a template context.  The compiler
+        evaluates it when it reads the body, in each includer.
+      * eager evaluation.  A constant evaluation outside each template
+        context, of one of these forms:
+          - a variable at namespace scope, or a static data member, that
+            is constexpr, constinit or const, and whose initializer holds
+            an evaluated call
+          - an alias whose type holds an evaluated call, for example in a
+            splice
+          - in the body of a function or a lambda: a constexpr or
+            constinit variable whose initializer holds an evaluated call,
+            or an expansion statement (`template for`), which the compiler
+            expands when it reads the body.
+        A call is evaluated when no sizeof, alignof, decltype, noexcept,
+        requires-expression or lambda body holds it.  A cast is not a call:
+        static_cast, const_cast, reinterpret_cast, dynamic_cast, bit_cast,
+        and a functional cast through a type name such as `unsigned(3)`.
+        A literal, an enumerator, sizeof, an arithmetic expression, a
+        reflection `^^X` and a braced initializer with no call in it hold
+        no call.  A const variable counts only when the object itself is
+        const: `const char* p` does not count, and `const char* const p`
+        does.
+    A template context is an enclosing template declaration with
+    parameters, an enclosing generic lambda (a lambda with a template
+    parameter list or a parameter of a placeholder type), an enclosing
+    abbreviated function template (a function with a parameter of a
+    placeholder type) and an enclosing function with a requires-clause.
+    An explicit specialization (`template <>`) is not a template context,
+    because the compiler reads its body where it stands.
+
+    A macro that makes a check.  The guard reads the replacement list of
+    each #define of each header under include/ as preprocessing tokens, and
+    counts the self-test namespaces and the static_asserts that it writes
+    outside each brace that is not a namespace or an extern "C++" body.  A
+    macro that names such a macro makes its checks too.  An invocation of
+    such a macro at namespace scope in a header, outside a self-test
+    namespace, counts each check of one expansion.  The key of each one is
+    the spelling of the invocation.  A static_assert whose condition is the
+    literal `true` checks nothing.  It is the device that makes a macro end
+    in a semicolon at its call site, and it does not count.
 
 THE LEDGER
-    utils/scripts/header-checks-ledger.txt holds two kinds of row.
+    utils/scripts/header-checks-ledger.txt holds three kinds of row.
       path | self-test namespaces | namespace-scope static_asserts
-          The checks that the header still holds.  A count above its row
-          fails: move the new check to the check file.  A count below its
-          row also fails: regenerate the row with --write in the same
-          commit.  A header with no check has no row.
-      keep | path | namespace or static_assert | key | reason
-          One check that stays in its header, because its result depends
-          on the translation unit that includes the header.  The key of a
-          namespace is its full name.  The key of a static_assert is the
-          spelling of its condition, as --list prints it.  A keep row that
-          names no check fails, and a keep row with no reason fails.  A
+      function static_assert | path | count
+      eager evaluation | path | count
+          The work that the header still does in each includer.  Each item
+          of a row gives a warning on each run, so the debt stays visible.
+          A count above its row is an error: move the new check to the
+          check file, or make the new evaluation lazy.  A count below its
+          row is an error too: regenerate the ledger with --write in the
+          same commit.  A header with no item of a kind has no row of that
+          kind.
+      keep | path | kind | key | reason
+          One item that stays in its header, because its result depends on
+          the translation unit that includes the header.  The kind is one
+          of the four kinds.  The key of a namespace is its full name, the
+          key of a static_assert is the spelling of its condition, and the
+          key of an eager evaluation is the qualified name of what it
+          defines, all as --list prints them.  A keep row that names no
+          item is an error, and a keep row with no reason is an error.  A
           reason does not contain ` | `.
+
+THE REPORT
+    Each finding is one line in the format of utils/scripts/check_report.py,
+    under the check name header-checks.  With --warnings-dir DIR the guard
+    also writes its warnings to DIR/header-checks.txt.
 
 THE CHECK FILES
     Each file under test/layer/checks/ is a .cpp file, its header exists,
@@ -77,24 +125,31 @@ WHAT THE GUARD CANNOT SEE
     A macro body has no scope until the macro expands, so the guard counts
     the checks of a macro at each invocation and not at its #define.  A
     macro that a file outside include/ defines, and a name that a macro
-    builds with `##`, are not read.  Every arm of an #if counts, because
-    the kit does not preprocess.
+    builds with `##`, are not read.  The guard does not read a function
+    static_assert or an eager evaluation that a macro writes.  Every arm of
+    an #if counts, because the kit does not preprocess.  The syntax cannot
+    tell a cheap call from an expensive one, and it cannot see an eager
+    instantiation, for example a non-template function that reads a
+    variable template.  The test header_constexpr_ops measures the exact
+    form: each header alone compiles at a low -fconstexpr-ops-limit.
 
 Usage
-    check-header-checks.py                         compare the tree with the ledger
-    check-header-checks.py --list                  print each check that a header holds
+    check-header-checks.py [--warnings-dir DIR]    compare the tree with the ledger
+    check-header-checks.py --list                  print each item that a header holds
     check-header-checks.py --write                 write the count rows of the ledger again from the tree
     check-header-checks.py --standalone BUILD_DIR  compile each listed header alone and refuse one that compiles
-    check-header-checks.py --self-test             plant each kind of check in a scratch tree and examine each verdict
+    check-header-checks.py --self-test             plant each kind of item in a scratch tree and examine each verdict
 
-Exit 0 clean, 1 on a new check, a bad check file, a listed header that
-compiles alone or a parse failure, 2 on a stale or malformed row, a
-missing compile command, a usage error or a failed self-test, 3 when the
-kit is not installed.
+Exit 0 with no error, 1 on an error finding (a new item, a stale or
+malformed row, a bad check file, a parse failure or a missing include
+directory), 1 when a listed header compiles alone, 2 on a missing compile
+command, a usage error or a failed self-test, 3 when the kit is not
+installed.
 """
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import io
 import json
@@ -104,16 +159,19 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import check_report  # noqa: E402
 import tsast  # noqa: E402
 
 SCRIPT = "utils/scripts/check-header-checks.py"
 LEDGER = "utils/scripts/header-checks-ledger.txt"
+CHECK = "header-checks"
 INCLUDE = "include"
 CHECKS = "test/layer/checks"
 NOT_STANDALONE = "test/layer/crucible-not-standalone.txt"
@@ -121,7 +179,11 @@ SENTINEL_TARGET = "layer_sentinel_crucible"
 HEADER_SUFFIXES = (".h", ".hpp")
 NAMESPACE = "namespace"
 ASSERT = "static_assert"
-KINDS = (NAMESPACE, ASSERT)
+FUNCTION_ASSERT = "function static_assert"
+EAGER = "eager evaluation"
+KINDS = (NAMESPACE, ASSERT, FUNCTION_ASSERT, EAGER)
+# The kinds that have a count row of their own, `kind | path | count`.
+ROW_KINDS = (FUNCTION_ASSERT, EAGER)
 SEPARATOR = " | "
 # The node types whose body is namespace scope.  A static_assert with an
 # ancestor of any other type sits in a class, a function, a lambda or a
@@ -130,32 +192,49 @@ NAMESPACE_SCOPE = frozenset({
     "translation_unit", "declaration_list", "namespace_definition", "linkage_specification",
     "preproc_if", "preproc_ifdef", "preproc_else", "preproc_elif", "preproc_elifdef",
 })
+FUNCTION_BODIES = ("function_definition", "lambda_expression")
+PARAMETER_TYPES = ("parameter_declaration", "optional_parameter_declaration", "variadic_parameter_declaration")
+# The operands that the compiler does not evaluate.  A lambda body runs only
+# when a call runs it, and the call is the call_expression around it.
+UNEVALUATED = frozenset({
+    "sizeof_expression", "alignof_expression", "decltype", "noexcept_expression", "requires_expression",
+    "requires_clause", "lambda_expression",
+})
+CAST_NAMES = frozenset({"static_cast", "const_cast", "reinterpret_cast", "dynamic_cast", "bit_cast"})
+# A call through a type name is a functional cast or a constructor of a literal type.
+TYPE_CALLEES = frozenset({"primitive_type", "sized_type_specifier", "type_identifier", "template_type"})
+CLASS_SPECIFIERS = ("class_specifier", "struct_specifier", "union_specifier")
 LEDGER_HEADER = (
-    "# utils/scripts/header-checks-ledger.txt — the compile-time checks that each header under include/\n"
-    "# still holds.  utils/scripts/check-header-checks.py reads this ledger.\n"
+    "# utils/scripts/header-checks-ledger.txt — the compile-time work that each header under include/\n"
+    "# still does in each translation unit that includes it.  utils/scripts/check-header-checks.py\n"
+    "# reads this ledger.\n"
     "#\n"
-    "# A header holds no self-test namespace and no static_assert at namespace scope.  Such a check\n"
-    "# runs again in each translation unit that includes the header.  It belongs in the check file of\n"
-    "# the header, which one translation unit compiles one time: test/layer/checks/<layer>/<path>.cpp\n"
-    "# for include/<layer>/<path>.h.  The first line of code of a check file includes its header.\n"
+    "# A header holds no self-test namespace, no static_assert at namespace scope and no static_assert\n"
+    "# in the body of a function that is not a template.  Such a check belongs in the check file of the\n"
+    "# header, which one translation unit compiles one time: test/layer/checks/<layer>/<path>.cpp for\n"
+    "# include/<layer>/<path>.h.  The first line of code of a check file includes its header.  A\n"
+    "# constant evaluation outside each template is lazy: a variable template, or a member of a template.\n"
     "#\n"
     "# A count row:  path | self-test namespaces | namespace-scope static_asserts\n"
-    "#   The counts can only decrease.  A header with no check has no row.  When you move a check, run\n"
+    "#               function static_assert | path | count\n"
+    "#               eager evaluation | path | count\n"
+    "#   Each item of a row gives a warning on each run.  The counts can only decrease.  A header with no\n"
+    "#   item of a kind has no row of that kind.  When you move a check or make an evaluation lazy, run\n"
     "#   python3 utils/scripts/check-header-checks.py --write in the same commit.\n"
     "#\n"
-    "# A keep row:   keep | path | namespace or static_assert | key | reason\n"
-    "#   One check that stays in its header, because its result depends on the translation unit that\n"
-    "#   includes the header.  The key of a namespace is its full name.  The key of a static_assert is\n"
-    "#   the spelling of its condition, as --list prints it.  The reason is mandatory.\n"
+    "# A keep row:   keep | path | kind | key | reason\n"
+    "#   One item that stays in its header, because its result depends on the translation unit that\n"
+    "#   includes the header.  The kind is namespace, static_assert, function static_assert or eager\n"
+    "#   evaluation.  The key is the one that --list prints.  The reason is mandatory.\n"
 )
 
 
 @dataclass(frozen=True)
 class Check:
-    """One self-test namespace or one namespace-scope static_assert of a header.
+    """One item of compile-time work that a header does in each includer.
 
-    via names the macro whose invocation makes the check, or is empty for a
-    check that the header writes itself.
+    via names the macro whose invocation makes the item, or is empty for an
+    item that the header writes itself.
     """
 
     path: str
@@ -178,16 +257,19 @@ class Keep:
 
 @dataclass
 class Ledger:
-    """The rows of the ledger, and one message for each malformed row.
+    """The rows of the ledger, and one (line, message) for each malformed row.
 
+    counts maps each header to the count of each kind that its rows permit,
+    and lines maps (header, kind) to the line of the row that permits it.
     bad_keeps holds the messages of the malformed keep rows only, because
     --write keeps each keep row and cannot keep one that it cannot read.
     """
 
-    counts: dict[str, tuple[int, int]]
-    keeps: list[Keep]
-    malformed: list[str]
-    bad_keeps: list[str]
+    counts: dict[str, dict[str, int]] = field(default_factory=dict)
+    lines: dict[tuple[str, str], int] = field(default_factory=dict)
+    keeps: list[Keep] = field(default_factory=list)
+    malformed: list[tuple[int, str]] = field(default_factory=list)
+    bad_keeps: list[tuple[int, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -214,12 +296,16 @@ class MacroBody:
 
 @dataclass
 class Scan:
-    """What the guard reads from one tree."""
+    """What the guard reads from one tree.
+
+    failures holds (path, message) for each file that the guard cannot read.
+    """
 
     checks: list[Check]
     headers: frozenset[str]
-    bad_check_files: list[str]
-    failures: list[str]
+    bad_check_files: list[tuple[str, str]]
+    failures: list[tuple[str, str]]
+    has_include: bool = True
 
 
 def is_self_test_segment(segment: str) -> bool:
@@ -252,6 +338,230 @@ def is_at_namespace_scope(node: tsast.Node) -> bool:
             return False
         owner = owner.parent
     return True
+
+
+def has_placeholder_parameter(parameters: tsast.Node | None) -> bool:
+    """Say whether a parameter list has a parameter of a placeholder type, such as `auto x` or `Concept auto x`.
+
+    Args:
+        parameters: A parameter_list, or None
+
+    Returns:
+        True when one parameter has a placeholder type
+    """
+    if parameters is None:
+        return False
+    for parameter in parameters.children_of_type(*PARAMETER_TYPES):
+        written = parameter.child_by_field("type")
+        if written is not None and written.type == "placeholder_type_specifier":
+            return True
+    return False
+
+
+def is_in_template_context(node: tsast.Node) -> bool:
+    """Say whether a node is in a template context, where the compiler reads it only at an instantiation.
+
+    Complexity: linear in the depth of the node.
+
+    Args:
+        node: Any node
+
+    Returns:
+        True when a template declaration with parameters, a generic lambda,
+        an abbreviated function template or a function with a
+        requires-clause encloses the node
+    """
+    owner = node.parent
+    while owner is not None:
+        if owner.type == "template_declaration":
+            parameters = owner.child_by_field("parameters")
+            if parameters is not None and tsast.non_comment_children(parameters):
+                return True
+        elif owner.type == "lambda_expression":
+            declarator = owner.child_by_field("declarator")
+            if owner.child_by_field("template_parameters") is not None or (
+                    declarator is not None and has_placeholder_parameter(declarator.child_by_field("parameters"))):
+                return True
+        elif owner.type == "function_definition":
+            declarator = owner.child_by_field("declarator")
+            if declarator is not None and next(declarator.descendants("requires_clause"), None) is not None:
+                return True
+            listed = tsast.parameters(owner)
+            if listed and has_placeholder_parameter(listed[0][1].parent):
+                return True
+        owner = owner.parent
+    return False
+
+
+def is_in_function_body(node: tsast.Node) -> bool:
+    """Say whether a function or a lambda encloses a node."""
+    return node.ancestor_of_type(*FUNCTION_BODIES) is not None
+
+
+def is_cast(call: tsast.Node) -> bool:
+    """Say whether a call_expression is a cast and not a call.
+
+    Args:
+        call: A call_expression
+
+    Returns:
+        True for a named cast, for bit_cast and for a call through a type name
+    """
+    callee = call.child_by_field("function")
+    if callee is None:
+        return False
+    return callee.type in TYPE_CALLEES or tsast.leaf_name(callee) in CAST_NAMES
+
+
+def evaluated_calls(node: tsast.Node) -> list[tsast.Node]:
+    """Return each call under a node that a constant evaluation of the node runs.
+
+    Complexity: linear in the size of the subtree.
+
+    Args:
+        node: An initializer, a type or a range expression
+
+    Returns:
+        Each call_expression that no unevaluated operand holds and that is not a cast
+    """
+    found: list[tsast.Node] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.type in UNEVALUATED:
+            continue
+        if current.type == "call_expression" and not is_cast(current):
+            found.append(current)
+        stack.extend(current.children)
+    return found
+
+
+def has_qualifier(declaration: tsast.Node, *words: str) -> bool:
+    """Say whether a declaration has one of the given specifiers or qualifiers directly, such as constexpr."""
+    return any(child.type in ("type_qualifier", "storage_class_specifier") and tsast.spelled(child) in words
+               for child in declaration.children)
+
+
+def is_const_object(declaration: tsast.Node, declarator: tsast.Node) -> bool:
+    """Say whether the object that a declarator declares is const, and not only what it points to.
+
+    Args:
+        declaration: The declaration or field_declaration
+        declarator: The declarator inside its init_declarator, or the declarator of a field
+
+    Returns:
+        True for `const T x`, `const T x[]` and `T* const x`
+    """
+    current = declarator
+    while current is not None and current.type == "array_declarator":
+        current = current.child_by_field("declarator")
+    if current is None or current.type == "reference_declarator":
+        return False
+    if current.type == "pointer_declarator":
+        return any(child.type == "type_qualifier" and tsast.spelled(child) == "const" for child in current.children)
+    return has_qualifier(declaration, "const")
+
+
+def owner_parts(node: tsast.Node) -> tuple[str, ...]:
+    """Return the qualified name of the scope that holds a node: its namespaces, then its function or its classes.
+
+    A node inside a lambda that no function holds gets the segment `<lambda>`.
+
+    Args:
+        node: Any node
+
+    Returns:
+        The segments, outermost first
+    """
+    parts = list(tsast.namespace_path(node))
+    function = tsast.enclosing_function(node)
+    if function is not None:
+        parts.extend(function)
+        return tuple(parts)
+    classes: list[str] = []
+    holder = node.ancestor_of_type(*CLASS_SPECIFIERS)
+    while holder is not None:
+        name = holder.child_by_field("name")
+        text = None if name is None else tsast.leaf_name(name)
+        classes.append(text or "<class>")
+        holder = holder.ancestor_of_type(*CLASS_SPECIFIERS)
+    parts.extend(reversed(classes))
+    if node.ancestor_of_type("lambda_expression") is not None:
+        parts.append("<lambda>")
+    return tuple(parts)
+
+
+def is_at_eager_scope(node: tsast.Node) -> bool:
+    """Say whether each ancestor of a declaration is namespace scope or an explicit specialization.
+
+    Complexity: linear in the depth of the node.
+    """
+    owner = node.parent
+    while owner is not None:
+        if owner.type not in NAMESPACE_SCOPE and owner.type != "template_declaration":
+            return False
+        owner = owner.parent
+    return True
+
+
+def eager_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str]]:
+    """Return each eager evaluation of a header, with its key.
+
+    Complexity: linear in the number of nodes of the file, times the depth of each candidate.
+
+    Args:
+        tree: The parse tree of a header
+
+    Returns:
+        (the node, the key) for each site, in source order
+    """
+    sites: list[tuple[tsast.Node, str]] = []
+    for declaration in tree.find("declaration"):
+        is_constant = has_qualifier(declaration, "constexpr", "constinit")
+        if not is_constant and not has_qualifier(declaration, "const"):
+            continue
+        items = [(item.child_by_field("declarator"), item.child_by_field("value")) for item in declaration.children
+                 if item.field == "declarator" and item.type == "init_declarator"]
+        items = [(target, value) for target, value in items if target is not None and value is not None]
+        if not items:
+            continue
+        is_local = is_in_function_body(declaration)
+        if (is_local and not is_constant) or (not is_local and not is_at_eager_scope(declaration)) \
+                or is_in_template_context(declaration):
+            continue
+        for target, value in items:
+            if (is_constant or is_const_object(declaration, target)) and evaluated_calls(value):
+                name = tsast.leaf_name(target) or tsast.spelled(target)
+                sites.append((target, "::".join((*owner_parts(declaration), name))))
+    for member in tree.find("field_declaration"):
+        if not has_qualifier(member, "static"):
+            continue
+        is_constant = has_qualifier(member, "constexpr", "constinit")
+        declared: tsast.Node | None = None
+        counts = False
+        for item in member.children:
+            if item.field == "declarator":
+                declared = item
+                counts = is_constant or is_const_object(member, item)
+            elif item.field == "default_value" and declared is not None and counts and evaluated_calls(item) \
+                    and not is_in_template_context(member):
+                name = tsast.leaf_name(declared) or tsast.spelled(declared)
+                sites.append((declared, "::".join((*owner_parts(member), name))))
+    for alias in tree.find("alias_declaration", "type_definition"):
+        written = alias.child_by_field("type")
+        if written is None or not evaluated_calls(written) or is_in_template_context(alias):
+            continue
+        named = alias.child_by_field("name") if alias.type == "alias_declaration" else alias.child_by_field("declarator")
+        name = "" if named is None else tsast.leaf_name(named) or tsast.spelled(named)
+        sites.append((alias, "::".join((*owner_parts(alias), name))))
+    for expansion in tree.find("expansion_statement"):
+        if is_in_template_context(expansion):
+            continue
+        source = expansion.child_by_field("right")
+        shown = tsast.spelled(source) if source is not None else tsast.spelled(expansion)
+        sites.append((expansion, "::".join(owner_parts(expansion)) + f"::template for({shown})"))
+    sites.sort(key=lambda site: site[0].start)
+    return sites
 
 
 def tests_literal_true(texts: list[str]) -> bool:
@@ -430,9 +740,9 @@ def header_of_check(root: Path, check_file: str) -> str | None:
 
 
 def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) -> tuple[list[Check], list[str]]:
-    """Return each self-test namespace and each namespace-scope static_assert of one header.
+    """Return each item of compile-time work that one header does in each includer.
 
-    Complexity: linear in the number of nodes of the file.
+    Complexity: linear in the number of nodes of the file, times the depth of each candidate.
 
     Args:
         tree: The parse tree of the header
@@ -440,8 +750,8 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
         macros: The checks of each macro of the headers that writes one
 
     Returns:
-        The checks in source order, and one message for each namespace
-        whose name the guard cannot read
+        The items in source order, and one message for each namespace whose
+        name the guard cannot read
     """
     checks: list[Check] = []
     unread: list[str] = []
@@ -451,8 +761,8 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
             continue
         parts = tsast.qualified_parts(name)
         if parts is None:
-            unread.append(f"{rel}:{node.line}: the guard cannot read the name of this namespace, so it cannot "
-                          f"tell whether it is a self-test namespace.")
+            unread.append(f"the guard cannot read the name of the namespace at line {node.line}, so it cannot tell "
+                          f"whether it is a self-test namespace")
             continue
         enclosing = tsast.namespace_path(node)
         if any(is_self_test_segment(segment) for segment in enclosing):
@@ -460,14 +770,15 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
         if any(is_self_test_segment(segment) for segment in parts[1]):
             checks.append(Check(rel, node.line, NAMESPACE, "::".join((*enclosing, *parts[1]))))
     for node in tree.find("static_assert_declaration"):
-        if not is_at_namespace_scope(node):
-            continue
-        if any(is_self_test_segment(segment) for segment in tsast.namespace_path(node)):
-            continue
         condition = node.child_by_field("condition")
         key = tsast.spelled(condition if condition is not None else node)
-        if key != "true":
-            checks.append(Check(rel, node.line, ASSERT, key))
+        if key == "true":
+            continue
+        if is_at_namespace_scope(node):
+            if not any(is_self_test_segment(segment) for segment in tsast.namespace_path(node)):
+                checks.append(Check(rel, node.line, ASSERT, key))
+        elif is_in_function_body(node) and not is_in_template_context(node):
+            checks.append(Check(rel, node.line, FUNCTION_ASSERT, key))
     for site, name in macro_sites(tree):
         made = macros.get(name)
         if made is None or not is_at_namespace_scope(site):
@@ -477,7 +788,10 @@ def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) ->
         key = tsast.spelled(site).removesuffix(";")
         checks.extend([Check(rel, site.line, NAMESPACE, key, name)] * made.namespaces)
         checks.extend([Check(rel, site.line, ASSERT, key, name)] * made.asserts)
-    checks.sort(key=lambda check: (check.row, check.kind))
+    for site, key in eager_sites(tree):
+        if not any(is_self_test_segment(segment) for segment in tsast.namespace_path(site)):
+            checks.append(Check(rel, site.line, EAGER, key))
+    checks.sort(key=lambda check: (check.row, KINDS.index(check.kind)))
     return checks, unread
 
 
@@ -509,7 +823,7 @@ def scan(root: Path) -> Scan:
         root: The repository root
 
     Returns:
-        The checks, the set of headers, each bad check file and each parse failure
+        The items, the set of headers, each bad check file and each parse failure
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -518,21 +832,23 @@ def scan(root: Path) -> Scan:
     headers = sorted(path for path in base.rglob("*") if path.is_file() and path.suffix in HEADER_SUFFIXES
                      and tsast.is_in_cpp_scope(path.relative_to(root))) if base.is_dir() else []
     checks: list[Check] = []
-    failures: list[str] = []
+    failures: list[tuple[str, str]] = []
     trees: list[tsast.Tree] = []
     for tree in tsast.parse(headers, strict=False):
         if tree.diagnostic is not None:
-            failures.append(f"{Path(tree.path).relative_to(root).as_posix()}: the parser cannot read this file, so "
-                            f"the guard cannot count its checks.  {tree.diagnostic.strip()}")
+            failures.append((Path(tree.path).relative_to(root).as_posix(),
+                             f"the parser cannot read this file, so the guard cannot count its items.  "
+                             f"{' '.join(tree.diagnostic.split())}"))
             continue
         trees.append(tree)
     macros = macro_table(trees)
     for tree in trees:
-        found, unread = header_checks(tree, Path(tree.path).relative_to(root).as_posix(), macros)
+        rel = Path(tree.path).relative_to(root).as_posix()
+        found, unread = header_checks(tree, rel, macros)
         checks.extend(found)
-        failures.extend(unread)
+        failures.extend((rel, message) for message in unread)
 
-    bad: list[str] = []
+    bad: list[tuple[str, str]] = []
     check_root = root / CHECKS
     sources: list[Path] = []
     expected: dict[str, str] = {}
@@ -541,28 +857,29 @@ def scan(root: Path) -> Scan:
             continue
         rel = path.relative_to(root).as_posix()
         if path.suffix != ".cpp":
-            bad.append(f"{rel}: a check file is a .cpp file: {CHECKS}/<layer>/<path>.cpp for "
-                       f"include/<layer>/<path>.h.  Rename the file, or move it out of {CHECKS}/.")
+            bad.append((rel, f"a check file is a .cpp file: {CHECKS}/<layer>/<path>.cpp for "
+                             f"include/<layer>/<path>.h.  Rename the file, or move it out of {CHECKS}/."))
             continue
         header = header_of_check(root, rel)
         if header is None:
-            bad.append(f"{rel}: no header include/{Path(rel).relative_to(CHECKS).with_suffix('.h').as_posix()} "
-                       f"exists.  A check file belongs to one header.  Move it with its header, or delete it.")
+            bad.append((rel, f"no header include/{Path(rel).relative_to(CHECKS).with_suffix('.h').as_posix()} "
+                             f"exists.  A check file belongs to one header.  Move it with its header, or delete it."))
             continue
         sources.append(path)
         expected[rel] = Path(header).relative_to(INCLUDE).as_posix()
     for tree in tsast.parse(sources, strict=False):
         rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            failures.append(f"{rel}: the parser cannot read this check file.  {tree.diagnostic.strip()}")
+            failures.append((rel, f"the parser cannot read this check file.  {' '.join(tree.diagnostic.split())}"))
             continue
         included = first_include(tree)
         if included != expected[rel]:
             shown = f"<{included}>" if included is not None else "no written include path"
-            bad.append(f"{rel}: the first line of code includes {shown}, not <{expected[rel]}>.  The first line "
-                       f"of code of a check file includes its own header, so the file shows that the header "
-                       f"compiles alone.")
-    return Scan(checks, frozenset(Path(path).relative_to(root).as_posix() for path in headers), bad, failures)
+            bad.append((rel, f"the first line of code includes {shown}, not <{expected[rel]}>.  The first line "
+                             f"of code of a check file includes its own header, so the file shows that the header "
+                             f"compiles alone."))
+    return Scan(checks, frozenset(Path(path).relative_to(root).as_posix() for path in headers), bad, failures,
+                base.is_dir())
 
 
 def read_ledger(path: Path) -> Ledger:
@@ -572,63 +889,75 @@ def read_ledger(path: Path) -> Ledger:
         path: The ledger file
 
     Returns:
-        The count rows, the keep rows and one message for each malformed row
+        The count rows, the keep rows and one (line, message) for each malformed row
     """
-    ledger = Ledger({}, [], [], [])
+    ledger = Ledger()
     if not path.is_file():
         return ledger
-    shape = (f"A count row is `path{SEPARATOR}self-test namespaces{SEPARATOR}static_asserts`, and a keep row is "
-             f"`keep{SEPARATOR}path{SEPARATOR}namespace or static_assert{SEPARATOR}key{SEPARATOR}reason`.")
+    shape = (f"A count row is `path{SEPARATOR}self-test namespaces{SEPARATOR}static_asserts` or "
+             f"`{FUNCTION_ASSERT} or {EAGER}{SEPARATOR}path{SEPARATOR}count`, and a keep row is "
+             f"`keep{SEPARATOR}path{SEPARATOR}kind{SEPARATOR}key{SEPARATOR}reason`.")
     keys: set[tuple[str, str, str]] = set()
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         entry = raw.strip()
         if not entry or entry.startswith("#"):
             continue
-        where = f"{LEDGER}:{number}"
         # The space after the entry keeps an empty last cell, so that a
         # keep row that ends in its separator has an empty reason.
         cells = [cell.strip() for cell in (entry + " ").split(SEPARATOR)]
         if cells[0] == "keep":
             problem = ""
             if len(cells) < 5 or cells[2] not in KINDS or not cells[1].startswith(f"{INCLUDE}/"):
-                problem = f"MALFORMED {where}: {entry}  {shape}"
+                problem = f"the row is malformed: {entry}  {shape}"
             elif not cells[-1]:
-                problem = (f"MALFORMED {where}: the keep row gives no reason.  Say why the check depends on the "
-                           f"translation unit that includes the header.")
+                problem = "the keep row gives no reason.  Say why the item depends on the translation unit that " \
+                          "includes the header."
             elif (cells[1], cells[2], SEPARATOR.join(cells[3:-1])) in keys:
-                problem = f"DUPLICATE {where}: a keep row for this check comes before this one."
+                problem = "a keep row for this item comes before this one.  Remove one of them."
             if problem:
-                ledger.malformed.append(problem)
-                ledger.bad_keeps.append(problem)
+                ledger.malformed.append((number, problem))
+                ledger.bad_keeps.append((number, problem))
                 continue
             keep = Keep(cells[1], cells[2], SEPARATOR.join(cells[3:-1]), cells[-1], number)
             keys.add((keep.path, keep.kind, keep.key))
             ledger.keeps.append(keep)
             continue
-        if len(cells) != 3 or not cells[1].isdigit() or not cells[2].isdigit():
-            ledger.malformed.append(f"MALFORMED {where}: {entry}  {shape}")
+        if cells[0] in ROW_KINDS:
+            if len(cells) != 3 or not cells[1].startswith(f"{INCLUDE}/") or not cells[2].isdigit():
+                ledger.malformed.append((number, f"the row is malformed: {entry}  {shape}"))
+                continue
+            permitted = {cells[0]: int(cells[2])}
+            header = cells[1]
+        else:
+            if len(cells) != 3 or not cells[1].isdigit() or not cells[2].isdigit():
+                ledger.malformed.append((number, f"the row is malformed: {entry}  {shape}"))
+                continue
+            permitted = {NAMESPACE: int(cells[1]), ASSERT: int(cells[2])}
+            header = cells[0]
+        if not any(permitted.values()):
+            ledger.malformed.append((number, f"the row counts no item.  A header with no item of a kind has no row "
+                                             f"of that kind.  Run: python3 {SCRIPT} --write"))
             continue
-        if cells[0] in ledger.counts:
-            ledger.malformed.append(f"DUPLICATE {where}: {cells[0]} has a count row before this one.")
+        slot = ledger.counts.setdefault(header, {})
+        if any(kind in slot for kind in permitted):
+            ledger.malformed.append((number, f"{header} has a row of this kind before this one.  Remove one of "
+                                             f"them, or run: python3 {SCRIPT} --write"))
             continue
-        namespaces, asserts = int(cells[1]), int(cells[2])
-        if namespaces == 0 and asserts == 0:
-            ledger.malformed.append(f"MALFORMED {where}: the row counts no check.  A header with no check has no "
-                                    f"row.  Run: python3 {SCRIPT} --write")
-            continue
-        ledger.counts[cells[0]] = (namespaces, asserts)
+        slot.update(permitted)
+        for kind in permitted:
+            ledger.lines[(header, kind)] = number
     return ledger
 
 
 def apply_keeps(checks: list[Check], keeps: list[Keep]) -> tuple[list[Check], list[Keep]]:
-    """Remove each kept check.
+    """Remove each kept item.
 
     Args:
-        checks: Every check of the tree
+        checks: Every item of the tree
         keeps: The keep rows
 
     Returns:
-        The checks that no keep row names, and each keep row that names no check
+        The items that no keep row names, and each keep row that names no item
     """
     wanted = {(keep.path, keep.kind, keep.key) for keep in keeps}
     matched: set[tuple[str, str, str]] = set()
@@ -643,94 +972,107 @@ def apply_keeps(checks: list[Check], keeps: list[Keep]) -> tuple[list[Check], li
     return remaining, stale
 
 
-def per_header(checks: list[Check]) -> dict[str, tuple[int, int]]:
-    """Count the self-test namespaces and the namespace-scope static_asserts of each header."""
-    counts: dict[str, list[int]] = {}
+def per_header(checks: list[Check]) -> dict[str, dict[str, int]]:
+    """Count the items of each kind in each header."""
+    counts: dict[str, dict[str, int]] = {}
     for check in checks:
-        slot = counts.setdefault(check.path, [0, 0])
-        slot[0 if check.kind == NAMESPACE else 1] += 1
-    return {path: (pair[0], pair[1]) for path, pair in counts.items()}
+        slot = counts.setdefault(check.path, {})
+        slot[check.kind] = slot.get(check.kind, 0) + 1
+    return counts
 
 
 def describe(check: Check, count: int = 1) -> str:
-    """Return one line that names a check and its place.
+    """Return the sentence that names one item, its cost and its repair.
 
     Args:
-        check: The check
-        count: The number of equal checks that one invocation of a macro makes
+        check: The item
+        count: The number of equal items that one invocation of a macro makes
     """
+    target = check_file_of(check.path)
     if check.via:
         made = "self-test namespace(s)" if check.kind == NAMESPACE else "namespace-scope static_assert(s)"
-        return (f"{check.path}:{check.row}: the invocation of the macro {check.via} makes {count} {made}.  "
-                f"--list prints its key")
+        return (f"the invocation of the macro {check.via} makes {count} {made}, and each one runs again in each "
+                f"translation unit that includes this header.  Move each check that the macro writes to {target}")
     if check.kind == NAMESPACE:
-        return f"{check.path}:{check.row}: the self-test namespace {check.key}"
-    return f"{check.path}:{check.row}: a namespace-scope static_assert({check.key})"
+        return (f"the self-test namespace {check.key} runs again in each translation unit that includes this header.  "
+                f"Move it to {target}")
+    if check.kind == ASSERT:
+        return (f"the namespace-scope static_assert({check.key}) runs again in each translation unit that includes "
+                f"this header.  Move it to {target}")
+    if check.kind == FUNCTION_ASSERT:
+        return (f"the static_assert({check.key}) in the body of a function that is not a template runs again in each "
+                f"translation unit that includes this header.  Move it to {target}, or make the function a template")
+    return (f"the constant evaluation of {check.key} runs again in each translation unit that includes this header.  "
+            f"Make it a variable template or a member of a template, or move it to {target}")
 
 
-def check(root: Path, ledger_path: Path) -> int:
-    """Compare the tree with the ledger and print the report.
+def check(root: Path, ledger_path: Path, warnings_dir: Path | None = None) -> int:
+    """Compare the tree with the ledger and print each finding.
 
     Args:
         root: The repository root
         ledger_path: The ledger file
+        warnings_dir: The warnings directory of check_report, or None
 
     Returns:
-        0 clean, 1 on a new check, a bad check file or a parse failure, 2 on a stale or malformed row
+        0 with no error finding, 1 with one or more
     """
     found = scan(root)
     ledger = read_ledger(ledger_path)
     checks, stale_keeps = apply_keeps(found.checks, ledger.keeps)
     counts = per_header(checks)
+    findings: list[check_report.Finding] = []
+
+    def report(level: check_report.Level, path: str, line: int, message: str) -> None:
+        """Add one finding."""
+        findings.append(check_report.Finding(level, path, line, CHECK, message))
+
+    if not found.has_include:
+        report("error", INCLUDE, 0, f"the directory {INCLUDE}/ does not exist, so the guard has no header to read")
     over = 0
     stale = 0
+    grouped = Counter(checks)
     for path in sorted(set(counts) | set(ledger.counts)):
-        have = counts.get(path, (0, 0))
-        allowed = ledger.counts.get(path, (0, 0))
         if path in ledger.counts and path not in found.headers:
             stale += 1
-            print(f"STALE     {LEDGER}: the row names {path}, which is not a header under include/.  Run: "
-                  f"python3 {SCRIPT} --write", file=sys.stderr)
+            line = min(number for (header, _kind), number in ledger.lines.items() if header == path)
+            report("error", LEDGER, line, f"the row names {path}, which is not a header under {INCLUDE}/.  Run: "
+                                          f"python3 {SCRIPT} --write")
             continue
-        if have[0] > allowed[0] or have[1] > allowed[1]:
-            over += 1
-            print(f"NEW CHECK {path} holds {have[0]} self-test namespace(s) and {have[1]} namespace-scope "
-                  f"static_assert(s), and the ledger permits {allowed[0]} and {allowed[1]}.  Move each check, "
-                  f"unchanged and inside the same enclosing namespaces, to the check file {check_file_of(path)}, "
-                  f"whose first line of code includes <{Path(path).relative_to(INCLUDE).as_posix()}>.  A "
-                  f"static_assert inside a class or a template stays in the header.  A check whose result depends "
-                  f"on the translation unit that includes the header can stay, with a keep row and its reason.",
-                  file=sys.stderr)
-            shown: dict[Check, int] = {}
-            for item in checks:
-                if item.path == path and (item.kind == NAMESPACE and have[0] > allowed[0]
-                                          or item.kind == ASSERT and have[1] > allowed[1]):
-                    shown[item] = shown.get(item, 0) + 1
-            for item, count in shown.items():
-                print(f"            {describe(item, count)}", file=sys.stderr)
-        elif have != allowed:
-            stale += 1
-            print(f"STALE     {path} holds {have[0]} self-test namespace(s) and {have[1]} namespace-scope "
-                  f"static_assert(s), and its row says {allowed[0]} and {allowed[1]}.  Regenerate this row in the "
-                  f"same commit: python3 {SCRIPT} --write", file=sys.stderr)
+        for kind in KINDS:
+            have = counts.get(path, {}).get(kind, 0)
+            allowed = ledger.counts.get(path, {}).get(kind, 0)
+            held = [(item, number) for item, number in grouped.items() if item.path == path and item.kind == kind]
+            if have > allowed:
+                over += 1
+                for item, number in held:
+                    report("error", path, item.row,
+                           f"{describe(item, number)}.  The header holds {have} item(s) of the kind {kind}, and the "
+                           f"ledger permits {allowed}.  An item whose result depends on the translation unit that "
+                           f"includes the header can stay, with a keep row and its reason.")
+                continue
+            for item, number in held:
+                report("warning", path, item.row, f"{describe(item, number)}.  The ledger holds it as debt.")
+            if have < allowed:
+                stale += 1
+                report("error", LEDGER, ledger.lines[(path, kind)],
+                       f"{path} holds {have} item(s) of the kind {kind}, and its row permits {allowed}.  Regenerate "
+                       f"the ledger in the same commit: python3 {SCRIPT} --write")
     for keep in stale_keeps:
         stale += 1
-        print(f"STALE     {LEDGER}:{keep.line}: the keep row names no {keep.kind} {keep.key} in {keep.path}.  "
-              f"Remove the row, or correct its key: python3 {SCRIPT} --list prints each key.", file=sys.stderr)
-    for line in found.bad_check_files:
-        print(f"CHECK FILE {line}", file=sys.stderr)
-    for line in found.failures + ledger.malformed:
-        print(line, file=sys.stderr)
+        report("error", LEDGER, keep.line, f"the keep row names no {keep.kind} {keep.key} in {keep.path}.  Remove the "
+                                           f"row, or correct its key: python3 {SCRIPT} --list prints each key.")
+    for path, message in found.bad_check_files:
+        report("error", path, 0, message)
+    for path, message in found.failures:
+        report("error", path, 0, message)
+    for line, message in ledger.malformed:
+        report("error", LEDGER, line, message)
     total = per_header(found.checks)
-    print(f"check-header-checks: {len(total)} header(s) hold {sum(pair[0] for pair in total.values())} self-test "
-          f"namespace(s) and {sum(pair[1] for pair in total.values())} namespace-scope static_assert(s), "
-          f"{len(found.checks) - len(checks)} of them kept.  The ledger permits "
-          f"{sum(pair[0] for pair in ledger.counts.values())} and {sum(pair[1] for pair in ledger.counts.values())} "
-          f"in {len(ledger.counts)} header(s).  {over} over, {stale} stale, {len(found.bad_check_files)} bad check "
-          f"file(s).", file=sys.stderr)
-    if over or found.bad_check_files or found.failures:
-        return 1
-    return 2 if stale or ledger.malformed else 0
+    shown = ", ".join(f"{sum(slot.get(kind, 0) for slot in total.values())} {kind}" for kind in KINDS)
+    print(f"check-header-checks: {len(total)} header(s) hold {shown}, {len(found.checks) - len(checks)} of them "
+          f"kept.  {over} over, {stale} stale, {len(found.bad_check_files)} bad check file(s).", file=sys.stderr)
+    return check_report.emit(findings, CHECK, warnings_dir)
 
 
 def write(root: Path, ledger_path: Path) -> int:
@@ -746,14 +1088,20 @@ def write(root: Path, ledger_path: Path) -> int:
     found = scan(root)
     ledger = read_ledger(ledger_path)
     if found.failures or ledger.bad_keeps:
-        for line in found.failures + ledger.bad_keeps:
-            print(line, file=sys.stderr)
+        for path, message in found.failures:
+            print(f"{path}: {message}", file=sys.stderr)
+        for line, message in ledger.bad_keeps:
+            print(f"{LEDGER}:{line}: {message}", file=sys.stderr)
         print("check-header-checks: --write does not write the ledger while a file does not parse or a keep row "
               "is malformed.", file=sys.stderr)
         return 1
     checks, _stale_keeps = apply_keeps(found.checks, ledger.keeps)
     counts = per_header(checks)
-    rows = [f"{path}{SEPARATOR}{counts[path][0]}{SEPARATOR}{counts[path][1]}\n" for path in sorted(counts)]
+    rows = [f"{path}{SEPARATOR}{slot.get(NAMESPACE, 0)}{SEPARATOR}{slot.get(ASSERT, 0)}\n"
+            for path, slot in sorted(counts.items()) if slot.get(NAMESPACE, 0) or slot.get(ASSERT, 0)]
+    for kind in ROW_KINDS:
+        rows.extend(f"{kind}{SEPARATOR}{path}{SEPARATOR}{slot[kind]}\n"
+                    for path, slot in sorted(counts.items()) if slot.get(kind, 0))
     keeps = [f"keep{SEPARATOR}{keep.path}{SEPARATOR}{keep.kind}{SEPARATOR}{keep.key}{SEPARATOR}{keep.reason}\n"
              for keep in sorted(ledger.keeps, key=lambda keep: (keep.path, keep.kind, keep.key))]
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
@@ -765,7 +1113,7 @@ def write(root: Path, ledger_path: Path) -> int:
 
 
 def list_checks(root: Path, ledger_path: Path) -> int:
-    """Print each check that a header holds, with the key that a keep row names.
+    """Print each item that a header holds, with the key that a keep row names.
 
     Returns:
         0, or 1 on a parse failure
@@ -775,8 +1123,8 @@ def list_checks(root: Path, ledger_path: Path) -> int:
     for item in found.checks:
         marker = "KEPT" if (item.path, item.kind, item.key) in kept else "HELD"
         print(f"{marker}  {item.path}:{item.row}  {item.kind}  {item.key}")
-    for line in found.failures:
-        print(line)
+    for path, message in found.failures:
+        print(f"{path}: {message}")
     return 1 if found.failures else 0
 
 
@@ -909,8 +1257,116 @@ def standalone(root: Path, build_dir: Path) -> int:
     return 2 if problems else 0
 
 
+# Each line of the planted header, and how the guard reads it: the kind of
+# item that the line holds, or None for a line that counts nothing.
+PLANTED: list[tuple[str, str | None, str]] = [
+    ("#pragma once", None, ""),
+    ("namespace foundation {", None, ""),
+    ("static_assert(sizeof(int) == 4);", ASSERT, "a static_assert in a namespace body"),
+    ("struct Holder { static_assert(sizeof(Holder*) == 8); };", None, "a static_assert in a class"),
+    ("template <class T> struct Box { static_assert(sizeof(T) > 0); };", None, "a static_assert in a template"),
+    ("inline void run() { static_assert(1 == 1); }", FUNCTION_ASSERT, "a static_assert in a function body"),
+    ("inline constexpr int probe = [] { static_assert(2 == 2); return 0; }();", FUNCTION_ASSERT,
+     "a static_assert in a lambda body at namespace scope"),
+    ("// static_assert(false); in a comment", None, "a static_assert in a comment"),
+    ('inline const char* text = "static_assert(false);";', None, "a static_assert in a string"),
+    ("#if defined(PLANTED)", None, ""),
+    ("static_assert(3 == 3);", ASSERT, "a static_assert in an arm of a preprocessor conditional"),
+    ("#endif", None, ""),
+    ('extern "C++" { static_assert(4 == 4); }', ASSERT, "a static_assert in an extern \"C++\" body"),
+    ("namespace detail::planted_self_test {", NAMESPACE, "a namespace whose name ends in _self_test"),
+    ("static_assert(5 == 5);", None, "a static_assert inside a self-test namespace"),
+    ("namespace inner_self_test { static_assert(6 == 6); }", None,
+     "a self-test namespace inside a self-test namespace"),
+    ("inline constexpr int inside_self_test = compute();", None, "an eager evaluation inside a self-test namespace"),
+    ("}  // namespace detail::planted_self_test", None, ""),
+    ("namespace self_test { struct Probe {}; }", NAMESPACE, "a namespace named self_test"),
+    ("namespace fn_test { inline void f0() {} }", NAMESPACE, "a namespace whose name ends in _test"),
+    ("namespace testing { struct Witness; }", None, "a namespace named testing"),
+    ("namespace contest { struct Entry {}; }", None, "a namespace whose name only contains test"),
+    ("struct Member { void act() const { static_assert(10 == 10); } };", FUNCTION_ASSERT,
+     "a static_assert in a member function of a class"),
+    ("consteval bool walk() { static_assert(11 == 11); return true; }", FUNCTION_ASSERT,
+     "a static_assert in a consteval function"),
+    ("template <> inline void special<int>() { static_assert(12 == 12); }", FUNCTION_ASSERT,
+     "a static_assert in an explicit specialization"),
+    ("template <class T> void generic() { static_assert(13 == 13); }", None,
+     "a static_assert in a function template"),
+    ("template <class T> struct Shell { void act() { static_assert(14 == 14); } };", None,
+     "a static_assert in a member function of a class template"),
+    ("inline auto generic_lambda = [](auto value) { static_assert(15 == 15); return value; };", None,
+     "a static_assert in a generic lambda"),
+    ("inline auto listed_lambda = []<class T>(T value) { static_assert(16 == 16); return value; };", None,
+     "a static_assert in a lambda with a template parameter list"),
+    ("inline void abbreviated(auto value) { static_assert(17 == 17); (void)value; }", None,
+     "a static_assert in an abbreviated function template"),
+    ("inline void constrained() requires true { static_assert(18 == 18); }", None,
+     "a static_assert in a function with a requires-clause"),
+    ("inline constexpr int eager_call = compute();", EAGER, "a constexpr variable whose initializer calls"),
+    ("inline constexpr unsigned members = std::meta::members_of(^^Holder, ctx).size();", EAGER,
+     "a constexpr variable whose initializer walks reflection"),
+    ("constinit int bound = compute();", EAGER, "a constinit variable whose initializer calls"),
+    ("const int table_size = compute();", EAGER, "a const variable whose initializer calls"),
+    ("inline const char* const fixed_name = name_of();", EAGER, "a const pointer whose initializer calls"),
+    ("inline const char* moving_name = name_of();", None, "a pointer to const whose initializer calls"),
+    ("struct Counted { static constexpr int count = compute(); static constexpr int plain = 3; };", EAGER,
+     "a static data member whose initializer calls"),
+    ("using Spliced = [:pick_type():];", EAGER, "an alias whose splice calls"),
+    ("inline void local_walk() { constexpr auto total = compute(); (void)total; }", EAGER,
+     "a constexpr local of a function whose initializer calls"),
+    ("consteval bool expand() { template for (constexpr auto item : items) { (void)item; } return true; }", EAGER,
+     "an expansion statement in a function body"),
+    ("template <> inline constexpr int lazy<int> = compute();", EAGER,
+     "an explicit specialization of a variable template whose initializer calls"),
+    ("inline constexpr int literal = 3 + 4 * 2;", None, "an arithmetic expression on literals"),
+    ("inline constexpr int casts = static_cast<int>(Kind::one) + int(2) + unsigned(3) + sizeof(Holder);", None,
+     "a cast, a functional cast, an enumerator and sizeof"),
+    ("inline constexpr auto bits = std::bit_cast<unsigned>(1.0f);", None, "a bit_cast"),
+    ("inline constexpr bool unevaluated = noexcept(compute()) && sizeof(decltype(compute())) > 0;", None,
+     "a call in noexcept, decltype and sizeof"),
+    ("inline constexpr bool required = requires { compute(); };", None, "a call in a requires-expression"),
+    ("inline constexpr auto deferred = [] { return compute(); };", None, "a call in a lambda that no code calls"),
+    ("inline constexpr auto reflected = ^^Holder;", None, "a reflection with no call"),
+    ("inline constexpr Box<int> braced{1, 2};", None, "a braced initializer with no call"),
+    ("template <class T> inline constexpr int lazy = compute<T>();", None, "a variable template"),
+    ("template <class T> struct Lazy { static constexpr int count = compute<T>(); };", None,
+     "a static data member of a class template"),
+    ("template <class T> void lazy_local() { constexpr auto total = compute<T>(); (void)total; }", None,
+     "a constexpr local of a function template"),
+    ("inline auto lazy_expand = [](auto pack) { template for (constexpr auto item : pack) { (void)item; } };", None,
+     "an expansion statement in a generic lambda"),
+    ("inline void runtime_local() { const int value = compute(); (void)value; }", None,
+     "a const local of a function, which needs no constant evaluation"),
+    ("}  // namespace foundation", None, ""),
+    ('static_assert(7 == 7, "global scope");', ASSERT, "a static_assert at global scope"),
+    ("#define PLANTED_CHECK static_assert(8 == 8)", None, "a static_assert in a macro body"),
+    ("#define PLANTED_PAIR(T) static_assert(sizeof(T) > 0, #T); static_assert(alignof(T) > 0)", None,
+     "two static_asserts in the body of a function-like macro"),
+    ("#define PLANTED_NESTED(T) PLANTED_PAIR(T)", None, "a macro body that names another macro"),
+    ('#define PLANTED_TRUE(T) struct T##_tag {}; static_assert(true, "a semicolon at the call site")', None,
+     "a macro body whose one static_assert tests the literal true"),
+    ("#define PLANTED_IN_CLASS(T) struct T##_holder { static_assert(sizeof(T) > 0); }", None,
+     "a macro body that writes a static_assert inside a class"),
+    ("#define PLANTED_SELF_TEST namespace planted_macro_self_test { static_assert(9 == 9); }", None,
+     "a macro body that writes a self-test namespace"),
+    ("PLANTED_CHECK;", ASSERT, "an object-like macro that writes a static_assert, at global scope"),
+    ("namespace foundation {", None, ""),
+    ("PLANTED_PAIR(int);", ASSERT, "a function-like macro that writes two static_asserts"),
+    ("PLANTED_NESTED(long)", ASSERT, "a macro that names a macro that writes static_asserts"),
+    ("PLANTED_TRUE(planted);", None, "a macro whose one static_assert tests the literal true"),
+    ("PLANTED_IN_CLASS(char);", None, "a macro that writes a static_assert inside a class"),
+    ("PLANTED_SELF_TEST;", NAMESPACE, "a macro that writes a self-test namespace"),
+    ("struct Macro { PLANTED_PAIR(int); };", None, "a macro that writes static_asserts, in a class body"),
+    ("inline void macro_body() { PLANTED_PAIR(int); }", None,
+     "a macro that writes static_asserts, in a function body"),
+    ("namespace detail::macro_self_test { PLANTED_PAIR(short); }", NAMESPACE,
+     "a self-test namespace that holds a macro that writes static_asserts"),
+    ("}  // namespace foundation", None, ""),
+]
+
+
 def self_test() -> int:
-    """Plant each kind of check in a scratch tree and make sure that each verdict is correct.
+    """Plant each kind of item in a scratch tree and make sure that each verdict is correct.
 
     Returns:
         0 when every case holds, 2 otherwise
@@ -926,67 +1382,19 @@ def self_test() -> int:
         if not holds:
             failures.append(name)
 
-    # Each line of the planted header, and how the guard reads it: a
-    # namespace, a static_assert, or None for a line that counts nothing.
-    planted: list[tuple[str, str | None, str]] = [
-        ("#pragma once", None, ""),
-        ("namespace foundation {", None, ""),
-        ("static_assert(sizeof(int) == 4);", ASSERT, "a static_assert in a namespace body"),
-        ("struct Holder { static_assert(sizeof(Holder*) == 8); };", None, "a static_assert in a class"),
-        ("template <class T> struct Box { static_assert(sizeof(T) > 0); };", None, "a static_assert in a template"),
-        ("inline void run() { static_assert(1 == 1); }", None, "a static_assert in a function body"),
-        ("inline constexpr int probe = [] { static_assert(2 == 2); return 0; }();", None,
-         "a static_assert in a lambda body"),
-        ("// static_assert(false); in a comment", None, "a static_assert in a comment"),
-        ('inline const char* text = "static_assert(false);";', None, "a static_assert in a string"),
-        ("#if defined(PLANTED)", None, ""),
-        ("static_assert(3 == 3);", ASSERT, "a static_assert in an arm of a preprocessor conditional"),
-        ("#endif", None, ""),
-        ('extern "C++" { static_assert(4 == 4); }', ASSERT, "a static_assert in an extern \"C++\" body"),
-        ("namespace detail::planted_self_test {", NAMESPACE, "a namespace whose name ends in _self_test"),
-        ("static_assert(5 == 5);", None, "a static_assert inside a self-test namespace"),
-        ("namespace inner_self_test { static_assert(6 == 6); }", None,
-         "a self-test namespace inside a self-test namespace"),
-        ("}  // namespace detail::planted_self_test", None, ""),
-        ("namespace self_test { struct Probe {}; }", NAMESPACE, "a namespace named self_test"),
-        ("namespace fn_test { inline void f0() {} }", NAMESPACE, "a namespace whose name ends in _test"),
-        ("namespace testing { struct Witness; }", None, "a namespace named testing"),
-        ("namespace contest { struct Entry {}; }", None, "a namespace whose name only contains test"),
-        ("}  // namespace foundation", None, ""),
-        ('static_assert(7 == 7, "global scope");', ASSERT, "a static_assert at global scope"),
-        ("#define PLANTED_CHECK static_assert(8 == 8)", None, "a static_assert in a macro body"),
-        ("#define PLANTED_PAIR(T) static_assert(sizeof(T) > 0, #T); static_assert(alignof(T) > 0)", None,
-         "two static_asserts in the body of a function-like macro"),
-        ("#define PLANTED_NESTED(T) PLANTED_PAIR(T)", None, "a macro body that names another macro"),
-        ('#define PLANTED_TRUE(T) struct T##_tag {}; static_assert(true, "a semicolon at the call site")', None,
-         "a macro body whose one static_assert tests the literal true"),
-        ("#define PLANTED_IN_CLASS(T) struct T##_holder { static_assert(sizeof(T) > 0); }", None,
-         "a macro body that writes a static_assert inside a class"),
-        ("#define PLANTED_SELF_TEST namespace planted_macro_self_test { static_assert(9 == 9); }", None,
-         "a macro body that writes a self-test namespace"),
-        ("PLANTED_CHECK;", ASSERT, "an object-like macro that writes a static_assert, at global scope"),
-        ("namespace foundation {", None, ""),
-        ("PLANTED_PAIR(int);", ASSERT, "a function-like macro that writes two static_asserts"),
-        ("PLANTED_NESTED(long)", ASSERT, "a macro that names a macro that writes static_asserts"),
-        ("PLANTED_TRUE(planted);", None, "a macro whose one static_assert tests the literal true"),
-        ("PLANTED_IN_CLASS(char);", None, "a macro that writes a static_assert inside a class"),
-        ("PLANTED_SELF_TEST;", NAMESPACE, "a macro that writes a self-test namespace"),
-        ("struct Macro { PLANTED_PAIR(int); };", None, "a macro that writes static_asserts, in a class body"),
-        ("inline void macro_body() { PLANTED_PAIR(int); }", None,
-         "a macro that writes static_asserts, in a function body"),
-        ("namespace detail::macro_self_test { PLANTED_PAIR(short); }", NAMESPACE,
-         "a self-test namespace that holds a macro that writes static_asserts"),
-        ("}  // namespace foundation", None, ""),
-    ]
-    kept_header = "#pragma once\nnamespace crucible {\nstatic_assert(sizeof(long) == 8);\n" \
-                  "static_assert(sizeof(char) == 1);\n}  // namespace crucible\n"
+    kept_header = ("#pragma once\nnamespace crucible {\nstatic_assert(sizeof(long) == 8);\n"
+                   "static_assert(sizeof(char) == 1);\ninline constexpr int kept_value = read_unit();\n"
+                   "}  // namespace crucible\n")
     keep_row = "keep | include/crucible/Kept.h | static_assert | sizeof(long)==8 | the planted reason"
-    planted_row = "include/foundation/Planted.h | 5 | 9"
-    matching = ("include/crucible/Kept.h | 0 | 1\n" + planted_row + "\n" + keep_row + "\n")
+    eager_keep_row = "keep | include/crucible/Kept.h | eager evaluation | crucible::kept_value | the planted reason"
+    planted_rows = ("include/foundation/Planted.h | 5 | 9\n"
+                    "function static_assert | include/foundation/Planted.h | 5\n"
+                    "eager evaluation | include/foundation/Planted.h | 11\n")
+    matching = "include/crucible/Kept.h | 0 | 1\n" + planted_rows + keep_row + "\n" + eager_keep_row + "\n"
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         files = {
-            "include/foundation/Planted.h": "\n".join(line for line, _, _ in planted) + "\n",
+            "include/foundation/Planted.h": "\n".join(line for line, _, _ in PLANTED) + "\n",
             "include/fixy/Clean.h": "#pragma once\nnamespace fixy { struct Clean {}; }\n",
             "include/crucible/Kept.h": kept_header,
             f"{CHECKS}/fixy/Clean.cpp": "// The checks of fixy/Clean.h.\n#include <fixy/Clean.h>\n\n"
@@ -997,29 +1405,40 @@ def self_test() -> int:
             (root / rel).write_text(text, encoding="utf-8")
         ledger = root / LEDGER
         ledger.parent.mkdir(parents=True, exist_ok=True)
+        warnings_dir = root / "build" / check_report.WARNINGS_SUBDIR
+        warnings_file = warnings_dir / f"{CHECK}.txt"
 
         def captured(action) -> tuple[int, str]:
-            """Run one action and keep its report."""
+            """Run one action and keep its report and its findings."""
             buffer = io.StringIO()
-            with contextlib.redirect_stderr(buffer):
+            with contextlib.redirect_stderr(buffer), contextlib.redirect_stdout(buffer):
                 code = action()
             return code, buffer.getvalue()
 
+        def verdict() -> tuple[int, str]:
+            """Compare the scratch tree with its ledger."""
+            return captured(lambda: check(root, ledger, warnings_dir))
+
         found = scan(root)
         rows = {(item.row, item.kind) for item in found.checks if item.path == "include/foundation/Planted.h"}
-        for line, (_, kind, label) in enumerate(planted, start=1):
+        for line, (_, kind, label) in enumerate(PLANTED, start=1):
             if not label:
                 continue
             if kind is None:
                 expect(f"not counted: {label}", not any(row == line for row, _ in rows), True)
             else:
-                expect(f"counted: {label}", (line, kind) in rows)
-        expect("the keys name each namespace in full, each condition by its spelling and each macro by its "
-               "invocation",
+                expect(f"counted as {kind}: {label}", (line, kind) in rows)
+        expect("the keys name each namespace in full, each condition by its spelling, each macro by its "
+               "invocation and each evaluation by its qualified name",
                {item.key for item in found.checks if item.path == "include/foundation/Planted.h"} == {
                    "foundation::detail::planted_self_test", "foundation::self_test", "foundation::fn_test",
                    "sizeof(int)==4", "3==3", "4==4", "7==7", "PLANTED_CHECK", "PLANTED_PAIR(int)",
-                   "PLANTED_NESTED(long)", "PLANTED_SELF_TEST", "foundation::detail::macro_self_test"})
+                   "PLANTED_NESTED(long)", "PLANTED_SELF_TEST", "foundation::detail::macro_self_test",
+                   "1==1", "2==2", "10==10", "11==11", "12==12", "foundation::probe", "foundation::eager_call",
+                   "foundation::members",
+                   "foundation::bound", "foundation::table_size", "foundation::fixed_name",
+                   "foundation::Counted::count", "foundation::Spliced", "foundation::local_walk::total",
+                   "foundation::expand::template for(items)", "foundation::lazy"})
         made = [(item.key, item.kind, item.via) for item in found.checks if item.via]
         expect("an invocation counts each check of one expansion, through a macro that it names too",
                sorted(made) == sorted([("PLANTED_CHECK", ASSERT, "PLANTED_CHECK"),
@@ -1028,74 +1447,117 @@ def self_test() -> int:
                                        ("PLANTED_NESTED(long)", ASSERT, "PLANTED_NESTED"),
                                        ("PLANTED_NESTED(long)", ASSERT, "PLANTED_NESTED"),
                                        ("PLANTED_SELF_TEST", NAMESPACE, "PLANTED_SELF_TEST")]))
-        inside = next(line for line, (text, _, _) in enumerate(planted, start=1) if "detail::macro_self_test" in text)
+        inside = next(line for line, (text, _, _) in enumerate(PLANTED, start=1) if "detail::macro_self_test" in text)
         expect("a macro inside a self-test namespace counts with the namespace", (inside, ASSERT) not in rows, True)
         expect("the planted tree has no parse failure and no bad check file",
                not found.failures and not found.bad_check_files, True)
 
         ledger.write_text(matching, encoding="utf-8")
-        expect("a ledger that agrees with the tree passes", captured(lambda: check(root, ledger))[0] == 0, True)
+        code, report = verdict()
+        expect("a ledger that agrees with the tree passes, with a warning for each held item",
+               code == 0 and "error:" not in report
+               and "include/foundation/Planted.h:6: warning: [header-checks] the static_assert(1==1)" in report
+               and "include/foundation/Planted.h:32: warning: [header-checks] the constant evaluation of "
+                   "foundation::eager_call" in report)
+        written = warnings_file.read_text(encoding="utf-8") if warnings_file.is_file() else ""
+        expect("the warnings file holds one line in the format for each warning, and nothing else",
+               written.count("\n") == report.count(": warning: [header-checks]")
+               and all(check_report.parse_line(text) is not None for text in written.splitlines()))
+        expect("the kept items give no finding", "crucible::kept_value" not in report and "sizeof(long)" not in report,
+               True)
         clean_planted = (root / "include/fixy/Clean.h").read_text(encoding="utf-8")
-        (root / "include/fixy/Clean.h").write_text(clean_planted + "static_assert(sizeof(int) == 4);\n",
-                                                   encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a planted namespace-scope static_assert in a clean header fails",
-               code == 1 and "NEW CHECK include/fixy/Clean.h" in report
-               and f"{CHECKS}/fixy/Clean.cpp" in report and "include/fixy/Clean.h:3:" in report)
-        (root / "include/fixy/Clean.h").write_text(
-            clean_planted + "namespace fixy::detail::clean_self_test { struct Probe {}; }\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a planted self-test namespace in a clean header fails",
-               code == 1 and "the self-test namespace fixy::detail::clean_self_test" in report)
-        (root / "include/fixy/Clean.h").write_text(clean_planted, encoding="utf-8")
-        for text, label in (("include/foundation/Planted.h | 5 | 8", "static_assert"),
-                            ("include/foundation/Planted.h | 4 | 9", "self-test namespace")):
-            ledger.write_text(matching.replace(planted_row, text), encoding="utf-8")
-            code, report = captured(lambda: check(root, ledger))
-            expect(f"one more {label} than the row permits fails",
-                   code == 1 and "NEW CHECK include/foundation/Planted.h" in report)
-        ledger.write_text(matching.replace(planted_row + "\n", ""), encoding="utf-8")
-        expect("a header with checks and no row fails", captured(lambda: check(root, ledger))[0] == 1)
+        for planted_line, label, kind in (
+                ("static_assert(sizeof(int) == 4);", "a namespace-scope static_assert", ASSERT),
+                ("namespace fixy::detail::clean_self_test { struct Probe {}; }", "a self-test namespace", NAMESPACE),
+                ("inline void clean_body() { static_assert(sizeof(int) == 4); }", "a function static_assert",
+                 FUNCTION_ASSERT),
+                ("inline constexpr int clean_eager = compute();", "an eager evaluation", EAGER)):
+            (root / "include/fixy/Clean.h").write_text(clean_planted + planted_line + "\n", encoding="utf-8")
+            code, report = verdict()
+            expect(f"{label} planted in a clean header is an error",
+                   code == 1 and "include/fixy/Clean.h:3: error: [header-checks]" in report
+                   and f"of the kind {kind}, and the ledger permits 0" in report)
+        (root / "include/fixy/Clean.h").write_text(clean_planted + "template <class T> inline void clean_body() "
+                                                   "{ static_assert(sizeof(T) > 0); }\ntemplate <class T> inline "
+                                                   "constexpr int clean_eager = compute<T>();\n", encoding="utf-8")
+        code, report = verdict()
+        expect("the same function static_assert and evaluation in templates are no finding",
+               code == 0 and "include/fixy/Clean.h" not in report, True)
         (root / "include/fixy/Clean.h").write_text(clean_planted + "PLANTED_PAIR(Clean);\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a macro that writes static_asserts, planted in a clean header, fails",
-               code == 1 and "NEW CHECK include/fixy/Clean.h holds 0 self-test namespace(s) and 2" in report
-               and "include/fixy/Clean.h:3: the invocation of the macro PLANTED_PAIR makes 2 namespace-scope "
-                   "static_assert(s)" in report, True)
+        code, report = verdict()
+        expect("a macro that writes static_asserts, planted in a clean header, is an error",
+               code == 1 and "include/fixy/Clean.h:3: error: [header-checks] the invocation of the macro PLANTED_PAIR "
+                             "makes 2 namespace-scope static_assert(s)" in report, True)
         (root / "include/fixy/Clean.h").write_text(clean_planted, encoding="utf-8")
-        ledger.write_text(matching.replace(planted_row, "include/foundation/Planted.h | 5 | 10"), encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a row above the tree fails as stale and asks for a regenerate in the same commit",
-               code == 2 and "Regenerate this row in the same commit" in report, True)
+        for row, label in (("include/foundation/Planted.h | 5 | 8", "static_assert"),
+                           ("include/foundation/Planted.h | 4 | 9", "self-test namespace"),
+                           ("function static_assert | include/foundation/Planted.h | 4", "function static_assert"),
+                           ("eager evaluation | include/foundation/Planted.h | 10", "eager evaluation")):
+            first = row.split(SEPARATOR)[0]
+            original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
+            ledger.write_text(matching.replace(original, row), encoding="utf-8")
+            code, report = verdict()
+            expect(f"one more {label} than the row permits is an error",
+                   code == 1 and ": error: [header-checks]" in report and "include/foundation/Planted.h:" in report)
+        for row, label in (("include/foundation/Planted.h | 5 | 10", "static_assert"),
+                           ("function static_assert | include/foundation/Planted.h | 6", "function static_assert"),
+                           ("eager evaluation | include/foundation/Planted.h | 12", "eager evaluation")):
+            first = row.split(SEPARATOR)[0]
+            original = next(text for text in planted_rows.splitlines() if text.split(SEPARATOR)[0] == first)
+            ledger.write_text(matching.replace(original, row), encoding="utf-8")
+            code, report = verdict()
+            expect(f"a {label} row above the tree is an error that asks for a regenerate in the same commit",
+                   code == 1 and f"{LEDGER}:" in report and "Regenerate the ledger in the same commit" in report,
+                   True)
+        ledger.write_text(matching.replace(planted_rows, ""), encoding="utf-8")
+        code, report = verdict()
+        expect("a header with items and no row is an error", code == 1 and "error:" in report)
         ledger.write_text(matching + "include/foundation/Gone.h | 1 | 1\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a row that names no header fails as stale", code == 2 and "include/foundation/Gone.h" in report, True)
-        ledger.write_text(matching + "include/fixy/Clean.h | 0 | 0\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a row that counts no check is malformed", code == 2 and "counts no check" in report, True)
-        ledger.write_text(matching + "include/foundation/Planted.h | 9 | 9\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a second row for one header fails", code == 2 and "DUPLICATE" in report, True)
-        ledger.write_text(matching + "include/fixy/Clean.h 1 1\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a row without its separators is malformed", code == 2 and "MALFORMED" in report, True)
-        ledger.write_text(matching.replace(" | the planted reason", " | "), encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a keep row with no reason is malformed", code != 0 and "gives no reason" in report, True)
+        code, report = verdict()
+        expect("a row that names no header is an error", code == 1 and "include/foundation/Gone.h" in report, True)
+        ledger.write_text(matching + "eager evaluation | include/foundation/Gone.h | 1\n", encoding="utf-8")
+        code, report = verdict()
+        expect("an eager row that names no header is an error",
+               code == 1 and "the row names include/foundation/Gone.h" in report, True)
+        for extra, label in (("include/fixy/Clean.h | 0 | 0", "a row that counts no item"),
+                             ("eager evaluation | include/fixy/Clean.h | 0", "an eager row that counts no item"),
+                             ("include/foundation/Planted.h | 9 | 9", "a second count row for one header"),
+                             ("eager evaluation | include/foundation/Planted.h | 11", "a second eager row"),
+                             ("include/fixy/Clean.h 1 1", "a row without its separators"),
+                             ("eager evaluation | include/fixy/Clean.h | many", "an eager row with no number"),
+                             ("function static_assert | fixy/Clean.h | 1", "a row with a path outside include/"),
+                             ("keep | include/fixy/Clean.h | constexpr | key | reason", "a keep row of no kind")):
+            ledger.write_text(matching + extra + "\n", encoding="utf-8")
+            code, report = verdict()
+            expect(f"{label} is an error", code == 1 and f"{LEDGER}:" in report and "error:" in report, True)
+        ledger.write_text(matching.replace(" | the planted reason", " | ", 1), encoding="utf-8")
+        code, report = verdict()
+        expect("a keep row with no reason is an error", code == 1 and "gives no reason" in report, True)
         ledger.write_text(matching.replace("sizeof(long)==8", "sizeof(long)==4"), encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a keep row that names no check fails", code != 0 and "the keep row names no static_assert" in report,
+        code, report = verdict()
+        expect("a keep row that names no item is an error", code == 1 and "the keep row names no static_assert" in report,
                True)
-        ledger.write_text(matching.replace(keep_row + "\n", ""), encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("without its keep row, the kept static_assert counts", code == 1 and "include/crucible/Kept.h" in report,
-               True)
-        ledger.write_text("include/foundation/Planted.h | 1 | 1\n" + keep_row + "\n", encoding="utf-8")
+        ledger.write_text(matching.replace(eager_keep_row + "\n", ""), encoding="utf-8")
+        code, report = verdict()
+        expect("without its keep row, the kept evaluation counts",
+               code == 1 and "include/crucible/Kept.h:5: error: [header-checks]" in report, True)
+        ledger.write_text("include/foundation/Planted.h | 1 | 1\n" + keep_row + "\n" + eager_keep_row + "\n",
+                          encoding="utf-8")
         code, _ = captured(lambda: write(root, ledger))
         written = ledger.read_text(encoding="utf-8")
-        expect("--write gives a ledger that passes, with the header and the keep row",
-               code == 0 and captured(lambda: check(root, ledger))[0] == 0 and written.startswith(LEDGER_HEADER)
-               and keep_row in written and planted_row in written)
+        expect("--write gives a ledger that passes, with the header, each row kind and each keep row",
+               code == 0 and verdict()[0] == 0 and written.startswith(LEDGER_HEADER)
+               and keep_row in written and eager_keep_row in written and all(text in written for text in
+                                                                              planted_rows.splitlines()))
+        for rel in ("include/foundation/Planted.h", "include/crucible/Kept.h"):
+            (root / rel).unlink()
+        ledger.write_text("", encoding="utf-8")
+        code, report = verdict()
+        expect("a run with no warning passes and removes the warnings file",
+               code == 0 and "warning:" not in report and not warnings_file.exists(), True)
+        for rel in ("include/foundation/Planted.h", "include/crucible/Kept.h"):
+            (root / rel).write_text(files[rel], encoding="utf-8")
+        ledger.write_text(matching, encoding="utf-8")
 
         clean_check = (root / f"{CHECKS}/fixy/Clean.cpp").read_text(encoding="utf-8")
         for text, label in ((clean_check.replace("<fixy/Clean.h>", "<foundation/Planted.h>"),
@@ -1105,41 +1567,47 @@ def self_test() -> int:
                             ("namespace fixy {}\n" + clean_check, "a check file whose first line of code is not an "
                                                                   "include")):
             (root / f"{CHECKS}/fixy/Clean.cpp").write_text(text, encoding="utf-8")
-            code, report = captured(lambda: check(root, ledger))
-            expect(f"{label} fails", code == 1 and f"CHECK FILE {CHECKS}/fixy/Clean.cpp" in report)
+            code, report = verdict()
+            expect(f"{label} is an error", code == 1 and f"{CHECKS}/fixy/Clean.cpp:0: error:" in report)
         (root / f"{CHECKS}/fixy/Clean.cpp").write_text(clean_check.replace("<fixy/Clean.h>", '"fixy/Clean.h"'),
                                                        encoding="utf-8")
-        expect("a check file that includes its header in quotes passes", captured(lambda: check(root, ledger))[0] == 0,
-               True)
+        expect("a check file that includes its header in quotes passes", verdict()[0] == 0, True)
         (root / f"{CHECKS}/fixy/Clean.cpp").write_text(clean_check, encoding="utf-8")
         (root / f"{CHECKS}/fixy/Gone.cpp").write_text("#include <fixy/Gone.h>\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a check file with no header fails", code == 1 and "no header include/fixy/Gone.h" in report)
+        code, report = verdict()
+        expect("a check file with no header is an error", code == 1 and "no header include/fixy/Gone.h" in report)
         (root / f"{CHECKS}/fixy/Gone.cpp").unlink()
         (root / f"{CHECKS}/fixy/Notes.txt").write_text("notes\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a file under the check root that is not a .cpp file fails", code == 1 and "Notes.txt" in report)
+        code, report = verdict()
+        expect("a file under the check root that is not a .cpp file is an error", code == 1 and "Notes.txt" in report)
         (root / f"{CHECKS}/fixy/Notes.txt").unlink()
         (root / "include/fixy/Broken.h").write_text("void f() { g(1) { } }\n", encoding="utf-8")
-        code, report = captured(lambda: check(root, ledger))
-        expect("a header the parser cannot read fails", code == 1 and "include/fixy/Broken.h" in report)
+        code, report = verdict()
+        expect("a header the parser cannot read is an error",
+               code == 1 and "include/fixy/Broken.h:0: error: [header-checks] the parser cannot read" in report)
         expect("--write refuses while a header does not parse", captured(lambda: write(root, ledger))[0] == 1, True)
         (root / "include/fixy/Broken.h").unlink()
 
         previous = Path.cwd()
         os.chdir("/")
         try:
-            from_slash = captured(lambda: check(root, ledger))
+            from_slash = verdict()
         finally:
             os.chdir(previous)
-        expect("the report from / equals the report from the repository",
-               from_slash == captured(lambda: check(root, ledger)), True)
+        expect("the report from / equals the report from the repository", from_slash == verdict(), True)
 
+        empty = root / "empty"
+        empty.mkdir()
+        code, report = captured(lambda: check(empty, empty / LEDGER, None))
+        expect("a tree with no include directory is an error", code == 1 and "include:0: error:" in report)
+        ledger.unlink()
+        code, report = verdict()
+        expect("a missing ledger permits nothing, so each held item is an error",
+               code == 1 and "include/foundation/Planted.h:3: error:" in report)
         for rel in ("include/foundation/Planted.h", "include/crucible/Kept.h"):
             (root / rel).unlink()
         ledger.write_text("", encoding="utf-8")
-        expect("a tree with no check in a header and an empty ledger passes",
-               captured(lambda: check(root, ledger))[0] == 0, True)
+        expect("a tree with no item in a header and an empty ledger passes", verdict()[0] == 0, True)
 
         # The list of the headers that cannot compile alone, against a
         # compile database whose crucible sentinel runs the host compiler.
@@ -1148,7 +1616,7 @@ def self_test() -> int:
             expect("a host C++ compiler exists for the cases of --standalone", False)
         else:
             build = root / "build"
-            build.mkdir()
+            build.mkdir(exist_ok=True)
             sentinel = build / "sentinel.cpp"
             sentinel.write_text("#include <crucible/Alone.h>\n", encoding="utf-8")
             (build / "compile_commands.json").write_text(json.dumps([{
@@ -1197,19 +1665,30 @@ def main(argv: list[str]) -> int:
     Returns:
         The exit code
     """
+    parser = argparse.ArgumentParser(prog="check-header-checks.py", add_help=True)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--list", action="store_true", help="print each item that a header holds")
+    modes.add_argument("--write", action="store_true", help="write the count rows of the ledger again")
+    modes.add_argument("--standalone", metavar="BUILD_DIR", type=Path,
+                       help="compile each listed header alone and refuse one that compiles")
+    modes.add_argument("--self-test", action="store_true", help="plant each kind of item and examine each verdict")
+    check_report.add_arguments(parser)
+    try:
+        options = parser.parse_args(argv)
+    except SystemExit as stop:
+        return 0 if stop.code == 0 else 2
     root = tsast.REPO_ROOT
     ledger = root / LEDGER
-    modes = {(): lambda: check(root, ledger), ("--self-test",): self_test,
-             ("--write",): lambda: write(root, ledger), ("--list",): lambda: list_checks(root, ledger)}
-    action = modes.get(tuple(argv))
-    if action is None and len(argv) == 2 and argv[0] == "--standalone":
-        return standalone(root, Path(argv[1]).resolve())
-    if action is None:
-        print("usage: check-header-checks.py [--list | --write | --standalone BUILD_DIR | --self-test]",
-              file=sys.stderr)
-        return 2
     try:
-        return action()
+        if options.self_test:
+            return self_test()
+        if options.write:
+            return write(root, ledger)
+        if options.list:
+            return list_checks(root, ledger)
+        if options.standalone is not None:
+            return standalone(root, options.standalone.resolve())
+        return check(root, ledger, options.warnings_dir)
     except tsast.KitMissing as exc:
         print(f"check-header-checks: {exc}", file=sys.stderr)
         return 3
