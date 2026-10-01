@@ -142,7 +142,9 @@ endif()
 # is on the line.  The use build then reports "source locations have
 # changed" for functions nobody touched.  Measured on this tree: the
 # same compile without the launcher reports none.  A PGO build runs
-# the compiler directly.  The flags this block computes are applied
+# the compiler without ccache.  The build launcher of
+# cmake/BuildLauncher.cmake still runs in front of the compiler, and it
+# gives the compiler its command unchanged.  The flags this block computes are applied
 # to crucible_dialect next to its other C++26 options.
 #
 # The generate build and the use build have different build
@@ -333,6 +335,11 @@ endif()
 # It puts its flags on the directory, so it comes before the first target.
 # It can clear the compiler launcher, as the PGO block does.
 include(utils/tools/quarantine/Quarantine.cmake)
+
+# The build launcher records the cost of each compile and each link, and
+# holds the budget of each one.  It comes after each block that sets or
+# clears the compiler launcher, and before the first target.
+include(cmake/BuildLauncher.cmake)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

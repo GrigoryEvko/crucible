@@ -10,8 +10,10 @@
 #
 # The targets of the tree: no compile job takes more than 15 s, and no test and no cold fixture
 # compile takes more than 10 s.
-compile-cpu    | 10 | 20 | s  | the user and system CPU time of one compile job, from the compile launcher
-compile-memory | 2  | 6  | GB | the peak resident memory of one compile job, from the compile launcher
+compile-cpu    | 10 | 20 | s  | the user and system CPU time of one compile job, from the build launcher.  The launcher stops a job at three times the error threshold
+compile-memory | 2  | 4  | GB | the peak resident memory of one compile job, from the build launcher.  The launcher fails a job over the error threshold that no ledger row admits
+link-time      | 2  | 5  | s  | the user and system CPU time of one link, from the build launcher.  The launcher stops a link at three times the error threshold
+link-memory    | 0.5 | 1 | GB | the peak resident memory of one link, from the build launcher.  The launcher fails a link over the error threshold that no ledger row admits
 function-size  | 64 | 256 | KB | the size of the largest function in one object of the Debug build
 test-time      | 5  | 20 | s  | the wall time of one test in one ctest run
 fixture-cpu    | 5  | 15 | s  | the user CPU time of one negative-fixture compile that the result store does not hold (test/neg_compile_driver.py)

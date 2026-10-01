@@ -1019,6 +1019,22 @@ Each build type other than Debug also takes `-fharden-compares` and
 injection, and they find no defect in a test. On a heavy translation unit, they
 cost 20% to 46% of the back end.
 
+In each preset, `cmake/BuildLauncher.cmake` puts `utils/scripts/build-launcher.py`
+in front of each compile command and in front of ccache. It also puts the
+launcher in front of each link of an executable or a shared library. The
+launcher gives the command to the compiler or the linker unchanged. It writes
+the CPU time, the wall time and the peak memory of the step to `<output>.cost`,
+and a record of a ccache hit holds no time. A step over the memory error
+threshold of the row `compile-memory` or `link-memory` in
+`utils/scripts/budgets.txt` fails, unless a row of the ledger of that check
+admits its output with a reason. `RLIMIT_CPU` stops a step at three times the
+error threshold of the row `compile-cpu` or `link-time`. Its soft limit and its
+hard limit are equal, so the kernel sends SIGKILL and not SIGXCPU. The GCC 16
+driver crashes when SIGXCPU stops the compiler. The launcher adds
+approximately 10 ms to each step, and the compile database does not show it.
+`utils/scripts/cost_meter.py` holds the measurement and the record format, and
+each launcher imports it.
+
 ### Debug preset
 
 ```
@@ -2334,7 +2350,7 @@ Each translation unit that includes a header compiles that header again. These r
 2. **Compile-time tables are lazy.** A reflection walk, a roster or a table that not every includer reads is a variable template, or it is inside a template. Then only a translation unit that reads it evaluates it. The test `header_checks` reads the parse tree and finds each reflection walk outside a template, because the operation count of GCC does not see it. A reflection query is a call of a `std::meta` or `std::define_static_*` function, a call that takes a `^^X` reflection, or a splice in a loop. The test reports a query in the initializer of a constexpr, constinit or const variable or static data member, and in the type of an alias. In a function body, it reports a query in a constexpr local, and each expansion statement. A plain call, a cheap constant and a `^^X` alone are no finding. Each walk in the ledger gives a warning, and a new one is an error. The exact form for a plain call is the compiler: each header also compiles alone in a one-line unit, with `-fconstexpr-ops-limit` at the error threshold of the row `header-constexpr-ops` in `utils/scripts/budgets.txt`, so an eager evaluation of more operations stops the compile. `all` compiles the units of the headers that have no check file. The target `layer_alone` compiles the others, and the default leg of CI builds it. A row of `test/layer/header-constexpr-ops.txt` gives one header a higher limit with its reason, and the test `header_constexpr_ops` refuses a row that its header no longer needs.
 3. **No heavy inline body in a header.** Each includer analyzes a non-template inline function again. A body that is cold or large goes to a source file.
 4. **Builtins before headers.** A base header does not include an intrinsics header, `<thread>` or `<chrono>` for one function. Use the builtin, for example `__builtin_ia32_pause`, `__builtin_ia32_rdtsc`, `__atomic_load_n` or `__builtin_memcpy`. `utils/scripts/check-heavy-includes.py` (the test `heavy_includes`) rejects a new include of a heavy standard header in a header under `include/`. A standard header is heavy when its compile time alone is more than the time of `<meta>` alone times the factor of the row `heavy-include` in `utils/scripts/budgets.txt`. `utils/scripts/header-costs.txt` holds the measured times. `utils/scripts/heavy-includes-ledger.txt` holds the includes that the tree has today, and each one gives a warning.
-5. **No giant translation unit and no giant function.** A generator writes its output as shards. Split a test file that compiles for more than 60 s at `-j1` by subject. Split a function that is large enough to make the debug-information passes explode.
+5. **No giant translation unit and no giant function.** A generator writes its output as shards. Split a test file that compiles for more than 60 s at `-j1` by subject. Split a function that is large enough to make the debug-information passes explode. The build launcher (§V) fails a compile or a link over the memory error threshold when it ends, and it stops a step at three times the time error threshold.
 6. **No unity build and no precompiled header.** The reflection walks of this tree read each header that a translation unit includes, so a unity build or a precompiled header can change a result. `utils/scripts/check-no-unity-pch.py` (the test `no_unity_pch`) rejects each one, in the compile database of the build and in the CMake files of the tree.
 7. **No padding bit in the element of a large fixed list.** With `-ftrivial-auto-var-init=zero`, GCC writes one store for each padding hole of each element of a fixed list in an automatic object, with no loop. Make each padding byte a member, as `include/crucible/ledger/Verdict.h` does with `pad`. `utils/scripts/check-padded-lists.py` (the test `padded_lists`) rejects a new fixed list of more elements than the row `padded-list` of `utils/scripts/budgets.txt` permits, when its element type has a padding bit. `utils/scripts/padded-lists-ledger.txt` holds the padded lists that the tree has today, and each one gives a warning.
 8. **A second configure compiles nothing.** A configure run writes a generated file or a link only when its content or its target changes. The compiler launcher gives ccache the source tree as `base_dir`, so a cache hit records no dependency path of another build directory. `utils/scripts/check-reconfigure-noop.py`, a step of the CI build job, configures a build again and requires that the two builds after it compile nothing and that each dependency in the log of Ninja exists. Its self-test is the test `reconfigure_noop_self_test`.

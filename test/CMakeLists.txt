@@ -5326,6 +5326,16 @@ add_test(NAME reconfigure_noop_self_test
           --cmake ${CMAKE_COMMAND} --ninja ${CMAKE_MAKE_PROGRAM})
 set_tests_properties(reconfigure_noop_self_test PROPERTIES LABELS "ci_guard")
 
+# cmake/BuildLauncher.cmake puts utils/scripts/build-launcher.py in front of
+# each compile and each link.  The launcher writes the cost of the step beside
+# its output, fails a step over the memory error threshold that no ledger row
+# admits, and stops a step at three times the time error threshold.
+# build_launcher_test runs the launcher with planted tools, and with the real
+# compiler and the real ccache.
+add_test(NAME build_launcher_test
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/build_launcher_test.py --cxx ${CRUCIBLE_REAL_CXX})
+set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
+
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a
