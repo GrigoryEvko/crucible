@@ -408,6 +408,8 @@ Shared files (`CMakeLists.txt`, `test/*/CMakeLists.txt`, CLAUDE.md, the ledger) 
 
 ### 7.10 The S0 gate
 
+The owner's target (2026-10-01): after an edit of a base header, `cmake --build` uses all 192 cores and gives a full build in about 15 s, and a full test run takes about 15 s more. At 192 cores the wall time is at least the total CPU divided by 192, so this target sets a total-CPU budget (about 2,500 CPU-s for the build and about 2,500 CPU-s for the tests), in addition to the tail. System time counts too: each unit reports the user and system time of its jobs.
+
 All numbers come from `build-gauge.sh` on the same host as the baseline:
 - The tail: no build job takes more than 15 s in the ninja log of a clean Debug build at `-j64`. No fixture (cold) and no test takes more than 10 s.
 - The clean Debug build of `all` takes at most 60 s wall at `-j192` (or at the highest job count that the memory check allows, with the job count stated).
