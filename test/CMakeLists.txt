@@ -5280,6 +5280,17 @@ set_tests_properties(heavy_includes heavy_includes_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 
+# no_unity_pch — no target compiles as a unity build or with a precompiled
+# header, because the reflection walks of this tree see each header that a
+# translation unit includes.  The check reads the compile database of this
+# build and the CMake files of the tree.
+add_test(NAME no_unity_pch_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-unity-pch.py --self-test)
+add_test(NAME no_unity_pch
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-unity-pch.py
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(no_unity_pch no_unity_pch_self_test PROPERTIES LABELS "ci_guard")
+
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a
