@@ -1211,6 +1211,18 @@ function(crucible_neg_compile_test name)
   set_property(DIRECTORY APPEND PROPERTY CRUCIBLE_NEG_REGISTERED_SOURCES "${source}")
 endfunction()
 
+# The driver keeps the result of each fixture compile in a store, and it uses
+# a stored result only while each input of the compile is the same.  The test
+# compiles small fixtures in a temporary tree with a store of its own.  It
+# changes a header, adds a header earlier in the search list, adds a file that
+# a __has_include probe names, and damages and changes an entry.  Exit 3
+# reports a skip when the compiler cannot run.
+add_test(NAME fixture_store_self_test
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver_test.py --cxx ${CRUCIBLE_REAL_CXX})
+set_tests_properties(fixture_store_self_test PROPERTIES
+  LABELS "ci_guard"
+  SKIP_RETURN_CODE 3)
+
 # ─── DeadlineWatchdog::observe negative fixtures (HS14) ──────────────
 #   The Bg/Init/Test gate keeps a hot-foreground replay-bound thread
 #   from polling the warden watchdog.  Internally the watchdog now
