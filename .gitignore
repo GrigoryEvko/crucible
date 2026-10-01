@@ -21,14 +21,12 @@ Testing/
 # every scan.
 .worktrees/
 
-# Pinned binary tools that the repo installs for itself. Crucible holds its own
-# tree-sitter CLI and C++ grammar here rather than reach for one on the PATH,
-# because a PATH binary is an unpinned input. utils/scripts/install-tree-sitter.sh
-# fills this directory from a GitHub release, and it verifies the tarball
-# against a hardcoded SHA256 before it unpacks anything. CI runs the same
-# script, so the bytes match. The contents are large and platform-specific, so
-# they never enter a commit.
-.tools/
+# The install scripts put the pinned tools in the shared cache
+# (utils/scripts/tools_root.sh), and no script writes .tools/. A checkout or an
+# export can still hold a copy or a link of the tools there. The guards list
+# files with git ls-files --exclude-standard, so this line keeps that copy out
+# of every scan and out of every commit.
+.tools
 
 # Python bytecode
 __pycache__/

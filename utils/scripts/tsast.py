@@ -1294,7 +1294,7 @@ def cpp_files(*roots: str | Path, include_unparseable: bool = False) -> list[Pat
     return sorted(found)
 
 
-_WALK_SKIPPED = (".git", ".tools", "build", "cmake-build-", "third_party", "external", "vendor")
+_WALK_SKIPPED = (".git", "build", "cmake-build-", "third_party", "external", "vendor")
 
 
 def tracked_files(root: Path) -> list[str]:
@@ -1305,7 +1305,7 @@ def tracked_files(root: Path) -> list[str]:
     check, can appear under the root while a guard runs and vanish before it
     reads them.  Outside a work tree, for example in the scratch tree of a
     self-test, the walk takes every file and skips each version control,
-    tool, build and vendor directory.
+    build and vendor directory.
 
     Complexity: linear in the number of files under the root.
 

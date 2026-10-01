@@ -100,8 +100,9 @@ jobs:
       # The installer verifies the release tarball against a SHA256 hardcoded in
       # the script, checks the grammar and runtime lineage in the kit manifest,
       # and parses a fixture that only the fork parses.  A failure installs
-      # nothing.  The kit lands in .tools/, which is gitignored, and the
-      # installer appends its bin directory to GITHUB_PATH.
+      # nothing.  The kit lands in the tools directory of the shared cache
+      # root (utils/scripts/tools_root.sh, under the home directory of the
+      # runner), and the installer appends its bin directory to GITHUB_PATH.
       #
       # This step stays FREE: the download is one 43 MB release asset from
       # GitHub, and no runner label changes.
@@ -113,7 +114,8 @@ jobs:
       # The guards read shell scripts with ast-grep's bash grammar, so a git
       # call inside a heredoc body or a comment is not a call.  The installer
       # verifies the release zip against a SHA256 hardcoded in the script and
-      # runs a fixture through the binary.  The binary lands in .tools/.
+      # runs a fixture through the binary.  The binary lands in the tools
+      # directory of the shared cache root.
       - name: Install the pinned ast-grep (self-test + install)
         run: |
           bash utils/scripts/install-ast-grep.sh --self-test

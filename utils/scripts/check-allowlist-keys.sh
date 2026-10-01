@@ -105,9 +105,9 @@ moved_candidates_() {
         hit=${hit#"$SCAN_ROOT/"}
         [ "$hit" = "$dead" ] && continue
         found+=("$hit")
-    # A hidden directory at the root holds no tracked source: .git, the
-    # agent work trees in .worktrees and the pinned tools in .tools.  A file
-    # there must not be named as the place a key moved to.
+    # A hidden directory at the root holds no tracked source: .git and the
+    # agent work trees in .worktrees.  A file there must not be named as the
+    # place a key moved to.
     done < <(find "$SCAN_ROOT" \
                   -path "$SCAN_ROOT/.*" -prune -o \
                   -path "$SCAN_ROOT/build*" -prune -o \

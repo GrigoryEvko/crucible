@@ -10,10 +10,13 @@
 # Python bindings carry an upstream runtime.  This CLI is the only consumer that
 # can read the grammar, so every AST gate calls it.
 #
-# The kit lands in .tools/ under the repo root.  The directory is gitignored.
-# Crucible holds its own binary, and CI installs the same bytes from the same
-# release.  Nothing reaches for a tree-sitter on the developer PATH, because a
-# PATH binary is an unpinned input.
+# The kit lands in the tools directory of the shared cache root
+# (utils/scripts/tools_root.sh), outside each checkout, so every checkout and
+# every work tree uses one install.  The directory name carries the pinned tag
+# and the start of the pinned SHA256.  Crucible holds its own binary, and CI
+# installs the same bytes from the same release.  Nothing reaches for a
+# tree-sitter on the developer PATH, because a PATH binary is an unpinned
+# input.
 #
 # FAIL-CLOSED PINNING.  The tarball must hash to the SHA256 written below.  The
 # release also publishes a SHA256SUMS file, and this script does not read it: a
@@ -38,8 +41,8 @@
 
 set -Eeuo pipefail
 
-. "$(dirname -- "${BASH_SOURCE[0]}")/repo_root.sh"
-INSTALL_ROOT="$REPO_ROOT/.tools/tree-sitter"
+. "$(dirname -- "${BASH_SOURCE[0]}")/tools_root.sh"
+KIT_PREFIX='tree-sitter-cpp-fork-'
 
 # ── The pin ────────────────────────────────────────────────────────────────
 # Bump every field together.  A kit is one coherent lineage, and a partial bump
@@ -191,11 +194,12 @@ FIXTURE
     return "$rc"
 }
 
-# Print the kit directory for the pinned tag on this platform.
+# Print the kit directory for the pinned tag and SHA256 on this platform.
 kit_dir() {
-    local slug
+    local slug want
     slug="$(platform_slug)" || return 4
-    printf '%s/tree-sitter-cpp-fork-%s-%s\n' "$INSTALL_ROOT" "$KIT_TAG" "$slug"
+    want="$(pinned_sha "$slug")" || return 4
+    printf '%s/%s%s-%s-%s\n' "$TOOLS_ROOT" "$KIT_PREFIX" "$KIT_TAG" "$slug" "$(tool_digest_tag "$want")"
 }
 
 # Verify an installed kit end to end: stamp, lineage, executable, parse.
@@ -230,20 +234,6 @@ verify_installed() {
 
 # ── Install ────────────────────────────────────────────────────────────────
 
-# Remove every kit directory that the pin does not name.  A kit directory
-# carries its tag, so a tag bump otherwise leaves the previous kit on disk at
-# 43 MB.  The glob stays inside the install root and matches only a kit
-# directory, so nothing else can be reached.
-prune_other_kits() {
-    local keep="$1" stale
-    for stale in "$INSTALL_ROOT"/tree-sitter-cpp-fork-*; do
-        [[ -d "$stale" ]] || continue
-        [[ "$stale" != "$keep" ]] || continue
-        rm -rf -- "$stale"
-        printf 'install-tree-sitter: removed the kit left by an earlier pin at %s\n' "$stale" >&2
-    done
-}
-
 # Append the kit's bin directory to the GitHub Actions PATH file when one is set.
 export_gha_path() {
     local kit="$1"
@@ -253,6 +243,14 @@ export_gha_path() {
     fi
 }
 
+# Record the use of the kit, remove each kit that no run used for a long
+# time, and give the kit to the GitHub Actions PATH.
+finish_install() {
+    mark_tool_used "$1"
+    prune_unused_tools "$KIT_PREFIX" "$1"
+    export_gha_path "$1"
+}
+
 install_kit() {
     local kit slug want url work tarball got name
     kit="$(kit_dir)" || return 4
@@ -260,19 +258,19 @@ install_kit() {
     want="$(pinned_sha "$slug")" || return 4
 
     if verify_installed "$kit" 2>/dev/null; then
-        printf 'install-tree-sitter: already at the pin (%s, %s).\n' "$KIT_TAG" "$slug" >&2
-        prune_other_kits "$kit"
-        export_gha_path "$kit"
+        printf 'install-tree-sitter: already at the pin (%s, %s) at %s.\n' "$KIT_TAG" "$slug" "$kit" >&2
+        finish_install "$kit"
         return 0
     fi
+    command -v python3 >/dev/null 2>&1 || { printf 'install-tree-sitter: python3 is required.\n' >&2; return 4; }
 
-    name="tree-sitter-cpp-fork-$KIT_TAG-$slug"
+    name="$KIT_PREFIX$KIT_TAG-$slug"
     url="https://github.com/$KIT_REPO/releases/download/$KIT_TAG/$name.tar.gz"
 
-    mkdir -p -- "$INSTALL_ROOT"
-    # The staging directory sits under the install root so the final move stays
-    # on one filesystem and is atomic.
-    work="$(mktemp -d -- "$INSTALL_ROOT/.staging.XXXXXX")"
+    mkdir -p -- "$TOOLS_ROOT"
+    # The staging directory sits under the tools root, so the final rename
+    # stays on one filesystem.
+    work="$(mktemp -d -- "$TOOLS_ROOT/.staging.XXXXXX")"
     # shellcheck disable=SC2064
     trap "rm -rf -- '$work'" EXIT
 
@@ -315,23 +313,37 @@ install_kit() {
         printf 'installed_by       utils/scripts/install-tree-sitter.sh\n'
     } > "$work/$name/.crucible-pin"
 
-    rm -rf -- "$kit"
-    mv -- "$work/$name" "$kit"
-    printf 'install-tree-sitter: installed %s at %s\n' "$KIT_TAG" "$kit" >&2
-
-    prune_other_kits "$kit"
-    export_gha_path "$kit"
+    # A directory at the kit path failed the verification above, so it is
+    # damaged or incomplete.
+    if [[ -e "$kit" ]]; then
+        retire_tool_dir "$kit" || true
+    fi
+    if publish_tool_dir "$work/$name" "$kit"; then
+        printf 'install-tree-sitter: installed %s at %s\n' "$KIT_TAG" "$kit" >&2
+    elif verify_installed "$kit" 2>/dev/null; then
+        printf 'install-tree-sitter: another install put the kit at %s first.\n' "$kit" >&2
+    else
+        printf 'install-tree-sitter: the verified kit did not move to %s.  Nothing was installed.\n' "$kit" >&2
+        return 2
+    fi
+    finish_install "$kit"
 }
 
 # ── Self-test ──────────────────────────────────────────────────────────────
 
 SELF_TEST_FAILED=0
+SELF_TEST_TOTAL=0
+SELF_TEST_NEGATIVES=0
 
 self_test_case() {
     local name="$1" want="$2"
     shift 2
     local rc=0
     "$@" >/dev/null 2>&1 || rc=$?
+    SELF_TEST_TOTAL=$((SELF_TEST_TOTAL + 1))
+    if [[ "$want" == 'fail' ]]; then
+        SELF_TEST_NEGATIVES=$((SELF_TEST_NEGATIVES + 1))
+    fi
     if [[ "$want" == 'pass' && "$rc" -eq 0 ]]; then
         printf '  ok   %s\n' "$name" >&2
     elif [[ "$want" == 'fail' && "$rc" -ne 0 ]]; then
@@ -346,6 +358,14 @@ self_test_case() {
 # named function, because self_test_case runs its argument list as a command.
 sha_equals() {
     [[ "$(sha256_of "$1")" == "$2" ]]
+}
+
+# True when the kit directory sits in the tools root, and its name carries
+# the pinned tag and the first 16 digits of the pinned SHA256 of the platform.
+kit_dir_names_the_pin() {
+    local kit want
+    kit="$(kit_dir)" && want="$(pinned_sha "$(platform_slug)")" || return 1
+    [[ "$(dirname -- "$kit")" == "$TOOLS_ROOT" && "$kit" == *"-$KIT_TAG-"* && "$kit" == *"-${want:0:16}" ]]
 }
 
 write_manifest() {
@@ -401,11 +421,15 @@ self_test() {
     # Negative control: an unpinned platform does not.
     self_test_case 'platform_slug rejects Windows/i686' fail platform_slug Windows i686
 
+    self_test_case 'kit_dir names the pinned tag and SHA256 under the tools root' pass kit_dir_names_the_pin
+    tools_root_self_test || SELF_TEST_FAILED=1
+
     if [[ "$SELF_TEST_FAILED" -ne 0 ]]; then
         printf 'install-tree-sitter --self-test: FAILED\n' >&2
         return 2
     fi
-    printf 'install-tree-sitter --self-test: 10 cases pass, 6 of them negative controls.\n' >&2
+    printf 'install-tree-sitter --self-test: %d cases pass, %d of them negative controls.\n' \
+        "$SELF_TEST_TOTAL" "$SELF_TEST_NEGATIVES" >&2
 }
 
 # ── Entry ──────────────────────────────────────────────────────────────────
@@ -429,6 +453,7 @@ main() {
                 printf 'install-tree-sitter: the pinned kit is not installed.  Run: bash utils/scripts/install-tree-sitter.sh\n' >&2
                 return 3
             fi
+            mark_tool_used "$kit"
             if [[ "$1" == '--print-kit' ]]; then printf '%s\n' "$kit"; else printf '%s/bin/tree-sitter\n' "$kit"; fi
             ;;
         --self-test)

@@ -6,9 +6,12 @@
 # they read C++ with the tree-sitter kit (utils/scripts/install-tree-sitter.sh),
 # whose grammar is a C++26 fork.
 #
-# The binary lands in .tools/ under the repo root, which is gitignored.  CI
-# installs the same bytes from the same release, and nothing reaches for an
-# ast-grep on the PATH, because a PATH binary is an unpinned input.
+# The binary lands in the tools directory of the shared cache root
+# (utils/scripts/tools_root.sh), outside each checkout, so every checkout and
+# every work tree uses one install.  The directory name carries the pinned
+# version and the start of the pinned SHA256.  CI installs the same bytes from
+# the same release, and nothing reaches for an ast-grep on the PATH, because a
+# PATH binary is an unpinned input.
 #
 # FAIL-CLOSED PINNING.  The release zip must hash to the SHA256 written below.
 # After the unpack the binary must report the pinned version, and it must read
@@ -30,8 +33,8 @@
 
 set -Eeuo pipefail
 
-. "$(dirname -- "${BASH_SOURCE[0]}")/repo_root.sh"
-INSTALL_ROOT="$REPO_ROOT/.tools/ast-grep"
+. "$(dirname -- "${BASH_SOURCE[0]}")/tools_root.sh"
+BINARY_PREFIX='ast-grep-'
 
 # ── The pin ────────────────────────────────────────────────────────────────
 # SHA256 of each release zip, read from the 0.45.3 release on 2026-09-26 by a
@@ -122,11 +125,12 @@ verify_binary() {
     assert_fixture_lines "$lines"
 }
 
-# Print the install directory for the pinned version on this platform.
+# Print the install directory for the pinned version and SHA256 on this platform.
 install_dir() {
-    local triple
+    local triple want
     triple="$(platform_triple)" || return 4
-    printf '%s/ast-grep-%s-%s\n' "$INSTALL_ROOT" "$PIN_VERSION" "$triple"
+    want="$(pinned_sha "$triple")" || return 4
+    printf '%s/%s%s-%s-%s\n' "$TOOLS_ROOT" "$BINARY_PREFIX" "$PIN_VERSION" "$triple" "$(tool_digest_tag "$want")"
 }
 
 # Verify an installed binary end to end: stamp, executable, version, fixture.
@@ -156,17 +160,6 @@ verify_installed() {
 
 # ── Install ────────────────────────────────────────────────────────────────
 
-# Remove every install directory that the pin does not name.
-prune_other_versions() {
-    local keep="$1" stale
-    for stale in "$INSTALL_ROOT"/ast-grep-*; do
-        [[ -d "$stale" ]] || continue
-        [[ "$stale" != "$keep" ]] || continue
-        rm -rf -- "$stale"
-        printf 'install-ast-grep: removed the binary left by an earlier pin at %s\n' "$stale" >&2
-    done
-}
-
 install_binary() {
     local dir triple want url work zip got
     dir="$(install_dir)" || return 4
@@ -174,17 +167,18 @@ install_binary() {
     want="$(pinned_sha "$triple")" || return 4
 
     if verify_installed "$dir" 2>/dev/null; then
-        printf 'install-ast-grep: already at the pin (%s, %s).\n' "$PIN_VERSION" "$triple" >&2
-        prune_other_versions "$dir"
+        printf 'install-ast-grep: already at the pin (%s, %s) at %s.\n' "$PIN_VERSION" "$triple" "$dir" >&2
+        mark_tool_used "$dir"
+        prune_unused_tools "$BINARY_PREFIX" "$dir"
         return 0
     fi
     command -v python3 >/dev/null 2>&1 || { printf 'install-ast-grep: python3 is required.\n' >&2; return 4; }
 
     url="https://github.com/$PIN_REPO/releases/download/$PIN_VERSION/app-$triple.zip"
-    mkdir -p -- "$INSTALL_ROOT"
-    # The staging directory sits under the install root, so the final move
-    # stays on one filesystem and is atomic.
-    work="$(mktemp -d -- "$INSTALL_ROOT/.staging.XXXXXX")"
+    mkdir -p -- "$TOOLS_ROOT"
+    # The staging directory sits under the tools root, so the final rename
+    # stays on one filesystem.
+    work="$(mktemp -d -- "$TOOLS_ROOT/.staging.XXXXXX")"
     # shellcheck disable=SC2064
     trap "rm -rf -- '$work'" EXIT
 
@@ -213,10 +207,21 @@ install_binary() {
     verify_binary "$work/out/ast-grep" || return 2
 
     printf '%s %s\n' "$PIN_VERSION" "$want" > "$work/out/.crucible-pin"
-    rm -rf -- "$dir"
-    mv -- "$work/out" "$dir"
-    printf 'install-ast-grep: installed ast-grep %s at %s\n' "$PIN_VERSION" "$dir" >&2
-    prune_other_versions "$dir"
+    # A directory at the install path failed the verification above, so it
+    # is damaged or incomplete.
+    if [[ -e "$dir" ]]; then
+        retire_tool_dir "$dir" || true
+    fi
+    if publish_tool_dir "$work/out" "$dir"; then
+        printf 'install-ast-grep: installed ast-grep %s at %s\n' "$PIN_VERSION" "$dir" >&2
+    elif verify_installed "$dir" 2>/dev/null; then
+        printf 'install-ast-grep: another install put the binary at %s first.\n' "$dir" >&2
+    else
+        printf 'install-ast-grep: the verified binary did not move to %s.  Nothing was installed.\n' "$dir" >&2
+        return 2
+    fi
+    mark_tool_used "$dir"
+    prune_unused_tools "$BINARY_PREFIX" "$dir"
 }
 
 # ── Self-test ──────────────────────────────────────────────────────────────
@@ -247,6 +252,15 @@ sha_equals() {
     [[ "$(sha256_of "$1")" == "$2" ]]
 }
 
+# True when the install directory sits in the tools root, and its name
+# carries the pinned version and the first 16 digits of the pinned SHA256 of
+# the platform.
+install_dir_names_the_pin() {
+    local dir want
+    dir="$(install_dir)" && want="$(pinned_sha "$(platform_triple)")" || return 1
+    [[ "$(dirname -- "$dir")" == "$TOOLS_ROOT" && "$dir" == *"-$PIN_VERSION-"* && "$dir" == *"-${want:0:16}" ]]
+}
+
 self_test() {
     printf 'install-ast-grep --self-test\n' >&2
     local work
@@ -269,6 +283,10 @@ self_test() {
 
     self_test_case 'platform_triple resolves Linux/x86_64' pass platform_triple Linux x86_64
     self_test_case 'platform_triple rejects Windows/i686' fail platform_triple Windows i686
+
+    self_test_case 'install_dir names the pinned version and SHA256 under the tools root' pass \
+        install_dir_names_the_pin
+    tools_root_self_test || SELF_TEST_FAILED=1
 
     if [[ "$SELF_TEST_FAILED" -ne 0 ]]; then
         printf 'install-ast-grep --self-test: FAILED\n' >&2
@@ -299,6 +317,7 @@ main() {
                 printf 'install-ast-grep: the pinned binary is not installed.  Run: bash utils/scripts/install-ast-grep.sh\n' >&2
                 return 3
             fi
+            mark_tool_used "$dir"
             printf '%s/ast-grep\n' "$dir"
             ;;
         --self-test)

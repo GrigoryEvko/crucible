@@ -8,6 +8,13 @@ THE ROOT
     and each build directory, so every guard, every build directory and every
     work tree uses what one of them calculated.
 
+THE TOOLS
+    The pinned tools (the tree-sitter kit and ast-grep) live in the tools
+    subdirectory of the default root, and utils/scripts/tools_root.sh owns
+    them.  $CRUCIBLE_CACHE_DIR does not move them, because a self-test points
+    it at a scratch directory and "off" turns each cache off.  No eviction of
+    this module reads that subdirectory.
+
 THE ENTRIES
     An entry is a file whose name is the SHA-256 of each input that its
     contents depend on.  A changed input gives a different name, so an entry
