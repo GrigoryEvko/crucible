@@ -22,7 +22,7 @@ test/fixy/test_armed_roster.cpp ::fixy::session::global::detail x24 — names ea
 test/fixy/test_armed_roster.cpp ::foundation::effects::detail x5 — names each armed predicate of the effects layer
 test/fixy/test_armed_roster.cpp ::foundation::permissions::detail x8 — names each armed predicate of the permissions layer
 test/fixy/test_payload_row.cpp ::fixy::concurrent::detail x3 — pins the list of payload families that carry a row
-test/fixy/test_refined.cpp ::fixy::detail x1 — runs the edge self-test of the sealed implication relation
+test/fixy/test_refined.cpp ::fixy::detail x1 — runs the edge walk of the sealed implication relation
 test/fixy/test_tagged.cpp ::fixy::detail x4 — uses the retag policy probes of the sealed retag relation
 
 # Proof and context audits: a test that walks the proof types, the mint keys

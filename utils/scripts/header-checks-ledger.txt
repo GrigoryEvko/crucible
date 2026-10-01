@@ -19,38 +19,6 @@ include/crucible/ledger/RefreshDaemon.h | 1 | 5
 include/crucible/ledger/probes/CacheTier.h | 1 | 0
 include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
-include/fixy/Aliases.h | 1 | 8
-include/fixy/Atom.h | 1 | 2
-include/fixy/Axis.h | 0 | 19
-include/fixy/Bits.h | 1 | 7
-include/fixy/Borrowed.h | 1 | 38
-include/fixy/Budgeted.h | 1 | 0
-include/fixy/CanonicalOrder.h | 1 | 0
-include/fixy/Checked.h | 0 | 21
-include/fixy/Cyclic.h | 1 | 12
-include/fixy/CyclicBuffer.h | 1 | 0
-include/fixy/EpochVersioned.h | 1 | 0
-include/fixy/Federation.h | 0 | 4
-include/fixy/FixedArray.h | 1 | 15
-include/fixy/GradedFacade.h | 1 | 0
-include/fixy/Machine.h | 1 | 2
-include/fixy/Mutation.h | 0 | 13
-include/fixy/OwnedFile.h | 1 | 1
-include/fixy/OwnedMmap.h | 1 | 0
-include/fixy/OwnedRegion.h | 1 | 13
-include/fixy/Path.h | 1 | 0
-include/fixy/Qtt.h | 0 | 33
-include/fixy/Refined.h | 3 | 61
-include/fixy/Saturate.h | 1 | 0
-include/fixy/Saturated.h | 1 | 16
-include/fixy/ScopedView.h | 1 | 12
-include/fixy/Secret.h | 1 | 26
-include/fixy/SelfContained.h | 1 | 0
-include/fixy/SharedRegion.h | 1 | 0
-include/fixy/Stale.h | 1 | 3
-include/fixy/Tagged.h | 2 | 19
-include/fixy/Throws.h | 1 | 0
-include/fixy/Witnessed.h | 1 | 0
 include/foundation/AlignedBuffer.h | 1 | 0
 include/foundation/Brand.h | 1 | 0
 include/foundation/ChannelBinding.h | 0 | 12
@@ -84,6 +52,11 @@ include/foundation/reflect/Instance.h | 1 | 0
 include/foundation/reflect/Signature.h | 1 | 0
 include/foundation/reflect/TypeComponents.h | 1 | 0
 
+keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
+keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Linear<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
+keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||sizeof(Affine<long long>)<=sizeof(long long)+alignof(long long) | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
+keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||sizeof(Linear<int>)<=sizeof(int)+alignof(int) | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
+keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||sizeof(Linear<void*>)<=sizeof(void*)+alignof(void*) | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::atomicity,[](std::meta::info commit_tag)consteval{return::fixy::atom_pack::names_tag(atomicity_tags,commit_tag);}>() | the walk evaluates the names_tag lookup of atomicity_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::flag,[](std::meta::info flag_tag)consteval{return::fixy::atom_pack::has_row(flag_table,flag_tag);}>() | the walk evaluates the has_row lookup of flag_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::open_mode,[](std::meta::info mode_tag)consteval{return::fixy::atom_pack::has_row(open_mode_table,mode_tag);}>() | the walk evaluates the has_row lookup of open_mode_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)

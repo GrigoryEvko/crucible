@@ -2280,10 +2280,10 @@ crucible_neg_compile_test(neg_iter_det_signature_len_uint32_max
 # Each pins the mutation that failed and the value it was given.
 crucible_neg_compile_test(neg_iter_det_ops_since_boundary_regression
   "__builtin_trap.*is not a constant expression"
-  "Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)")
+  "Monotonic<unsigned int(, std::less<unsigned int> )?>::advance\\(5\\)")
 crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
   "__builtin_trap.*is not a constant expression"
-  "Monotonic<unsigned int, std::less<unsigned int> >::bump\\(\\)")
+  "Monotonic<unsigned int(, std::less<unsigned int> )?>::bump\\(\\)")
 
 # The iter_det_state::{Building, Steady} tags and their view_ok overloads
 # give the detector's phase a type, so a caller can carry a witness of it.
@@ -2314,10 +2314,10 @@ crucible_neg_compile_test(neg_iter_det_view_in_field
 # Each pins the mutation that failed and the value it was given.
 crucible_neg_compile_test(neg_merkle_dag_variant_id_regression
   "__builtin_trap.*is not a constant expression"
-  "Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)")
+  "Monotonic<unsigned int(, std::less<unsigned int> )?>::advance\\(5\\)")
 crucible_neg_compile_test(neg_merkle_dag_variant_id_overflow
   "__builtin_trap.*is not a constant expression"
-  "Monotonic<unsigned int, std::less<unsigned int> >::bump\\(\\)")
+  "Monotonic<unsigned int(, std::less<unsigned int> )?>::bump\\(\\)")
 
 # ValidCKernelIdRaw is Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>.
 # It is the gate at each widening of a uint8_t to a CKernelId.  The door
@@ -2466,9 +2466,9 @@ crucible_neg_compile_test(neg_lower_trace_graph_bg_only_row
 #     value breaks the precondition of advance in a constant evaluation.
 crucible_neg_compile_test(neg_transaction_step_id_assign_from_raw
   "neg_transaction_step_id_assign_from_raw.cpp:19:29: error: no match for .operator=."
-  "\\(operand types are .fixy::Monotonic<long unsigned int, std::less<long unsigned int> >. and .uint64_t.")
+  "\\(operand types are .fixy::Monotonic<long unsigned int(, std::less<long unsigned int> )?>. and .uint64_t.")
 crucible_neg_compile_test(neg_transaction_step_id_advance_retrograde
-  "in .constexpr. expansion of .tx.crucible::Transaction::step_id.fixy::Monotonic<long unsigned int, std::less<long unsigned int> >::advance\\(50\\)."
+  "in .constexpr. expansion of .tx.crucible::Transaction::step_id.fixy::Monotonic<long unsigned int(, std::less<long unsigned int> )?>::advance\\(50\\)."
   "error: .__builtin_trap\\(\\). is not a constant expression")
 
 # The log holds a monotonic clock reader, so CtxFitsTransactionLog admits

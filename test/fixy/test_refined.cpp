@@ -261,9 +261,9 @@ inline constexpr ffc::edge<rel::predicate_t<even>, rel::predicate_t<fixy::non_ne
 static_assert(ffc::Admitted<^^not_the_relation, rel::predicate_t<even>, rel::predicate_t<fixy::non_negative>>);
 static_assert(!fixy::PredicateImplies<even, fixy::non_negative>, "an edge outside admitted_implications is inert");
 
-// Every member of the namespace is an edge or a rule, and the fold the
-// header runs over them is reachable from here.
-static_assert(fixy::detail::refined_self_test::every_edge_holds());
+// Every member of the namespace is an edge or a rule, and the fold of
+// the header over them is reachable from here.
+static_assert(fixy::detail::refined_edge_walk::every_edge_holds());
 
 // A rule is a function of type rule_signature, and the walk calls each
 // one.  No rule can be inert because a separate marker is missing.

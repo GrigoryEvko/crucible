@@ -212,15 +212,6 @@ mint_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>)
     return AppendOnly<T, Storage>{};
 }
 
-static_assert(sizeof(AppendOnly<char*>) == sizeof(std::vector<char*>),
-              "AppendOnly<char*> must collapse to sizeof(Storage<char*>). The grade "
-              "(Length{size_t}) is computed from c.size() rather than stored "
-              "separately, which holds only while SeqPrefixLattice supplies a "
-              "grade_of trait method.");
-static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(std::vector<std::uint64_t>),
-              "AppendOnly<uint64_t> must collapse to sizeof(Storage<T>). The grade is "
-              "computed from c.size() rather than stored separately.");
-
 // KeyFn and Cmp must be empty and default-constructible, and the two
 // static_asserts below reject anything else.
 //
@@ -235,7 +226,8 @@ static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(std::vector<std::uint6
 // contents. The same argument applies to a projection that reads state:
 // the key of an element would depend on when it was appended.
 //
-// Emptiness is also what the layout static_assert below relies on. Both
+// Emptiness is also what the layout pin in the check file of this header
+// relies on. Both
 // members collapse into the AppendOnly through [[no_unique_address]]
 // only while they have nothing to store.
 //
@@ -325,9 +317,6 @@ template <typename T, typename KeyFn, typename Cmp, template <typename...> class
 mint_ordered_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>) {
     return OrderedAppendOnly<T, KeyFn, Cmp, Storage>{};
 }
-
-static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std::uint64_t>),
-              "OrderedAppendOnly must collapse empty KeyFn/Cmp to zero layout cost");
 
 // Cmp fixes the direction of travel. With the default std::less,
 // advance accepts a value that is not less than the current one.
@@ -420,13 +409,6 @@ template <typename T, typename Cmp>
     return Monotonic<T, Cmp>{std::move(initial)};
 }
 
-static_assert(sizeof(Monotonic<uint32_t, std::less<uint32_t>>) == sizeof(uint32_t),
-              "Monotonic<T, EmptyCmp> must be zero-cost: value and grade have the "
-              "same type and collapse to one storage cell.");
-static_assert(sizeof(Monotonic<uint64_t, std::less<uint64_t>>) == sizeof(uint64_t),
-              "Monotonic<T, EmptyCmp> must be zero-cost: value and grade have the "
-              "same type and collapse to one storage cell.");
-
 // This is not Refined<bounded_above<Max>, Monotonic<T>> because Refined
 // checks its predicate once at construction, so every later advance on
 // the inner Monotonic escapes the bound and the alias fails silently.
@@ -499,12 +481,6 @@ template <typename T, auto Max, typename Cmp>
 mint_bounded_monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return BoundedMonotonic<T, Max, Cmp>{std::move(initial)};
 }
-
-static_assert(sizeof(BoundedMonotonic<std::uint32_t, 1024U>) == sizeof(std::uint32_t),
-              "BoundedMonotonic must collapse to underlying T");
-static_assert(!std::is_trivially_copyable_v<BoundedMonotonic<std::uint32_t, 1024U>>
-                  && !::foundation::lifetime::ImplicitLifetimeThroughout<BoundedMonotonic<std::uint32_t, 1024U>>,
-              "std::bit_cast and std::start_lifetime_as must not build a counter above its bound");
 
 template <typename T>
     requires std::move_constructible<T>
@@ -665,9 +641,6 @@ template <typename Ptr>
 [[nodiscard]] constexpr WriteOnceNonNull<Ptr> mint_write_once_non_null() noexcept {
     return WriteOnceNonNull<Ptr>{};
 }
-
-static_assert(sizeof(WriteOnceNonNull<int*>) == sizeof(int*));
-static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 
 // Pinned because the atomic is the identity of the counter. Moving it
 // would fork the monotonic sequence across two atomics.
@@ -854,17 +827,6 @@ template <typename T, typename Cmp>
 [[nodiscard]] constexpr AtomicMonotonic<T, Cmp> mint_atomic_monotonic(T initial) noexcept {
     return AtomicMonotonic<T, Cmp>{initial};
 }
-
-static_assert(alignof(AtomicMonotonic<uint64_t>) >= 64, "AtomicMonotonic must be cache-line aligned: repeated "
-                                                        "advance/bump/CAS traffic invalidates the consumer's "
-                                                        "cached line every iteration, so the counter must not "
-                                                        "share a line with unrelated embedder state.");
-static_assert(alignof(AtomicMonotonic<uint32_t>) >= 64);
-static_assert(sizeof(AtomicMonotonic<uint64_t>) >= 64, "AtomicMonotonic occupies a full cache line by "
-                                                       "construction; embedders rely on the counter NOT "
-                                                       "sharing a line with any field touched on the "
-                                                       "producer/consumer hot path.");
-static_assert(sizeof(AtomicMonotonic<uint32_t>) >= 64);
 
 template <typename T>
 using MaxObserved = AtomicMonotonic<T, std::less<T>>;

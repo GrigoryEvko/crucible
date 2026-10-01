@@ -2,8 +2,10 @@
 // predicates with one meaning imply one another round a ring, and the
 // search from the first one comes back to it on the third step.
 //
-// The fixture plants the edges before the header, because the header
-// reads the namespace as it stands at its foot.
+// The fixture plants the edges before the header, because the relation
+// reads the namespace as it stands where the header defines it.  Then
+// the fixture calls the walk of fixy/Refined.h, which runs the search
+// from every edge.
 
 #include <foundation/diag/FailClosed.h>
 
@@ -30,5 +32,7 @@ inline constexpr ::foundation::fail_closed::edge<planted::not_below_four_t, plan
 }  // namespace fixy::refined::admitted_implications
 
 #include <fixy/Refined.h>
+
+static_assert(::fixy::detail::refined_edge_walk::every_edge_holds());
 
 int main() { return 0; }

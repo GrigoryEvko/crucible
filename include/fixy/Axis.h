@@ -197,17 +197,6 @@ namespace detail {
     return false;
 }
 
-// Both answers, so a caller's walk cannot pass through a helper that
-// always says yes.
-static_assert(text_contains("fixy::fn<T>", "fn<"));
-static_assert(text_contains("abc", "abc"));
-static_assert(text_contains("abc", "a"));
-static_assert(text_contains("abc", "c"));
-static_assert(text_contains("abc", ""));
-static_assert(!text_contains("abc", "abcd"));
-static_assert(!text_contains("abc", "x"));
-static_assert(!text_contains("", "a"));
-
 }  // namespace detail
 
 // The strict poles that are not a point of a foundation lattice.  Each
@@ -585,8 +574,8 @@ concept TakesDefaultTraits = requires {
 // primary would catch only the first, and only by being incomplete at a
 // sizeof.
 //
-// Only the first of the two is witnessed from outside, by the
-// assertion below and by neg_axis_unclassified_axis.  Witnessing the
+// Only the first of the two is witnessed from outside, by the check
+// file of this header and by neg_axis_unclassified_axis.  Witnessing the
 // second would mean specialising axis_traits for an axis the walk has
 // already instantiated, which is separately ill-formed, so no fixture
 // can reach it.
@@ -641,13 +630,6 @@ concept AxisIsClassified = (TakesDefaultTraits<A> == axis_takes_defaults<A>);
     return count;
 }
 
-static_assert(every_axis_has_traits(),
-              "fixy::Axis: an axis is neither on defaulted_axes nor carries an axis_traits "
-              "specialisation, or it carries both, or the one it carries does not classify as "
-              "exactly one of caller-supplied, strict or derived.  An axis whose grade is a Fact "
-              "lattice discharged at the type level, with no wrapper, joins defaulted_axes and needs "
-              "nothing else.  Any other axis needs a specialisation next to the others above.");
-
 // The rule of the header comment, over the table.  Each axis with a pole
 // states its claim, and its pole must be the weakest claim of that kind.
 // The walk answers with the names of the axes that break the rule, so
@@ -696,34 +678,5 @@ namespace detail {
 [[nodiscard]] consteval bool every_pole_is_the_weakest_claim() {
     return detail::axes_whose_pole_is_not_the_weakest_claim_().empty();
 }
-
-static_assert(every_pole_is_the_weakest_claim(), detail::weakest_claim_diagnostic_());
-
-// The check has the two answers, so the walk above cannot pass through a
-// rule that always says yes.
-static_assert(PoleFitsClaim<Claim::Fact, pole::Unconstrained<Axis::Lifetime>>);
-static_assert(PoleFitsClaim<Claim::Fact, tags::trust::Unverified>);
-static_assert(PoleFitsClaim<Claim::Right, ::foundation::effects::Row<>>);
-static_assert(PoleFitsClaim<Claim::Right, pole::stale::Fresh>);
-static_assert(!PoleFitsClaim<Claim::Right, pole::Unconstrained<Axis::Effect>>,
-              "on a Right axis a pole that claims nothing would grant every right");
-static_assert(!PoleFitsClaim<Claim::Fact, tags::source::FromInternal>,
-              "on a Fact axis a pole that names a source would give every binding that source");
-static_assert(!PoleFitsClaim<Claim::Fact, std::integral_constant<std::uint32_t, 1u>>,
-              "on a Fact axis a pole that names a version would give every binding that version");
-
-// The walk above rejects an axis only if the comparison it rests on can
-// answer no.  A value one past the enum stands in for the next
-// enumerator somebody adds: it reaches the primary, like that
-// enumerator would, and it is not on the roster, like that enumerator
-// would not be.  Without this line the partition check could pass by
-// being vacuous.
-static_assert(!AxisIsClassified<static_cast<Axis>(axis_count)>,
-              "fixy::Axis: the partition check must reject an axis the table has not classified.  "
-              "It answers yes for a value one past the enum, so it would answer yes for a new "
-              "enumerator too, and defaulted_axes would stop being an opt-in.");
-
-static_assert(std::is_same_v<axis_traits<Axis::Observability>::strict, axis_traits<Axis::Effect>::strict>,
-              "Observability's derived pole must round-trip to Effect's strict pole.");
 
 }  // namespace fixy

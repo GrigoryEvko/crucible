@@ -126,9 +126,9 @@ static_assert(extracted == 10);
 static_assert(RetagAllowed<source::FromUser, source::FromUser>);
 static_assert(RetagAllowed<source::X86Pinned, source::X86Pinned>);
 static_assert(::fixy::retag_policy<source::FromUser, source::FromUser>::allowed);
-static_assert(!RetagAllowed<::fixy::detail::retag_policy_test::NeverFrom, ::fixy::detail::retag_policy_test::NeverTo>);
-static_assert(!::fixy::retag_policy<::fixy::detail::retag_policy_test::NeverFrom,
-                                    ::fixy::detail::retag_policy_test::NeverTo>::allowed);
+static_assert(!RetagAllowed<::fixy::detail::retag_sentinel::NeverFrom, ::fixy::detail::retag_sentinel::NeverTo>);
+static_assert(
+    !::fixy::retag_policy<::fixy::detail::retag_sentinel::NeverFrom, ::fixy::detail::retag_sentinel::NeverTo>::allowed);
 
 // The trust ratchet: Verified -> Unverified stays rejected.  Admitting it
 // would defeat the verification-status monotonicity contract.

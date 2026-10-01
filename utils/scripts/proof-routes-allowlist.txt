@@ -8,9 +8,9 @@
 # Unions of scalars.  The permission-tag tests need a union type to prove
 # that a union is not a permission tag, and the self-contained walk needs
 # two to prove that it reads a union member.  No member is a proof type.
-include/fixy/SelfContained.h:union:EitherPointer
-include/fixy/SelfContained.h:union:EitherValue
 test/foundation/test_permissions_compile.cpp:union:UnionTag
+test/layer/checks/fixy/SelfContained.cpp:union:EitherPointer
+test/layer/checks/fixy/SelfContained.cpp:union:EitherValue
 
 # Unions of scalars in the stable-id tests.  GCC prints a union value
 # without its active member, so the stable id refuses a union value.  These

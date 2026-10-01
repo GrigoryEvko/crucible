@@ -124,7 +124,7 @@ fixy_neg_compile_test(neg_qtt_grade_that_only_compares_equal
 # expression steps a Monotonic backward or sets a WriteOnce twice.
 fixy_neg_compile_test(neg_mutation_monotonic_step_backward
   "non-constant condition for static assertion"
-  "in .constexpr. expansion of .counter\\.fixy::Monotonic<unsigned int, std::less<unsigned int> >::advance\\(5\\)."
+  "in .constexpr. expansion of .counter\\.fixy::Monotonic<unsigned int(, std::less<unsigned int> )?>::advance\\(5\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_neg_compile_test(neg_mutation_write_once_twice
   "non-constant condition for static assertion"
@@ -1039,7 +1039,7 @@ fixy_neg_compile_test(neg_refined_sealed_into_unreachable
 
 # A rule is a function of type rule_signature, and the walk calls each
 # one.  A class, or a function of another type, in the namespace would
-# decide nothing, so the self-test refuses each where it walks the
+# decide nothing, so the edge walk refuses each where it walks the
 # namespace.
 fixy_neg_compile_test(neg_refined_class_in_the_relation
   "static assertion failed: a member of admitted_implications is an edge, a narrowing edge, the seal, or a rule of type refined::rule_signature"
@@ -1068,15 +1068,15 @@ fixy_neg_compile_test(neg_refined_chain_wrong_direction
   "the expression .predicate_implies\\(.*\\[with P = fixy::BoundedAbove<20>\\{\\}; Q = fixy::InRange<5, 9>\\{\\}\\]. evaluated to .false.")
 
 # Two distinct predicates that imply each other through steps that do
-# not narrow are two names for one predicate.  The walk at the foot of
-# the header runs the closure from each edge, and the search stops on
-# the cycle, of two steps or of three.
+# not narrow are two names for one predicate.  The walk of the header
+# runs the closure from each edge, and the search stops on the cycle, of
+# two steps or of three.  Each fixture calls the walk.
 fixy_neg_compile_test(neg_refined_implication_cycle_edges
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_self_test::unreachable_conclusion\\).")
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\).")
 fixy_neg_compile_test(neg_refined_implication_cycle_ring
   "call to non-.constexpr. function .void fixy::refined::implication_cycle_between_two_names_for_one_predicate\\(\\)."
-  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_self_test::unreachable_conclusion\\).")
+  "in .constexpr. expansion of .fixy::refined::predicate_implies\\(\\^\\^planted::<lambda\\(auto:[0-9]+\\)>, \\^\\^fixy::detail::refined_edge_walk::unreachable_conclusion\\).")
 
 # A predicate with a base class borrows none of its base's places in
 # the relation, as a premise or as a conclusion.

@@ -15,12 +15,7 @@
 # to derive the branded templates from the parse tree.  The list of nine
 # names that it replaced did not see OwnedMmap, NumaPlacement or the
 # other templates that carry a brand.
-include/fixy/Borrowed.h	55
 include/fixy/OwnedMmap.h	1
-include/fixy/OwnedRegion.h	13
-include/fixy/Qtt.h	2
-include/fixy/ScopedView.h	6
-include/fixy/SharedRegion.h	1
 include/fixy/session/Payload.h	14
 include/foundation/effects/Computation.h	3
 include/foundation/permissions/Permission.h	53

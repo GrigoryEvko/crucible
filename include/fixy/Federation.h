@@ -87,9 +87,6 @@ using PeerKeyFingerprint = HandshakeWord<detail::handshake_word::PeerKeyFingerpr
 using Nonce = HandshakeWord<detail::handshake_word::Nonce>;
 using HandshakeMac = HandshakeWord<detail::handshake_word::Mac>;
 
-static_assert(sizeof(OrgId) == sizeof(std::uint64_t));
-static_assert(std::is_trivially_copyable_v<OrgId>);
-
 template <typename Org>
     requires FederationOrgTag<Org>
 inline constexpr OrgId federation_org_id = OrgId{::foundation::reflect::stable_type_id<Org>};
@@ -125,9 +122,6 @@ struct FederationHandshake {
     Nonce nonce{};
     HandshakeMac mac{};
 };
-
-static_assert(std::is_trivially_copyable_v<FederationHandshake>);
-static_assert(sizeof(FederationHandshake) == 32);
 
 enum class AdmittanceError : std::uint8_t {
     OrgMismatch = 1,

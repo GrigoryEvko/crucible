@@ -946,7 +946,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::ThreadNamed, ^^::fixy::ThreadNamed<"census">},
     {^^::fixy::Machine, ^^::fixy::Machine<MachineState>},
     {^^::fixy::ClockSource, ^^::fixy::MonotonicClockBytes<int>},
-    {^^::fixy::OwnedMmap, ^^::fixy::detail::owned_mmap_self_test::SmokeOwnedMmap},
+    {^^::fixy::OwnedMmap, ^^::fixy::detail::SmokeOwnedMmap},
     {^^::fixy::Disjoint, ^^::fixy::Disjoint<PureRegionTag, ::foundation::brand::DefaultBrand, SplitSiteName, 2>},
     {^^::fixy::SharedRegion, ^^::fixy::SharedRegion<int, PureRegionTag>},
     {^^::fixy::ScopedView, ^^::fixy::ScopedView<::fixy::detail::sv_test_carrier, ::fixy::detail::sv_test_tag>},

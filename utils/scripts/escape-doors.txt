@@ -13,6 +13,5 @@
 # reclassified, never added.  --refresh rewrites the pin and keeps
 # each reason.
 hatch-total 1
-include/fixy/OwnedRegion.h:alloc_array  arena allocation door: carves a T* from the region's own block and is gated by an effects::Alloc capability token; provenance is *this and the token is the explicit, discouraged key
 include/fixy/concurrent/Topology.h:instance  singleton accessor: returns a reference to a function-static const Topology; static lifetime, cannot dangle
 include/foundation/effects/Computation.h:extract  within-object accessor: returns a reference to the carried value; provenance is the Computation itself, so the reference lives as long as it does
