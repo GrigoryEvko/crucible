@@ -416,15 +416,12 @@ jobs:
       # curl, tar and coreutils serve utils/scripts/install-tree-sitter.sh: it
       # downloads one release asset, checks its SHA256 and unpacks it. The
       # fedora:44 base carries none of the three reliably, and weak deps are off.
-      # strace records the file lookups of each negative-fixture compile for the
-      # result store of test/neg_compile_driver.py, and the parts of
-      # fixture_store_self_test need it.
       - name: Install toolchain + BPF stack + ccache
         run: >
           dnf install -y --setopt=install_weak_deps=False --setopt=keepcache=1
           gcc-c++ isl cmake ninja-build git ripgrep ccache diffutils
           clang llvm xxd bpftool libbpf-devel
-          curl tar coreutils strace
+          curl tar coreutils
 
       # The patched GCC that the patched-gcc job built.  CRUCIBLE_CXX names it.
       - name: Restore the patched GCC

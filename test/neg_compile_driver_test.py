@@ -5,12 +5,13 @@ Each check makes a small tree of headers, fixtures and a compile database in a
 temporary directory, with a store of its own.  It runs the driver as CTest does,
 and it reads the lines that the driver writes about the store.  Each check
 compiles with the compiler that `--cxx` names.  The exit code is 0 when each
-check passes, 1 when a check fails, and 3 when the compiler cannot run or
-strace cannot record a program.
+check passes, 1 when a check fails, and 3 when the compiler cannot run or when
+the host cannot give the condition of each check of the part.
 
 With `--part K/N`, the test runs only the checks whose position modulo N is K.
 CTest runs each part as one test, so the parts run at the same time.  Part 0
-also checks the parse of a dependency file and of a strace record.
+also checks the parse of a dependency file, of a search list and of a list of
+the loader, the ELF interpreter, the search roots and the compile environment.
 
 The store refuses a result while an input of the compile is less than one
 second old.  Each check waits for that period after it makes its tree, and
@@ -52,35 +53,51 @@ FILES = {
     ),
     "neg/neg_missing.cpp": "#include <nope/none.h>\n",
     "neg/neg_computed.cpp": "#define HEADER <b/B.h>\n#include HEADER\nB converted = 3;\n",
+    "neg/neg_quote.cpp": '#include "b/B.h"\nB converted = 3;\n',
+    "neg/neg_parent.cpp": '#include "../b/B.h"\nB converted = 3;\n',
 }
+# The search list of each fixture is `-I shadow -I include`.  neg_parent also
+# searches include/sub, where its name `../b/B.h` reaches include/b/B.h.
+EXTRA_SEARCH = {"neg/neg_parent.cpp": "include/sub"}
+CONVERTING_B = "#pragma once\nstruct B { B(int) {} };\n"
 
 
 class StoreTest:
     """The checks of the result store, each one in a temporary tree of its own."""
 
     def __init__(self, root: Path, cxx: str) -> None:
-        """Make the tree of headers, fixtures and compile database in `root`."""
-        self.root = root
-        self.build = root / "build"
-        self.store = root / "store"
+        """Make the tree of headers, fixtures and compile database in `root`.
+
+        The tree uses the real path of `root`, because the driver names each
+        search directory by its real path.  The store is in the build
+        directory: a new directory in `root` changes the time that the store
+        reads for each path in `root` that does not exist.
+        """
+        self.root = root.resolve()
+        self.cxx = cxx
+        self.build = self.root / "build"
+        self.store = self.build / "store"
         self.failures: list[str] = []
+        self.skipped = ""
         for name, text in FILES.items():
-            (root / name).parent.mkdir(parents=True, exist_ok=True)
-            (root / name).write_text(text)
-        (root / "shadow").mkdir()
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text(text)
+        (self.root / "shadow").mkdir()
         self.build.mkdir()
-        rows = [
-            {
+        rows = []
+        for name in FILES:
+            if not name.startswith("neg/"):
+                continue
+            extra = ["-I", str(self.root / EXTRA_SEARCH[name])] if name in EXTRA_SEARCH else []
+            rows.append({
                 "directory": str(self.build),
-                "file": str(root / name),
+                "file": str(self.root / name),
                 "arguments": [
-                    cxx, "-std=c++20", "-I", str(root / "shadow"), "-I", str(root / "include"),
-                    "-fdiagnostics-color=never", "-c", str(root / name), "-o", str(self.build / f"{Path(name).stem}.o"),
+                    cxx, "-std=c++20", "-I", str(self.root / "shadow"), "-I", str(self.root / "include"), *extra,
+                    "-fdiagnostics-color=never", "-c", str(self.root / name), "-o",
+                    str(self.build / f"{Path(name).stem}.o"),
                 ],
-            }
-            for name in FILES
-            if name.startswith("neg/")
-        ]
+            })
         (self.build / "compile_commands.json").write_text(json.dumps(rows))
 
     def run(self, fixture: str, *regexes: str, warnings_dir: Path | None = None,
@@ -114,6 +131,10 @@ class StoreTest:
         """Record the failure `what` when `is_true` is False."""
         if not is_true:
             self.failures.append(what)
+
+    def skip(self, reason: str) -> None:
+        """Record that the host cannot give the condition of the check."""
+        self.skipped = reason
 
     def entry_path(self, notes: list[str]) -> Path | None:
         """Return the path of the entry that a note names, or None."""
@@ -173,31 +194,40 @@ class StoreTest:
         shadowed = self.run("neg_size", *SIZE)
         self.expect(shadowed[0] == 1 and "compiled successfully" in shadowed[2],
                     f"the shadow header makes the fixture compile: {shadowed[0]}")
-        self.expect(self.has(shadowed[3], f"compiled (a search path changed: {self.root / 'shadow'}"),
+        self.expect(self.has(shadowed[3], f"compiled (a search directory changed: {self.root / 'shadow'})"),
                     f"the store sees the new header in the search list: {shadowed[3]}")
 
     def check_precompiled_header(self) -> None:
-        """A new precompiled header beside a found header compiles the fixture again."""
+        """A new precompiled header beside a found header compiles the fixture again, and the store refuses it."""
         stored = self.run("neg_convert", *CONVERT)
         self.expect(stored[0] == 0 and self.has(stored[3], "stored"), f"the convert fixture stores: {stored[3]}")
         planted = self.root / "include/b/B.h.gch"
         planted.write_text("not a precompiled header\n")
         changed = self.run("neg_convert", *CONVERT)
-        self.expect(self.has(changed[3], f"compiled (a search path changed: {planted})"),
+        self.expect(self.has(changed[3], f"compiled (a search directory changed: {self.root / 'include'})"),
                     f"the store sees the new precompiled header: {changed[3]}")
-        self.expect(self.has(changed[3], f"not stored (a precompiled header is in the search list: {planted})"),
-                    f"the store refuses a result with a precompiled header in the search list: {changed[3]}")
+        self.expect(self.has(changed[3], f"not stored (a precompiled header is in a search directory: {planted})"),
+                    f"the store refuses a result with a precompiled header in a search directory: {changed[3]}")
+        self.settle()
+        settled = self.run("neg_convert", *CONVERT)
+        self.expect(self.has(settled[3], f"not stored (a precompiled header is in a search directory: {planted})"),
+                    f"the store refuses the result also after the settle period: {settled[3]}")
 
     def check_unrelated_file(self) -> None:
-        """A new file that no search looks for changes no stored result."""
+        """A new file outside each search root changes no stored result, and a new file in a root does."""
         stored = self.run("neg_convert", *CONVERT)
         self.expect(stored[0] == 0 and self.entry_path(stored[3]) is not None,
                     f"the convert fixture has an entry: {stored[3]}")
-        other = self.root / "include/b/Other.h"
-        other.write_text("#pragma once\n")
+        unrelated = self.root / "other/Other.h"
+        unrelated.parent.mkdir()
+        unrelated.write_text("#pragma once\n")
         again = self.run("neg_convert", *CONVERT)
         self.expect(self.has(again[3], "the result comes from the store"),
-                    f"a file that no search looks for does not compile the fixture again: {again[3]}")
+                    f"a file outside each search root does not compile the fixture again: {again[3]}")
+        (self.root / "include/b/Other.h").write_text("#pragma once\n")
+        rooted = self.run("neg_convert", *CONVERT)
+        self.expect(self.has(rooted[3], f"compiled (a search directory changed: {self.root / 'include'})"),
+                    f"a new file in a search directory compiles the fixture again: {rooted[3]}")
 
     def check_has_include(self) -> None:
         """A new file that a `__has_include` probe names compiles the fixture again, and so does its removal."""
@@ -206,18 +236,19 @@ class StoreTest:
         late = self.root / "include/sub/late"
         late.mkdir()
         (late / "L.h").write_text("#pragma once\n")
+        include = self.root / "include"
         changed = self.run("neg_probe", *PROBE)
-        self.expect(changed[0] == 1 and self.has(changed[3], f"compiled (a search path changed: {late / 'L.h'}"),
+        self.expect(changed[0] == 1 and self.has(changed[3], f"compiled (a search directory changed: {include})"),
                     f"a new probed file compiles the fixture again: {changed[0]} {changed[3]}")
-        self.expect(self.has(changed[3], f"not stored (a search path changed less than one second before the "
-                                         f"compile: {late / 'L.h'}"),
+        self.expect(self.has(changed[3], f"not stored (a search directory changed less than one second before the "
+                                         f"compile: {include})"),
                     f"the store refuses a result while a probed file is new: {changed[3]}")
         self.settle()
         found = self.run("neg_probe", *PROBE)
         self.expect(found[0] == 1 and self.has(found[3], "stored"), f"the found probe stores: {found[3]}")
         (late / "L.h").unlink()
         removed = self.run("neg_probe", *PROBE)
-        self.expect(removed[0] == 0 and self.has(removed[3], f"compiled (a search path changed: {late / 'L.h'}"),
+        self.expect(removed[0] == 0 and self.has(removed[3], f"compiled (a search directory changed: {include})"),
                     f"a removed probed file compiles the fixture again: {removed[0]} {removed[3]}")
 
     def check_fatal_error(self) -> None:
@@ -232,7 +263,7 @@ class StoreTest:
         header.write_text("#pragma once\n")
         found = self.run("neg_missing", *MISSING)
         self.expect(found[0] == 1 and "compiled successfully" in found[2]
-                    and self.has(found[3], f"compiled (a search path changed: {self.root / 'include/nope'}"),
+                    and self.has(found[3], f"compiled (a search directory changed: {self.root / 'include'})"),
                     f"a new file with the missing name compiles the fixture again: {found[0]} {found[3]}")
 
     def check_macro_include(self) -> None:
@@ -242,33 +273,116 @@ class StoreTest:
                     f"the store takes the result of a macro include: {computed[3]}")
         shadow = self.root / "shadow/b"
         shadow.mkdir()
-        (shadow / "B.h").write_text("#pragma once\nstruct B { B(int) {} };\n")
+        (shadow / "B.h").write_text(CONVERTING_B)
         shadowed = self.run("neg_computed", *CONVERT)
         self.expect(shadowed[0] == 1 and "compiled successfully" in shadowed[2]
-                    and self.has(shadowed[3], f"compiled (a search path changed: {self.root / 'shadow'}"),
+                    and self.has(shadowed[3], f"compiled (a search directory changed: {self.root / 'shadow'})"),
                     f"a shadow of the header that a macro names compiles the fixture again: "
                     f"{shadowed[0]} {shadowed[3]}")
 
-    def check_tracer(self) -> None:
-        """Without strace, or with a strace that writes a message, the driver compiles and stores no result."""
-        bin_dir = self.root / "bin"
-        bin_dir.mkdir()
-        before = self.entry_files()
-        bare = self.run("neg_convert", *CONVERT, PATH=str(bin_dir))
-        self.expect(bare[0] == 0 and self.has(bare[3], "not stored (strace is not in PATH"),
-                    f"without strace the driver compiles and stores no result: {bare[0]} {bare[3]}")
-        fake = bin_dir / "strace"
-        fake.write_text('#!/bin/sh\necho "strace: a planted message" >&2\nwhile [ "$1" != "--" ]; do shift; done\n'
-                        'shift\nexec "$@"\n')
-        fake.chmod(0o755)
-        noisy = self.run("neg_convert", *CONVERT, PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-        self.expect(noisy[0] == 0 and self.has(noisy[3], "not stored (no strace record shows the start of")
-                    and "strace: a planted message" not in noisy[1] + noisy[2],
-                    f"a strace with no record gives the output of a compile without it: {noisy[0]} {noisy[3]}")
+    def check_quote_directory(self) -> None:
+        """A new header in the directory of a fixture shadows its quote include, and compiles it again."""
+        stored = self.run("neg_quote", *CONVERT)
+        self.expect(stored[0] == 0 and self.has(stored[3], "stored"), f"the quote fixture stores: {stored[3]}")
+        local = self.root / "neg/b/B.h"
+        local.parent.mkdir()
+        local.write_text(CONVERTING_B)
+        shadowed = self.run("neg_quote", *CONVERT)
+        self.expect(shadowed[0] == 1 and "compiled successfully" in shadowed[2]
+                    and self.has(shadowed[3], f"compiled (a search directory changed: {self.root / 'neg'})"),
+                    f"a header beside the fixture shadows its quote include: {shadowed[0]} {shadowed[3]}")
+
+    def check_parent_name(self) -> None:
+        """A new header at an earlier path of a name with `..` compiles the fixture again.
+
+        The name `../b/B.h` reaches the directory above the tree from each
+        directory before include/sub, and no search root holds that path.
+        """
+        stored = self.run("neg_parent", *CONVERT)
+        self.expect(stored[0] == 0 and self.has(stored[3], "stored"), f"the parent fixture stores: {stored[3]}")
+        earlier = self.root / "b/B.h"
+        earlier.parent.mkdir()
+        earlier.write_text(CONVERTING_B)
+        shadowed = self.run("neg_parent", *CONVERT)
+        self.expect(shadowed[0] == 1 and "compiled successfully" in shadowed[2]
+                    and self.has(shadowed[3], f"compiled (a probed path changed: {self.root / 'shadow'}/../b/B.h)"),
+                    f"a header at an earlier path of a name with .. compiles the fixture again: {shadowed[0]} "
+                    f"{shadowed[3]}")
+
+    def check_loader(self) -> None:
+        """A shared object of cc1plus in a directory of LD_LIBRARY_PATH changes the key of the compile."""
+        cc1plus = subprocess.run([self.cxx, "-print-prog-name=cc1plus"], text=True, capture_output=True,
+                                 check=False).stdout.strip()
+        interpreter = driver.elf_interpreter(cc1plus) if os.path.isfile(cc1plus) else None
+        if interpreter is None:
+            self.skip(f"cc1plus ({cc1plus}) has no program interpreter")
+            return
+        listed = subprocess.run([interpreter, "--list", cc1plus], text=True, capture_output=True, check=False)
+        parsed = driver.parse_loader_list(listed.stdout, "", self.root)
+        system = [path for path in (parsed[0] if parsed else []) if path.startswith(("/lib", "/usr/lib"))
+                  and not os.path.basename(path).startswith("ld-linux")]
+        if not system:
+            self.skip(f"cc1plus maps no shared object from a system directory: {listed.stdout.strip()}")
+            return
+        chosen = next((path for path in system if os.path.basename(path).startswith("libz")), system[0])
+        library = self.root / "lib"
+        library.mkdir()
+        stored = self.run("neg_convert", *CONVERT, LD_LIBRARY_PATH=str(library))
+        self.expect(stored[0] == 0 and self.has(stored[3], "stored"),
+                    f"the convert fixture stores with an empty LD_LIBRARY_PATH directory: {stored[3]}")
+        shutil.copyfile(os.path.realpath(chosen), library / os.path.basename(chosen))
+        self.settle()
+        moved = self.run("neg_convert", *CONVERT, LD_LIBRARY_PATH=str(library))
+        self.expect(moved[0] == 0 and self.has(moved[3], "compiled (no entry)") and self.has(moved[3], "stored"),
+                    f"a copy of {chosen} in LD_LIBRARY_PATH gives a new key: {moved[0]} {moved[3]}")
+
+    def check_message_language(self) -> None:
+        """The driver compiles with LC_MESSAGES=C, so a host language with a GCC catalog gives English diagnostics."""
+        source = self.root / "neg/neg_convert.cpp"
+        base = {name: value for name, value in os.environ.items() if name not in ("LC_ALL", "LC_MESSAGES")}
+        chosen = ""
+        for candidate in ("en_US.UTF-8", "en_US.utf8", "en_GB.UTF-8", "de_DE.UTF-8"):
+            raw = subprocess.run([self.cxx, "-fsyntax-only", "-I", str(self.root / "include"), str(source)],
+                                 env={**base, "LC_ALL": candidate, "LANGUAGE": "de"}, text=True, capture_output=True,
+                                 check=False)
+            if raw.returncode == 1 and CONVERT[0] not in raw.stderr:
+                chosen = candidate
+                break
+        if not chosen:
+            self.skip("no locale of the host makes the compiler translate its diagnostics with LANGUAGE=de")
+            return
+        stored = self.run("neg_convert", *CONVERT, LC_ALL=chosen, LANGUAGE="de")
+        self.expect(stored[0] == 0 and self.has(stored[3], "stored") and CONVERT[0] in stored[1],
+                    f"with LC_ALL={chosen} and LANGUAGE=de the diagnostics are English: {stored[0]} {stored[3]}")
+
+    def check_identity_change(self) -> None:
+        """A compiler that changes during the compile stores no result.
+
+        A wrapper compiler adds a comment line to its own script in each compile
+        with `-c`.  The script is the compiler driver of the key, and it is no
+        dependency, so only the key that the driver computes again after the
+        compile sees the change.
+        """
+        wrapper = self.root / "wrapper.sh"
+        wrapper.write_text(f'#!/bin/sh\ncase " $* " in *" -c "*) echo "# a change" >> "$0";; esac\n'
+                           f'exec "{self.cxx}" "$@"\n')
+        wrapper.chmod(0o755)
+        rows = json.loads((self.build / "compile_commands.json").read_text())
+        for row in rows:
+            row["arguments"] = [str(wrapper), *row["arguments"][1:]]
+        (self.build / "compile_commands.json").write_text(json.dumps(rows))
+        self.settle()
+        changed = self.run("neg_convert", *CONVERT)
+        self.expect(changed[0] == 0 and self.has(changed[3], "not stored (the compiler identity changed during the "
+                                                             "compile"),
+                    f"a compiler that changes during the compile stores no result: {changed[0]} {changed[3]}")
+
+    def check_store_off(self) -> None:
+        """With CRUCIBLE_NEG_CACHE=0, the driver compiles and writes no entry."""
         off = self.run("neg_convert", *CONVERT, CRUCIBLE_NEG_CACHE="0")
         self.expect(off[0] == 0 and off[3] == ["compiled (the store is off)"],
                     f"CRUCIBLE_NEG_CACHE=0 compiles: {off[3]}")
-        self.expect(self.entry_files() == before, "these runs write no entry")
+        self.expect(self.entry_files() == [], "a run with the store off writes no entry")
 
     def check_stored_output_is_evaluated(self) -> None:
         """A damaged entry is a miss, and a changed entry fails as a fresh compile does."""
@@ -407,95 +521,80 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_unrelated_file,
     StoreTest.check_fatal_error,
     StoreTest.check_macro_include,
-    StoreTest.check_tracer,
+    StoreTest.check_quote_directory,
+    StoreTest.check_parent_name,
+    StoreTest.check_loader,
+    StoreTest.check_message_language,
+    StoreTest.check_identity_change,
+    StoreTest.check_store_off,
     StoreTest.check_stored_output_is_evaluated,
     StoreTest.check_eviction,
     StoreTest.check_cpu_budget,
 )
 
-
-def _record(directory: Path, name: str, lines: list[str]) -> None:
-    """Write one planted strace record, with the exit line at its end."""
-    (directory / name).write_text("\n".join([*lines, "+++ exited with 1 +++"]) + "\n", encoding="latin-1")
+SEARCH_LIST = """\
+ignoring nonexistent directory "/opt/gcc/x86_64/include"
+ignoring duplicate directory "/opt/inc/./"
+  as it is a non-system directory that duplicates a system directory
+#include "..." search starts here:
+ /work/quote
+#include <...> search starts here:
+ /work/include
+ /opt/gcc/include/c++
+ /Library/Frameworks (framework directory)
+End of search list.
+"""
+LOADER_OUTPUT = """\
+\tlinux-vdso.so.1 (0x00007ffd)
+\tlibz.so.1 => /lib64/libz.so.1 (0x00007f01)
+\t/lib64/ld-linux-x86-64.so.2 (0x00007f02)
+"""
+LOADER_DEBUG = """\
+     1234:\tfind library=libz.so.1 [0]; searching
+     1234:\t search path=/opt/lib:glibc-hwcaps/x86-64-v3:\t\t(LD_LIBRARY_PATH)
+     1234:\t  trying file=/opt/lib/libz.so.1
+     1234:\t  trying file=glibc-hwcaps/x86-64-v3/libz.so.1
+     1234:\t search cache=/etc/ld.so.cache
+     1234:\t  trying file=/lib64/libz.so.1
+"""
 
 
 def check_parsers(failures: list[str]) -> None:
-    """Check the parse of a dependency file and of a strace record."""
+    """Check the parsers and the pure functions of the store on planted input."""
     parsed = driver.parse_dependency_file("out.o: a\\ b.h c.h \\\n d$$.h\\#e.h\n")
     if parsed != ["a b.h", "c.h", "d$.h#e.h"]:
         failures.append(f"the dependency file parse gives {parsed}")
     if driver.parse_dependency_file("out.o: a.h\nb.h: c.h\n") is not None:
         failures.append("a dependency file with two rules is refused")
-    with tempfile.TemporaryDirectory(prefix="neg-trace-") as scratch:
-        directory = Path(scratch)
-        prefix = directory / "fixture.trace"
-        argv = ["/opt/gcc/bin/g++", "-c", "x.cpp"]
-        _record(directory, "fixture.trace.100", [
-            'execve("/opt/gcc/bin/g++", ["/opt/gcc/bin/g++", "-c", "x.cpp"], 0x7ff /* 3 vars */) = 0',
-            'access("/tmp", R_OK|W_OK|X_OK) = 0',
-            'openat(AT_FDCWD, "/tmp/cc1.s", O_RDWR|O_CREAT|O_EXCL, 0600) = 3',
-            'unlink("/tmp/cc1.s") = 0',
-        ])
-        _record(directory, "fixture.trace.101", [
-            'execve("/opt/gcc/libexec/cc1plus", ["cc1plus"], 0x7ff /* 3 vars */) = 0',
-            'getcwd("/work", 4096) = 6',
-            'openat(AT_FDCWD, "x.cpp", O_RDONLY|O_NOCTTY) = 3',
-            'newfstatat(AT_FDCWD, "/inc/a/A.h.gch", 0x7ffd, 0) = -1 ENOENT (No such file or directory)',
-            'openat(AT_FDCWD, "/inc/a/A.h", O_RDONLY|O_NOCTTY <unfinished ...>',
-            '<... openat resumed>) = 4',
-            'readlink("/inc", 0x7ffe, 1023) = -1 EINVAL (Invalid argument)',
-            'openat(AT_FDCWD, "/inc/\\xc3\\xa9.h", O_RDONLY|O_NOCTTY) = -1 ENOTDIR (Not a directory)',
-            'readlink("/proc/self/exe", "/opt/gcc/libexec/cc1plus", 4095) = 24',
-            'openat(AT_FDCWD, "/tmp/cc1.s", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3',
-            '--- SIGCHLD {si_signo=SIGCHLD} ---',
-        ])
-        record, reason = driver.read_trace(prefix, argv, directory)
-        expected = {
-            "/opt/gcc/bin/g++": {(True, True)}, "/opt/gcc/libexec/cc1plus": {(True, True)},
-            "/tmp": {(True, True)}, str(directory / "x.cpp"): {(True, True)},
-            "/inc/a/A.h.gch": {(True, False)}, "/inc/a/A.h": {(True, True)}, "/inc": {(False, True)},
-            "/inc/é.h": {(True, False)},
-        }
-        if record is None or record.lookups != expected or record.refusal:
-            failures.append(f"the strace record gives {record} ({reason})")
-        elif record.sources != [str(directory / "x.cpp"), "/inc/a/A.h"]:
-            failures.append(f"the strace record gives the sources {record.sources}")
-        for refused, call in (
-            ("a path relative to a directory descriptor", 'openat(3, "a/A.h", O_RDONLY|O_NOCTTY) = 4'),
-            ("a call that the driver does not know", 'chroot("/jail") = 0'),
-            ("an error other than no such file", 'openat(AT_FDCWD, "/inc/b.h", O_RDONLY) = -1 EACCES (Denied)'),
-            ("a change of the working directory", 'chdir("/elsewhere") = 0'),
-            ("a line that is not a call", 'openat(AT_FDCWD, "/inc/c.h", O_RDONLY|O_NOCTTY'),
-        ):
-            (directory / "fixture.trace.101").unlink()
-            _record(directory, "fixture.trace.101", [call])
-            record, reason = driver.read_trace(prefix, argv, directory)
-            if record is None or not record.refusal:
-                failures.append(f"the strace record does not refuse {refused}: {record} ({reason})")
-        (directory / "fixture.trace.101").write_text('openat(AT_FDCWD, "x.cpp", O_RDONLY|O_NOCTTY) = 3\n')
-        if driver.read_trace(prefix, argv, directory)[0] is not None:
-            failures.append("a strace record with no exit line is refused")
-        (directory / "fixture.trace.100").unlink()
-        (directory / "fixture.trace.101").unlink()
-        _record(directory, "fixture.trace.101", ['execve("/other/g++", ["g++"], 0x7ff /* 3 vars */) = 0'])
-        if driver.read_trace(prefix, argv, directory)[0] is not None:
-            failures.append("a strace record that does not start the compiler driver is refused")
-
-
-def tracer_problem() -> str:
-    """Return the reason that strace cannot record a program on this host, or an empty text."""
-    tracer = shutil.which("strace")
-    if tracer is None:
-        return "strace is not in PATH"
-    with tempfile.TemporaryDirectory(prefix="neg-tracer-") as scratch:
-        prefix = Path(scratch) / "probe.trace"
-        argv = [sys.executable, "-c", "pass"]
-        proc = subprocess.run([tracer, *driver._TRACE_OPTIONS, "-o", str(prefix), "--", *argv],
-                              text=True, capture_output=True, check=False)
-        record, reason = driver.read_trace(prefix, argv, Path(scratch))
-        if proc.returncode != 0 or proc.stderr or record is None:
-            return f"strace cannot record a program: exit {proc.returncode}, {proc.stderr.strip()} {reason}".strip()
-    return ""
+    named = driver.parse_search_list(SEARCH_LIST)
+    expected_named = ["/opt/gcc/x86_64/include", "/opt/inc/./", "/work/quote", "/work/include", "/opt/gcc/include/c++",
+                      "/Library/Frameworks"]
+    if named != expected_named:
+        failures.append(f"the search list parse gives {named}")
+    if driver.parse_search_list(SEARCH_LIST.replace("End of search list.\n", "")) is not None:
+        failures.append("a search list with no end line is refused")
+    loader = driver.parse_loader_list(LOADER_OUTPUT, LOADER_DEBUG, Path("/work"))
+    expected_loader = (["/lib64/libz.so.1", "/lib64/ld-linux-x86-64.so.2"],
+                       ["/opt/lib/libz.so.1", "/work/glibc-hwcaps/x86-64-v3/libz.so.1", "/lib64/libz.so.1"],
+                       ["/etc/ld.so.cache"])
+    if loader != expected_loader:
+        failures.append(f"the loader list parse gives {loader}")
+    if driver.parse_loader_list("\tlibq.so.1 => not found\n", "", Path("/work")) is not None:
+        failures.append("a loader list with an object that the loader does not find is refused")
+    interpreter = driver.elf_interpreter(os.path.realpath(sys.executable))
+    if interpreter is None or not os.path.isfile(interpreter):
+        failures.append(f"the interpreter of {sys.executable} is {interpreter}")
+    if driver.elf_interpreter(str(DRIVER)) is not None:
+        failures.append("a file that is not ELF has no interpreter")
+    roots, probes = driver.search_roots(["/s/sub"], ["/n/x.cpp", "/s/sub/../b/B.h"], ["/abs/m.h", "../m.h", "m.h"])
+    expected_probes = [path for reach in ("/s/sub/../b/B.h", "/n/../b/B.h", "/s/sub/../b/../b/B.h", "/s/sub/../m.h",
+                                          "/n/../m.h", "/s/sub/../b/../m.h", "/abs/m.h")
+                       for path in (reach, reach + ".gch")]
+    if roots != ["/s/sub", "/n", "/s/sub/../b"] or probes != expected_probes:
+        failures.append(f"the search roots are {roots} and the probes are {probes}")
+    env = driver.compile_environment({"LC_ALL": "de_DE.UTF-8", "LANG": "en_US.UTF-8", "LANGUAGE": "de"})
+    if env != {"LC_CTYPE": "de_DE.UTF-8", "LANG": "en_US.UTF-8", "LANGUAGE": "de", "LC_MESSAGES": "C"}:
+        failures.append(f"the compile environment is {env}")
 
 
 def main(arguments: list[str]) -> int:
@@ -514,24 +613,28 @@ def main(arguments: list[str]) -> int:
     if not cxx or shutil.which(cxx) is None:
         print("neg_compile_driver_test.py --cxx COMPILER: the compiler cannot run", file=sys.stderr)
         return 3
-    problem = tracer_problem()
-    if problem:
-        print(f"neg_compile_driver_test.py: {problem}.  The store needs strace.  Install strace, and let a "
-              f"process trace its children (kernel.yama.ptrace_scope at most 1).", file=sys.stderr)
-        return 3
     failures: list[str] = []
+    skips: list[str] = []
     if index == 0:
         check_parsers(failures)
-    for check in CHECKS[index::count]:
+    checks = CHECKS[index::count]
+    for check in checks:
         with tempfile.TemporaryDirectory(prefix="neg-store-") as directory:
             test = StoreTest(Path(directory), cxx)
             test.settle()
             check(test)
             failures.extend(f"{check.__name__}: {failure}" for failure in test.failures)
+            if test.skipped:
+                skips.append(f"{check.__name__}: {test.skipped}")
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
-    print(f"neg_compile_driver_test.py part {index}/{count}: {len(failures)} failures", file=sys.stderr)
-    return 1 if failures else 0
+    for skip in skips:
+        print(f"SKIP: {skip}", file=sys.stderr)
+    print(f"neg_compile_driver_test.py part {index}/{count}: {len(failures)} failures, {len(skips)} skips",
+          file=sys.stderr)
+    if failures:
+        return 1
+    return 3 if checks and len(skips) == len(checks) and index != 0 else 0
 
 
 if __name__ == "__main__":

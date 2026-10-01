@@ -39,64 +39,114 @@ larger than its limit, the driver removes the entries that it did not use for
 the longest time.  A damaged entry, an entry that the driver cannot read and an
 entry in a different format are not correct entries.
 
+The compile environment
+-----------------------
+Each compile, and each query of the compiler, runs with LC_MESSAGES=C, and the
+value of LC_ALL goes to LC_CTYPE.  GCC then reads no message catalog, and its
+diagnostics are in English, the language of the regexes.  Without this, a host
+with LANGUAGE=de gets German diagnostics from the catalogs of the compiler, and
+each fixture fails.  LC_CTYPE keeps the codeset, which sets the quote
+characters of a diagnostic.
+
 Why a stored result is the result of the compile
 ------------------------------------------------
 A compile gives the same exit code and the same output when all its inputs are
-the same.  The store makes sure of each input:
+the same.  The inputs are the compiler and its environment, the bytes of each
+file that the compile reads, and the answer of each lookup that the compile
+makes.  The store makes sure of each input:
 
-1. The key is a hash of these items: the bytes of the compiler driver, of
-   cc1plus and of the assembler, the bytes of each file that the command
-   names (for example a plugin and its data file), the full command, the
-   working directory, each environment variable that GCC reads, and the bytes
-   of this file.  When the command contains `-march=native`, the key also
-   holds the model and the flags of the host CPU.
+1. The key is a hash of these items: the compiler identity, the full command,
+   the working directory, each environment variable that GCC or the loader
+   reads, and the bytes of this file.  The compiler identity is the path and
+   the bytes of the compiler driver, of cc1plus and of the assembler, of each
+   shared object that the loader maps into them, and of the specs file, and
+   the codeset of LC_CTYPE.  The key also holds the bytes of each file that the
+   command names, for example a plugin.  When the command contains
+   `-march=native`, the key holds the model and the flags of the host CPU.
 2. The entry lists each file that GCC read, from the dependency file of the
    compile, with a hash of its bytes.  The driver reads each file again and
-   compares the hashes.  After a fatal error, for example a missing header,
-   GCC writes no dependency file.  Then the list comes from the record of
-   item 3: libcpp opens each source file with O_NOCTTY, and the list holds
-   each file that the compiler opened in that mode.  When GCC writes a
-   dependency file, the driver makes sure that the record shows each file of
-   that list.  Each compile is then a test of the O_NOCTTY rule.
-3. A new file can change the file that an `#include` finds, and GCC did not
-   read that new file.  The driver runs the compile under strace, which
-   records each file system call of the compiler.  The record holds each
-   path that the compile looked up: each name of each `#include`,
-   `#include_next`, `#embed` and `__has_include` in each search directory,
-   each precompiled header `NAME.gch`, and each program and library that the
-   compiler driver looked for.  The compiler makes each lookup itself.  A
-   name that a macro gives is in the record, and a probe in a skipped branch
-   is not.  A path that the compile writes, such as the object file, and a
-   path under /proc, /sys or /dev are not lookups.  No part of the driver
-   reads the text of a file that GCC read.
-4. The entry holds the condition of each path in the record: no file, a
-   regular file, a directory, another kind of file, or a symbolic link with
-   its target and the condition of that target.  The driver makes sure that
-   each condition is the same.  A new file at one of these paths, or a
-   removed one, changes its condition.  A change in a search directory at a
-   path that the compile did not look up changes no condition.
-5. A file can change while GCC reads it.  The driver does not store a result
-   when a file that GCC read, or a path in the record that is not a
-   directory, changed in the second before the compile started or after
-   that.  It also does not store a result when the condition of a path does
-   not agree with the result that GCC got for it.  A directory changes with
-   each file in it.  Only the kind of a directory counts.
+   compares the hashes.  After a fatal error, GCC writes no dependency file.
+   Then the driver preprocesses the source again with `-M -MG`, which writes
+   the dependency rule and continues after a missing header.  That pass reads
+   each file that the compile read before its fatal error, and it can read
+   more.  It also names each missing header.
+3. The entry lists the search roots of the compile, with the kind and the real
+   path of each root.  The roots are each directory that GCC names in its
+   search list (the output of `-E -v` on an empty file, with each directory
+   that GCC ignores), and the directory of each dependency.  For each root
+   that is a directory, the entry holds a hash of the names under it: the name
+   and the kind of each entry, the target of each symbolic link, and the names
+   under each directory that a link names.  A root inside a different root
+   gets no hash of its own.
+4. The entry lists the state of each exact path that an include name with a
+   `..` component, or an absolute name, can reach (item 5), and of its
+   precompiled name `NAME.gch`.
+
+Why these inputs are sufficient
+-------------------------------
+5. GCC finds a name N of an `#include`, `#include_next`, `#embed` or
+   `__has_include` at the first path D/N in its search sequence that is a
+   file.  D is a directory of the search list or the directory of the current
+   file.  Item 3 holds the directory of the current file, because the current
+   file is a dependency.  The command, the environment and the compiler in the
+   key, and the directories that GCC names in the list, set the search list.  When N has no `..`
+   component and is not absolute, each path D/N is under the root D, so the
+   hash of the names under D sets the answer at D.  The bytes of the file that
+   GCC finds are the bytes of a dependency, which item 2 holds.  A name with a
+   `..` component can reach a path outside each root.  When GCC finds such a
+   name, the dependency file spells the path D/N, and item 4 holds the path
+   that N reaches from each root.  When a fatal error stops at such a name, the
+   `-M -MG` pass spells it, and item 4 holds its paths.  An absolute name has
+   one path, which is a dependency or the missing header of a fatal error.
+   A `__has_include` probe that finds no file leaves no trace.  When its name
+   has a `..` component or is absolute, the store does not see that probe.  No
+   file of the tree has such a probe.
+6. The compiler makes three other kinds of lookup, and the key sets each one.
+   The driver of GCC finds cc1plus, the assembler and the specs file: the
+   store asks the driver for each path (`-print-prog-name`, `-print-file-name`)
+   in each run.  The loader finds the shared objects: the loader lists them
+   (`--list`), and with LD_DEBUG=libs it names each path that it tries.  A
+   memo keeps the list while each tried path has the same state, and each
+   object, the cache of the loader and its preload list have the same size
+   and times.  GCC reads its message catalogs only for a language other than
+   C, and the compile environment sets LC_MESSAGES=C.  The driver computes
+   the key again after the compile, and it stores no result when the key
+   changed.
+7. A change in a root or of a dependency after the compile changes the hash or
+   the state in the entry.  A change while GCC reads a file can hide.  The
+   driver does not store a result when a dependency, a directory under a root,
+   a root, a probed path or the target of a symbolic link changed in the second
+   before the compile started or after that.  For a path that does not exist,
+   the driver reads the time of the nearest directory above it.  A directory
+   gets a new change time when a process adds, removes or renames a name in
+   it.  A memo keeps the hash of the names under a root, with the inode and the
+   two change times of each directory under the root and the target of each
+   link.  The memo gives the hash while each one is the same.
+
+A new file in a root changes the key of each compile that searches that root,
+also when no lookup names the new file.  A new header in `include/` then
+compiles each fixture again, and a new fixture file compiles each fixture of
+its directory again.
 
 The driver stores no result in these conditions:
 
-- strace is not in PATH, it did not record the full compile, or it wrote a
-  message into the output.  In the last two conditions, the driver compiles
-  again without strace, and it uses the output of that compile.
 - The exit code is not 0 or 1.  A signal or an internal error of the compiler
   can give a different output on the next run.
-- The record shows a call that the driver does not know, a path relative to
-  a directory descriptor, a change of the working directory, or an error
-  other than "no such file" for a path.
-- A precompiled header is in the search list.  GCC reads its bytes, and the
-  dependency file does not name it.
+- An input changed in the settle period of item 7, or the key changed during
+  the compile (item 6).
+- The driver cannot read a root or a probed path.
+- A search directory holds a precompiled header (a name that ends in `.gch`),
+  or a probed path of item 4 is one.  GCC reads its bytes, and the dependency
+  file does not name it.
+- A root holds more than 200,000 names.
+- The `-M -MG` pass after a fatal error writes no dependency rule.
 - The command gives a plugin an output directory (`-fplugin-arg-NAME-out=`).
   The compile writes a file there, and a stored result does not write it.
 - The command reads a profile (`-fprofile-use`, `-fauto-profile`).
+- The command names a response file (`@FILE`), a `-B` prefix, a plugin by a
+  name that is not a path, or a file for `-include` or `-imacros` by a
+  relative name.  GCC looks for such a file in the working directory or under
+  the prefix, and no root holds those lookups.
 
 The CPU time of a compile
 -------------------------
@@ -104,12 +154,8 @@ The driver measures the user and the system CPU time of each compile from the
 resource use of its child processes.  It runs one compile at a time, so the
 CPU time that its waited children gain during the call is the time of the
 compiler driver, cc1plus and the assembler.  The budget applies to the user
-time.  A compile under strace also counts the system time of the stops of
-strace, which was 0.2 s to 1.8 s for one fixture of the tree on the shared
-host, and the compile alone had 0.1 s to 0.3 s.  The user time of one fixture
-changed by less than 10% with and without strace.  The finding gives the two
-times.  The entry of the store keeps them, and a result from the store gives
-the times of the compile that made it.
+time.  The finding gives the two times.  The entry of the store keeps them, and
+a result from the store gives the times of the compile that made it.
 
 The row fixture-cpu of utils/scripts/budgets.txt gives the thresholds.  A
 measure above the warning threshold prints a warning in the format of
@@ -130,6 +176,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import locale
 import os
 import re
 import resource
@@ -137,10 +184,12 @@ import secrets
 import shlex
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import time
 import zlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -355,8 +404,41 @@ def find_compile_command(build_dir: Path, source: Path) -> tuple[list[str], Path
     return list(command), Path(match.get("directory", build_dir))
 
 
-def run_compile(argv: list[str], directory: Path) -> CompileResult:
-    """Compile with `argv` in `directory`, and return the exit code, the output and the CPU time.
+def compile_environment(base: Mapping[str, str]) -> dict[str, str]:
+    """Return the environment of each compile and of each query of the compiler.
+
+    With LC_MESSAGES=C, GCC reads no message catalog.  LC_ALL takes precedence
+    over LC_MESSAGES, so its value goes to LC_CTYPE, which keeps the codeset.
+    GCC reads no other locale category.
+    """
+    env = dict(base)
+    every = env.pop("LC_ALL", "")
+    if every:
+        env["LC_CTYPE"] = every
+    env["LC_MESSAGES"] = "C"
+    return env
+
+
+def locale_codeset(env: Mapping[str, str]) -> str:
+    """Return the codeset that setlocale(LC_CTYPE, "") gives under `env`.
+
+    GCC uses its quote characters and its text art for UTF-8 only.  A locale
+    that the host does not hold leaves GCC in the C locale, and the function
+    then gives the codeset of C.
+    """
+    saved = locale.setlocale(locale.LC_CTYPE)
+    try:
+        try:
+            locale.setlocale(locale.LC_CTYPE, env.get("LC_CTYPE") or env.get("LANG") or "C")
+        except locale.Error:
+            locale.setlocale(locale.LC_CTYPE, "C")
+        return locale.nl_langinfo(locale.CODESET)
+    finally:
+        locale.setlocale(locale.LC_CTYPE, saved)
+
+
+def run_compile(argv: list[str], directory: Path, env: Mapping[str, str]) -> CompileResult:
+    """Compile with `argv` in `directory` under `env`, and return the exit code, the output and the CPU time.
 
     The driver runs one child process at a time, so the change of the resource
     use of its waited children over the call is the use of this compile and of
@@ -366,6 +448,7 @@ def run_compile(argv: list[str], directory: Path) -> CompileResult:
     proc = subprocess.run(
         argv,
         cwd=directory,
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -378,7 +461,7 @@ def run_compile(argv: list[str], directory: Path) -> CompileResult:
 
 # ── The result store ───────────────────────────────────────────────
 
-_STORE_MAGIC = b"crucible-neg-store 3\n"
+_STORE_MAGIC = b"crucible-neg-store 4\n"
 # A change in this period before the compile started can be a change that the
 # compiler did not see.  The period is longer than one tick of the clock that
 # sets file times.
@@ -388,58 +471,23 @@ _DEFAULT_LIMIT_MB = 1024
 _EVICT_TO = 0.9
 _DEPFILE_PLACEHOLDER = "<dependency file>"
 # The environment variables that GCC reads.  Each one can change the files
-# that GCC finds or the text of a diagnostic.
+# that GCC finds or the text of a diagnostic.  The variables of the loader
+# (LD_*) can change the shared objects of the compiler.
 _GCC_ENVIRONMENT = frozenset({
     "COLUMNS", "COMPILER_PATH", "CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH",
     "DEPENDENCIES_OUTPUT", "LANG", "LANGUAGE", "LIBRARY_PATH", "OBJC_INCLUDE_PATH",
-    "SOURCE_DATE_EPOCH", "SUNPRO_DEPENDENCIES", "TERM", "TERM_URLS",
+    "SOURCE_DATE_EPOCH", "SUNPRO_DEPENDENCIES", "TEMP", "TERM", "TERM_URLS", "TMP", "TMPDIR",
 })
-_GCC_ENVIRONMENT_PREFIXES = ("GCC_", "LC_")
+_GCC_ENVIRONMENT_PREFIXES = ("GCC_", "LC_", "LD_")
 _PLUGIN_OUTPUT = re.compile(r"-fplugin-arg-[^=]*-out=")
 _PROFILE_INPUT = ("-fprofile-use", "-fauto-profile")
-
-# The options of strace for a compile.  -ff writes one record for each
-# process, and the lines of two processes then do not mix.  --seccomp-bpf
-# stops a process only at a call that the record holds, and the trace then
-# adds little time.  -q keeps the exit line of each process, which shows that
-# the record is full.  -x writes a name that holds a byte above 127 in
-# hexadecimal, and -s keeps each name whole.
-_TRACE_OPTIONS = ("-ff", "-q", "--seccomp-bpf", "-e", "trace=%file", "-x", "-s", "65535")
-# One call in a record: the name, the arguments, the result and the error.
-_TRACE_CALL = re.compile(
-    r"^(?P<call>[a-z_0-9]+)\((?P<args>.*)\)\s+=\s+(?P<result>-?\d+|\?)(?:\s+(?P<errno>E[A-Z0-9]+)\b.*)?$"
-)
-_TRACE_STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
-_TRACE_ESCAPE = re.compile(r"\\(x[0-9a-fA-F]{2}|[0-7]{1,3}|.)")
-_TRACE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "v": "\v", "f": "\f", "a": "\a", "b": "\b"}
-_TRACE_EXIT = ("+++ exited with ", "+++ killed by ")
-# An integer directory descriptor before a name, in the arguments of a call
-# after each string is made empty: the name is relative to that directory and
-# not to the working directory.
-_TRACE_DIRFD = re.compile(r'(?:^|, )\d+, ""')
-_WRITE_FLAGS = re.compile(r"\bO_(?:WRONLY|RDWR|CREAT|TRUNC|APPEND|TMPFILE)\b")
-# The calls that look up a path, by name.  The value tells whether the call
-# follows a symbolic link at the end of the path.
-_LOOKUP_CALLS = {
-    "open": True, "openat": True, "openat2": True, "stat": True, "stat64": True, "newfstatat": True,
-    "fstatat64": True, "statx": True, "access": True, "faccessat": True, "faccessat2": True, "statfs": True,
-    "statfs64": True, "execve": True, "execveat": True, "lstat": False, "lstat64": False, "readlink": False,
-    "readlinkat": False, "getxattr": True, "lgetxattr": False, "listxattr": True, "llistxattr": False,
-}
-# The calls that write a path.  The compile makes each path that one of them
-# names, and no such path is an input of the compile.
-_WRITE_CALLS = frozenset({
-    "creat", "unlink", "unlinkat", "rename", "renameat", "renameat2", "mkdir", "mkdirat", "rmdir", "link",
-    "linkat", "symlink", "symlinkat", "chmod", "fchmodat", "fchmodat2", "chown", "lchown", "fchownat",
-    "truncate", "truncate64", "utime", "utimes", "utimensat", "futimesat", "mknod", "mknodat", "setxattr",
-    "lsetxattr", "removexattr", "lremovexattr",
-})
-# The calls that name no input of the compile.  getcwd gives the working
-# directory, which the key holds.
-_IGNORED_CALLS = frozenset({"getcwd"})
-# The kernel makes the files of these trees, and their contents depend on the
-# process that reads them.
-_KERNEL_TREES = ("/proc", "/sys", "/dev")
+# The options that name a file which GCC looks for in the working directory
+# first, before the search list.
+_WORKING_DIRECTORY_INCLUDES = ("-include", "-imacros", "--include", "--imacros")
+# The loader of the C library reads this list of objects in each process.
+_PRELOAD_LIST = "/etc/ld.so.preload"
+# A root with more names than this is not a search directory of a fixture.
+_LISTING_LIMIT = 200_000
 
 _driver_digest_value: str | None = None
 
@@ -489,7 +537,7 @@ def file_digest(path: str, memo_dir: Path) -> str:
     """
     status = os.stat(path)
     fields = _stat_fields(status)
-    memo = memo_dir / f"{_short_digest(os.fsencode(os.path.realpath(path)))}.json"
+    memo = memo_dir / f"file-{_short_digest(os.fsencode(os.path.realpath(path)))}.json"
     try:
         recorded = json.loads(memo.read_text())
         if recorded.get("stat") == fields and isinstance(recorded.get("digest"), str):
@@ -510,23 +558,24 @@ def file_digest(path: str, memo_dir: Path) -> str:
     return digest
 
 
-def _program_path(driver: str, program: str, prefix_args: list[str], directory: Path) -> str | None:
+def _ask_driver(driver: str, option: str, directory: Path, env: Mapping[str, str]) -> str:
+    """Return what the compiler driver prints for one `-print-*` option, or an empty text.
+
+    The driver prints the answer of the last such option only, so each
+    question is one run.
+    """
+    proc = subprocess.run([driver, option], cwd=directory, env=env, text=True, capture_output=True, check=False)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def _program_path(driver: str, program: str, directory: Path, env: Mapping[str, str]) -> str | None:
     """Return the path of the program that `driver` runs as `program`, or None."""
-    proc = subprocess.run(
-        [driver, *prefix_args, f"-print-prog-name={program}"],
-        cwd=directory,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    name = proc.stdout.strip()
-    if proc.returncode != 0 or not name:
-        return None
+    name = _ask_driver(driver, f"-print-prog-name={program}", directory, env)
     # GCC prints the bare name of a program outside its own directories, and it
     # then finds the program through PATH.
-    if not os.path.isabs(name):
-        name = shutil.which(name) or ""
-    return name if os.path.isfile(name) else None
+    if name and not os.path.isabs(name):
+        name = shutil.which(name, path=env.get("PATH")) or ""
+    return name if name and os.path.isfile(name) else None
 
 
 def _host_cpu() -> str:
@@ -551,33 +600,80 @@ def _named_files(arg: str) -> list[str]:
     names = [arg]
     if "=" in arg:
         names.append(arg.split("=", 1)[1])
-    if arg.startswith("@"):
-        names.append(arg[1:])
     return [name for name in names if name]
 
 
-def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir: Path) -> tuple[str | None, str]:
+def _key_refusal(argv: list[str], directory: Path) -> str:
+    """Return the reason that the store cannot key the command `argv`, or an empty text.
+
+    The store refuses a command whose compile writes an output that a stored
+    result does not give, or makes a lookup that no search root holds.
+    """
+    for index, arg in enumerate(argv[1:], start=1):
+        if arg.startswith(_PROFILE_INPUT):
+            return "the command reads a profile"
+        if _PLUGIN_OUTPUT.match(arg):
+            return "a plugin of the command writes an output file"
+        if arg.startswith("@"):
+            return "the command names a response file"
+        if arg.startswith("-B"):
+            return "the command names a -B prefix"
+        if arg.startswith("-fplugin="):
+            plugin = arg.split("=", 1)[1]
+            # GCC looks for a plugin name with no directory part in its plugin
+            # directory or in the search path of the loader.
+            if os.sep not in plugin or not os.path.isfile(os.path.join(directory, plugin)):
+                return "the command names a plugin by a name that is not a path"
+        for option in _WORKING_DIRECTORY_INCLUDES:
+            if arg == option:
+                name = argv[index + 1] if index + 1 < len(argv) else ""
+            elif arg.startswith(option):
+                name = arg[len(option) :].removeprefix("=")
+            else:
+                continue
+            if not os.path.isabs(name):
+                return f"the command names a file for {option} by a relative name"
+    return ""
+
+
+def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir: Path,
+                env: Mapping[str, str]) -> tuple[str | None, str]:
     """Return the store key of the compile, or None and the reason for no key.
 
-    `argv` ends with `-MF` and the dependency file.  `protected` holds the
-    resolved paths of the source, the object file and the dependency file, which
-    are not inputs of the key.
+    `argv` ends with `-MF` and the dependency file, and `env` is the compile
+    environment.  `protected` holds the resolved paths of the source, the
+    object file and the dependency file, which are not inputs of the key.  The
+    key holds the inputs of items 1 and 6 of the module text.
     """
-    for arg in argv:
-        if arg.startswith(_PROFILE_INPUT):
-            return None, "the command reads a profile"
-        if _PLUGIN_OUTPUT.match(arg):
-            return None, "a plugin of the command writes an output file"
-    driver = argv[0] if os.sep in argv[0] else shutil.which(argv[0])
+    refusal = _key_refusal(argv, directory)
+    if refusal:
+        return None, refusal
+    driver = argv[0] if os.sep in argv[0] else shutil.which(argv[0], path=env.get("PATH"))
     if not driver:
         return None, f"the compiler driver {argv[0]} is not in PATH"
     driver = os.path.join(directory, driver)
-    prefix_args = [arg for index, arg in enumerate(argv) if arg.startswith("-B") or argv[index - 1] == "-B"]
     try:
-        identity: list[list[str | None]] = [["driver", file_digest(driver, memo_dir)]]
+        programs = [driver]
         for program in ("cc1plus", "as"):
-            path = _program_path(driver, program, prefix_args, directory)
-            identity.append([program, path, file_digest(path, memo_dir) if path else None])
+            path = _program_path(driver, program, directory, env)
+            if path is None:
+                return None, f"the compiler driver finds no {program}"
+            programs.append(path)
+        identity: list[object] = [[path, file_digest(path, memo_dir)] for path in programs]
+        specs = _ask_driver(driver, "-print-file-name=specs", directory, env)
+        has_specs = os.path.isabs(specs) and os.path.isfile(specs)
+        identity.append(["specs", specs, file_digest(specs, memo_dir) if has_specs else None])
+        plugins = [os.path.join(directory, arg.split("=", 1)[1]) for arg in argv if arg.startswith("-fplugin=")]
+        for path in [*programs, *plugins]:
+            # cc1plus loads a plugin, so its loader maps the objects of the plugin.
+            interpreter = elf_interpreter(path) or (elf_interpreter(programs[1]) if path in plugins else None)
+            if interpreter is None:
+                identity.append([path, "static"])
+                continue
+            objects, reason = shared_objects(path, interpreter, directory, env, memo_dir)
+            if objects is None:
+                return None, reason
+            identity.append([path, interpreter, [[name, file_digest(name, memo_dir)] for name in objects]])
         files: list[list[int | str]] = []
         for index, arg in enumerate(argv[1:], start=1):
             for name in _named_files(arg):
@@ -588,13 +684,14 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
         return None, f"an input of the key cannot be read: {error}"
     environment = sorted(
         [name, value]
-        for name, value in os.environ.items()
+        for name, value in env.items()
         if name in _GCC_ENVIRONMENT or name.startswith(_GCC_ENVIRONMENT_PREFIXES)
     )
     is_native = any(arg.startswith("-m") and arg.endswith("=native") for arg in argv)
     material = json.dumps(
         {
             "argv": argv[:-1] + [_DEPFILE_PLACEHOLDER],
+            "codeset": locale_codeset(env),
             "directory": str(directory),
             "driver": _driver_digest(),
             "environment": environment,
@@ -651,170 +748,447 @@ def parse_dependency_file(text: str) -> list[str] | None:
     return words[targets[0] + 1 :]
 
 
-@dataclass(slots=True)
-class TraceRecord:
-    """What the strace record of one compile shows.
+# ── The compiler identity: the loader ──────────────────────────────
 
-    `lookups` maps each path that the compile looked up to the set of the
-    results that it got: (does the call follow a symbolic link at the end,
-    does the path exist).  `sources` holds each regular file that libcpp
-    opened (with O_NOCTTY), in the sequence of the record.  `refusal` is the
-    reason that the record cannot describe the inputs of the compile, or an
-    empty text.
+
+def elf_interpreter(path: str) -> str | None:
+    """Return the program interpreter (PT_INTERP) of the ELF file `path`, or None.
+
+    A static program has no interpreter, and a file that is not ELF has none.
+    The function reads the file header and the program headers only.
     """
+    with open(path, "rb") as stream:
+        head = stream.read(64)
+        if len(head) < 64 or head[:4] != b"\x7fELF" or head[4] not in (1, 2):
+            return None
+        is_64 = head[4] == 2
+        order = "<" if head[5] == 1 else ">"
+        if is_64:
+            (table_offset,) = struct.unpack_from(order + "Q", head, 32)
+            entry_size, entry_count = struct.unpack_from(order + "HH", head, 54)
+        else:
+            (table_offset,) = struct.unpack_from(order + "I", head, 28)
+            entry_size, entry_count = struct.unpack_from(order + "HH", head, 42)
+        stream.seek(table_offset)
+        table = stream.read(entry_size * entry_count)
+        for index in range(entry_count):
+            entry = table[index * entry_size : (index + 1) * entry_size]
+            # p_type 3 is PT_INTERP.  p_offset and p_filesz are at 8 and 32 in
+            # a 64-bit header, and at 4 and 16 in a 32-bit header.
+            if len(entry) < (56 if is_64 else 32) or struct.unpack_from(order + "I", entry, 0)[0] != 3:
+                continue
+            word = order + ("Q" if is_64 else "I")
+            (offset,) = struct.unpack_from(word, entry, 8 if is_64 else 4)
+            (size,) = struct.unpack_from(word, entry, 32 if is_64 else 16)
+            stream.seek(offset)
+            return os.fsdecode(stream.read(size).rstrip(b"\0"))
+    return None
 
-    lookups: dict[str, set[tuple[bool, bool]]]
-    sources: list[str]
-    refusal: str
 
+def parse_loader_list(stdout: str, stderr: str, directory: Path) -> tuple[list[str], list[str], list[str]] | None:
+    """Return the objects, the tried paths and the caches of one `--list` run of the loader with LD_DEBUG=libs.
 
-def _trace_string(text: str) -> str:
-    """Return the name that strace writes as `text`, a quoted string without its quotes.
-
-    strace writes a backslash before a quote and before a backslash, a C
-    escape for a control character, and two hexadecimal digits for each byte
-    of a name that holds a byte above 127.  The cost is O(n) in the length.
+    stdout names one object on each line: `name => path (address)`, `path
+    (address)`, or an object of the kernel such as `linux-vdso.so.1
+    (address)`, which is not a file.  stderr names each path that the loader
+    tried (`trying file=PATH`) and each cache that it read (`search
+    cache=PATH`).  An empty entry of LD_LIBRARY_PATH gives a tried path
+    relative to the working directory.  The function returns None when the
+    loader finds no object for a name (`=> not found`).
     """
-    def unescape(match: re.Match[str]) -> str:
-        """Return the character of one escape."""
-        code = match.group(1)
-        if code[0] == "x":
-            return chr(int(code[1:], 16))
-        if code.isdigit():
-            return chr(int(code, 8))
-        return _TRACE_ESCAPES.get(code, code)
-
-    raw = _TRACE_ESCAPE.sub(unescape, text)
-    return os.fsdecode(raw.encode("latin-1"))
-
-
-def _trace_calls(path: Path) -> tuple[list[re.Match[str]], bool, str]:
-    """Return the calls in the record of one process, True when the record is full, and the first unread line.
-
-    A full record ends with the exit line of the process.  A call that a
-    signal interrupts takes two lines, and the function joins them.  A line
-    of a signal or of the process is not a call.  The function returns each
-    other line that it cannot read as a call, because a call that it cannot
-    read can be a lookup.
-    """
-    calls: list[re.Match[str]] = []
-    pending = ""
-    unread = ""
-    is_full = False
-    for line in path.read_text(encoding="latin-1").splitlines():
-        if line.startswith(_TRACE_EXIT):
-            is_full = True
+    objects: list[str] = []
+    for line in stdout.splitlines():
+        text = line.strip()
+        if "=>" in text:
+            text = text.split("=>", 1)[1].strip()
+            if text.startswith("not found"):
+                return None
+        if text.startswith("/"):
+            objects.append(text.rsplit(" (", 1)[0])
+    tried: list[str] = []
+    caches: list[str] = []
+    for line in stderr.splitlines():
+        _, is_try, rest = line.partition("trying file=")
+        if is_try:
+            tried.append(os.path.join(directory, rest))
             continue
-        if line.startswith(("--- ", "+++ ")) or not line:
-            continue
-        if line.endswith(" <unfinished ...>"):
-            pending = line[: -len(" <unfinished ...>")]
-            continue
-        if line.startswith("<... ") and " resumed>" in line and pending:
-            line = pending + line.split(" resumed>", 1)[1]
-            pending = ""
-        match = _TRACE_CALL.match(line)
-        if match is None:
-            unread = unread or line
-            continue
-        calls.append(match)
-    return calls, is_full, unread or pending
+        _, is_cache, rest = line.partition("search cache=")
+        if is_cache:
+            caches.append(rest.strip())
+    return list(dict.fromkeys(objects)), list(dict.fromkeys(tried)), list(dict.fromkeys(caches))
 
 
-def read_trace(prefix: Path, argv: list[str], directory: Path) -> tuple[TraceRecord | None, str]:
-    """Return what the records `prefix.PID` of a traced compile show, or None and the reason.
-
-    The records are full when each one ends with its exit line, and when one
-    process ran `argv[0]`.  A path that a call writes is an output of the
-    compile, and a path in a tree of the kernel is not a file.  Neither one is
-    a lookup.  The cost is O(n) in the length of the records.
-    """
-    paths = sorted(prefix.parent.glob(prefix.name + ".*"))
-    driver = argv[0] if os.sep in argv[0] else (shutil.which(argv[0]) or argv[0])
-    driver = os.path.realpath(os.path.join(directory, driver))
-    lookups: dict[str, set[tuple[bool, bool]]] = {}
-    written: set[str] = set()
-    sources: list[str] = []
-    refusal = ""
-    has_driver = False
-    for record_path in paths:
-        calls, is_full, unread = _trace_calls(record_path)
-        if not is_full:
-            return None, f"the strace record {record_path.name} has no exit line"
-        if unread:
-            refusal = refusal or f"the strace record {record_path.name} holds a line that is not a call: {unread}"
-        for index, call in enumerate(calls):
-            name, args, result, errno = call.group("call", "args", "result", "errno")
-            strings = [_trace_string(text) for text in _TRACE_STRING.findall(args)]
-            if name == "execve" and index == 0 and result == "0" and strings:
-                has_driver = has_driver or os.path.realpath(os.path.join(directory, strings[0])) == driver
-            if name in _IGNORED_CALLS:
-                continue
-            if name == "chdir":
-                refusal = refusal or "the compile changes its working directory"
-                continue
-            is_open = name in ("open", "openat", "openat2")
-            is_write = name in _WRITE_CALLS or (is_open and bool(_WRITE_FLAGS.search(args)))
-            # A lookup names one path.  The other strings of execve are its arguments.
-            named = strings if is_write else strings[:1]
-            if any(text and not os.path.isabs(text) for text in named) and _TRACE_DIRFD.search(
-                _TRACE_STRING.sub('""', args)
-            ):
-                refusal = refusal or f"a call names a path relative to a directory descriptor: {name}"
-                continue
-            if is_write:
-                written.update(os.path.join(directory, text) for text in named if text)
-                continue
-            if name not in _LOOKUP_CALLS:
-                refusal = refusal or f"the compile makes a file system call that the driver does not know: {name}"
-                continue
-            if not strings or not strings[0]:
-                continue
-            target = os.path.join(directory, strings[0])
-            follows = _LOOKUP_CALLS[name] and "AT_SYMLINK_NOFOLLOW" not in args and "O_NOFOLLOW" not in args
-            if result != "-1" or (errno == "EINVAL" and name in ("readlink", "readlinkat")):
-                exists = True
-            elif errno in ("ENOENT", "ENOTDIR"):
-                exists = False
-            else:
-                refusal = refusal or f"the compile got {errno} for {target}"
-                continue
-            lookups.setdefault(target, set()).add((follows, exists))
-            if is_open and exists and "O_NOCTTY" in args:
-                sources.append(target)
-    if not has_driver:
-        return None, f"no strace record shows the start of {argv[0]}"
-
-    def is_input(path: str) -> bool:
-        """Return True when `path` is not an output of the compile and not in a tree of the kernel."""
-        return path not in written and not any(path == tree or path.startswith(tree + "/") for tree in _KERNEL_TREES)
-
-    kept = {path: results for path, results in lookups.items() if is_input(path)}
-    return TraceRecord(kept, list(dict.fromkeys(filter(is_input, sources))), refusal), ""
-
-
-def traced_compile(argv: list[str], directory: Path, prefix: Path) -> tuple[CompileResult, TraceRecord | None, str]:
-    """Compile under strace, and return the result, the record and the reason for no record.
-
-    When strace is not in PATH, the function compiles without it.  When the
-    records are not full, or strace wrote a message into the output, the
-    output of the compile is not the output of the compiler alone.  Then the
-    function compiles again without strace.  It removes the records.
-    """
-    tracer = shutil.which("strace")
-    if tracer is None:
-        return run_compile(argv, directory), None, "strace is not in PATH"
+def _exists(path: str) -> bool:
+    """Return True when a file has the name `path` after each symbolic link."""
     try:
-        result = run_compile([tracer, *_TRACE_OPTIONS, "-o", str(prefix), "--", *argv], directory)
-        record, reason = read_trace(prefix, argv, directory)
-        has_message = any(line.startswith("strace: ") for line in result.output.splitlines())
-        if record is None or has_message:
-            Path(argv[-1]).unlink(missing_ok=True)
-            return run_compile(argv, directory), None, reason or "strace wrote a message into the output"
-        return result, record, ""
+        os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return True
+
+
+def _entry_ctime(path: str) -> int:
+    """Return the change time of the file that `path` names, or of the nearest directory above it when none exists.
+
+    A new file at `path` gives that directory a new change time, so a time
+    older than a moment shows that the state of `path` did not change after
+    that moment.
+    """
+    current = os.path.realpath(path)
+    while True:
+        try:
+            return os.stat(current).st_ctime_ns
+        except OSError:
+            parent = os.path.dirname(current)
+            if parent == current:
+                return 0
+            current = parent
+
+
+def shared_objects(program: str, interpreter: str, directory: Path, env: Mapping[str, str],
+                   memo_dir: Path) -> tuple[list[str] | None, str]:
+    """Return the shared objects that the loader maps for `program`, or None and the reason.
+
+    The loader `interpreter` lists them as it maps them in a run, and it names
+    each path that it tries.  A memo keeps the list.  The memo gives the list
+    while each tried path has the same state, and each object, each cache of
+    the loader and the preload list have the same device, inode, size and
+    times.  The function writes no memo when a file that exists changed in the
+    settle period, because the run of the loader can then miss it.  A tried
+    path that does not exist needs no such check: when a file appears there,
+    the memo check fails.  The driver computes the key again after the
+    compile, so a change between this run and the compile stores no result.
+    """
+    status = os.stat(program)
+    loader_variables = sorted([name, value] for name, value in env.items() if name.startswith("LD_"))
+    material = json.dumps([program, interpreter, _stat_fields(status), str(directory), loader_variables])
+    memo = memo_dir / f"loader-{_short_digest(material.encode('ascii'))}.json"
+    try:
+        recorded = json.loads(memo.read_text())
+        if all(_stat_fields(os.stat(path)) == fields for path, fields in recorded["files"]) and all(
+            _exists(path) == exists for path, exists in recorded["tried"]
+        ):
+            return list(recorded["objects"]), ""
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    loader_env = {name: value for name, value in env.items() if name != "LD_DEBUG_OUTPUT"}
+    loader_env["LD_DEBUG"] = "libs"
+    started_ns = time.time_ns()
+    proc = subprocess.run([interpreter, "--list", program], cwd=directory, env=loader_env, capture_output=True,
+                          text=True, errors="surrogateescape", check=False)
+    parsed = parse_loader_list(proc.stdout, proc.stderr, directory) if proc.returncode == 0 else None
+    if parsed is None:
+        return None, f"the loader {interpreter} cannot list the shared objects of {program}"
+    objects, tried, caches = parsed
+    files = list(dict.fromkeys([*objects, *caches, *([_PRELOAD_LIST] if _exists(_PRELOAD_LIST) else [])]))
+    file_rows = [(path, _stat_fields(os.stat(path))) for path in files]
+    tried_rows = [(path, _exists(path)) for path in [*tried, _PRELOAD_LIST]]
+    settled_ns = started_ns - _SETTLE_NS
+    is_settled = all(fields[4] < settled_ns for _, fields in file_rows) and all(
+        os.stat(path).st_ctime_ns < settled_ns for path, exists in tried_rows if exists
+    )
+    if is_settled:
+        payload = json.dumps({"objects": objects, "files": file_rows, "tried": tried_rows})
+        try:
+            _write_atomic(memo, payload.encode("ascii"))
+        except OSError:
+            pass
+    return objects, ""
+
+
+# ── The search roots ───────────────────────────────────────────────
+
+
+def _command_without_output(argv: list[str]) -> list[str]:
+    """Return `argv` without `-c`, the object file and the dependency options.
+
+    The search query and the dependency pass give their own mode and output.
+    """
+    result: list[str] = []
+    skip_next = False
+    for arg in _strip_dependency_flags(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "-o":
+            skip_next = True
+            continue
+        if arg == "-c" or (arg.startswith("-o") and len(arg) > 2):
+            continue
+        result.append(arg)
+    return result
+
+
+def parse_search_list(text: str) -> list[str] | None:
+    """Return each directory that the output of `-E -v` names, or None when the output has no full search list.
+
+    GCC prints each directory of the quote list and of the bracket list on a
+    line that starts with a space, between `search starts here:` and `End of
+    search list.`.  Before the lists, it prints in quotes each directory that
+    it ignores: one that does not exist, and a duplicate of an earlier one.
+    These texts are English, which the compile environment gives.
+    """
+    named: list[str] = []
+    is_inside = False
+    for line in text.splitlines():
+        if line.startswith("ignoring ") and line.count('"') >= 2:
+            named.append(line[line.index('"') + 1 : line.rindex('"')])
+        elif line.startswith("#include ") and line.endswith("search starts here:"):
+            is_inside = True
+        elif line == "End of search list.":
+            return named
+        elif is_inside and line.startswith(" "):
+            named.append(line[1:].removesuffix(" (framework directory)"))
+    return None
+
+
+def search_directories(argv: list[str], directory: Path, source: Path, scratch: Path,
+                       env: Mapping[str, str]) -> tuple[list[str] | None, str]:
+    """Return each directory that GCC names in the search list of the compile, or None and the reason.
+
+    The query preprocesses an empty file with the suffix of the source, with
+    the options of the compile, so GCC gives the same search list.
+    """
+    empty = scratch / f"search-query{source.suffix}"
+    command = [arg for arg in _command_without_output(argv)
+               if arg.startswith("-") or os.path.realpath(os.path.join(directory, arg)) != str(source)]
+    try:
+        empty.write_bytes(b"")
+        proc = subprocess.run([*command, "-E", "-v", str(empty), "-o", os.devnull], cwd=directory, env=env,
+                              capture_output=True, text=True, errors="surrogateescape", check=False)
+    except OSError as error:
+        return None, f"the search query cannot run: {error}"
     finally:
-        for path in prefix.parent.glob(prefix.name + ".*"):
-            path.unlink(missing_ok=True)
+        empty.unlink(missing_ok=True)
+    named = parse_search_list(proc.stderr)
+    if named is None:
+        return None, f"the compiler prints no search list (exit code {proc.returncode})"
+    return [os.path.join(directory, name) for name in named], ""
+
+
+def dependency_pass(argv: list[str], directory: Path, scratch: Path,
+                    env: Mapping[str, str]) -> tuple[list[str] | None, list[str], str]:
+    """Return the dependencies and the missing headers of the source, from a preprocess with `-M -MG`.
+
+    The function returns None and the reason when the preprocess writes no
+    dependency rule.  A name in the rule that does not name a file is a header
+    that the preprocess did not find, as the source spells it.
+    """
+    depfile = scratch / "dependency-pass.d"
+    try:
+        proc = subprocess.run([*_command_without_output(argv), "-M", "-MG", "-MF", str(depfile)], cwd=directory,
+                              env=env, capture_output=True, text=True, errors="surrogateescape", check=False)
+        parsed = parse_dependency_file(depfile.read_text(errors="surrogateescape")) if depfile.exists() else None
+    except OSError as error:
+        return None, [], f"the dependency pass cannot run: {error}"
+    finally:
+        depfile.unlink(missing_ok=True)
+    if parsed is None:
+        return None, [], f"the preprocess with -M -MG writes no dependency rule (exit code {proc.returncode})"
+    present: list[str] = []
+    missing: list[str] = []
+    for name in dict.fromkeys(parsed):
+        full = os.path.join(directory, name)
+        if os.path.isfile(full):
+            present.append(full)
+        else:
+            missing.append(name)
+    return present, missing, ""
+
+
+def root_state(path: str) -> list[str] | None:
+    """Return the state of a search root or of a probed path.
+
+    The state is None when no file has the name, else the kind of the file
+    (_kind) and its real path.  A path that the driver cannot read has the
+    state of an error.
+    """
+    try:
+        status = os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as error:
+        return [f"error {error.errno}", path]
+    return [_kind(status), os.path.realpath(path)]
+
+
+def search_roots(named: list[str], dependencies: list[str], missing: list[str]) -> tuple[list[str], list[str]]:
+    """Return the search roots and the probed paths of a compile (items 3 and 4 of the module text).
+
+    The roots are the named directories and the directory of each dependency.
+    A dependency path whose part after a root has a `..` component was found
+    by a name with that component.  The probes are the path that such a name
+    reaches from each root, the path of each missing header with an absolute
+    name or a `..` component, and the precompiled name of each one.  The cost
+    is O(r * (d + m)) for r roots, d dependencies and m missing headers.
+    """
+    roots = list(dict.fromkeys([*named, *(os.path.dirname(path) for path in dependencies)]))
+    names: list[str] = []
+    for path in dependencies:
+        if ".." not in path.split(os.sep):
+            continue
+        for root in roots:
+            prefix = root.rstrip(os.sep) + os.sep
+            if path.startswith(prefix) and ".." in path[len(prefix) :].split(os.sep):
+                names.append(path[len(prefix) :])
+    names.extend(name for name in missing if not os.path.isabs(name) and ".." in name.split(os.sep))
+    reached = [os.path.join(root, name) for name in dict.fromkeys(names) for root in roots]
+    reached.extend(name for name in missing if os.path.isabs(name))
+    probes = [path for reach in reached for path in (reach, reach + ".gch")]
+    return roots, list(dict.fromkeys(probes))
+
+
+def listing_roots(states: Mapping[str, list[str] | None]) -> list[str]:
+    """Return the real path of each directory root that no other directory root holds.
+
+    The hash of the names under a root covers each directory inside it.  The
+    cost is O(r^2) for r roots.
+    """
+    reals = sorted({state[1] for state in states.values() if state is not None and state[0] == "dir"})
+    kept: list[str] = []
+    for real in reals:
+        if not any(real == outer or real.startswith(outer.rstrip(os.sep) + os.sep) for outer in kept):
+            kept.append(real)
+    return kept
+
+
+@dataclass(frozen=True, slots=True)
+class Listing:
+    """The hash of the names under one root, and what the store reads from them.
+
+    `newest_ctime_ns` is the newest change time of a directory under the root
+    or of the target of a link.  `precompiled` names the first precompiled
+    header under the root, or is empty.  `entries` counts the names.
+    """
+
+    digest: str
+    newest_ctime_ns: int
+    precompiled: str
+    entries: int
+
+
+def _walk(root: str) -> tuple[Listing, list[list[object]], list[list[object]]] | None:
+    """Walk the tree under the real directory `root`, and return the hash of its names, its directories and its links.
+
+    Each directory is a row (path, inode, mtime, ctime), and each symbolic link
+    is a row (path, target, kind of the file that it names, real path of a
+    named directory).  The walk follows each link to a directory, and it walks
+    each real directory one time.  The function returns None for a tree of more
+    than _LISTING_LIMIT names.  The cost is O(n log n) for n names, because
+    the names of each directory are sorted.
+    """
+    hasher = hashlib.sha256()
+    directories: list[list[object]] = []
+    links: list[list[object]] = []
+    seen: set[str] = set()
+    pending = [root]
+    entries = 0
+    newest = 0
+    precompiled = ""
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        status = os.stat(current)
+        directories.append([current, status.st_ino, status.st_mtime_ns, status.st_ctime_ns])
+        newest = max(newest, status.st_ctime_ns)
+        with os.scandir(current) as iterator:
+            items = sorted(iterator, key=lambda item: item.name)
+        hasher.update(b"D" + os.fsencode(current) + b"\0")
+        for item in items:
+            entries += 1
+            name = os.fsencode(item.name)
+            if item.name.endswith(".gch") and not precompiled:
+                precompiled = item.path
+            if item.is_symlink():
+                target = os.readlink(item.path)
+                try:
+                    kind: str | None = _kind(os.stat(item.path))
+                except (FileNotFoundError, NotADirectoryError):
+                    kind = None
+                real = os.path.realpath(item.path) if kind == "dir" else None
+                links.append([item.path, target, kind, real])
+                newest = max(newest, _entry_ctime(item.path))
+                hasher.update(b"l" + name + b"\0" + os.fsencode(target) + b"\0" + str(kind).encode() + b"\0")
+                if real is not None:
+                    pending.append(real)
+            elif item.is_dir(follow_symlinks=False):
+                hasher.update(b"d" + name + b"\0")
+                pending.append(item.path)
+            else:
+                hasher.update((b"f" if item.is_file(follow_symlinks=False) else b"o") + name + b"\0")
+        if entries > _LISTING_LIMIT:
+            return None
+    return Listing(hasher.hexdigest()[:32], newest, precompiled, entries), directories, links
+
+
+def _stamps_agree(directories: list[list[object]]) -> bool:
+    """Return True when each directory has the same inode and the same two change times."""
+    for path, inode, mtime_ns, ctime_ns in directories:
+        try:
+            status = os.stat(str(path))
+        except OSError:
+            return False
+        if (status.st_ino, status.st_mtime_ns, status.st_ctime_ns) != (inode, mtime_ns, ctime_ns):
+            return False
+    return True
+
+
+def _links_agree(links: list[list[object]]) -> bool:
+    """Return True when each symbolic link has the same target, the same kind of named file and the same real path."""
+    for path, target, kind, real in links:
+        try:
+            if os.readlink(str(path)) != target:
+                return False
+            now_kind: str | None = _kind(os.stat(str(path)))
+        except (FileNotFoundError, NotADirectoryError):
+            now_kind = None
+        except OSError:
+            return False
+        if now_kind != kind or (real is not None and os.path.realpath(str(path)) != real):
+            return False
+    return True
+
+
+def tree_listing(root: str, memo_dir: Path) -> tuple[Listing | None, str]:
+    """Return the hash of the names under the real directory `root`, or None and the reason.
+
+    A memo keeps the hash with the stamp of each directory and each link
+    (item 7 of the module text).  The function writes the memo only when no
+    directory changed in the settle period before the walk.  A check of a
+    memo costs one stat for each directory and two for each link.  A walk of
+    /usr/include, with 1,600 directories, costs about 40 ms, and the check of
+    its memo about 5 ms.
+    """
+    memo = memo_dir / f"listing-{_short_digest(os.fsencode(root))}.json"
+    try:
+        recorded = json.loads(memo.read_text())
+        if recorded["root"] == root and _stamps_agree(recorded["directories"]) and _links_agree(recorded["links"]):
+            return Listing(*recorded["listing"]), ""
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    started_ns = time.time_ns()
+    try:
+        walked = _walk(root)
+    except OSError as error:
+        return None, f"the search directory {root} cannot be read: {error}"
+    if walked is None:
+        return None, f"the search directory {root} holds more than {_LISTING_LIMIT} names"
+    listing, directories, links = walked
+    if not (_stamps_agree(directories) and _links_agree(links)):
+        return None, f"the search directory {root} changed during its walk"
+    if listing.newest_ctime_ns < started_ns - _SETTLE_NS:
+        try:
+            _write_atomic(memo, json.dumps({
+                "root": root,
+                "listing": [listing.digest, listing.newest_ctime_ns, listing.precompiled, listing.entries],
+                "directories": directories,
+                "links": links,
+            }).encode("ascii"))
+        except OSError:
+            pass
+    return listing, ""
 
 
 def _kind(status: os.stat_result) -> str:
@@ -824,71 +1198,25 @@ def _kind(status: os.stat_result) -> str:
     return "dir" if stat.S_ISDIR(status.st_mode) else "other"
 
 
-def path_state(path: str) -> str | list[str | None] | None:
-    """Return the condition of a path that the compile looked up.
-
-    The condition is None when no file has the name, the kind of the file
-    (_kind), an error text when the driver cannot read the name, or
-    ["link", the target, the condition of the file that the link names] for a
-    symbolic link.  A regular file is a dependency, whose bytes the entry
-    holds, or a file of which only the presence decides what the compile
-    does.  An edit of a file then changes no condition.
-    """
-    try:
-        status = os.lstat(path)
-        if not stat.S_ISLNK(status.st_mode):
-            return _kind(status)
-        target = os.readlink(path)
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-    except OSError as error:
-        return f"error {error.errno}"
-    try:
-        named: str | None = _kind(os.stat(path))
-    except (FileNotFoundError, NotADirectoryError):
-        named = None
-    except OSError as error:
-        named = f"error {error.errno}"
-    return ["link", target, named]
-
-
-def _changed_since(path: str, moment_ns: int) -> bool:
-    """Return True when the entry of `path` itself changed at or after `moment_ns`, or cannot be read."""
-    try:
-        return os.lstat(path).st_ctime_ns >= moment_ns
-    except OSError:
-        return True
-
-
-def _agrees(state: str | list[str | None] | None, follows: bool, exists: bool) -> bool:
-    """Return True when `state` gives the result that the compile got for its path.
-
-    A call that follows a link sees the file that the link names.  An error
-    state agrees with no result.
-    """
-    if isinstance(state, list) and follows:
-        state = state[2]
-    if isinstance(state, str) and state.startswith("error"):
-        return False
-    return (state is not None) == exists
-
-
 def encode_entry(entry: dict[str, object]) -> bytes:
     """Return the bytes of a store entry: a format line, a checksum and the packed entry."""
     payload = zlib.compress(json.dumps(entry, separators=(",", ":")).encode("ascii"), 6)
     return _STORE_MAGIC + hashlib.sha256(payload).hexdigest().encode("ascii") + b"\n" + payload
 
 
-def _is_state(value: object) -> bool:
-    """Return True when `value` has the shape of a `path_state` result."""
-    if value is None or isinstance(value, str):
-        return True
-    return (
-        isinstance(value, list)
-        and len(value) == 3
-        and value[0] == "link"
-        and isinstance(value[1], str)
-        and (value[2] is None or isinstance(value[2], str))
+def _is_text_pairs(value: object) -> bool:
+    """Return True when `value` is a list of pairs of texts."""
+    return isinstance(value, list) and all(
+        isinstance(item, list) and len(item) == 2 and all(isinstance(part, str) for part in item) for item in value
+    )
+
+
+def _is_states(value: object) -> bool:
+    """Return True when `value` is a list of pairs of a path and a `root_state` result."""
+    return isinstance(value, list) and all(
+        isinstance(item, list) and len(item) == 2 and isinstance(item[0], str)
+        and (item[1] is None or _is_text_pairs([item[1]]))
+        for item in value
     )
 
 
@@ -905,21 +1233,13 @@ def decode_entry(blob: bytes) -> dict[str, object] | None:
         return None
     if not isinstance(entry, dict):
         return None
-    dependencies = entry.get("dependencies")
-    searched = entry.get("searched")
     returncode = entry.get("returncode")
     times = (entry.get("user_s"), entry.get("system_s"))
     is_well_formed = (
-        isinstance(dependencies, list)
-        and all(
-            isinstance(item, list) and len(item) == 2 and all(isinstance(part, str) for part in item)
-            for item in dependencies
-        )
-        and isinstance(searched, list)
-        and all(
-            isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and _is_state(item[1])
-            for item in searched
-        )
+        _is_text_pairs(entry.get("dependencies"))
+        and _is_states(entry.get("roots"))
+        and _is_states(entry.get("probes"))
+        and _is_text_pairs(entry.get("listings"))
         and isinstance(returncode, int)
         and not isinstance(returncode, bool)
         and isinstance(entry.get("output"), str)
@@ -934,17 +1254,17 @@ def decode_entry(blob: bytes) -> dict[str, object] | None:
 class ResultStore:
     """The store of compile results in one directory.
 
-    `entries/` holds one file for each key, and `identity/` holds the memo of
-    `file_digest`.  Many fixtures read and write the store at the same time.
-    Each write goes through a temporary file and a rename, and a reader that
-    loses a file to a removal counts a miss.
+    `entries/` holds one file for each key, and `memo/` holds the memos of
+    `file_digest`, `shared_objects` and `tree_listing`.  Many fixtures read and
+    write the store at the same time.  Each write goes through a temporary file
+    and a rename, and a reader that loses a file to a removal counts a miss.
     """
 
     def __init__(self, root: Path, limit_bytes: int) -> None:
         """Use the store in `root`, with a size limit of `limit_bytes`."""
         self.root = root
         self.entries = root / "entries"
-        self.identity = root / "identity"
+        self.memo = root / "memo"
         self.limit_bytes = limit_bytes
 
     def entry_path(self, key: str) -> Path:
@@ -954,9 +1274,10 @@ class ResultStore:
     def lookup(self, key: str) -> tuple[CompileResult | None, str]:
         """Return the stored result for `key`, or None and the reason for a miss.
 
-        The function makes sure that each search path has the same condition
-        and that each dependency has the same bytes.  The cost is O(n) in the
-        bytes of the dependencies.
+        The function makes sure that each search root and each probed path has
+        the same state, that the names under each root are the same, and that
+        each dependency has the same bytes.  The cost is O(n + d) for n bytes of
+        dependencies and d directories under the roots.
         """
         path = self.entry_path(key)
         try:
@@ -966,9 +1287,16 @@ class ResultStore:
         entry = decode_entry(blob)
         if entry is None:
             return None, "the entry is damaged"
-        for name, state in entry["searched"]:  # type: ignore[union-attr]
-            if path_state(name) != state:
-                return None, f"a search path changed: {name}"
+        for name, state in entry["roots"]:  # type: ignore[union-attr]
+            if root_state(name) != state:
+                return None, f"a search root changed: {name}"
+        for name, state in entry["probes"]:  # type: ignore[union-attr]
+            if root_state(name) != state:
+                return None, f"a probed path changed: {name}"
+        for root, digest in entry["listings"]:  # type: ignore[union-attr]
+            listing, reason = tree_listing(root, self.memo)
+            if listing is None or listing.digest != digest:
+                return None, reason or f"a search directory changed: {root}"
         for name, digest in entry["dependencies"]:  # type: ignore[union-attr]
             try:
                 data = Path(name).read_bytes()
@@ -987,29 +1315,21 @@ class ResultStore:
         self,
         key: str,
         result: CompileResult,
-        dependencies: list[str] | None,
-        trace: TraceRecord,
+        dependencies: list[str],
+        missing: list[str],
+        named: list[str],
         started_ns: int,
     ) -> tuple[bool, str]:
         """Store `result` for `key`, and return True, or False and the reason.
 
-        `dependencies` is the list of the dependency file, or None when GCC
-        wrote none.  Then the list is the source files of the record.  The
-        function refuses a result whose inputs it cannot record in full, or
-        whose inputs changed in the settle period before `started_ns`.  The
-        cost is O(n + p) for n bytes of dependencies and p paths of the record.
+        `dependencies` holds each file that GCC read, `missing` each header that
+        a fatal error did not find, and `named` each directory of the search
+        list.  The function refuses a result whose inputs changed in the settle
+        period before `started_ns`, and a result that a precompiled header or a
+        root that it cannot read can change.  The cost is O(n + d) for n bytes of
+        dependencies and d directories under the roots, plus a walk of each root
+        that has no memo.
         """
-        if result.returncode not in (0, 1):
-            return False, f"the exit code is {result.returncode}"
-        if trace.refusal:
-            return False, trace.refusal
-        if dependencies is None:
-            dependencies = [name for name in trace.sources if os.path.isfile(name)]
-        else:
-            opened = {os.path.realpath(name) for name in trace.sources}
-            unseen = next((name for name in dependencies if os.path.realpath(name) not in opened), None)
-            if unseen is not None:
-                return False, f"the strace record shows no open of the dependency {unseen}"
         settled_ns = started_ns - _SETTLE_NS
         recorded: list[list[str]] = []
         for name in dependencies:
@@ -1022,22 +1342,32 @@ class ResultStore:
             if _stat_fields(before) != _stat_fields(after) or after.st_ctime_ns >= settled_ns:
                 return False, f"a dependency changed less than one second before the compile: {name}"
             recorded.append([name, _short_digest(data)])
-        states: list[list[object]] = []
-        for name, results in trace.lookups.items():
-            state = path_state(name)
-            if not all(_agrees(state, follows, exists) for follows, exists in results):
-                return False, f"a search path changed while GCC read it: {name}"
-            if state is not None and name.endswith(".gch"):
-                return False, f"a precompiled header is in the search list: {name}"
-            # A file can be replaced by another kind of file with the same result
-            # of the call.  A directory changes with each file in it, and its kind
-            # alone decides a lookup.
-            if state is not None and state != "dir" and _changed_since(name, settled_ns):
-                return False, f"a search path changed less than one second before the compile: {name}"
-            states.append([name, state])
+        roots, probes = search_roots(named, dependencies, missing)
+        states = {path: root_state(path) for path in roots}
+        probe_states = {path: root_state(path) for path in probes}
+        for path, state in [*states.items(), *probe_states.items()]:
+            if state is not None and state[0].startswith("error"):
+                return False, f"a search root cannot be read: {path}"
+            if state is not None and path in probe_states and path.endswith(".gch"):
+                return False, f"a precompiled header is on a probed path: {path}"
+        listed = [(root, *tree_listing(root, self.memo)) for root in listing_roots(states)]
+        for root, listing, reason in listed:
+            if listing is None:
+                return False, reason
+            if listing.precompiled:
+                return False, f"a precompiled header is in a search directory: {listing.precompiled}"
+        for root, listing, _ in listed:
+            if listing is not None and listing.newest_ctime_ns >= settled_ns:
+                return False, f"a search directory changed less than one second before the compile: {root}"
+        changed = next((path for path in [*states, *probe_states] if _entry_ctime(path) >= settled_ns), None)
+        if changed is not None:
+            return False, f"a search root changed less than one second before the compile: {changed}"
+        listings = [[root, listing.digest] for root, listing, _ in listed if listing is not None]
         entry = {
             "dependencies": recorded,
-            "searched": states,
+            "roots": [[path, state] for path, state in states.items()],
+            "probes": [[path, state] for path, state in probe_states.items()],
+            "listings": listings,
             "output": result.output,
             "returncode": result.returncode,
             "user_s": round(result.user_s, 3),
@@ -1114,7 +1444,7 @@ def open_store() -> tuple[ResultStore | None, str]:
     root = Path(configured) if configured else Path.home() / ".cache" / "crucible" / "neg"
     try:
         (root / "entries").mkdir(parents=True, exist_ok=True)
-        (root / "identity").mkdir(parents=True, exist_ok=True)
+        (root / "memo").mkdir(parents=True, exist_ok=True)
     except OSError as error:
         return None, f"the store directory cannot be made: {error}"
     return ResultStore(root, _store_limit_bytes()), ""
@@ -1225,22 +1555,45 @@ def report_cpu(fixture_name: str, source: Path, result: CompileResult, is_stored
     return report.emit(findings, _CPU_CHECK, warnings_dir, fixture_name)
 
 
+def _record_compile(store: ResultStore, key: str, result: CompileResult, dependencies: list[str] | None,
+                    argv: list[str], directory: Path, source: Path, env: Mapping[str, str],
+                    started_ns: int) -> tuple[bool, str]:
+    """Find the inputs of a compile that the store needs, and store its result.
+
+    `dependencies` is the list of the dependency file of GCC, or None after a
+    fatal error.  Then the `-M -MG` pass gives the list and the missing
+    headers.  The search query gives the directories of the search list.  The
+    two runs of the compiler use the scratch directory of the dependency file.
+    """
+    scratch = Path(argv[-1]).parent
+    missing: list[str] = []
+    if dependencies is None:
+        dependencies, missing, reason = dependency_pass(argv, directory, scratch, env)
+        if dependencies is None:
+            return False, reason
+    named, reason = search_directories(argv, directory, source, scratch, env)
+    if named is None:
+        return False, reason
+    return store.record(key, result, dependencies, missing, named, started_ns)
+
+
 def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: Path, output: Path,
                   budget: CpuBudget) -> tuple[CompileResult, bool]:
     """Return the result of the compile, from the store or from a compile, and True when it comes from the store.
 
     `argv` ends with `-MF` and the dependency file of this process.  After a
     compile, the dependency file goes to the name of the fixture in the scratch
-    directory.  When the store can take the result, the compile runs under
-    strace (traced_compile).  A stored result whose compile took more CPU time
-    than the error threshold is a miss, so the driver measures again.
+    directory.  The compile runs in the compile environment, with or without
+    the store.  A stored result whose compile took more CPU time than the error
+    threshold is a miss, so the driver measures again.
     """
     depfile = Path(argv[-1])
+    env = compile_environment(os.environ)
+    protected = {os.path.realpath(path) for path in (source, output, depfile)}
     store, reason = open_store()
     key: str | None = None
     if store is not None:
-        protected = {os.path.realpath(path) for path in (source, output, depfile)}
-        key, reason = compile_key(argv, directory, protected, store.identity)
+        key, reason = compile_key(argv, directory, protected, store.memo, env)
     if store is not None and key is not None:
         stored, reason = store.lookup(key)
         if stored is not None and budget.is_over_error(fixture_name, stored.user_s):
@@ -1251,13 +1604,7 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     _note(fixture_name, f"compiled ({reason})")
     depfile.unlink(missing_ok=True)
     started_ns = time.time_ns()
-    trace: TraceRecord | None = None
-    trace_reason = ""
-    if store is not None and key is not None:
-        prefix = depfile.with_name(f"{depfile.stem}.trace")
-        result, trace, trace_reason = traced_compile(argv, directory, prefix)
-    else:
-        result = run_compile(argv, directory)
+    result = run_compile(argv, directory, env)
     dependencies: list[str] | None = None
     is_readable = True
     try:
@@ -1271,14 +1618,21 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         if parsed is not None:
             dependencies = list(dict.fromkeys(os.path.join(directory, name) for name in parsed))
     if store is not None and key is not None:
-        if trace is None:
-            is_stored, why = False, trace_reason
-        elif not is_readable:
+        if not is_readable:
             is_stored, why = False, "the dependency file of GCC does not hold exactly one rule"
+        elif result.returncode not in (0, 1):
+            # A signal or an internal error of the compiler can give a different
+            # output on the next run.
+            is_stored, why = False, f"the exit code is {result.returncode}"
         elif budget.is_over_error(fixture_name, result.user_s):
             is_stored, why = False, "the compile took more CPU time than the error threshold"
+        elif compile_key(argv, directory, protected, store.memo, env)[0] != key:
+            # The compiler, a shared object, a path that the loader tried or a
+            # file of the command changed between the key and the compile.
+            is_stored, why = False, "the compiler identity changed during the compile"
         else:
-            is_stored, why = store.record(key, result, dependencies, trace, started_ns)
+            is_stored, why = _record_compile(store, key, result, dependencies, argv, directory, source, env,
+                                             started_ns)
         _note(fixture_name, f"stored (entry {key})" if is_stored else f"not stored ({why})")
     return result, False
 
