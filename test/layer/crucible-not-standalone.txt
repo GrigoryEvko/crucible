@@ -23,7 +23,6 @@ crucible/warden/bpf/common.h | a BPF C header that includes vmlinux.h
 # The ledger probes include bench_harness.h from bench/, which is not on the
 # include path of a crucible header.
 crucible/ledger/ProbeSupport.h | it includes bench_harness.h, which is not on the include path
-crucible/ledger/RefreshDaemon.h | it includes ProbeSupport.h, which includes bench_harness.h
 crucible/ledger/probes/CacheTier.h | it includes ProbeSupport.h, which includes bench_harness.h
 crucible/ledger/probes/HugePage.h | it includes ProbeSupport.h, which includes bench_harness.h
 crucible/ledger/probes/VectorWidth.h | it includes ProbeSupport.h, which includes bench_harness.h

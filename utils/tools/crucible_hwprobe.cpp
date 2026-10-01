@@ -10,27 +10,16 @@
 // table, and commits through the same store. It adds only the policy of
 // when to ask: a thread, a schedule and a backoff.
 //
-// The probe table holds the timer-floor probe of this file and the probes of
+// The probe table holds the timer-floor probe of the tool and the probes of
 // ledger/probes/: vector width, cache tier with the NUMA hop, and
-// transparent hugepages. The timer-floor probe measures the floor of the
-// timing rig itself: the cost of touching a register and reading the cycle
-// counter around it. That number is real, is stable, and decides nothing.
-// It proves that the loop closes — measure, judge, store, read back, serve.
-//
-// Timing goes through bench/bench_harness.h rather than a rig written here.
-// The harness already reports the quantiles, the within-run coefficient of
-// variation and the first-half-versus-second-half drift that the evidence
-// record wants, and it already knows how to pin, warm up and cap wall time.
-// A second rig would be a second set of bugs.
+// transparent hugepages. Each probe family compiles in a translation unit of
+// its own, and crucible_hwprobe_probes.h declares the door to each one.
+
+#include "crucible_hwprobe_probes.h"
 
 #include <crucible/ledger/Ledger.h>
-#include <crucible/ledger/ProbeSupport.h>
-#include <crucible/ledger/probes/CacheTier.h>
-#include <crucible/ledger/probes/HugePage.h>
-#include <crucible/ledger/probes/VectorWidth.h>
+#include <crucible/ledger/ProbeSettings.h>
 #include <foundation/reflect/EnumName.h>
-
-#include "bench_harness.h"
 
 #include <algorithm>
 #include <array>
@@ -45,11 +34,7 @@ namespace {
 
 using namespace crucible;
 using crucible::ledger::CompetenceReport;
-using crucible::ledger::LedgerError;
-using crucible::ledger::VerdictEvidence;
 using crucible::ledger::VerdictId;
-using crucible::ledger::VerdictMeasurement;
-using crucible::ledger::VerdictValue;
 
 // ── Options ───────────────────────────────────────────────────────────
 
@@ -140,66 +125,19 @@ void print_usage() noexcept {
 // The probe signature takes only the competence report, because a probe has
 // no business knowing about command-line flags. The knobs that are
 // genuinely measurement parameters reach every probe through the settings
-// block in ProbeSupport.h, which the probes read and nothing else writes.
-
-// ── Evidence from a bench report ──────────────────────────────────────
-
-using crucible::ledger::evidence_from_two_runs;
-
-// Two runs, not one. The within-run coefficient of variation says how
-// steady the samples were inside a single burst; it says nothing about
-// whether the burst itself was representative. A part that throttles
-// between runs, a scheduler that places the second run on a colder cache,
-// an operator who changes the governor mid-flight — all of those show up as
-// run-to-run spread and none of them show up within a run. The evidence
-// record has a field for each because they fail differently, and filling
-// the second one from the first would be a lie the reader cannot detect.
-[[nodiscard]] std::expected<VerdictMeasurement, LedgerError> probe_timer_floor(ledger::LedgerIoCtx const&,
-                                                                               CompetenceReport const&) noexcept {
-    int sink = 0;
-
-    auto one_run = [&](const char* name) {
-        auto run = bench::Run{name};
-        auto& configured = run.samples(ledger::probe_settings().sample_count).warmup(2000).max_wall_ms(4000);
-        const int core = ledger::probe_settings().pin_core;
-        if (core >= 0) {
-            (void)configured.core(core);
-        } else {
-            (void)configured.no_pin();
-        }
-        return run.measure([&] {
-            sink += 1;
-            bench::do_not_optimize(sink);
-        });
-    };
-
-    const bench::Report first = one_run("ledger.timer_floor.run1");
-    const bench::Report second = one_run("ledger.timer_floor.run2");
-
-    if (first.pct.n == 0u || second.pct.n == 0u) {
-        return std::unexpected(LedgerError::ConfidenceBelowBar);
-    }
-
-    // The two-run fold lives in ProbeSupport.h, because the probes of
-    // ledger/probes/ use it too. This probe reads the shared one rather than keeping its
-    // own copy, so a change to how evidence is built cannot apply to three
-    // probes and miss the fourth.
-    const VerdictEvidence evidence = evidence_from_two_runs(first, second);
-
-    return VerdictMeasurement{.value = VerdictValue{evidence.quantiles.p50_ns}, .evidence = evidence};
-}
+// block in ProbeSettings.h, which the probes read and nothing else writes.
 
 constexpr ledger::ProbeRegistration kProbeTable[] = {
-    {.id = VerdictId::TimerFloorNanos, .run = &probe_timer_floor},
-    {.id = VerdictId::VectorWidthPreferredBits, .run = &ledger::probes::probe_vector_width_preferred_bits},
-    {.id = VerdictId::VectorWidthComputeGainPercent, .run = &ledger::probes::probe_vector_width_compute_gain},
-    {.id = VerdictId::VectorWidthMemoryGainPercent, .run = &ledger::probes::probe_vector_width_memory_gain},
-    {.id = VerdictId::ParallelKneeBytes, .run = &ledger::probes::probe_parallel_knee_bytes},
-    {.id = VerdictId::ParallelCeilingBytes, .run = &ledger::probes::probe_parallel_ceiling_bytes},
-    {.id = VerdictId::NumaRemoteCostPercent, .run = &ledger::probes::probe_numa_remote_cost},
-    {.id = VerdictId::ThpFaultCostNanosPerMib, .run = &ledger::probes::probe_thp_fault_cost},
-    {.id = VerdictId::ThpFaultGainPercent, .run = &ledger::probes::probe_thp_fault_gain},
-    {.id = VerdictId::ThpAccessGainPercent, .run = &ledger::probes::probe_thp_access_gain},
+    {.id = VerdictId::TimerFloorNanos, .run = &hwprobe::probe_timer_floor},
+    {.id = VerdictId::VectorWidthPreferredBits, .run = &hwprobe::probe_vector_width_preferred_bits},
+    {.id = VerdictId::VectorWidthComputeGainPercent, .run = &hwprobe::probe_vector_width_compute_gain},
+    {.id = VerdictId::VectorWidthMemoryGainPercent, .run = &hwprobe::probe_vector_width_memory_gain},
+    {.id = VerdictId::ParallelKneeBytes, .run = &hwprobe::probe_parallel_knee_bytes},
+    {.id = VerdictId::ParallelCeilingBytes, .run = &hwprobe::probe_parallel_ceiling_bytes},
+    {.id = VerdictId::NumaRemoteCostPercent, .run = &hwprobe::probe_numa_remote_cost},
+    {.id = VerdictId::ThpFaultCostNanosPerMib, .run = &hwprobe::probe_thp_fault_cost},
+    {.id = VerdictId::ThpFaultGainPercent, .run = &hwprobe::probe_thp_fault_gain},
+    {.id = VerdictId::ThpAccessGainPercent, .run = &hwprobe::probe_thp_access_gain},
 };
 
 // Order matters here and nowhere else. Each probe of ledger/probes/ answers

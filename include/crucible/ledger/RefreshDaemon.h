@@ -50,7 +50,7 @@
 // rather than producing a thread that never sleeps.
 
 #include <crucible/ledger/Ledger.h>
-#include <crucible/ledger/ProbeSupport.h>
+#include <crucible/ledger/ProbeSettings.h>
 #include <foundation/contracts/Pre.h>
 
 #include <atomic>

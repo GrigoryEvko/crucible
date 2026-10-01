@@ -197,9 +197,14 @@ enum class RefreshReason : std::uint8_t {
     }
 }
 
+// pad holds the last byte, so the compiler adds no padding byte to the
+// request.  A RefreshQueue holds 256 requests.  With
+// -ftrivial-auto-var-init=zero, GCC writes zero to each padding hole of each
+// request of an automatic queue, one store for each hole and with no loop.
 struct RefreshRequest {
     VerdictId id = VerdictId::TimerFloorNanos;
     RefreshReason reason = RefreshReason::Absent;
+    std::uint8_t pad = 0;
 };
 
 using RefreshQueue = std::inplace_vector<RefreshRequest, kMaxLedgerEntries>;
@@ -273,12 +278,16 @@ struct ProbeRegistration {
 // What happened to one queued verdict. A refusal carries the bar it missed
 // and the evidence that missed it, because a count of refusals with no
 // reason is the failure this ledger exists to prevent.
+//
+// pad holds the two bytes before the evidence, so the compiler adds no
+// padding byte to the record, for the reason that RefreshRequest gives.
 struct RefreshRecord {
     VerdictId id = VerdictId::TimerFloorNanos;
     bool was_admitted = false;
     bool had_probe = false;
     EvidenceFault fault = EvidenceFault::None;
     LedgerError error = LedgerError::None;
+    std::uint8_t pad[2]{};
     VerdictEvidence evidence{};
 };
 

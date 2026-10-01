@@ -617,8 +617,16 @@ target_link_libraries(dump_row_hashes PRIVATE fixy)
 # evidence record wants.  That is an include path only — the tool is not
 # a bench target, is built in every configuration, and does not take the
 # bench tree's -O3 -march=native.
+#
+# Each probe family compiles in a translation unit of its own, so that each
+# compile job stays short, and utils/tools/crucible_hwprobe_probes.h
+# declares the one door from main to each unit.
 add_executable(crucible_hwprobe
   utils/tools/crucible_hwprobe.cpp
+  utils/tools/crucible_hwprobe_cache_tier.cpp
+  utils/tools/crucible_hwprobe_huge_page.cpp
+  utils/tools/crucible_hwprobe_timer_floor.cpp
+  utils/tools/crucible_hwprobe_vector_width.cpp
 )
 target_link_libraries(crucible_hwprobe PRIVATE crucible)
 target_include_directories(crucible_hwprobe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/bench)

@@ -749,33 +749,45 @@ void test_store_is_bounded() {
 // ── Layout ────────────────────────────────────────────────────────────
 
 // With -ftrivial-auto-var-init=zero, GCC writes zero to each padding byte of
-// each automatic Ledger that has an initializer, and of each Ledger that a
-// return statement makes.  It writes one store for each padding hole of each
-// of the 256 entries, with no loop.  __builtin_clear_padding writes zero to
-// the same bytes.  If each byte of an entry keeps its value after the call,
-// the entry has no padding byte.
-void test_entry_has_no_padding_byte() {
+// each automatic object that has an initializer, and of each object that a
+// return statement makes.  For a Ledger, a RefreshQueue or a RefreshLog, it
+// writes one store for each padding hole of each of the 256 elements, with no
+// loop.  __builtin_clear_padding writes zero to the same bytes.  If each byte
+// of an element keeps its value after the call, the element has no padding
+// byte.
+template <class Element>
+[[nodiscard]] std::size_t padding_byte_count() noexcept {
     constexpr unsigned char kFill = 0xA5;
-    std::array<unsigned char, sizeof(ledger::LedgerEntry)> filled{};
+    std::array<unsigned char, sizeof(Element)> filled{};
     filled.fill(kFill);
-    auto entry = std::bit_cast<ledger::LedgerEntry>(filled);
-    __builtin_clear_padding(&entry);
-    const auto kept = std::bit_cast<std::array<unsigned char, sizeof(ledger::LedgerEntry)>>(entry);
-    std::size_t padding_byte_count = 0;
+    auto element = std::bit_cast<Element>(filled);
+    __builtin_clear_padding(&element);
+    const auto kept = std::bit_cast<std::array<unsigned char, sizeof(Element)>>(element);
+    std::size_t padding_bytes = 0;
     for (const unsigned char byte : kept) {
         if (byte != kFill) {
-            ++padding_byte_count;
+            ++padding_bytes;
         }
     }
-    if (padding_byte_count != 0u) {
-        std::fprintf(stderr,
-                     "test_ledger: LedgerEntry has %zu padding bytes.  Make each one a member, as Verdict.h "
-                     "does with pad.\n",
-                     padding_byte_count);
-    }
-    assert(padding_byte_count == 0u);
+    return padding_bytes;
+}
 
-    std::printf("  test_entry_has_no_padding_byte:            PASSED\n");
+void expect_no_padding_byte(const char* element_name, std::size_t padding_bytes) {
+    if (padding_bytes != 0u) {
+        std::fprintf(stderr,
+                     "test_ledger: %s has %zu padding bytes.  Make each one a member, as Verdict.h does with "
+                     "pad.\n",
+                     element_name, padding_bytes);
+    }
+    assert(padding_bytes == 0u);
+}
+
+void test_list_elements_have_no_padding_byte() {
+    expect_no_padding_byte("LedgerEntry", padding_byte_count<ledger::LedgerEntry>());
+    expect_no_padding_byte("RefreshRequest", padding_byte_count<ledger::RefreshRequest>());
+    expect_no_padding_byte("RefreshRecord", padding_byte_count<ledger::RefreshRecord>());
+
+    std::printf("  test_list_elements_have_no_padding_byte:   PASSED\n");
 }
 
 }  // namespace
@@ -798,7 +810,7 @@ int main() {
     test_refresh_plan_and_run();
     test_refusals_name_the_bar_they_missed();
     test_store_is_bounded();
-    test_entry_has_no_padding_byte();
+    test_list_elements_have_no_padding_byte();
     std::printf("test_ledger: 17 groups, all passed\n");
     return 0;
 }
