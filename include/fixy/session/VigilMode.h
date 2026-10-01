@@ -159,7 +159,12 @@ private:
 //
 // Observing the mode does not need a handle and stays const: that is
 // atomic_machine_state(cell), which takes a const reference.
-using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, ModeCell&, DefaultAbandonmentPolicy>;
+//
+// The alias is a template, so that only a translation unit that names the
+// handle opens the protocol to compute its first type.  Each includer of
+// crucible/Vigil.h reads the mode and the cell and names no handle.
+template <class Cell = ModeCell>
+using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, Cell&, DefaultAbandonmentPolicy>;
 
 // The factory is a constrained template rather than a plain function
 // taking the cell directly.  The concept pins the parameter to exactly
@@ -174,7 +179,8 @@ concept CtxFitsVigilModeBridge =
 
 template <class Ctx, class Cell>
     requires CtxFitsVigilModeBridge<Ctx, Cell>
-[[nodiscard]] constexpr ModeSessionHandle mint_vigil_mode_bridge(Ctx const& ctx, Cell& cell) noexcept {
+[[nodiscard]] constexpr ModeSessionHandle<std::remove_cvref_t<Cell>> mint_vigil_mode_bridge(Ctx const& ctx,
+                                                                                            Cell& cell) noexcept {
     return mint_atomic_session<ModeProtocol>(ctx, cell);
 }
 

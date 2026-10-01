@@ -568,6 +568,10 @@ namespace detail {
     return found;
 }
 
+// A template, so that only a translation unit that calls it expands the
+// walk.  The same holds for each walk over an enum or a class below that
+// takes an unused template parameter.
+template <class = void>
 [[nodiscard]] consteval bool rule_code_names_(std::string_view code) noexcept {
     bool found = false;
 #pragma GCC diagnostic push
@@ -599,6 +603,7 @@ inline constexpr std::size_t live_rule_count = detail::corpus_count_(Disposition
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
+template <class = void>
 [[nodiscard]] consteval bool every_pending_axis_is_still_empty() noexcept {
     bool unchanged = true;
     template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
@@ -790,6 +795,7 @@ template <class Site>
 
 namespace detail {
 
+template <class = void>
 [[nodiscard]] consteval std::string_view code_the_enum_disagrees_about_() noexcept {
     for (const corpus_entry& entry : rule_corpus) {
         const bool shipped = entry.disposition == Disposition::Live || entry.disposition == Disposition::Pending;
@@ -798,6 +804,7 @@ namespace detail {
     return {};
 }
 
+template <class = void>
 [[nodiscard]] consteval std::string_view code_the_corpus_never_listed_() noexcept {
     std::string_view missing{};
 #pragma GCC diagnostic push
@@ -2100,6 +2107,7 @@ namespace detail {
     return id.size() == code.size() + 3 && id.starts_with(code) && id.ends_with("_ok");
 }
 
+template <class = void>
 [[nodiscard]] consteval std::size_t implemented_rule_count_() noexcept {
     std::size_t found = 0;
 #pragma GCC diagnostic push
@@ -2116,6 +2124,7 @@ namespace detail {
     return found;
 }
 
+template <class = void>
 [[nodiscard]] consteval bool every_live_entry_is_implemented_() noexcept {
     for (const corpus_entry& entry : rule_corpus) {
         if (entry.disposition != Disposition::Live) continue;
@@ -2141,6 +2150,7 @@ namespace detail {
 // verdict row is named even before it reaches the corpus.
 namespace detail {
 
+template <class = void>
 [[nodiscard]] consteval bool every_ok_member_has_a_verdict_row_() noexcept {
     bool all_rowed = true;
 #pragma GCC diagnostic push

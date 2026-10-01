@@ -113,7 +113,9 @@ namespace detail {
 // A policy that licenses a channel is a decision a reviewer must see.
 // This walks the policy namespace of fixy/Tags.h rather than a hand
 // list, so the count reads every declared policy; fixy/Secret.h proves
-// the declared set and the admitted set are one set.
+// the declared set and the admitted set are one set.  The walk is a
+// template, so that only a translation unit that calls it expands it.
+template <class = void>
 [[nodiscard]] consteval std::size_t non_none_policy_count_() noexcept {
     std::size_t count = 0;
     static constexpr auto members = std::define_static_array(
@@ -221,10 +223,10 @@ struct is_ghost_<::fixy::atom::ghost> : std::true_type {};
 // this header.
 using ::fixy::detail::text_contains;
 
-// Assembled once per entry.  A function-local static inside each entry
-// would be per translation unit and re-run the assembly in every
-// including unit; keyed on the entry, one instantiation serves the
-// build.
+// Assembled one time per entry, in a translation unit that reads the
+// text.  The full_diagnostic() of each entry below is a template, so a
+// translation unit that includes this header and reads no text does not
+// assemble it.
 template <class Entry>
 inline constexpr std::string_view full_diagnostic_v = []() consteval -> std::string_view {
     std::string text{"fixy::fn<Type, Atoms...> [tier 5: NotInCorpus]: the binding matches the "
@@ -271,8 +273,9 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
                "the policies whose mask names IO.";
     }
 
+    template <class Self = classified_io_without_declassify>
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
-        return detail::full_diagnostic_v<classified_io_without_declassify>;
+        return detail::full_diagnostic_v<Self>;
     }
 };
 
@@ -302,8 +305,9 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
                "Security to a less restrictive level; no policy discharges Bg.";
     }
 
+    template <class Self = classified_bg_without_declassify>
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
-        return detail::full_diagnostic_v<classified_bg_without_declassify>;
+        return detail::full_diagnostic_v<Self>;
     }
 };
 
@@ -345,8 +349,9 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
                "Security axes, not Staleness.";
     }
 
+    template <class Self = staleness_secret_without_declassify>
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
-        return detail::full_diagnostic_v<staleness_secret_without_declassify>;
+        return detail::full_diagnostic_v<Self>;
     }
 };
 
@@ -378,8 +383,9 @@ struct ghost_runtime_observable final : ::foundation::diag::tag_base {
                "information-flow channel).";
     }
 
+    template <class Self = ghost_runtime_observable>
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
-        return detail::full_diagnostic_v<ghost_runtime_observable>;
+        return detail::full_diagnostic_v<Self>;
     }
 };
 
@@ -414,8 +420,9 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
                "Security to as_public / as_unclassified, or declassify under a policy whose mask names IO.";
     }
 
+    template <class Self = internal_io_without_declassify>
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
-        return detail::full_diagnostic_v<internal_io_without_declassify>;
+        return detail::full_diagnostic_v<Self>;
     }
 };
 
@@ -448,8 +455,9 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
                "as_unclassified; no policy discharges Bg.";
     }
 
+    template <class Self = internal_bg_without_declassify>
     [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
-        return detail::full_diagnostic_v<internal_bg_without_declassify>;
+        return detail::full_diagnostic_v<Self>;
     }
 };
 

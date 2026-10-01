@@ -121,11 +121,11 @@
 
 #include <pthread.h>
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -154,11 +154,12 @@ enum class priority : std::uint32_t {
 inline constexpr std::uint32_t endpoint_capacity = 4096;
 inline constexpr std::uint32_t thread_capacity = 1024;
 
-// A wait that lasts this long starts to trace its chain.
-inline constexpr std::chrono::milliseconds suspect_after{50};
+// A wait that lasts this many nanoseconds of the monotonic clock starts
+// to trace its chain.
+inline constexpr std::uint64_t suspect_after_ns = 50000000;
 
-// The same cycle must hold at two traces this far apart.
-inline constexpr std::chrono::milliseconds confirm_after{50};
+// The same cycle must hold at two traces this many nanoseconds apart.
+inline constexpr std::uint64_t confirm_after_ns = 50000000;
 
 // The longest chain the detector follows.
 inline constexpr std::size_t max_chain = 64;
@@ -615,7 +616,7 @@ struct wait_chain {
                  "  Each thread waits on an endpoint whose peer the next thread holds.  An endpoint\n"
                  "  escaped the fork that made its channel, so threads and channels no longer form\n"
                  "  a forest.\n",
-                 chain.count, static_cast<long long>(confirm_after.count()));
+                 chain.count, static_cast<long long>(confirm_after_ns / 1000000));
     for (std::size_t index = 0; index < chain.count; ++index) {
         const chain_link& link = chain.links[index];
         const std::uint64_t waiter = index == 0 ? self : chain.links[index - 1].holder;
@@ -833,6 +834,22 @@ struct session_ref {
 /// records ever claimed.
 [[nodiscard]] inline std::uint32_t live_count() noexcept { return detail::count_live(); }
 
+namespace detail {
+
+/// The nanoseconds of CLOCK_MONOTONIC, the clock that std::chrono::steady_clock
+/// reads on Linux.  A read of this clock does not fail on Linux.  If one
+/// fails, the result is zero, and poll() then traces no chain.
+[[nodiscard]] inline std::uint64_t monotonic_ns() noexcept {
+    ::timespec now{};
+    if (::clock_gettime(CLOCK_MONOTONIC, &now)
+        != 0) {  // SYSCALL-CAP-OK: watch::detail::monotonic_ns, read only by wait_scope, which a session handle opens on a wait that its transport declares, under the gate of the session mint
+        return 0;
+    }
+    return static_cast<std::uint64_t>(now.tv_sec) * 1000000000u + static_cast<std::uint64_t>(now.tv_nsec);
+}
+
+}  // namespace detail
+
 // The wait of one thread on one endpoint.  A handle opens it before a
 // declared blocking call of its transport, and when a polling or trying
 // transport first finds nothing to do.  poll() runs between the retries.
@@ -841,15 +858,15 @@ class wait_scope {
     std::uint32_t endpoint_ = 0;
     std::uint64_t self_ = 0;
     std::uint32_t spins_ = 0;
-    std::chrono::steady_clock::time_point start_{};
-    std::chrono::steady_clock::time_point last_trace_{};
+    std::uint64_t start_ns_ = 0;
+    std::uint64_t last_trace_ns_ = 0;
     detail::wait_chain suspect_{};
 
 public:
     /// Refuses the wait when it breaks the priority order, and otherwise
     /// publishes that the calling thread waits on `endpoint`.
-    explicit wait_scope(endpoint_id endpoint) noexcept : start_{std::chrono::steady_clock::now()} {
-        last_trace_ = start_;
+    explicit wait_scope(endpoint_id endpoint) noexcept : start_ns_{detail::monotonic_ns()} {
+        last_trace_ns_ = start_ns_;
         if (endpoint == endpoint_id::none) return;
         const std::uint64_t self = detail::owner_token();
         if (self == detail::untracked_owner) return;
@@ -872,15 +889,16 @@ public:
         detail::thread_at_(detail::index_of(self_)).blocked_on.store(0, std::memory_order_release);
     }
 
-    /// Pauses once.  After suspect_after, it traces the wait-for chain at
-    /// most once for each confirm_after.  The same cycle at two traces is
-    /// a deadlock: it prints the cycle and aborts.
+    /// Pauses once.  After suspect_after_ns, it traces the wait-for chain
+    /// at most once for each confirm_after_ns.  The same cycle at two
+    /// traces is a deadlock: it prints the cycle and aborts.
     void poll() noexcept {
         CRUCIBLE_SPIN_PAUSE;
         if (endpoint_ == 0 || (++spins_ & 1023u) != 0) return;
-        const auto now = std::chrono::steady_clock::now();
-        if (now - start_ < suspect_after || now - last_trace_ < confirm_after) return;
-        last_trace_ = now;
+        const std::uint64_t now_ns = detail::monotonic_ns();
+        // The clock counts from boot, so neither sum wraps.
+        if (now_ns == 0 || now_ns < start_ns_ + suspect_after_ns || now_ns < last_trace_ns_ + confirm_after_ns) return;
+        last_trace_ns_ = now_ns;
         const detail::wait_chain chain = detail::trace_chain(self_, endpoint_);
         if (chain.same_cycle_as(suspect_)) [[unlikely]]
             detail::report_deadlock(chain, self_);

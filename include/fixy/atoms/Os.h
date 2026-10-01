@@ -372,7 +372,9 @@ template <std::meta::info Ns>
     return count;
 }
 
-// Every one of the ten namespaces, walked.
+// Every one of the ten namespaces, walked.  The walk is a template, so
+// that only a translation unit that calls it expands it.
+template <class = void>
 [[nodiscard]] consteval bool every_os_tag_namespace_holds_only_tags_() noexcept {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

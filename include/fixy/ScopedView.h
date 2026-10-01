@@ -33,6 +33,7 @@
 #include <new>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace fixy {
 
@@ -267,11 +268,14 @@ namespace detail {
 // The hole has the same shape as the rule that the walk does not follow
 // a raw pointer.  Everything reachable by value is audited.
 //
-// The Visited pack is the set of classes already open on the walk.  A
-// type cannot hold itself by value, so the member walk alone always
-// terminates, but the associated-type rule can point back at an
-// enclosing class — `struct Node { std::vector<Node> children; }` —
-// and a second visit of one class answers nothing the first did not.
+// The walk is a search over the types that a value of the root type
+// holds, with one list of the classes it has seen.  It reads each class
+// one time, so a class that two members or two bases share costs one
+// visit, and a class that the associated-type rule reaches again —
+// `struct Node { std::vector<Node> children; }` — stops the search
+// there.  The answer is the answer to one question: can the search reach
+// a ScopedView from the root.  The variable template below keeps that
+// answer, so each root type costs one search in a translation unit.
 template <typename T>
 concept sv_complete = requires { sizeof(T); };
 
@@ -287,23 +291,36 @@ concept sv_has_associated_element = requires {
     sizeof(typename T::element_type);
 } && !std::is_same_v<std::remove_cv_t<typename T::element_type>, std::remove_cv_t<T>>;
 
-template <typename T, typename... Visited>
-consteval bool contains_scoped_view_();
+// The three concepts as variables, so that the search can ask each one
+// of a type that it holds as a reflection.  Asking the concept also
+// instantiates a class template specialization that nothing has used
+// yet, as the sizeof in the concept requires.
+template <typename T>
+inline constexpr bool sv_is_complete_v = sv_complete<T>;
+template <typename T>
+inline constexpr bool sv_has_value_v = sv_has_associated_value<T>;
+template <typename T>
+inline constexpr bool sv_has_element_v = sv_has_associated_element<T>;
+template <typename T>
+using sv_value_t = typename T::value_type;
+template <typename T>
+using sv_element_t = typename T::element_type;
 
-template <typename T, typename... Visited>
-consteval bool associated_contains_view() {
-    bool found = false;
-    if constexpr (sv_has_associated_value<T>) {
-        if (contains_scoped_view_<typename T::value_type, Visited...>()) found = true;
-    }
-    if constexpr (sv_has_associated_element<T>) {
-        if (contains_scoped_view_<typename T::element_type, Visited...>()) found = true;
-    }
-    return found;
+[[nodiscard]] consteval std::meta::info sv_bare_(std::meta::info type) {
+    return std::meta::dealias(std::meta::remove_cvref(std::meta::dealias(type)));
 }
 
-template <typename T, typename... Visited>
-consteval bool reflect_contains_view() {
+[[nodiscard]] consteval bool sv_asks_(std::meta::info question, std::meta::info type) {
+    return std::meta::extract<bool>(std::meta::substitute(question, {type}));
+}
+
+// Complexity: one visit for each class reachable from the root, and a
+// linear scan of the seen list for each type that a visit finds.  The
+// list holds only classes and unions, because no other type can hold a
+// view by value.  An array is replaced by its element type.  A pointer
+// is not followed.
+template <class = void>
+[[nodiscard]] consteval bool sv_reaches_view_(std::meta::info root) {
     using namespace std::meta;
     // unchecked(), not current().  access_context::current() is fixed
     // at the point it is written, which is inside this namespace, so
@@ -314,46 +331,50 @@ consteval bool reflect_contains_view() {
     // takes the context that answers the question it is asking.
     // Secret.h's policy-roster walk uses unchecked() for the same
     // reason.
-    constexpr auto ctx = access_context::unchecked();
+    constexpr access_context ctx = access_context::unchecked();
+    std::vector<info> seen;
     bool found = false;
-    static constexpr auto bases = std::define_static_array(bases_of(^^T, ctx));
-    static constexpr auto members = std::define_static_array(nonstatic_data_members_of(^^T, ctx));
-    // -Wshadow fires on the expansion-statement induction variable.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto b : bases) {
-        using B = typename[:type_of(b):];
-        if (contains_scoped_view_<B, Visited...>()) found = true;
+    const auto visit = [&](info held) {
+        info type = sv_bare_(held);
+        if (is_array_type(type)) type = sv_bare_(remove_all_extents(type));
+        if (has_template_arguments(type) && template_of(type) == ^^ScopedView) {
+            found = true;
+            return;
+        }
+        if (!is_class_type(type) && !is_union_type(type)) return;
+        // An index loop over the data, because the constant evaluator
+        // runs a loop through vector iterators about four times slower.
+        const info* const known = seen.data();
+        const std::size_t known_count = seen.size();
+        for (std::size_t index = 0; index < known_count; ++index) {
+            if (known[index] == type) return;
+        }
+        seen.push_back(type);
+    };
+    visit(root);
+    for (std::size_t next = 0; next < seen.size() && !found; ++next) {
+        const info type = seen[next];
+        // A type that is complete here needs no instantiation, and the
+        // cheap query answers for it.
+        if (!is_complete_type(type) && !sv_asks_(^^sv_is_complete_v, type)) continue;
+        for (const info base : bases_of(type, ctx))
+            visit(type_of(base));
+        for (const info member : nonstatic_data_members_of(type, ctx))
+            visit(type_of(member));
+        if (sv_asks_(^^sv_has_value_v, type)) visit(substitute(^^sv_value_t, {type}));
+        if (sv_asks_(^^sv_has_element_v, type)) visit(substitute(^^sv_element_t, {type}));
     }
-    template for (constexpr auto m : members) {
-        using F = typename[:type_of(m):];
-        if (contains_scoped_view_<F, Visited...>()) found = true;
-    }
-#pragma GCC diagnostic pop
     return found;
 }
 
-template <typename T, typename... Visited>
-consteval bool contains_scoped_view_() {
-    using U = std::remove_cvref_t<T>;
-    if constexpr ((std::is_same_v<U, Visited> || ...)) {
-        return false;
-    } else if constexpr (IsScopedView<U>) {
-        return true;
-    } else if constexpr (std::is_array_v<U>) {
-        return contains_scoped_view_<std::remove_all_extents_t<U>, Visited...>();
-    } else if constexpr ((std::is_class_v<U> || std::is_union_v<U>) && sv_complete<U>) {
-        return reflect_contains_view<U, U, Visited...>() || associated_contains_view<U, U, Visited...>();
-    } else {
-        return false;
-    }
-}
+template <typename T>
+inline constexpr bool sv_contains_view_v = sv_reaches_view_(^^T);
 
 }  // namespace detail
 
 template <typename T>
 consteval bool contains_scoped_view() {
-    return detail::contains_scoped_view_<T>();
+    return detail::sv_contains_view_v<T>;
 }
 
 // The audit is opt-in: a carrier that never writes this static_assert

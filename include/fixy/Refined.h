@@ -41,7 +41,6 @@
 
 #include <array>
 #include <bit>
-#include <cmath>
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -204,7 +203,7 @@ template <class V, auto Bound>
         constexpr bool no_wider = std::numeric_limits<B>::digits <= std::numeric_limits<V>::digits
                                && std::numeric_limits<B>::max_exponent <= std::numeric_limits<V>::max_exponent
                                && std::numeric_limits<B>::min_exponent >= std::numeric_limits<V>::min_exponent;
-        return no_wider && std::isfinite(Bound);
+        return no_wider && __builtin_isfinite(Bound);
     } else {
         return false;
     }

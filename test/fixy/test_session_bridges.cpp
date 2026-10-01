@@ -101,7 +101,7 @@ static_assert(sizeof(vm::ModeCell) == sizeof(std::atomic<vm::Mode>));
 // The handle borrows the cell mutably, which is what lets a Send branch
 // reach publish_from_session.  The address of the cell is its identity,
 // so the cell is Pinned and the handle holds a reference to it.
-static_assert(std::is_same_v<typename vm::ModeSessionHandle::resource_type, vm::ModeCell&>);
+static_assert(std::is_same_v<typename vm::ModeSessionHandle<>::resource_type, vm::ModeCell&>);
 static_assert(std::is_base_of_v<::foundation::Pinned<vm::ModeCell>, vm::ModeCell>);
 
 // A cell with the read shape that is not Pinned is refused: a copy of

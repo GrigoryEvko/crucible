@@ -586,6 +586,10 @@ concept AxisIsClassified = (TakesDefaultTraits<A> == axis_takes_defaults<A>);
 // specialisation, must classify as exactly one of caller-supplied,
 // strict or derived, and must name a shape and a discharge that the
 // switches below know.
+//
+// The walk is a template, so that only a translation unit that calls it
+// expands it.  The two walks below are templates for the same reason.
+template <class = void>
 [[nodiscard]] consteval bool every_axis_has_traits() noexcept {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
 #pragma GCC diagnostic push
@@ -617,6 +621,7 @@ concept AxisIsClassified = (TakesDefaultTraits<A> == axis_takes_defaults<A>);
     return true;
 }
 
+template <class = void>
 [[nodiscard]] consteval std::size_t count_axes_of_shape(Shape shape) noexcept {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
     std::size_t count = 0;
@@ -641,6 +646,7 @@ concept StatesItsClaim = requires {
 
 namespace detail {
 
+template <class = void>
 [[nodiscard]] consteval std::string axes_whose_pole_is_not_the_weakest_claim_() {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^Axis));
     std::string offenders;
@@ -663,6 +669,7 @@ namespace detail {
     return offenders;
 }
 
+template <class = void>
 [[nodiscard]] consteval std::string_view weakest_claim_diagnostic_() {
     std::string message =
         "fixy/Axis.h: the strict pole of each axis must be its weakest claim, and these axes break the rule: ";
@@ -675,6 +682,7 @@ namespace detail {
 
 }  // namespace detail
 
+template <class = void>
 [[nodiscard]] consteval bool every_pole_is_the_weakest_claim() {
     return detail::axes_whose_pole_is_not_the_weakest_claim_().empty();
 }
