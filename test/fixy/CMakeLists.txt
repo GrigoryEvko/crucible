@@ -879,7 +879,11 @@ fixy_neg_compile_test(neg_secret_transform_returns_void
 # set — how many atoms were walked, how many are refused alone and which
 # they are, how many axes contributed a same-axis pair, how many atoms
 # carry a lift — so a reader can judge whether the walk covered anything.
-fixy_test(rejections_generated)
+# The walk has eight parts, and each part is a source file of the one
+# executable, so that no translation unit compiles for long.
+fixy_test(rejections_generated rejections_generated.cpp rejections_generated_0.cpp rejections_generated_1.cpp
+  rejections_generated_2.cpp rejections_generated_3.cpp rejections_generated_4.cpp rejections_generated_5.cpp
+  rejections_generated_6.cpp rejections_generated_7.cpp)
 
 # A cv-qualified atom fails the same-as clause of IsAtom; the compiler
 # names the clause and the two types it compared.
