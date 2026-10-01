@@ -37,7 +37,9 @@
 //
 // One thread per child, spawned and joined inside the call.  That suits
 // a few children with long bodies.  It is the wrong shape for many short
-// tasks, which want a work-stealing pool instead.
+// tasks, which want a work-stealing pool instead.  The threads start and
+// join in src/foundation/PermissionFork.cpp, so a translation unit that
+// includes this header does not compile <thread>.
 //
 // A callable's own noexcept specification is all that is checked here.
 // The fixy::atom::ctrl::throws atom is above this layer.  fixy/os/Spawn.h
@@ -53,11 +55,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <meta>
 #include <new>
+#include <span>
 #include <string_view>
-#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -223,6 +224,19 @@ template <bool Spawn, typename Ctx, typename Parent, typename... Children>
 concept CtxFitsPermissionForkArm = (Spawn && CtxFitsPermissionFork<Ctx, Parent, Children...>)
                                 || (!Spawn && CtxFitsPermissionForkInline<Ctx, Parent, Children...>);
 
+// One body of the spawning arm: the address of its frame, and the function
+// that runs the body from that frame.  The frame lives in the frame of the
+// fork, which waits until every thread has joined.
+struct fork_task {
+    void* frame = nullptr;
+    void (*run)(void* frame) noexcept = nullptr;
+};
+
+// Starts one thread for each task, runs the task on its thread, and joins
+// every thread before it returns.  A failure to start a thread ends the
+// process.  The body is in src/foundation/PermissionFork.cpp.
+void run_fork_tasks(std::span<const fork_task> tasks) noexcept;
+
 }  // namespace detail
 
 // The two mints, declared before the runner so that its friend
@@ -279,29 +293,33 @@ class PermissionForkRunner final : ::foundation::NoObject<PermissionForkRunner> 
         body(view, ctx);
     }
 
+    // The frame of one spawned body: the body in the tuple of the fork, and
+    // the context of the fork.
+    template <typename Body, typename Ctx>
+    struct spawn_frame_ {
+        Body* body = nullptr;
+        Ctx const* ctx = nullptr;
+    };
+
+    // Runs on the thread of one body.  The thread moves the body out of
+    // the tuple and copies the context, so the body lives on its own thread
+    // and ends there.  The fork waits in the join, so it does not touch the
+    // tuple or the context while a thread reads them.
+    template <typename Child, typename Brand, typename Ctx, typename Body>
+    static void run_spawned_(void* frame) noexcept {
+        spawn_frame_<Body, Ctx> const& source = *static_cast<spawn_frame_<Body, Ctx>*>(frame);
+        Body body = std::move(*source.body);
+        Ctx const child_ctx = *source.ctx;
+        run_body_<Child, Brand>(body, child_ctx);
+    }
+
     template <typename Brand, typename... Children, typename Ctx, typename Bodies, std::size_t... Is>
     static void spawn_(Ctx const& ctx, Bodies& bodies, std::index_sequence<Is...>) noexcept {
-        // A jthread constructor is not noexcept, because the thread creation
-        // under it can fail on resource exhaustion.  Without the catch, that
-        // failure reaches this function's noexcept boundary and terminates
-        // when the build has exceptions on, but aborts when it does not.  The
-        // catch makes both builds abort, which is what a resource failure does
-        // everywhere else here.
-#if defined(__cpp_exceptions)
-        try {
-#endif
-            [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
-                [body = std::move(std::get<Is>(bodies)), child_ctx = ctx](std::stop_token) mutable noexcept {
-                    run_body_<Children...[Is], Brand>(body, child_ctx);
-                }}...};
-#if defined(__cpp_exceptions)
-        } catch (...) {
-            // The catch is deliberately untyped.  The contract is that any
-            // failure to construct a thread aborts, and the exception type a
-            // given standard library reports it with is not fixed.
-            std::abort();
-        }
-#endif
+        std::tuple<spawn_frame_<std::tuple_element_t<Is, Bodies>, Ctx>...> frames{
+            spawn_frame_<std::tuple_element_t<Is, Bodies>, Ctx>{&std::get<Is>(bodies), &ctx}...};
+        std::array<detail::fork_task, sizeof...(Is)> const tasks{detail::fork_task{
+            &std::get<Is>(frames), &run_spawned_<Children...[Is], Brand, Ctx, std::tuple_element_t<Is, Bodies>>}...};
+        detail::run_fork_tasks(tasks);
     }
 
     template <typename Brand, typename... Children, typename Ctx, typename Bodies, std::size_t... Is>

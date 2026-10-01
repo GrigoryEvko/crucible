@@ -6,16 +6,18 @@ namespace fixy::concurrent {
 
 namespace detail::stage_endpoint_bridge_self_test {
 
-using stage_endpoint_bridge_witness::UTag1;
-using stage_endpoint_bridge_witness::UTag2;
-using stage_endpoint_bridge_witness::UBrand;
+// The tags, the channels and the endpoints that the checks name.  No code
+// builds a channel of them.
+struct UTag1 {};
+struct UTag2 {};
+struct UBrand {};
 
-using stage_endpoint_bridge_witness::FgCtx;
-using stage_endpoint_bridge_witness::Ch1;
-using stage_endpoint_bridge_witness::Ch2;
+using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
+using Ch1 = PermissionedSpscChannel<int, 64, UTag1, UBrand>;
+using Ch2 = PermissionedSpscChannel<int, 64, UTag2, UBrand>;
 
-using stage_endpoint_bridge_witness::ConsEp;
-using stage_endpoint_bridge_witness::ProdEp;
+using ConsEp = Endpoint<Ch1, Direction::Consumer, FgCtx>;
+using ProdEp = Endpoint<Ch2, Direction::Producer, FgCtx>;
 
 static_assert(IsEndpoint<ConsEp>);
 static_assert(IsEndpoint<ProdEp>);

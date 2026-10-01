@@ -2399,7 +2399,10 @@ These library types make the axioms from §II true at compile time. They are in 
 | `foundation/permissions/Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` in `ReadView.h` for lifetime-bound borrows. Factories: `mint_permission_root`, `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n`, `mint_permission_combine_n` and `mint_permission_share`. |
 | `foundation/permissions/PermissionFork.h` | ThreadSafe, BorrowSafe | `mint_permission_fork<Children...>(ctx, parent, callables...)` is the CSL parallel composition rule, as a fork-join with one `std::jthread` for each child. Its constraint is `CtxFitsPermissionFork<Ctx, Parent, Children...>`, which asks for `can_split_into_pack_v<Parent, Children...>` and a context that has `Effect::Bg`. `mint_permission_fork_inline` does the bodies inline in child order. Each mint gives back the parent permission after all bodies complete. |
 
-Every header is header-only and self-contained. The dependency rule is the layer
+Every header is self-contained. Two cold bodies are in the library `foundation`, so
+that an includer does not compile them: the abort of `Permission.h` in
+`src/foundation/Permission.cpp`, and the thread start of `PermissionFork.h` in
+`src/foundation/PermissionFork.cpp`. The other headers are header-only. The dependency rule is the layer
 rule, and `utils/scripts/check-layer-boundary.py` enforces it: `foundation` names only
 `foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`
 names anything below it.

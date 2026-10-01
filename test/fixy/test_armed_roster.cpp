@@ -131,6 +131,19 @@ using DelegatedRecv = sn::DelegatedSession<BareRecv, DelegatedWire, sn::DefaultA
 struct InlineClaimed {};
 struct InlineUnclaimed {};
 
+// Two channels, and an endpoint of each direction over them, for the
+// endpoint cell.  No code builds a channel of them.
+struct EndpointTag1 {};
+struct EndpointTag2 {};
+struct EndpointBrand {};
+using EndpointFgCtx = fe::ExecCtx<fe::ctx_cap::Fg, Row<>>;
+using EndpointCh1 = ::fixy::concurrent::PermissionedSpscChannel<int, 64, EndpointTag1, EndpointBrand>;
+using EndpointCh2 = ::fixy::concurrent::PermissionedSpscChannel<int, 64, EndpointTag2, EndpointBrand>;
+using ConsumerEndpoint =
+    ::fixy::concurrent::Endpoint<EndpointCh1, ::fixy::concurrent::Direction::Consumer, EndpointFgCtx>;
+using ProducerEndpoint =
+    ::fixy::concurrent::Endpoint<EndpointCh2, ::fixy::concurrent::Direction::Producer, EndpointFgCtx>;
+
 // A machine with one edge, Idle to Busy, for the transition predicate.
 struct Idle {};
 struct Busy {};
@@ -528,6 +541,15 @@ template <>
 struct foundation::contracts::armed_cell<::fixy::concurrent::detail::has_load> {
     using accepts = witnesses<w::Loader>;
     using refuses = witnesses<int, w::Publisher, w::Plain>;
+};
+
+// An endpoint of either direction is an endpoint.  The handle that it owns
+// is not, and the trait sees a reference as no endpoint: IsEndpoint strips
+// the reference before it asks.
+template <>
+struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_endpoint> {
+    using accepts = witnesses<w::ConsumerEndpoint, w::ProducerEndpoint>;
+    using refuses = witnesses<int, w::EndpointCh1::ConsumerHandle, w::ConsumerEndpoint&>;
 };
 
 template <>

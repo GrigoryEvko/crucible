@@ -75,7 +75,6 @@ include/fixy/concurrent/Topology.h | <thread>
 include/fixy/os/Sched.h | <thread>
 include/foundation/AlignedBuffer.h | <memory>
 include/foundation/Lifetime.h | <memory>
-include/foundation/permissions/PermissionFork.h | <thread>
 
 keep | include/crucible/canopy/bpf/common.h | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
 keep | include/crucible/cntp/bpf/common.h | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it

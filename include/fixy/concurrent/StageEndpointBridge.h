@@ -21,7 +21,6 @@
 
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
-#include <foundation/contracts/Armed.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Signature.h>
@@ -307,33 +306,9 @@ class StageEndpointDoor final : ::foundation::NoObject<StageEndpointDoor> {
     }
 };
 
-// The tags, the channels and the endpoints that only checks name.  The
-// armed cell below and the check file of this header name them, and no
-// code builds a channel of them.
-namespace detail::stage_endpoint_bridge_witness {
-
-struct UTag1 {};
-struct UTag2 {};
-struct UBrand {};
-
-using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
-using Ch1 = PermissionedSpscChannel<int, 64, UTag1, UBrand>;
-using Ch2 = PermissionedSpscChannel<int, 64, UTag2, UBrand>;
-
-using ConsEp = Endpoint<Ch1, Direction::Consumer, FgCtx>;
-using ProdEp = Endpoint<Ch2, Direction::Producer, FgCtx>;
-
-}  // namespace detail::stage_endpoint_bridge_witness
+// The armed cell of detail::is_endpoint is in test/fixy/test_armed_roster.cpp.
+// Its witnesses are endpoints over two channels, and a header that names
+// them builds the two channel types in each translation unit that
+// includes it.
 
 }  // namespace fixy::concurrent
-
-// An endpoint of either direction is an endpoint.  The handle that it owns
-// is not, and the trait sees a reference as no endpoint: IsEndpoint strips
-// the reference before it asks.
-template <>
-struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_endpoint> {
-    using accepts = witnesses<::fixy::concurrent::detail::stage_endpoint_bridge_witness::ConsEp,
-                              ::fixy::concurrent::detail::stage_endpoint_bridge_witness::ProdEp>;
-    using refuses = witnesses<int, ::fixy::concurrent::detail::stage_endpoint_bridge_witness::Ch1::ConsumerHandle,
-                              ::fixy::concurrent::detail::stage_endpoint_bridge_witness::ConsEp&>;
-};
