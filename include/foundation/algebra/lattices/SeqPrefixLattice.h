@@ -20,7 +20,6 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 
-#include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -60,10 +59,10 @@ struct SeqPrefixLattice {
     }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a.length <= b.length; }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return element_type{std::max(a.length, b.length)};
+        return element_type{a.length < b.length ? b.length : a.length};
     }
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return element_type{std::min(a.length, b.length)};
+        return element_type{b.length < a.length ? b.length : a.length};
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept { return "SeqPrefixLattice"; }

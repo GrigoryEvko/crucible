@@ -28,7 +28,6 @@
 #include <fixy/Refined.h>
 #include <foundation/Platform.h>
 
-#include <algorithm>
 #include <array>
 #include <bit>
 #include <compare>
@@ -36,7 +35,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <ranges>
 #include <span>
 #include <string_view>
 #include <type_traits>

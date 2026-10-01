@@ -59,7 +59,6 @@ include/crucible/topology/Pingmesh.h | <chrono>
 include/fixy/Borrowed.h | <ranges>
 include/fixy/Budgeted.h | <memory>
 include/fixy/EpochVersioned.h | <memory>
-include/fixy/FixedArray.h | <ranges>
 include/fixy/SelfContained.h | <ranges>
 include/fixy/concurrent/Pipeline.h | <thread>
 include/fixy/concurrent/Topology.h | <filesystem>

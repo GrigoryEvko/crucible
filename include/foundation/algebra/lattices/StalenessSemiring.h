@@ -23,7 +23,6 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 
-#include <algorithm>
 #include <compare>
 #include <cstdint>
 #include <limits>
@@ -59,10 +58,10 @@ struct StalenessSemiring {
     [[nodiscard]] static constexpr element_type top() noexcept { return element_type::infinity(); }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a.value <= b.value; }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return element_type{std::max(a.value, b.value)};
+        return element_type{a.value < b.value ? b.value : a.value};
     }
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return element_type{std::min(a.value, b.value)};
+        return element_type{b.value < a.value ? b.value : a.value};
     }
 
     [[nodiscard]] static constexpr element_type zero() noexcept { return top(); }

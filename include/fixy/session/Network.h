@@ -94,12 +94,12 @@
 #include <fixy/session/Crash.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/NetworkModel.h>
+#include <fixy/session/Payload.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 #include <foundation/algebra/Transition.h>
 #include <foundation/contracts/Armed.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -296,11 +296,13 @@ consteval bag_verdict bag_verdict_of(std::meta::info protocol) {
         std::vector<std::meta::info> informed{hops[first].to};
         for (std::size_t second = first + 1; second < hops.size(); ++second) {
             const hop& later = hops[second];
-            const bool is_after_receive = std::ranges::contains(informed, later.from);
+            const bool is_after_receive = ::fixy::session::detail::holds_type(informed, later.from);
             if (!is_after_receive && later.to == hops[first].to && later.word == hops[first].word) {
                 return {bag_fault::repeated_word, first, second};
             }
-            if (is_after_receive && !std::ranges::contains(informed, later.to)) informed.push_back(later.to);
+            if (is_after_receive && !::fixy::session::detail::holds_type(informed, later.to)) {
+                informed.push_back(later.to);
+            }
         }
     }
     return {};
