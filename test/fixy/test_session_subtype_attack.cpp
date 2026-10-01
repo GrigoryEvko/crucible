@@ -28,6 +28,8 @@
 
 #include "session_subtype_attack.h"
 
+#include <foundation/Platform.h>
+
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -102,6 +104,24 @@ enum class side : int {
     finished
 };
 
+// One wait of a side for its queue.  The first waits of a step spin with
+// a pause, the next waits give the processor to another thread, and the
+// remaining waits sleep.  A side that waits through a deadlock then
+// sleeps through the stall ticks, and it does not make a system call in
+// a tight loop.  Each step starts its count at zero.
+inline void wait_for_queue(std::uint32_t& waits_of_step) {
+    constexpr std::uint32_t pause_waits = 64;
+    constexpr std::uint32_t yield_waits = 256;
+    if (waits_of_step < pause_waits) {
+        CRUCIBLE_SPIN_PAUSE;
+    } else if (waits_of_step < pause_waits + yield_waits) {
+        std::this_thread::yield();
+    } else {
+        std::this_thread::sleep_for(std::chrono::microseconds{50});
+    }
+    if (waits_of_step < pause_waits + yield_waits) ++waits_of_step;
+}
+
 // Runs the two scripts against each other.  A run is a deadlock when
 // each side that has not finished waits, and no side makes progress for
 // `stall_ticks`: a waiting side waits for the other side to act, and
@@ -121,16 +141,17 @@ outcome run_pair(std::span<const step> left, std::span<const step> right, std::s
                           std::atomic<side>& state) {
         for (const step& action : script) {
             state.store(side::waiting, std::memory_order_release);
+            std::uint32_t waits_of_step = 0;
             if (action.is_send) {
                 while (!out.try_push(action.message)) {
                     if (stop.load(std::memory_order_acquire)) return;
-                    std::this_thread::yield();
+                    wait_for_queue(waits_of_step);
                 }
             } else {
                 int value = 0;
                 while (!in.try_pop(value)) {
                     if (stop.load(std::memory_order_acquire)) return;
-                    std::this_thread::yield();
+                    wait_for_queue(waits_of_step);
                 }
                 if (value != action.message) wrong.store(true, std::memory_order_release);
             }
