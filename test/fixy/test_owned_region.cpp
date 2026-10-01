@@ -9,44 +9,41 @@
 // about the chunk arithmetic that produces it: every element written
 // exactly once, nothing skipped, nothing touched twice.
 //
-// The join is spelled out once below through the public door.  The
-// arena is a bump allocator over a fixed block, which is all adopt reads
-// of an arena.
+// The join is spelled out once through the public door.  The arena is a
+// bump allocator over a fixed block, which is all adopt reads of an arena.
+//
+// The test is several source files of one executable, so that no
+// translation unit holds every test:
+//
+//   owned_region.h                the shared part
+//   this file                     the compile-time properties, adopt,
+//                                 wrap, the brand, the refusals of
+//                                 recombine, the doors that empty a
+//                                 region, the driver of every total and
+//                                 count, and main
+//   ..._split.cpp                 splits into shards and the rebuild of
+//                                 the whole
+//   ..._every_total_<k>.cpp       every total over the shard counts of
+//                                 range k
 
-#include <fixy/OwnedRegion.h>
-#include <foundation/Lifetime.h>
+#include "owned_region.h"
 
 #include "../foundation/abort_probe.h"
 
-#include <foundation/effects/Effect.h>
-#include <foundation/permissions/Permission.h>
-
-#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
-#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-using ::fixy::OwnedRegion;
-using ::fixy::Slice;
-using ::foundation::permissions::mint_permission_root;
-using ::foundation::permissions::can_split_into_pack_v;
+namespace test_owned_region {
 
-struct TestFailure {};
-
-#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
-    do {                                                                                  \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
-            throw TestFailure{};                                                          \
-        }                                                                                 \
-    } while (0)
+static_assert(::fixy::ArrayArena<Arena, float>);
+static_assert(!::fixy::ArrayArena<Arena, ::foundation::permissions::Permission<DataA>>,
+              "the arena must not start the lifetime of a proof type over its bytes");
 
 namespace {
 
@@ -65,40 +62,6 @@ void run_test(const char* name, F&& body) {
         std::fprintf(stderr, "FAILED\n");
     }
 }
-
-struct DataA {
-    using permission_row = ::foundation::effects::Row<>;
-};
-struct DataB {
-    using permission_row = ::foundation::effects::Row<>;
-};
-
-// One bump pointer over a fixed block: the smallest thing adopt asks
-// of an arena.  The lifetime start gives a live object only to a type
-// whose every subobject is an implicit-lifetime type, so the constraint
-// refuses every other type.
-class Arena {
-    alignas(std::max_align_t) unsigned char block_[1 << 16]{};
-    std::size_t used_ = 0;
-
-public:
-    template <typename T>
-        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-    [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t n) noexcept {
-        if (n == 0) return nullptr;
-        const std::size_t misalign = used_ % alignof(T);
-        const std::size_t start = misalign == 0 ? used_ : used_ + (alignof(T) - misalign);
-        const std::size_t nbytes = n * sizeof(T);
-        if (start + nbytes > sizeof(block_)) std::abort();
-        used_ = start + nbytes;
-        return ::foundation::lifetime::start_as_array<T>(block_ + start, n).data();
-    }
-};
-static_assert(::fixy::ArrayArena<Arena, float>);
-static_assert(!::fixy::ArrayArena<Arena, ::foundation::permissions::Permission<DataA>>,
-              "the arena must not start the lifetime of a proof type over its bytes");
-
-inline ::foundation::effects::Alloc test_alloc_token() noexcept { return ::foundation::effects::Alloc{}; }
 
 // A lookalike declares the two member types that the extractors read, so
 // a refusal of it is the constraint's and not a missing member's.
@@ -203,195 +166,14 @@ void test_wrap_borrows_storage() {
     CRUCIBLE_TEST_REQUIRE(sum == 1 + 2 + 3 + 4 + 5 + 60);
 }
 
-void test_split_into_chunk_math() {
-    Arena arena;
-    auto perm = mint_permission_root<DataA>();
-    using Brand = decltype(perm)::brand_type;
-    auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 1000, std::move(perm));
-
-    // Each element holds its own index, so a shard's contents identify
-    // the offset it was cut from.
-    for (std::size_t i = 0; i < 1000; ++i)
-        region.span()[i] = i;
-
-    auto parts = ::fixy::mint_split<8>(std::move(region));
-    auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
-
-    // 1000 over 8 divides exactly, so every shard is the same size.
-    CRUCIBLE_TEST_REQUIRE(s0.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s1.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s7.size() == 125);
-
-    // The shards are views into one buffer, not copies, which is what
-    // reading the seeded indices back at the right offsets shows.
-    CRUCIBLE_TEST_REQUIRE(s0.cspan()[0] == 0);
-    CRUCIBLE_TEST_REQUIRE(s0.cspan()[124] == 124);
-    CRUCIBLE_TEST_REQUIRE(s1.cspan()[0] == 125);
-    CRUCIBLE_TEST_REQUIRE(s7.cspan()[0] == 875);
-    CRUCIBLE_TEST_REQUIRE(s7.cspan()[124] == 999);
-
-    // Each shard carries its own slice index in its tag.
-    static_assert(std::remove_cvref_t<decltype(s3)>::tag_type::index == 3);
-    static_assert(std::is_same_v<std::remove_cvref_t<decltype(s3)>::tag_type::parent_type, DataA>);
-}
-
-void test_split_uneven() {
-    Arena arena;
-    auto perm = mint_permission_root<DataA>();
-    using Brand = decltype(perm)::brand_type;
-    auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 1001, std::move(perm));
-
-    auto parts = ::fixy::mint_split<8>(std::move(region));
-    auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
-
-    // 1001 over 8 leaves a remainder of one, so the first shard takes one
-    // element more than the 125 that each other shard takes.
-    CRUCIBLE_TEST_REQUIRE(s0.size() == 126);
-    CRUCIBLE_TEST_REQUIRE(s1.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s6.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s7.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s1.data() == s0.data() + 126);
-    CRUCIBLE_TEST_REQUIRE(s7.data() + 125 == s0.data() + 1001);
-}
-
-void test_split_smaller_than_n() {
-    Arena arena;
-    auto perm = mint_permission_root<DataA>();
-    using Brand = decltype(perm)::brand_type;
-    auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 5, std::move(perm));
-
-    auto parts = ::fixy::mint_split<8>(std::move(region));
-    auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
-
-    // With fewer elements than shards, each of the first five shards takes
-    // one element.  The last three are empty, and each starts at the end
-    // of the region, not past it.
-    CRUCIBLE_TEST_REQUIRE(s0.size() == 1);
-    CRUCIBLE_TEST_REQUIRE(s4.size() == 1);
-    CRUCIBLE_TEST_REQUIRE(s5.size() == 0);
-    CRUCIBLE_TEST_REQUIRE(s6.size() == 0);
-    CRUCIBLE_TEST_REQUIRE(s7.size() == 0);
-    CRUCIBLE_TEST_REQUIRE(s5.empty());
-    CRUCIBLE_TEST_REQUIRE(s5.data() == s0.data() + 5);
-    CRUCIBLE_TEST_REQUIRE(s7.data() == s0.data() + 5);
-}
-
-// The byte offset of a shard from the start of its region.  It is read
-// as an integer, so a shard that starts past the region gives a number
-// that the caller can compare, not a pointer that is undefined to form.
-template <typename Shard, typename T>
-std::uintptr_t byte_offset_of(Shard const& shard, T const* base) noexcept {
-    return std::bit_cast<std::uintptr_t>(shard.data()) - std::bit_cast<std::uintptr_t>(base);
-}
-
-// One shard count over every total from 0 to 64.  The storage is a heap
-// block of exactly `total` elements, so AddressSanitizer reports a write
-// past its end.  At a total of zero the block has one element, because the
-// optimizer refuses an allocation of zero (-Werror=alloc-zero) and the empty
-// region writes nothing.  A total of zero also runs over a null base, which
-// is the region that an arena gives for a request of zero elements.
-template <std::size_t N>
-void split_and_recombine_every_total() {
-    for (std::size_t total = 0; total <= 64; ++total) {
-        const bool also_null_base = total == 0;
-        for (int pass = 0; pass < (also_null_base ? 2 : 1); ++pass) {
-            auto storage = std::make_unique<std::uint32_t[]>(total == 0 ? 1 : total);
-            std::uint32_t* const base = pass == 0 ? storage.get() : nullptr;
-            auto region = ::fixy::mint_owned_region(base, total, mint_permission_root<DataA>());
-            using Region = decltype(region);
-            auto parts = ::fixy::mint_split<N>(std::move(region));
-
-            // Each shard starts where the one before it ends, holds the
-            // count or one element more than the count of every other
-            // shard, and writes its own index over its range.
-            std::array<std::size_t, N> sizes{};
-            std::size_t next_start = 0;
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (
-                    [&] {
-                        auto& shard = std::get<Is>(parts.shards);
-                        CRUCIBLE_TEST_REQUIRE(byte_offset_of(shard, base) == next_start * sizeof(std::uint32_t));
-                        CRUCIBLE_TEST_REQUIRE(shard.size() == total / N || shard.size() == total / N + 1);
-                        for (auto& element : shard.span())
-                            element = static_cast<std::uint32_t>(Is);
-                        sizes[Is] = shard.size();
-                        next_start += shard.size();
-                    }(),
-                    ...);
-            }(std::make_index_sequence<N>{});
-            CRUCIBLE_TEST_REQUIRE(next_start == total);
-
-            // recombine accepts every split, and the whole it gives back
-            // holds each shard's index exactly over that shard's range.
-            auto whole = Region::recombine(std::move(parts.witness), std::move(parts.shards));
-            CRUCIBLE_TEST_REQUIRE(whole.data() == base);
-            CRUCIBLE_TEST_REQUIRE(whole.size() == total);
-            std::size_t position = 0;
-            for (std::size_t shard_index = 0; shard_index < N; ++shard_index) {
-                for (std::size_t element = 0; element < sizes[shard_index]; ++element, ++position) {
-                    CRUCIBLE_TEST_REQUIRE(whole.cspan()[position] == shard_index);
-                }
-            }
-        }
-    }
-}
-
 // Every total from 0 to 64 into every shard count from 1 to 16.  A split
 // that puts a shard past the end of its region, or leaves a gap between
-// two shards, fails the offset check, and recombine aborts on it.
+// two shards, fails the offset check, and recombine aborts on it.  Each
+// range of shard counts is in a source file of its own.
 void test_split_and_recombine_every_total_and_count() {
-    []<std::size_t... Counts>(std::index_sequence<Counts...>) {
-        (split_and_recombine_every_total<Counts + 1>(), ...);
-    }(std::make_index_sequence<16>{});
-}
-
-// The join, spelled out once: every shard writes its own slice index over its range, and the shards are
-// then surrendered to recombine, which folds their Slice permissions
-// back into the parent's.  The post-join scan shows both that no shard
-// wrote outside its range and that no element went unwritten.
-void test_split_then_rebuild_through_recombine() {
-    Arena arena;
-    constexpr std::size_t N = 800;  // 8 × 100, exact division
-    auto perm = mint_permission_root<DataA>();
-    using Whole = OwnedRegion<std::uint64_t, DataA, decltype(perm)::brand_type>;
-    auto region = Whole::adopt(test_alloc_token(), arena, N, std::move(perm));
-
-    // A value no shard index can produce, so an untouched element is
-    // distinguishable from a written one.
-    for (std::size_t i = 0; i < N; ++i)
-        region.span()[i] = 0xDEAD;
-
-    std::uint64_t* base = region.data();
-    const std::size_t count = region.size();
-
-    auto parts = ::fixy::mint_split<8>(std::move(region));
-    std::apply(
-        [](auto&... sub) {
-            (
-                [](auto& one) {
-                    using SubT = std::remove_cvref_t<decltype(one)>;
-                    constexpr std::size_t shard_idx = SubT::tag_type::index;
-                    for (auto& x : one.span())
-                        x = shard_idx;
-                }(sub),
-                ...);
-        },
-        parts.shards);
-
-    // The receipt the split wrote is surrendered beside the shards, and
-    // it is what tells recombine that one split produced them.
-    auto recombined = Whole::recombine(std::move(parts.witness), std::move(parts.shards));
-
-    // recombine derives both from the shards rather than being told, so
-    // check it recovered the extent the split started from.
-    CRUCIBLE_TEST_REQUIRE(recombined.data() == base);
-    CRUCIBLE_TEST_REQUIRE(recombined.size() == count);
-    CRUCIBLE_TEST_REQUIRE(recombined.size() == N);
-    for (std::size_t shard = 0; shard < 8; ++shard) {
-        for (std::size_t i = 0; i < 100; ++i) {
-            CRUCIBLE_TEST_REQUIRE(recombined.cspan()[shard * 100 + i] == shard);
-        }
-    }
+    split_and_recombine_every_total_of_counts_1_to_9();
+    split_and_recombine_every_total_of_counts_10_to_13();
+    split_and_recombine_every_total_of_counts_14_to_16();
 }
 
 // The brand travels with the region: a region minted from a branded
@@ -541,6 +323,10 @@ void test_adopt_zero_length() {
 }
 
 }  // namespace
+
+}  // namespace test_owned_region
+
+using namespace test_owned_region;
 
 int main() {
     std::fprintf(stderr, "test_owned_region:\n");

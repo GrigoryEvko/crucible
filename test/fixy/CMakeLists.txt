@@ -1283,7 +1283,11 @@ fixy_test(test_version_attacks)
 # Legal C++ that writes the private state of a proof through a splice.
 # An attack that still succeeds is a row of the shrink-only ledger.
 fixy_test(test_splice_access_attacks)
-fixy_test(test_owned_region)
+# The tests of an owned region are in several source files, by subject,
+# and the split of every total into each shard count is in three of them,
+# so that no translation unit compiles all of them.
+fixy_test(test_owned_region test_owned_region.cpp test_owned_region_split.cpp test_owned_region_every_total_0.cpp
+  test_owned_region_every_total_1.cpp test_owned_region_every_total_2.cpp)
 fixy_test(test_borrowed)
 fixy_test(test_scoped_view)
 fixy_test(test_machine)
@@ -2128,8 +2132,12 @@ fixy_neg_compile_test(neg_sess_mint_vendor_none
   "VendorPinned<foundation::algebra::lattices::VendorBackend::None, fixy::session::Send<.*Ping, fixy::session::End> >\\]. evaluated to .false.")
 
 # Subtyping: one walk gives the verdict and its reason, and each refusal
-# names the class of the failure and the failed pair.
-fixy_test(test_session_subtype)
+# names the class of the failure and the failed pair.  The checks are in
+# several source files, by group, so that no translation unit compiles
+# all of them.
+fixy_test(test_session_subtype test_session_subtype.cpp test_session_subtype_closure_0.cpp
+  test_session_subtype_closure_1.cpp test_session_subtype_closure_2.cpp test_session_subtype_relation.cpp
+  test_session_subtype_reason.cpp test_session_subtype_payload.cpp test_session_subtype_async.cpp)
 
 # The content-addressed marker and its payload are subsorts of each
 # other, at any depth.
@@ -2315,8 +2323,13 @@ fixy_neg_compile_test(neg_sess_subtype_keyed_step_label_set_output
 # The adversarial campaign against the algebra and the relations.  The
 # runtime half runs two threads over bounded queues with a watchdog, so
 # a deadlock ends the run with a verdict and never hangs.  The attacks
-# that succeed are pinned on a ledger that can only shrink.
-fixy_test(test_session_subtype_attack)
+# that succeed are pinned on a ledger that can only shrink.  The attacks
+# are in several source files, by group, so that no translation unit
+# compiles all of them.
+fixy_test(test_session_subtype_attack test_session_subtype_attack.cpp test_session_subtype_attack_recursion.cpp
+  test_session_subtype_attack_generated.cpp test_session_subtype_attack_choices.cpp
+  test_session_subtype_attack_keyed.cpp test_session_subtype_attack_fuel.cpp
+  test_session_subtype_attack_ledger.cpp)
 
 # HS14 for mint_session_handle.  Its requires-clause is the whole
 # admission gate, so each clause gets a fixture that fails through it
@@ -2964,7 +2977,11 @@ fixy_test(test_session_global_attack test_session_global_attack.cpp test_session
 # configurations under crash-stop failures (Barwell, Hou, Yoshida and
 # Zhou, LMCS 2025, Definitions 4.12 and 4.18).  The test checks each rule,
 # and it checks operational correspondence on a corpus of global types.
-fixy_test(test_session_semantics)
+# The checks are in several source files, by group, so that no
+# translation unit compiles all of them.
+fixy_test(test_session_semantics test_session_semantics.cpp test_session_semantics_global.cpp
+  test_session_semantics_config.cpp test_session_semantics_corpus.cpp test_session_semantics_sender.cpp
+  test_session_semantics_sender_tirore3.cpp)
 
 # Two fixtures for each input predicate of the public aliases.  A state
 # holds a well-formed global type and a set of crashed roles.
