@@ -124,16 +124,24 @@ private:
     std::uint8_t size_ = 0;
 };
 
+// Each pad member of the two facts holds bytes that the compiler would
+// otherwise pad, so a fact has no padding byte.  A snapshot holds 64 node
+// facts and 128 edge facts, and with -ftrivial-auto-var-init=zero GCC writes
+// zero to each padding hole of each fact in an automatic snapshot, one store
+// for each hole.  test/test_topology_discovery.cpp makes sure that the facts
+// have no padding byte.
 struct DiscoveryNodeFact {
     cog::Uuid uuid{};
     cog::CogLevel level = cog::CogLevel::L0_Atomic;
     cog::CogKind kind = cog::CogKind::Gpu;
+    std::uint8_t pad_after_kind[6]{};
     VendorDiscoveryString vendor{};
     VendorDiscoveryString model{};
     VendorDiscoveryString driver{};
     VendorDiscoveryString firmware{};
     VendorDiscoveryString bus_info{};
     std::int16_t numa_node = -1;
+    std::uint8_t pad_after_numa_node[6]{};
     cog::NicPortTargetCaps nic_caps{};
 };
 
@@ -141,10 +149,12 @@ struct DiscoveryEdgeFact {
     std::uint16_t from_node = 0;
     std::uint16_t to_node = 0;
     LinkKind kind = LinkKind::Unknown;
+    std::uint8_t pad_after_kind[3]{};
     std::uint64_t bandwidth_bytes_per_sec = 0;
     std::uint64_t rtt_ns_p50 = 0;
     std::uint64_t rtt_ns_p99 = 0;
     float drop_rate = 0.0f;
+    std::uint8_t pad_tail[4]{};
 };
 
 template <std::size_t MaxNodes, std::size_t MaxEdges>

@@ -105,8 +105,14 @@ inline constexpr std::uint32_t kLoadBudgetPercentOfCpus = 50;
 // needs. 3 and above locks the subsystem entirely.
 inline constexpr std::int32_t kMaxPerfEventParanoid = 2;
 
+// Each pad member holds bytes that the compiler would otherwise pad, so the
+// report has no padding byte.  With -ftrivial-auto-var-init=zero, GCC writes
+// zero to each padding hole of a Ledger at each return of one, one store for
+// each hole.  test/test_ledger.cpp makes sure that the report has no padding
+// byte.
 struct CompetenceReport {
     ::fixy::Bits<CompetenceDefect> defects{};
+    std::uint8_t pad_after_defects[2]{};
 
     // The facts behind the defects, kept so an operator reading the ledger
     // can see how far off the host was rather than only that it was off.
@@ -121,9 +127,11 @@ struct CompetenceReport {
     std::uint32_t allowed_cpu_count = 0;
     std::uint32_t machine_cpu_count = 0;
     std::int32_t perf_event_paranoid = 0;
+    std::uint8_t pad_after_paranoid[4]{};
     std::uint64_t scaling_min_freq_khz = 0;
     std::uint64_t scaling_max_freq_khz = 0;
     bool governor_is_performance = false;
+    std::uint8_t pad_tail[7]{};
 
     // The single question every confidence decision asks.
     [[nodiscard]] constexpr bool is_competent() const noexcept { return defects.raw() == 0u; }

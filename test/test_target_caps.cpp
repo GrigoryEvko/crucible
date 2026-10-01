@@ -9,6 +9,7 @@
 #include <crucible/cog/TargetCaps.h>
 #include <foundation/reflect/EnumName.h>
 
+#include "padding_bytes.h"
 #include "test_assert.h"
 
 #include <bit>
@@ -237,8 +238,16 @@ static void test_caps_for_binding() {
     std::printf("  test_caps_for_binding:                PASSED\n");
 }
 
+// Each node fact of a discovery snapshot holds one NIC port schema, and each
+// padding byte of the schema costs one store for each of the 64 facts at each
+// initialization of an automatic snapshot (padding_bytes.h).
+static void test_nic_port_target_caps_has_no_padding_byte() {
+    crucible::test::expect_no_padding_byte<^^cog::NicPortTargetCaps>();
+    std::printf("  test_nic_port_target_caps_has_no_padding_byte: PASSED\n");
+}
+
 int main() {
-    std::printf("test_target_caps: 9 groups\n");
+    std::printf("test_target_caps: 10 groups\n");
     test_names_at_run_time();
     test_pcie_gen_value_is_generation();
     test_gpu_feature_runtime();
@@ -248,6 +257,7 @@ int main() {
     test_cpu_target_caps_construction();
     test_dram_target_caps_construction();
     test_caps_for_binding();
-    std::printf("test_target_caps: 9 groups, all passed\n");
+    test_nic_port_target_caps_has_no_padding_byte();
+    std::printf("test_target_caps: 10 groups, all passed\n");
     return 0;
 }

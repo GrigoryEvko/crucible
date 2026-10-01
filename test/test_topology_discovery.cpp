@@ -1,6 +1,7 @@
 #include <crucible/topology/Discovery.h>
 #include <foundation/reflect/EnumName.h>
 
+#include "padding_bytes.h"
 #include "test_assert.h"
 
 #include <cstdio>
@@ -179,6 +180,16 @@ static void test_static_gates() {
     std::printf("  test_static_gates:                    PASSED\n");
 }
 
+// A snapshot holds 64 identities, 64 node facts and 128 edge facts, and each
+// padding byte of one of them costs one store for each element at each
+// initialization of an automatic snapshot (padding_bytes.h).
+static void test_snapshot_elements_have_no_padding_byte() {
+    crucible::test::expect_no_padding_byte<^^cog::CogIdentity>();
+    crucible::test::expect_no_padding_byte<^^topology::DiscoveryNodeFact>();
+    crucible::test::expect_no_padding_byte<^^topology::DiscoveryEdgeFact>();
+    std::printf("  test_snapshot_elements_have_no_padding_byte: PASSED\n");
+}
+
 int main() {
     std::printf("test_topology_discovery:\n");
     test_enum_names_come_from_reflection();
@@ -187,6 +198,7 @@ int main() {
     test_lldp_record_state_reset();
     test_graceful_empty_live_discovery();
     test_static_gates();
+    test_snapshot_elements_have_no_padding_byte();
     std::printf("test_topology_discovery: all PASSED\n");
     return 0;
 }

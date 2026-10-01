@@ -184,18 +184,28 @@ struct GpuTargetCaps {
     ::fixy::Bits<GpuFeature> features{};
 };
 
+// Each pad member holds bytes that the compiler would otherwise pad, so the
+// schema has no padding byte.  A discovery snapshot holds one schema in each
+// of its 64 node facts, and with -ftrivial-auto-var-init=zero GCC writes zero
+// to each padding hole of each one in an automatic snapshot, one store for
+// each hole.  test/test_target_caps.cpp makes sure that the schema has no
+// padding byte.
 struct NicPortTargetCaps {
     VendorClaim<LinkLayer> link_layer{};
+    std::uint8_t pad_after_link_layer[7]{};
     VendorClaim<std::uint64_t> line_rate_bytes_per_sec{};
     ValidMtu mtu_bytes = ::fixy::mint_refined<valid_mtu>(std::uint16_t{1500});
 
     VendorClaim<std::uint16_t> max_tx_queues{};
     VendorClaim<std::uint16_t> max_rx_queues{};
+    std::uint8_t pad_after_rx_queues[2]{};
     VendorClaim<std::uint32_t> max_qp_count{};  // RDMA queue pairs
     VendorClaim<std::uint32_t> max_cq_count{};  // RDMA completion queues
     VendorClaim<std::uint32_t> max_mr_count{};  // RDMA memory regions
+    std::uint8_t pad_after_mr_count[4]{};
     VendorClaim<std::uint64_t> max_mr_size_bytes{};
     VendorClaim<std::uint32_t> tcam_entries{};
+    std::uint8_t pad_after_tcam_entries[4]{};
 
     // Line rate that survives PCIe, driver and kernel overhead.
     CalibratedValue<std::uint64_t> effective_bandwidth_bytes_per_sec{};
@@ -208,6 +218,7 @@ struct NicPortTargetCaps {
     VendorClaim<std::uint16_t> pcie_root_complex_id{};
     VendorClaim<PcieGen> pcie_gen{};
     VendorClaim<std::uint8_t> pcie_lanes{};
+    std::uint8_t pad_after_pcie_lanes[4]{};
 
     // Peer GPUs this port can reach by direct DMA. The span points into
     // an arena this struct does not own and which must outlive it. An
@@ -215,6 +226,7 @@ struct NicPortTargetCaps {
     std::span<const CogIdentity> gpu_direct_peers{};
 
     ::fixy::Bits<NicFeature> features{};
+    std::uint8_t pad_tail[4]{};
 };
 
 struct NvSwitchTargetCaps {

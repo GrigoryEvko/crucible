@@ -1,5 +1,6 @@
 #include <crucible/SchemaTable.h>
 
+#include "padding_bytes.h"
 #include "test_assert.h"
 
 #include <cstdint>
@@ -252,6 +253,13 @@ static void test_lookup_works_post_seal() {
     std::printf("  test_lookup_post_seal:          PASSED\n");
 }
 
+// A table holds 512 entries, and each padding byte of an entry costs one
+// store at each initialization of an automatic table (padding_bytes.h).
+static void test_entry_has_no_padding_byte() {
+    crucible::test::expect_no_padding_byte<^^SchemaEntry>();
+    std::printf("  test_entry_has_no_padding_byte: PASSED\n");
+}
+
 int main() {
     test_empty_lookup_returns_nullptr();
     test_register_and_lookup();
@@ -267,6 +275,7 @@ int main() {
     test_typed_register_with_mutable_view();
     test_sanitized_boundary_name_registers();
     test_lookup_works_post_seal();
-    std::printf("test_schema_table: 14 groups, all passed\n");
+    test_entry_has_no_padding_byte();
+    std::printf("test_schema_table: 15 groups, all passed\n");
     return 0;
 }

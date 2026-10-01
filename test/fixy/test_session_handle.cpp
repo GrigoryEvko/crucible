@@ -48,6 +48,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "../padding_bytes.h"
+
 namespace s = fixy::session;
 
 // The permission tree of the forked-channel walk.  The split manifest
@@ -1304,6 +1306,14 @@ struct LateRead {
     return 0;
 }
 
+// A wait-for chain holds a fixed list of links, and each padding byte of a
+// link costs one store for each link at each return of trace_chain
+// (padding_bytes.h).
+[[nodiscard]] int chain_link_has_no_padding_byte() {
+    crucible::test::expect_no_padding_byte<^^s::watch::detail::chain_link>();
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -1326,5 +1336,6 @@ int main() {
     if (const int rc = polling_channel_waits_without_a_false_deadlock(); rc != 0) return rc;
     if (const int rc = channel_claim_names_no_holder(); rc != 0) return rc;
     if (const int rc = each_transport_shape_waits_through_the_watch(); rc != 0) return rc;
+    if (const int rc = chain_link_has_no_padding_byte(); rc != 0) return rc;
     return 0;
 }

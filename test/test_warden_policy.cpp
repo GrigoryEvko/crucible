@@ -24,6 +24,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/os/Sched.h>
 
+#include "padding_bytes.h"
+
 namespace {
 
 int failures = 0;
@@ -404,6 +406,16 @@ void test_registry_applies_on_mint_hardening() {
     CHECK(HotRegionRegistry::instance().size() == baseline, "registry clean after unregister");
 }
 
+// A snapshot returns up to 256 regions, and the registry holds 256 slots.
+// Each padding byte of a region or a slot costs one store for each element of
+// the list (padding_bytes.h).  The slot is a private class, so the test names
+// it through the member that holds the slots.
+void test_region_and_slot_have_no_padding_byte() {
+    crucible::test::expect_no_padding_byte<^^crucible::warden::HotRegion>();
+    constexpr std::meta::info slot_list = crucible::test::member_type(^^crucible::warden::HotRegionRegistry, "slots_");
+    crucible::test::expect_no_padding_byte<std::meta::template_arguments_of(slot_list)[0]>();
+}
+
 }  // namespace
 
 int main() {
@@ -420,6 +432,7 @@ int main() {
     test_policy_production_degrades_gracefully();
     test_registry_basic();
     test_registry_applies_on_mint_hardening();
+    test_region_and_slot_have_no_padding_byte();
 
     if (failures == 0) {
         std::puts("test_warden_policy: OK");

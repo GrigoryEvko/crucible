@@ -36,6 +36,13 @@ inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
     return (n + kHugePageBytes - 1) & ~(kHugePageBytes - 1);
 }
 
+// pad holds the seven bytes after the hint, so a region has no padding
+// byte.  A snapshot returns up to 256 regions, and with
+// -ftrivial-auto-var-init=zero GCC writes zero to each padding hole of each
+// region of the returned list, one store for each hole.  The slot of the
+// registry below has the same pad for the same reason.
+// test/test_warden_policy.cpp makes sure that the region and the slot have
+// no padding byte.
 struct HotRegion {
     void* addr = nullptr;
     size_t len = 0;
@@ -43,6 +50,7 @@ struct HotRegion {
     // buffer that is resized often, where collapsing it into huge
     // pages would stall the resize.
     bool huge_hint = false;
+    uint8_t pad[7]{};
     // Borrowed, and usually a string literal. The caller keeps it
     // alive for as long as the region stays registered.
     const char* label = "";
@@ -146,10 +154,12 @@ private:
     HotRegionRegistry() = default;
     ~HotRegionRegistry() = default;
 
+    // No thread writes pad after the construction of the registry.
     struct Slot {
         std::atomic<void*> addr{nullptr};
         std::atomic<size_t> len{0};
         std::atomic<bool> huge_hint{false};
+        uint8_t pad[7]{};
         std::atomic<const char*> label{""};
     };
 

@@ -225,10 +225,17 @@ concept IsComputeKind = cog_family_v<K> == CogFamily::Compute;
 template <typename T>
 using VendorClaim = ::fixy::Tagged<T, ::fixy::tags::source::Vendor>;
 
+// pad holds the six bytes after the kind, so the identity has no padding
+// byte.  A discovery snapshot holds 64 identities, and with
+// -ftrivial-auto-var-init=zero GCC writes zero to each padding hole of each
+// one in an automatic snapshot, one store for each hole.
+// test/test_topology_discovery.cpp makes sure that the identity has no
+// padding byte.
 struct CogIdentity {
     Uuid uuid;
     CogLevel level = CogLevel::L0_Atomic;
     CogKind kind = CogKind::Gpu;
+    std::uint8_t pad[6]{};
 
     // The character storage behind these views lives in the topology
     // arena, which must outlive this identity.

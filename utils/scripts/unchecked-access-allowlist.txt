@@ -49,6 +49,7 @@ test/fixy/test_secret.cpp — walks the secret-policy namespace to check the pol
 test/fixy/test_splice_access_attacks.cpp — the ledger reproducer: a splice of a private member still writes it
 test/fixy/test_tagged.cpp — walks the admitted retags to check the sealed relation
 test/layer/checks/foundation/permissions/Permission.cpp — walks the permission tag namespace to check that each canonical tag is a sound token
+test/padding_bytes.h — walks every base and member of a type, a private one too, to count the bits that hold a value, and gives a test the type of a private member
 
 # Negative fixtures that read the return type of a private member function,
 # so that the fixture follows the production signature.  They keep the

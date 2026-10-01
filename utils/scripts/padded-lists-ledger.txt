@@ -14,14 +14,6 @@
 #   An element type with padding on purpose.  The reason is mandatory.
 
 include/crucible/CKernel.h | member | crucible::CKernelTable::entries_ | crucible::CKernelEntry
-include/crucible/SchemaTable.h | member | crucible::SchemaTable::entries_ | crucible::SchemaEntry
-include/crucible/topology/Discovery.h | alias | crucible::topology::DefaultDiscoverySnapshot | crucible::cog::CogIdentity
-include/crucible/topology/Discovery.h | alias | crucible::topology::DefaultDiscoverySnapshot | crucible::topology::DiscoveryEdgeFact
-include/crucible/topology/Discovery.h | alias | crucible::topology::DefaultDiscoverySnapshot | crucible::topology::DiscoveryNodeFact
-include/crucible/warden/Registry.h | member | crucible::warden::HotRegionRegistry::slots_ | crucible::warden::HotRegionRegistry::Slot
-include/crucible/warden/Registry.h | return | std::inplace_vector<crucible::warden::HotRegion, 256> crucible::warden::HotRegionRegistry::snapshot() const | crucible::warden::HotRegion
-include/crucible/warden/Registry.h | return | std::inplace_vector<crucible::warden::HotRegion, 256> crucible::warden::HotRegionRegistryHandle::snapshot() const | crucible::warden::HotRegion
-include/fixy/session/Watch.h | member | fixy::session::watch::detail::wait_chain::links | fixy::session::watch::detail::chain_link
 
 keep | include/fixy/session/Watch.h | member | fixy::session::watch::detail::registry::endpoints | fixy::session::watch::detail::endpoint_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage
 keep | include/fixy/session/Watch.h | member | fixy::session::watch::detail::registry::threads | fixy::session::watch::detail::thread_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage

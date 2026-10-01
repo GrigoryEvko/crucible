@@ -12,10 +12,10 @@
 #include <crucible/ledger/Ledger.h>
 #include <foundation/reflect/EnumName.h>
 
+#include "padding_bytes.h"
 #include "test_assert.h"
 
 #include <array>
-#include <bit>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -748,44 +748,14 @@ void test_store_is_bounded() {
 
 // ── Layout ────────────────────────────────────────────────────────────
 
-// With -ftrivial-auto-var-init=zero, GCC writes zero to each padding byte of
-// each automatic object that has an initializer, and of each object that a
-// return statement makes.  For a Ledger, a RefreshQueue or a RefreshLog, it
-// writes one store for each padding hole of each of the 256 elements, with no
-// loop.  __builtin_clear_padding writes zero to the same bytes.  If each byte
-// of an element keeps its value after the call, the element has no padding
-// byte.
-template <class Element>
-[[nodiscard]] std::size_t padding_byte_count() noexcept {
-    constexpr unsigned char kFill = 0xA5;
-    std::array<unsigned char, sizeof(Element)> filled{};
-    filled.fill(kFill);
-    auto element = std::bit_cast<Element>(filled);
-    __builtin_clear_padding(&element);
-    const auto kept = std::bit_cast<std::array<unsigned char, sizeof(Element)>>(element);
-    std::size_t padding_bytes = 0;
-    for (const unsigned char byte : kept) {
-        if (byte != kFill) {
-            ++padding_bytes;
-        }
-    }
-    return padding_bytes;
-}
-
-void expect_no_padding_byte(const char* element_name, std::size_t padding_bytes) {
-    if (padding_bytes != 0u) {
-        std::fprintf(stderr,
-                     "test_ledger: %s has %zu padding bytes.  Make each one a member, as Verdict.h does with "
-                     "pad.\n",
-                     element_name, padding_bytes);
-    }
-    assert(padding_bytes == 0u);
-}
-
+// A Ledger, a RefreshQueue and a RefreshLog each hold 256 elements, and each
+// Ledger holds one CompetenceReport.  With -ftrivial-auto-var-init=zero, each
+// padding byte of them costs one store at each return (padding_bytes.h).
 void test_list_elements_have_no_padding_byte() {
-    expect_no_padding_byte("LedgerEntry", padding_byte_count<ledger::LedgerEntry>());
-    expect_no_padding_byte("RefreshRequest", padding_byte_count<ledger::RefreshRequest>());
-    expect_no_padding_byte("RefreshRecord", padding_byte_count<ledger::RefreshRecord>());
+    crucible::test::expect_no_padding_byte<^^ledger::LedgerEntry>();
+    crucible::test::expect_no_padding_byte<^^ledger::RefreshRequest>();
+    crucible::test::expect_no_padding_byte<^^ledger::RefreshRecord>();
+    crucible::test::expect_no_padding_byte<^^ledger::CompetenceReport>();
 
     std::printf("  test_list_elements_have_no_padding_byte:   PASSED\n");
 }

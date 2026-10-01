@@ -533,10 +533,17 @@ inline void forget_records_in_child() noexcept {
 
 // One link of a wait-for chain: a thread waits on an endpoint, and the
 // peer of that endpoint is held by the next thread.
+//
+// pad holds the four bytes after the peer, so a link has no padding byte.
+// With -ftrivial-auto-var-init=zero, GCC writes zero to each padding hole of
+// each link of the chain that trace_chain returns, one store for each hole.
+// test/fixy/test_session_handle.cpp makes sure that the link has no padding
+// byte.
 struct chain_link {
     std::uint32_t endpoint = 0;
     std::uint32_t endpoint_generation = 0;
     std::uint32_t peer = 0;
+    std::array<std::uint8_t, 4> pad{};
     std::uint64_t holder = 0;
     std::uint64_t holder_epoch = 0;
 
@@ -581,9 +588,13 @@ struct wait_chain {
             || thread.generation.load(std::memory_order_acquire) != generation_of(holder)) {
             return chain;
         }
-        chain.links[chain.count++] =
-            chain_link{current, waiting.generation.load(std::memory_order_acquire), index_of(peer), holder,
-                       thread.wait_epoch.load(std::memory_order_acquire)};
+        chain.links[chain.count++] = chain_link{
+            .endpoint = current,
+            .endpoint_generation = waiting.generation.load(std::memory_order_acquire),
+            .peer = index_of(peer),
+            .holder = holder,
+            .holder_epoch = thread.wait_epoch.load(std::memory_order_acquire),
+        };
         if (holder == self) {
             chain.is_cycle = true;
             return chain;

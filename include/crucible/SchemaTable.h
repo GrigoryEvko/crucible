@@ -32,10 +32,16 @@ namespace crucible {
 
 static constexpr uint32_t SCHEMA_TABLE_CAP = 512;
 
+// pad holds the four bytes after the length, so the entry has no padding
+// byte.  With -ftrivial-auto-var-init=zero, GCC writes zero to each padding
+// hole of each of the 512 entries of an automatic table, one store for each
+// hole.  test/test_schema_table.cpp makes sure that the entry has no padding
+// byte.
 struct SchemaEntry {
     SchemaHash hash;
     const char* name = nullptr;  // owned: malloc'd copy, freed in clear()
     uint32_t name_len = 0;  // cached byte length; excludes trailing NUL
+    uint8_t pad[4]{};
 };
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SchemaEntry);
