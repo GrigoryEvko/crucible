@@ -52,7 +52,6 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
-#include <foundation/diag/Catalog.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/effects/Ctx.h>
@@ -1131,16 +1130,10 @@ public:
     }
 };
 
-[[noreturn]] CRUCIBLE_COLD inline void shared_permission_pool_saturated_abort_() noexcept {
-    using Tag = ::foundation::diag::SharedPermissionPoolSaturated;
-    std::fprintf(stderr,
-                 "crucible: fatal contract violation: %.*s\n"
-                 "  description: %.*s\n"
-                 "  remediation: %.*s\n",
-                 static_cast<int>(Tag::name.size()), Tag::name.data(), static_cast<int>(Tag::description.size()),
-                 Tag::description.data(), static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
-    std::abort();
-}
+// A lend found the share count at its maximum.  The body is in
+// src/foundation/Permission.cpp: it prints the text of the catalog tag
+// SharedPermissionPoolSaturated, and only that file reads the catalog.
+[[noreturn]] CRUCIBLE_COLD void shared_permission_pool_saturated_abort_() noexcept;
 
 // Each guard keeps a pointer into its pool, and its destructor writes
 // the pool's count.  A pool that ends while a guard lives would take that

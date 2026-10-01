@@ -43,8 +43,8 @@ int g_failures = 0;
 // The first and last tags are read out of the catalog rather than named
 // here.  Naming one would make every append to the catalog redden this
 // file, which tells the appender nothing about what actually broke.
-using LeadingTag = std::tuple_element_t<0, diag::Catalog>;
-using TrailingTag = std::tuple_element_t<diag::catalog_size - 1, diag::Catalog>;
+using LeadingTag = std::tuple_element_t<0, diag::Catalog<>>;
+using TrailingTag = std::tuple_element_t<diag::catalog_size - 1, diag::Catalog<>>;
 
 static_assert(diag::category_of_v<LeadingTag> == diag::categories_v.front());
 static_assert(diag::category_of_v<TrailingTag> == diag::categories_v.back());

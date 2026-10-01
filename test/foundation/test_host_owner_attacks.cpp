@@ -12,9 +12,13 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <latch>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -123,6 +127,65 @@ static_assert(!std::is_convertible_v<ProducerCtx, UnbrandedCtx> && !std::is_cons
     return other_thread_can_claim && producer.claim.is_claimable_by_caller();
 }
 
+// One brand for each thread of the identity test, so the threads hold
+// claims of different brands at the same time.
+template <std::size_t Index>
+struct NumberedProducer {
+    fe::host::ProducerClaim<NumberedProducer> claim;
+};
+
+inline constexpr std::size_t identity_thread_count = 8;
+using IdentityIndices = std::make_index_sequence<identity_thread_count>;
+
+template <std::size_t... Index>
+using NumberedProducers = std::tuple<NumberedProducer<Index>...>;
+
+template <std::size_t... Index>
+[[nodiscard]] auto numbered_producers(std::index_sequence<Index...>) -> NumberedProducers<Index...>;
+
+using IdentityProducers = decltype(numbered_producers(IdentityIndices{}));
+
+// Thread `self` wins the claim of its own brand.
+template <std::size_t... Index>
+void claim_own(IdentityProducers& producers, std::size_t self, std::index_sequence<Index...>) {
+    ((Index == self ? static_cast<void>(std::get<Index>(producers).claim.mint_producer_context()) : void()), ...);
+}
+
+// For each brand, true when the calling thread can take its claim.
+template <std::size_t... Index>
+[[nodiscard]] std::array<bool, identity_thread_count> claimable_by_caller(IdentityProducers& producers,
+                                                                          std::index_sequence<Index...>) {
+    return {std::get<Index>(producers).claim.is_claimable_by_caller()...};
+}
+
+// A claim tells threads apart by the identity of the thread.  Each of
+// eight threads wins the claim of its own brand, and a latch keeps every
+// thread alive while each one reads every claim.  A thread can still take
+// its own claim, so its identity did not change between the win and the
+// read.  It cannot take the claim of another thread, so no two live
+// threads share an identity.
+[[nodiscard]] inline bool live_threads_have_distinct_stable_identities() {
+    IdentityProducers producers;
+    std::array<std::array<bool, identity_thread_count>, identity_thread_count> reads{};
+    std::latch all_claimed{static_cast<std::ptrdiff_t>(identity_thread_count)};
+    {
+        std::array<std::jthread, identity_thread_count> threads;
+        for (std::size_t self = 0; self < identity_thread_count; ++self) {
+            threads[self] = std::jthread([&producers, &reads, &all_claimed, self] {
+                claim_own(producers, self, IdentityIndices{});
+                all_claimed.arrive_and_wait();
+                reads[self] = claimable_by_caller(producers, IdentityIndices{});
+            });
+        }
+    }
+    for (std::size_t self = 0; self < identity_thread_count; ++self) {
+        for (std::size_t other = 0; other < identity_thread_count; ++other) {
+            if (reads[self][other] != (self == other)) return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace host_owner_attacks
 
 int main() {
@@ -133,6 +196,12 @@ int main() {
     }
     if (!a_fresh_claim_is_claimable_from_any_thread()) {
         std::fprintf(stderr, "FAIL: an unused producer claim refused a thread\n");
+        return EXIT_FAILURE;
+    }
+    if (!live_threads_have_distinct_stable_identities()) {
+        std::fprintf(stderr,
+                     "FAIL: a thread could take the claim of another live thread, or could not take its own claim, "
+                     "so two live threads shared an identity or a thread lost its identity\n");
         return EXIT_FAILURE;
     }
     std::printf("test_host_owner_attacks: every owner is complete, and a claim binds its first thread\n");

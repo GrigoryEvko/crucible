@@ -35,7 +35,6 @@ include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
 include/fixy/Insights.h | 0 | 24
 function static_assert | include/crucible/Graph.h | 1
-function static_assert | include/foundation/effects/Ctx.h | 1
 function static_assert | include/foundation/effects/Effect.h | 1
 eager evaluation | include/crucible/RecipeRegistry.h | 1
 eager evaluation | include/crucible/Serialize.h | 3
@@ -62,7 +61,7 @@ eager evaluation | include/foundation/algebra/Modality.h | 1
 eager evaluation | include/foundation/algebra/lattices/MemoryScopeLattice.h | 2
 eager evaluation | include/foundation/algebra/lattices/NumaNodeLattice.h | 1
 eager evaluation | include/foundation/algebra/lattices/StalenessSemiring.h | 2
-eager evaluation | include/foundation/diag/Catalog.h | 5
+eager evaluation | include/foundation/diag/Catalog.h | 2
 eager evaluation | include/foundation/diag/RowHash.h | 2
 eager evaluation | include/foundation/diag/RowMismatch.h | 2
 eager evaluation | include/foundation/effects/Effect.h | 7

@@ -1191,8 +1191,8 @@ namespace detail {
 // and inside one loop after its first step when it names one.
 [[nodiscard]] consteval ::foundation::algebra::transition::well_formed_algebra::position
 position_of(std::meta::info loop_ctx) {
-    if (std::meta::dealias(inner_loop_ctx_of(loop_ctx)) == ^^void) return {0, true};
-    return {1, true};
+    if (std::meta::dealias(inner_loop_ctx_of(loop_ctx)) == ^^void) return {false, true};
+    return {true, true};
 }
 
 // A function at namespace scope that is not a template, so no

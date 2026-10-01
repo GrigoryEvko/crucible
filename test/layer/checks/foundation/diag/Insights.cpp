@@ -26,7 +26,7 @@ static_assert(insight_provider<EpochMismatch>::severity == Severity::Error,
 // fails here rather than joining a hand list nobody extends.
 template <std::size_t... Is>
 [[nodiscard]] consteval bool every_catalog_tag_has_substantive_insights(std::index_sequence<Is...>) noexcept {
-    return (HasSubstantiveInsights<std::tuple_element_t<Is, Catalog>> && ...);
+    return (HasSubstantiveInsights<std::tuple_element_t<Is, Catalog<>>> && ...);
 }
 static_assert(every_catalog_tag_has_substantive_insights(std::make_index_sequence<catalog_size>{}),
               "a catalog tag has no insight_provider specialization, or one of its prose fields is "

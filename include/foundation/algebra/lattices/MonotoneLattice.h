@@ -26,7 +26,6 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 
-#include <cmath>
 #include <concepts>
 #include <contracts>
 #include <cstdint>
@@ -84,7 +83,7 @@ struct MonotoneLattice {
     // instantiations pay for it.
     [[nodiscard]] static constexpr bool is_nan_safe(T const& x) noexcept {
         if constexpr (std::is_floating_point_v<T>) {
-            return !std::isnan(x);
+            return !__builtin_isnan(x);
         } else {
             return true;
         }

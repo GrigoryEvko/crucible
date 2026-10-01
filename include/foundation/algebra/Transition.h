@@ -221,10 +221,13 @@
 // changes an answer at any depth.  The registry alone decides what a
 // node is, and a seal closes the registry.
 //
-// Complexity: each fold visits each node of the spine once, so it is
-// linear in the size of the protocol.  Refinement visits each pair of
-// nodes at most once, so it is O(|T|·|U|) on the two type graphs
-// (Udomsrirungruang and Yoshida, POPL 2025, section 5).
+// Complexity: a translation unit reads the view of each type once, and
+// each fold computes its result for each distinct (type, algebra,
+// context) once.  So a fold is linear in the distinct subtrees of the
+// protocol, and a subtree that two protocols share costs one read in the
+// second.  Refinement visits each pair of graph nodes at most once, so it
+// is O(|T|·|U|) on the two type graphs (Udomsrirungruang and Yoshida,
+// POPL 2025, section 5).  A graph has one node for each distinct subtree.
 
 #include <foundation/Platform.h>
 #include <foundation/reflect/Hash.h>
@@ -235,6 +238,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace foundation::algebra::transition {
@@ -324,6 +328,27 @@ struct seal {
 };
 
 inline constexpr std::size_t npos = static_cast<std::size_t>(-1);
+
+// A run of elements in static storage.  It is a structural type, so a
+// constant of it can be read back through reflection, and a variable
+// template can keep it as the one answer for its arguments.
+template <class T>
+struct static_run {
+    const T* data = nullptr;
+    std::size_t length = 0;
+
+    [[nodiscard]] constexpr const T& operator[](std::size_t index) const noexcept { return data[index]; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return length; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return length == 0; }
+    [[nodiscard]] constexpr const T* begin() const noexcept { return data; }
+    [[nodiscard]] constexpr const T* end() const noexcept { return data + length; }
+};
+
+template <class T>
+[[nodiscard]] consteval static_run<T> to_static_run(const std::vector<T>& values) {
+    const std::span<const T> stored = std::define_static_array(values);
+    return static_run<T>{stored.data(), stored.size()};
+}
 
 // ── The registry ──────────────────────────────────────────────────────
 
@@ -541,9 +566,11 @@ namespace detail {
 
 }  // namespace detail
 
-// The first rule this registration breaks, or none.  A shape with no
-// registration is not incoherent: the fold refuses it on its own.
-[[nodiscard]] consteval coherence_verdict check_combinator(std::meta::info registry, std::meta::info shape) {
+namespace detail {
+
+// The first rule this registration breaks, read now.  check_combinator
+// below keeps the answer for each shape.
+[[nodiscard]] consteval coherence_verdict check_combinator_now(std::meta::info registry, std::meta::info shape) {
     const combinator_lookup own = lookup_combinator(registry, shape);
     if (!own.is_found) return {};
     const combinator& entry = own.entry;
@@ -597,6 +624,19 @@ namespace detail {
     }
     if (mirror.keyed_choice != keyed.entry.dual) return {incoherence::keyed_choice_not_dual, shape};
     return {};
+}
+
+}  // namespace detail
+
+// The coherence of one shape, read once per translation unit.
+template <std::meta::info Registry, std::meta::info Shape>
+inline constexpr coherence_verdict coherence_v = detail::check_combinator_now(Registry, Shape);
+
+// The first rule this registration breaks, or none.  A shape with no
+// registration is not incoherent: the fold refuses it on its own.
+[[nodiscard]] consteval coherence_verdict check_combinator(std::meta::info registry, std::meta::info shape) {
+    return std::meta::extract<coherence_verdict>(std::meta::substitute(
+        ^^coherence_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(shape)}));
 }
 
 // The first incoherent registration of the registry, or none.
@@ -664,6 +704,8 @@ namespace detail {
 
 // ── One node ──────────────────────────────────────────────────────────
 
+// The branches live in static storage, so a node is a structural type,
+// and decompose keeps one node for each type.
 struct node {
     std::meta::info type{};
     bool is_registered = false;
@@ -673,16 +715,16 @@ struct node {
     std::meta::info next{};
     std::meta::info annotation{};
     std::meta::info value{};
-    std::vector<std::meta::info> branches{};
+    static_run<std::meta::info> branches{};
 };
 
-// The registered view of one type.  A type whose shape has no
-// registration, or whose arguments do not match the layout of its kind,
-// is not registered.  Complexity: linear in the number of arguments.
-[[nodiscard]] consteval node decompose(std::meta::info registry, std::meta::info type) {
+namespace detail {
+
+// The registered view of one type, read now.  `type` is a dealiased
+// type.  decompose below keeps the answer for each type.
+[[nodiscard]] consteval node decompose_now(std::meta::info registry, std::meta::info type) {
     node result{};
-    result.type = std::meta::dealias(type);
-    if (!std::meta::is_type(result.type)) return result;
+    result.type = type;
     const combinator_lookup lookup = lookup_combinator(registry, shape_of(result.type));
     if (!lookup.is_found) return result;
     result.entry = lookup.entry;
@@ -723,13 +765,15 @@ struct node {
                 result.annotation = std::meta::dealias(arguments[0]);
                 first = 1;
             }
+            std::vector<std::meta::info> branches;
             for (std::size_t index = first; index < arguments.size(); ++index) {
                 if (!std::meta::is_type(arguments[index])) {
                     result.is_malformed = true;
                     break;
                 }
-                result.branches.push_back(std::meta::dealias(arguments[index]));
+                branches.push_back(std::meta::dealias(arguments[index]));
             }
+            result.branches = to_static_run(branches);
             break;
         }
         default:
@@ -738,6 +782,29 @@ struct node {
     }
     if (result.is_malformed) result.is_registered = false;
     return result;
+}
+
+}  // namespace detail
+
+// The registered view of one type, read once per translation unit.
+template <std::meta::info Registry, std::meta::info Type>
+inline constexpr node node_v = detail::decompose_now(Registry, Type);
+
+// The registered view of one type.  A type whose shape has no
+// registration, or whose arguments do not match the layout of its kind,
+// is not registered.  The view of a type is read once per translation
+// unit, so each walk that meets a type again, in the same protocol or in
+// another one, reads the kept view.  Complexity: linear in the number of
+// arguments at the first read of a type.
+[[nodiscard]] consteval node decompose(std::meta::info registry, std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    if (!std::meta::is_type(dealiased)) {
+        node result{};
+        result.type = dealiased;
+        return result;
+    }
+    return std::meta::extract<node>(std::meta::substitute(
+        ^^node_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(dealiased)}));
 }
 
 [[nodiscard]] consteval bool is_registered(std::meta::info registry, std::meta::info type) {
@@ -932,10 +999,25 @@ using node_reader = node_members (*)(std::meta::info);
 // and never passed.  `child(type, context)` gives the result for one
 // child.  An algebra asks only for the children it needs, so a refusal
 // stops the walk.
+//
+// The algebra and its context are structural types, and the result of an
+// algebra depends only on the node, the algebra and the context.  So the
+// fold keeps one result for each (type, algebra, context) in a
+// translation unit, and a subtree that occurs again, in the same protocol
+// or in another one, costs one read.  An algebra keeps its context small
+// for this reason: a context that counts without a bound gives a new
+// result for each count.
 
 template <class Algebra>
 [[nodiscard]] consteval typename Algebra::result fold(std::meta::info registry, std::meta::info type,
-                                                      const Algebra& algebra, typename Algebra::context context) {
+                                                      const Algebra& algebra, typename Algebra::context context);
+
+namespace detail {
+
+// The fold at one node, read now.  `type` is dealiased.
+template <class Algebra>
+[[nodiscard]] consteval typename Algebra::result fold_now(std::meta::info registry, std::meta::info type,
+                                                          const Algebra& algebra, typename Algebra::context context) {
     const node view = decompose(registry, type);
     if (!view.is_registered) return algebra.unregistered(view, context);
     const auto child = [&](std::meta::info child_type, typename Algebra::context child_context) {
@@ -960,6 +1042,21 @@ template <class Algebra>
             break;
     }
     return algebra.unregistered(view, context);
+}
+
+}  // namespace detail
+
+// The result of the fold at one node, read once per translation unit.
+template <std::meta::info Registry, std::meta::info Type, auto Algebra, auto Context>
+inline constexpr typename std::remove_cvref_t<decltype(Algebra)>::result fold_v =
+    detail::fold_now(Registry, Type, Algebra, Context);
+
+template <class Algebra>
+[[nodiscard]] consteval typename Algebra::result fold(std::meta::info registry, std::meta::info type,
+                                                      const Algebra& algebra, typename Algebra::context context) {
+    return std::meta::extract<typename Algebra::result>(std::meta::substitute(
+        ^^fold_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(std::meta::dealias(type)),
+                   std::meta::reflect_constant(algebra), std::meta::reflect_constant(context)}));
 }
 
 // ── Algebras ──────────────────────────────────────────────────────────
@@ -1007,11 +1104,11 @@ namespace detail {
 // A branch is a label unless its head, under wrappers and binders, is an
 // input step whose payload a payload registration marks as no label.  A
 // binder at the head is looked through, because its first action is the
-// first action of its body.  Complexity: linear in the wrappers and
-// binders at the head.
-[[nodiscard]] consteval branch_head head_of_branch(std::meta::info registry, std::meta::info branch) {
+// first action of its body.  `root` is a dealiased type, and
+// head_of_branch below keeps the answer for each type.  Complexity:
+// linear in the wrappers and binders at the head.
+[[nodiscard]] consteval branch_head head_of_branch_now(std::meta::info registry, std::meta::info root) {
     branch_head result{};
-    const std::meta::info root = std::meta::dealias(branch);
     node head = decompose(registry, strip_wrappers(registry, root));
     while (head.is_registered && head.entry.kind == shape_kind::binder) {
         head = decompose(registry, strip_wrappers(registry, head.next));
@@ -1027,6 +1124,20 @@ namespace detail {
         result.label_word = label_word_of(result.label_key);
     }
     return result;
+}
+
+}  // namespace detail
+
+// The head of one branch, read once per translation unit.
+template <std::meta::info Registry, std::meta::info Branch>
+inline constexpr branch_head branch_head_v = detail::head_of_branch_now(Registry, Branch);
+
+namespace detail {
+
+[[nodiscard]] consteval branch_head head_of_branch(std::meta::info registry, std::meta::info branch) {
+    return std::meta::extract<branch_head>(
+        std::meta::substitute(^^branch_head_v, {std::meta::reflect_constant(registry),
+                                                std::meta::reflect_constant(std::meta::dealias(branch))}));
 }
 
 [[nodiscard]] consteval bool is_label_branch(std::meta::info registry, std::meta::info branch) {
@@ -1348,9 +1459,13 @@ struct empty_choice_algebra {
 //   8. A payload that is a protocol is well-formed outside every binder.
 //      The endpoint travels to another participant, so a back node of it
 //      cannot name a binder of the carrier.
+//
+// A back node binds the nearest binder, so a rule asks only whether a
+// binder stands above a node, never how many.  The position holds that
+// one bit, and the fold keeps at most four results for each type.
 struct well_formed_algebra {
     struct position {
-        std::size_t depth = 0;
+        bool is_in_binder = false;
         bool is_guarded = true;
     };
     using result = bool;
@@ -1363,7 +1478,7 @@ struct well_formed_algebra {
     }
     template <class Child>
     consteval bool back(const node& view, context ctx, const Child&) const {
-        return view.entry.is_plain && ctx.depth > 0 && ctx.is_guarded;
+        return view.entry.is_plain && ctx.is_in_binder && ctx.is_guarded;
     }
     template <class Child>
     consteval bool step(const node& view, context ctx, const Child& child) const {
@@ -1373,23 +1488,23 @@ struct well_formed_algebra {
             if (rule.is_found && !rule.entry.is_sendable) return false;
         }
         if (is_keyed_step(registry, view) && view.entry.keyed_choice == std::meta::info{}) return false;
-        if (view.entry.payload_is_protocol && !child(view.payload, position{0, true})) return false;
-        return child(view.next, position{ctx.depth, true});
+        if (view.entry.payload_is_protocol && !child(view.payload, position{false, true})) return false;
+        return child(view.next, position{ctx.is_in_binder, true});
     }
     template <class Child>
     consteval bool choice(const node& view, context ctx, const Child& child) const {
         if (!view.entry.is_plain) return false;
         if (fault_of_choice(registry, view) != choice_fault::none) return false;
         for (const std::meta::info branch : view.branches) {
-            if (!child(branch, position{ctx.depth, true})) return false;
+            if (!child(branch, position{ctx.is_in_binder, true})) return false;
         }
         return true;
     }
     template <class Child>
-    consteval bool binder(const node& view, context ctx, const Child& child) const {
+    consteval bool binder(const node& view, context, const Child& child) const {
         if (!view.entry.is_plain) return false;
         if (fold(registry, view.next, terminal_algebra{}, 0)) return false;
-        return child(view.next, position{ctx.depth + 1, false});
+        return child(view.next, position{true, false});
     }
     template <class Child>
     consteval bool wrapper(const node& view, context ctx, const Child& child) const {
@@ -1587,7 +1702,7 @@ struct compose_at_choice_algebra {
     template <class Child>
     consteval std::meta::info choice(const node& view, context, const Child&) const {
         if (index >= view.branches.size()) return {};
-        std::vector<std::meta::info> mapped = view.branches;
+        std::vector<std::meta::info> mapped(view.branches.begin(), view.branches.end());
         mapped[index] = fold(registry, mapped[index], compose_algebra{registry, suffix}, 0);
         return std::meta::substitute(view.entry.shape,
                                      detail::choice_arguments(registry, view, view.entry.shape, mapped));
@@ -1667,47 +1782,47 @@ namespace detail {
 
 // Finds a node by the binders above it.  `target` names what to find: a
 // back node with no binder above it, or a terminal that composition
-// replaces with a binder above it.  The context is the number of binders
-// above the node.
+// replaces with a binder above it.  The context is true when a binder
+// stands above the node.  Each target asks only that one bit.
 struct binding_probe_algebra {
     enum class probe : std::uint8_t {
         open_back,
         bound_terminal
     };
     using result = bool;
-    using context = std::size_t;
+    using context = bool;
     probe target = probe::open_back;
 
     template <class Child>
-    consteval bool terminal(const node& view, context depth, const Child&) const {
-        return target == probe::bound_terminal && depth > 0 && !view.entry.absorbs_suffix;
+    consteval bool terminal(const node& view, context is_bound, const Child&) const {
+        return target == probe::bound_terminal && is_bound && !view.entry.absorbs_suffix;
     }
     template <class Child>
-    consteval bool back(const node&, context depth, const Child&) const {
-        return target == probe::open_back && depth == 0;
+    consteval bool back(const node&, context is_bound, const Child&) const {
+        return target == probe::open_back && !is_bound;
     }
     template <class Child>
-    consteval bool step(const node& view, context depth, const Child& child) const {
-        return child(view.next, depth);
+    consteval bool step(const node& view, context is_bound, const Child& child) const {
+        return child(view.next, is_bound);
     }
     template <class Child>
-    consteval bool choice(const node& view, context depth, const Child& child) const {
+    consteval bool choice(const node& view, context is_bound, const Child& child) const {
         for (const std::meta::info branch : view.branches) {
-            if (child(branch, depth)) return true;
+            if (child(branch, is_bound)) return true;
         }
         return false;
     }
     template <class Child>
-    consteval bool binder(const node& view, context depth, const Child& child) const {
-        return child(view.next, depth + 1);
+    consteval bool binder(const node& view, context, const Child& child) const {
+        return child(view.next, true);
     }
     template <class Child>
-    consteval bool wrapper(const node& view, context depth, const Child& child) const {
-        return child(view.next, depth);
+    consteval bool wrapper(const node& view, context is_bound, const Child& child) const {
+        return child(view.next, is_bound);
     }
     template <class Child>
-    consteval bool marker(const node& view, context depth, const Child& child) const {
-        return child(view.next, depth);
+    consteval bool marker(const node& view, context is_bound, const Child& child) const {
+        return child(view.next, is_bound);
     }
     consteval bool unregistered(const node&, context) const { return true; }
 };
@@ -1715,7 +1830,7 @@ struct binding_probe_algebra {
 // True when `type` holds a back node that no binder of `type` binds.
 // Complexity: linear in the size of the protocol.
 [[nodiscard]] consteval bool has_open_back(std::meta::info registry, std::meta::info type) {
-    return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::open_back}, std::size_t{0});
+    return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::open_back}, false);
 }
 
 // True when composition replaces a terminal of `type` that stands below a
@@ -1723,7 +1838,7 @@ struct binding_probe_algebra {
 // Complexity: linear in the size of the protocol.
 [[nodiscard]] consteval bool has_bound_terminal(std::meta::info registry, std::meta::info type,
                                                 std::size_t binders_above = 0) {
-    return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::bound_terminal}, binders_above);
+    return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::bound_terminal}, binders_above > 0);
 }
 
 // ── The payload preorder ──────────────────────────────────────────────
@@ -1816,12 +1931,21 @@ inline constexpr bool subsorts_v = detail::subsorts_within(Axioms, Sub, Super, d
 
 // ── The type graph ────────────────────────────────────────────────────
 //
-// One node per occurrence of a combinator.  A back node points to the
-// binder it binds.  A binder points to its body.  A keyed step outside a
-// choice is two nodes: the keyed choice of its registration, and the
-// step as the one branch of that choice.  The graph of a protocol then
-// has as many nodes as the protocol has combinators, plus one for each
-// such step.
+// One node per distinct subtree.  A back node points to the binder it
+// binds.  A binder points to its body.  A keyed step outside a choice is
+// two nodes: the keyed choice of its registration, and the step as the
+// one branch of that choice.
+//
+// Two occurrences of one type share one node when both are branches of a
+// choice or neither is, and when the back nodes of the type with no
+// binder in the type bind the same binder.  A back node binds the nearest
+// binder, so a type with no such back node has the same future at each
+// occurrence, and a type with one has the same future under the same
+// nearest binder.  Each relation over the graph then gives the answer of
+// the graph with one node per occurrence, and it visits each distinct
+// subtree once.  A protocol that holds a subtree many times, such as a
+// loop unfolded at each of its back nodes, keeps a graph of the size of
+// its distinct subtrees.
 
 // `is_label` is the answer of the payload rules for this node as a
 // branch, and `head_payload` is the payload of its head step under its
@@ -1854,17 +1978,41 @@ struct graph_node {
     bool can_end = false;
 };
 
+// One node that the build made, under the identity that it shares: its
+// type, whether it is a branch, and the node of the binder that the back
+// nodes of the type with no binder in the type bind, or npos.
+struct built_node {
+    std::meta::info type{};
+    bool is_branch = false;
+    std::size_t scope = npos;
+    std::size_t index = npos;
+};
+
+// `built` lists each node that the build made, so an occurrence of a
+// subtree that the graph holds reads its node.
 struct type_graph {
     std::vector<graph_node> nodes{};
     std::vector<std::size_t> children{};
     std::vector<std::size_t> sorted_labels{};
     std::meta::info unregistered{};
+    std::vector<built_node> built{};
 };
 
 namespace detail {
 
 consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type,
                                    std::vector<std::size_t>& binders, bool is_branch);
+
+// The node that the graph holds for this identity, or npos.  Complexity:
+// linear in the nodes of the graph.  A protocol has few distinct
+// subtrees, and each compare is one compare of a reflection.
+[[nodiscard]] consteval std::size_t find_built(const type_graph& graph, std::meta::info type, bool is_branch,
+                                               std::size_t scope) {
+    for (const built_node& made : graph.built) {
+        if (made.type == type && made.is_branch == is_branch && made.scope == scope) return made.index;
+    }
+    return npos;
+}
 
 // The note of the choice that a keyed step stands for: the note that the
 // payload rule names for an input step, or none.  A note of a template
@@ -1914,10 +2062,15 @@ consteval std::size_t add_keyed_step(std::meta::info registry, type_graph& graph
 }
 
 // `is_branch` is true for a branch of a choice, where a keyed step is the
-// branch itself and not a choice of its own.
+// branch itself and not a choice of its own.  An occurrence whose identity
+// the graph holds reads that node, and the build does not enter it again.
 consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type,
                                    std::vector<std::size_t>& binders, bool is_branch) {
     const node view = decompose(registry, type);
+    const std::size_t scope = binders.empty() || !has_open_back(registry, view.type) ? npos : binders.back();
+    const std::size_t shared = find_built(graph, view.type, is_branch, scope);
+    if (shared != npos) return shared;
+    graph.built.push_back(built_node{view.type, is_branch, scope, graph.nodes.size()});
     if (!is_branch && view.is_registered && view.entry.keyed_choice != std::meta::info{}
         && is_keyed_step(registry, view)) {
         return add_keyed_step(registry, graph, view, binders);
@@ -2004,10 +2157,11 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
 
 // Marks each node from which a path of the graph reaches a terminal.  A
 // back node leads to its binder, and a free back node leads nowhere.
-// Children stand after their parent in the node order, so one pass in
-// the reverse order settles every edge of the tree, and each further pass
-// settles one more level of loop-back.  Complexity: O(N·d) for N nodes
-// and d levels of loops inside loops, O(N²) at worst.
+// A node stands after the parent that made it, so one pass in the reverse
+// order settles each edge to a node that its parent made.  Each further
+// pass settles one more level of loop-back, or one more edge to a shared
+// node that an earlier parent made.  Complexity: O(N²) at worst for N
+// nodes.
 consteval void mark_can_end(type_graph& graph) {
     for (bool is_changed = true; is_changed;) {
         is_changed = false;
@@ -2050,23 +2204,6 @@ consteval void mark_can_end(type_graph& graph) {
     detail::add_to_graph(registry, graph, type, binders, false);
     detail::mark_can_end(graph);
     return graph;
-}
-
-// A run of elements in static storage.  It is a structural type, so a
-// constant of it can be read back through reflection.
-template <class T>
-struct static_run {
-    const T* data = nullptr;
-    std::size_t length = 0;
-
-    [[nodiscard]] constexpr const T& operator[](std::size_t index) const { return data[index]; }
-    [[nodiscard]] constexpr std::size_t size() const { return length; }
-};
-
-template <class T>
-[[nodiscard]] consteval static_run<T> to_static_run(const std::vector<T>& values) {
-    const std::span<const T> stored = std::define_static_array(values);
-    return static_run<T>{stored.data(), stored.size()};
 }
 
 // A graph in static storage.  The graph of one protocol is built once

@@ -30,7 +30,6 @@
 #include <iterator>
 #include <meta>
 #include <string_view>
-#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -342,13 +341,15 @@ struct BrandRegistry {
 // of the brand, which is hidden, so each shared library would hold a copy.
 CRUCIBLE_PROCESS_WIDE inline constinit BrandRegistry brand_registry{};
 
-// The identity of the calling thread, the same in every shared library.  Zero
-// names no thread.  Like a std::thread::id, a value can name a new thread
-// after the thread that owned it ends.
+// The identity of the calling thread, the same in every shared library: the
+// address of the thread control block, which the thread pointer register
+// holds.  Each live thread has its own block, so two live threads never have
+// one identity, and one thread keeps its identity for its life.  The block
+// of a live thread is never at address zero, so zero names no thread.  Like
+// a std::thread::id, a value can name a new thread after the thread that
+// owned it ends, because the runtime can give its block to the new thread.
 [[nodiscard]] inline std::uintptr_t calling_thread_identity() noexcept {
-    static_assert(sizeof(std::thread::id) == sizeof(std::uintptr_t) && std::is_trivially_copyable_v<std::thread::id>,
-                  "the identity of a thread is the bits of its std::thread::id");
-    return std::bit_cast<std::uintptr_t>(std::this_thread::get_id());
+    return std::bit_cast<std::uintptr_t>(__builtin_thread_pointer());
 }
 
 }  // namespace detail::producer_claim
@@ -397,7 +398,7 @@ public:
     // reads the thread identity and an atomic, so it is not constexpr.
     [[nodiscard]] CRUCIBLE_INLINE auto mint_producer_context() noexcept  // MINT-PATTERN-OK: reads the thread id
         -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
-        const auto current_tid = std::this_thread::get_id();
+        const std::uintptr_t current_tid = detail::producer_claim::calling_thread_identity();
         if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
             claim_or_reject_(current_tid);
         return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ForegroundOwner::key()};
@@ -407,8 +408,8 @@ public:
     // holds it.  Two threads that both ask before either claims both read
     // true, and the loser of the claim then ends the process.
     [[nodiscard]] bool is_claimable_by_caller() const noexcept {
-        const auto holder = holder_.load(std::memory_order_relaxed);
-        return holder == std::thread::id{} || holder == std::this_thread::get_id();
+        const std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
+        return holder == 0 || holder == detail::producer_claim::calling_thread_identity();
     }
 
     // True when no claim of this brand is live, or the calling thread
@@ -439,14 +440,14 @@ private:
         return key;
     }
 
-    [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::thread::id current_tid) noexcept {
-        auto holder = holder_.load(std::memory_order_relaxed);
-        if (holder == std::thread::id{}) {
+    [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::uintptr_t current_tid) noexcept {
+        std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
+        if (holder == 0) {
             // Relaxed is enough: the claim synchronizes nothing, it only
             // records which thread arrived first.  A failed exchange leaves
             // the winner's id in `holder`, which the check below reports.
             if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) {
-                BrandRecord* const record = enter_brand_(detail::producer_claim::calling_thread_identity());
+                BrandRecord* const record = enter_brand_(current_tid);
                 if (record != nullptr) {
                     entered_record_ = record;
                     return;
@@ -454,7 +455,7 @@ private:
                 // Another thread holds a live claim of this brand.  The claim
                 // is undone first, so that its destructor removes no entry
                 // that it did not make.
-                holder_.store(std::thread::id{}, std::memory_order_relaxed);
+                holder_.store(0, std::memory_order_relaxed);
                 CRUCIBLE_FATAL_INVARIANT(record != nullptr);
             }
         }
@@ -527,11 +528,10 @@ private:
 
     static void unlock_registry_(BrandRegistry& registry) noexcept { registry.lock.clear(std::memory_order_release); }
 
-    // A thread id is not a lock-free atomic on every target, and a hidden
-    // mutex on this check would put a lock on the dispatch path.
-    static_assert(std::atomic<std::thread::id>::is_always_lock_free,
-                  "std::atomic<std::thread::id> must be lock-free on this target.");
-    std::atomic<std::thread::id> holder_{};
+    // The identity of the thread that holds the claim, or zero.  An atomic
+    // word is lock-free on every target of the tree, so the check on the
+    // dispatch path takes no hidden mutex.
+    std::atomic<std::uintptr_t> holder_{0};
 
     // The record that the win of this claim entered, or null before a win.
     // The destructor leaves that record without a second scan of the

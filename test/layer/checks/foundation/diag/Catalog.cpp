@@ -81,7 +81,7 @@ static_assert(category_count == catalog_size, "Category enum cardinality and Cat
     template for (constexpr auto en : category_enumerators) {
         constexpr std::size_t index = enumerator_position(en);
         constexpr Category c = [:en:];
-        using tag = std::tuple_element_t<index, Catalog>;
+        using tag = std::tuple_element_t<index, Catalog<>>;
         mirrors = mirrors && static_cast<std::size_t>(std::to_underlying(c)) == index
                && std::is_same_v<tag, tag_of_t<c>> && std::meta::identifier_of(en) == tag::name
                && name_of(c) == tag::name && description_of(c) == tag::description
@@ -103,7 +103,7 @@ static_assert(category_mirrors_catalog(), "The Category enum and the Catalog tup
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool category_of_reverse_map_impl(std::index_sequence<Is...>) noexcept {
-    return ((category_of_v<std::tuple_element_t<Is, Catalog>> == static_cast<Category>(Is)) && ...);
+    return ((category_of_v<std::tuple_element_t<Is, Catalog<>>> == static_cast<Category>(Is)) && ...);
 }
 
 [[nodiscard]] consteval bool category_of_reverse_map() noexcept {
@@ -117,7 +117,7 @@ static_assert(category_of_reverse_map(), "category_of_v<Tag> does not round-trip
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool catalog_names_distinct_impl(std::index_sequence<Is...>) noexcept {
-    constexpr auto names = std::array<std::string_view, sizeof...(Is)>{std::tuple_element_t<Is, Catalog>::name...};
+    constexpr auto names = std::array<std::string_view, sizeof...(Is)>{std::tuple_element_t<Is, Catalog<>>::name...};
     for (std::size_t i = 0; i < names.size(); ++i) {
         for (std::size_t j = i + 1; j < names.size(); ++j) {
             if (names[i] == names[j]) return false;
@@ -136,9 +136,9 @@ static_assert(catalog_names_distinct(), "Two or more tags in Catalog share the s
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool catalog_fields_nonempty_impl(std::index_sequence<Is...>) noexcept {
-    return ((!std::tuple_element_t<Is, Catalog>::description.empty()
-             && !std::tuple_element_t<Is, Catalog>::remediation.empty()
-             && !std::tuple_element_t<Is, Catalog>::name.empty())
+    return ((!std::tuple_element_t<Is, Catalog<>>::description.empty()
+             && !std::tuple_element_t<Is, Catalog<>>::remediation.empty()
+             && !std::tuple_element_t<Is, Catalog<>>::name.empty())
             && ...);
 }
 
@@ -175,7 +175,7 @@ CRUCIBLE_DIAG_ASSERT((std::is_same_v<int, int>), HotPathViolation,
 static_assert(categories_v.size() == catalog_size, "categories_v cardinality drifted from catalog_size — both must "
                                                    "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == category_of_v<std::tuple_element_t<catalog_size - 1, Catalog>>);
+static_assert(categories_v[catalog_size - 1] == category_of_v<std::tuple_element_t<catalog_size - 1, Catalog<>>>);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(std::index_sequence<Is...>) noexcept {
