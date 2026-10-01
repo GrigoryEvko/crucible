@@ -1135,7 +1135,7 @@ All UB-adjacent and lifetime-adjacent warnings are hard errors.
 ```
 
 Non-error warnings (informational, not yet hard):
-- `-Wpadded` (off — we accept padding where it occurs)
+- `-Wpadded` (off). A class can have a padding byte, except the element type of a large fixed list, which `utils/scripts/check-padded-lists.py` rejects (§XV "Compile time")
 - `-Wsuggest-*` (off — suggestions, not errors)
 
 ---
