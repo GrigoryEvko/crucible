@@ -173,7 +173,7 @@ inline constexpr std::uint64_t kLongSweepDigest = 0xEBA0C1BEB4DB4EC1ULL;
     // The two words come from the header, so this cell fails if the pin
     // moves, and fails differently if the runtime path disagrees with the
     // constant-folded one.
-    using namespace fixy::fp::detail::polynomial_self_test;
+    using namespace fixy::fp::detail;
 
     volatile std::uint32_t u1 = 0xDEADBEEFu;
     volatile std::uint32_t u2 = 0xCAFEBABEu;
