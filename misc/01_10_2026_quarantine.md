@@ -364,6 +364,24 @@ The first part of 0i started early, on 2026-10-01, for the crucible test files w
 2. For each one: include only the header that the fixture attacks, make the tables it does not read lazy (with the 0h units), or split a test into several tests over disjoint cases.
 3. `test/neg_compile_driver.py` reads the include directives of each header as text to record the names that a lookup tried. That breaks the rule that no check reads C++ as text. Replace the scan with the compiler's own list (`-E -dI`, about 0.25 s, and only on a miss). The same pass gives a key for the three fixtures that stop with a fatal error and get no dependency file (`neg_platform_unsupported_architecture`, `neg_platform_apple_aarch64`, `neg_layer_foundation_includes_fixy`), so they can use the store too.
 
+### 7.8d Unit 0k: the compile-time checks (owner, 2026-10-01)
+
+**Goal.** Each pattern that made the build or the tests slow gives a warning or an error before it lands again. A warning does not fail. An error fails.
+
+1. **The report format** (on main at 89e31d686). `utils/scripts/check_report.py` prints each finding as `PATH:LINE: warning|error: [CHECK] MESSAGE`. A check writes its warnings to `<build>/check-warnings`, and the CI step "Check warnings" prints them, because ctest hides the output of a test that passes. `utils/scripts/budgets.txt` holds the thresholds of each measured check.
+2. **Ratchet.** Each check starts with a ledger of the violations on main. A ledger row gives a warning on each run. A new violation gives an error. An exact count cannot rise above its row, and a row cannot keep slack.
+3. **The checks**, in four units:
+
+| Unit | Check | Kind |
+|---|---|---|
+| chk-header | a `static_assert` in a non-template function body of a header; eager reflection at namespace scope of a header (R13, R14) | parse tree, new finding kinds of `header_checks` |
+| chk-static | a heavy standard header included in a header (R16); a unity build or a PCH; a padding byte in the element type of a fixed list of 64 or more elements | parse tree, compile database, compiler |
+| chk-launcher | a compile launcher that records CPU, wall time and peak memory per object; the budgets compile-cpu, compile-memory, function-size, object-text, header-alone | measured, with a ledger |
+| chk-limits | `-fconstexpr-ops-limit` toward the GCC default with reasoned exceptions; test-time from the ctest JUnit report and preset timeouts; fixture-cpu inside the fixture driver; a re-configure that rebuilds nothing | exact limit, measured, witness |
+
+4. **Thresholds.** An exact count fails at its threshold. A time fails only above the noise that the unit measures on this host, and it warns at the target.
+5. chk-header starts after the units that change `check-header-checks.py` and the fixy headers land.
+
 ### 7.9 Stage 0 order and parallelism
 
 | Wave | Units | Needs first |
