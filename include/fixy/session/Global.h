@@ -209,6 +209,35 @@ namespace detail {
     return result;
 }
 
+// True when the members of the global node `type` and of each node below
+// it agree with their arguments, as first_disagreeing_node of
+// foundation/algebra/Transition.h finds with the reader above.  The
+// children are read through the concept below, so the compiler keeps the
+// answer for each node type.  A global type and its unfolding share each
+// node of the loop body, and each projection of one global type reads the
+// same nodes.  Complexity: linear in the distinct node types, times their
+// members.
+[[nodiscard]] consteval bool global_members_agree_below(std::meta::info type);
+
+// The answer of global_members_agree_below for one node type.  It is a
+// concept, so no translation unit can specialize the answer.
+template <typename Node>
+concept GlobalMembersAgreeBelow = global_members_agree_below(^^Node);
+
+[[nodiscard]] consteval bool global_members_agree_below(std::meta::info type) {
+    namespace tr = ::foundation::algebra::transition;
+    const std::meta::info node_type = std::meta::dealias(type);
+    const tr::node_members view = global_node_members(node_type);
+    if (!view.is_node) return true;
+    if (!tr::members_agree(node_type, view.claims, view.bases)) return false;
+    for (const std::meta::info child : view.children) {
+        if (!std::meta::extract<bool>(std::meta::substitute(^^GlobalMembersAgreeBelow, {std::meta::dealias(child)}))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace detail
 
 // ── Role lists ───────────────────────────────────────────────────────

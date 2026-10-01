@@ -756,10 +756,15 @@ struct proj_walk<g::EnRouteChoice<g::Crashed<From>, To, Chosen, g::Branch<Ls, Ps
     using type = typename decltype(proj_en_route<From, To, true, Chosen, R, Reliable>(BL<Br<Ls, Ps, Cs>...>{}))::type;
 };
 
+// The kept answer of each node type of G comes first.  Only a G that has
+// a node whose members lie walks the tree again, to name the first such
+// node.
 template <typename G, typename R, typename Reliable>
 consteval auto project_under() {
     constexpr std::meta::info disagreeing =
-        ::foundation::algebra::transition::first_disagreeing_node(&g::detail::global_node_members, ^^G);
+        std::meta::extract<bool>(std::meta::substitute(^^g::detail::GlobalMembersAgreeBelow, {^^G}))
+            ? std::meta::info{}
+            : ::foundation::algebra::transition::first_disagreeing_node(&g::detail::global_node_members, ^^G);
     static_assert(disagreeing == std::meta::info{},
                   ::foundation::algebra::transition::disagreeing_message(
                       "fixy::session::diagnostic [Projection_Specialized_Global_Node]: ",

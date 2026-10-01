@@ -371,11 +371,13 @@ inline constexpr std::string_view unregistered_prefix = "fixy::session::diagnost
 inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic [Subtype_Incoherent_Registration]: ";
 
 // True when each node of the spine of the protocol is registered and
-// coherent.
+// coherent.  The two concepts of fixy/session/Protocol.h keep the answer
+// for each node type, so a node that two protocols share is read one
+// time.
 [[nodiscard]] consteval bool spine_is_sound(std::meta::info protocol) {
-    namespace tr = ::foundation::algebra::transition;
-    return tr::first_unregistered(protocol_registry, protocol) == std::meta::info{}
-        && tr::first_incoherent(protocol_registry, protocol).reason == tr::incoherence::none;
+    const std::meta::info type = std::meta::dealias(protocol);
+    return std::meta::extract<bool>(std::meta::substitute(^^::fixy::session::detail::SpineRegisteredBelow, {type}))
+        && std::meta::extract<bool>(std::meta::substitute(^^::fixy::session::detail::SpineCoherentBelow, {type}));
 }
 
 // The answer of spine_is_sound for one protocol, as a concept.

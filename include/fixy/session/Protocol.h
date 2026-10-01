@@ -540,15 +540,97 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
     return result;
 }
 
+// True when the members of the node `type` and of each node below it agree
+// with their arguments.  It reads the children through the concept below,
+// so the compiler keeps the answer for each node type, and a node that
+// many protocols share is read one time in a translation unit.  A loop
+// and its unfolding share each node of the loop.  Complexity: linear in
+// the distinct node types, times their members.
+[[nodiscard]] consteval bool members_agree_below(std::meta::info type);
+
+// The answer of members_agree_below for one node type.  It is a concept,
+// so no translation unit can specialize the answer.
+template <typename Node>
+concept MembersAgreeBelow = members_agree_below(^^Node);
+
+[[nodiscard]] consteval bool members_agree_below(std::meta::info type) {
+    namespace tr = ::foundation::algebra::transition;
+    const std::meta::info node_type = std::meta::dealias(type);
+    const tr::node_members view = session_node_members(node_type);
+    if (!view.is_node) return true;
+    if (!tr::members_agree(node_type, view.claims, view.bases)) return false;
+    for (const std::meta::info child : view.children) {
+        if (!std::meta::extract<bool>(std::meta::substitute(^^MembersAgreeBelow, {std::meta::dealias(child)}))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // The refusal of a protocol with a node whose members lie.  The refusal
 // throws, so no constant evaluation reads the answer after it.  The
 // answer is true, so a gate that holds this clause adds no second error
-// to the refusal.
+// to the refusal.  The kept answer of each node type comes first.  Only a
+// protocol that has a node whose members lie walks the tree again, to
+// name the first such node.
 consteval bool require_agreeing_members(std::meta::info protocol) {
     namespace tr = ::foundation::algebra::transition;
+    if (std::meta::extract<bool>(std::meta::substitute(^^MembersAgreeBelow, {std::meta::dealias(protocol)}))) {
+        return true;
+    }
     const std::meta::info disagreeing = tr::first_disagreeing_node(&session_node_members, protocol);
     if (disagreeing != std::meta::info{}) {
         throw std::meta::exception(refusal_text(tr::disagreeing_message(specialized_prefix, disagreeing)), disagreeing);
+    }
+    return true;
+}
+
+// The spine of a protocol, as two questions about each node and each node
+// below it on the spine: the next node and each branch.  A payload and a
+// value are not nodes.  first_unregistered and first_incoherent of
+// foundation/algebra/Transition.h ask the same two questions, and they
+// name the node that fails.  The two functions here read the children
+// through a concept, so the compiler keeps the answer for each node type,
+// as members_agree_below does.  Complexity: linear in the distinct node
+// types of the spine.
+[[nodiscard]] consteval bool spine_registered_below(std::meta::info type);
+[[nodiscard]] consteval bool spine_coherent_below(std::meta::info type);
+
+template <typename Node>
+concept SpineRegisteredBelow = spine_registered_below(^^Node);
+
+template <typename Node>
+concept SpineCoherentBelow = spine_coherent_below(^^Node);
+
+// True when each node of the spine is a registered combinator.
+[[nodiscard]] consteval bool spine_registered_below(std::meta::info type) {
+    const ::foundation::algebra::transition::node view =
+        ::foundation::algebra::transition::decompose(protocol_registry, type);
+    if (!view.is_registered) return false;
+    if (view.next != std::meta::info{}
+        && !std::meta::extract<bool>(std::meta::substitute(^^SpineRegisteredBelow, {view.next}))) {
+        return false;
+    }
+    for (const std::meta::info branch : view.branches) {
+        if (!std::meta::extract<bool>(std::meta::substitute(^^SpineRegisteredBelow, {branch}))) return false;
+    }
+    return true;
+}
+
+// True when the registration of each registered node of the spine is
+// coherent.  An unregistered node is no incoherence, as in
+// first_incoherent.
+[[nodiscard]] consteval bool spine_coherent_below(std::meta::info type) {
+    namespace tr = ::foundation::algebra::transition;
+    const tr::node view = tr::decompose(protocol_registry, type);
+    if (!view.is_registered) return true;
+    if (tr::check_combinator(protocol_registry, view.entry.shape).reason != tr::incoherence::none) return false;
+    if (view.next != std::meta::info{}
+        && !std::meta::extract<bool>(std::meta::substitute(^^SpineCoherentBelow, {view.next}))) {
+        return false;
+    }
+    for (const std::meta::info branch : view.branches) {
+        if (!std::meta::extract<bool>(std::meta::substitute(^^SpineCoherentBelow, {branch}))) return false;
     }
     return true;
 }
@@ -557,12 +639,16 @@ consteval bool require_agreeing_members(std::meta::info protocol) {
 // of the spine of the protocol must be registered, and the message names
 // the first one that is not.  A payload and a value are not nodes.  Then
 // each node must keep the members that its arguments give.  The answer is
-// true, because each refusal throws.
+// true, because each refusal throws.  The kept answer of each node type
+// comes first, and only a spine with an unregistered node walks again to
+// name it.
 consteval bool require_registered_spine(std::meta::info protocol) {
     namespace tr = ::foundation::algebra::transition;
-    const std::meta::info missing = tr::first_unregistered(protocol_registry, protocol);
-    if (missing != std::meta::info{}) {
-        throw std::meta::exception(refusal_text(tr::unregistered_message(unregistered_prefix, missing)), missing);
+    if (!std::meta::extract<bool>(std::meta::substitute(^^SpineRegisteredBelow, {std::meta::dealias(protocol)}))) {
+        const std::meta::info missing = tr::first_unregistered(protocol_registry, protocol);
+        if (missing != std::meta::info{}) {
+            throw std::meta::exception(refusal_text(tr::unregistered_message(unregistered_prefix, missing)), missing);
+        }
     }
     require_registered_head(protocol);
     return require_agreeing_members(protocol);
