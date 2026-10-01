@@ -1,0 +1,17 @@
+# utils/scripts/budgets.txt — the thresholds of the compile-time checks that measure a quantity.
+# utils/scripts/check_report.py reads this table (read_budgets, classify).
+#
+# A row:  check | warn | error | unit | what the check measures
+#
+# A value over the warning threshold gives a warning, which does not fail the check.  A value over
+# the error threshold gives an error, which fails it.  A value equal to a threshold does not exceed
+# it.  A check that measures time on the shared build host sets its error threshold above the
+# noise that the host adds, and states the measured noise in the commit that sets the value.
+#
+# The targets of the tree: no compile job takes more than 15 s, and no test and no cold fixture
+# compile takes more than 10 s.
+compile-cpu    | 10 | 20 | s  | the user and system CPU time of one compile job, from the compile launcher
+compile-memory | 2  | 6  | GB | the peak resident memory of one compile job, from the compile launcher
+function-size  | 64 | 256 | KB | the size of the largest function in one object of the Debug build
+test-time      | 5  | 20 | s  | the wall time of one test in one ctest run
+fixture-cpu    | 5  | 15 | s  | the CPU time of one negative-fixture compile that the result store does not hold

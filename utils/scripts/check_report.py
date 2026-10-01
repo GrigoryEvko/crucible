@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""One format for the warnings and errors of the compile-time checks, and the budget table they read.
+
+THE FORMAT
+    A check reports each finding on one line of its standard output:
+
+        PATH:LINE: warning: [CHECK] MESSAGE
+        PATH:LINE: error: [CHECK] MESSAGE
+
+    PATH is relative to the repository root when the finding is in the tree.
+    LINE is 0 when no line applies.  CHECK is the name of the check, for
+    example compile-cpu.  An error fails the check, and the exit status is 1.
+    A warning does not fail the check.  With warnings only, the exit status
+    is 0.
+
+THE WARNINGS DIRECTORY
+    ctest shows no output of a test that passes, so the ctest output does not
+    show the warnings of a check that passes.  A check that gets
+    --warnings-dir DIR also writes its warning lines to DIR/CHECK.txt.  It
+    removes that file when it has no warning.  report-check-warnings.py prints
+    every file of DIR.  DIR is <build>/check-warnings, so each preset has its
+    own directory.
+
+GITHUB ANNOTATIONS
+    When the environment sets GITHUB_ACTIONS to "true", the check also prints
+    each finding as a workflow command.  The CI run then shows the finding as
+    an annotation on its file.
+
+THE BUDGET TABLE
+    utils/scripts/budgets.txt gives the warning threshold and the error
+    threshold of each check that measures a quantity.  read_budgets() reads
+    the table, and classify() compares one value with one row.  A value that
+    is equal to a threshold does not exceed it.
+
+Run this file with --self-test to do a test of the module.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import re
+import sys
+import tempfile
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+Level = Literal["warning", "error"]
+
+BUDGETS = Path(__file__).resolve().parent / "budgets.txt"
+# The name of the warnings directory inside a build directory.
+WARNINGS_SUBDIR = "check-warnings"
+LEVELS: tuple[Level, ...] = ("warning", "error")
+# A check name is lowercase words with hyphens, so it is also a safe file name.
+CHECK_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+FINDING_LINE = re.compile(
+    r"(?P<path>.+?):(?P<line>\d+): (?P<level>warning|error): \[(?P<check>[a-z0-9-]+)\] (?P<message>.*)"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    """One warning or one error of a check, at one place."""
+
+    level: Level
+    path: str
+    line: int
+    check: str
+    message: str
+
+    def __post_init__(self) -> None:
+        """Refuse a finding that the line format cannot hold.
+
+        Raises:
+            ValueError: If the level, the check name, the line or the message is not valid
+        """
+        if self.level not in LEVELS:
+            raise ValueError(f"the level {self.level!r} is not one of {LEVELS}")
+        if not CHECK_NAME.fullmatch(self.check):
+            raise ValueError(f"the check name {self.check!r} is not lowercase words with hyphens")
+        if self.line < 0:
+            raise ValueError(f"the line {self.line} of {self.path} is negative")
+        if not self.path or "\n" in self.path or "\n" in self.message:
+            raise ValueError(f"a finding of {self.check} has an empty path or a line break")
+
+    def text(self) -> str:
+        """Return the finding as one line of the format.
+
+        Returns:
+            The line, with no line break at its end
+        """
+        return f"{self.path}:{self.line}: {self.level}: [{self.check}] {self.message}"
+
+    def annotation(self) -> str:
+        """Return the finding as a GitHub workflow command.
+
+        Returns:
+            The command, with its properties and its message escaped
+        """
+        properties = f"file={escape_property(self.path)},title={escape_property(self.check)}"
+        if self.line > 0:
+            properties += f",line={self.line}"
+        return f"::{self.level} {properties}::{escape_data(self.message)}"
+
+
+@dataclass(frozen=True, slots=True)
+class Budget:
+    """One row of the budget table: the two thresholds of one check."""
+
+    check: str
+    warn: float
+    error: float
+    unit: str
+    meaning: str
+
+
+def escape_data(text: str) -> str:
+    """Escape the message of a workflow command.
+
+    Args:
+        text: The message
+
+    Returns:
+        The message, with %, carriage return and line feed escaped
+    """
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def escape_property(text: str) -> str:
+    """Escape one property value of a workflow command.
+
+    Args:
+        text: The value
+
+    Returns:
+        The value, with the characters of escape_data and also ':' and ',' escaped
+    """
+    return escape_data(text).replace(":", "%3A").replace(",", "%2C")
+
+
+def parse_line(text: str) -> Finding | None:
+    """Read one line of the format back into a finding.
+
+    Args:
+        text: One line, with or without its line break
+
+    Returns:
+        The finding, or None when the line does not have the format
+    """
+    match = FINDING_LINE.fullmatch(text.rstrip("\n"))
+    if match is None:
+        return None
+    level: Level = "error" if match["level"] == "error" else "warning"
+    return Finding(level, match["path"], int(match["line"]), match["check"], match["message"])
+
+
+def read_budgets(path: Path = BUDGETS) -> dict[str, Budget]:
+    """Read the budget table.
+
+    A row is: check | warn | error | unit | meaning.  A line that starts with
+    '#' and an empty line are not rows.
+
+    Args:
+        path: The table
+
+    Returns:
+        Each row, by its check name
+
+    Raises:
+        ValueError: If a row does not have five cells, a threshold is not a finite number,
+            the warning threshold is more than the error threshold, or a check has two rows
+    """
+    budgets: dict[str, Budget] = {}
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        cells = [cell.strip() for cell in stripped.split("|")]
+        if len(cells) != 5:
+            raise ValueError(f"{path}:{number}: a row has five cells (check | warn | error | unit | meaning), "
+                             f"and this row has {len(cells)}")
+        check, warn_text, error_text, unit, meaning = cells
+        if not CHECK_NAME.fullmatch(check):
+            raise ValueError(f"{path}:{number}: the check name {check!r} is not lowercase words with hyphens")
+        try:
+            warn, error = float(warn_text), float(error_text)
+        except ValueError:
+            raise ValueError(f"{path}:{number}: the thresholds {warn_text!r} and {error_text!r} of {check} "
+                             f"must be numbers") from None
+        if not (math.isfinite(warn) and math.isfinite(error)) or warn > error:
+            raise ValueError(f"{path}:{number}: the warning threshold {warn_text} of {check} must be finite and "
+                             f"at most its error threshold {error_text}")
+        if check in budgets:
+            raise ValueError(f"{path}:{number}: the check {check} has a second row")
+        budgets[check] = Budget(check, warn, error, unit, meaning)
+    return budgets
+
+
+def classify(value: float, budget: Budget) -> Level | None:
+    """Compare one measured value with the thresholds of its check.
+
+    Args:
+        value: The value, in the unit of the row
+        budget: The row
+
+    Returns:
+        "error" when the value exceeds the error threshold, "warning" when it exceeds only the
+        warning threshold, and None when it exceeds neither
+    """
+    if value > budget.error:
+        return "error"
+    if value > budget.warn:
+        return "warning"
+    return None
+
+
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the --warnings-dir option that every check takes.
+
+    Args:
+        parser: The parser of the check
+    """
+    parser.add_argument("--warnings-dir", type=Path, default=None,
+                        help="write the warning lines to WARNINGS_DIR/CHECK.txt for report-check-warnings.py")
+
+
+def is_github_actions() -> bool:
+    """Tell whether the check runs in a GitHub workflow.
+
+    Returns:
+        True when the environment sets GITHUB_ACTIONS to "true"
+    """
+    return os.environ.get("GITHUB_ACTIONS", "") == "true"
+
+
+def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None) -> int:
+    """Print the findings of one check, write its warnings file, and give its exit status.
+
+    Complexity: O(n log n) for n findings, because of the sort.
+
+    Args:
+        findings: The findings.  Each one must name this check
+        check: The name of the check
+        warnings_dir: The warnings directory, or None to write no file
+
+    Returns:
+        1 when one finding or more is an error, else 0
+
+    Raises:
+        ValueError: If a finding names a different check
+    """
+    ordered = sorted(findings, key=lambda found: (found.path, found.line, found.level, found.message))
+    strangers = sorted({found.check for found in ordered if found.check != check})
+    if strangers:
+        raise ValueError(f"the findings of {check} name the checks {strangers}")
+    annotate = is_github_actions()
+    for found in ordered:
+        print(found.text())
+        if annotate:
+            print(found.annotation())
+    if warnings_dir is not None:
+        write_warnings(warnings_dir, check, [found for found in ordered if found.level == "warning"])
+    return 1 if any(found.level == "error" for found in ordered) else 0
+
+
+def write_warnings(warnings_dir: Path, check: str, warnings: list[Finding]) -> None:
+    """Write the warnings file of one check, or remove it when the check has no warning.
+
+    A reader in another process sees the whole file or no file.
+
+    Args:
+        warnings_dir: The warnings directory
+        check: The name of the check
+        warnings: The warnings of this run
+    """
+    target = warnings_dir / f"{check}.txt"
+    if not warnings:
+        target.unlink(missing_ok=True)
+        return
+    warnings_dir.mkdir(parents=True, exist_ok=True)
+    staging = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    staging.write_text("".join(f"{found.text()}\n" for found in warnings), encoding="utf-8")
+    os.replace(staging, target)
+
+
+def read_warnings_dir(warnings_dir: Path) -> tuple[list[Finding], list[str]]:
+    """Read every warnings file of one warnings directory.
+
+    Complexity: O(n) in the number of lines of the files.
+
+    Args:
+        warnings_dir: The directory.  It can be missing
+
+    Returns:
+        The warnings in file order, and one problem text for each line that does not have the format
+    """
+    findings: list[Finding] = []
+    problems: list[str] = []
+    if not warnings_dir.is_dir():
+        return findings, problems
+    for path in sorted(warnings_dir.glob("*.txt")):
+        for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            found = parse_line(raw)
+            if found is None or found.check != path.stem:
+                problems.append(f"{path}:{number}: the line is not a warning of {path.stem}: {raw}")
+            else:
+                findings.append(found)
+    return findings, problems
+
+
+def self_test() -> int:
+    """Do a test of each function, with negative controls.
+
+    Returns:
+        0 when every case holds, else 1
+    """
+    failures: list[str] = []
+
+    def expect(name: str, holds: bool) -> None:
+        print(f"  {'ok  ' if holds else 'FAIL'} {name}")
+        if not holds:
+            failures.append(name)
+
+    def refuses(name: str, action: object) -> None:
+        try:
+            action()  # type: ignore[operator]
+        except ValueError:
+            expect(name, True)
+            return
+        expect(name, False)
+
+    sample = Finding("warning", "include/fixy/Refined.h", 12, "compile-cpu", "12.4 s CPU, 50% over 10 s")
+    expect("text has the format", sample.text()
+           == "include/fixy/Refined.h:12: warning: [compile-cpu] 12.4 s CPU, 50% over 10 s")
+    expect("parse_line reads text back", parse_line(sample.text()) == sample)
+    expect("parse_line refuses a free line", parse_line("STALE something") is None)
+    expect("annotation escapes", Finding("error", "a,b:c.h", 3, "function-size", "100% of x").annotation()
+           == "::error file=a%2Cb%3Ac.h,title=function-size,line=3::100%25 of x")
+    expect("escape_data escapes line breaks", escape_data("a\r\nb") == "a%0D%0Ab")
+    expect("annotation omits line 0", "line=" not in Finding("warning", "build/x.o", 0, "object-text", "m")
+           .annotation())
+    refuses("Finding refuses a level", lambda: Finding("info", "p", 1, "compile-cpu", "m"))  # type: ignore[arg-type]
+    refuses("Finding refuses a check name", lambda: Finding("error", "p", 1, "Compile_CPU", "m"))
+    refuses("Finding refuses a line break", lambda: Finding("error", "p", 1, "compile-cpu", "a\nb"))
+
+    budgets = read_budgets()
+    expect("the repository table reads", bool(budgets))
+    with tempfile.TemporaryDirectory(prefix="check-report-") as scratch:
+        root = Path(scratch)
+        table = root / "budgets.txt"
+        table.write_text("# comment\n\nalpha | 1 | 2 | s | a value\n", encoding="utf-8")
+        row = read_budgets(table)["alpha"]
+        expect("a row reads", row == Budget("alpha", 1.0, 2.0, "s", "a value"))
+        expect("at the warning threshold: none", classify(1.0, row) is None)
+        expect("over the warning threshold: warning", classify(1.5, row) == "warning")
+        expect("at the error threshold: warning", classify(2.0, row) == "warning")
+        expect("over the error threshold: error", classify(2.1, row) == "error")
+        for name, body in (("four cells", "alpha | 1 | 2 | s\n"),
+                           ("a word threshold", "alpha | one | 2 | s | m\n"),
+                           ("warn over error", "alpha | 3 | 2 | s | m\n"),
+                           ("an infinite threshold", "alpha | 1 | inf | s | m\n"),
+                           ("a second row", "alpha | 1 | 2 | s | m\nalpha | 1 | 2 | s | m\n")):
+            table.write_text(body, encoding="utf-8")
+            refuses(f"read_budgets refuses {name}", lambda: read_budgets(table))
+
+        warnings_dir = root / WARNINGS_SUBDIR
+        warning = Finding("warning", "b.h", 2, "alpha", "warn")
+        error = Finding("error", "a.h", 1, "alpha", "fail")
+        expect("an error gives status 1", emit([warning, error], "alpha", warnings_dir) == 1)
+        written = (warnings_dir / "alpha.txt").read_text(encoding="utf-8")
+        expect("the file holds the warning only", written == f"{warning.text()}\n")
+        found, problems = read_warnings_dir(warnings_dir)
+        expect("read_warnings_dir reads it", found == [warning] and not problems)
+        expect("warnings only give status 0", emit([warning], "alpha", warnings_dir) == 0)
+        expect("no warning removes the file", emit([], "alpha", warnings_dir) == 0
+               and not (warnings_dir / "alpha.txt").exists())
+        refuses("emit refuses a finding of another check",
+                lambda: emit([Finding("error", "a.h", 1, "beta", "m")], "alpha", None))
+        warnings_dir.mkdir(exist_ok=True)
+        (warnings_dir / "alpha.txt").write_text("not a finding\n", encoding="utf-8")
+        found, problems = read_warnings_dir(warnings_dir)
+        expect("read_warnings_dir reports a bad line", not found and len(problems) == 1)
+        expect("a missing directory reads empty", read_warnings_dir(root / "missing") == ([], []))
+
+    if failures:
+        print(f"check_report --self-test: FAILED, {len(failures)} case(s) did not hold")
+        return 1
+    print("check_report --self-test: every case holds.")
+    return 0
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["--self-test"]:
+        sys.exit(self_test())
+    print("usage: check_report.py --self-test", file=sys.stderr)
+    sys.exit(2)

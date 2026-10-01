@@ -299,6 +299,9 @@ jobs:
       - name: ci_guard label coverage (self-test)
         run: python3 utils/scripts/check-ci-guard-labels.py --self-test
 
+      - name: check report format and budget table (self-test)
+        run: python3 utils/scripts/check_report.py --self-test
+
   # ---------------------------------------------------------------------------
   # The substrate guards. Same free runner, no compiler.
   # ---------------------------------------------------------------------------
@@ -518,6 +521,16 @@ jobs:
       - name: Test
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
+
+      # A compile-time check that passes with warnings writes them to
+      # <build>/check-warnings (utils/scripts/check_report.py), because ctest
+      # shows no output of a test that passes.  This step prints each warning
+      # as an annotation of the run.  It fails only on a malformed warnings file.
+      - name: Check warnings
+        if: always()
+        run: >
+          python3 utils/scripts/report-check-warnings.py
+          ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
 
       # Persist ccache even when Build/Test FAILED or the run was CANCELLED.
       # `if: always()` is load-bearing: it runs in the cancellation grace

@@ -3,6 +3,11 @@
 # crucible INTERFACE library, plus sanitizers below.
 # ═══════════════════════════════════════════════════════════════
 
+# The directory where a compile-time check writes the warnings that do not fail
+# it (utils/scripts/check_report.py).  Give it to each such check as
+# --warnings-dir.
+set(CRUCIBLE_CHECK_WARNINGS_DIR "${CMAKE_BINARY_DIR}/check-warnings")
+
 # ═══════════════════════════════════════════════════════════════
 # SECTION 8: Sanitizers
 #
@@ -5225,6 +5230,17 @@ add_test(NAME header_checks
 set_tests_properties(header_checks header_checks_self_test PROPERTIES
     LABELS "ci_guard;substrate"
     SKIP_RETURN_CODE 3)
+
+# The compile-time checks report each finding as a warning or an error, in the
+# format of utils/scripts/check_report.py.  An error fails the check, and a
+# warning does not.  ctest shows no output of a test that passes, so a check
+# that gets --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR} also writes its
+# warnings there, and utils/scripts/report-check-warnings.py prints them.
+# utils/scripts/budgets.txt gives the thresholds of the checks that measure a
+# quantity.  The top of this file sets CRUCIBLE_CHECK_WARNINGS_DIR.
+add_test(NAME check_report_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check_report.py --self-test)
+set_tests_properties(check_report_self_test PROPERTIES LABELS "ci_guard")
 
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
