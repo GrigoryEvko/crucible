@@ -701,7 +701,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::canonical_order, kMachinery},
     {^^::fixy::canonical_order::layer, "the names of the layers of the canonical wrapper order: a position is read "
                                        "from each name at compile time, and none of them is a value"},
-    {^^::fixy::spin::gate_size_probe_, "a layout probe for a static assertion"},
     {^^::fixy::federation, "the words, the handshake and the replay window of the federation door, and the tag of "
                            "the local cipher: runtime values and a tag that carry no grade; the peer token that the "
                            "door admits is the carrier, and it folds"},
@@ -839,6 +838,13 @@ using SwmrWitness =
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
 using BorrowedInt = ::fixy::Borrowed<int, PureRegionTag>;
 
+// The pin proof and the placement proof.  Each is named and never built,
+// because each one comes only from its mint.
+using CpuPinnedWitness =
+    ::fixy::CpuPinned<::fixy::AffinityMask::single(0), ::fixy::PinningPosture::PinnedExplicit, int>;
+struct NumaProbeRegion final {};
+using NumaPlacementWitness = ::fixy::NumaPlacement<NumaProbeRegion, ::fixy::mmap::prot::WriteCopy, PureRegionBrand>;
+
 // The decorators of a session handle, each over one plain handle at End.
 using PlainHandle = ::fixy::session::SessionHandle<::fixy::session::End, int>;
 using CrashWatchedHandle =
@@ -922,8 +928,8 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::EpochVersioned, ^^::fixy::EpochVersioned<int>},
     {^^::fixy::Budgeted, ^^::fixy::Budgeted<int>},
     {^^::fixy::Tagged, ^^::fixy::Tagged<int, ::fixy::tags::trust::Verified>},
-    {^^::fixy::CpuPinned, ^^::fixy::detail::cpu_pinned_invariants::PinnedC0},
-    {^^::fixy::NumaPlacement, ^^::fixy::detail::numa_placement_invariants::Placement},
+    {^^::fixy::CpuPinned, ^^CpuPinnedWitness},
+    {^^::fixy::NumaPlacement, ^^NumaPlacementWitness},
     {^^::fixy::SchedClass, ^^::fixy::sched_class::Batch<int>},
     {^^::fixy::ThreadNamed, ^^::fixy::ThreadNamed<"census">},
     {^^::fixy::Machine, ^^::fixy::Machine<MachineState>},

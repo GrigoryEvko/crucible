@@ -2,7 +2,7 @@
 // utils/scripts/witness-roster.txt.  Edit the roster, not this file.
 // clang-format off: the generator owns this layout, and --check compares it byte for byte.
 //
-// fixy::NumaPlacement<fixy::detail::numa_placement_invariants::ProbeRegion, fixy::mmap::prot::WriteCopy> attests to a fact it cannot see.  The expression below is the
+// fixy::NumaPlacement<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy> attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
 // refusal must read "is private within this context".
@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::NumaPlacement<fixy::detail::numa_placement_invariants::ProbeRegion, fixy::mmap::prot::WriteCopy>{fixy::NumaBindableRegion<fixy::detail::numa_placement_invariants::ProbeRegion, fixy::mmap::prot::WriteCopy>{}, foundation::algebra::lattices::NumaNodeId{0}};
+    [[maybe_unused]] auto forged = fixy::NumaPlacement<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>{fixy::NumaBindableRegion<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>{}, foundation::algebra::lattices::NumaNodeId{0}};
     return 0;
 }

@@ -9,8 +9,6 @@
 #   <template> | open | <reason>     a template that stays open on purpose.
 #
 # Run check-trait-injection.py --refresh in the commit that removes a read.
-fixy::ClockSource::satisfies | 1
-fixy::SchedClass::runnable_on | 1
 fixy::atom::detail::atom_refusal_v | 1
 fixy::atom::detail::effect_grade_row_ | 1
 fixy::atom::fp::detail::settings_from_ | 1
@@ -73,7 +71,6 @@ fixy::mint_linear_view | 1
 fixy::mint_version_source | 1
 fixy::mint_view | 1
 fixy::mint_witnessed_under | 1
-fixy::mmap::advise_release_aware | 1
 fixy::mmap::detail::all_atom_tags_known_v | 1
 fixy::mmap::detail::is_primary_with_share_v | 1
 fixy::mmap::detail::pack_has_anonymous_v | 1

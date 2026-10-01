@@ -189,21 +189,6 @@ include/fixy/handle/Once.h | 0 | 2
 include/fixy/handle/OneShotFlag.h | 0 | 2
 include/fixy/handle/PublishCommit.h | 0 | 4
 include/fixy/handle/PublishOnce.h | 0 | 15
-include/fixy/os/AtomPack.h | 1 | 0
-include/fixy/os/CipherDurable.h | 0 | 29
-include/fixy/os/ClockSource.h | 0 | 58
-include/fixy/os/CpuPinned.h | 0 | 26
-include/fixy/os/Fs.h | 0 | 53
-include/fixy/os/Io.h | 0 | 69
-include/fixy/os/Mmap.h | 0 | 78
-include/fixy/os/NumaPlacement.h | 0 | 11
-include/fixy/os/Sched.h | 0 | 28
-include/fixy/os/SchedClass.h | 0 | 37
-include/fixy/os/Socket.h | 0 | 13
-include/fixy/os/Spawn.h | 1 | 0
-include/fixy/os/SpinLock.h | 1 | 5
-include/fixy/os/ThreadName.h | 0 | 15
-include/fixy/os/Time.h | 0 | 55
 include/fixy/session/Checkpoint.h | 0 | 2
 include/fixy/session/ContentAddressed.h | 1 | 0
 include/fixy/session/Crash.h | 1 | 5
@@ -286,3 +271,15 @@ include/foundation/reflect/Hash.h | 1 | 0
 include/foundation/reflect/Instance.h | 1 | 0
 include/foundation/reflect/Signature.h | 1 | 0
 include/foundation/reflect/TypeComponents.h | 1 | 0
+
+keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::atomicity,[](std::meta::info commit_tag)consteval{return::fixy::atom_pack::names_tag(atomicity_tags,commit_tag);}>() | the walk evaluates the names_tag lookup of atomicity_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::flag,[](std::meta::info flag_tag)consteval{return::fixy::atom_pack::has_row(flag_table,flag_tag);}>() | the walk evaluates the has_row lookup of flag_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::open_mode,[](std::meta::info mode_tag)consteval{return::fixy::atom_pack::has_row(open_mode_table,mode_tag);}>() | the walk evaluates the has_row lookup of open_mode_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::sync_op,[](std::meta::info sync_tag)consteval{return::fixy::atom_pack::names_tag(sync_op_tags,sync_tag);}>() | the walk evaluates the names_tag lookup of sync_op_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Io.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::io::ring_flag,[](std::meta::info flag_tag)consteval{return::fixy::atom_pack::has_row(ring_flag_table,flag_tag);}>() | the walk evaluates the has_row lookup of ring_flag_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Io.h | static_assert | SimpleTransfer<zerocopy::Sendfile> | the check evaluates the names_tag lookup of simple_transfer_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Mmap.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::advice,[](std::meta::info advice_tag)consteval{return::fixy::atom_pack::has_row(advice_table,advice_tag);}>() | the walk evaluates the has_row lookup of advice_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Mmap.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::prot,[](std::meta::info prot_tag)consteval{return::fixy::atom_pack::has_row(prot_table,prot_tag);}>() | the walk evaluates the has_row lookup of prot_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Mmap.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::share,[](std::meta::info share_tag)consteval{return::fixy::atom_pack::has_row(share_table,share_tag);}>() | the walk evaluates the has_row lookup of share_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Mmap.h | static_assert | PrimaryShare<share::Private> | the check evaluates the names_tag lookup of primary_share_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/os/Socket.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::net::socket_kind,[](std::meta::info kind_tag)consteval{return::fixy::atom_pack::has_row(socket_table,kind_tag);}>() | the walk evaluates the has_row lookup of socket_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)

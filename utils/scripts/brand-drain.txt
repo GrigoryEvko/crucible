@@ -21,8 +21,6 @@ include/fixy/OwnedRegion.h	13
 include/fixy/Qtt.h	2
 include/fixy/ScopedView.h	6
 include/fixy/SharedRegion.h	1
-include/fixy/os/Mmap.h	1
-include/fixy/os/NumaPlacement.h	1
 include/fixy/session/Payload.h	14
 include/foundation/effects/Computation.h	3
 include/foundation/permissions/Permission.h	53

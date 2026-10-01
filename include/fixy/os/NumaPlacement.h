@@ -103,12 +103,10 @@ mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, P
 namespace detail {
 
 // The width of the node mask that mbind reads.  NumaNodeId names the
-// nodes 0 thru 253, so 256 bits hold each of them.
+// nodes 0 thru 253, so 256 bits hold each of them.  The check file of
+// this header pins that each concrete node has a bit.
 inline constexpr std::size_t numa_mask_bits = 256;
 inline constexpr std::size_t numa_mask_word_bits = sizeof(unsigned long) * CHAR_BIT;
-static_assert(numa_mask_bits % numa_mask_word_bits == 0);
-static_assert(std::to_underlying(NumaNodeId::None) <= numa_mask_bits,
-              "every concrete node must have a bit in the mask that mbind reads");
 
 // Binds the pages of the range to one concrete node, and moves the pages
 // that the range holds.  Returns 0 on success and the errno otherwise.
@@ -223,44 +221,11 @@ mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, P
 
 }  // namespace numa
 
-}  // namespace fixy
-
-namespace fixy::detail::numa_placement_invariants {
-
+// A region tag that only checks name.  The witness roster
+// (utils/scripts/witness-roster.txt) and the check file of this header
+// spell a placement over it, and no code builds a region of it.
+namespace detail::numa_placement_witness {
 struct ProbeRegion final {};
-using Placement = NumaPlacement<ProbeRegion, mmap::prot::WriteCopy>;
-using Region = Placement::region_type;
+}  // namespace detail::numa_placement_witness
 
-// The gate, from a scope that the mint does not befriend.  Each cell
-// names a route that builds a proof with no call to mbind.  test/fixy/neg/
-// holds the same routes as negative-compile fixtures.
-static_assert(!std::is_default_constructible_v<Placement>,
-              "the default constructor of NumaPlacement must not be public: it claims a binding nobody made.");
-static_assert(!std::is_constructible_v<Placement, Region, NumaNodeId>,
-              "the value constructor of NumaPlacement must not be public: it claims a binding nobody made.");
-static_assert(!std::is_copy_constructible_v<Placement> && !std::is_copy_assignable_v<Placement>,
-              "a placement proof owns its region, so a copy must be refused.");
-static_assert(std::is_nothrow_move_constructible_v<Placement> && std::is_nothrow_move_assignable_v<Placement>);
-static_assert(!std::is_trivially_copyable_v<Placement> && !std::is_implicit_lifetime_v<Placement>
-                  && !std::is_aggregate_v<Placement>,
-              "std::bit_cast and std::start_lifetime_as must not build a placement proof.");
-
-// The share mode is part of the region type, so a shared or a file
-// region has no path to the mint.
-static_assert(std::is_same_v<Region::share_type, mmap::share::Anonymous>);
-
-using IoBlockCtx = ::foundation::effects::ExecCtx<
-    ::foundation::effects::Test,
-    ::foundation::effects::Row<::foundation::effects::Effect::Test, ::foundation::effects::Effect::IO,
-                               ::foundation::effects::Effect::Block>>;
-using IoOnlyCtx = ::foundation::effects::ExecCtx<
-    ::foundation::effects::Test,
-    ::foundation::effects::Row<::foundation::effects::Effect::Test, ::foundation::effects::Effect::IO>>;
-using ForegroundCtx = ::foundation::effects::ExecCtx<>;
-
-static_assert(numa::CtxFitsNumaBind<IoBlockCtx>);
-static_assert(!numa::CtxFitsNumaBind<IoOnlyCtx>,
-              "a context without Block must not bind memory: mbind can park the caller while it moves pages.");
-static_assert(!numa::CtxFitsNumaBind<ForegroundCtx>);
-
-}  // namespace fixy::detail::numa_placement_invariants
+}  // namespace fixy

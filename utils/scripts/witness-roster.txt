@@ -171,7 +171,7 @@ fixy::ThreadNamed<"forged"> | fixy/os/ThreadName.h | fixy::ThreadNamed<"forged">
 # A placement proof claims that mbind bound its region to one node.  Its
 # value constructor is private, and mint_numa_placement, which makes the
 # call first, is the sole friend.
-fixy::NumaPlacement<fixy::detail::numa_placement_invariants::ProbeRegion, fixy::mmap::prot::WriteCopy> | fixy/os/NumaPlacement.h | fixy::NumaPlacement<fixy::detail::numa_placement_invariants::ProbeRegion, fixy::mmap::prot::WriteCopy>{fixy::NumaBindableRegion<fixy::detail::numa_placement_invariants::ProbeRegion, fixy::mmap::prot::WriteCopy>{}, foundation::algebra::lattices::NumaNodeId{0}} | private | closed
+fixy::NumaPlacement<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy> | fixy/os/NumaPlacement.h | fixy::NumaPlacement<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>{fixy::NumaBindableRegion<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>{}, foundation::algebra::lattices::NumaNodeId{0}} | private | closed
 # A clock read on the replay-bound foreground path makes replay diverge,
 # so the reader's one door is mint_clock_reader, gated on a context that
 # owns Bg, Init or Test.
