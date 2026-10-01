@@ -3523,8 +3523,13 @@ fixy_neg_compile_test(neg_session_declassify_unadmitted_policy
 # ── The lock-free rings ───────────────────────────────────────────────
 #
 # The threaded half of this test is what checks the ordering claim, so
-# it is the half that means anything under the tsan preset.
+# it is the half that means anything under the tsan preset.  The never-full
+# round starts 64 producer threads and a consumer thread, and each one runs
+# without a stop until its round ends.  The round finds a stale head only
+# when many producers operate at the same time.  PROCESSORS gives that count
+# to CTest, so CTest starts no other test on those processors.
 fixy_test(test_concurrent_rings)
+set_tests_properties(test_concurrent_rings PROPERTIES PROCESSORS 64)
 
 # The Chase-Lev deque maps a position to a cell with a mask, and a thief
 # reads a cell without a lock.  So a capacity that is not a power of two
@@ -3646,9 +3651,12 @@ fixy_neg_compile_test(neg_recording_endpoint_wrong_log_type
 # ── The snapshot and the single-writer many-reader channel ────────────
 #
 # A seqlock snapshot publishes one value to many readers, and the channel
-# over it gives one linear writer and a pool of reader shares.
+# over it gives one linear writer and a pool of reader shares.  The session
+# test starts up to 16 reader threads that read in a loop while the writer
+# publishes, and PROCESSORS gives that count to CTest.
 fixy_test(test_concurrent_snapshot)
 fixy_test(test_concurrent_swmr_session)
+set_tests_properties(test_concurrent_swmr_session PROPERTIES PROCESSORS 16)
 
 # The writer mint takes the writer permission of a channel of the SWMR
 # shape, and the reader mint lends from a channel that can change.
