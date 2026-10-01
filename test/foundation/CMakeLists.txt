@@ -152,16 +152,16 @@ set_property(TEST neg_platform_longer_cache_line APPEND PROPERTY ENVIRONMENT
 # names the law function and the refused lattice.
 foundation_neg_compile_test(neg_lattice_order_against_join
   "no matching function for call to .verify_lattice_axioms_at<Inverted>"
-  "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::lattice_self_test::InvertedOrder\\]. evaluated to .false.")
+  "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::InvertedOrder\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_lattice_bottom_above_top
   "template constraint failure for .template<foundation::algebra::ModalityKind M, class L, class T> +requires +LatticeGradesValue<L, T> class foundation::algebra::Graded."
-  "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::lattice_self_test::ExchangedBounds\\]. evaluated to .false.")
+  "the expression .\\(laws_hold<L>\\)\\(\\) \\[with L = foundation::algebra::detail::ExchangedBounds\\]. evaluated to .false.")
 # Two operation pairs with the signature of a semiring and not its laws:
 # subtraction for add, and the maximum for both add and mul.  The laws at
 # zero() and one() refuse both at the verify helper.
 foundation_neg_compile_test(neg_semiring_subtraction_for_add
   "no matching function for call to .verify_semiring_axioms_at<Subtraction>"
-  "the expression .\\(semiring_laws_hold<S>\\)\\(\\) \\[with S = foundation::algebra::detail::lattice_self_test::SubtractionSemiring\\]. evaluated to .false.")
+  "the expression .\\(semiring_laws_hold<S>\\)\\(\\) \\[with S = foundation::algebra::detail::SubtractionSemiring\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_semiring_zero_does_not_annihilate
   "no matching function for call to .verify_semiring_axioms_at<\\{anonymous\\}::MaxMax>"
   "the expression .\\(semiring_laws_hold<S>\\)\\(\\) \\[with S = <unnamed>::MaxMax\\]. evaluated to .false.")
@@ -173,7 +173,7 @@ foundation_neg_compile_test(neg_semiring_zero_does_not_annihilate
 # guard in Graded.h, and the second names the constructor it refused.
 foundation_neg_compile_test(neg_graded_stored_grade_outside_the_order
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
-  "Graded<foundation::algebra::detail::graded_self_test::self_test_authority>\\(foundation::algebra::detail::graded_self_test::self_test_authority::key\\(\\), .*, 9\\)")
+  "Graded<foundation::algebra::detail::self_test_authority>\\(foundation::algebra::detail::self_test_authority::key\\(\\), .*, 9\\)")
 foundation_neg_compile_test(neg_graded_element_grade_outside_the_order
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "TrivialChainLattice, unsigned char>::Graded\\(9\\)")
@@ -183,7 +183,7 @@ foundation_neg_compile_test(neg_graded_element_grade_outside_the_order
 # that names another grade.
 foundation_neg_compile_test(neg_graded_witness_names_another_grade
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
-  "MonotoneLattice<int, std::less<int> >, int>::Graded<\\{anonymous\\}::fixture_authority>\\(\\{anonymous\\}::fixture_authority::key\\(\\), 5, 10\\)")
+  "MonotoneLattice<int(, std::less<int> )?>, int>::Graded<\\{anonymous\\}::fixture_authority>\\(\\{anonymous\\}::fixture_authority::key\\(\\), 5, 10\\)")
 
 # A stored grade is a claim about the value, and each door that makes one
 # asks for a grade_key<Authority>.  Braces with no key meet no
@@ -199,7 +199,7 @@ foundation_neg_compile_test(neg_graded_key_outside_its_authority
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_graded_peek_mut_without_key
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::peek_mut\\(\\)."
-  "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::detail::lattice_self_test::TrivialBoolLattice\\]. evaluated to .false.")
+  "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::detail::TrivialBoolLattice\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_graded_default_value_claims_bytes
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(\\)."
   "required by the constraints of .template<foundation::algebra::ModalityKind M, class L, class T> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(\\) requires ! foundation::algebra::Graded<M, L, T>::stores_grade_ \\|\\| \\(GradeIgnoresBytes<L>\\).")

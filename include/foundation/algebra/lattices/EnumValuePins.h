@@ -20,10 +20,14 @@
 // ships.
 //
 // Each enum is one hand-written table and one call.  The table is the format,
-// and foundation::reflect::pin_enum compares it with the enum.
+// and foundation::reflect::pin_enum compares it with the enum.  The calls are
+// in the check file of this header,
+// test/layer/checks/foundation/algebra/lattices/EnumValuePins.cpp, so one
+// translation unit evaluates them.
 //
 // The roster is the set of pinned enums itself.  A new lattice enum whose
-// value reaches a cache key adds its own table and call below.
+// value reaches a cache key adds its own table below and its call in the
+// check file.
 
 #include <foundation/algebra/lattices/AllocClassLattice.h>
 #include <foundation/algebra/lattices/BarrierStrengthLattice.h>
@@ -60,7 +64,6 @@ template <class E, std::size_t N>
 }
 
 inline constexpr std::array<enum_pin<HotPathTier>, 3> hot_path_tier_pins{{{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
-static_assert(pin_lattice_enum(hot_path_tier_pins), "HotPathTier drifted from hot_path_tier_pins.");
 
 inline constexpr std::array<enum_pin<DetSafeTier>, 7> det_safe_tier_pins{{{"NonDeterministicSyscall", 0},
                                                                           {"FilesystemMtime", 1},
@@ -69,7 +72,6 @@ inline constexpr std::array<enum_pin<DetSafeTier>, 7> det_safe_tier_pins{{{"NonD
                                                                           {"MonotonicClockRead", 4},
                                                                           {"PhiloxRng", 5},
                                                                           {"Pure", 6}}};
-static_assert(pin_lattice_enum(det_safe_tier_pins), "DetSafeTier drifted from det_safe_tier_pins.");
 
 inline constexpr std::array<enum_pin<Tolerance>, 7> tolerance_pins{{{"RELAXED", 0},
                                                                     {"ULP_INT8", 1},
@@ -78,13 +80,11 @@ inline constexpr std::array<enum_pin<Tolerance>, 7> tolerance_pins{{{"RELAXED", 
                                                                     {"ULP_FP32", 4},
                                                                     {"ULP_FP64", 5},
                                                                     {"BITEXACT", 6}}};
-static_assert(pin_lattice_enum(tolerance_pins), "Tolerance drifted from tolerance_pins.");
 
 // None is the bottom sentinel and Portable the top one, which is why the
 // last value is 255 rather than 7.
 inline constexpr std::array<enum_pin<VendorBackend>, 8> vendor_backend_pins{
     {{"None", 0}, {"CPU", 1}, {"NV", 2}, {"AMD", 3}, {"TPU", 4}, {"TRN", 5}, {"CER", 6}, {"Portable", 255}}};
-static_assert(pin_lattice_enum(vendor_backend_pins), "VendorBackend drifted from vendor_backend_pins.");
 
 inline constexpr std::array<enum_pin<BarrierStrength>, 7> barrier_strength_pins{{{"None", 0},
                                                                                  {"CompilerBarrier", 1},
@@ -93,7 +93,6 @@ inline constexpr std::array<enum_pin<BarrierStrength>, 7> barrier_strength_pins{
                                                                                  {"AcqRel", 4},
                                                                                  {"SeqCst", 5},
                                                                                  {"FullFence", 6}}};
-static_assert(pin_lattice_enum(barrier_strength_pins), "BarrierStrength drifted from barrier_strength_pins.");
 
 // Thread is the bottom sentinel and System the top one.  The middle
 // values pack a trunk into the high nibble: 0x1n is the GPU trunk and
@@ -107,26 +106,20 @@ inline constexpr std::array<enum_pin<MemoryScope>, 8> memory_scope_pins{{{"Threa
                                                                          {"Inner", 0x20},
                                                                          {"Outer", 0x21},
                                                                          {"System", 0xFF}}};
-static_assert(pin_lattice_enum(memory_scope_pins), "MemoryScope drifted from memory_scope_pins.");
 
 inline constexpr std::array<enum_pin<CipherTierTag>, 3> cipher_tier_tag_pins{{{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
-static_assert(pin_lattice_enum(cipher_tier_tag_pins), "CipherTierTag drifted from cipher_tier_tag_pins.");
 
 inline constexpr std::array<enum_pin<ResidencyHeatTag>, 3> residency_heat_tag_pins{
     {{"Cold", 0}, {"Warm", 1}, {"Hot", 2}}};
-static_assert(pin_lattice_enum(residency_heat_tag_pins), "ResidencyHeatTag drifted from residency_heat_tag_pins.");
 
 inline constexpr std::array<enum_pin<AllocClassTag>, 6> alloc_class_tag_pins{
     {{"HugePage", 0}, {"Mmap", 1}, {"Heap", 2}, {"Arena", 3}, {"Pool", 4}, {"Stack", 5}}};
-static_assert(pin_lattice_enum(alloc_class_tag_pins), "AllocClassTag drifted from alloc_class_tag_pins.");
 
 inline constexpr std::array<enum_pin<WaitStrategy>, 6> wait_strategy_pins{
     {{"Block", 0}, {"Park", 1}, {"AcquireWait", 2}, {"UmwaitC01", 3}, {"BoundedSpin", 4}, {"SpinPause", 5}}};
-static_assert(pin_lattice_enum(wait_strategy_pins), "WaitStrategy drifted from wait_strategy_pins.");
 
 inline constexpr std::array<enum_pin<SuspendBehavior>, 3> suspend_behavior_pins{
     {{"Unknown", 0}, {"PausesOnSuspend", 1}, {"KeepsTicking", 2}}};
-static_assert(pin_lattice_enum(suspend_behavior_pins), "SuspendBehavior drifted from suspend_behavior_pins.");
 
 inline constexpr std::array<enum_pin<ClockSource>, 10> clock_source_pins{{{"Realtime", 0},
                                                                           {"Monotonic", 1},
@@ -138,11 +131,9 @@ inline constexpr std::array<enum_pin<ClockSource>, 10> clock_source_pins{{{"Real
                                                                           {"TscSerialized", 7},
                                                                           {"PmuCounter", 8},
                                                                           {"PtpHwClock", 9}}};
-static_assert(pin_lattice_enum(clock_source_pins), "ClockSource drifted from clock_source_pins.");
 
 inline constexpr std::array<enum_pin<Lifetime>, 3> lifetime_pins{
     {{"PER_REQUEST", 0}, {"PER_PROGRAM", 1}, {"PER_FLEET", 2}}};
-static_assert(pin_lattice_enum(lifetime_pins), "Lifetime drifted from lifetime_pins.");
 
 // A recipe family is part of a KernelCache key: the (content_hash,
 // device_capability) slot a compiled kernel lands in is derived from the
@@ -151,6 +142,5 @@ static_assert(pin_lattice_enum(lifetime_pins), "Lifetime drifted from lifetime_p
 // takes the next free value after BlockStable.
 inline constexpr std::array<enum_pin<RecipeFamily>, 6> recipe_family_pins{
     {{"Linear", 0}, {"Pairwise", 1}, {"Kahan", 2}, {"BlockStable", 3}, {"None", 254}, {"Any", 255}}};
-static_assert(pin_lattice_enum(recipe_family_pins), "RecipeFamily drifted from recipe_family_pins.");
 
 }  // namespace foundation::algebra::lattices::detail::enum_value_pins

@@ -35,8 +35,8 @@ static_assert(fa::has_grade_only_v<fa::ModalityKind::Stepping>);
 
 // Row is a refinement of BoundedLattice, and the self-test row is its
 // first witness.
-static_assert(fa::Row<fa::detail::lattice_self_test::TrivialRow>);
-static_assert(!fa::Row<fa::detail::lattice_self_test::TrivialBoolLattice>);
+static_assert(fa::Row<fa::detail::TrivialRow>);
+static_assert(!fa::Row<fa::detail::TrivialBoolLattice>);
 
 // A lattice with no name() is still a lattice.  HasLatticeName refuses it
 // although lattice_name gives it the sentinel, so the sentinel is not a
@@ -59,7 +59,7 @@ static_assert(fa::HasLatticeName<NamedLattice>);
 static_assert(fa::lattice_name<NamedLattice>() == "NamedLattice");
 
 // The primary template over an empty grade still collapses to sizeof(T).
-using EmptyGraded = fa::Graded<fa::ModalityKind::Absolute, fa::detail::graded_self_test::TrivialEmptyLattice, int>;
+using EmptyGraded = fa::Graded<fa::ModalityKind::Absolute, fa::detail::TrivialEmptyLattice, int>;
 static_assert(sizeof(EmptyGraded) == sizeof(int));
 static_assert(fa::IsGraded<EmptyGraded>);
 static_assert(fa::is_graded_specialization_v<EmptyGraded const&>);
@@ -82,7 +82,7 @@ template <typename T>
 
 void lattice_runs_at_run_time() {
     using namespace fa;
-    using namespace fa::detail::lattice_self_test;
+    using namespace fa::detail;
     using L = TrivialBoolLattice;
     const bool truth = opaque(true);
     const bool falsity = opaque(false);
@@ -148,7 +148,7 @@ void modality_runs_at_run_time() {
 
 void graded_runs_at_run_time() {
     using namespace fa;
-    using namespace fa::detail::graded_self_test;
+    using namespace fa::detail;
     const auto key = self_test_authority::key;
     const OneByteValue value{opaque('*')};
 
@@ -238,7 +238,7 @@ void graded_runs_at_run_time() {
 // GradedTrait.h names, so its assertions hold for a type that was built.
 void graded_trait_runs_at_run_time() {
     using namespace fa;
-    using namespace fa::detail::is_graded_specialization_self_test;
+    using namespace fa::detail;
     const GraderAB raised{opaque(true)};
     expect(raised.grade() && raised.peek());
     const GraderAB lowered = GraderAB::at_bottom();

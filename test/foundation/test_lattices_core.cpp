@@ -54,6 +54,12 @@ struct Payload {
     std::uint64_t b{0};
 };
 
+// The payload of the carriers that the run-time bodies build over the
+// fixtures of each lattice header.
+struct OneByteValue {
+    char c{0};
+};
+
 // The authority for the carriers built below.  It hands its key out,
 // which an authority in production code never does.
 struct test_authority {
@@ -153,7 +159,7 @@ void saturate_runs_at_run_time() {
 }
 
 void bool_lattice_runs_at_run_time() {
-    using namespace fl::detail::bool_lattice_self_test;
+    using namespace fl::detail;
     using L = fl::BoolLattice<positive>;
     const L::element_type a = opaque(L::bottom());
     const L::element_type b = opaque(L::top());
@@ -177,7 +183,7 @@ void bool_lattice_runs_at_run_time() {
 }
 
 void trust_lattice_runs_at_run_time() {
-    using namespace fl::detail::trust_lattice_self_test;
+    using namespace fl::detail;
     using L = fl::TrustLattice<source::Sanitized>;
     const L::element_type a = opaque(L::bottom());
     const L::element_type b = opaque(L::top());
@@ -197,7 +203,7 @@ void trust_lattice_runs_at_run_time() {
 }
 
 void conf_lattice_runs_at_run_time() {
-    using namespace fl::detail::conf_lattice_self_test;
+    using namespace fl::detail;
     using fl::Conf;
     using fl::ConfLattice;
     const Conf lower = opaque(Conf::Public);
@@ -225,7 +231,7 @@ void conf_lattice_runs_at_run_time() {
 }
 
 void qtt_semiring_runs_at_run_time() {
-    using namespace fl::detail::qtt_self_test;
+    using namespace fl::detail;
     using fl::QttGrade;
     using fl::QttSemiring;
     const QttGrade zero = opaque(QttGrade::Zero);
@@ -254,7 +260,7 @@ void qtt_semiring_runs_at_run_time() {
 }
 
 void monotone_lattice_runs_at_run_time() {
-    using namespace fl::detail::monotone_lattice_self_test;
+    using namespace fl::detail;
     const std::uint64_t low = opaque(std::uint64_t{100});
     const std::uint64_t high = opaque(std::uint64_t{1000});
 
@@ -295,7 +301,7 @@ void monotone_lattice_runs_at_run_time() {
 void seq_prefix_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::seq_prefix_lattice_self_test;
+    using namespace fl::detail;
     const std::size_t n_a = opaque(std::size_t{5});
     const std::size_t n_b = opaque(std::size_t{17});
     Length<EventA> a{n_a};
@@ -316,7 +322,7 @@ void seq_prefix_lattice_runs_at_run_time() {
 }
 
 void staleness_semiring_runs_at_run_time() {
-    using namespace fl::detail::staleness_semiring_self_test;
+    using namespace fl::detail;
     using fl::StalenessSemiring;
     const StalenessSemiring::element_type fresher{opaque(std::uint64_t{5})};
     const StalenessSemiring::element_type staler{opaque(std::uint64_t{17})};
@@ -345,7 +351,7 @@ void staleness_semiring_runs_at_run_time() {
 void fractional_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::fractional_lattice_self_test;
+    using namespace fl::detail;
     const Rational a{opaque(std::int64_t{1}), opaque(std::int64_t{4})};
     const Rational b{opaque(std::int64_t{1}), opaque(std::int64_t{2})};
     expect(FractionalLattice::leq(a, b) && !FractionalLattice::leq(b, a));

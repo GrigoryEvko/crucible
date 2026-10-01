@@ -5,7 +5,7 @@
 #include <foundation/algebra/Graded.h>
 
 namespace fa = ::foundation::algebra;
-using Exchanged = fa::detail::lattice_self_test::ExchangedBounds;
+using Exchanged = fa::detail::ExchangedBounds;
 
 using Carrier = fa::Graded<fa::ModalityKind::Absolute, Exchanged, int>;
 

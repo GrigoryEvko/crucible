@@ -8,8 +8,8 @@
 namespace {
 
 namespace fa = ::foundation::algebra;
-using GOneByte = fa::detail::graded_self_test::GOneByte;
-using Value = fa::detail::graded_self_test::OneByteValue;
+using GOneByte = fa::detail::GOneByte;
+using Value = fa::detail::OneByteValue;
 
 GOneByte const forged{Value{}, true};
 

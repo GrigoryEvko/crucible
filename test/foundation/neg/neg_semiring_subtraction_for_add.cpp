@@ -6,7 +6,7 @@
 #include <foundation/algebra/Lattice.h>
 
 namespace fa = ::foundation::algebra;
-using Subtraction = fa::detail::lattice_self_test::SubtractionSemiring;
+using Subtraction = fa::detail::SubtractionSemiring;
 
 static_assert(fa::verify_semiring_axioms_at<Subtraction>(0, 1, 1));
 

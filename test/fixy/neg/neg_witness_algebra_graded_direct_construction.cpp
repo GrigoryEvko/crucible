@@ -2,7 +2,7 @@
 // utils/scripts/witness-roster.txt.  Edit the roster, not this file.
 // clang-format off: the generator owns this layout, and --check compares it byte for byte.
 //
-// foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::lattice_self_test::TrivialBoolLattice, int> attests to a fact it cannot see.  The expression below is the
+// foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::TrivialBoolLattice, int> attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
 // refusal must read "no matching function for call".
@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::lattice_self_test::TrivialBoolLattice, int>{0, true};
+    [[maybe_unused]] auto forged = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::TrivialBoolLattice, int>{0, true};
     return 0;
 }

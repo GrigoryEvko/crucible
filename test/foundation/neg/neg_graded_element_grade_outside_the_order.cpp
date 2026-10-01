@@ -9,7 +9,7 @@
 namespace {
 
 namespace fa = ::foundation::algebra;
-using ChainElement = fa::detail::graded_self_test::GChainElement;
+using ChainElement = fa::detail::GChainElement;
 
 constexpr ChainElement outside_the_order{static_cast<unsigned char>(9)};
 

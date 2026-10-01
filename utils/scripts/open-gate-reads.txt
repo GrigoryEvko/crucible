@@ -97,7 +97,7 @@ fixy::session::protocol_is_at_v | 1
 fixy::session::type_display_name_v | 1
 foundation::AlignedBuffer | 2
 foundation::algebra::Graded::can_regrade_ | 2
-foundation::algebra::Graded::inject | 3
+foundation::algebra::Graded::inject | 2
 foundation::algebra::claim_orientation_v | 2
 foundation::algebra::claim_subject_v | 1
 foundation::algebra::detail::lattice_laws::laws_hold | 1
@@ -105,8 +105,6 @@ foundation::algebra::detail::lattice_laws::semiring_laws_hold | 1
 foundation::algebra::lattice_name | 2
 foundation::algebra::lattices::SeqPrefixLattice::grade_of | 1
 foundation::algebra::lattices::monotone_bounds | 1
-foundation::algebra::verify_bounded_lattice_axioms_at | 1
-foundation::algebra::verify_lattice_axioms_at | 1
 foundation::diag::has_insights_v | 1
 foundation::diag::has_substantive_insights_v | 1
 foundation::diag::is_diagnostic_class_v | 5

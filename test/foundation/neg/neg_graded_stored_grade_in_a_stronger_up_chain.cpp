@@ -9,7 +9,7 @@
 int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
-    using Authority = fa::detail::graded_self_test::self_test_authority;
+    using Authority = fa::detail::self_test_authority;
     fa::Graded<fa::ModalityKind::Absolute, fl::DetSafeLattice, int> const read{
         Authority::key(), 5, fl::DetSafeTier::NonDeterministicSyscall};
     return read.peek();

@@ -110,7 +110,7 @@ fixy::session::SessionFromMachine<int, fixy::session::End> | fixy/session/Machin
 # and only the key's authority builds one.  Braces that pair a value with
 # a grade meet no constructor.
 foundation::algebra::grade_key<forge::brand> | foundation/algebra/Graded.h | foundation::algebra::grade_key<forge::brand>{} | private | closed
-foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::lattice_self_test::TrivialBoolLattice, int> | foundation/algebra/Graded.h | foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::lattice_self_test::TrivialBoolLattice, int>{0, true} | no-match | closed
+foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::TrivialBoolLattice, int> | foundation/algebra/Graded.h | foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::detail::TrivialBoolLattice, int>{0, true} | no-match | closed
 
 # -- Counts, clocks, versions and budgets ----------------------------
 # A count or a clock comes only from the successor doors of its lattice

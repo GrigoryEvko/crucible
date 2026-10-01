@@ -67,12 +67,12 @@ test/fixy/test_owned_mmap.cpp ::fixy::atom::detail x1 — uses the sample leak r
 test/fixy/test_row_hash_wrappers.cpp ::fixy::concurrent::detail x11 — hashes the row of the stage fakes
 test/fixy/test_row_hash_wrappers.cpp ::fixy::corpus::detail x3 — hashes the row of a secret carrier
 test/fixy/test_row_hash_wrappers.cpp ::fixy::detail x6 — hashes the row of the mapping and view probes, and counts the reflected roles
-test/foundation/test_algebra_core.cpp ::foundation::algebra::detail x6 — runs the lattice self-test namespace
+test/foundation/test_algebra_core.cpp ::foundation::algebra::detail x6 — runs the fixtures of the algebra headers
 test/foundation/test_computation.cpp ::foundation::effects::detail x30 — pins the graded capabilities of the computation carrier
 test/foundation/test_diag.cpp ::foundation::diag::detail x2 — pins the counts of the diagnostic self-test, and makes sure that a failed write poisons the stream sink of the JSON emitter
 test/foundation/test_effects_core.cpp ::foundation::effects::detail x14 — runs the effect-row self-test namespaces
-test/foundation/test_lattices_bands.cpp ::foundation::algebra::lattices::detail x17 — runs the band lattice self-test namespaces
-test/foundation/test_lattices_core.cpp ::foundation::algebra::lattices::detail x8 — runs the core lattice self-test namespaces
+test/foundation/test_lattices_bands.cpp ::foundation::algebra::lattices::detail x3 — runs the fixtures of the chain, product and clock lattice headers
+test/foundation/test_lattices_core.cpp ::foundation::algebra::lattices::detail x8 — runs the fixtures of the core lattice headers
 test/foundation/test_permissions_compile.cpp ::foundation::permissions::detail x1 — runs the permission-set smoke namespace
 test/foundation/test_platform.cpp ::foundation::detail x2 — asks the layer whether a debugger is attached
 test/foundation/test_reflect.cpp ::foundation::reflect::detail x2 — runs the reflection self-test namespace

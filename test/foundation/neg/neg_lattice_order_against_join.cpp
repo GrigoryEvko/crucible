@@ -6,7 +6,7 @@
 #include <foundation/algebra/Lattice.h>
 
 namespace fa = ::foundation::algebra;
-using Inverted = fa::detail::lattice_self_test::InvertedOrder;
+using Inverted = fa::detail::InvertedOrder;
 
 static_assert(fa::verify_lattice_axioms_at<Inverted>(0, 1, 3));
 

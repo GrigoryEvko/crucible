@@ -9,10 +9,10 @@
 namespace {
 
 namespace fa = ::foundation::algebra;
-using Chain = fa::detail::graded_self_test::TrivialChainLattice;
-using Value = fa::detail::graded_self_test::OneByteValue;
+using Chain = fa::detail::TrivialChainLattice;
+using Value = fa::detail::OneByteValue;
 using GradedByte = fa::Graded<fa::ModalityKind::Absolute, Chain, Value>;
-using Authority = fa::detail::graded_self_test::self_test_authority;
+using Authority = fa::detail::self_test_authority;
 
 constexpr GradedByte high{Authority::key(), Value{}, static_cast<unsigned char>(3)};
 

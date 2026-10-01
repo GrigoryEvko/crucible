@@ -12,7 +12,7 @@ int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
     using HalfTurned = fl::ProductLattice<fl::DualLattice<fl::EpochLattice>, fl::GenerationLattice>;
-    using Authority = fa::detail::graded_self_test::self_test_authority;
+    using Authority = fa::detail::self_test_authority;
     fa::Graded<fa::ModalityKind::Absolute, HalfTurned, int> const value{
         Authority::key(), 1, {fl::EpochLattice::bottom(), fl::GenerationLattice::bottom()}};
     return value.peek();

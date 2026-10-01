@@ -1,7 +1,7 @@
 // Sentinel TU for the band, hardware-scope and clock lattices and the
-// enum value pins.  Each header carries its own static_asserts.  This
-// file includes each header and runs one run-time body for each.
-// EnumValuePins.h is included so its pins are compiled at all.
+// enum value pins.  The check file of each header under
+// test/layer/checks/ holds its static_asserts.  This file includes each
+// header and runs one run-time body for each.
 //
 // The tiers are walked by reflection rather than listed by hand, so a
 // new enumerator is covered the moment it is declared.
@@ -61,11 +61,14 @@ struct TwoWords {
     unsigned long long hi{0};
 };
 
-// The payload of the pinned carriers below.  A chain header keeps no
-// payload type of its own, because ChainLattice.h checks the layout of
-// a pinned carrier one time for all of them.
+// The payloads of the carriers below.  A chain header keeps no payload
+// type of its own, because the check file of ChainLattice.h checks the
+// layout of a pinned carrier one time for all of them.
 struct OneByteValue {
     char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
 };
 
 // The Absolute carrier over a pinned grade.
@@ -287,19 +290,18 @@ template <typename L, std::size_t... Slots>
 static_assert(
     slots_take_their_own_axis<fl::ClockSourceLattice>(std::make_index_sequence<fl::ClockSourceLattice::arity>{}));
 
-// The three function-scope using-directives give each body below the
-// name lookup of its header.  There the self-test namespace nests in
-// lattices, which nests in algebra, so the scaffolding types the bodies
-// name resolve.
+// The function-scope using-directives give each body below the name
+// lookup of its header.  The fixtures that a body names are in the
+// detail namespace of the lattice header.
 //
-// The static_assert walls stay in the headers.  Those read a shipped
-// lattice against its own grades, so they fire wherever the header is
-// used, and each header's self-test namespace holds one.
+// The static_assert walls are in the check file of each header.  Those
+// read a shipped lattice against its own grades, and one translation
+// unit evaluates them.
 
 void chain_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::chain_lattice_self_test;
+    using namespace fl::detail;
     volatile std::uint8_t raw_hi = 2;
     const SmokeTier lo = SmokeTier::Lo;
     const SmokeTier hi = static_cast<SmokeTier>(raw_hi);
@@ -321,7 +323,6 @@ void chain_lattice_runs_at_run_time() {
 void det_safe_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::det_safe_lattice_self_test;
     DetSafeTier a = DetSafeTier::NonDeterministicSyscall;
     DetSafeTier b = DetSafeTier::Pure;
     [[maybe_unused]] bool l1 = DetSafeLattice::leq(a, b);
@@ -352,7 +353,6 @@ void det_safe_lattice_runs_at_run_time() {
 void alloc_class_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::alloc_class_lattice_self_test;
     AllocClassTag a = AllocClassTag::HugePage;
     AllocClassTag b = AllocClassTag::Stack;
     [[maybe_unused]] bool l1 = AllocClassLattice::leq(a, b);
@@ -383,7 +383,6 @@ void alloc_class_lattice_runs_at_run_time() {
 void hot_path_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::hot_path_lattice_self_test;
     HotPathTier a = HotPathTier::Cold;
     HotPathTier b = HotPathTier::Hot;
     [[maybe_unused]] bool l1 = HotPathLattice::leq(a, b);
@@ -413,7 +412,6 @@ void hot_path_lattice_runs_at_run_time() {
 void cipher_tier_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::cipher_tier_lattice_self_test;
     CipherTierTag a = CipherTierTag::Cold;
     CipherTierTag b = CipherTierTag::Hot;
     [[maybe_unused]] bool l1 = CipherTierLattice::leq(a, b);
@@ -473,7 +471,6 @@ void tolerance_lattice_runs_at_run_time() {
 void wait_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::wait_lattice_self_test;
     WaitStrategy a = WaitStrategy::Block;
     WaitStrategy b = WaitStrategy::SpinPause;
     [[maybe_unused]] bool l1 = WaitLattice::leq(a, b);
@@ -504,7 +501,6 @@ void wait_lattice_runs_at_run_time() {
 void lifetime_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::lifetime_lattice_self_test;
     Lifetime a = Lifetime::PER_REQUEST;
     Lifetime b = Lifetime::PER_FLEET;
     [[maybe_unused]] bool l1 = LifetimeLattice::leq(a, b);
@@ -533,7 +529,6 @@ void lifetime_lattice_runs_at_run_time() {
 void vendor_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::vendor_lattice_self_test;
     VendorBackend a = VendorBackend::NV;
     VendorBackend b = VendorBackend::AMD;
     [[maybe_unused]] bool l1 = VendorLattice::leq(a, b);
@@ -563,7 +558,6 @@ void vendor_lattice_runs_at_run_time() {
 void recipe_family_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::recipe_family_lattice_self_test;
     RecipeFamily bot = RecipeFamilyLattice::bottom();
     RecipeFamily topv = RecipeFamilyLattice::top();
     RecipeFamily kahan = RecipeFamily::Kahan;
@@ -588,7 +582,6 @@ void recipe_family_lattice_runs_at_run_time() {
 void barrier_strength_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::barrier_strength_lattice_self_test;
     BarrierStrength a = BarrierStrength::None;
     BarrierStrength b = BarrierStrength::FullFence;
     [[maybe_unused]] bool rl = BarrierStrengthLattice::leq(a, b);
@@ -618,7 +611,6 @@ void barrier_strength_lattice_runs_at_run_time() {
 void memory_scope_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::memory_scope_lattice_self_test;
     MemoryScope a = MemoryScope::Cta;
     MemoryScope b = MemoryScope::Inner;
     [[maybe_unused]] bool l1 = MemoryScopeLattice::leq(a, b);
@@ -646,7 +638,7 @@ void memory_scope_lattice_runs_at_run_time() {
 void product_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::product_lattice_self_test;
+    using namespace fl::detail;
     using L = P_u8u8;
     L::element_type lo{1, 2};
     L::element_type hi{5, 7};
@@ -695,7 +687,6 @@ void product_lattice_runs_at_run_time() {
 void pinning_requirement_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::pinning_requirement_lattice_self_test;
     PinningRequirement a = PinningRequirement::NotRequired;
     PinningRequirement b = PinningRequirement::CrossSocketSafe;
     [[maybe_unused]] bool l1 = PinningRequirementLattice::leq(a, b);
@@ -726,7 +717,6 @@ void pinning_requirement_lattice_runs_at_run_time() {
 void suspend_behavior_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::suspend_behavior_lattice_self_test;
     SuspendBehavior a = SuspendBehavior::Unknown;
     SuspendBehavior b = SuspendBehavior::KeepsTicking;
     [[maybe_unused]] bool l1 = SuspendBehaviorLattice::leq(a, b);
@@ -757,7 +747,7 @@ void suspend_behavior_lattice_runs_at_run_time() {
 void clock_source_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::clock_source_lattice_self_test;
+    using namespace fl::detail;
     ClockSource source = ClockSource::TscRaw;
     auto tsc_point = clock_source_project(source);
     [[maybe_unused]] DetSafeTier det = ClockSourceLattice::get<0>(tsc_point);
@@ -791,7 +781,6 @@ void clock_source_lattice_runs_at_run_time() {
 void affinity_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::affinity_lattice_self_test;
     AffinityMask bot = AffinityLattice::bottom();
     AffinityMask topv = AffinityLattice::top();
     AffinityMask bergamo_full = AffinityMask::range(0, 191);
@@ -848,7 +837,6 @@ void numa_node_lattice_runs_at_run_time() {
 void scheduler_policy_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::scheduler_policy_lattice_self_test;
     SchedulerPolicy a = SchedulerPolicy::Idle;
     SchedulerPolicy b = SchedulerPolicy::Deadline;
     [[maybe_unused]] bool l1 = SchedulerPolicyLattice::leq(a, b);

@@ -7,9 +7,9 @@
 namespace {
 
 namespace fa = ::foundation::algebra;
-using GOneByte = fa::detail::graded_self_test::GOneByte;
-using Value = fa::detail::graded_self_test::OneByteValue;
-using Authority = fa::detail::graded_self_test::self_test_authority;
+using GOneByte = fa::detail::GOneByte;
+using Value = fa::detail::OneByteValue;
+using Authority = fa::detail::self_test_authority;
 
 char rewrite() {
     GOneByte held{Authority::key(), Value{}, false};

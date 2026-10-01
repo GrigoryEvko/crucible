@@ -7,7 +7,7 @@
 namespace {
 
 namespace fa = ::foundation::algebra;
-using GOneByte = fa::detail::graded_self_test::GOneByte;
+using GOneByte = fa::detail::GOneByte;
 
 GOneByte const defaulted{};
 

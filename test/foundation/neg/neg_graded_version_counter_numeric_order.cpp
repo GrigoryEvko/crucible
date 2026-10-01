@@ -10,7 +10,7 @@
 int main() {
     namespace fa = ::foundation::algebra;
     namespace fl = ::foundation::algebra::lattices;
-    using Authority = fa::detail::graded_self_test::self_test_authority;
+    using Authority = fa::detail::self_test_authority;
     fa::Graded<fa::ModalityKind::Absolute, fl::EpochLattice, int> const stale{Authority::key(), 1,
                                                                               fl::EpochLattice::bottom()};
     return stale.peek();

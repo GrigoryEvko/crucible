@@ -102,46 +102,12 @@ template <typename W>
     requires GradedWrapper<W>
 inline constexpr bool is_graded_wrapper_v<W> = true;
 
-namespace detail::is_graded_specialization_self_test {
+namespace detail {
 
-using GraderAB =
-    Graded<ModalityKind::Absolute, ::foundation::algebra::detail::lattice_self_test::TrivialBoolLattice, bool>;
+// A Graded specialization that the check file of this header and
+// test/foundation/test_algebra_core.cpp name.
+using GraderAB = Graded<ModalityKind::Absolute, ::foundation::algebra::detail::TrivialBoolLattice, bool>;
 
-static_assert(is_graded_specialization_v<GraderAB>);
-
-static_assert(is_graded_specialization_v<GraderAB const>);
-static_assert(is_graded_specialization_v<GraderAB&>);
-static_assert(is_graded_specialization_v<GraderAB const&>);
-static_assert(is_graded_specialization_v<GraderAB&&>);
-static_assert(is_graded_specialization_v<GraderAB const&&>);
-
-static_assert(IsGraded<GraderAB const&> == is_graded_specialization_v<GraderAB const&>);
-static_assert(IsGraded<GraderAB&&> == is_graded_specialization_v<GraderAB&&>);
-
-static_assert(!is_graded_specialization_v<int>);
-static_assert(!is_graded_specialization_v<int const&>);
-static_assert(!is_graded_specialization_v<void>);
-static_assert(!is_graded_specialization_v<::foundation::algebra::detail::lattice_self_test::TrivialBoolLattice>);
-
-static_assert(IsGraded<int const&> == is_graded_specialization_v<int const&>);
-static_assert(IsGraded<void> == is_graded_specialization_v<void>);
-
-static_assert(graded_modality_v<GraderAB> == ModalityKind::Absolute);
-static_assert(graded_modality<GraderAB const&>::value == ModalityKind::Absolute);
-
-// The opt-in is a member, and its absence answers no.
-struct Undeclared {};
-struct DeclaredTrue {
-    static constexpr bool value_type_decoupled = true;
-};
-struct DeclaredFalse {
-    static constexpr bool value_type_decoupled = false;
-};
-static_assert(!DeclaresValueTypeDecoupled<Undeclared>);
-static_assert(DeclaresValueTypeDecoupled<DeclaredTrue>);
-static_assert(!DeclaresValueTypeDecoupled<DeclaredFalse>);
-static_assert(DeclaresValueTypeDecoupled<DeclaredTrue const&>);
-
-}  // namespace detail::is_graded_specialization_self_test
+}  // namespace detail
 
 }  // namespace foundation::algebra
