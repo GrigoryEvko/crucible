@@ -15,5 +15,5 @@
 # test/ and bench/ are not scanned.  Taking the test path is what
 # they are for.
 
-include/foundation/effects/Effect.h x14  — declares the door, its three factories and TestWitness, and pins their noexcept in its own self-test.  This is the definition site.
+include/foundation/effects/Effect.h x8  — declares the door, its three factories and TestWitness.  This is the definition site.
 include/foundation/effects/Ctx.h x6  — declares the foreground door and ForegroundWitness, friends the witness from the key of the foreground context and from the branded source, and gives the branded door.  This is the definition site.

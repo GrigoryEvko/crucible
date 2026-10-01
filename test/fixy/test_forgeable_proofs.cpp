@@ -192,15 +192,13 @@ static_assert(!fp::SharedPermission<Region>::confers_runtime_access,
               "copy and move, and move it to the witness list, before it gates anything.");
 
 // The class templates of the two namespaces that anyone may build.  Each
-// is a trait, a row, a set of tags, a fold helper, a self-test probe, or
-// a value carrier with a public constructor.
+// is a trait, a row, a set of tags, a fold helper, or a value carrier
+// with a public constructor.
 inline constexpr std::meta::info open_templates[] = {
     ^^fe::canonical_row,
     ^^fe::cap_permitted_row,
     ^^fe::Computation,
     ^^fe::detail::AtomField,
-    ^^fe::detail::capability_self_test::can_consume_from_lvalue,
-    ^^fe::detail::capability_self_test::can_consume_from_rvalue,
     ^^fe::detail::conveys_authority,
     ^^fe::detail::conveys_authority_directly,
     ^^fe::detail::conveys_authority_listed,
@@ -208,8 +206,6 @@ inline constexpr std::meta::info open_templates[] = {
     ^^fe::detail::extract_admits_payload,
     ^^fe::detail::is_computation,
     ^^fe::detail::lift_row,
-    ^^fe::detail::lift_self_test::sample_non_row,
-    ^^fe::detail::lift_self_test::sample_row,
     ^^fe::detail::row_concat,
     ^^fe::detail::row_difference_impl,
     ^^fe::detail::row_insert_unique,

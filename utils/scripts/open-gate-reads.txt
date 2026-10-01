@@ -100,7 +100,6 @@ foundation::algebra::lattices::monotone_bounds | 1
 foundation::diag::has_insights_v | 1
 foundation::diag::has_substantive_insights_v | 1
 foundation::diag::is_diagnostic_class_v | 5
-foundation::effects::Computation | 1
 foundation::effects::detail::bare_tag_info_ | 1
 foundation::effects::detail::extract_admits_payload_v | 8
 foundation::effects::detail::is_axis_tag_ | 1
@@ -109,11 +108,8 @@ foundation::effects::detail::names_each_axis_once_ | 1
 foundation::effects::detail::pack_sums_fit_ | 1
 foundation::effects::detail::rows_sum_fit_ | 1
 foundation::effects::detail::sums_fit_pairwise_ | 1
-foundation::effects::extract_bare | 1
 foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
 foundation::permissions::has_split_pack_authoring_witness_v | open | the witness of a split manifest, an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
-foundation::permissions::mint_read_loan | open | the reads are self-test concepts in ReadView.h that ask whether a call of the loan mint compiles; no mint reads them, and the mint is the door that they probe
-foundation::permissions::with_read_view | open | the reads are self-test concepts in ReadView.h that ask whether a call of the read door compiles; no mint reads them, and the door is what they probe
 foundation::reflect::any_component_satisfies | 1
 foundation::reflect::arity_v | 2
 foundation::reflect::bits_to_string | 1

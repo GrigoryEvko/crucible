@@ -1,7 +1,8 @@
-// Sentinel TU for the resource axes and the concurrent rows.  The two
-// headers carry their own static_asserts.  This file includes them and
-// drives every accessor with values the optimizer cannot fold, which is
-// the run-time half that a static_assert cannot check.
+// Sentinel TU for the resource axes and the concurrent rows.  The check
+// files of the two headers carry their static_asserts.  This file
+// includes the headers and drives every accessor with values the
+// optimizer cannot fold, which is the run-time half that a static_assert
+// cannot check.
 
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Resources.h>
@@ -104,7 +105,7 @@ static_assert(sizeof(every_kind) / sizeof(every_kind[0]) == fe::resource_kind_co
               "The table of axes disagrees with the reflected count.  Add the new axis to the table.");
 
 // Each name is read through a volatile load, so the call happens at run
-// time and cannot fold into the compile-time checks of the header.
+// time and cannot fold into the compile-time checks of the check file.
 [[nodiscard]] bool every_kind_has_a_name_at_run_time() noexcept {
     for (fe::ResourceKind kind : every_kind) {
         volatile fe::ResourceKind loaded = kind;

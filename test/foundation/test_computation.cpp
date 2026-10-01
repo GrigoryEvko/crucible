@@ -113,7 +113,7 @@ static_assert(
 
 // Drives every accessor with non-constant arguments, where inline-body
 // and constant-evaluation regressions surface that the assertions in
-// the header cannot see.
+// the check file of the header cannot see.
 void computation_graded_runs_at_run_time() noexcept {
     using namespace ::foundation::effects;
     using G_pure = ComputationGraded<Row<>, int>;
@@ -149,8 +149,9 @@ void computation_graded_runs_at_run_time() noexcept {
 }
 
 // Every operation is driven here with non-constant arguments.  The
-// static_assert wall in the header only proves the constant-evaluated
-// path, which does not exercise overload selection on real values.
+// static_assert wall in the check file of the header only proves the
+// constant-evaluated path, which does not exercise overload selection on
+// real values.
 void computation_runs_at_run_time() {
     using namespace ::foundation::effects;
     auto pure_lvalue = Computation<Row<>, int>::mint_computation(100);
@@ -195,8 +196,8 @@ void computation_runs_at_run_time() {
 
 // The authority relation, read over complete types.
 //
-// Computation.h pins the same property against forward declarations,
-// which is all a partial specialization needs to match.  Here every
+// The check file of Computation.h pins the same property against forward
+// declarations, which is all a partial specialization needs to match.  Here every
 // named type is complete, so a declaration that drifted away from its
 // definition would show up as a mismatch rather than as a silent
 // non-match that admits the payload.

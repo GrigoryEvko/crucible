@@ -28,7 +28,7 @@ test/fixy/test_tagged.cpp ::fixy::detail x4 — uses the retag policy probes of 
 # Proof and context audits: a test that walks the proof types, the mint keys
 # and the context witnesses, or attacks them.
 test/fixy/test_contexts.cpp ::foundation::effects::detail x5 — pins each context witness to the context it stands for
-test/fixy/test_forgeable_proofs.cpp ::foundation::effects::detail x29 — walks the context base, the mint keys and the open effect templates for a forgeable proof
+test/fixy/test_forgeable_proofs.cpp ::foundation::effects::detail x25 — walks the context base, the mint keys and the open effect templates for a forgeable proof
 test/foundation/test_ctx.cpp ::foundation::effects::detail x5 — builds a context from a context witness
 test/foundation/test_host_owner_attacks.cpp ::foundation::effects::detail x4 — pins that no mint key has a default constructor or a trivial copy
 
@@ -70,7 +70,7 @@ test/fixy/test_row_hash_wrappers.cpp ::fixy::detail x6 — hashes the row of the
 test/foundation/test_algebra_core.cpp ::foundation::algebra::detail x6 — runs the fixtures of the algebra headers
 test/foundation/test_computation.cpp ::foundation::effects::detail x30 — pins the graded capabilities of the computation carrier
 test/foundation/test_diag.cpp ::foundation::diag::detail x2 — pins the counts of the diagnostic self-test, and makes sure that a failed write poisons the stream sink of the JSON emitter
-test/foundation/test_effects_core.cpp ::foundation::effects::detail x14 — runs the effect-row self-test namespaces
+test/foundation/test_effects_core.cpp ::foundation::effects::detail x13 — pins the mint key of each context, and builds a lookalike on the context base
 test/foundation/test_lattices_bands.cpp ::foundation::algebra::lattices::detail x3 — runs the fixtures of the chain, product and clock lattice headers
 test/foundation/test_lattices_core.cpp ::foundation::algebra::lattices::detail x8 — runs the fixtures of the core lattice headers
 test/foundation/test_permissions_compile.cpp ::foundation::permissions::detail x1 — runs the permission-set smoke namespace

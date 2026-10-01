@@ -1347,9 +1347,10 @@ crucible_neg_compile_test(neg_workload_decision_dispatch_raw_decision
 
 # ─── The carrier width of the effect row lattice ────────────────────
 #
-# The lattice carries a row as a uint64_t bitmask.  foundation/effects/Row.h
-# bounds the Effect enum at 64 atoms, and foundation/effects/Effect.h pins
-# its underlying type to uint8_t.  Neither assertion can fire from a
+# The lattice carries a row as a uint64_t bitmask.  The check file of
+# foundation/effects/Row.h bounds the Effect enum at 64 atoms, and the
+# check file of foundation/effects/Effect.h pins its underlying type to
+# uint8_t.  Neither assertion can fire from a
 # fixture.  Each fixture puts the same form of assertion on a test
 # universe: 65 atoms, and an atom with a uint16_t underlying type.  The
 # fixtures check the form of the two assertions, not the live code.

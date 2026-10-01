@@ -19,9 +19,10 @@
 // No context builds from nothing.  Each is handed the capability it
 // claims, because a context is not evidence of a capability: it carries
 // one, and the one it carries came from mint_context or, for the
-// foreground, from the key that the producer claim holds.  The record
-// in foundation/effects/Ctx.h proves the properties of each row, and
-// test/fixy/test_contexts.cpp proves them again through these names.
+// foreground, from the key that the producer claim holds.  The check
+// file of foundation/effects/Ctx.h proves the properties of each row of
+// its record, and test/fixy/test_contexts.cpp proves them again through
+// these names.
 
 #include <foundation/effects/Ctx.h>
 

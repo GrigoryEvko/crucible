@@ -1,8 +1,8 @@
-// Assertions embedded in a header are only verified under the
-// project's warning flags when some translation unit includes that
-// header.  This file exists to be that translation unit for the
-// permission headers, so a new one gets an include here.  Reaching
-// main is itself the claim: the whole include set compiled clean.
+// The permission headers keep their compile-time checks in their check
+// files.  This file includes all of the permission headers together
+// under the project's warning flags, so a new one gets an include here.
+// Reaching main is itself the claim: the whole include set compiled
+// clean.
 
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>

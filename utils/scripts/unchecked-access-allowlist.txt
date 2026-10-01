@@ -24,7 +24,6 @@ include/foundation/algebra/Transition.h — walks a transition registry to deriv
 include/foundation/contracts/Armed.h — walks a scope to derive the armed-predicate roster
 include/foundation/diag/Catalog.h — walks the diagnostic namespace to derive the catalog
 include/foundation/diag/FailClosed.h — walks a fail-closed relation's namespace to count and seal its edges
-include/foundation/permissions/Permission.h — walks the permission tag namespace to derive the tag roster
 
 # Structure walks: a verdict over every base and data member of a type, which
 # must see the private ones to be sound.  Each returns a bool, a hash or a row,
@@ -49,6 +48,7 @@ test/fixy/test_refined.cpp — walks the admitted implications to check the seal
 test/fixy/test_secret.cpp — walks the secret-policy namespace to check the policy roster
 test/fixy/test_splice_access_attacks.cpp — the ledger reproducer: a splice of a private member still writes it
 test/fixy/test_tagged.cpp — walks the admitted retags to check the sealed relation
+test/layer/checks/foundation/permissions/Permission.cpp — walks the permission tag namespace to check that each canonical tag is a sound token
 
 # Negative fixtures that read the return type of a private member function,
 # so that the fixture follows the production signature.  They keep the

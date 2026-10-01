@@ -4,8 +4,8 @@
 // contexts that own it and for no other, and every context is built at
 // run time from the capability it claims.
 //
-// foundation/effects/Ctx.h pins the shapes in its record of the named
-// contexts, and fixy/Ctx.h names that record.  This file restates each
+// The check file of foundation/effects/Ctx.h pins the shapes in the
+// record of the named contexts, and fixy/Ctx.h names that record.  This file restates each
 // row through the production names, so a rewrite of the record reddens
 // here too.  It adds the scenarios: a gated call, a row narrowed from one
 // production context into another, and the runtime construction, which

@@ -1,6 +1,6 @@
-// Sentinel TU for the effect atoms and rows.  The two headers carry
-// their own static_asserts.  This file includes them and holds the
-// runtime cells that concern atoms, contexts and rows.
+// Sentinel TU for the effect atoms and rows.  The check files of the two
+// headers carry their static_asserts.  This file includes the headers
+// and holds the runtime cells that concern atoms, contexts and rows.
 
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -191,7 +191,6 @@ void every_accessor_runs_at_run_time() {
 // change that dragged in a non-trivial default constructor fails here.
 void row_types_run_at_run_time() {
     using namespace ::foundation::effects;
-    using namespace ::foundation::effects::detail::effect_row_self_test;
     [[maybe_unused]] Row<Effect::Bg> r_bg{};
     [[maybe_unused]] Row<Effect::Bg, Effect::IO> r_bg_io{};
     [[maybe_unused]] EmptyRow r_empty{};
@@ -205,8 +204,8 @@ void row_types_run_at_run_time() {
 }
 
 // Every accessor is called here with non-constant arguments.  The
-// static_assert wall in the header only proves the constant-evaluated
-// path.
+// static_assert wall in the check file of Row.h only proves the
+// constant-evaluated path.
 void effect_row_lattice_runs_at_run_time() noexcept {
     using namespace ::foundation::effects;
     using L = EffectRowLattice;
