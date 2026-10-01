@@ -235,7 +235,7 @@ Stage 1 can start while Stage 0 unit 0h still runs, because unit 0h edits header
 
 **Goal.** Make each build and each test run at least two times faster, before hundreds of guard runs start. Every later stage multiplies the cost of one build. The speed comes from how the tree uses C++ (rules R13 to R17), not from a changed compiler (D10).
 
-**The right tail comes first (owner, 2026-10-01).** Builds and tests run at a high job count (up to `-j192`), so the wall time is the longest single job, not the total CPU divided by the jobs. A change that makes one long job short is worth more than a change that makes the total smaller. A split that adds total CPU to remove a long job is correct. The targets: no translation unit and no test takes more than 20 s at `-j1` in Debug. At the baseline, the tail was one 315 s translation unit, sixteen more above 40 s, seventeen guards above 20 s (the longest 192 s) and fixtures up to 29 s. Every ordinary test took less than 5 s.
+**The right tail comes first (owner, 2026-10-01).** Builds and tests run at a high job count (up to `-j192`), so the wall time is the longest single job, not the total CPU divided by the jobs. A change that makes one long job short is worth more than a change that makes the total smaller. A split that adds total CPU to remove a long job is correct. The targets (owner, tightened 2026-10-01): no build job takes more than 15 s in the ninja log of a clean Debug build at `-j64` on this host, and no fixture (cold) and no test takes more than 10 s. On main at e028fb57, a clean build at `-j64` took 82 s wall, with 22 compile jobs above 20 s and 73 above 15 s (the longest 33 s). The full cold ctest at `-j64` took 165 s, with 18 guards above 15 s (the longest 140 s), 6 fixtures above 15 s and 117 above 10 s, and no other test above 4.2 s. At the baseline, the tail was one 315 s translation unit, sixteen more above 40 s, seventeen guards above 20 s (the longest 192 s) and fixtures up to 29 s. Every ordinary test took less than 5 s.
 
 **Entry.** Wave E finished. The QPLUG plugin is on main. The baseline of section 3 is measured.
 
@@ -330,7 +330,7 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 
 ### 7.7 Unit 0g: the slow guards
 
-**Goal.** No guard takes more than 20 s wall on a warm store.
+**Goal.** No guard takes more than 10 s wall on a warm store (tests have a 10 s tail target).
 
 1. Measure each of `no_unchecked_access`, `proof_routes`, `start_lifetime`, `federation_admission`, `atom_roster_joined_self_test` (125 s to 163 s at the baseline). Find where the time goes. Then do the same for each other guard above 20 s: `trait_guard` 45 s, `banned_calls` 41 s, `no_ffast_math` 40 s, `no_combine_ids_duplicate` 40 s, `syscall_capability` 37 s, `host_owners` 36 s, `detail_namespace` 35 s, `no_coordination_refs` 34 s, `parse_clean` 24.5 s, `atom_roster_joined` 22.5 s, `derived_pins` 21.6 s. A shared cache that serves many guards comes first. `session_oracle_self_test` (192 s) belongs to unit 0d, which owns the oracle scripts.
 2. `utils/scripts/preprocessed.py`: one shared, content-keyed store in `~/.cache/crucible/preprocessed/`, with a size limit and an age limit, shared by every guard and every worktree. Scan each distinct (file, content hash) chunk one time, not one time for each translation unit that includes it.
@@ -347,7 +347,7 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 
 ### 7.8b Unit 0i: the tail splits (after units 0c)
 
-**Goal.** No translation unit of the tree takes more than 20 s at `-j1` in Debug.
+**Goal.** No build job of the tree takes more than 15 s in the ninja log of a clean Debug build at `-j64`.
 
 The first part of 0i started early, on 2026-10-01, for the crucible test files whose back end makes them long (test_vigil_dispatch, test_region_cache, the model tests, test_vigil and others). No check-move unit edits those files. The fixy test files on the list wait for the 0c units, because those units can edit them.
 
@@ -391,7 +391,7 @@ Shared files (`CMakeLists.txt`, `test/*/CMakeLists.txt`, CLAUDE.md, the ledger) 
 ### 7.10 The S0 gate
 
 All numbers come from `build-gauge.sh` on the same host as the baseline:
-- The tail: no translation unit takes more than 20 s at `-j1` in Debug. No fixture (cold) and no test takes more than 10 s.
+- The tail: no build job takes more than 15 s in the ninja log of a clean Debug build at `-j64`. No fixture (cold) and no test takes more than 10 s.
 - The clean Debug build of `all` takes at most 60 s wall at `-j192` (or at the highest job count that the memory check allows, with the job count stated).
 - `ctest` of the full Debug suite takes at most 60 s wall at `-j192` with a cold fixture store. A second run on an unchanged tree compiles no fixture.
 - The total CPU is not a target (owner, 2026-10-01). Only the longest single job counts.
