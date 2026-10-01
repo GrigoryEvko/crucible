@@ -4241,7 +4241,7 @@ fixy_neg_compile_test(neg_os_tsc_reader_shape_of_a_pin
   "required for the satisfaction of .IsSingletonCpuPin<PinT>.")
 fixy_neg_compile_test(neg_os_tsc_reader_recogniser_specialized
   "expected initializer before .<. token"
-  "recogniser_specialized\\.cpp:[0-9]+:[0-9]+: error")
+  "neg_os_tsc_reader_recogniser_specialized\\.cpp:22:38: error:")
 
 # The rest of the gate of the TSC mint: the pin is given up, not lent, it
 # has the explicit posture, and the context is off the foreground path.
@@ -4362,7 +4362,7 @@ fixy_neg_compile_test(neg_os_mmap_free_on_safe_surface
   "the expression .!\\(DiscardsPages<Advice>\\) \\[with Advice = fixy::mmap::advice::Free\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_os_mmap_foreign_advice_row
   "expected initializer before .<. token"
-  "neg_os_mmap_foreign_advice_row\\.cpp:17:48: error:")
+  "neg_os_mmap_foreign_advice_row\\.cpp:22:48: error:")
 
 # ── A mapping is minted with the exclusive permission of its region ──
 #
@@ -4471,7 +4471,7 @@ fixy_neg_compile_test(neg_owned_mmap_region_ctx_lacks_block
 # template of protection words names nothing.
 fixy_neg_compile_test(neg_owned_mmap_foreign_prot_row
   "expected initializer before .<. token"
-  "neg_owned_mmap_foreign_prot_row\\.cpp:17:45: error:")
+  "neg_owned_mmap_foreign_prot_row\\.cpp:22:45: error:")
 
 # ── A descriptor comes only from a gated mint ────────────────────────
 #
@@ -4578,7 +4578,7 @@ fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
 # a variable template of flag bits names nothing.
 fixy_neg_compile_test(neg_os_fs_foreign_flag_row
   "expected initializer before .<. token"
-  "neg_os_fs_foreign_flag_row\\.cpp:17:43: error:")
+  "neg_os_fs_foreign_flag_row\\.cpp:22:43: error:")
 
 fixy_neg_compile_test(neg_os_fs_mint_file_empty_atoms
   "no matching function for call"
