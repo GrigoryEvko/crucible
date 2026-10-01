@@ -17,7 +17,8 @@ link-memory    | 0.5 | 1 | GB | the peak resident memory of one link, from the b
 function-size  | 64 | 256 | KB | the size of the largest function in one object.  The Debug build with ASan has the largest functions
 object-text    | 512 | 768 | KB | the machine code of one object: the sum of its allocated, executable sections
 header-alone   | 8  | 12 | MB | the bytes that one header of include/ includes when it compiles alone, from the ninja dependency log of its sentinel
-test-time      | 5  | 20 | s  | the wall time of one test in one ctest run
+test-time      | 5  | 30 | s  | the wall time of one test in one ctest run, from the test launcher for an executable test and from the JUnit report for another test (utils/scripts/check-test-time.py)
+test-memory    | 0.5 | 1.5 | GB | the peak resident memory of the largest process of one executable test, from the test launcher
 fixture-cpu    | 5  | 15 | s  | the user CPU time of one negative-fixture compile that the result store does not hold (test/neg_compile_driver.py)
 padded-list    | 63 | 63 | elements | the element count of a fixed list whose element type has a padding bit (utils/scripts/check-padded-lists.py). A count above it gives a finding
 heavy-include  | 1.25 | 1.25 | x <meta> | the CPU time of one standard header alone (utils/scripts/header-costs.txt) as a multiple of the time of <meta> alone. A header above it is heavy, and a header under include/ does not include it

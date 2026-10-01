@@ -68,6 +68,7 @@ utils/scripts/check-start-lifetime.py | tsast,preprocessor,json,text | the allow
 utils/scripts/check-stub-discipline.py | tsast |
 utils/scripts/check-syscall-capability.py | tsast,text | the allowlist rows and their reasons
 utils/scripts/check-syscall-grant-coverage.py | tsast |
+utils/scripts/check-test-time.py | json,text | the JUnit report of a ctest run, the test list of ctest --show-only=json-v1, the build kind and the ledger rows
 utils/scripts/check-trait-injection.py | tsast |
 utils/scripts/check-use-after-move.py | tsast,text | the allowlist rows
 utils/scripts/check-vessel-acceptance.py | compiler,json,text | CMakeCache.txt and the output of the torch probe
@@ -87,6 +88,7 @@ utils/scripts/repo_root.py | none |
 utils/scripts/repo_root.sh | none |
 utils/scripts/report-check-warnings.py | text | the warnings files of the checks
 utils/scripts/session-oracle.sh | git,text | the switch list that opam prints
+utils/scripts/test-launcher.py | text | the budget table, the build kind, the ledger rows of test-time and test-memory, and the records and warnings files that it writes
 utils/scripts/throwaway_repo.py | git |
 utils/scripts/tsast.py | kit |
 utils/scripts/tu-sample.py | compiler,json,text | the compile database, the file of --compare, and the diagnostics of a failed compile

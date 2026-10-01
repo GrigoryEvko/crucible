@@ -1,0 +1,10 @@
+# utils/scripts/test-memory-ledger.txt — the executable tests whose largest process takes more peak
+# memory than the error threshold of the row test-memory of utils/scripts/budgets.txt, for one kind
+# of build.  utils/scripts/test-launcher.py reads it after each test.
+#
+# A row:  kind | test | value | reason
+#
+# The kind is the line of BUILD_DIR/build-kind.txt, for example x86_64-debug-asan.  The value is the
+# measured peak memory in GB.  A test with a row gives a warning, so the debt stays visible.  A test
+# with a row whose peak memory is at or below the error threshold fails.  Remove the row in the
+# commit that makes the test small.

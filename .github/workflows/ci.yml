@@ -535,7 +535,19 @@ jobs:
       # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
       - name: Test
         if: ${{ matrix.run_tests }}
-        run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
+        run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }} --output-junit ctest-junit.xml
+
+      # The test launcher holds the budget of each executable test while it
+      # runs.  A script test has no launcher, so this step reads its wall time
+      # from the JUnit report that the step above writes into the build
+      # directory, against the row test-time of utils/scripts/budgets.txt.
+      # The step "Check warnings" prints the warnings.
+      - name: Test time of the script tests
+        if: ${{ matrix.run_tests }}
+        run: >
+          python3 utils/scripts/check-test-time.py
+          --build-dir ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
+          --warnings-dir ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}/check-warnings
 
       # A compile-time check that passes with warnings writes them to
       # <build>/check-warnings (utils/scripts/check_report.py), because ctest

@@ -18,7 +18,9 @@ THE ENGINE
 THE RULE
     A test counts as a script test when one argument of its command is a path
     under <source>/utils/scripts/.  Each script test must carry the label ci_guard.
-    A compiled test binary is not a script test.
+    A compiled test binary is not a script test, also when the test launcher
+    utils/scripts/test-launcher.py runs it, because CMake puts the launcher
+    only in front of an executable target.
 
 Exit 0 clean, 1 on an unlabelled script test, 2 on a usage error, a ctest
 failure or a failed self-test.
@@ -36,6 +38,8 @@ from pathlib import Path
 from repo_root import REPO_ROOT
 
 LABEL = "ci_guard"
+# The launcher that CMake puts in front of each test whose command is an executable target.
+TEST_LAUNCHER = "test-launcher.py"
 
 
 class CtestError(RuntimeError):
@@ -68,14 +72,18 @@ def labels_of(test: dict) -> list[str]:
 
 
 def script_of(test: dict, scripts_dir: Path) -> str | None:
-    """Return the first command argument that is a path under SCRIPTS_DIR, relative to it, or None."""
+    """Return the first command argument that is a path under SCRIPTS_DIR, relative to it, or None.
+
+    A command that the test launcher runs is a compiled test, and it gives None.
+    """
     for argument in test.get("command", []) or []:
         path = Path(argument)
         if not path.is_absolute():
             continue
         path = path.resolve()
         if path.is_relative_to(scripts_dir):
-            return str(path.relative_to(scripts_dir))
+            relative = str(path.relative_to(scripts_dir))
+            return None if relative == TEST_LAUNCHER else relative
     return None
 
 
@@ -145,6 +153,8 @@ add_test(NAME planted_overridden COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/
 set_tests_properties(planted_overridden PROPERTIES LABELS "ci_guard")
 set_tests_properties(planted_overridden PROPERTIES LABELS "slow")
 add_test(NAME planted_not_a_script COMMAND bash ${CMAKE_SOURCE_DIR}/utils/tools/run.sh utils/scripts/check-a.sh)
+add_test(NAME planted_launched COMMAND python3 -S ${CMAKE_SOURCE_DIR}/utils/scripts/test-launcher.py
+         --warnings-dir ${CMAKE_BINARY_DIR}/check-warnings ${CMAKE_BINARY_DIR}/planted_launched)
 add_subdirectory(sub)
 """
 
@@ -163,6 +173,7 @@ EXPECTED = (
     ("planted_append", False),
     ("planted_overridden", True),
     ("planted_not_a_script", False),
+    ("planted_launched", False),
     ("planted_in_subdir", True),
 )
 

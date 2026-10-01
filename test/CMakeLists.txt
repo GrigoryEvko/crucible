@@ -3,10 +3,9 @@
 # crucible INTERFACE library, plus sanitizers below.
 # ═══════════════════════════════════════════════════════════════
 
-# The directory where a compile-time check writes the warnings that do not fail
-# it (utils/scripts/check_report.py).  Give it to each such check as
-# --warnings-dir.
-set(CRUCIBLE_CHECK_WARNINGS_DIR "${CMAKE_BINARY_DIR}/check-warnings")
+# cmake/TestLauncher.cmake sets CRUCIBLE_CHECK_WARNINGS_DIR, the directory where
+# a compile-time check writes the warnings that do not fail it
+# (utils/scripts/check_report.py).  Give it to each such check as --warnings-dir.
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 8: Sanitizers
@@ -5328,6 +5327,21 @@ add_test(NAME reconfigure_noop_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-reconfigure-noop.py --self-test
           --cmake ${CMAKE_COMMAND} --ninja ${CMAKE_MAKE_PROGRAM})
 set_tests_properties(reconfigure_noop_self_test PROPERTIES LABELS "ci_guard")
+
+# The test launcher (cmake/TestLauncher.cmake) runs in front of each test whose
+# command is an executable target, and it holds the rows test-time and
+# test-memory of utils/scripts/budgets.txt while the test runs.  CMake gives
+# no launcher to a script test, so check-test-time.py reads the wall time of
+# those tests from the JUnit report of a run:
+#     ctest --test-dir BUILD_DIR -j16 --output-junit ctest-junit.xml
+#     python3 utils/scripts/check-test-time.py --build-dir BUILD_DIR
+# The CI build job runs it after the tests of each leg.  A test cannot measure
+# the run that it is part of, so only the two self-tests are tests.
+add_test(NAME test_launcher_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/scripts/test-launcher.py --self-test)
+add_test(NAME test_time_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-test-time.py --self-test)
+set_tests_properties(test_launcher_self_test test_time_self_test PROPERTIES LABELS "ci_guard")
 
 # cmake/BuildLauncher.cmake puts utils/scripts/build-launcher.py in front of
 # each compile and each link.  The launcher writes the cost of the step beside

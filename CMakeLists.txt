@@ -341,6 +341,11 @@ include(utils/tools/quarantine/Quarantine.cmake)
 # clears the compiler launcher, and before the first target.
 include(cmake/BuildLauncher.cmake)
 
+# The test launcher records the cost of each executable test and holds its
+# budget.  It also names the warnings directory of the checks.  It comes
+# before the first target.
+include(cmake/TestLauncher.cmake)
+
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
