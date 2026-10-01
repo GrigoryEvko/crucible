@@ -517,6 +517,17 @@ jobs:
       - name: ccache stats
         run: ccache -s
 
+      # A second configure, and the two builds after it, compile nothing.  The
+      # check also refuses a configure that makes a link again with the same
+      # target, and a recorded dependency that does not exist.  The analyzer
+      # leg builds only the crucible library, so it skips the check.
+      - name: Re-configure compiles nothing
+        if: ${{ matrix.preset != 'analyzer' }}
+        run: >
+          python3 utils/scripts/check-reconfigure-noop.py
+          ${{ matrix.preset == 'default' && 'build' || format('build-{0}', matrix.preset) }}
+          --jobs ${{ matrix.jobs }}
+
       # Skipped for the analyzer preset (build-time -fanalyzer findings are its coverage).
       - name: Test
         if: ${{ matrix.run_tests }}

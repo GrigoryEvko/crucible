@@ -57,6 +57,19 @@ if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
   # identity makes every object compile again.
   # The driver is the compiler that ccache runs, so a ccache link does not
   # put the ccache binary in the identity.
+  #
+  # The launcher also sets base_dir to the source tree.  ccache writes each
+  # path under base_dir in a dependency file relative to the build
+  # directory, and a cache hit gives the dependency file of the build that
+  # stored the result.  A path under the source tree is then correct in each
+  # build directory that gets a hit.  A base_dir above the compiler, such as
+  # a home directory, also makes the headers of the compiler relative.  A
+  # hit in a build directory at a different depth then records headers that
+  # do not exist, and Ninja compiles the object again on each build.
+  # utils/scripts/check-reconfigure-noop.py finds such a dependency.
+  # ccache does not hash base_dir, so an entry that a launcher with another
+  # base_dir stored can still give such a dependency file.  The namespace
+  # keeps the entries of this launcher apart from those entries.
   execute_process(
       COMMAND "${CRUCIBLE_REAL_CXX}" -print-prog-name=cc1plus
       OUTPUT_VARIABLE CRUCIBLE_CC1PLUS
@@ -77,7 +90,8 @@ if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
       "${CRUCIBLE_REAL_CXX}" "${CRUCIBLE_CC1PLUS}")
   list(GET CMAKE_CXX_COMPILER_LAUNCHER 0 CRUCIBLE_CCACHE)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${CRUCIBLE_CCACHE}"
-      "compiler_check=string:${CRUCIBLE_DRIVER_SHA256}-${CRUCIBLE_CC1PLUS_SHA256}")
+      "compiler_check=string:${CRUCIBLE_DRIVER_SHA256}-${CRUCIBLE_CC1PLUS_SHA256}"
+      "base_dir=${CMAKE_SOURCE_DIR}" "namespace=source-base-dir")
   message(STATUS "ccache: ${CRUCIBLE_CCACHE} (compiler launcher enabled, cc1plus ${CRUCIBLE_CC1PLUS})")
 elseif(CRUCIBLE_USE_CCACHE)
   message(STATUS "ccache: not found on PATH — proceeding without launcher")

@@ -5313,6 +5313,16 @@ set_tests_properties(padded_lists padded_lists_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 
+# reconfigure_noop — a second configure and the two builds after it compile
+# nothing.  A ctest test cannot configure and build the tree that runs it, so
+# the check itself is a step of the CI build job, after the build:
+#     python3 utils/scripts/check-reconfigure-noop.py BUILD_DIR
+# Only the self-test is a test.  It plants each defect in a scratch project.
+add_test(NAME reconfigure_noop_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-reconfigure-noop.py --self-test
+          --cmake ${CMAKE_COMMAND} --ninja ${CMAKE_MAKE_PROGRAM})
+set_tests_properties(reconfigure_noop_self_test PROPERTIES LABELS "ci_guard")
+
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a
