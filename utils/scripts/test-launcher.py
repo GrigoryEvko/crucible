@@ -38,7 +38,10 @@ THE BUDGET ROWS
     and the timeout of the test preset is the hard stop.  In a build of a
     kind with tsan, a wall time over the error threshold gives a warning
     only: ThreadSanitizer serializes the threads of a test, and one test took
-    15 s in one run and 91 s in the next on the shared host.
+    15 s in one run and 91 s in the next on the shared host.  On a GitHub
+    runner, each time error is a warning that says that it was demoted
+    (utils/scripts/cost_meter.py, A CI RUNNER), and a memory error stays an
+    error.
     A test that failed keeps its status, so a failure, a skip code and a
     WILL_FAIL test keep the meaning that ctest gives them.  A WILL_FAIL test
     over its budget therefore does not fail.  No executable test of the tree
@@ -99,9 +102,14 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         kind: The kind of the build, or None
 
     Returns:
-        One (level, row, message) for each row with a finding
+        One (level, row, message) for each row with a finding.  On a GitHub runner, a time error is a warning
     """
     findings = []
+
+    def add(level: str, row: str, message: str) -> None:
+        shown_level, shown_message = cost_meter.ci_verdict(level, row, message)
+        findings.append((shown_level, row, shown_message))
+
     for row, value, unit, text in (("test-time", run.wall_s, "s", f"{run.wall_s:.2f} s of wall time"),
                                    ("test-memory", run.peak_gb, "GB", f"{run.peak_gb:.3f} GB of peak memory")):
         if row not in budget:
@@ -110,21 +118,20 @@ def judge(name: str, run: cost_meter.Measurement, budget: dict[str, tuple[float,
         admitted = ledger_row(row, name, kind)
         said = f"the test {name} took {text}"
         if admitted is not None and value <= error:
-            findings.append(("error", row, f"{said}, no more than the error threshold of {error:g} {unit}.  Remove "
-                                           f"its row {admitted[0]}"))
+            add("error", row, f"{said}, no more than the error threshold of {error:g} {unit}.  Remove its row "
+                              f"{admitted[0]}")
         elif value > error and admitted is not None:
-            findings.append(("warning", row, f"{said}, over the error threshold of {error:g} {unit}, and the row "
-                                             f"{admitted[0]} admits it: {admitted[1]}"))
+            add("warning", row, f"{said}, over the error threshold of {error:g} {unit}, and the row {admitted[0]} "
+                                f"admits it: {admitted[1]}")
         elif value > error and row == "test-time" and kind is not None and "-tsan" in kind:
-            findings.append(("warning", row, f"{said}, over the error threshold of {error:g} {unit}.  The build kind "
-                                             f"{kind} budgets no wall time, so the timeout of the test preset is the "
-                                             f"hard stop"))
+            add("warning", row, f"{said}, over the error threshold of {error:g} {unit}.  The build kind {kind} "
+                                f"budgets no wall time, so the timeout of the test preset is the hard stop")
         elif value > error:
-            findings.append(("error", row, f"{said}, over the error threshold of {error:g} {unit}, and no row of "
-                                           f"utils/scripts/{row}-ledger.txt admits it for the kind {kind}.  Make the "
-                                           f"test smaller, or split it into tests over disjoint cases"))
+            add("error", row, f"{said}, over the error threshold of {error:g} {unit}, and no row of "
+                              f"utils/scripts/{row}-ledger.txt admits it for the kind {kind}.  Make the test smaller, "
+                              f"or split it into tests over disjoint cases")
         elif value > warn:
-            findings.append(("warning", row, f"{said}, over the warning threshold of {warn:g} {unit}"))
+            add("warning", row, f"{said}, over the warning threshold of {warn:g} {unit}")
     return findings
 
 
@@ -262,8 +269,12 @@ def self_test() -> int:
         def ledger(row: str, text: str) -> None:
             (ledgers / f"{row}-ledger.txt").write_text("# kind | test | value | reason\n" + text)
 
-        def launch(target: Path, *args: str) -> tuple[int, str]:
+        def launch(target: Path, *args: str, **extra: str) -> tuple[int, str]:
+            # A case that needs a CI runner sets GITHUB_ACTIONS itself, so
+            # each verdict is the same on a CI runner and on the build host.
             environment = dict(os.environ, **{BUDGETS_ENV: str(table), LEDGERS_ENV: str(ledgers)})
+            environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
+            environment.update(extra)
             proc = subprocess.run([sys.executable, "-S", __file__, "--warnings-dir", str(warnings), str(target),
                                    *args], env=environment, capture_output=True, text=True, check=False)
             return proc.returncode, proc.stderr
@@ -302,6 +313,16 @@ def self_test() -> int:
         status, said = launch(program, "3")
         expect("a test that failed keeps its status over the error threshold",
                status == 3 and ": error: [test-time] " in said)
+        status, said = launch(program, GITHUB_ACTIONS="true")
+        record = json.loads((build / "test" / ("test_planted" + RECORD_SUFFIX)).read_text())
+        expect("on a CI runner, a passed test over the time error threshold passes, with a warning that says that "
+               "the error was demoted", status == 0 and ": warning: [test-time] " in said and "demoted" in said
+               and ": error: " not in said and record["result"] == "passed")
+        budget("1000 | 2000", "0 | 0")
+        status, said = launch(program, GITHUB_ACTIONS="true")
+        expect("on a CI runner, a passed test over the memory error threshold still fails",
+               status == 1 and ": error: [test-memory] " in said)
+        budget("0 | 0", "1000 | 2000")
         (build / cost_meter.KIND_FILE).write_text("x86_64-debug-tsan\n")
         status, said = launch(program)
         expect("a build of a tsan kind warns on a time over the error threshold, and the test passes",

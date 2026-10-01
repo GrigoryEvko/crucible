@@ -7,7 +7,10 @@ command is a planted compiler (a Python script that writes an object), a
 planted ccache (a Python script that writes a stats log as ccache 4 does) or
 a planted linker.  A budget table and a directory of ledgers of the test set
 the thresholds and the admitted outputs.  A case examines the status, the
-output and the record of the launcher.
+output and the record of the launcher.  Each case runs with no
+GITHUB_ACTIONS, except two cases that set it to "true": on a CI runner, a
+compile past the CPU limit runs to its end with a warning, and a compile over
+the memory error threshold still fails.
 
 With `--cxx`, two more cases use the real compiler.  One compiles and links.
 The other compiles a constant evaluation that runs away, and the compile must
@@ -51,7 +54,8 @@ if mode == "sleep":
     open(out + ".started", "w").close()
     time.sleep(30)
 if mode == "spin":
-    spin = "import time\\nstop = time.process_time() + 20\\nwhile time.process_time() < stop:\\n    pass\\n"
+    spin = ("import os, time\\nstop = time.process_time() + float(os.environ.get('PLANTED_SPIN_S', '20'))\\n"
+            "while time.process_time() < stop:\\n    pass\\n")
     if subprocess.call([sys.executable, "-c", spin]) < 0:
         sys.stderr.write("tool: fatal error: Killed signal terminated program\\n")
         sys.exit(1)
@@ -124,7 +128,9 @@ class Bench:
         self.budgets = root / "budgets.txt"
         self.budgets.write_text(QUIET, encoding="utf-8")
         self.env = dict(os.environ, CRUCIBLE_BUILD_BUDGETS=str(self.budgets), CRUCIBLE_BUILD_LEDGERS=str(self.ledgers))
-        for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY"):
+        # A case that needs a CI runner sets GITHUB_ACTIONS itself, so each
+        # verdict is the same on a CI runner and on the build host.
+        for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY", "GITHUB_ACTIONS"):
             self.env.pop(name, None)
 
     def argv(self, tool: list[str], link: bool = False, output: Path | None = None) -> list[str]:
@@ -270,6 +276,19 @@ def main(argv: list[str]) -> int:
                result.returncode == 1 and time.monotonic() - started < 15 and found_line is not None
                and found_line.level == "error" and found_line.check == "compile-cpu"
                and "hard limit of 1 s" in found_line.message and bench.record().get("result") == "failed")
+        result = bench.launch(bench.tool, PLANTED_MODE="spin", PLANTED_SPIN_S="1.5", GITHUB_ACTIONS="true")
+        found_line = last_finding(result.stderr)
+        expect("on a CI runner, a compile past the CPU limit runs to its end, and its time error is a warning",
+               result.returncode == 0 and bench.object.exists() and bench.record().get("result") == "built"
+               and found_line is not None and found_line.level == "warning" and found_line.check == "compile-cpu"
+               and "hard limit of 0.9 s" in found_line.message and "demoted" in found_line.message)
+        (bench.ledgers / "compile-memory-ledger.txt").write_text("# a planted ledger\n", encoding="utf-8")
+        bench.table("compile-cpu | 1000 | 2000 | s | t\ncompile-memory | 0.0001 | 0.0002 | GB | m\n")
+        result = bench.launch(bench.tool, GITHUB_ACTIONS="true")
+        found_line = last_finding(result.stderr)
+        expect("on a CI runner, a compile over the memory error threshold still fails and removes the object",
+               result.returncode == 1 and not bench.object.exists() and bench.record().get("result") == "rejected"
+               and found_line is not None and found_line.level == "error" and found_line.check == "compile-memory")
         bench.table(QUIET)
 
         linked = bench.root / "out" / "program"

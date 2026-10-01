@@ -165,8 +165,11 @@ threshold fails the test, and the driver does not store that result, so the
 next run measures again.  utils/scripts/fixture-cpu-ledger.txt names the
 fixtures above the error threshold at this time, `fixture | note`.  A listed
 fixture gives a warning, and a listed fixture at or below the error threshold
-fails, so that its row goes.  CRUCIBLE_NEG_BUDGETS and CRUCIBLE_NEG_CPU_LEDGER
-name a different table and ledger, for the tests of the driver.
+fails, so that its row goes.  On a GitHub runner, each of these errors is a
+warning that says that it was demoted (utils/scripts/cost_meter.py, A CI
+RUNNER).  A budget that cannot be read stays an error.  CRUCIBLE_NEG_BUDGETS
+and CRUCIBLE_NEG_CPU_LEDGER name a different table and ledger, for the tests
+of the driver.
 
 test/neg_compile_driver_test.py holds the tests of the store and of the CPU
 budget.
@@ -1537,21 +1540,21 @@ def report_cpu(fixture_name: str, source: Path, result: CompileResult, is_stored
     if budget.problem:
         findings.append(report.Finding("error", place, 0, _CPU_CHECK, f"{budget.problem}."))
     elif fixture_name in budget.ledger and result.user_s <= budget.error:
-        findings.append(report.Finding("error", place, 0, _CPU_CHECK,
-                                       f"{text}, no more than the error threshold {budget.error:g} s.  Remove its "
-                                       f"row from utils/scripts/fixture-cpu-ledger.txt."))
+        findings.append(report.judged("error", place, 0, _CPU_CHECK,
+                                      f"{text}, no more than the error threshold {budget.error:g} s.  Remove its "
+                                      f"row from utils/scripts/fixture-cpu-ledger.txt."))
     elif fixture_name in budget.ledger:
-        findings.append(report.Finding("warning", place, 0, _CPU_CHECK,
-                                       f"{text}, more than the error threshold {budget.error:g} s.  It has a row in "
-                                       f"the ledger: {budget.ledger[fixture_name]}"))
+        findings.append(report.judged("warning", place, 0, _CPU_CHECK,
+                                      f"{text}, more than the error threshold {budget.error:g} s.  It has a row in "
+                                      f"the ledger: {budget.ledger[fixture_name]}"))
     elif result.user_s > budget.error:
-        findings.append(report.Finding("error", place, 0, _CPU_CHECK,
-                                       f"{text}, more than the error threshold {budget.error:g} s.  Include only the "
-                                       f"header that the fixture attacks, or make the tables that it does not read "
-                                       f"lazy."))
+        findings.append(report.judged("error", place, 0, _CPU_CHECK,
+                                      f"{text}, more than the error threshold {budget.error:g} s.  Include only the "
+                                      f"header that the fixture attacks, or make the tables that it does not read "
+                                      f"lazy."))
     elif result.user_s > budget.warn:
-        findings.append(report.Finding("warning", place, 0, _CPU_CHECK,
-                                       f"{text}, more than the warning threshold {budget.warn:g} s."))
+        findings.append(report.judged("warning", place, 0, _CPU_CHECK,
+                                      f"{text}, more than the warning threshold {budget.warn:g} s."))
     return report.emit(findings, _CPU_CHECK, warnings_dir, fixture_name)
 
 

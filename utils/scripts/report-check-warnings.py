@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_report  # noqa: E402
+import cost_meter  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
@@ -36,7 +37,7 @@ def main(argv: list[str]) -> int:
         return 2
     warnings_dir = Path(argv[0]) / check_report.WARNINGS_SUBDIR
     findings, problems = check_report.read_warnings_dir(warnings_dir)
-    annotate = check_report.is_github_actions()
+    annotate = cost_meter.is_github_actions()
     for found in findings:
         print(found.text())
         if annotate:

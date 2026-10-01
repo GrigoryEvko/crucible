@@ -32,6 +32,15 @@ GITHUB ANNOTATIONS
     each finding as a workflow command.  The CI run then shows the finding as
     an annotation on its file.
 
+A CI RUNNER
+    The time thresholds apply to the build host, and a GitHub runner is
+    slower (utils/scripts/cost_meter.py, A CI RUNNER).  A check makes the
+    finding of a judgment of a measured value with judged().  When
+    GITHUB_ACTIONS is "true", judged() gives a warning for an error of a time
+    row, and the message tells so.  An error of a memory row, of a size row
+    or of an input stays an error.  github_actions() sets or removes the
+    variable for the cases of a self-test.
+
 THE BUDGET TABLE
     utils/scripts/budgets.txt gives the warning threshold and the error
     threshold of each check that measures a quantity.  read_budgets() reads
@@ -52,10 +61,12 @@ import os
 import re
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+
+import cost_meter
 
 Level = Literal["warning", "error"]
 
@@ -239,13 +250,50 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="write the warning lines to WARNINGS_DIR/CHECK.txt for report-check-warnings.py")
 
 
-def is_github_actions() -> bool:
-    """Tell whether the check runs in a GitHub workflow.
+def judged(level: Level, path: str, line: int, check: str, message: str) -> Finding:
+    """Return the finding of one judgment of a measured value against a threshold or a ledger row.
+
+    On a GitHub runner, an error of a time row becomes a warning that gives
+    the reason (utils/scripts/cost_meter.py, ci_verdict).  A finding that
+    reports an input that the check cannot read is not a judgment, and a
+    check makes it with Finding.
+
+    Args:
+        level: The level of the judgment on the build host
+        path: The place of the finding
+        line: The line of the finding, or 0
+        check: The name of the check, which is the row of the budget table
+        message: The message
 
     Returns:
-        True when the environment sets GITHUB_ACTIONS to "true"
+        The finding
     """
-    return os.environ.get("GITHUB_ACTIONS", "") == "true"
+    shown_level, shown_message = cost_meter.ci_verdict(level, check, message)
+    return Finding("error" if shown_level == "error" else "warning", path, line, check, shown_message)
+
+
+@contextlib.contextmanager
+def github_actions(is_active: bool) -> Iterator[None]:
+    """Set or remove GITHUB_ACTIONS for the body of a with statement, and put the earlier value back after it.
+
+    A self-test uses it, so that each case gives the same verdict on a CI
+    runner and on the build host.
+
+    Args:
+        is_active: True to set GITHUB_ACTIONS to "true", False to remove it
+    """
+    earlier = os.environ.get(cost_meter.GITHUB_ACTIONS_ENV)
+    if is_active:
+        os.environ[cost_meter.GITHUB_ACTIONS_ENV] = "true"
+    else:
+        os.environ.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
+    try:
+        yield
+    finally:
+        if earlier is None:
+            os.environ.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
+        else:
+            os.environ[cost_meter.GITHUB_ACTIONS_ENV] = earlier
 
 
 def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None, key: str | None = None) -> int:
@@ -271,7 +319,7 @@ def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None, key
         raise ValueError(f"the findings of {check} name the checks {strangers}")
     if key is not None and not WRITER_KEY.fullmatch(key):
         raise ValueError(f"the writer key {key!r} of {check} is not a word of letters, digits, '_' and '-'")
-    annotate = is_github_actions()
+    annotate = cost_meter.is_github_actions()
     for found in ordered:
         print(found.text())
         if annotate:
@@ -435,6 +483,30 @@ def self_test() -> int:
            found_row == 0 and printed.getvalue().strip().isdigit())
     with contextlib.redirect_stderr(io.StringIO()):
         expect("--error-threshold fails for a missing row", print_error_threshold("no-such-check") == 1)
+
+    expect("the time rows of cost_meter are the rows of unit s of the repository table",
+           cost_meter.TIME_ROWS == {row.check for row in budgets.values() if row.unit == "s"})
+    earlier = os.environ.get(cost_meter.GITHUB_ACTIONS_ENV)
+    with github_actions(False):
+        expect("off a CI runner, a time error stays an error",
+               judged("error", "t.cpp", 0, "test-time", "slow") == Finding("error", "t.cpp", 0, "test-time", "slow"))
+        os.environ[cost_meter.GITHUB_ACTIONS_ENV] = "false"
+        expect("GITHUB_ACTIONS=false is not a CI runner", judged("error", "t.cpp", 0, "compile-cpu", "m").level == "error")
+    with github_actions(True):
+        demoted = judged("error", "t.cpp", 0, "test-time", "slow")
+        expect("on a CI runner, a time error is a warning that says that it was demoted",
+               demoted.level == "warning" and demoted.message == f"slow.  {cost_meter.CI_DEMOTION}.")
+        expect("on a CI runner, a memory error stays an error",
+               judged("error", "t.cpp", 0, "test-memory", "big") == Finding("error", "t.cpp", 0, "test-memory", "big"))
+        expect("on a CI runner, an error of a row that is not a time stays an error",
+               judged("error", "t.o", 0, "function-size", "f").level == "error")
+        expect("on a CI runner, a time warning keeps its message",
+               judged("warning", "t.cpp", 0, "link-time", "w") == Finding("warning", "t.cpp", 0, "link-time", "w"))
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            status = emit([demoted], "test-time", None)
+        expect("on a CI runner, a demoted time error gives status 0 and an annotation",
+               status == 0 and "::warning file=t.cpp,title=test-time::" in printed.getvalue())
+    expect("github_actions() puts the earlier value back", os.environ.get(cost_meter.GITHUB_ACTIONS_ENV) == earlier)
 
     if failures:
         print(f"check_report --self-test: FAILED, {len(failures)} case(s) did not hold")

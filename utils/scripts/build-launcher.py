@@ -29,6 +29,12 @@ THE BUDGET ROWS
         so.  Below the limit, a time over the warning threshold gives a
         warning line.  The error threshold itself is a check after the build,
         because the CPU time of one step depends on the load of the host.
+        On a GitHub runner, the step gets no limit, and a step past three
+        times the error threshold gives a warning line that says that the
+        time error was demoted (utils/scripts/cost_meter.py, A CI RUNNER).
+        Off a CI runner, a step past that limit with no limit on it (the
+        operating system refused the limit) fails after the step, as the
+        limit would stop it.
       * The peak memory, which is almost the same on each run of one step.
         Over the error threshold, the script removes the output, prints an
         error line and exits with status 1, unless a row of
@@ -153,6 +159,14 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
             return "built", ("warning", memory_row, message)
         return "rejected", ("error", memory_row, f"{message}.  The launcher removed the output.  Make the step "
                                                  f"smaller, or add a row with a reason")
+    if time_row in budget and run.cpu_limit_s is None and run.cpu_s > CPU_LIMIT_FACTOR * budget[time_row][1]:
+        level, message = cost_meter.ci_verdict(
+            "error", time_row, f"the {step} job used {run.cpu_s:.1f} s CPU, more than the hard limit of "
+                               f"{CPU_LIMIT_FACTOR * budget[time_row][1]:g} s, three times the error threshold of "
+                               f"{budget[time_row][1]:g} s, and no CPU limit stopped it")
+        if level == "error":
+            return "rejected", (level, time_row, f"{message}.  The launcher removed the output")
+        return "built", (level, time_row, message)
     parts = []
     check = None
     for row, value, text, unit in ((time_row, run.cpu_s, f"{run.cpu_s:.1f} s CPU", "s"),

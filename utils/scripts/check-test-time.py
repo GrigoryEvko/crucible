@@ -39,6 +39,10 @@ LEVELS
     A time is the wall time of one test while the other tests of the run run
     at the same time, so the error threshold sits above the noise of the
     shared host.  The commit that sets the row states the measured noise.
+    On a GitHub runner, each error that judges a time is a warning that says
+    that it was demoted (utils/scripts/cost_meter.py, A CI RUNNER).  A row of
+    a test that the build does not register and an input that the check
+    cannot read stay errors.
 
 Usage
     check-test-time.py --build-dir BUILD_DIR [--junit FILE] [--warnings-dir DIR]
@@ -252,9 +256,9 @@ def evaluate(times: list[TestTime], places: dict[str, Place], launched: set[str]
                                                  f"{text}.  The build kind {kind} budgets no wall time, so the timeout "
                                                  f"of the test preset is the hard stop."))
         elif level == "error":
-            findings.append(check_report.Finding("error", place.path, place.line, CHECK,
-                                                 f"{text}.  Make the test faster, or split it into several tests "
-                                                 f"over disjoint cases."))
+            findings.append(check_report.judged("error", place.path, place.line, CHECK,
+                                                f"{text}.  Make the test faster, or split it into several tests "
+                                                f"over disjoint cases."))
         else:
             findings.append(check_report.Finding("warning", place.path, place.line, CHECK, f"{text}."))
     for name, row in sorted(ledger.items()):
@@ -263,9 +267,9 @@ def evaluate(times: list[TestTime], places: dict[str, Place], launched: set[str]
                                                  f"the ledger names the test {name}, which the build does not "
                                                  f"register.  Remove the row."))
         elif name in measured and measured[name] <= budget.error:
-            findings.append(check_report.Finding("error", ledger_name, row.line, CHECK,
-                                                 f"the test {name} took {measured[name]:.2f} s, no more than the "
-                                                 f"error threshold {budget.error:g} s.  Remove its row."))
+            findings.append(check_report.judged("error", ledger_name, row.line, CHECK,
+                                                f"the test {name} took {measured[name]:.2f} s, no more than the "
+                                                f"error threshold {budget.error:g} s.  Remove its row."))
     return findings
 
 
@@ -294,6 +298,16 @@ def write_ledger(path: Path, times: list[TestTime], launched: set[str], kind: st
 
 
 def self_test() -> int:
+    """Run the cases of the self-test with GITHUB_ACTIONS removed, except in the cases that set it.
+
+    Returns:
+        0 when every case holds, 2 otherwise
+    """
+    with check_report.github_actions(False):
+        return self_test_cases()
+
+
+def self_test_cases() -> int:
     """Plant each level and each failure mode in scratch files, and check each verdict.
 
     Returns:
@@ -339,6 +353,16 @@ def self_test() -> int:
     found = run({"fast": 1.0}, {"gone": "a reason"})
     expect("an error: a row whose test the build does not register",
            len(found) == 1 and found[0].level == "error" and "does not register" in found[0].message)
+    with check_report.github_actions(True):
+        found = run({"slower": 25.0}, {})
+        expect("on a CI runner, a warning: a test above the error threshold, which says that the error was demoted",
+               len(found) == 1 and found[0].level == "warning" and "demoted" in found[0].message)
+        found = run({"listed_fast": 19.0}, {"listed_fast": "a reason"})
+        expect("on a CI runner, a warning: a row whose test took no more than the error threshold",
+               [item.level for item in found] == ["warning", "warning"] and "demoted" in found[1].message)
+        found = run({"fast": 1.0}, {"gone": "a reason"})
+        expect("on a CI runner, an error: a row whose test the build does not register",
+               len(found) == 1 and found[0].level == "error")
 
     with tempfile.TemporaryDirectory(prefix="check-test-time-") as work:
         root = Path(work)

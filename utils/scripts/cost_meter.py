@@ -20,7 +20,20 @@ MEASURE
     interrupt can arrive after wait4 returns, at a point that has no handler
     for it.  With a CPU limit, each process of the command gets
     RLIMIT_CPU of that many seconds, so a process that runs away ends on
-    SIGKILL and does not run for minutes.
+    SIGKILL and does not run for minutes.  On a CI runner, limit_cpu() sets
+    no limit (A CI RUNNER below tells why).
+
+A CI RUNNER
+    The thresholds of the time rows (TIME_ROWS: compile-cpu, link-time,
+    test-time and fixture-cpu) apply to the build host of the tree, which has
+    384 hardware threads.  A GitHub runner has 4 slower vCPUs and 16 GB, and
+    it runs two or three jobs at a time.  A time there can exceed an error
+    threshold with no defect in the tree.  When the environment sets
+    GITHUB_ACTIONS to "true", ci_verdict() changes an error of a time row to
+    a warning, and the message tells so.  limit_cpu() then sets no CPU limit,
+    because a step that the limit stops cannot become a warning.  An error of
+    a memory row, of a size row or of an input stays an error.  Each launcher
+    and each check that judges a time calls ci_verdict().
 
 THE RECORD
     write_record(path, fields) writes a JSON object with one key on each line.
@@ -65,6 +78,12 @@ RECORD_SUFFIX = ".cost"
 KIND_FILE = "build-kind.txt"
 CARRIED_KEYS = ('"cost": ', '"last_cost": ')
 KB_PER_GB = 1024 * 1024
+# The rows of utils/scripts/budgets.txt whose value is a time.  The self-test
+# of utils/scripts/check_report.py holds this set equal to the rows of unit s.
+TIME_ROWS = frozenset({"compile-cpu", "link-time", "test-time", "fixture-cpu"})
+GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
+CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
+               "thresholds apply to the build host, and a CI runner is slower")
 
 
 class Measurement:
@@ -100,6 +119,33 @@ class Measurement:
         return self.peak_rss_kb / KB_PER_GB
 
 
+def is_github_actions() -> bool:
+    """Tell whether the process runs in a GitHub workflow.
+
+    Returns:
+        True when the environment sets GITHUB_ACTIONS to "true"
+    """
+    return os.environ.get(GITHUB_ACTIONS_ENV, "") == "true"
+
+
+def ci_verdict(level: str, check: str, message: str) -> tuple[str, str]:
+    """Return the level and the message of one judgment of a measured value, for the host that measured it.
+
+    Args:
+        level: "warning" or "error"
+        check: The row of the budget table that the judgment reads
+        message: The message of the judgment
+
+    Returns:
+        A warning whose message gives the reason, for an error of a row in TIME_ROWS on a GitHub runner.
+        Else the level and the message, unchanged
+    """
+    if level != "error" or check not in TIME_ROWS or not is_github_actions():
+        return level, message
+    stop = "" if message.endswith(".") else "."
+    return "warning", f"{message}{stop}  {CI_DEMOTION}."
+
+
 def limit_cpu(seconds: float) -> int | None:
     """Give this process, and each process that it starts after the call, a CPU limit.
 
@@ -108,14 +154,18 @@ def limit_cpu(seconds: float) -> int | None:
     process that reaches the limit gets SIGKILL and no SIGXCPU.  The default
     action of SIGXCPU writes a core dump, and the GCC 16 driver crashes when
     it reports a compiler that SIGXCPU stopped.  A hard limit that the
-    environment set lower stays.
+    environment set lower stays.  On a GitHub runner, the function sets no
+    limit, because a time error there is a warning (the module docstring
+    tells why).
 
     Args:
         seconds: The limit, in seconds of CPU time
 
     Returns:
-        The limit that each process has, or None when the call could not set one
+        The limit that each process has, or None when the call set no limit
     """
+    if is_github_actions():
+        return None
     import resource
 
     limit = max(1, -int(-seconds // 1))

@@ -1028,7 +1028,8 @@ and a record of a ccache hit holds no time. A step over the memory error
 threshold of the row `compile-memory` or `link-memory` in
 `utils/scripts/budgets.txt` fails, unless a row of the ledger of that check
 admits its output with a reason. `RLIMIT_CPU` stops a step at three times the
-error threshold of the row `compile-cpu` or `link-time`. Its soft limit and its
+error threshold of the row `compile-cpu` or `link-time`, except on a GitHub
+runner (§XV "Compile time", rule 13). Its soft limit and its
 hard limit are equal, so the kernel sends SIGKILL and not SIGXCPU. The GCC 16
 driver crashes when SIGXCPU stops the compiler. The launcher adds
 approximately 10 ms to each step, and the compile database does not show it.
@@ -2358,6 +2359,7 @@ Each translation unit that includes a header compiles that header again. These r
 10. **A constant evaluation is small.** Each translation unit and each negative fixture compiles with `-fconstexpr-ops-limit` at the error threshold of the row `constexpr-ops` in `utils/scripts/budgets.txt`, the GCC default of 33,554,432 operations. `cmake/Budgets.cmake` reads the row for the build, and the session oracle and the atom roster guard read the same row. A translation unit that needs more takes a source-file `COMPILE_OPTIONS` property with its reason, beside the flag in `CMakeLists.txt`.
 11. **A test is fast and small.** `utils/scripts/test-launcher.py` runs in front of each test whose command is an executable target, because `cmake/TestLauncher.cmake` sets `CMAKE_TEST_LAUNCHER`. It measures the wall time and the peak memory of the test against the rows `test-time` and `test-memory` of `utils/scripts/budgets.txt`. Above a warning threshold, it writes a warning to `ROW.TEST.txt` in the warnings directory. Above an error threshold, a test that passed fails, unless a row of `utils/scripts/test-time-ledger.txt` or `utils/scripts/test-memory-ledger.txt` admits it for the kind of the build. In a TSan build, a wall time above the error threshold gives only a warning. CMake gives no launcher to a script test, so `utils/scripts/check-test-time.py`, a step of the CI build job, reads the wall time of those tests from the JUnit report of a ctest run.
 12. **Each test preset has a timeout.** Each test preset of `CMakePresets.json` sets a timeout for each test, as the hard stop. Never raise a timeout to make a slow test pass.
+13. **A time budget only warns on a GitHub runner.** With `GITHUB_ACTIONS=true`, `utils/scripts/cost_meter.py` changes each time error to a warning and sets no CPU limit, because the thresholds apply to the 384-thread build host.
 
 ### Include order convention
 

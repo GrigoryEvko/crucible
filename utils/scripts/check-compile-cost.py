@@ -77,9 +77,13 @@ THE LEDGERS
       * A row whose item the build does not hold gives a warning, because an
         optional target is not in each build of a kind.
     A time or memory check does not judge an item whose record is a ccache
-    hit.  The rows do not use the exact-count rule of the compile-time checks,
-    because one value changes between two hosts of one kind (-march=native)
-    and with each edit to an included header.  The build launcher reads the
+    hit.  On a GitHub runner, each error of compile-cpu and link-time that
+    judges a time is a warning that says that it was demoted
+    (utils/scripts/cost_meter.py, A CI RUNNER).  An error of a memory check, of
+    a size check or of an input stays an error.  The rows do not use the
+    exact-count rule of the compile-time checks, because one value changes
+    between two hosts of one kind (-march=native) and with each edit to an
+    included header.  The build launcher reads the
     rows of compile-memory and link-memory to admit a step over the memory
     error threshold.
     --write writes the rows of the kind of the build again from this build,
@@ -664,7 +668,7 @@ def judge(context: Context, budget: check_report.Budget, measures: list[Measure]
         if row is None:
             if level is not None:
                 limit = budget.error if level == "error" else budget.warn
-                findings.append(check_report.Finding(
+                findings.append(check_report.judged(
                     level, measure.path, 0, context.check,
                     f"{measure.message}, over the {level} threshold {limit:g} {budget_unit}"))
             continue
@@ -675,11 +679,10 @@ def judge(context: Context, budget: check_report.Budget, measures: list[Measure]
                 f"{measure.message}, over the error threshold {budget.error:g} {budget_unit}.  The row "
                 f"{ledger.shown}:{line} admits it (value {value:g} at the last --write): {reason}"))
         else:
-            findings.append(error_at(
-                context.check, ledger.shown,
+            findings.append(check_report.judged(
+                "error", ledger.shown, line, context.check,
                 f"the row admits {measure.item} in the kind {context.kind}, and it is at {measure.value:.2f} "
-                f"{budget_unit}, at or under the error threshold {budget.error:g} {budget_unit}.  Remove the row",
-                line))
+                f"{budget_unit}, at or under the error threshold {budget.error:g} {budget_unit}.  Remove the row"))
     for item, (line, _value, _reason) in sorted(rows.items(), key=lambda entry: entry[1][0]):
         if item not in measured and item not in unjudged:
             findings.append(check_report.Finding(
@@ -969,6 +972,16 @@ class Scratch:
 
 
 def self_test() -> int:
+    """Plant each verdict of each check and examine it, with GITHUB_ACTIONS removed except in the cases that set it.
+
+    Returns:
+        0 when every case holds, else 2
+    """
+    with check_report.github_actions(False):
+        return self_test_cases()
+
+
+def self_test_cases() -> int:
     """Plant each verdict of each check and examine it.
 
     Returns:
@@ -1004,6 +1017,14 @@ def self_test() -> int:
         expect("compile-cpu: a 25 s job gives an error", status == 1 and levels(found) == ["error", "warning"])
         status, found, _ = tree.run("compile-memory")
         expect("compile-memory: a 5 GB job gives an error", status == 1 and levels(found) == ["error", "warning"])
+        with check_report.github_actions(True):
+            status, found, _ = tree.run("compile-cpu")
+            expect("compile-cpu: on a CI runner, a 25 s job gives a warning that says that the error was demoted",
+                   status == 0 and levels(found) == ["warning", "warning"]
+                   and any("demoted" in f.message for f in found if f.path == "src/slower.cpp"))
+            status, found, _ = tree.run("compile-memory")
+            expect("compile-memory: on a CI runner, a 5 GB job still gives an error",
+                   status == 1 and levels(found) == ["error", "warning"])
         tree.ledger("compile-cpu", f"{debug} | CMakeFiles/lib.dir/slower.cpp.o | 25 | a planted reason\n")
         status, found, _ = tree.run("compile-cpu")
         expect("compile-cpu: a row turns the error into a warning that gives the reason",
@@ -1015,6 +1036,11 @@ def self_test() -> int:
         status, found, _ = tree.run("compile-cpu")
         expect("compile-cpu: a row of an item under the error threshold is an error",
                status == 1 and any(f.path.endswith("compile-cpu-ledger.txt") and f.level == "error" for f in found))
+        with check_report.github_actions(True):
+            status, found, _ = tree.run("compile-cpu")
+            expect("compile-cpu: on a CI runner, a row of an item under the error threshold is a warning",
+                   status == 0 and any(f.path.endswith("compile-cpu-ledger.txt") and f.level == "warning"
+                                       and "demoted" in f.message for f in found))
         tree.ledger("compile-cpu", f"{debug} | CMakeFiles/lib.dir/gone.cpp.o | 21 | a planted reason\n"
                                    f"{debug} | CMakeFiles/lib.dir/slower.cpp.o | 25 | a planted reason\n")
         status, found, _ = tree.run("compile-cpu")

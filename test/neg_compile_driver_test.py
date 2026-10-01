@@ -107,7 +107,10 @@ class StoreTest:
         The result is the exit code, the standard output, the standard error and
         the lines about the store.
         """
-        env = {name: value for name, value in os.environ.items() if not name.startswith("CRUCIBLE_NEG_")}
+        # A check that needs a CI runner sets GITHUB_ACTIONS itself, so each
+        # verdict is the same on a CI runner and on the build host.
+        env = {name: value for name, value in os.environ.items()
+               if not name.startswith("CRUCIBLE_NEG_") and name != "GITHUB_ACTIONS"}
         env["CRUCIBLE_NEG_CACHE_DIR"] = str(self.store)
         env.update(environment)
         options = ["--warnings-dir", str(warnings_dir)] if warnings_dir is not None else []
@@ -471,6 +474,12 @@ class StoreTest:
                     and self.has(failed[3], "not stored (the compile took more CPU time than the error threshold"),
                     f"a compile above the error threshold fails, and the driver measures it again: {failed[0]} "
                     f"{failed[3]}")
+        demoted = self.run("neg_convert", *CONVERT, warnings_dir=warnings, GITHUB_ACTIONS="true", **env)
+        line = finding(demoted[1], "warning")
+        self.expect(demoted[0] == 0 and line is not None and "more than the error threshold 0 s" in line
+                    and "demoted" in line and finding(demoted[1], "error") is None,
+                    f"on a CI runner, a compile above the error threshold passes with a warning that says that the "
+                    f"error was demoted: {demoted[0]} {line}")
         ledger.write_text("neg_convert | a planted reason\n")
         listed = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         line = finding(listed[1], "warning")
@@ -492,6 +501,10 @@ class StoreTest:
         line = finding(missing[1], "error")
         self.expect(missing[0] == 1 and line is not None and "has no row fixture-cpu" in line,
                     f"a budget table with no row fixture-cpu fails: {missing[0]} {line}")
+        missing = self.run("neg_convert", *CONVERT, GITHUB_ACTIONS="true", **env)
+        line = finding(missing[1], "error")
+        self.expect(missing[0] == 1 and line is not None and "has no row fixture-cpu" in line,
+                    f"on a CI runner, a budget that cannot be read still fails: {missing[0]} {line}")
 
     def check_eviction(self) -> None:
         """A store above its limit removes the entries that it did not use for the longest time."""
