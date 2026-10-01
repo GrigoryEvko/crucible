@@ -21,6 +21,12 @@ THE WARNINGS DIRECTORY
     every file of DIR.  DIR is <build>/check-warnings, so each preset has its
     own directory.
 
+    A check of which many processes run at the same time, for example one
+    for each test or each fixture, gives each process a key.  Each process
+    then writes DIR/CHECK.KEY.txt, and it removes only that file.  A key is a
+    word of letters, digits, '_' and '-', so the check name is the part of
+    the file name before the first '.'.
+
 GITHUB ANNOTATIONS
     When the environment sets GITHUB_ACTIONS to "true", the check also prints
     each finding as a workflow command.  The CI run then shows the finding as
@@ -56,6 +62,9 @@ WARNINGS_SUBDIR = "check-warnings"
 LEVELS: tuple[Level, ...] = ("warning", "error")
 # A check name is lowercase words with hyphens, so it is also a safe file name.
 CHECK_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
+# The key of one writer of a check, for example the name of one test.  It has
+# no '.', so the check name of a warnings file is the part before the first '.'.
+WRITER_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
 FINDING_LINE = re.compile(
     r"(?P<path>.+?):(?P<line>\d+): (?P<level>warning|error): \[(?P<check>[a-z0-9-]+)\] (?P<message>.*)"
 )
@@ -236,7 +245,7 @@ def is_github_actions() -> bool:
     return os.environ.get("GITHUB_ACTIONS", "") == "true"
 
 
-def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None) -> int:
+def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None, key: str | None = None) -> int:
     """Print the findings of one check, write its warnings file, and give its exit status.
 
     Complexity: O(n log n) for n findings, because of the sort.
@@ -245,28 +254,31 @@ def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None) -> 
         findings: The findings.  Each one must name this check
         check: The name of the check
         warnings_dir: The warnings directory, or None to write no file
+        key: The key of this writer, when many processes of the check run at the same time
 
     Returns:
         1 when one finding or more is an error, else 0
 
     Raises:
-        ValueError: If a finding names a different check
+        ValueError: If a finding names a different check, or the key is not a word of WRITER_KEY
     """
     ordered = sorted(findings, key=lambda found: (found.path, found.line, found.level, found.message))
     strangers = sorted({found.check for found in ordered if found.check != check})
     if strangers:
         raise ValueError(f"the findings of {check} name the checks {strangers}")
+    if key is not None and not WRITER_KEY.fullmatch(key):
+        raise ValueError(f"the writer key {key!r} of {check} is not a word of letters, digits, '_' and '-'")
     annotate = is_github_actions()
     for found in ordered:
         print(found.text())
         if annotate:
             print(found.annotation())
     if warnings_dir is not None:
-        write_warnings(warnings_dir, check, [found for found in ordered if found.level == "warning"])
+        write_warnings(warnings_dir, check, [found for found in ordered if found.level == "warning"], key)
     return 1 if any(found.level == "error" for found in ordered) else 0
 
 
-def write_warnings(warnings_dir: Path, check: str, warnings: list[Finding]) -> None:
+def write_warnings(warnings_dir: Path, check: str, warnings: list[Finding], key: str | None = None) -> None:
     """Write the warnings file of one check, or remove it when the check has no warning.
 
     A reader in another process sees the whole file or no file.
@@ -275,8 +287,14 @@ def write_warnings(warnings_dir: Path, check: str, warnings: list[Finding]) -> N
         warnings_dir: The warnings directory
         check: The name of the check
         warnings: The warnings of this run
+        key: The key of this writer, or None for the one file of the check
+
+    Raises:
+        ValueError: If the key is not a word of WRITER_KEY
     """
-    target = warnings_dir / f"{check}.txt"
+    if key is not None and not WRITER_KEY.fullmatch(key):
+        raise ValueError(f"the writer key {key!r} of {check} is not a word of letters, digits, '_' and '-'")
+    target = warnings_dir / (f"{check}.txt" if key is None else f"{check}.{key}.txt")
     if not warnings:
         target.unlink(missing_ok=True)
         return
@@ -302,10 +320,11 @@ def read_warnings_dir(warnings_dir: Path) -> tuple[list[Finding], list[str]]:
     if not warnings_dir.is_dir():
         return findings, problems
     for path in sorted(warnings_dir.glob("*.txt")):
+        check = path.name.split(".", 1)[0]
         for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             found = parse_line(raw)
-            if found is None or found.check != path.stem:
-                problems.append(f"{path}:{number}: the line is not a warning of {path.stem}: {raw}")
+            if found is None or found.check != check:
+                problems.append(f"{path}:{number}: the line is not a warning of {check}: {raw}")
             else:
                 findings.append(found)
     return findings, problems
@@ -384,6 +403,26 @@ def self_test() -> int:
         found, problems = read_warnings_dir(warnings_dir)
         expect("read_warnings_dir reports a bad line", not found and len(problems) == 1)
         expect("a missing directory reads empty", read_warnings_dir(root / "missing") == ([], []))
+        (warnings_dir / "alpha.txt").unlink()
+
+        first = Finding("warning", "neg/one.cpp", 0, "alpha", "one")
+        second = Finding("warning", "neg/two.cpp", 0, "alpha", "two")
+        expect("a writer with a key gives status 0", emit([first], "alpha", warnings_dir, "neg_one") == 0
+               and emit([second], "alpha", warnings_dir, "neg-two") == 0)
+        expect("each writer writes its own file", sorted(path.name for path in warnings_dir.glob("*.txt"))
+               == ["alpha.neg-two.txt", "alpha.neg_one.txt"])
+        found, problems = read_warnings_dir(warnings_dir)
+        expect("read_warnings_dir reads the file of each writer", sorted(found, key=lambda item: item.message)
+               == [first, second] and not problems)
+        expect("a writer with no warning removes only its own file", emit([], "alpha", warnings_dir, "neg_one") == 0
+               and [path.name for path in warnings_dir.glob("*.txt")] == ["alpha.neg-two.txt"])
+        (warnings_dir / "alpha.neg-two.txt").write_text(Finding("warning", "x", 0, "beta", "m").text() + "\n",
+                                                         encoding="utf-8")
+        found, problems = read_warnings_dir(warnings_dir)
+        expect("read_warnings_dir reports a line of another check in the file of a writer",
+               not found and len(problems) == 1)
+        refuses("emit refuses a key with a dot", lambda: emit([first], "alpha", warnings_dir, "a.b"))
+        refuses("emit refuses an empty key", lambda: emit([first], "alpha", warnings_dir, ""))
 
     if failures:
         print(f"check_report --self-test: FAILED, {len(failures)} case(s) did not hold")

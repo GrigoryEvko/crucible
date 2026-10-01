@@ -98,7 +98,32 @@ The driver stores no result in these conditions:
   The compile writes a file there, and a stored result does not write it.
 - The command reads a profile (`-fprofile-use`, `-fauto-profile`).
 
-test/neg_compile_driver_test.py holds the tests of the store.
+The CPU time of a compile
+-------------------------
+The driver measures the user and the system CPU time of each compile from the
+resource use of its child processes.  It runs one compile at a time, so the
+CPU time that its waited children gain during the call is the time of the
+compiler driver, cc1plus and the assembler.  The budget applies to the user
+time.  A compile under strace also counts the system time of the stops of
+strace, which was 0.2 s to 1.8 s for one fixture of the tree on the shared
+host, and the compile alone had 0.1 s to 0.3 s.  The user time of one fixture
+changed by less than 10% with and without strace.  The finding gives the two
+times.  The entry of the store keeps them, and a result from the store gives
+the times of the compile that made it.
+
+The row fixture-cpu of utils/scripts/budgets.txt gives the thresholds.  A
+measure above the warning threshold prints a warning in the format of
+utils/scripts/check_report.py, and writes it to the warnings directory, in a
+file of this fixture (`fixture-cpu.NAME.txt`).  A measure above the error
+threshold fails the test, and the driver does not store that result, so the
+next run measures again.  utils/scripts/fixture-cpu-ledger.txt names the
+fixtures above the error threshold at this time, `fixture | note`.  A listed
+fixture gives a warning, and a listed fixture at or below the error threshold
+fails, so that its row goes.  CRUCIBLE_NEG_BUDGETS and CRUCIBLE_NEG_CPU_LEDGER
+name a different table and ledger, for the tests of the driver.
+
+test/neg_compile_driver_test.py holds the tests of the store and of the CPU
+budget.
 """
 
 from __future__ import annotations
@@ -107,6 +132,7 @@ import hashlib
 import json
 import os
 import re
+import resource
 import secrets
 import shlex
 import shutil
@@ -220,10 +246,17 @@ def summarise_errors(stripped: str, source: Path) -> tuple[int, list[int]]:
 
 @dataclass(frozen=True, slots=True)
 class CompileResult:
-    """The exit code and the combined standard output and error of one compile."""
+    """The exit code, the combined standard output and error, and the CPU time of one compile.
+
+    `user_s` and `system_s` are the user and the system CPU time of the
+    compile in seconds.  A result from the store gives the times of the
+    compile that made it.
+    """
 
     returncode: int
     output: str
+    user_s: float
+    system_s: float
 
 
 def _replace_output(argv: list[str], output: Path) -> list[str]:
@@ -323,7 +356,13 @@ def find_compile_command(build_dir: Path, source: Path) -> tuple[list[str], Path
 
 
 def run_compile(argv: list[str], directory: Path) -> CompileResult:
-    """Compile with `argv` in `directory`, and return the exit code and the output."""
+    """Compile with `argv` in `directory`, and return the exit code, the output and the CPU time.
+
+    The driver runs one child process at a time, so the change of the resource
+    use of its waited children over the call is the use of this compile and of
+    each process that it waited for.
+    """
+    before = resource.getrusage(resource.RUSAGE_CHILDREN)
     proc = subprocess.run(
         argv,
         cwd=directory,
@@ -332,12 +371,14 @@ def run_compile(argv: list[str], directory: Path) -> CompileResult:
         stderr=subprocess.PIPE,
         check=False,
     )
-    return CompileResult(proc.returncode, proc.stdout + proc.stderr)
+    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return CompileResult(proc.returncode, proc.stdout + proc.stderr, after.ru_utime - before.ru_utime,
+                         after.ru_stime - before.ru_stime)
 
 
 # ── The result store ───────────────────────────────────────────────
 
-_STORE_MAGIC = b"crucible-neg-store 2\n"
+_STORE_MAGIC = b"crucible-neg-store 3\n"
 # A change in this period before the compile started can be a change that the
 # compiler did not see.  The period is longer than one tick of the clock that
 # sets file times.
@@ -867,6 +908,7 @@ def decode_entry(blob: bytes) -> dict[str, object] | None:
     dependencies = entry.get("dependencies")
     searched = entry.get("searched")
     returncode = entry.get("returncode")
+    times = (entry.get("user_s"), entry.get("system_s"))
     is_well_formed = (
         isinstance(dependencies, list)
         and all(
@@ -881,6 +923,10 @@ def decode_entry(blob: bytes) -> dict[str, object] | None:
         and isinstance(returncode, int)
         and not isinstance(returncode, bool)
         and isinstance(entry.get("output"), str)
+        and all(
+            isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value < float("inf")
+            for value in times
+        )
     )
     return entry if is_well_formed else None
 
@@ -934,7 +980,8 @@ class ResultStore:
             os.utime(path)
         except OSError:
             pass
-        return CompileResult(entry["returncode"], entry["output"]), ""  # type: ignore[arg-type]
+        return CompileResult(entry["returncode"], entry["output"], float(entry["user_s"]),  # type: ignore[arg-type]
+                             float(entry["system_s"])), ""  # type: ignore[arg-type]
 
     def record(
         self,
@@ -993,6 +1040,8 @@ class ResultStore:
             "searched": states,
             "output": result.output,
             "returncode": result.returncode,
+            "user_s": round(result.user_s, 3),
+            "system_s": round(result.system_s, 3),
         }
         try:
             _write_atomic(self.entry_path(key), encode_entry(entry))
@@ -1076,13 +1125,115 @@ def _note(fixture_name: str, text: str) -> None:
     print(f"neg-compile {fixture_name}: {text}", file=sys.stderr)
 
 
-def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: Path, output: Path) -> CompileResult:
-    """Return the result of the compile, from the store or from a compile.
+# ── The CPU budget of a compile ────────────────────────────────────
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SCRIPTS = _REPO_ROOT / "utils" / "scripts"
+_CPU_CHECK = "fixture-cpu"
+_CPU_LEDGER = _SCRIPTS / "fixture-cpu-ledger.txt"
+
+
+@dataclass(frozen=True, slots=True)
+class CpuBudget:
+    """The thresholds of the row fixture-cpu, and the rows of the ledger.
+
+    `problem` is the reason that the table or the ledger cannot be read, or
+    an empty text.  A budget with a problem fails the test.
+    """
+
+    warn: float
+    error: float
+    ledger: dict[str, str]
+    problem: str
+
+    def is_over_error(self, fixture_name: str, user_s: float) -> bool:
+        """Return True when a measure fails the test because of the error threshold alone."""
+        return user_s > self.error and fixture_name not in self.ledger
+
+
+def _report_module():
+    """Return the module utils/scripts/check_report.py."""
+    if str(_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS))
+    import check_report
+
+    return check_report
+
+
+def read_cpu_budget() -> CpuBudget:
+    """Read the row fixture-cpu of the budget table and the rows of the CPU ledger.
+
+    A ledger row is `fixture | note`.  CRUCIBLE_NEG_BUDGETS and
+    CRUCIBLE_NEG_CPU_LEDGER name a different table and ledger.
+    """
+    table = Path(os.environ.get("CRUCIBLE_NEG_BUDGETS") or _SCRIPTS / "budgets.txt")
+    ledger_path = Path(os.environ.get("CRUCIBLE_NEG_CPU_LEDGER") or _CPU_LEDGER)
+    try:
+        row = _report_module().read_budgets(table).get(_CPU_CHECK)
+        if row is None:
+            return CpuBudget(0.0, 0.0, {}, f"the budget table {table} has no row {_CPU_CHECK}")
+        ledger: dict[str, str] = {}
+        for number, raw in enumerate(ledger_path.read_text(encoding="utf-8").splitlines(), start=1):
+            text = raw.strip()
+            if not text or text.startswith("#"):
+                continue
+            cells = [cell.strip() for cell in text.split("|")]
+            if len(cells) != 2 or not all(cells) or cells[0] in ledger:
+                return CpuBudget(0.0, 0.0, {}, f"{ledger_path}:{number}: a row is `fixture | note`, with two "
+                                               f"cells that are not empty, and one row for each fixture")
+            ledger[cells[0]] = cells[1]
+    except (OSError, ValueError) as error:
+        return CpuBudget(0.0, 0.0, {}, f"the budget of {_CPU_CHECK} cannot be read: {error}")
+    return CpuBudget(row.warn, row.error, ledger, "")
+
+
+def report_cpu(fixture_name: str, source: Path, result: CompileResult, is_stored: bool, budget: CpuBudget,
+               warnings_dir: Path | None) -> int:
+    """Report the CPU time of the compile against the budget, and return 1 when it fails the test.
+
+    The warning line goes to the file of this fixture in the warnings
+    directory, so the many fixtures that run at the same time do not write
+    one file.
+    """
+    report = _report_module()
+    try:
+        place = str(source.relative_to(_REPO_ROOT))
+    except ValueError:
+        place = str(source)
+    findings = []
+    measured = "the stored compile" if is_stored else "the compile"
+    text = (f"{measured} of the fixture {fixture_name} took {result.user_s:.2f} s of user CPU time (and "
+            f"{result.system_s:.2f} s of system time)")
+    if budget.problem:
+        findings.append(report.Finding("error", place, 0, _CPU_CHECK, f"{budget.problem}."))
+    elif fixture_name in budget.ledger and result.user_s <= budget.error:
+        findings.append(report.Finding("error", place, 0, _CPU_CHECK,
+                                       f"{text}, no more than the error threshold {budget.error:g} s.  Remove its "
+                                       f"row from utils/scripts/fixture-cpu-ledger.txt."))
+    elif fixture_name in budget.ledger:
+        findings.append(report.Finding("warning", place, 0, _CPU_CHECK,
+                                       f"{text}, more than the error threshold {budget.error:g} s.  It has a row in "
+                                       f"the ledger: {budget.ledger[fixture_name]}"))
+    elif result.user_s > budget.error:
+        findings.append(report.Finding("error", place, 0, _CPU_CHECK,
+                                       f"{text}, more than the error threshold {budget.error:g} s.  Include only the "
+                                       f"header that the fixture attacks, or make the tables that it does not read "
+                                       f"lazy."))
+    elif result.user_s > budget.warn:
+        findings.append(report.Finding("warning", place, 0, _CPU_CHECK,
+                                       f"{text}, more than the warning threshold {budget.warn:g} s."))
+    return report.emit(findings, _CPU_CHECK, warnings_dir, fixture_name)
+
+
+def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: Path, output: Path,
+                  budget: CpuBudget) -> tuple[CompileResult, bool]:
+    """Return the result of the compile, from the store or from a compile, and True when it comes from the store.
 
     `argv` ends with `-MF` and the dependency file of this process.  After a
     compile, the dependency file goes to the name of the fixture in the scratch
     directory.  When the store can take the result, the compile runs under
-    strace (traced_compile).
+    strace (traced_compile).  A stored result whose compile took more CPU time
+    than the error threshold is a miss, so the driver measures again.
     """
     depfile = Path(argv[-1])
     store, reason = open_store()
@@ -1092,9 +1243,11 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         key, reason = compile_key(argv, directory, protected, store.identity)
     if store is not None and key is not None:
         stored, reason = store.lookup(key)
+        if stored is not None and budget.is_over_error(fixture_name, stored.user_s):
+            stored, reason = None, "the stored compile took more CPU time than the error threshold"
         if stored is not None:
             _note(fixture_name, f"the result comes from the store (entry {key})")
-            return stored
+            return stored, True
     _note(fixture_name, f"compiled ({reason})")
     depfile.unlink(missing_ok=True)
     started_ns = time.time_ns()
@@ -1122,10 +1275,12 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             is_stored, why = False, trace_reason
         elif not is_readable:
             is_stored, why = False, "the dependency file of GCC does not hold exactly one rule"
+        elif budget.is_over_error(fixture_name, result.user_s):
+            is_stored, why = False, "the compile took more CPU time than the error threshold"
         else:
             is_stored, why = store.record(key, result, dependencies, trace, started_ns)
         _note(fixture_name, f"stored (entry {key})" if is_stored else f"not stored ({why})")
-    return result
+    return result, False
 
 
 # ── The test result ────────────────────────────────────────────────
@@ -1221,9 +1376,15 @@ def main(arguments: list[str]) -> int:
     # are mandatory: a fixture whose generic regex matched but whose
     # specific regex went silent would otherwise pass.  See the two-regex
     # floor above `crucible_neg_compile_test` in test/CMakeLists.txt.
+    # `--warnings-dir DIR` before the other arguments names the warnings
+    # directory of utils/scripts/check_report.py.
+    warnings_dir: Path | None = None
+    if len(arguments) >= 3 and arguments[1] == "--warnings-dir":
+        warnings_dir = Path(arguments[2])
+        arguments = [arguments[0], *arguments[3:]]
     if len(arguments) < 5:
         print(
-            "usage: neg_compile_driver.py <build-dir> <source> "
+            "usage: neg_compile_driver.py [--warnings-dir DIR] <build-dir> <source> "
             "<fixture-name> <expected-regex> [<expected-regex> ...]",
             file=sys.stderr,
         )
@@ -1233,6 +1394,9 @@ def main(arguments: list[str]) -> int:
     source = Path(arguments[2]).resolve()
     fixture_name = arguments[3]
     expected_regexes = arguments[4:]
+    if not _report_module().WRITER_KEY.fullmatch(fixture_name):
+        print(f"the fixture name {fixture_name!r} is not a word of letters, digits, '_' and '-'", file=sys.stderr)
+        return 2
 
     found = find_compile_command(build_dir, source)
     if found is None:
@@ -1245,8 +1409,12 @@ def main(arguments: list[str]) -> int:
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
     argv = compile_argv(command, output, depfile)
-    result = obtain_result(fixture_name, argv, directory, source, output)
-    return evaluate(fixture_name, source, expected_regexes, result)
+    budget = read_cpu_budget()
+    result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget)
+    verdict = evaluate(fixture_name, source, expected_regexes, result)
+    sys.stdout.flush()
+    over_budget = report_cpu(fixture_name, source, result, is_stored, budget, warnings_dir)
+    return verdict or over_budget
 
 
 if __name__ == "__main__":

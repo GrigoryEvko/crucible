@@ -284,7 +284,12 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
                     key, _, value = item.partition("=")
                     env[key] = value
         if any(part.endswith("neg_compile_driver.py") for part in command):
-            source = str(Path(command[3]).resolve())
+            # The driver takes `[--warnings-dir DIR] <build-dir> <source> ...`.
+            driver_at = next(index for index, part in enumerate(command) if part.endswith("neg_compile_driver.py"))
+            arguments = command[driver_at + 1:]
+            if arguments[:1] == ["--warnings-dir"]:
+                arguments = arguments[2:]
+            source = str(Path(arguments[1]).resolve())
             entry = by_file.get(source)
             compile_argv = _strip_output(_entry_argv(entry)) if entry else []
             candidates.append(Candidate(test["name"], "neg", command, str(build), env, source,

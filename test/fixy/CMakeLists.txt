@@ -57,6 +57,7 @@ function(fixy_neg_compile_test name)
   target_link_libraries(${name} PRIVATE fixy)
   add_test(NAME ${name}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/test/neg_compile_driver.py
+            --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR}
             ${CMAKE_BINARY_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/neg/${name}.cpp
             ${name}

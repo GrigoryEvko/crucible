@@ -1284,6 +1284,7 @@ function(crucible_neg_compile_test name)
   target_link_libraries(${name} PRIVATE crucible)
   add_test(NAME ${name}
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver.py
+            --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR}
             ${CMAKE_BINARY_DIR}
             ${source}
             ${name}
@@ -1297,12 +1298,14 @@ endfunction()
 # compiles small fixtures in temporary trees, each with a store of its own.  It
 # changes a header, adds a header earlier in the search list, adds a file that
 # a __has_include probe names, adds the header that a fatal error misses, and
-# damages and changes an entry.  Each check waits about one second for the
+# damages and changes an entry.  It also gives the driver a budget table and a
+# ledger of its own, and checks the warning, the error and the ledger rows of
+# the CPU budget of a compile.  Each check waits about one second for the
 # files of its tree to age, and the checks run as FIXTURE_STORE_SELF_TEST_PARTS
 # parts at the same time.  Part K runs each check whose position modulo the
 # count of parts is K.  Exit 3 reports a skip when the compiler cannot run or
 # strace cannot record a program.
-set(FIXTURE_STORE_SELF_TEST_PARTS 10)
+set(FIXTURE_STORE_SELF_TEST_PARTS 11)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   add_test(NAME fixture_store_self_test_${part}

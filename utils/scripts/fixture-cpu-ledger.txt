@@ -1,0 +1,9 @@
+# utils/scripts/fixture-cpu-ledger.txt — the negative fixtures whose cold compile takes more CPU time
+# than the error threshold of the row fixture-cpu of utils/scripts/budgets.txt.
+# test/neg_compile_driver.py reads it after each compile and each result from its store.
+#
+# A row:  fixture | note
+#
+# A fixture with a row gives a warning, so the debt stays visible.  A fixture with a row whose compile
+# takes no more than the error threshold fails its test.  Remove the row in the commit that makes the
+# fixture fast.
