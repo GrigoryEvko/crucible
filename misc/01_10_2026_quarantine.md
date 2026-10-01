@@ -349,6 +349,8 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 
 **Goal.** No translation unit of the tree takes more than 20 s at `-j1` in Debug.
 
+The first part of 0i started early, on 2026-10-01, for the crucible test files whose back end makes them long (test_vigil_dispatch, test_region_cache, the model tests, test_vigil and others). No check-move unit edits those files. The fixy test files on the list wait for the 0c units, because those units can edit them.
+
 1. Build `all` from clean on main after the 0c units land, and list each translation unit above 20 s from the ninja log. At the baseline the list held, among others: test_vigil_dispatch 66 s, test_region_cache 58 s, test_vigil 47 s, test_mlp_trace 46 s, test_vit 42 s, test_resnet 42 s, test_vigil_deadline_watchdog 38 s, test_transaction_owner 38 s, vessel_api 36 s, rejections_generated 35 s, test_background_thread_run_in_row 33 s, test_owned_region 32 s, test_end_to_end 29 s.
 2. Split each test file on the list by subject into several source files of the same executable. The ctest names and every case stay the same. A generated file comes out of its generator as shards.
 3. When one header alone costs more than half of the 20 s, the split cannot help. Report that header to the matching 0h unit, with its `-ftime-report` table.
