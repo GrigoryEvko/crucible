@@ -386,7 +386,7 @@ All numbers come from `build-gauge.sh` on the same host as the baseline:
 - The tail: no translation unit, no fixture and no test takes more than 20 s at `-j1` in Debug.
 - The clean Debug build of `all` takes at most 60 s wall at `-j192` (or at the highest job count that the memory check allows, with the job count stated).
 - `ctest` of the full Debug suite takes at most 60 s wall at `-j192` with a cold fixture store. A second run on an unchanged tree compiles no fixture.
-- The total CPU of the build and of the cold fixture run is reported, and it is not more than the baseline.
+- The total CPU is not a target (owner, 2026-10-01). Only the longest single job counts.
 - The header-checks guard is in error mode with an empty ledger, apart from reasoned rows.
 - The full suite passes in the Debug, Release, TSan and UBSan-strict presets, with identical results for every determinism test.
 
