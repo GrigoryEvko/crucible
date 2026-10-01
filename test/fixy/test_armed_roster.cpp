@@ -536,13 +536,13 @@ struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_stage_ed
     using refuses = witnesses<int, ::fixy::concurrent::StagePack<>>;
 };
 
-// A stage is named by the self-test stage of fixy/concurrent/Stage.h,
+// A stage is named by the witness stage body of fixy/concurrent/Stage.h,
 // which fits the foreground context.  Naming the type does not build a
 // stage, so no handle and no channel is made here.
 template <>
 struct foundation::contracts::armed_cell<::fixy::concurrent::detail::is_stage> {
     using accepts = witnesses<
-        ::fixy::concurrent::Stage<&::fixy::concurrent::detail::stage_self_test::stage_pass_through, ::fixy::HotFgCtx>>;
+        ::fixy::concurrent::Stage<&::fixy::concurrent::detail::stage_witness::stage_pass_through, ::fixy::HotFgCtx>>;
     using refuses = witnesses<int, ::fixy::concurrent::StagePack<>, ::fixy::concurrent::StageEdge<0, 1, 0, 0>>;
 };
 
@@ -773,7 +773,7 @@ struct foundation::contracts::armed_cell<::fixy::concurrent::is_stage_inline_saf
 
 // The handles of a variadic stage match its parameters in count, order
 // and type.
-namespace stage_fakes = ::fixy::concurrent::detail::stage_self_test;
+namespace stage_fakes = ::fixy::concurrent::detail::stage_witness;
 template <>
 struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_variadic_stage_take_handles> {
     using accepts = witnesses<::fixy::concurrent::detail::can_variadic_stage_take_handles<

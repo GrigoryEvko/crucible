@@ -43,7 +43,6 @@ fixy::concurrent::is_consumer_handle_v | 4
 fixy::concurrent::is_producer_handle_v | 3
 fixy::concurrent::is_swmr_reader_v | 2
 fixy::concurrent::is_swmr_writer_v | 3
-fixy::concurrent::mint_stage | 1
 fixy::concurrent::stage_input_count_v | 1
 fixy::concurrent::stage_output_count_v | 1
 fixy::corpus::classified_bg_without_declassify::matches | 1

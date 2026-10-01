@@ -2,7 +2,7 @@
 // utils/scripts/witness-roster.txt.  Edit the roster, not this file.
 // clang-format off: the generator owns this layout, and --check compares it byte for byte.
 //
-// fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_self_test::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_self_test::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterBrand>::WriterHandle attests to a fact it cannot see.  The expression below is the
+// fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterHandle attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
 // refusal must read "is private within this context".
@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_self_test::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_self_test::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterBrand>::WriterHandle{forge::lvalue<fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_self_test::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_self_test::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterBrand>>(), forge::rvalue<foundation::permissions::Permission<fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_self_test::WriterBrand>>()};
+    [[maybe_unused]] auto forged = fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterHandle{forge::lvalue<fixy::concurrent::swmr_session::SwmrSession<int, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>>(), forge::rvalue<foundation::permissions::Permission<fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterTag, fixy::concurrent::swmr_session::detail::swmr_session_witness::WriterBrand>>()};
     return 0;
 }

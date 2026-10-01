@@ -157,40 +157,13 @@ class EndpointDoor final : ::foundation::NoObject<EndpointDoor> {
     }
 };
 
-namespace detail::endpoint_self_test {
-
-namespace proto = ::fixy::session;
-
+// The tags and the context that only checks name.  The witness roster
+// (utils/scripts/witness-roster.txt) and the check file of this header
+// spell an endpoint over them, and no code builds a channel of them.
+namespace detail::endpoint_witness {
 struct UserTag {};
 struct UserBrand {};
-using SmallSpsc = PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
-using SmallMpsc = PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
-using ProdEp = Endpoint<SmallSpsc, Direction::Producer, FgCtx>;
-using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, FgCtx>;
-using MpscProdEp = Endpoint<SmallMpsc, Direction::Producer, FgCtx>;
-
-static_assert(std::is_same_v<typename ProdEp::handle_type, typename SmallSpsc::ProducerHandle>);
-static_assert(std::is_same_v<typename ConsEp::handle_type, typename SmallSpsc::ConsumerHandle>);
-static_assert(std::is_same_v<typename MpscProdEp::handle_type, typename SmallMpsc::ProducerHandle>);
-static_assert(std::is_same_v<typename ProdEp::value_type, int>);
-static_assert(std::is_same_v<typename ProdEp::user_tag, UserTag>);
-static_assert(std::is_same_v<typename ProdEp::ctx_type, FgCtx>);
-static_assert(std::is_same_v<typename ProdEp::proto_type, proto::Loop<proto::Send<int, proto::Continue>>>);
-
-// Head line, tail line and the cell line, as the handle states.
-static_assert(ProdEp::per_call_working_set == 192);
-
-static_assert(!std::is_copy_constructible_v<ProdEp>);
-static_assert(!std::is_copy_assignable_v<ProdEp>);
-static_assert(std::is_move_constructible_v<ProdEp>);
-static_assert(!std::is_move_assignable_v<ProdEp>);
-static_assert(std::is_nothrow_move_constructible_v<ProdEp>);
-
-static_assert(sizeof(ProdEp) == sizeof(void*), "Endpoint must collapse to pointer-size — Ctx EBO-collapse is "
-                                               "load-bearing for the zero-runtime-cost claim.");
-static_assert(sizeof(ConsEp) == sizeof(void*));
-
-}  // namespace detail::endpoint_self_test
+}  // namespace detail::endpoint_witness
 
 }  // namespace fixy::concurrent

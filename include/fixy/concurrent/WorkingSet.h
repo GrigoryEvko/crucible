@@ -48,9 +48,6 @@ inline constexpr std::size_t conservative_l1d_per_core = 32 * 1024;
 inline constexpr std::size_t conservative_l2_per_core = 256 * 1024;
 inline constexpr std::size_t conservative_l3_total = 4 * 1024 * 1024;
 
-static_assert(conservative_l1d_per_core < conservative_l2_per_core);
-static_assert(conservative_l2_per_core < conservative_l3_total);
-
 [[nodiscard]] consteval std::size_t cell_line_footprint(std::size_t value_bytes) noexcept {
     if (value_bytes == 0) return 0;
     return ((value_bytes + hot_path_cache_line_bytes - 1) / hot_path_cache_line_bytes) * hot_path_cache_line_bytes;

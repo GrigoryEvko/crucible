@@ -261,35 +261,13 @@ template <RingValue T, std::size_t Capacity, typename Root>
 using mpsc_channel_t = PermissionedMpscChannel<T, Capacity, typename detail::mpsc_root_parts<Root>::user_tag,
                                                typename detail::mpsc_root_parts<Root>::brand>;
 
-namespace detail::mpsc_channel_self_test {
-
-// The tag and the brand the witness roster names for this channel.
+// The tag and the brand the witness roster names for this channel.  The
+// check file of this header names them too, and no code builds a channel
+// of them.
+namespace detail::mpsc_channel_witness {
 struct WitnessTag {};
 struct WitnessBrand {};
-
-// A channel names its tag and a brand of one root.  A channel that omits
-// the tag or the brand names no type, and no channel is on the erased
-// brand or on a type that is not a brand.
-template <template <RingValue, std::size_t, typename, ::foundation::brand::IsFreshBrand> class Channel,
-          typename... TagAndBrand>
-concept NamesAChannelOf = requires { typename Channel<int, 8, TagAndBrand...>; };
-static_assert(NamesAChannelOf<PermissionedMpscChannel, WitnessTag, WitnessBrand>);
-static_assert(!NamesAChannelOf<PermissionedMpscChannel>);
-static_assert(!NamesAChannelOf<PermissionedMpscChannel, WitnessTag>);
-static_assert(!NamesAChannelOf<PermissionedMpscChannel, WitnessTag, ::foundation::brand::DefaultBrand>);
-static_assert(!NamesAChannelOf<PermissionedMpscChannel, WitnessTag, int>);
-
-using Witness = PermissionedMpscChannel<int, 8, WitnessTag, WitnessBrand>;
-static_assert(
-    std::is_same_v<mpsc_channel_t<int, 8, ::foundation::permissions::Permission<Witness::whole_tag, WitnessBrand>>,
-                   Witness>);
-
-// The producer root is the one door into the pool, and no default
-// constructor builds a channel with an empty pool.
-static_assert(!std::is_default_constructible_v<Witness>);
-static_assert(sizeof(Witness::ConsumerHandle) == sizeof(void*));
-
-}  // namespace detail::mpsc_channel_self_test
+}  // namespace detail::mpsc_channel_witness
 
 }  // namespace fixy::concurrent
 

@@ -2,7 +2,7 @@
 // utils/scripts/witness-roster.txt.  Edit the roster, not this file.
 // clang-format off: the generator owns this layout, and --check compares it byte for byte.
 //
-// fixy::concurrent::SwmrStage<&fixy::concurrent::detail::stage_self_test::stage_swmr_publish, fixy::HotFgCtx> attests to a fact it cannot see.  The expression below is the
+// fixy::concurrent::SwmrStage<&fixy::concurrent::detail::stage_witness::stage_swmr_publish, fixy::HotFgCtx> attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
 // refusal must read "is private within this context".
@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::concurrent::SwmrStage<&fixy::concurrent::detail::stage_self_test::stage_swmr_publish, fixy::HotFgCtx>{forge::lvalue<fixy::HotFgCtx>(), forge::rvalue<fixy::concurrent::detail::stage_self_test::FakeConsumer<int>>(), forge::rvalue<fixy::concurrent::detail::stage_self_test::FakeWriter<int>>()};
+    [[maybe_unused]] auto forged = fixy::concurrent::SwmrStage<&fixy::concurrent::detail::stage_witness::stage_swmr_publish, fixy::HotFgCtx>{forge::lvalue<fixy::HotFgCtx>(), forge::rvalue<fixy::concurrent::detail::stage_witness::FakeConsumer<int>>(), forge::rvalue<fixy::concurrent::detail::stage_witness::FakeWriter<int>>()};
     return 0;
 }

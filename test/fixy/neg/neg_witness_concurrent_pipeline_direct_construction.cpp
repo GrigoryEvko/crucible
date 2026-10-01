@@ -2,7 +2,7 @@
 // utils/scripts/witness-roster.txt.  Edit the roster, not this file.
 // clang-format off: the generator owns this layout, and --check compares it byte for byte.
 //
-// fixy::concurrent::Pipeline<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_self_test::stage_pass_through, fixy::HotFgCtx>> attests to a fact it cannot see.  The expression below is the
+// fixy::concurrent::Pipeline<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>> attests to a fact it cannot see.  The expression below is the
 // raw data a forger would hand its constructor, and the fixture stands
 // on the door staying shut: the construction must be refused, and the
 // refusal must read "is private within this context".
@@ -26,6 +26,6 @@ template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::concurrent::Pipeline<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_self_test::stage_pass_through, fixy::HotFgCtx>>{forge::rvalue<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_self_test::stage_pass_through, fixy::HotFgCtx>>()};
+    [[maybe_unused]] auto forged = fixy::concurrent::Pipeline<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>>{forge::rvalue<fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>>()};
     return 0;
 }

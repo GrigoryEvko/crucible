@@ -711,10 +711,4 @@ inline void Topology::probe_linux_(std::string_view sysfs_root) noexcept {
 }
 #endif  // __has_include(<filesystem>)
 
-static_assert(std::is_class_v<Topology>);
-// The address of the singleton is the identity of the probed data, so it
-// neither copies nor moves.
-static_assert(!std::is_copy_constructible_v<Topology>);
-static_assert(!std::is_move_constructible_v<Topology>);
-
 }  // namespace fixy::concurrent

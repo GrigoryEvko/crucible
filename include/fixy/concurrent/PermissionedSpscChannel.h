@@ -262,40 +262,13 @@ template <RingValue T, std::size_t Capacity, typename Root>
 using spsc_channel_t = PermissionedSpscChannel<T, Capacity, typename detail::spsc_root_parts<Root>::user_tag,
                                                typename detail::spsc_root_parts<Root>::brand>;
 
-namespace detail::spsc_channel_self_test {
-
-// The tag and the brand the witness roster names for this channel.
+// The tag and the brand the witness roster names for this channel.  The
+// check file of this header names them too, and no code builds a channel
+// of them.
+namespace detail::spsc_channel_witness {
 struct WitnessTag {};
 struct WitnessBrand {};
-
-// A channel names its tag and a brand of one root.  A channel that omits
-// the tag or the brand names no type, and no channel is on the erased
-// brand or on a type that is not a brand.
-template <template <RingValue, std::size_t, typename, ::foundation::brand::IsFreshBrand> class Channel,
-          typename... TagAndBrand>
-concept NamesAChannelOf = requires { typename Channel<int, 8, TagAndBrand...>; };
-static_assert(NamesAChannelOf<PermissionedSpscChannel, WitnessTag, WitnessBrand>);
-static_assert(!NamesAChannelOf<PermissionedSpscChannel>);
-static_assert(!NamesAChannelOf<PermissionedSpscChannel, WitnessTag>);
-static_assert(!NamesAChannelOf<PermissionedSpscChannel, WitnessTag, ::foundation::brand::DefaultBrand>);
-static_assert(!NamesAChannelOf<PermissionedSpscChannel, WitnessTag, int>);
-
-using Witness = PermissionedSpscChannel<int, 8, WitnessTag, WitnessBrand>;
-static_assert(
-    std::is_same_v<spsc_channel_t<int, 8, ::foundation::permissions::Permission<Witness::whole_tag, WitnessBrand>>,
-                   Witness>);
-
-// A channel of another brand is another type, and so is each handle.
-struct OtherBrand {};
-using OtherWitness = PermissionedSpscChannel<int, 8, WitnessTag, OtherBrand>;
-static_assert(!std::is_same_v<Witness, OtherWitness>);
-static_assert(!std::is_same_v<Witness::ProducerHandle::channel_type, OtherWitness::ConsumerHandle::channel_type>);
-
-// The binding and the claim keep the handles one pointer wide.
-static_assert(sizeof(Witness::ProducerHandle) == sizeof(void*));
-static_assert(sizeof(Witness::ConsumerHandle) == sizeof(void*));
-
-}  // namespace detail::spsc_channel_self_test
+}  // namespace detail::spsc_channel_witness
 
 }  // namespace fixy::concurrent
 

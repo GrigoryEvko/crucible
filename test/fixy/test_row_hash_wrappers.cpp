@@ -856,8 +856,20 @@ using CheckpointAtEnd = ::fixy::session::CheckpointHandle<
     PlainHandle, ::fixy::session::End, void,
     ::fixy::session::CheckpointFrame<::fixy::session::End, ::fixy::session::End, void>>;
 
-namespace stage_probe = ::fixy::concurrent::detail::stage_self_test;
-namespace pipeline_probe = ::fixy::concurrent::detail::pipeline_self_test;
+// The three stage shapes and the two pipeline shapes, each over the
+// witness stage bodies of fixy/concurrent/Stage.h.  Naming a type builds
+// no stage, so no handle and no channel is made here.
+namespace stage_fakes = ::fixy::concurrent::detail::stage_witness;
+using StageWitness = ::fixy::concurrent::Stage<&stage_fakes::stage_pass_through, ::fixy::HotFgCtx>;
+using MpmcStageWitness =
+    ::fixy::concurrent::MpmcStage<&stage_fakes::stage_fan_in_two, ::fixy::HotFgCtx,
+                                  std::tuple<stage_fakes::FakeConsumer<int>, stage_fakes::FakeConsumer<int>>,
+                                  std::tuple<stage_fakes::FakeProducer<int>>>;
+using SwmrStageWitness = ::fixy::concurrent::SwmrStage<&stage_fakes::stage_swmr_publish, ::fixy::HotFgCtx>;
+using PipelineWitness = ::fixy::concurrent::Pipeline<StageWitness>;
+using PipelineDagWitness = ::fixy::concurrent::PipelineDag<
+    ::fixy::concurrent::StageGraph<::fixy::concurrent::StagePack<StageWitness, StageWitness>,
+                                   ::fixy::concurrent::EdgePack<::fixy::concurrent::StageEdge<0, 1>>>>;
 
 inline constexpr CarrierWitness kCarriers[] = {
     {^^fa::Graded, ^^fa::Graded<fa::ModalityKind::Absolute, PureDet, int>},
@@ -954,11 +966,11 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::PermissionedSpscChannel, ^^SpscWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
     {^^::fixy::concurrent::swmr_session::SwmrSession, ^^SwmrWitness},
-    {^^::fixy::concurrent::Stage, ^^stage_probe::S1},
-    {^^::fixy::concurrent::MpmcStage, ^^stage_probe::M1},
-    {^^::fixy::concurrent::SwmrStage, ^^stage_probe::W1},
-    {^^::fixy::concurrent::Pipeline, ^^pipeline_probe::P1},
-    {^^::fixy::concurrent::PipelineDag, ^^pipeline_probe::PDiamond},
+    {^^::fixy::concurrent::Stage, ^^StageWitness},
+    {^^::fixy::concurrent::MpmcStage, ^^MpmcStageWitness},
+    {^^::fixy::concurrent::SwmrStage, ^^SwmrStageWitness},
+    {^^::fixy::concurrent::Pipeline, ^^PipelineWitness},
+    {^^::fixy::concurrent::PipelineDag, ^^PipelineDagWitness},
 
     {^^::fixy::handle::SetOnce, ^^::fixy::handle::SetOnce<int>},
     {^^::fixy::handle::Lazy, ^^::fixy::handle::Lazy<int>},
@@ -1428,8 +1440,8 @@ static_assert(row_hash_contribution_v<::fixy::AtomicMonotonic<std::uint64_t>>
 
 // A pipeline is not the stage it runs, and the two ends of a channel are
 // two claims.
-static_assert(row_hash_contribution_v<pipeline_probe::P1> != row_hash_contribution_v<pipeline_probe::S_int_to_int>);
-static_assert(row_hash_contribution_v<stage_probe::S1> != row_hash_contribution_v<stage_probe::W1>);
+static_assert(row_hash_contribution_v<PipelineWitness> != row_hash_contribution_v<StageWitness>);
+static_assert(row_hash_contribution_v<StageWitness> != row_hash_contribution_v<SwmrStageWitness>);
 static_assert(row_hash_contribution_v<SpscWitness::ProducerHandle>
               != row_hash_contribution_v<SpscWitness::ConsumerHandle>);
 static_assert(row_hash_contribution_v<MpscWitness::ProducerHandle>
