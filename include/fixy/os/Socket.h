@@ -15,7 +15,7 @@
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/AtomPack.h>
-#include <fixy/os/Fs.h>
+#include <fixy/os/Fd.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>

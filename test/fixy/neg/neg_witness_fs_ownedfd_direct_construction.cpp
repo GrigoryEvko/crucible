@@ -11,7 +11,7 @@
 // renders it, with parentheses.  The source spells it with braces, so
 // the match cannot be satisfied by the fixture's own text.
 
-#include <fixy/os/Fs.h>
+#include <fixy/os/Fd.h>
 
 #include <cstddef>
 #include <cstdint>

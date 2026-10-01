@@ -27,7 +27,7 @@ static_assert(!std::is_constructible_v<OwnedFile, std::FILE*>,
               "mint_owned_file or mint_temporary_file.");
 static_assert(!std::is_constructible_v<OwnedFile, int>,
               "There is no descriptor form either: fdopen over a descriptor owned elsewhere would fclose that "
-              "descriptor.  A descriptor is OwnedFd's business, in fixy/os/Fs.h.");
+              "descriptor.  A descriptor is OwnedFd's business, in fixy/os/Fd.h.");
 static_assert(std::is_default_constructible_v<OwnedFile>, "The empty handle claims nothing, so it stays reachable.");
 
 // The release door admits a leak atom on an rvalue handle and nothing

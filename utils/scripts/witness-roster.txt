@@ -207,7 +207,7 @@ fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | f
 fixy::OwnedFile | fixy/OwnedFile.h | fixy::OwnedFile{stdout} | private | closed
 fixy::OwnedFileDoor | fixy/OwnedFile.h | fixy::OwnedFileDoor{} | deleted | closed
 fixy::io::IoUringRing | fixy/os/Io.h | fixy::io::IoUringRing{3, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, static_cast<void*>(nullptr), std::size_t{0}, std::uint32_t{0}, std::uint32_t{0}} | private | closed
-fixy::fs::OwnedFd | fixy/os/Fs.h | fixy::fs::OwnedFd{3} | private | closed
+fixy::fs::OwnedFd | fixy/os/Fd.h | fixy::fs::OwnedFd{3} | private | closed
 # The three doors of OwnedFd.  No object of a door exists, its members
 # are private, and its friends are the gated mints that open a descriptor.
 fixy::fs::FileDoor | fixy/os/Fs.h | fixy::fs::FileDoor{} | deleted | closed

@@ -16,7 +16,7 @@
 #include <fixy/Refined.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
-#include <fixy/os/Fs.h>
+#include <fixy/os/Fd.h>
 #include <foundation/Lifetime.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
@@ -26,6 +26,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <ctime>
 #include <expected>
