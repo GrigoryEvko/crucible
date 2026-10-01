@@ -54,6 +54,12 @@ After a header unit exists in `gcm.cache`, a plain `#include "h.h"` under `-fmod
 - Precompiled header for each include prefix: the fixture CPU fell almost by half, but the wall time after a base-header edit rose from 34 s to 58 s at 192 jobs, because each precompiled header takes 1.5 to 3 times one fixture compile and its group waits for it. The run wrote 28 GB of precompiled headers.
 - Header units: the fixture CPU fell by 4.2 to 4.5 times (2,989 s to 617 s of user time at 192 jobs). After an edit of `foundation/Platform.h`, the module files of 357 project headers take about 5 s to build again, on a critical path of 19 headers. With that, all fixtures took 19.4 s against 25.5 s at 192 jobs on a loaded host. 318 fixture verdicts changed.
 
-## Other GCC 16 defect found in the same work
+## Other GCC 16 defects found in the same work
 
 **S1. The driver crashes after SIGXCPU.** When `RLIMIT_CPU` stops a compile with SIGXCPU, the driver `g++` crashes with SIGSEGV in `diagnostics::context::action_after_output` and leaves a core dump. The compile launcher of the tree (`utils/scripts/cost_meter.py`) stops a step with SIGKILL for this reason.
+
+**S2. Where the template contracts go.** In `gcc/cp/module.cc` (lines 11347 to 11354 of 16.2.1), the module writer walks `get_fn_contract_specifiers(fn)` only in the dependency pass and never streams it. The importer gets only `DECL_PRE_FN` and `DECL_POST_FN`, and a template has neither, so an instantiation has no contract (C1). In a precompiled header the precondition was lost in 55 of 55 builds, and a `post` on a class-template member in 23 of 25. A possible cause is `contract_decl_map`, a hash map keyed by tree pointers; not confirmed.
+
+**S3. A lambda with `pre` inside a function template crashes the compiler.** The instantiation gives an internal compiler error in `expand_expr_real_1` (`expr.cc:11648`). The tree has no native `pre`, so this does not occur in the tree.
+
+**S4. A header unit of a header that uses contracts gives "conflicting declaration `std::contracts::contract_violation`".**
