@@ -31,7 +31,7 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 
 Crucible has no proof-assistant source of truth. Correctness is won by three complementary disciplines: **contracts-enforced invariants** (P2900R14), **linear / refined / session-typed wrappers** over every resource, and **measurement** (Mimic MAP-Elites + calibrated simulators + cross-vendor CI — §L2, §L15). The first two disciplines operate at this time. The measurement discipline is planned, because no compute backend exists. No SMT-proven optimal kernels; no proved-allocators-theorem. What we have instead:
 
-**Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`pre`/`post`/`contract_assert`), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast`, saturation arithmetic. Detail catalog in §II of the Code Guide below.
+**Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`CRUCIBLE_PRE`/`CRUCIBLE_POST`/`contract_assert` in the function body, §XII), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast`, saturation arithmetic. Detail catalog in §II of the Code Guide below.
 
 **Safety wrappers.** The value-level wrappers are in `include/fixy/`, in namespace `fixy`. One algebraic substrate unifies them: `Graded<Modality, Lattice, T>` in `include/foundation/algebra/Graded.h`, in namespace `foundation::algebra`. The design is in `misc/25_04_2026.md` §2. Every Graded-backed wrapper exposes a uniform diagnostic surface (`graded_type`, `lattice_type`, `value_type`, `modality`, `value_type_name()`, `lattice_name()`), and most wrappers get it from `fixy::graded_facade` in `include/fixy/GradedFacade.h`. The `GradedWrapper` concept in `include/foundation/algebra/GradedTrait.h` enforces the contract structurally. Adversarial cheat-detection harness at `test/fixy/test_cheat_probe.cpp` (56 cheats, 2 of them admitted and documented).
 
@@ -704,7 +704,7 @@ void connect(uint32_t src, uint32_t dst, uint32_t slot);
 
 **Cost of violation:** crash (best case) or silent wrong answer.
 
-**Compiler enforcement:** `-Werror=null-dereference -Werror=nonnull -Werror=nonnull-compare -Wanalyzer-null-dereference -Wanalyzer-possible-null-dereference`, contracts `pre(p != nullptr)` on all pointer params.
+**Compiler enforcement:** `-Werror=null-dereference -Werror=nonnull -Werror=nonnull-compare -Wanalyzer-null-dereference -Wanalyzer-possible-null-dereference`, `CRUCIBLE_PRE(p != nullptr)` on all pointer params.
 
 **Discipline:**
 - `[[nodiscard]]` on every query returning bool or pointer.
@@ -720,9 +720,8 @@ void connect(uint32_t src, uint32_t dst, uint32_t slot);
 }
 
 // Boundary function: contract-enforce non-null
-void process(const TraceEntry* entry)
-    pre (entry != nullptr)
-{
+void process(const TraceEntry* entry) {
+    CRUCIBLE_PRE(entry != nullptr);
     // body can assume entry is non-null
 }
 ```
@@ -830,7 +829,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 | Feature | Paper | Usage |
 |---|---|---|
-| Contracts (`pre`/`post`/`contract_assert`) | P2900R14 | Every boundary function. Debug `enforce`, Release `observe`. Only a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS` changes to `ignore` (§XII names each one) |
+| Contracts (`contract_assert`, through `CRUCIBLE_PRE`/`CRUCIBLE_POST`) | P2900R14 | Every boundary function. Debug `enforce`, Release `observe`. Only a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS` changes to `ignore` (§XII names each one). A `pre` or `post` specifier on a declaration is a compile error in each build (§XII) |
 | Erroneous behavior for uninit reads | P2795R5 | Foundation of InitSafe axiom |
 | Partial program correctness | P1494R5 | Contract violation = `std::terminate`, not UB |
 | Trivial infinite loops not UB | P2809R3 | Closes LLVM `while(1){}` → unreachable optimization |
@@ -1035,6 +1034,14 @@ driver crashes when SIGXCPU stops the compiler. The launcher adds
 approximately 10 ms to each step, and the compile database does not show it.
 `utils/scripts/cost_meter.py` holds the measurement and the record format, and
 each launcher imports it.
+
+In each preset, `utils/tools/quarantine/Quarantine.cmake` builds the GCC plugin
+of `utils/tools/quarantine/` at configure time, and puts `-fplugin=` and the
+plugin arguments on each C++ compile. With `CRUCIBLE_QUARANTINE=OFF`, the
+plugin applies only the contract rule of §XII. The load of the plugin adds
+approximately 6 ms to each compile, and the rule takes less than 0.2% of the
+CPU time of a heavy unit. ccache ignores the paths in the plugin arguments, so
+the build directories of two work trees share the cache.
 
 ### Debug preset
 
@@ -1867,13 +1874,14 @@ template<typename T>
 ### Contract on boundary, bare on hot path
 
 ```cpp
-// Boundary: contract-checked
-std::expected<PlanId, Error> submit_plan(PlanId id, std::span<const PatchValue> patches)
-    pre  (!id.is_none())
-    pre  (std::all_of(patches.begin(), patches.end(), valid_patch))
-    post (r) (r.has_value() || !r->is_none())
-{
-    return runtime::submit_plan_inner(id, patches);
+// Boundary: contract-checked.  The checks are statements of the body, because
+// each build rejects a pre or post specifier (§XII).
+std::expected<PlanId, Error> submit_plan(PlanId id, std::span<const PatchValue> patches) {
+    CRUCIBLE_PRE(!id.is_none());
+    CRUCIBLE_PRE(std::all_of(patches.begin(), patches.end(), valid_patch));
+    std::expected<PlanId, Error> result = runtime::submit_plan_inner(id, patches);
+    CRUCIBLE_POST(result, !result.has_value() || !result->is_none());
+    return result;
 }
 
 // Hot path: no contracts (compiled with contract-semantic=ignore)
@@ -1937,7 +1945,7 @@ Nothing throws. Not because a flag forbids it — `-fno-exceptions` is not in th
 
 | Class | Mechanism | Runtime cost | Example |
 |---|---|---|---|
-| **Impossible** (contract violation) | `pre` / `post` / `contract_assert` | Debug and Release do the check, and both end the process, because the handler aborts. Its cost is 0 ns only in a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS` | Null pointer, OOB index, invariant violation |
+| **Impossible** (contract violation) | `CRUCIBLE_PRE` / `CRUCIBLE_POST` / `contract_assert` | Debug and Release do the check, and both end the process, because the handler aborts. Its cost is 0 ns only in a TU that takes `CRUCIBLE_CONTRACT_IGNORE_OPTIONS` | Null pointer, OOB index, invariant violation |
 | **Expected-but-rare** | `std::expected<T, E>` return | ~1 ns (branch on `.has_value()`) | Parse error, shape out of bucket, peer timeout |
 | **Catastrophic** | a cold `[[noreturn]]` helper that prints the diagnostic and calls `std::abort()` | — | OOM, hardware fault, corrupt state, FLR failure |
 
@@ -2019,9 +2027,9 @@ enum class CompileError : uint8_t {
 [[nodiscard]] std::expected<CompiledKernel, CompileError>
 compile_kernel(::foundation::effects::Bg const& bg, Arena& arena,
                const KernelNode& k, const TargetCaps& caps)
-    pre (k.recipe != nullptr)
-    pre (k.tile != nullptr)
 {
+    CRUCIBLE_PRE(k.recipe != nullptr);
+    CRUCIBLE_PRE(k.tile != nullptr);
     if (!fleet_supports(k.recipe, caps)) [[unlikely]]
         return std::unexpected(CompileError::RecipeNotInFleet);
     // ...
@@ -2092,6 +2100,10 @@ const auto& ck = *r;  // happy path
 // [[assume(cond)]] for the optimizer. Under static_assert/consteval it
 // triggers __builtin_trap(), which is not constexpr and stops the
 // surrounding consteval call.
+//
+// GCC 16 also does not keep the pre or post specifier of a template
+// in a header unit or in a precompiled header. So the tree has no
+// specifier, and each build rejects one (below).
 #define CRUCIBLE_PRE(cond)         /* see foundation/contracts/Pre.h */
 #define CRUCIBLE_POST(retvar, cond) /* see foundation/contracts/Post.h */
 ```
@@ -2100,13 +2112,15 @@ const auto& ck = *r;  // happy path
 - `CRUCIBLE_ASSERT` — public API entry. Contracts handle it.
 - `CRUCIBLE_DEBUG_ASSERT` — SPSC ring bounds, arena bump sanity, RNG counter — hot path, can't afford a branch.
 - `CRUCIBLE_INVARIANT` — loop trip counts, alignment, range bounds. The optimizer uses it.
-- `CRUCIBLE_PRE` / `CRUCIBLE_POST` — boundary pre/postcondition where the predicate references `this->` members or the return value's pointee. Mandatory replacement for vanilla P2900 `pre()` / `post (r:...)` whenever the consteval-bypass family applies. The decide-catalog predicates and the dual-side audit of pre and post use this rail.
+- `CRUCIBLE_PRE` / `CRUCIBLE_POST` — each precondition and each postcondition of a function. `CRUCIBLE_PRE` is a statement at the start of the body, and `CRUCIBLE_POST` is a statement before each return. The decide-catalog predicates and the dual-side audit of pre and post use this rail.
+
+**The contract rule.** A P2900 `pre` or `post` specifier on a function declaration is a compile error in each build. The GCC plugin of `utils/tools/quarantine/` holds the rule. `utils/tools/quarantine/Quarantine.cmake` builds the plugin at configure time and loads it into each C++ compile of the tree. When `CRUCIBLE_QUARANTINE` is `OFF`, the plugin applies only this rule (`mode=contracts`). The rule applies to each file under the source root, also to `include/foundation/` and `include/fixy/`. The error names `CRUCIBLE_PRE` or `CRUCIBLE_POST`, and two notes give the reasons and the opt-out region. A test of the specifier itself puts the specifier in a `#pragma crucible I_KNOW_WHAT_IM_DOING("reason")` region. No file of the tree uses the region for this rule. `cmake/probes/contract_cache.cpp` holds a specifier, because it is a probe of a compiler fix to the specifier, and `execute_process` compiles it without the plugin. The fixtures `neg_contract_specifier_pre`, `neg_contract_specifier_post` and `neg_contract_specifier_template_member` show the error, and the test `quarantine_plugin` holds each form of the specifier. The plugin cannot see a specifier in a preprocessor arm that the unit does not compile, or on a member function of a local class in a template when the class declares the function and does not define it.
 
 #### VC discharge framing — three layers stack
 
 `CRUCIBLE_PRE` / `CRUCIBLE_POST` are the production-level discharge mechanism for verification conditions (VCs) that the type system cannot statically prove. Three layers stack from cheapest to most expensive:
 
-1. **Type-level proof (always-discharge):** `Refined<bounded_above<8>, uint8_t>` proves at construction that the wrapped value is in [0, 8]. Downstream functions that take `Refined<...>` need NO pre clause — the type IS the proof. Cheapest, most preferred form.
+1. **Type-level proof (always-discharge):** `Refined<bounded_above<8>, uint8_t>` proves at construction that the wrapped value is in [0, 8]. Downstream functions that take `Refined<...>` need NO `CRUCIBLE_PRE` — the type IS the proof. Cheapest, most preferred form.
 2. **Named predicate cite (catalog discharge):** `CRUCIBLE_PRE(decide::in_range<uint8_t>(idx, 0, 7))` names one of the 13 predicates in `include/foundation/contracts/Decide.h`, in namespace `foundation::decide`. A search finds each name. When a subsequent change lifts `idx` to `Refined`, that change goes through the predicate name one time.
 3. **Anonymous predicate (one-off discharge):** `CRUCIBLE_PRE(p != nullptr && p->ready)` — direct expression, no catalog cite. Use it only for an invariant that no catalog predicate names. Use (2) when you can, because an audit can then count the integer-overflow checks with `grep decide::no_overflow_sum`.
 
@@ -2114,7 +2128,7 @@ const auto& ck = *r;  // happy path
 
 **Two known traps:**
 - **Disjunction-vs-implies for null-guarded post:** `decide::implies(p != nullptr, p->status == X)` evaluates BOTH args eagerly under C++ function-call semantics — `p->status` derefs null when p is null. Use C++ short-circuit `||` (`p == nullptr || p->status == X`) when the consequent dereferences a witnessed non-null pointer. See `feedback_decide_implies_eager_eval.md` (UBSan-caught regression on `Tx::activate`, fixed in `9a0fc58`).
-- **Consteval-bypass on `this->` member predicates (GCC 16.1.1):** vanilla P2900 `pre()` / `post (r:...)` referencing class members through `this->` silently bypasses at consteval for foldable bodies. Migrate to in-body `CRUCIBLE_PRE` / `CRUCIBLE_POST`. The shim macros use `__builtin_trap()` (non-constexpr) to poison the surrounding consteval call.
+- **Consteval-bypass on `this->` member predicates (GCC 16.1.1):** vanilla P2900 `pre()` / `post (r:...)` referencing class members through `this->` silently bypasses at consteval for foldable bodies. This is one reason for the contract rule above. The shim macros use `__builtin_trap()` (non-constexpr) to poison the surrounding consteval call.
 
 Full per-axiom enforcement story for `CRUCIBLE_PRE` / `CRUCIBLE_POST` lives in `include/foundation/contracts/Pre.h` and `include/foundation/contracts/Post.h` docstrings.
 
@@ -2251,7 +2265,7 @@ Fuzzing via AFL++ / libFuzzer targets untrusted-input paths (Cipher deserialize,
 ### Coverage targets
 
 - Every public `.h` has a test.
-- Every `pre` / `post` has a test that exercises both success AND violation.
+- Every `CRUCIBLE_PRE` / `CRUCIBLE_POST` has a test that exercises both success AND violation.
 - Every enum variant has a test (round-trip if serialized).
 - Every `std::expected` error has a test that triggers it.
 - Every `[[assume]]` has a test that proves the condition holds at every reachable call site.
@@ -2394,7 +2408,7 @@ Each translation unit that includes a header compiles that header again. These r
 
 The tree uses `#include` only. A measurement on 2026-10-01 tried a precompiled header for each include prefix of the negative fixtures, and C++20 header units with include translation for the whole tree. Both changed results, so neither landed:
 
-- GCC 16 drops the native `pre` and `post` specifiers of a function template and of a member of a class template when it writes a header unit or a precompiled header. This is one reason for the rule that the tree uses `CRUCIBLE_PRE` and `CRUCIBLE_POST` only.
+- GCC 16 drops the native `pre` and `post` specifiers of a function template and of a member of a class template when it writes a header unit or a precompiled header. This is one reason for the rule that the tree uses `CRUCIBLE_PRE` and `CRUCIBLE_POST` only. Each build holds the rule (§XII "The contract rule").
 - A header unit does not see what its includer declares before the include, so an eager seal check in a header stops working. `source_location_of` can also name a different file.
 - GCC 16 has many module defects: internal compiler errors, a module file that GCC cannot read again in C++26 mode, a lost `= delete("reason")` text, and template instances that do not merge.
 
@@ -2554,21 +2568,7 @@ The lattice identity is a reflected name, so the graded fold is not portable acr
 
 Real-world issues encountered implementing the wrappers.  Document them here so the next person doesn't rediscover them.
 
-**Contract clause order on member functions.**  On a constructor or member function, `pre` / `post` must appear *after* `noexcept` and before the member initializer list (or body).  Newlines between clauses don't cost compilation, but `pre` separated from the colon by other tokens will not parse.
-
-```cpp
-// ✓ CORRECT
-constexpr R(int x) noexcept pre(x > 0) : v{x} {}
-
-// ✗ WRONG — pre before noexcept
-constexpr R(int x) pre(x > 0) noexcept : v{x} {}
-
-// ✗ WRONG — pre separated from colon by a different clause order
-constexpr R(int x)
-    pre(x > 0)         // parser error: expected ‘;’
-    noexcept
-    : v{x} {}
-```
+**The tree has no `pre` or `post` specifier.**  Each build rejects one (§XII "The contract rule").  So the rules of the specifier syntax do not apply here: the place of a specifier after `noexcept`, and the `const` that a value parameter needs when a postcondition reads it.  `CRUCIBLE_POST` is a statement of the body, and its condition can read each parameter.
 
 **`-fcontracts` and `-freflection` require `-std=c++26`.**  CMake's compiler-probe step runs before the project's `CMAKE_CXX_STANDARD` takes effect, so putting these flags in `CMAKE_CXX_FLAGS` via the preset breaks configuration.  The root `CMakeLists.txt` sets them at target level instead, with `target_compile_options(crucible_dialect INTERFACE -freflection -fcontracts)` after `project()` declares the standard.
 
@@ -2581,8 +2581,6 @@ void handle_contract_violation(const std::contracts::contract_violation& v) {
     std::abort();
 }
 ```
-
-**Postconditions with value parameters.**  P2900R14 forbids using a by-value parameter in a postcondition unless it is `const`.  `fn(int n) post(r: r == n*2)` fails with "value parameter used in postcondition must be const"; write `fn(int const n) post(r: r == n*2)` instead.  Fix is trivial once you know; confusing if you don't.
 
 ### GCC 16 reflection — implementation gotchas
 

@@ -11,6 +11,12 @@
 // function body instead sidesteps the constexpr-cache machinery that
 // causes both.
 //
+// GCC 16 also does not keep the contract clause of a template in a
+// header unit or in a precompiled header.  So the tree has no language
+// contract clause.  The quarantine plugin of utils/tools/quarantine/
+// rejects each `pre` and each `post` clause in each build, and its error
+// names these macros.
+//
 // The consteval arm calls `__builtin_trap()`, which is not a constant
 // expression.  Reaching it poisons the enclosing constant evaluation,
 // and that is what a static_assert reports as a failure.  At runtime

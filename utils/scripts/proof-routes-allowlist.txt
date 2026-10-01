@@ -43,3 +43,9 @@ src/observe/HdrHistogram.cpp:explicit-instantiation:class ConcurrentHdrHistogram
 src/observe/HdrHistogram.cpp:explicit-instantiation:class HdrHistogram<3,3600000000000ull>
 src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<2>
 src/topology/Pingmesh.cpp:explicit-instantiation:class Pingmesh<4>
+
+# An explicit specialization in the test of the contract rule.  The plugin
+# must reject a contract specifier on an explicit specialization too, and
+# only the declaration hook of the plugin sees one.  It names no proof type,
+# and no build compiles the file.
+utils/tools/quarantine/test/contracts.cpp:function-specialization:int template_pre<long>

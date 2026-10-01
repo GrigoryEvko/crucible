@@ -332,8 +332,10 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
 endif()
 
 # The quarantine plugin of GCC: CRUCIBLE_QUARANTINE = OFF | REPORT | ERROR.
-# It puts its flags on the directory, so it comes before the first target.
-# It can clear the compiler launcher, as the PGO block does.
+# The plugin also holds the contract rule, and each build loads it.  It puts
+# its flags on the directory, so it comes before the first target.  It can
+# clear the compiler launcher, as the PGO block does, or give ccache an
+# option.
 include(utils/tools/quarantine/Quarantine.cmake)
 
 # The build launcher records the cost of each compile and each link, and

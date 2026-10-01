@@ -11,6 +11,11 @@ Each class of finding has an expectation that fails when the plugin loses the
 check of that class.  The substrate rule, the admitted list and the opt-out
 region each have an expectation that fails when the plugin loses that rule.
 
+contracts.cpp holds each form of a P2900 contract specifier that the contract
+rule rejects, in each mode and also in substrate code.  The test compares the
+errors with CONTRACT_ERRORS.  A form that the plugin stops seeing, a second
+error for one specifier and an error outside the list each fail the test.
+
 usage: check_plugin.py --cxx CXX --source PLUGIN.cpp --admitted LIST -- BUILD_FLAGS...
 
 Exit 0 when each expectation holds, 1 when one fails, 2 on a usage error or a
@@ -21,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -94,6 +100,36 @@ PRAGMA_ERRORS = (
     ("end_without_region.cpp", "has no open region"),
 )
 
+# (file, line, specifier): each error of the contract rule for contracts.cpp.
+# The specifier on line 73 is in an opt-out region.  Outside.h is outside the
+# root, and the test writes it in its scratch directory.
+CONTRACT_ERRORS = (
+    ("include/fixy/Contracted.h", 9, "pre"),  # a template in substrate code
+    ("contracts.cpp", 12, "pre"),  # a declaration
+    ("contracts.cpp", 13, "post"),  # a definition
+    ("contracts.cpp", 14, "pre"),  # two specifiers on one declaration
+    ("contracts.cpp", 14, "post"),
+    ("contracts.cpp", 16, "pre"),  # a template with no definition
+    ("contracts.cpp", 20, "pre"),  # a member of a class template
+    ("contracts.cpp", 21, "post"),  # a defined member of a class template, instantiated
+    ("contracts.cpp", 23, "pre"),  # a member template of a class template
+    ("contracts.cpp", 25, "pre"),  # a member of a nested class of a class template
+    ("contracts.cpp", 27, "pre"),  # a hidden friend
+    ("contracts.cpp", 29, "pre"),  # a friend template of a class template
+    ("contracts.cpp", 34, "pre"),  # a member of a partial specialization
+    ("contracts.cpp", 39, "pre"),  # a member template of a class
+    ("contracts.cpp", 41, "pre"),  # a friend template of a class
+    ("contracts.cpp", 44, "pre"),  # a lambda
+    ("contracts.cpp", 45, "pre"),  # a generic lambda
+    ("contracts.cpp", 48, "pre"),  # a local declaration
+    ("contracts.cpp", 50, "pre"),  # a member of a local class
+    ("contracts.cpp", 55, "pre"),  # an explicit specialization
+    ("contracts.cpp", 57, "pre"),  # the spelling in a macro
+)
+CONTRACT_ERROR = re.compile(r"^(?P<path>.+?):(?P<line>\d+):\d+: error: the .(?P<specifier>pre|post). contract "
+                            r"specifier is not permitted in this tree", re.MULTILINE)
+OUTSIDE_HEADER = "#pragma once\nint outside_pre(int value) pre(value > 0);\n"
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -118,9 +154,10 @@ class Checker:
             raise RuntimeError(f"the plugin did not build:\n{built.stderr}")
 
     def compile(self, fixture: str, arguments: dict[str, str],
-                stage: tuple[str, ...] = ("-S", "-o", os.devnull)) -> subprocess.CompletedProcess[str]:
-        """Compile one fixture with the plugin, the given plugin arguments and the given stage flags."""
-        command = [self.cxx, "-std=c++26", "-I", str(HERE / "include"), f"-fplugin={self.plugin}"]
+                stage: tuple[str, ...] = ("-S", "-o", os.devnull),
+                extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
+        """Compile one fixture with the plugin, the given plugin arguments, stage flags and extra flags."""
+        command = [self.cxx, "-std=c++26", "-I", str(HERE / "include"), *extra, f"-fplugin={self.plugin}"]
         command += [f"-fplugin-arg-{PLUGIN}-{key}={value}" for key, value in arguments.items()]
         command += ["-fdiagnostics-color=never", *stage, str(HERE / fixture)]
         return subprocess.run(command, capture_output=True, text=True)
@@ -204,6 +241,62 @@ def run(checker: Checker, admitted: Path) -> None:
     broken = checker.compile("violations.cpp", {"root": str(HERE), "admitted": str(malformed)})
     checker.expect("an admitted entry without a reason is an error",
                    broken.returncode != 0 and "the reason is necessary" in broken.stderr, broken.stderr[-2000:])
+
+    run_contract_rule(checker)
+
+
+def contract_errors(stderr: str) -> list[tuple[str, int, str]]:
+    """Return each error of the contract rule in STDERR, with the path relative to this directory."""
+    errors: list[tuple[str, int, str]] = []
+    for match in CONTRACT_ERROR.finditer(stderr):
+        path = Path(match["path"])
+        relative = path.relative_to(HERE).as_posix() if path.is_relative_to(HERE) else path.as_posix()
+        errors.append((relative, int(match["line"]), match["specifier"]))
+    return sorted(errors)
+
+
+def run_contract_rule(checker: Checker) -> None:
+    """Compile contracts.cpp in each mode, and compare the errors with CONTRACT_ERRORS."""
+    outside = checker.work / "outside"
+    outside.mkdir(exist_ok=True)
+    (outside / "Outside.h").write_text(OUTSIDE_HEADER, encoding="utf-8")
+    extra = ("-fcontracts", "-I", str(outside))
+    expected = sorted(CONTRACT_ERRORS)
+    contract_reports = checker.work / "contract-reports"
+    runs = (
+        ("mode=contracts", {"root": str(HERE), "mode": "contracts"}, ("-S", "-o", os.devnull)),
+        ("mode=error", {"root": str(HERE), "mode": "error"}, ("-S", "-o", os.devnull)),
+        ("mode=report", {"root": str(HERE), "mode": "report", "out": str(contract_reports)},
+         ("-S", "-o", os.devnull)),
+        ("mode=contracts with -fsyntax-only", {"root": str(HERE), "mode": "contracts"}, ("-fsyntax-only",)),
+    )
+    for name, arguments, stage in runs:
+        compiled = checker.compile("contracts.cpp", arguments, stage, extra)
+        found = contract_errors(compiled.stderr)
+        missing = sorted(set(expected) - set(found))
+        unexpected = [error for error in found if error not in expected or found.count(error) > 1]
+        checker.expect(f"{name}: each contract specifier gives one error, and nothing else does",
+                       compiled.returncode != 0 and not missing and not unexpected,
+                       f"missing {missing}, unexpected {sorted(set(unexpected))}")
+    opted = [f for f in read_reports(contract_reports)
+             if f.kind == "opted_out" and f.file == "contracts.cpp" and f.line == 73]
+    checker.expect("the opt-out region turns the specifier on line 73 into opted_out",
+                   any(f.entity == "contract_specifier pre" for f in opted), "; ".join(map(str, opted)))
+
+    named = checker.compile("contracts.cpp", {"root": str(HERE), "mode": "contracts"}, extra=extra)
+    checker.expect("the error names CRUCIBLE_PRE, CRUCIBLE_POST and the reasons",
+                   all(text in named.stderr for text in ("CRUCIBLE_PRE(condition)", "foundation/contracts/Pre.h",
+                                                         "CRUCIBLE_POST(result, condition)",
+                                                         "foundation/contracts/Post.h", "header unit",
+                                                         "precompiled header", "constant evaluation")),
+                   named.stderr[-2000:])
+    quiet = checker.compile("violations.cpp", {"root": str(HERE), "mode": "contracts"})
+    checker.expect("mode=contracts applies only the contract rule",
+                   quiet.returncode == 0 and "quarantine:" not in quiet.stderr, quiet.stderr[-2000:])
+    unknown = checker.compile("violations.cpp", {"root": str(HERE), "mode": "contract"})
+    checker.expect("an unknown mode is an error",
+                   unknown.returncode != 0 and "the modes are report, error and contracts" in unknown.stderr,
+                   unknown.stderr[-2000:])
 
 
 def main(argv: list[str]) -> int:
