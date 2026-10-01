@@ -815,12 +815,27 @@ set_tests_properties(no_coordination_refs no_coordination_refs_self_test
 # self-test compiles the emitted tests, then a copy with one wrong row
 # planted in each test, which must fail on that row.  The oracle itself
 # runs only when a person regenerates golden.csv.
+#
+# The self-test has SESSION_ORACLE_SELF_TEST_PARTS disjoint parts, and each
+# part is one test.  Part K compiles each unit whose position in the list of
+# units, modulo the count of parts, is K.  The parts then hold each unit one
+# time, and no part takes much more than one compile of its largest unit.
+# A part runs about 30 compiles at the same time, and PROCESSORS gives that
+# count to CTest.  CTest then starts no more parts and tests than its job
+# count lets run, and a part keeps its time.
 add_test(NAME session_oracle_check
   COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --check)
-add_test(NAME session_oracle_self_test
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --self-test ${CMAKE_CXX_COMPILER})
-set_tests_properties(session_oracle_check session_oracle_self_test
-    PROPERTIES LABELS "ci_guard;session_oracle")
+set_tests_properties(session_oracle_check PROPERTIES LABELS "ci_guard;session_oracle")
+set(SESSION_ORACLE_SELF_TEST_PARTS 6)
+math(EXPR session_oracle_last_part "${SESSION_ORACLE_SELF_TEST_PARTS} - 1")
+foreach(part RANGE ${session_oracle_last_part})
+  add_test(NAME session_oracle_self_test_${part}
+    COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --self-test ${CMAKE_CXX_COMPILER}
+            --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
+  set_tests_properties(session_oracle_self_test_${part} PROPERTIES
+    LABELS "ci_guard;session_oracle"
+    PROCESSORS 30)
+endforeach()
 
 # The row-membership discipline.  utils/scripts/check-row-contains-discipline.py
 # reads each call of row_contains whose first argument is the row of a context
@@ -1248,15 +1263,24 @@ endfunction()
 
 # The driver keeps the result of each fixture compile in a store, and it uses
 # a stored result only while each input of the compile is the same.  The test
-# compiles small fixtures in a temporary tree with a store of its own.  It
+# compiles small fixtures in temporary trees, each with a store of its own.  It
 # changes a header, adds a header earlier in the search list, adds a file that
-# a __has_include probe names, and damages and changes an entry.  Exit 3
-# reports a skip when the compiler cannot run.
-add_test(NAME fixture_store_self_test
-  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver_test.py --cxx ${CRUCIBLE_REAL_CXX})
-set_tests_properties(fixture_store_self_test PROPERTIES
-  LABELS "ci_guard"
-  SKIP_RETURN_CODE 3)
+# a __has_include probe names, adds the header that a fatal error misses, and
+# damages and changes an entry.  Each check waits about one second for the
+# files of its tree to age, and the checks run as FIXTURE_STORE_SELF_TEST_PARTS
+# parts at the same time.  Part K runs each check whose position modulo the
+# count of parts is K.  Exit 3 reports a skip when the compiler cannot run or
+# strace cannot record a program.
+set(FIXTURE_STORE_SELF_TEST_PARTS 10)
+math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
+foreach(part RANGE ${fixture_store_last_part})
+  add_test(NAME fixture_store_self_test_${part}
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/neg_compile_driver_test.py --cxx ${CRUCIBLE_REAL_CXX}
+            --part ${part}/${FIXTURE_STORE_SELF_TEST_PARTS})
+  set_tests_properties(fixture_store_self_test_${part} PROPERTIES
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
+endforeach()
 
 # ─── DeadlineWatchdog::observe negative fixtures (HS14) ──────────────
 #   The Bg/Init/Test gate keeps a hot-foreground replay-bound thread

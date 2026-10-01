@@ -40,7 +40,8 @@ Modes:
               oracle and no compiler.  CI runs this mode.
   self-test   Compile the emitted tests, which must pass, and a copy with
               one planted wrong row per test, which must fail and name
-              the planted case.  Needs the project compiler.
+              the planted case.  Needs the project compiler.  With
+              --part K/N, it does only part K of N disjoint parts.
 
 The relations under test:
 
@@ -102,7 +103,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from repo_root import REPO_ROOT  # noqa: E402
-from emit import SHARD_BUDGET, GoldenError, Row, emit_all, read_golden, shard_file, write_golden  # noqa: E402
+from emit import (SHARD_BUDGET, WIRE_FAMILIES, GoldenError, Row, emit_all, read_golden,  # noqa: E402
+                  shard_file, write_golden)
 from execution import equal_up_to_unfolding, explore  # noqa: E402
 from model import (GBranch, GEnd, GMsg, GRec, GVar, Global, Local,  # noqa: E402
                    UntranslatableError, action_ok, canonical_roles, contractive, has_empty_choice,
@@ -2469,27 +2471,29 @@ def _plant(rows: list[Row]) -> tuple[list[Row], dict[str, str]]:
     return planted, labels
 
 
-def self_test(cxx: str, at: str | None, jobs: int) -> int:
+def self_test(cxx: str, at: str | None, jobs: int, part: tuple[int, int] = (0, 1)) -> int:
     """Prove the emitted tests pass and a planted disagreement fails.
 
     The tests compile against the tree of ``at``, the working tree by
     default (measured_tree), with at most ``jobs`` compiles at one time.
     Each planted row is compiled in a test that holds only the rows of its
     own case, so the check costs one small compile for each emitted test.
+    ``part`` is (K, N): the self-test does only the units of part K of N
+    (_self_test_units).
     """
     with measured_tree(at) as (include, _):
-        return _self_test(cxx, include, jobs)
+        return _self_test(cxx, include, jobs, part)
 
 
-# The emitted tests whose assertions run: the test is a program that
-# fails when a row differs.  Every other emitted test fails to compile.
-RUNTIME_TESTS = frozenset({"fixy_wire"})
+# The emitted tests whose assertions run, with the families of their rows:
+# the test is a program that fails when a row differs.  Every other emitted
+# test fails to compile.
+RUNTIME_TESTS: dict[str, tuple[str, ...]] = {"fixy_wire": WIRE_FAMILIES}
 
-# The compiles of the self-test at one time.  Each shard parses its
-# headers, and that parse costs more than its cases, so the self-test
-# compiles many shards at once.  The longest shard then sets the wall
-# time.  One compile holds at most about 1 GB of memory, so the peak of
-# the self-test is about 40 GB.
+# The compiles of one part of the self-test at one time.  Each compile
+# parses its headers, and that parse costs more than its cases.  A part
+# compiles all its shards at once, and the longest compile sets the wall
+# time.  One compile holds at most about 1 GB of memory.
 SELF_TEST_JOBS = 64
 
 
@@ -2572,51 +2576,124 @@ def _drift_self_test(rows: list[Row], copy: Path) -> list[str]:
     return []
 
 
-# The shard size of the wire rows in the self-test.  The self-test
-# compiles a wire shard with no debug information and no sanitizer, so a
-# wire row costs less there than in the Debug build, and larger shards
-# give fewer compiles of the same headers.  The rows and their order stay
-# as golden.csv gives them.  The build compiles the committed shards.
-SELF_TEST_WIRE_BUDGET = 50_000
+# The divisors of the shard size of SHARD_BUDGET for one shard of the
+# self-test.  The self-test compiles all the shards of a part at the same
+# time, and the longest compile sets the wall time of the part.  A case is
+# never cut, and the largest crash-stop case compiles in about 7 s alone.
+# A third of a static build shard compiles in about 6 s: about 3 s of
+# headers and 3 s of cases.  Half of a wire build shard compiles in about
+# 6 s: about 4 s of headers and 2 s of runs.  A smaller shard only adds
+# compiles of the same headers.  The rows and their order stay as
+# golden.csv gives them, and the build compiles the committed shards.
+SELF_TEST_STATIC_SHARE = 3
+SELF_TEST_RUNTIME_SHARE = 2
+
+# The measured rows of one program of a runtime test in the self-test.  A
+# program holds whole cases, links its shards and runs its rows.  Each
+# program is one unit, and the programs of one test can go to different
+# parts.
+SELF_TEST_PROGRAM_ROWS = 120
 
 
-def _self_test(cxx: str, include: Path, jobs: int) -> int:
-    from emit import emit_family, emit_self_check
+def _self_test_budget(stem: str) -> int:
+    """Return the shard size of the test of ``stem`` in the self-test."""
+    share = SELF_TEST_RUNTIME_SHARE if stem in RUNTIME_TESTS else SELF_TEST_STATIC_SHARE
+    return max(1, SHARD_BUDGET[stem] // share)
+
+
+def _runtime_programs(by_case: dict[str, list[Row]], families: tuple[str, ...]) -> Iterator[list[Row]]:
+    """Yield the rows of each runtime program: whole cases in order, about SELF_TEST_PROGRAM_ROWS measured rows each.
+
+    A measured row is a row of ``families`` that is not a gap.  A case with
+    no measured row goes to no program.  O(rows).
+    """
+    program: list[Row] = []
+    measured = 0
+    for case_rows in by_case.values():
+        count = sum(row.family in families and row.status != "gap" for row in case_rows)
+        if count == 0:
+            continue
+        if program and measured + count > SELF_TEST_PROGRAM_ROWS:
+            yield program
+            program, measured = [], 0
+        program.extend(case_rows)
+        measured += count
+    if program:
+        yield program
+
+
+def _self_test_units(rows: list[Row], planted: list[Row],
+                     labels: dict[str, str]) -> Iterator[tuple[str, str, list[str], str | None]]:
+    """Yield each unit of the self-test in a fixed order: its name, its stem, its shards and its label.
+
+    The label is None for a unit of clean rows, and it is the text that the
+    planted row prints for a unit of planted rows.  A static test gives one
+    unit for each shard, because each shard compiles alone.  A runtime test
+    gives one unit for each program (_runtime_programs), because a program
+    links and runs all its shards.  The tests with the smallest shard size
+    go first, because their rows cost the most and their compiles must start
+    first.  Then each planted unit holds the rows of the case of its planted
+    row.  The order depends only on golden.csv.  The parts that are cut from
+    it are then disjoint.  O(rows).
+    """
+    from emit import emit_family
+    by_case: dict[str, list[Row]] = {}
+    for row in rows:
+        by_case.setdefault(row.case, []).append(row)
+    for stem in sorted(SHARD_BUDGET, key=lambda name: (SHARD_BUDGET[name], name)):
+        budget = _self_test_budget(stem)
+        families = RUNTIME_TESTS.get(stem)
+        if families is None:
+            for index, shard in enumerate(emit_family(rows, stem, budget)):
+                yield f"clean {stem} shard {index}", stem, [shard], None
+            continue
+        for index, program in enumerate(_runtime_programs(by_case, families)):
+            yield f"clean {stem} program {index}", stem, emit_family(program, stem, budget), None
+    for stem, label in labels.items():
+        case = label.split(" case ", 1)[1].split()[0].rstrip(":")
+        subset = [r for r in planted if r.case == case]
+        yield f"planted {stem}", stem, emit_family(subset, stem, _self_test_budget(stem)), label
+
+
+def _self_test(cxx: str, include: Path, jobs: int, part: tuple[int, int]) -> int:
+    """Run part ``part`` = (K, N) of the self-test: each unit whose position modulo N is K.
+
+    Part 0 also checks the type grammar of the emitter and the drift
+    comparison, which are Python work.  Return the exit code.
+    """
+    from emit import emit_self_check
+    index_of_part, count = part
     _, rows = read_golden(GOLDEN)
-    failures: list[str] = emit_self_check()
+    failures: list[str] = emit_self_check() if index_of_part == 0 else []
     planted, labels = _plant(rows)
+    units: list[tuple[_SelfTestUnit, str | None]] = []
     with (tempfile.TemporaryDirectory(prefix="session_oracle_selftest_") as tmp,
           ThreadPoolExecutor(max_workers=jobs) as pool):
         root = Path(tmp)
         build = _SelfTestBuild(cxx, include, pool)
-        # The runtime tests go first, because each one links and runs after its compiles.
-        clean = [build.submit(_write_unit(root, f"clean {stem}", stem,
-                                          emit_family(rows, stem, SELF_TEST_WIRE_BUDGET)))
-                 for stem in sorted(SHARD_BUDGET, key=lambda name: name not in RUNTIME_TESTS)]
-        caught: dict[str, _SelfTestUnit] = {}
-        for stem, label in labels.items():
-            case = label.split(" case ", 1)[1].split()[0].rstrip(":")
-            subset = [r for r in planted if r.case == case]
-            caught[stem] = build.submit(_write_unit(root, f"planted {stem}", stem,
-                                                    emit_family(subset, stem, SELF_TEST_WIRE_BUDGET)))
+        for position, (name, stem, shards, label) in enumerate(_self_test_units(rows, planted, labels)):
+            if position % count == index_of_part:
+                units.append((build.submit(_write_unit(root, name, stem, shards)), label))
         # The drift comparison is Python work, so it runs while the compiles run.
-        failures += _drift_self_test(rows, root / "drift")
-        for unit in clean:
+        if index_of_part == 0:
+            failures += _drift_self_test(rows, root / "drift")
+        for unit, label in units:
             proc = build.result(unit)
-            if proc.returncode != 0:
+            if label is None and proc.returncode != 0:
                 failures.append(f"{unit.name} fails:\n{(proc.stdout + proc.stderr)[-2000:]}")
-        for stem, label in labels.items():
-            proc = build.result(caught[stem])
-            if proc.returncode == 0:
-                failures.append(f"planted {stem} passes; the planted row is not caught")
-            elif label not in proc.stderr:
-                failures.append(f"planted {stem} fails, but not on the planted row ({label})")
+            elif label is not None and proc.returncode == 0:
+                failures.append(f"{unit.name} passes; the planted row is not caught")
+            elif label is not None and label not in proc.stderr:
+                failures.append(f"{unit.name} fails, but not on the planted row ({label})")
+    where = f"session_oracle self-test part {index_of_part}/{count}"
     if failures:
         for failure in failures:
-            print(f"session_oracle self-test: FAIL: {failure}", file=sys.stderr)
+            print(f"{where}: FAIL: {failure}", file=sys.stderr)
         return 1
-    print("session_oracle self-test: the clean tests pass, each planted row is caught, "
-          "and the drift check sees a one-line change and a stale shard")
+    planted_count = sum(label is not None for _, label in units)
+    drift = ", and the drift check sees a one-line change and a stale shard" if index_of_part == 0 else ""
+    print(f"{where}: {len(units) - planted_count} clean units pass, "
+          f"{planted_count} planted rows are caught{drift}")
     return 0
 
 
@@ -2633,10 +2710,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--at", metavar="REV",
                         help="measure (regenerate) or compile the tests against (self-test) the include "
                              "tree of this commit; the default is the working tree")
+    parser.add_argument("--part", metavar="K/N", type=_parse_part, default=(0, 1),
+                        help="do only part K of N disjoint parts of the self-test, with 0 <= K < N; "
+                             "the default is 0/1, the full self-test")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     if args.mode in ("regenerate", "self-test") and not args.cxx:
         parser.error(f"{args.mode} needs --cxx")
+    if args.mode != "self-test" and args.part != (0, 1):
+        parser.error("--part applies to the self-test only")
     probe_jobs = args.jobs or 32
     if args.mode == "regenerate":
         regenerate(args.cxx, probe_jobs, do_shrink=not args.no_shrink, at=args.at)
@@ -2652,7 +2734,15 @@ def main(argv: list[str]) -> int:
         import toolchain
         LOG.info("the crash-stop toolchain is in %s", toolchain.install())
         return 0
-    return self_test(args.cxx, args.at, args.jobs or min(SELF_TEST_JOBS, os.cpu_count() or 1))
+    return self_test(args.cxx, args.at, args.jobs or min(SELF_TEST_JOBS, os.cpu_count() or 1), args.part)
+
+
+def _parse_part(text: str) -> tuple[int, int]:
+    """Return (K, N) for the text K/N of --part.  Refuse a text that does not give 0 <= K < N."""
+    index, slash, count = text.partition("/")
+    if not (slash and index.isdigit() and count.isdigit() and int(index) < int(count)):
+        raise argparse.ArgumentTypeError(f"'{text}' is not K/N with 0 <= K < N, for example 0/6")
+    return int(index), int(count)
 
 
 if __name__ == "__main__":

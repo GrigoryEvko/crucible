@@ -59,9 +59,10 @@
 #                  test, which must fail and name the planted case.
 #                  Then make sure that the drift check sees a one-line
 #                  change and a stale generated file.  The compiles run
-#                  in parallel, at most 64 at one time, and the peak of
-#                  memory is about 40 GB.  Give the compiler as the
-#                  second argument.
+#                  in parallel, at most 64 at one time.  Give the
+#                  compiler as the second argument.  With --part K/N
+#                  after it, the self-test does only part K of N
+#                  disjoint parts, and CTest runs each part as one test.
 #   --emit         Write the emitted tests from golden.csv, and remove
 #                  each generated file that golden.csv does not emit.
 #                  Use it after a note in golden.csv changes.
@@ -77,7 +78,7 @@
 #                  fixy/session/Network.h on each network, at HEAD.  CI
 #                  does not run it.
 #
-# --self-test and --regenerate take a commit as an optional third
+# --self-test and --regenerate take a commit as an optional last
 # argument, for example HEAD.  The tool then measures the include tree of
 # that commit, which it takes with git archive into a temporary directory,
 # and golden.csv names the full commit.  Without it, the tool measures the
@@ -176,7 +177,7 @@ session-oracle.sh — differential tests of the session relations.
 
 Usage:
   session-oracle.sh --check
-  session-oracle.sh --self-test CXX [COMMIT]
+  session-oracle.sh --self-test CXX [--part K/N] [COMMIT]
   session-oracle.sh --emit
   session-oracle.sh --regenerate CXX [COMMIT]
   session-oracle.sh --derive [CXX]
@@ -232,8 +233,19 @@ case "${1:-}" in
     --self-test)
         shift
         need_cxx "${1:-}"
-        at="$(at_option "${2:-}")" || exit 2
-        exec python3 "$driver" self-test --cxx "$1" ${at:+"$at"} ;;
+        cxx="$1"
+        shift
+        part=()
+        if [[ "${1:-}" == --part ]]; then
+            if [[ -z "${2:-}" ]]; then
+                echo "session-oracle.sh: --part needs K/N, for example --part 0/6." >&2
+                exit 2
+            fi
+            part=(--part "$2")
+            shift 2
+        fi
+        at="$(at_option "${1:-}")" || exit 2
+        exec python3 "$driver" self-test --cxx "$cxx" "${part[@]}" ${at:+"$at"} ;;
     --regenerate)
         shift
         need_cxx "${1:-}"

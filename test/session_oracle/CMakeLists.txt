@@ -14,8 +14,8 @@
 # (the runs, the subject-reduction safety, mpstk and the subtyping
 # certificates) have no assertion.
 # Rebuild the files with utils/scripts/session-oracle.sh --regenerate.  The
-# guards session_oracle_check and session_oracle_self_test are in
-# test/CMakeLists.txt beside the other script guards.
+# guard session_oracle_check and the parts session_oracle_self_test_K of
+# the self-test are in test/CMakeLists.txt beside the other script guards.
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/generated_sources.cmake)
 

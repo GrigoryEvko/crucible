@@ -217,14 +217,16 @@ def _shard_line(stem: str, index: int, count: int) -> str:
     return f"// Shard {index} of the {count} shards of test_session_oracle_{stem}.{holder}\n"
 
 
-def _static_shards(stem: str, description: str, preamble: str, namespace: str, blocks: list[str]) -> list[str]:
+def _static_shards(stem: str, description: str, preamble: str, namespace: str, blocks: list[str],
+                   budget: int | None = None) -> list[str]:
     """Return the shards of a test whose rows are static assertions.
 
     ``blocks`` holds the text of each case, in order.  Each shard is the
     notice, the description, the preamble (includes and declarations) and
-    the namespace that holds its cases.  O(size).
+    the namespace that holds its cases.  ``budget`` is the size of one
+    shard, and SHARD_BUDGET gives it when the argument is None.  O(size).
     """
-    ranges = _partition([len(block) for block in blocks], SHARD_BUDGET[stem])
+    ranges = _partition([len(block) for block in blocks], SHARD_BUDGET[stem] if budget is None else budget)
     shards: list[str] = []
     for index, part in enumerate(ranges):
         text = [GENERATED_NOTICE, _shard_line(stem, index, len(ranges)), description, preamble,
@@ -571,8 +573,8 @@ def _namespace(case: str) -> str:
     return "c_" + case
 
 
-def emit_fixy(rows: list[Row]) -> list[str]:
-    """Return the shards of the duality test.  O(rows)."""
+def emit_fixy(rows: list[Row], budget: int | None = None) -> list[str]:
+    """Return the shards of the duality test, with ``budget`` as in _static_shards.  O(rows)."""
     cases: dict[str, list[Row]] = {}
     for row in rows:
         if row.family in FIXY_FAMILIES and row.status != "gap":
@@ -604,11 +606,11 @@ def emit_fixy(rows: list[Row]) -> list[str]:
         "// global type, which fixy.accepts compares with the oracle.\n\n",
         "#include <fixy/session/Protocol.h>\n\n#include <type_traits>\n\n"
         + cpp_prelude() + "\nnamespace fs = ::fixy::session;\n\n",
-        "session_oracle::fixy_duality", blocks)
+        "session_oracle::fixy_duality", blocks, budget)
 
 
-def emit_multi(rows: list[Row]) -> list[str]:
-    """Return the shards of the fixy multiparty test.  O(rows)."""
+def emit_multi(rows: list[Row], budget: int | None = None) -> list[str]:
+    """Return the shards of the fixy multiparty test, with ``budget`` as in _static_shards.  O(rows)."""
     cases: dict[str, list[Row]] = {}
     for row in rows:
         if row.family in MULTI_FAMILIES and row.status != "gap":
@@ -660,7 +662,7 @@ def emit_multi(rows: list[Row]) -> list[str]:
         "#include <fixy/session/Liveness.h>\n#include <fixy/session/Network.h>\n"
         "#include <fixy/session/Projection.h>\n\n#include <type_traits>\n\n"
         + cpp_prelude() + "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
-        "session_oracle::fixy_projection", blocks)
+        "session_oracle::fixy_projection", blocks, budget)
 
 
 def subtype_pair(g_text: str, role: str) -> tuple[str, str]:
@@ -682,8 +684,8 @@ def subtype_pair(g_text: str, role: str) -> tuple[str, str]:
     return cpp_fixy_local(first), cpp_fixy_local(second)
 
 
-def emit_subtype(rows: list[Row]) -> list[str]:
-    """Return the shards of the fixy subtyping test.  O(rows)."""
+def emit_subtype(rows: list[Row], budget: int | None = None) -> list[str]:
+    """Return the shards of the fixy subtyping test, with ``budget`` as in _static_shards.  O(rows)."""
     cases: dict[str, list[Row]] = {}
     for row in rows:
         if row.family in SUBTYPE_FAMILIES and row.status != "gap" and not _hard_error(row):
@@ -719,7 +721,7 @@ def emit_subtype(rows: list[Row]) -> list[str]:
         "// acts.  Each U is the naive reading of a global type, and each T one change of U.\n\n",
         "#include <fixy/session/Subtype.h>\n\n#include <type_traits>\n\n"
         + cpp_prelude() + "\nnamespace fs = ::fixy::session;\n\n" + subtype_channel_decl() + "\n",
-        "session_oracle::fixy_subtype", blocks)
+        "session_oracle::fixy_subtype", blocks, budget)
 
 
 def keyed_subtype_locals(g_text: str, role: str) -> tuple[Local, Local]:
@@ -768,8 +770,8 @@ def wire_pair(g_text: str, role: str) -> tuple[str, str, int]:
     raise GoldenError(f"wire row {g_text} {role}: no spelling {spelling!r}")
 
 
-def emit_keyed_subtype(rows: list[Row]) -> list[str]:
-    """Return the shards of the keyed subtyping test.  O(rows)."""
+def emit_keyed_subtype(rows: list[Row], budget: int | None = None) -> list[str]:
+    """Return the shards of the keyed subtyping test, with ``budget`` as in _static_shards.  O(rows)."""
     cases: dict[str, list[Row]] = {}
     for row in rows:
         if row.family in KEYED_SUBTYPE_FAMILIES and row.status != "gap" and not _hard_error(row):
@@ -809,11 +811,11 @@ def emit_keyed_subtype(rows: list[Row]) -> list[str]:
         "// or one choice written positionally.\n\n",
         "#include <fixy/session/Projection.h>\n#include <fixy/session/Subtype.h>\n\n#include <type_traits>\n\n"
         + cpp_prelude() + "\nnamespace fs = ::fixy::session;\n\n" + subtype_channel_decl() + "\n",
-        "session_oracle::fixy_keyed_subtype", blocks)
+        "session_oracle::fixy_keyed_subtype", blocks, budget)
 
 
-def emit_keyed_multi(rows: list[Row]) -> list[str]:
-    """Return the shards of the keyed multiparty test.  O(rows)."""
+def emit_keyed_multi(rows: list[Row], budget: int | None = None) -> list[str]:
+    """Return the shards of the keyed multiparty test, with ``budget`` as in _static_shards.  O(rows)."""
     cases: dict[str, list[Row]] = {}
     for row in rows:
         if row.family in KEYED_MULTI_FAMILIES and row.status != "gap" and not _hard_error(row):
@@ -847,7 +849,7 @@ def emit_keyed_multi(rows: list[Row]) -> list[str]:
         "// subject-reduction development, whose branches carry labels too.\n\n",
         "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n\n#include <type_traits>\n\n"
         + cpp_prelude() + "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
-        "session_oracle::fixy_keyed_projection", blocks)
+        "session_oracle::fixy_keyed_projection", blocks, budget)
 
 
 def crash_reliable_set(roles: list[int], prefix: str) -> str:
@@ -856,8 +858,8 @@ def crash_reliable_set(roles: list[int], prefix: str) -> str:
     return f"fs::ReliableSet<{', '.join(cpp_role(r) for r in roles if r not in unreliable)}>"
 
 
-def emit_crash(rows: list[Row]) -> list[str]:
-    """Return the shards of the crash-stop test.  O(rows).
+def emit_crash(rows: list[Row], budget: int | None = None) -> list[str]:
+    """Return the shards of the crash-stop test, with ``budget`` as in _static_shards.  O(rows).
 
     The unit of a shard is one case, with every crash-stop variant of it,
     because the variants of a case share its global type.
@@ -897,11 +899,11 @@ def emit_crash(rows: list[Row]) -> list[str]:
         "// judges the context of these projections when the unreliable roles crash.\n\n",
         "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n\n#include <type_traits>\n\n"
         + cpp_prelude() + "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
-        "session_oracle::fixy_crash", ["".join(parts) for parts in blocks.values()])
+        "session_oracle::fixy_crash", ["".join(parts) for parts in blocks.values()], budget)
 
 
-def emit_enroute(rows: list[Row]) -> list[str]:
-    """Return the shards of the runtime global type test.  O(rows).
+def emit_enroute(rows: list[Row], budget: int | None = None) -> list[str]:
+    """Return the shards of the runtime global type test, with ``budget`` as in _static_shards.  O(rows).
 
     The unit of a shard is one case, with every runtime variant of it.
     """
@@ -942,7 +944,7 @@ def emit_enroute(rows: list[Row]) -> list[str]:
         "// type.\n\n",
         "#include <fixy/session/Liveness.h>\n#include <fixy/session/Projection.h>\n\n#include <type_traits>\n\n"
         + cpp_prelude() + "\nnamespace fs = ::fixy::session;\nnamespace fg = ::fixy::session::global;\n\n",
-        "session_oracle::fixy_enroute", ["".join(parts) for parts in blocks.values()])
+        "session_oracle::fixy_enroute", ["".join(parts) for parts in blocks.values()], budget)
 
 
 def wire_label(case: str, role: str) -> str:
@@ -1037,23 +1039,23 @@ _STATIC_EMITTERS = {
 }
 
 
-def emit_family(rows: list[Row], stem: str, wire_budget: int | None = None) -> list[str]:
+def emit_family(rows: list[Row], stem: str, budget: int | None = None) -> list[str]:
     """Return the shards of the emitted test of ``stem``.
 
-    ``wire_budget`` replaces the shard size of the wire test when it is not
-    None.  Only the layout of the wire rows changes: the rows, their order
-    and each case text stay the same.
+    ``budget`` replaces the shard size that SHARD_BUDGET gives the test when
+    it is not None.  Only the layout of the rows changes: the rows, their
+    order and each case text stay the same.
     """
     if stem == "fixy_wire":
-        return emit_wire(rows, wire_budget)
-    return _STATIC_EMITTERS[stem](rows)
+        return emit_wire(rows, budget)
+    return _STATIC_EMITTERS[stem](rows, budget)
 
 
-def emit_families(rows: list[Row], wire_budget: int | None = None) -> dict[str, list[str]]:
+def emit_families(rows: list[Row]) -> dict[str, list[str]]:
     """Return the shards of every emitted test, by the stem of the test, in the order of SHARD_BUDGET."""
     if tuple(SHARD_BUDGET) != (*_STATIC_EMITTERS, "fixy_wire"):
         raise RuntimeError("the emitters and SHARD_BUDGET must name the same tests in the same order")
-    return {stem: emit_family(rows, stem, wire_budget) for stem in SHARD_BUDGET}
+    return {stem: emit_family(rows, stem) for stem in SHARD_BUDGET}
 
 
 def _cmake_sources(families: dict[str, list[str]]) -> str:

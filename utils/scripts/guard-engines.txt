@@ -12,8 +12,8 @@
 
 test/fuzz/run-afl.sh | none |
 test/guard_attacks/test_use_after_move_attacks.py | tsast |
-test/neg_compile_driver.py | compiler,json,text | the compile database, the diagnostics, the dependency file and the search list of the compiler, and each line of a file that GCC read that names a file to include or to probe
-test/neg_compile_driver_test.py | compiler,json,text | the output of test/neg_compile_driver.py
+test/neg_compile_driver.py | compiler,json,text | the compile database, the diagnostics, the dependency file and the strace record of the compile
+test/neg_compile_driver_test.py | compiler,json,text | the output of test/neg_compile_driver.py and planted strace records
 utils/scripts/audit-decide-cite-ratio.py | tsast,git | the history of Decide.h
 utils/scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline utils/scripts/contracts-baseline.json
 utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest summary
