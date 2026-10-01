@@ -5295,6 +5295,24 @@ add_test(NAME no_unity_pch
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(no_unity_pch no_unity_pch_self_test PROPERTIES LABELS "ci_guard")
 
+# padded_lists — the element type of a large fixed list has no padding bit.
+# With -ftrivial-auto-var-init=zero, GCC writes one store for each padding
+# hole of each element of a fixed list in an automatic object, with no loop.
+# The check selects files from the parse tree, compiles one probe for each
+# through ccache, and reads the counts and the padding with reflection.  The
+# row padded-list of utils/scripts/budgets.txt gives the count.  Each padded
+# list that the tree holds today is a row of utils/scripts/padded-lists-ledger.txt
+# and gives a warning.  A new one is an error.
+add_test(NAME padded_lists_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-padded-lists.py
+          --build-dir ${CMAKE_BINARY_DIR} --self-test)
+add_test(NAME padded_lists
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-padded-lists.py
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(padded_lists padded_lists_self_test PROPERTIES
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
+
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a

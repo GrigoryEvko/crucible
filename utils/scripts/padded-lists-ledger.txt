@@ -1,0 +1,31 @@
+# utils/scripts/padded-lists-ledger.txt — the fixed lists whose element type has a padding bit.
+# utils/scripts/check-padded-lists.py reads this ledger.
+#
+# With -ftrivial-auto-var-init=zero, GCC writes one store for each padding hole of each element of
+# a fixed list in an automatic object, with no loop.  Make each padding byte a member.  The row
+# padded-list of utils/scripts/budgets.txt gives the element count above which a list counts.
+#
+# A count row:  path | role | declaration | element type
+#   A padded list that the tree holds today.  Each run gives a warning for it.  When you remove the
+#   padding, run python3 utils/scripts/check-padded-lists.py --build-dir BUILD_DIR --write in the
+#   same commit.
+#
+# A keep row:   keep | path | role | declaration | element type | reason
+#   An element type with padding on purpose.  The reason is mandatory.
+
+include/crucible/CKernel.h | member | crucible::CKernelTable::entries_ | crucible::CKernelEntry
+include/crucible/SchemaTable.h | member | crucible::SchemaTable::entries_ | crucible::SchemaEntry
+include/crucible/ledger/Ledger.h | alias | crucible::ledger::RefreshLog | crucible::ledger::RefreshRecord
+include/crucible/ledger/Ledger.h | alias | crucible::ledger::RefreshQueue | crucible::ledger::RefreshRequest
+include/crucible/ledger/Ledger.h | member | crucible::ledger::RefreshOutcome::log | crucible::ledger::RefreshRecord
+include/crucible/ledger/Ledger.h | return | crucible::ledger::RefreshQueue crucible::ledger::refresh_plan(const Ledger&, std::span<const VerdictId>, uint64_t) | crucible::ledger::RefreshRequest
+include/crucible/topology/Discovery.h | alias | crucible::topology::DefaultDiscoverySnapshot | crucible::cog::CogIdentity
+include/crucible/topology/Discovery.h | alias | crucible::topology::DefaultDiscoverySnapshot | crucible::topology::DiscoveryEdgeFact
+include/crucible/topology/Discovery.h | alias | crucible::topology::DefaultDiscoverySnapshot | crucible::topology::DiscoveryNodeFact
+include/crucible/warden/Registry.h | member | crucible::warden::HotRegionRegistry::slots_ | crucible::warden::HotRegionRegistry::Slot
+include/crucible/warden/Registry.h | return | std::inplace_vector<crucible::warden::HotRegion, 256> crucible::warden::HotRegionRegistry::snapshot() const | crucible::warden::HotRegion
+include/crucible/warden/Registry.h | return | std::inplace_vector<crucible::warden::HotRegion, 256> crucible::warden::HotRegionRegistryHandle::snapshot() const | crucible::warden::HotRegion
+include/fixy/session/Watch.h | member | fixy::session::watch::detail::wait_chain::links | fixy::session::watch::detail::chain_link
+
+keep | include/fixy/session/Watch.h | member | fixy::session::watch::detail::registry::endpoints | fixy::session::watch::detail::endpoint_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage
+keep | include/fixy/session/Watch.h | member | fixy::session::watch::detail::registry::threads | fixy::session::watch::detail::thread_record | each record is alignas(64) and fills one cache line, so two threads that write two records never share a line. The registry has static storage

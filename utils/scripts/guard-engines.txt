@@ -51,6 +51,7 @@ utils/scripts/check-no-raw-array-member.py | tsast,text | the allowlist rows
 utils/scripts/check-no-throw-no-rtti.sh | compiler,text | the nm symbol lists of the built artifacts
 utils/scripts/check-no-unchecked-access.py | tsast,preprocessor,json,text | the allowlist rows
 utils/scripts/check-no-unity-pch.py | json,text | the compile commands of the compile database, and the CMake files of the tree, read with a CMake lexer
+utils/scripts/check-padded-lists.py | tsast,compiler,json,text | the compile database, the ledger rows, test/layer/crucible-not-standalone.txt and the compile-time messages of the probe compiles
 utils/scripts/check-parse-clean.py | tsast |
 utils/scripts/check-permission-storage.py | tsast |
 utils/scripts/check-process-wide-state.py | tsast,text | the roster utils/scripts/process-wide-roster.txt
