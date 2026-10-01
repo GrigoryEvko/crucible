@@ -316,26 +316,27 @@ run_guard() {
 
 # ── Self-test ───────────────────────────────────────────────────────────
 #
-# Six axes.  Two are POSITIVE controls that inject a violation and require
-# the guard to find it and NAME it; two are NEGATIVE controls that inject
-# something that looks similar and require the guard to say nothing about
-# it, because a check that fires on anything new is not a check.
+# Five axes.  Axis 1 puts four probe headers into one sentinel.  Two are
+# POSITIVE controls that inject a violation, and the guard must find each
+# one and NAME it.  Two are NEGATIVE controls that inject something that
+# looks similar, and the guard must not name them, because a check that
+# fires on anything new is not a check.  The diagnostics of Collision.h name
+# every offender, so one compile proves the four probes, and it also proves
+# that one offender does not hide a second.
 #
-# The axes are judged against a BASELINE taken from the unmodified tree
-# rather than against "the tree is clean".  The self-test's subject is the
-# guard, not the tree: a real offender sitting in the tree is a finding
-# for whoever owns it, and it must not be able to turn this self-test red
-# or, worse, green for the wrong reason.  The baseline must be a definite
-# verdict — 0 or 1, never 2 — and each axis is a delta from it.
+# The axes judge the probes by name, not against "the tree is clean".  The
+# subject of the self-test is the guard, not the tree.  A real offender in
+# the tree is a finding for its owner, and the test atom_roster_joined
+# reports it.  It cannot turn this self-test red, or green for the wrong
+# reason.  A tree whose sentinel does not compile gives exit 2 in axis 1,
+# and axis 1 fails with the log of the compiler.
 #
-# Axes 1 to 6 re-invoke this script by its absolute path, from a deep
-# temporary working directory, which is the invocation ctest uses.
-#
-# The six runs are independent, so they run at the same time, and the
-# self-test takes the time of one sentinel compile.  Each verdict is then
-# read in the order of the axes.  Axes 7 to 9 prove the verdict cache on a
-# small sentinel: a second run reads it, a changed header misses it, and
-# the caches can be turned off.
+# Axes 1 and 2 run this script again by its absolute path, from a deep
+# temporary working directory, which is the invocation ctest uses.  Each of
+# them compiles the full sentinel, so the two run at the same time, and the
+# self-test takes the time of one sentinel compile.  Axes 3 to 5 prove the
+# verdict cache on a small sentinel: a second run reads it, a changed header
+# misses it, and the caches can be turned off.
 
 self_test_fail() {
     printf 'check-atom-roster-joined --self-test: FAIL: %s\n' "$1" >&2
@@ -378,7 +379,7 @@ put_probe() {
 }
 
 self_test() {
-    local tmp probe status baseline root
+    local tmp probe status root
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' RETURN
     # The probe headers are the same for each run of one version of this
@@ -391,7 +392,7 @@ self_test() {
     fi
     mkdir -p "$probe/roster_probe"
 
-    # Axis 2 — POSITIVE: a roster declared and not joined.
+    # Axis 1, POSITIVE: a roster declared and not joined.
     put_probe orphan.h <<'PROBE'
 #pragma once
 #include <fixy/Atom.h>
@@ -401,9 +402,9 @@ using probe_orphan_atom_roster = std::tuple<int>;
 }
 PROBE
 
-    # Axis 3 — NEGATIVE: a roster declared AND joined, through an alias to
-    # a family already in the join.  The guard must stay quiet, or it is
-    # firing on the declaration rather than on the relation.
+    # Axis 1, NEGATIVE: a roster declared AND joined, through an alias to a
+    # family already in the join.  The guard must not name it, or it fires
+    # on the declaration and not on the relation.
     put_probe joined.h <<'PROBE'
 #pragma once
 #include <fixy/atoms/Sync.h>
@@ -412,8 +413,8 @@ using probe_joined_atom_roster = sync_atom_roster;
 }
 PROBE
 
-    # Axis 4 — POSITIVE: a sample set that IS joined.  This is the half
-    # that keeps axis 2 from being dodged by a rename.
+    # Axis 1, POSITIVE: a sample set that IS joined.  This is the half that
+    # keeps a rename from dodging the unjoined roster above.
     put_probe wrong_samples.h <<'PROBE'
 #pragma once
 #include <fixy/atoms/Sync.h>
@@ -422,8 +423,8 @@ using probe_wrong_atom_samples = sync_atom_roster;
 }
 PROBE
 
-    # Axis 5 — NEGATIVE: a sample set outside the population, which is
-    # what a sample set is supposed to be.
+    # Axis 1, NEGATIVE: a sample set outside the population, which is what
+    # a sample set is supposed to be.
     put_probe ok_samples.h <<'PROBE'
 #pragma once
 #include <fixy/Atom.h>
@@ -433,80 +434,70 @@ using probe_ok_atom_samples = std::tuple<int>;
 }
 PROBE
 
-    # Axis 6 — a sentinel that will not compile must exit 2, not 0.  A
-    # guard that cannot measure reporting green is the failure mode this
-    # whole task is about.
+    # Axis 1 includes the four probes through one header.
+    put_probe all.h <<'PROBE'
+#pragma once
+#include <roster_probe/orphan.h>
+#include <roster_probe/joined.h>
+#include <roster_probe/wrong_samples.h>
+#include <roster_probe/ok_samples.h>
+PROBE
+
+    # Axis 2: a sentinel that does not compile must exit 2, not 0.  A guard
+    # that cannot measure and reports green is the failure that this guard
+    # exists to prevent.
     put_probe broken.h <<'PROBE'
 #pragma once
 this is not c++;
 PROBE
 
-    # Axis 1 is the baseline, by absolute path from a deep directory, with
-    # no probe.  The six runs go at the same time.
-    probe_start "$probe" "" "$tmp/a1.log"
-    probe_start "$probe" roster_probe/orphan.h "$tmp/a2.log"
-    probe_start "$probe" roster_probe/joined.h "$tmp/a3.log"
-    probe_start "$probe" roster_probe/wrong_samples.h "$tmp/a4.log"
-    probe_start "$probe" roster_probe/ok_samples.h "$tmp/a5.log"
-    probe_start "$probe" roster_probe/broken.h "$tmp/a6.log"
+    # The two runs go at the same time, each by absolute path from a deep
+    # directory.
+    probe_start "$probe" roster_probe/all.h "$tmp/a1.log"
+    probe_start "$probe" roster_probe/broken.h "$tmp/a2.log"
     wait
 
-    # Axis 1 — a definite verdict is required; exit 2 means the sentinel is
-    # broken and nothing below would mean anything.
-    baseline="$(probe_status "$tmp/a1.log")"
-    [[ $baseline -eq 0 || $baseline -eq 1 ]] \
-        || self_test_fail "axis 1: the baseline must be a definite verdict, not exit $baseline" "$tmp/a1.log"
-    printf 'check-atom-roster-joined --self-test: baseline verdict is %s\n' "$baseline"
+    status="$(probe_status "$tmp/a1.log")"
+    [[ $status -eq 1 ]] \
+        || self_test_fail "axis 1: an unjoined roster and a joined sample set must fail the guard (exit $status)" \
+                          "$tmp/a1.log"
+    grep -qF 'probe_orphan_atom_roster' "$tmp/a1.log" \
+        || self_test_fail 'axis 1: the message must name the unjoined roster' "$tmp/a1.log"
+    grep -qF 'all_atom_roster alias in include/fixy/Collision.h' "$tmp/a1.log" \
+        || self_test_fail 'axis 1: the message must name the join site' "$tmp/a1.log"
+    grep -qF 'probe_wrong_atom_samples' "$tmp/a1.log" \
+        || self_test_fail 'axis 1: the message must name the joined sample set' "$tmp/a1.log"
+    if grep -qF 'probe_joined_atom_roster' "$tmp/a1.log"; then
+        self_test_fail 'axis 1: a joined roster must not be named as an offender' "$tmp/a1.log"
+    fi
+    if grep -qF 'probe_ok_atom_samples' "$tmp/a1.log"; then
+        self_test_fail 'axis 1: an unjoined sample set must not be named as an offender' "$tmp/a1.log"
+    fi
 
     status="$(probe_status "$tmp/a2.log")"
-    [[ $status -eq 1 ]] || self_test_fail "axis 2: an unjoined roster must fail the guard (exit $status)" "$tmp/a2.log"
-    grep -qF 'probe_orphan_atom_roster' "$tmp/a2.log" \
-        || self_test_fail 'axis 2: the message must name the offending roster' "$tmp/a2.log"
-    grep -qF 'all_atom_roster alias in include/fixy/Collision.h' "$tmp/a2.log" \
-        || self_test_fail 'axis 2: the message must name the join site' "$tmp/a2.log"
+    [[ $status -eq 2 ]] || self_test_fail "axis 2: a sentinel that does not compile must exit 2 (exit $status)" \
+                                          "$tmp/a2.log"
 
-    status="$(probe_status "$tmp/a3.log")"
-    [[ $status -eq $baseline ]] \
-        || self_test_fail "axis 3: a joined roster must not change the verdict ($status, baseline $baseline)" "$tmp/a3.log"
-    if grep -qF 'probe_joined_atom_roster' "$tmp/a3.log"; then
-        self_test_fail 'axis 3: a joined roster must not be named as an offender' "$tmp/a3.log"
-    fi
-
-    status="$(probe_status "$tmp/a4.log")"
-    [[ $status -eq 1 ]] || self_test_fail "axis 4: a joined sample set must fail the guard (exit $status)" "$tmp/a4.log"
-    grep -qF 'probe_wrong_atom_samples' "$tmp/a4.log" \
-        || self_test_fail 'axis 4: the message must name the offending sample set' "$tmp/a4.log"
-
-    status="$(probe_status "$tmp/a5.log")"
-    [[ $status -eq $baseline ]] \
-        || self_test_fail "axis 5: an unjoined sample set must not change the verdict ($status, baseline $baseline)" "$tmp/a5.log"
-    if grep -qF 'probe_ok_atom_samples' "$tmp/a5.log"; then
-        self_test_fail 'axis 5: an unjoined sample set must not be named as an offender' "$tmp/a5.log"
-    fi
-
-    status="$(probe_status "$tmp/a6.log")"
-    [[ $status -eq 2 ]] || self_test_fail "axis 6: an uncompilable sentinel must exit 2 (exit $status)" "$tmp/a6.log"
-
-    # Axes 7 to 9 — the verdict cache, with a small sentinel and a scratch
+    # Axes 3 to 5: the verdict cache, with a small sentinel and a scratch
     # cache, so each run is one fast compile or none.
     local tiny="$tmp/tiny" seen
     mkdir -p "$tiny/roster_tiny"
     printf '#include <roster_tiny/tiny.h>\n' >"$tiny/tiny.cpp"
     printf 'int roster_tiny_value;\n' >"$tiny/roster_tiny/tiny.h"
 
-    # Axis 7 — a second run reads the verdict and the log of the first and
+    # Axis 3: a second run reads the verdict and the log of the first and
     # starts no compile.
     CRUCIBLE_CACHE_DIR="$tmp/cache" ROSTER_EXTRA_INCLUDE_DIR="$tiny" \
         classify "$tiny/tiny.cpp" "$tiny/first.log" >"$tiny/first.out"
     seen="$cache_outcome $(<"$tiny/first.out")"
-    [[ $seen == 'miss ok' ]] || self_test_fail "axis 7: a first run must compile and pass ($seen)" "$tiny/first.log"
+    [[ $seen == 'miss ok' ]] || self_test_fail "axis 3: a first run must compile and pass ($seen)" "$tiny/first.log"
     CRUCIBLE_CACHE_DIR="$tmp/cache" ROSTER_EXTRA_INCLUDE_DIR="$tiny" \
         classify "$tiny/tiny.cpp" "$tiny/second.log" >"$tiny/second.out"
     seen="$cache_outcome $(<"$tiny/second.out")"
     { [[ $seen == 'hit ok' ]] && cmp -s "$tiny/first.log" "$tiny/second.log"; } \
-        || self_test_fail "axis 7: a second run must read the verdict and the log of the first ($seen)" "$tiny/second.log"
+        || self_test_fail "axis 3: a second run must read the verdict and the log of the first ($seen)" "$tiny/second.log"
 
-    # Axis 8 — POSITIVE: a header whose contents change makes the cache miss
+    # Axis 4, POSITIVE: a header whose contents change makes the cache miss
     # and gives the new verdict, so the cache cannot give a stale one.  The
     # old contents read their own variant again.
     # The message is two literals, so the source line that the compiler
@@ -517,20 +508,20 @@ PROBE
         classify "$tiny/tiny.cpp" "$tiny/changed.log" >"$tiny/changed.out"
     seen="$cache_outcome $(<"$tiny/changed.out")"
     [[ $seen == 'miss violation' ]] \
-        || self_test_fail "axis 8: a changed header must miss and give its own verdict ($seen)" "$tiny/changed.log"
+        || self_test_fail "axis 4: a changed header must miss and give its own verdict ($seen)" "$tiny/changed.log"
     printf 'int roster_tiny_value;\n' >"$tiny/roster_tiny/tiny.h"
     CRUCIBLE_CACHE_DIR="$tmp/cache" ROSTER_EXTRA_INCLUDE_DIR="$tiny" \
         classify "$tiny/tiny.cpp" "$tiny/back.log" >"$tiny/back.out"
     seen="$cache_outcome $(<"$tiny/back.out")"
-    [[ $seen == 'hit ok' ]] || self_test_fail "axis 8: the old contents must read their own variant ($seen)" "$tiny/back.log"
+    [[ $seen == 'hit ok' ]] || self_test_fail "axis 4: the old contents must read their own variant ($seen)" "$tiny/back.log"
 
-    # Axis 9 — with the caches off, each run compiles.
+    # Axis 5: with the caches off, each run compiles.
     CRUCIBLE_CACHE_DIR=off ROSTER_EXTRA_INCLUDE_DIR="$tiny" \
         classify "$tiny/tiny.cpp" "$tiny/off.log" >"$tiny/off.out"
     seen="$cache_outcome $(<"$tiny/off.out")"
-    [[ $seen == 'off ok' ]] || self_test_fail "axis 9: with the caches off a run must compile ($seen)" "$tiny/off.log"
+    [[ $seen == 'off ok' ]] || self_test_fail "axis 5: with the caches off a run must compile ($seen)" "$tiny/off.log"
 
-    printf 'check-atom-roster-joined --self-test: PASS (9 axes, 2 negative controls)\n'
+    printf 'check-atom-roster-joined --self-test: PASS (5 axes, 2 negative controls)\n'
 }
 
 if [[ $mode == self_test ]]; then
