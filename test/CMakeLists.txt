@@ -301,30 +301,52 @@ crucible_test(test_cipher_commit_lifetime)
 crucible_test(test_chase_lev_deque)
 # The two properties -fno-exceptions and -fno-rtti stood for, held on the
 # artifact of THIS build rather than asserted by flags neither preset has
-# ever carried.  The gate reads three static libraries: crucible,
-# foundation and crucible_vigil.  It does not read crucible_perf,
-# crucible_cipher or crucible_vis.
-# utils/scripts/no-throw-no-rtti-allowlist.txt admits the throws and the
-# classes that a library header makes.  The self-test needs the project
-# compiler, because the system g++ may be too old for the fixtures.
+# ever carried.  The gate reads each static library of the tree: each
+# STATIC_LIBRARY target of the BUILDSYSTEM_TARGETS property of the root
+# directory and of each directory that the root adds before this one, other
+# than test/.  A new library joins the gate with no edit here.  A directory
+# that the root adds after this one (bench/, examples/) holds no library of
+# the tree.  utils/scripts/no-throw-no-rtti-allowlist.txt admits the throws
+# and the classes that a library header makes.  The self-test needs the
+# project compiler, because the system g++ may be too old for the fixtures.
 add_test(NAME no_throw_no_rtti_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh --self-test)
 set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
   ENVIRONMENT "CRUCIBLE_CXX=${CMAKE_CXX_COMPILER}"
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
+set(_no_throw_artifacts "")
+set(_no_throw_directories "${CMAKE_SOURCE_DIR}")
+while(_no_throw_directories)
+  list(POP_FRONT _no_throw_directories _no_throw_directory)
+  if(_no_throw_directory STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    continue()
+  endif()
+  get_property(_no_throw_targets DIRECTORY "${_no_throw_directory}" PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_no_throw_target IN LISTS _no_throw_targets)
+    get_target_property(_no_throw_type ${_no_throw_target} TYPE)
+    if(_no_throw_type STREQUAL "STATIC_LIBRARY")
+      list(APPEND _no_throw_artifacts "$<TARGET_FILE:${_no_throw_target}>")
+    endif()
+  endforeach()
+  get_property(_no_throw_subdirectories DIRECTORY "${_no_throw_directory}" PROPERTY SUBDIRECTORIES)
+  list(APPEND _no_throw_directories ${_no_throw_subdirectories})
+endwhile()
+if(NOT "$<TARGET_FILE:crucible>" IN_LIST _no_throw_artifacts
+   OR NOT "$<TARGET_FILE:foundation>" IN_LIST _no_throw_artifacts)
+  message(FATAL_ERROR "test/CMakeLists.txt: the no-throw gate found no static library crucible or foundation in "
+                      "the root directory, so it would read the wrong set of artifacts.  Define the libraries of "
+                      "the tree in the root CMakeLists.txt, before add_subdirectory(test).")
+endif()
 add_test(NAME no_throw_no_rtti
-  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh
-          $<TARGET_FILE:crucible> $<TARGET_FILE:foundation> $<TARGET_FILE:crucible_vigil>)
+  COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh ${_no_throw_artifacts})
 set_tests_properties(no_throw_no_rtti PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)
-# The gate reads the output of the optimizer.  In C++26, each libstdc++
-# allocate holds an inline `throw bad_alloc()`, after a length check that
-# makes the throw unreachable.  An optimized build finds that and deletes
-# the throw.  The strict UBSan checks stop that proof, and the throw stays
-# in the artifact.  The release, default, tsan and verify presets run the
-# gate.
+# The gate reads the output of the compiler.  The strict UBSan checks test
+# the dynamic type of each polymorphic object, so an artifact of that preset
+# defines the typeinfo of library classes such as std::_Sp_counted_base.
+# The release, default, tsan and verify presets run the gate.
 if(CRUCIBLE_UBSAN_STRICT)
   set_tests_properties(no_throw_no_rtti PROPERTIES DISABLED TRUE)
 endif()

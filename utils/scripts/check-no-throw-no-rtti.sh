@@ -36,13 +36,25 @@
 # in the scanned set.  Only a throw is a violation.
 #
 # WHERE A THROW STANDS.  The guard reads the relocations of the artifact
-# (readelf -rW), and each one names the section that holds it.  The tree
+# (objdump -r), and each one names the section that holds it.  The tree
 # compiles with -ffunction-sections, so that section names the function
 # that throws.  A local function that no code or data section of its own
 # object references is dead: no other object can name a local symbol, and
 # --gc-sections drops it from each link.  A throw in a dead function does
 # not count.  An optimized build can leave such a function behind, for
 # example the cold part of an allocator after each call of it was removed.
+#
+# AN ALLOCATION THAT FAILS.  In C++26, each allocate of libstdc++ holds an
+# inline `throw std::bad_alloc()` or `throw std::bad_array_new_length()`, and
+# std::inplace_vector throws std::bad_alloc when it is full.  An optimized
+# build deletes most of these throws, a build without optimization keeps
+# them.  This is the failure of an allocation inside the library, the same
+# throw that std::__throw_bad_alloc makes from libstdc++.so, which the guard
+# cannot see and never refused.  Nothing in the tree catches it outside the
+# documented catch boundary, so it ends the process: the policy of §II for
+# an exhausted memory.  The guard reads the type that each throw throws, and
+# it admits a throw of one of these two types.  A rethrow carries no type,
+# so it needs a row.
 #
 # THE ALLOWLIST.  utils/scripts/no-throw-no-rtti-allowlist.txt admits a
 # throw or a polymorphic class that the tree cannot remove, one row each:
@@ -77,11 +89,16 @@ USAGE
 # and __cxa_end_catch are absent on purpose: see the header.
 THROW_SYMBOLS=(__cxa_throw __cxa_rethrow)
 DOWNCAST_SYMBOLS=(__dynamic_cast __cxa_bad_cast)
+# The typeinfo of std::bad_alloc and of std::bad_array_new_length: see AN
+# ALLOCATION THAT FAILS in the header.
+ALLOCATION_FAILURES=(_ZTISt9bad_alloc _ZTISt20bad_array_new_length)
 
 allowlist_file="$(dirname "${BASH_SOURCE[0]}")/no-throw-no-rtti-allowlist.txt"
 
 # Total undefined symbols read, so the report can say the scan read something.
 symbols_read=0
+# The throws of a failed allocation that the scan read and admitted.
+allocation_failures=0
 
 # The rows of the allowlist that a reference matched, by line number.
 declare -A matched_rows=()
@@ -89,11 +106,15 @@ declare -A matched_rows=()
 declare -A scanned_names=()
 
 # Prints each reference of an artifact to a named symbol, one line each:
-# live or dead, the symbol, the member of the archive, and the demangled
-# function that holds the reference.  See WHERE A THROW STANDS in the
-# header.  Exits 2 when readelf cannot read the artifact.
+# live or dead, the symbol, the member of the archive, the mangled typeinfo
+# of the exception that a throw throws (or - for none), and the demangled
+# function that holds the reference.  The typeinfo of a throw is the last
+# typeinfo that its section references before the call: a throw loads it
+# as the second argument of __cxa_throw.  See WHERE A THROW STANDS in the
+# header.  Exits 2 when readelf or objdump cannot read the artifact.
 # Complexity: linear in the relocations and the symbols of the artifact.
 live_references_program='
+import re
 import subprocess
 import sys
 
@@ -104,7 +125,7 @@ FUNCTION_PREFIXES = (".text.unlikely.", ".text.hot.", ".text.startup.", ".text.e
 def listing(*args):
     done = subprocess.run(args, capture_output=True, text=True, check=False)
     if done.returncode != 0 or not done.stdout.strip():
-        sys.stderr.write("readelf cannot read " + artifact + ": " + done.stderr.strip() + "\n")
+        sys.stderr.write(args[0] + " cannot read " + artifact + ": " + done.stderr.strip() + "\n")
         sys.exit(2)
     return done.stdout.splitlines()
 
@@ -124,36 +145,50 @@ for line in listing("readelf", "-sW", artifact):
     if len(fields) >= 8 and fields[3] == "FUNC" and fields[4] == "LOCAL":
         local_functions.setdefault(member, set()).add(fields[7])
 
+
+def target_of(value):
+    for mark in ("+0x", "-0x"):
+        if mark in value:
+            return value.rsplit(mark, 1)[0]
+    return value
+
+
+# objdump prints each section name in full.  readelf cuts a section name at
+# 256 characters, and a mangled name of a template is often longer.
 references = {}
 hits = []
-member, section = artifact, ""
-for line in listing("readelf", "-rW", artifact):
-    if line.startswith("File: "):
-        member = member_of(line, member)
+member, section, typeinfo = artifact, "", "-"
+for line in listing("objdump", "-r", artifact):
+    member_line = re.match(r"^(\S+):\s+file format ", line)
+    if member_line is not None:
+        member = member_line.group(1)
         continue
-    if line.startswith("Relocation section "):
-        section = line.split(chr(39))[1].removeprefix(".rela").removeprefix(".rel")
+    if line.startswith("RELOCATION RECORDS FOR ["):
+        section, typeinfo = line[len("RELOCATION RECORDS FOR ["):].rsplit("]", 1)[0], "-"
         continue
     fields = line.split()
-    if len(fields) < 5 or not fields[2].startswith("R_") or section.startswith((".debug", ".eh_frame")):
+    if len(fields) != 3 or not fields[1].startswith("R_") or section.startswith((".debug", ".eh_frame")):
         continue
-    references.setdefault(member, set()).add(fields[4])
-    if fields[4] in wanted:
-        hits.append((fields[4], member, section))
+    target = target_of(fields[2])
+    references.setdefault(member, set()).add(target)
+    if target.startswith("_ZTI"):
+        typeinfo = target
+    if target in wanted:
+        hits.append((target, member, section, typeinfo if target == "__cxa_throw" else "-"))
 
 found = []
-for symbol, member, section in hits:
+for symbol, member, section, thrown in hits:
     function = next((section[len(prefix):] for prefix in FUNCTION_PREFIXES if section.startswith(prefix)), "")
     named = references.get(member, set())
     is_dead = (function in local_functions.get(member, set()) and function not in named and section not in named)
-    found.append(("dead" if is_dead else "live", symbol, member, function or "(section " + section + ")"))
-names = subprocess.run(["c++filt"], input="\n".join(entry[3] for entry in found), capture_output=True, text=True,
+    found.append(("dead" if is_dead else "live", symbol, member, thrown, function or "(section " + section + ")"))
+names = subprocess.run(["c++filt"], input="\n".join(entry[4] for entry in found), capture_output=True, text=True,
                        check=False).stdout.splitlines()
 if len(names) != len(found):
     sys.stderr.write("c++filt did not demangle each function name of " + artifact + "\n")
     sys.exit(2)
-for (state, symbol, member, _function), name in zip(found, names):
-    print(state + "\t" + symbol + "\t" + member + "\t" + name)
+for (state, symbol, member, thrown, _function), name in zip(found, names):
+    print(state + "\t" + symbol + "\t" + member + "\t" + thrown + "\t" + name)
 '
 
 # $1 = text.  Prints the text without its leading and trailing space.
@@ -248,16 +283,20 @@ scan_artifact() {
     # A throw, at each function that holds one.  Each undefined throw symbol
     # must have a relocation that the attribution reads, or the attribution
     # read nothing and the guard cannot decide.
-    local state function member references attributed=""
+    local state function member thrown references attributed=""
     if ! references="$(python3 -c "$live_references_program" "$artifact" "${THROW_SYMBOLS[@]}")"; then
         printf 'check-no-throw-no-rtti: the relocations of %s cannot be read, so nothing was checked.\n' \
             "$artifact" >&2
         return 2
     fi
-    while IFS=$'\t' read -r state symbol member function; do
+    while IFS=$'\t' read -r state symbol member thrown function; do
         [[ -z "$state" ]] && continue
         attributed+=" $symbol "
         [[ "$state" == "dead" ]] && continue
+        if [[ " ${ALLOCATION_FAILURES[*]} " == *" $thrown "* ]]; then
+            allocation_failures=$((allocation_failures + 1))
+            continue
+        fi
         row="$(admitting_row "$name" throw "$function")"
         if [[ -n "$row" ]]; then
             matched_rows["$row"]=1
@@ -393,7 +432,19 @@ EOF
                       'struct Elsewhere { Elsewhere() = default; virtual int tag() const; };' \
                       'Elsewhere* placed_entry(void* memory) noexcept { return new (memory) Elsewhere; }' \
                       >"$tmp_root/references.cpp"
-        for unit in clean throws catches rtti admitted polymorphic references; do
+        # The two throws of a failed allocation, and a function that throws
+        # one of them and an int, whose int throw stays a violation.
+        printf '%s\n' '#include <new>' \
+                      'int allocation_entry(int input) { if (input < 0) { throw std::bad_alloc(); } return input; }' \
+                      'int array_entry(int input) { if (input < 0) { throw std::bad_array_new_length(); } return input; }' \
+                      >"$tmp_root/allocation.cpp"
+        printf '%s\n' '#include <new>' \
+                      'int mixed_entry(int input) {' \
+                      '    if (input < 0) { throw std::bad_alloc(); }' \
+                      '    if (input > 9) { throw input; }' \
+                      '    return input;' \
+                      '}' >"$tmp_root/mixed.cpp"
+        for unit in clean throws catches rtti admitted polymorphic references allocation mixed; do
             "$cxx" -std=c++17 -O1 -ffunction-sections -c "$tmp_root/$unit.cpp" -o "$tmp_root/$unit.o" 2>/dev/null \
                 || fail "could not compile the $unit fixture"
             ar rcs "$tmp_root/lib$unit.a" "$tmp_root/$unit.o" 2>/dev/null \
@@ -430,6 +481,14 @@ EOF
         [[ "$rc" -eq 0 ]] || fail "a reference to a vtable that another object defines was reported ($out)"
         rc=0; check_stale_rows 2>/dev/null || rc=$?
         [[ "$rc" -eq 0 ]] || fail "a row that matched a reference was reported stale"
+        before="$allocation_failures"
+        rc=0; out="$(scan_artifact "$tmp_root/liballocation.a" 2>&1)" || rc=$?
+        [[ "$rc" -eq 0 ]] || fail "a throw of std::bad_alloc or std::bad_array_new_length was reported ($out)"
+        scan_artifact "$tmp_root/liballocation.a" 2>/dev/null
+        [[ "$allocation_failures" -ge $((before + 2)) ]] || fail "the two throws of a failed allocation were not read"
+        rc=0; out="$(scan_artifact "$tmp_root/libmixed.a" 2>&1)" || rc=$?
+        [[ "$rc" -eq 1 ]] && grep -q '__cxa_throw in mixed.o, in mixed_entry(int)\.' <<<"$out" \
+            || fail "an int throw beside a throw of std::bad_alloc was not reported ($out)"
 
         # The same artifacts against a row that matches nothing.
         matched_rows=()
@@ -450,8 +509,8 @@ EOF
         [[ "$rc" -eq 1 ]] && grep -q 'MALFORMED' <<<"$out" || fail "a row with no reason was not reported malformed"
 
         printf 'check-no-throw-no-rtti: self-test passed — a throw and a downcast are caught, a '
-        printf 'catch without a throw, a clean artifact, an admitted throw or class, a dead local function and a '
-        printf 'reference to a library vtable are not, and a stale or malformed row fails\n'
+        printf 'catch without a throw, a clean artifact, an admitted throw or class, a dead local function, a '
+        printf 'failed allocation and a reference to a library vtable are not, and a stale or malformed row fails\n'
         exit 0
         ;;
     "")
@@ -484,5 +543,5 @@ check_stale_rows || rc=1
 if [[ "$rc" -ne 0 ]]; then
     exit 1
 fi
-printf 'check-no-throw-no-rtti: %d artifact(s) hold both properties (%d symbols read, %d allowlist row(s) used) — nothing else throws and nothing else dispatches at runtime\n' \
-    "$scanned" "$symbols_read" "${#matched_rows[@]}"
+printf 'check-no-throw-no-rtti: %d artifact(s) hold both properties (%d symbols read, %d throw(s) of a failed allocation, %d allowlist row(s) used) — nothing else throws and nothing else dispatches at runtime\n' \
+    "$scanned" "$symbols_read" "$allocation_failures" "${#matched_rows[@]}"

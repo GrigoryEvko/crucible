@@ -792,8 +792,9 @@ endif()
 # Those instantiations define the virtual table of std::thread::_State_impl,
 # and the std::set of fixy/concurrent/Topology.h references __cxa_throw and
 # __cxa_rethrow.  The check of utils/scripts/check-no-throw-no-rtti.sh reads
-# this library too, and utils/scripts/no-throw-no-rtti-allowlist.txt admits
-# each of those references with its reason.
+# this library too.  It admits the throw of a failed allocation, and
+# utils/scripts/no-throw-no-rtti-allowlist.txt admits the rethrow and the
+# virtual table, each with its reason.
 #
 # The bodies compile with the definitions that crucible gives its
 # consumers, so each header reads the same macros in both places.
@@ -816,10 +817,11 @@ target_link_libraries(crucible PUBLIC crucible_vigil)
 # includes Cipher.h then parses no stream, no region serializer and no
 # federation protocol.
 #
-# The store is a library of its own for the reason that the Vigil runtime
-# above gives: its streams and std::filesystem reference __cxa_throw, and
-# utils/scripts/check-no-throw-no-rtti.sh refuses that in libcrucible.a.  The
-# Vigil runtime opens the store, so it links this library.
+# The store is a library of its own, as the Vigil runtime above is.  Its
+# streams, std::filesystem and its resident cache hold the throws of a failed
+# allocation, which utils/scripts/check-no-throw-no-rtti.sh reads in each
+# static library and admits.  The Vigil runtime opens the store, so it links
+# this library.
 add_library(crucible_cipher STATIC src/Cipher.cpp)
 target_include_directories(crucible_cipher PUBLIC include/)
 target_compile_definitions(crucible_cipher PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
@@ -832,9 +834,9 @@ target_link_libraries(crucible PUBLIC crucible_cipher)
 #
 # The block detector, the graph layout and the SVG renderer of
 # include/crucible/vis/.  A translation unit that includes a vis header then
-# compiles no layout and no renderer.  The bodies build std::string and
-# std::vector values, so they reference __cxa_throw, and the library stays
-# out of libcrucible.a for the reason that the Vigil runtime above gives.
+# compiles no layout and no renderer.  The bodies build std::string,
+# std::vector and std::unordered_map values, so they hold the throws of a
+# failed allocation, which utils/scripts/check-no-throw-no-rtti.sh admits.
 add_library(crucible_vis STATIC
   src/vis/BlockDetector.cpp
   src/vis/NetworkSimplex.cpp
@@ -1494,11 +1496,11 @@ endif()
 # ThreadSanitizer.
 #
 # The default preset puts UBSan on the test executables only (the
-# crucible_test factory).  UBSan with -fno-sanitize-recover stops the proof
-# that deletes the unreachable `throw bad_alloc()` of each libstdc++
-# allocate, and the no-throw gate then reads a throw in the libraries.
-# The strict preset puts the full UBSan set on the libraries, and that one
-# preset disables the gate (test/CMakeLists.txt).  The -fsanitize=undefined
+# crucible_test factory).  UBSan tests the dynamic type of each polymorphic
+# object, so an instrumented library defines the typeinfo of library classes
+# such as std::_Sp_counted_base, and the no-throw gate refuses a defined
+# typeinfo.  The strict preset puts the full UBSan set on the libraries, and
+# that one preset disables the gate (test/CMakeLists.txt).  The -fsanitize=undefined
 # set of GCC does not include float-cast-overflow, float-divide-by-zero and
 # bounds-strict, and the strict preset names them.
 set(_crucible_sanitizers "")
