@@ -706,13 +706,16 @@ struct derivation_mark {
 // proportion to the work it does: the prefixes it copies, the
 // assumptions it scans and the actions it reads back.  A search that
 // runs out has not proven the pair, and the pair is refused.  The
-// amount keeps each direction well inside the constexpr operation limit
-// of the build (-fconstexpr-ops-limit=100000000 in CMakeLists.txt), so
-// a hard pair is refused with an answer and never stops the build.  On
-// the hardest pair of the differential corpus, one unit costs about 220
-// operations, and the limit falls between 370,000 and 524,288 units, so
-// this amount is about one seventh of the limit.  No pair of the corpus
-// holds with twice this amount and fails with it.
+// amount keeps the search inside the constexpr operation limit of the
+// build (-fconstexpr-ops-limit, the row constexpr-ops of
+// utils/scripts/budgets.txt, 33,554,432 operations), so a hard pair is
+// refused with an answer and never stops the build.  On the hardest pair
+// of the differential corpus, one unit costs about 220 operations, so
+// the limit is about 152,000 units and one direction spends about 43% of
+// it.  The hardest evaluation of the corpus, in
+// test/session_oracle/generated_fixy_subtype_00.cpp, takes 28 to 30
+// million operations.  No pair of the corpus holds with twice this amount
+// and fails with it.
 inline constexpr std::size_t search_fuel = std::size_t{1} << 16;
 
 struct search {

@@ -36,7 +36,8 @@ THE BUDGET TABLE
     utils/scripts/budgets.txt gives the warning threshold and the error
     threshold of each check that measures a quantity.  read_budgets() reads
     the table, and classify() compares one value with one row.  A value that
-    is equal to a threshold does not exceed it.
+    is equal to a threshold does not exceed it.  A shell script gets the
+    error threshold of one row with `check_report.py --error-threshold CHECK`.
 
 Run this file with --self-test to do a test of the module.
 """
@@ -44,6 +45,8 @@ Run this file with --self-test to do a test of the module.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import math
 import os
 import re
@@ -424,6 +427,15 @@ def self_test() -> int:
         refuses("emit refuses a key with a dot", lambda: emit([first], "alpha", warnings_dir, "a.b"))
         refuses("emit refuses an empty key", lambda: emit([first], "alpha", warnings_dir, ""))
 
+    expect("threshold_text writes a whole number with no exponent", threshold_text(33554432.0) == "33554432")
+    expect("threshold_text keeps a fraction", threshold_text(1.25) == "1.25")
+    with contextlib.redirect_stdout(io.StringIO()) as printed:
+        found_row = print_error_threshold("constexpr-ops")
+    expect("--error-threshold prints the row constexpr-ops of the repository table",
+           found_row == 0 and printed.getvalue().strip().isdigit())
+    with contextlib.redirect_stderr(io.StringIO()):
+        expect("--error-threshold fails for a missing row", print_error_threshold("no-such-check") == 1)
+
     if failures:
         print(f"check_report --self-test: FAILED, {len(failures)} case(s) did not hold")
         return 1
@@ -431,8 +443,43 @@ def self_test() -> int:
     return 0
 
 
+def threshold_text(value: float) -> str:
+    """Return a threshold as the text of a number, with no exponent and no '.0' for a whole number.
+
+    Args:
+        value: The threshold
+
+    Returns:
+        The text
+    """
+    return str(int(value)) if value.is_integer() else repr(value)
+
+
+def print_error_threshold(check: str) -> int:
+    """Print the error threshold of one row of the budget table, for a shell script.
+
+    Args:
+        check: The check name of the row
+
+    Returns:
+        0 when the table has the row, else 1
+    """
+    try:
+        budget = read_budgets().get(check)
+    except (OSError, ValueError) as exc:
+        print(f"check_report.py: the budget table cannot be read: {exc}", file=sys.stderr)
+        return 1
+    if budget is None:
+        print(f"check_report.py: the budget table {BUDGETS} has no row {check}", file=sys.stderr)
+        return 1
+    print(threshold_text(budget.error))
+    return 0
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         sys.exit(self_test())
-    print("usage: check_report.py --self-test", file=sys.stderr)
+    if len(sys.argv) == 3 and sys.argv[1] == "--error-threshold":
+        sys.exit(print_error_threshold(sys.argv[2]))
+    print("usage: check_report.py --self-test | --error-threshold CHECK", file=sys.stderr)
     sys.exit(2)

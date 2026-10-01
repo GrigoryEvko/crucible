@@ -366,6 +366,11 @@ def evaluate(build: Path, jobs: int, root: Path) -> tuple[list[check_report.Find
 
 # ── The self-test ──────────────────────────────────────────────────
 
+# Each configure of a scratch project reads /proc/cpuinfo, and on a host with
+# hundreds of CPUs that one configure touches about 1.3 GB of memory.  So the
+# self-test has three projects: a clean one, one with every defect that a
+# configure and a build can show, and one whose build fails.  The edges run
+# POSIX tools and not `cmake -E`, so each build starts few processes.
 PROJECT = """cmake_minimum_required(VERSION 3.27)
 project(reconfigure_noop_plant NONE)
 file(GLOB inputs CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.txt")
@@ -373,30 +378,31 @@ file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/kept.txt" CONTENT "kept\\n")
 if(NOT IS_SYMLINK "${CMAKE_BINARY_DIR}/link")
   file(CREATE_LINK "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/link" SYMBOLIC)
 endif()
-add_custom_command(OUTPUT copy.txt COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/src/input.txt" copy.txt
+add_custom_command(OUTPUT copy.txt COMMAND cp "${CMAKE_SOURCE_DIR}/src/input.txt" copy.txt
                    DEPENDS ${inputs} "${CMAKE_BINARY_DIR}/kept.txt")
 add_custom_target(copy ALL DEPENDS copy.txt)
 """
 
 PLANTS = {
+    # The case builds the project after a change of CMakeLists.txt first, so
+    # Ninja runs CMake before the check.
     "clean": "",
-    "regenerated": "",
-    "link": ('file(REMOVE "${CMAKE_BINARY_DIR}/again")\n'
-             'file(CREATE_LINK "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/again" SYMBOLIC)\n'),
-    "rewrite": ('file(WRITE "${CMAKE_BINARY_DIR}/written.txt" "same\\n")\n'
-                'add_custom_command(OUTPUT written.out COMMAND "${CMAKE_COMMAND}" -E copy written.txt written.out\n'
+    # A link that each configure makes again, a file that each configure
+    # writes again and an edge that reads it, an edge whose dependency file
+    # names a header that does not exist, and an edge that adds an input of
+    # the glob in each build.
+    "defects": ('file(REMOVE "${CMAKE_BINARY_DIR}/again")\n'
+                'file(CREATE_LINK "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/again" SYMBOLIC)\n'
+                'file(WRITE "${CMAKE_BINARY_DIR}/written.txt" "same\\n")\n'
+                'add_custom_command(OUTPUT written.out COMMAND cp written.txt written.out\n'
                 '                   DEPENDS "${CMAKE_BINARY_DIR}/written.txt")\n'
-                'add_custom_target(written ALL DEPENDS written.out)\n'),
-    "missing": ('file(WRITE "${CMAKE_BINARY_DIR}/gone.in" "gone.out: ${CMAKE_BINARY_DIR}/no-such-header.h\\n")\n'
-                'add_custom_command(OUTPUT gone.out COMMAND "${CMAKE_COMMAND}" -E copy gone.in gone.d\n'
-                '                   COMMAND "${CMAKE_COMMAND}" -E touch gone.out DEPFILE gone.d)\n'
-                'add_custom_target(gone ALL DEPENDS gone.out)\n'),
-    "glob": ('add_custom_target(more ALL COMMAND "${CMAKE_COMMAND}" -DDIR=${CMAKE_SOURCE_DIR}/src\n'
-             '                  -P "${CMAKE_SOURCE_DIR}/more.cmake")\n'),
-    "failing": 'add_custom_target(failing ALL COMMAND "${CMAKE_COMMAND}" -E false)\n',
+                'add_custom_target(written ALL DEPENDS written.out)\n'
+                'file(WRITE "${CMAKE_BINARY_DIR}/gone.in" "gone.out: ${CMAKE_BINARY_DIR}/no-such-header.h\\n")\n'
+                'add_custom_command(OUTPUT gone.out COMMAND cp gone.in gone.d COMMAND touch gone.out DEPFILE gone.d)\n'
+                'add_custom_target(gone ALL DEPENDS gone.out)\n'
+                'add_custom_target(more ALL COMMAND mktemp "${CMAKE_SOURCE_DIR}/src/more-XXXXXX.txt")\n'),
+    "failing": "add_custom_target(failing ALL COMMAND false)\n",
 }
-# The script of the glob plant writes a new input file in each build.
-MORE_SCRIPT = 'string(TIMESTAMP stamp "%s%f" UTC)\nfile(WRITE "${DIR}/more-${stamp}.txt" "more\\n")\n'
 
 
 def plant_project(work: Path, plant: str, cmake: str, ninja: str) -> tuple[Path, str]:
@@ -414,7 +420,6 @@ def plant_project(work: Path, plant: str, cmake: str, ninja: str) -> tuple[Path,
     source = work / "source"
     (source / "src").mkdir(parents=True)
     (source / "src" / "input.txt").write_text("input\n", encoding="utf-8")
-    (source / "more.cmake").write_text(MORE_SCRIPT, encoding="utf-8")
     (source / "CMakeLists.txt").write_text(PROJECT + PLANTS[plant], encoding="utf-8")
     build = work / "build"
     code, output = run([cmake, "-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={ninja}", "-S", str(source), "-B", str(build)])
@@ -446,7 +451,7 @@ def self_test(cmake: str, ninja: str) -> int:
             build, problem = plant_project(work, plant, cmake, ninja)
             if problem:
                 return plant, [], problem
-            if plant == "regenerated":
+            if plant == "clean":
                 # A build after a change of a configure dependency makes Ninja
                 # run CMake, so the ninja log holds the outputs of that run.
                 run([cmake, "--build", str(build)])
@@ -473,19 +478,20 @@ def self_test(cmake: str, ninja: str) -> int:
         found = results[plant][0]
         return bool(found) and all(item.level == "error" and test(item) for item in found)
 
-    expect("no finding: a configure that writes only what it changes, a glob and a link", messages("clean") == [])
-    expect("no finding: a build directory where Ninja ran CMake before the check",
-           messages("regenerated") == [] and not results["regenerated"][1])
-    expect("an error: a link that the configure makes again",
-           only("link", lambda item: item.path == "build/again" and "made this link again" in item.message))
+    def has(path: str, *texts: str) -> bool:
+        return any(item.level == "error" and item.path == path and all(text in item.message for text in texts)
+                   for item in results["defects"][0])
+
+    expect("no finding: a configure that writes only what it changes, a glob, a link, and a build directory where "
+           "Ninja ran CMake before the check", messages("clean") == [] and not results["clean"][1])
+    expect("an error: a link that the configure makes again", has("build/again", "made this link again"))
     expect("an error: a file that the configure writes again, and the edge that reads it",
-           only("rewrite", lambda item: item.path == "build/written.out" and "first build" in item.message))
-    expect("an error: an edge with a dependency that does not exist runs in each build, and the dependency log "
-           "names it",
-           only("missing", lambda item: item.path == "build/gone.out") and len(results["missing"][0]) == 3
-           and any("no-such-header.h" in item.message for item in results["missing"][0]))
-    expect("an error: a build that changes a glob makes CMake configure again",
-           any("configured again" in item.message for item in results["glob"][0]))
+           has("build/written.out", "first build"))
+    expect("an error: an edge with a dependency that does not exist runs in each build",
+           has("build/gone.out", "first build") and has("build/gone.out", "second build"))
+    expect("an error: the dependency log names the dependency that does not exist",
+           has("build/gone.out", "no-such-header.h"))
+    expect("an error: a build that changes a glob makes CMake configure again", has("build", "configured again"))
     expect("an error: a build that fails", only("failing", lambda item: "the build fails" in item.message))
 
     with tempfile.TemporaryDirectory(prefix="reconfigure-noop-") as work:

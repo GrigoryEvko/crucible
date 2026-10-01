@@ -21,7 +21,7 @@ utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/t
 utils/scripts/build-launcher.py | compiler,text | the ccache stats log of each compile, the budget table and the ledger rows of the memory checks
 utils/scripts/cache_dir.py | none |
 utils/scripts/check-allowlist-keys.sh | text | the keys of the allowlists, and the paths in the Markdown guidance
-utils/scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile
+utils/scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile, and the row constexpr-ops of utils/scripts/budgets.txt through utils/scripts/check_report.py
 utils/scripts/check-banned-calls.py | tsast,text | the allowlist rows and utils/scripts/fixy-only-paths.txt
 utils/scripts/check-brand-drain.py | tsast,text | the ledger utils/scripts/brand-drain.txt
 utils/scripts/check-ci-guard-labels.py | json | the test list of ctest --show-only=json-v1

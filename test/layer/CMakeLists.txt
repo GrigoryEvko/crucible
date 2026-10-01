@@ -95,28 +95,8 @@ foreach(_row IN LISTS _not_standalone_rows)
 endforeach()
 
 # The operation limit of a header alone: the error threshold of the row
-# header-constexpr-ops in utils/scripts/budgets.txt.
-set(_budget_table "${CMAKE_SOURCE_DIR}/utils/scripts/budgets.txt")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_budget_table}")
-file(STRINGS "${_budget_table}" _ops_budget_rows REGEX "^header-constexpr-ops[ \t]*[|]" ENCODING UTF-8)
-list(LENGTH _ops_budget_rows _ops_budget_count)
-if(NOT _ops_budget_count EQUAL 1)
-  message(FATAL_ERROR "utils/scripts/budgets.txt: the table holds ${_ops_budget_count} rows header-constexpr-ops, "
-                      "and test/layer needs one.  A row is `header-constexpr-ops | warn | error | operations | "
-                      "meaning`.")
-endif()
-string(REPLACE "|" ";" _ops_budget_cells "${_ops_budget_rows}")
-list(LENGTH _ops_budget_cells _ops_budget_cell_count)
-if(NOT _ops_budget_cell_count EQUAL 5)
-  message(FATAL_ERROR "utils/scripts/budgets.txt: the row header-constexpr-ops has ${_ops_budget_cell_count} cells, "
-                      "and a row has five.  The meaning has no semicolon.")
-endif()
-list(GET _ops_budget_cells 2 _ops_limit)
-string(STRIP "${_ops_limit}" _ops_limit)
-if(NOT _ops_limit MATCHES "^[1-9][0-9]*$")
-  message(FATAL_ERROR "utils/scripts/budgets.txt: the error threshold `${_ops_limit}` of header-constexpr-ops is "
-                      "not a whole number of operations.")
-endif()
+# header-constexpr-ops in utils/scripts/budgets.txt (cmake/Budgets.cmake).
+crucible_budget_limit(header-constexpr-ops _ops_limit)
 
 # The headers that need a higher limit, relative to include/, with the limit
 # of each one.

@@ -17,13 +17,17 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from model import (LChoice, LEnd, LRec, LVar, Local, PRELUDE_NS, cpp_prelude)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+
+import check_report  # noqa: E402
+from model import (LChoice, LEnd, LRec, LVar, Local, PRELUDE_NS, cpp_prelude)  # noqa: E402
 
 LOG = logging.getLogger("session_oracle.probe")
 
@@ -61,10 +65,11 @@ HEADS = {
     "semantics": "#include <fixy/session/CrashAssociation.h>\n#include <fixy/session/Semantics.h>\n"
                  "#include <type_traits>\n",
 }
-# The constexpr budget is the one that the project build passes (CMakeLists.txt),
-# so a probe answers where the build answers.
+# The constexpr budget is the one that the project build passes, the row
+# constexpr-ops of utils/scripts/budgets.txt, so a probe answers where the
+# build answers.
 _FLAGS = ("-std=c++26", "-freflection", "-fcontracts", "-fdiagnostics-color=never",
-          "-fconstexpr-ops-limit=100000000")
+          f"-fconstexpr-ops-limit={check_report.threshold_text(check_report.read_budgets()['constexpr-ops'].error)}")
 
 
 @contextlib.contextmanager
