@@ -1531,9 +1531,8 @@ void test_two_claims_keep_two_slots() {
 // covered here without an edit. A role at zero shares a slot with every
 // bare payload in the tree.
 void test_every_role_is_off_the_zero_slot() {
-    check(::fixy::detail::role_self_test::roles_declared() > 0, "the reflected role roster is empty, so this check "
-                                                                "proves nothing");
-    check(::fixy::detail::role_self_test::roles_off_the_zero_slot() == ::fixy::detail::role_self_test::roles_declared(),
+    check(::fixy::detail::roles_declared() > 0, "the reflected role roster is empty, so this check proves nothing");
+    check(::fixy::detail::roles_off_the_zero_slot() == ::fixy::detail::roles_declared(),
           "a role reaches the zero slot, or has an arity this check cannot instantiate");
 }
 

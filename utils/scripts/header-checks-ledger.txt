@@ -59,16 +59,12 @@ include/fixy/Borrowed.h | 1 | 38
 include/fixy/Budgeted.h | 1 | 0
 include/fixy/CanonicalOrder.h | 1 | 0
 include/fixy/Checked.h | 0 | 21
-include/fixy/Collision.h | 1 | 16
-include/fixy/Corpus.h | 1 | 15
 include/fixy/Cyclic.h | 1 | 12
 include/fixy/CyclicBuffer.h | 1 | 0
 include/fixy/EpochVersioned.h | 1 | 0
 include/fixy/Federation.h | 0 | 4
 include/fixy/FixedArray.h | 1 | 15
-include/fixy/Fn.h | 1 | 0
 include/fixy/GradedFacade.h | 1 | 0
-include/fixy/Insights.h | 1 | 4
 include/fixy/Machine.h | 1 | 2
 include/fixy/Mutation.h | 0 | 13
 include/fixy/OwnedFile.h | 1 | 1
@@ -77,8 +73,6 @@ include/fixy/OwnedRegion.h | 1 | 13
 include/fixy/Path.h | 1 | 0
 include/fixy/Qtt.h | 0 | 33
 include/fixy/Refined.h | 3 | 61
-include/fixy/Reject.h | 1 | 0
-include/fixy/Role.h | 1 | 0
 include/fixy/Saturate.h | 1 | 0
 include/fixy/Saturated.h | 1 | 16
 include/fixy/ScopedView.h | 1 | 12
