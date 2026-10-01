@@ -91,10 +91,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // front has nowhere to retreat to when the up-front allocation fails.
     // Externally owned slots start null and are registered before replay.
     [[gnu::cold, gnu::noinline]]
-    void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY pre(plan != nullptr) pre(ptr_table_ == nullptr)
-        pre(pool_ == nullptr) pre(::foundation::decide::in_range<uint32_t>(plan->num_slots, 0u, kMaxNumSlots))
-            pre(::foundation::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes))
-                pre(plan->num_external <= plan->num_slots) {
+    void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(plan != nullptr);
+        CRUCIBLE_PRE(ptr_table_ == nullptr);
+        CRUCIBLE_PRE(pool_ == nullptr);
+        CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(plan->num_slots, 0u, kMaxNumSlots));
+        CRUCIBLE_PRE(::foundation::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes));
+        CRUCIBLE_PRE(plan->num_external <= plan->num_slots);
         num_slots_ = plan->num_slots;
         num_external_ = plan->num_external;
         pool_bytes_ = plan->pool_bytes;

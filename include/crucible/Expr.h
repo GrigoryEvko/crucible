@@ -51,14 +51,15 @@ struct Expr {
     // is legitimate too, but only for a node with no children.
     constexpr Expr(Op op_, uint8_t nargs_, uint16_t flags_, SymbolId symbol_id_, uint64_t hash_, int64_t payload_,
                    const Expr* const* args_) noexcept
-        pre(::foundation::decide::implies(::foundation::decide::positive(nargs_), args_ != nullptr))
         : op(op_),
           nargs(nargs_),
           flags(flags_),
           symbol_id(symbol_id_),
           hash(::fixy::mint_tagged<hash_family::FamilyB>(hash_)),
           payload(payload_),
-          args(args_) {}
+          args(args_) {
+        CRUCIBLE_PRE(::foundation::decide::implies(::foundation::decide::positive(nargs_), args_ != nullptr));
+    }
 
     Expr(const Expr&) = delete("interned Exprs have identity equality; copying would break intern");
     Expr& operator=(const Expr&) = delete("fields are const");

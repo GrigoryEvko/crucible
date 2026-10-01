@@ -31,6 +31,7 @@
 
 #include <fixy/OwnedFile.h>
 #include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
 
 #include <algorithm>
 #include <bitset>
@@ -382,8 +383,8 @@ template <::fixy::CtxFitsFileOpen Ctx>
 // node as the given CPU come first, and the given CPU itself is never
 // among them.
 template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::vector<int> select_warm_cpus(Ctx const& ctx, int hot_cpu, int count) noexcept
-    pre(::foundation::decide::non_negative(count)) {
+[[nodiscard]] inline std::vector<int> select_warm_cpus(Ctx const& ctx, int hot_cpu, int count) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::non_negative(count));
     const auto allowed = allowed_cpus(ctx);
     const int hot_numa = (hot_cpu >= 0) ? numa_node_of(ctx, hot_cpu) : -1;
 

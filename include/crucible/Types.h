@@ -2,6 +2,7 @@
 
 #include <fixy/Refined.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Post.h>
 
 #include <compare>
 #include <cstddef>
@@ -72,36 +73,39 @@ enum class ScalarType : int8_t {
 // to call sites where the type is known, so size arithmetic there needs no
 // guard against dividing by zero. A caller that accepts the undefined type
 // handles the zero itself.
-CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept
-    post(r : t == ScalarType::Undefined || !r.is_zero()) {
-    switch (t) {
-        case ScalarType::Bool:
-        case ScalarType::Byte:
-        case ScalarType::Char:
-        case ScalarType::Float8_e5m2:
-        case ScalarType::Float8_e4m3fn:
-        case ScalarType::Float8_e5m2fnuz:
-        case ScalarType::Float8_e4m3fnuz:
-            return ElementBytes{1};
-        case ScalarType::Short:
-        case ScalarType::Half:
-        case ScalarType::BFloat16:
-            return ElementBytes{2};
-        case ScalarType::Int:
-        case ScalarType::Float:
-        case ScalarType::ComplexHalf:
-            return ElementBytes{4};
-        case ScalarType::Long:
-        case ScalarType::Double:
-        case ScalarType::ComplexFloat:
-            return ElementBytes{8};
-        case ScalarType::ComplexDouble:
-            return ElementBytes{16};
-        case ScalarType::Undefined:
-            return ElementBytes{0};
-        default:
-            std::unreachable();
-    }
+CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept {
+    ElementBytes const result = [t]() noexcept -> ElementBytes {
+        switch (t) {
+            case ScalarType::Bool:
+            case ScalarType::Byte:
+            case ScalarType::Char:
+            case ScalarType::Float8_e5m2:
+            case ScalarType::Float8_e4m3fn:
+            case ScalarType::Float8_e5m2fnuz:
+            case ScalarType::Float8_e4m3fnuz:
+                return ElementBytes{1};
+            case ScalarType::Short:
+            case ScalarType::Half:
+            case ScalarType::BFloat16:
+                return ElementBytes{2};
+            case ScalarType::Int:
+            case ScalarType::Float:
+            case ScalarType::ComplexHalf:
+                return ElementBytes{4};
+            case ScalarType::Long:
+            case ScalarType::Double:
+            case ScalarType::ComplexFloat:
+                return ElementBytes{8};
+            case ScalarType::ComplexDouble:
+                return ElementBytes{16};
+            case ScalarType::Undefined:
+                return ElementBytes{0};
+            default:
+                std::unreachable();
+        }
+    }();
+    CRUCIBLE_POST(result, t == ScalarType::Undefined || !result.is_zero());
+    return result;
 }
 
 // The ordinals mirror the foreign runtime's exactly.

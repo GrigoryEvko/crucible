@@ -1,4 +1,5 @@
 #include <crucible/KernelCache.h>
+#include <foundation/contracts/Pre.h>
 
 #include "bench_harness.h"
 
@@ -51,7 +52,8 @@ public:
 
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash,
                                                                                 RowHash row_hash) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(content_hash.raw() != 0) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(content_hash.raw() != 0);
         [[assume(content_hash.raw() != 0)]];
         const std::uint64_t lookup_hash = content_hash.raw();
         const std::uint64_t lookup_row = row_hash.raw();
@@ -79,8 +81,9 @@ public:
     }
 
     [[nodiscard]] std::expected<void, InsertError> insert(ContentHash content_hash, RowHash row_hash,
-                                                          CompiledKernel* kernel) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(content_hash.raw() != 0) pre(kernel != nullptr) {
+                                                          CompiledKernel* kernel) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(content_hash.raw() != 0);
+        CRUCIBLE_PRE(kernel != nullptr);
         const std::uint64_t lookup_hash = content_hash.raw();
         const std::uint64_t lookup_row = row_hash.raw();
         const std::uint32_t mask = capacity_ - 1;

@@ -28,6 +28,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Row.h>
 
 namespace crucible {
@@ -146,8 +147,9 @@ struct CRUCIBLE_OWNER MetaLog {
     // counter or the slots it is about to fill, which the thread-safety
     // analysis cannot express, so it is suppressed here.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(n, std::uint32_t{0}, CAPACITY))
-            pre(::foundation::decide::valid_span(n, metas)) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(n, std::uint32_t{0}, CAPACITY));
+        CRUCIBLE_PRE(::foundation::decide::valid_span(n, metas));
         if (n == 0) [[unlikely]]
             return MetaIndex::none();
 
@@ -205,7 +207,8 @@ struct CRUCIBLE_OWNER MetaLog {
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
     CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex> try_append_pinned(const TensorMeta* metas,
                                                                                              uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::valid_span(n, metas)) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::valid_span(n, metas));
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>>(try_append(metas, n));
     }
 
@@ -217,7 +220,8 @@ struct CRUCIBLE_OWNER MetaLog {
         requires ::fixy::IsPure<CallerRow>
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_pure(const TensorMeta* metas,
                                                                                          uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::valid_span(n, metas)) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::valid_span(n, metas));
         return try_append(metas, n);
     }
 
@@ -226,7 +230,8 @@ struct CRUCIBLE_OWNER MetaLog {
     // claim a strength the sum does not have. Everything else passes the
     // strong index.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] const TensorMeta& at(MetaIndex idx) const CRUCIBLE_LIFETIMEBOUND
-    CRUCIBLE_NO_THREAD_SAFETY pre(idx.is_valid()) {
+    CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(idx.is_valid());
         return entries[idx.raw() & MASK];
     }
 
@@ -267,10 +272,13 @@ struct CRUCIBLE_OWNER MetaLog {
     // Valid only once both threads have stopped. Every counter here moves
     // backwards, which the monotonicity contract otherwise forbids, so the
     // caller must have joined the producer and the consumer first.
-    void reset() CRUCIBLE_NO_THREAD_SAFETY post(head.get() == 0) post(tail.get() == 0) post(cached_tail_.get() == 0) {
+    void reset() CRUCIBLE_NO_THREAD_SAFETY {
         head.reset_under_quiescence();
         tail.reset_under_quiescence();
         cached_tail_.reset_under_quiescence();
+        CRUCIBLE_POST(0, head.get() == 0);
+        CRUCIBLE_POST(0, tail.get() == 0);
+        CRUCIBLE_POST(0, cached_tail_.get() == 0);
     }
 };
 

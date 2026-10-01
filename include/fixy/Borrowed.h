@@ -247,7 +247,8 @@ public:
     // address carries no identity a brand could name.
     [[nodiscard]] static constexpr BorrowedRef from_raw_nonnull(T* p) noexcept
         requires std::is_same_v<Brand, ::foundation::brand::DefaultBrand>
-    pre(p != nullptr) {
+    {
+        CRUCIBLE_PRE(p != nullptr);
         return BorrowedRef{from_raw_tag_t{}, p};
     }
 

@@ -4,8 +4,9 @@
 // constexpr context (wide miss, the whole upper half-line).
 //
 // IterationDetector::SignatureLen is ::fixy::BoundedMonotonic<uint32_t, K>
-// with K = 5, and its constructor carries pre(!(T(Max) < initial)).
-// UINT32_MAX makes the predicate false, and the constant evaluation fails.
+// with K = 5, and its constructor has the precondition
+// std::cmp_less_equal(initial, Max).  UINT32_MAX makes the predicate false,
+// and the constant evaluation fails.
 //
 // Companion fixture to neg_iter_det_signature_len_above_k.cpp:
 //   - That one is the boundary edge (= K+1 = 6, off-by-one).

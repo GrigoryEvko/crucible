@@ -130,8 +130,9 @@ public:
             constexpr WriterHandle(WriterHandle&&) noexcept = default;
             constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
 
-            void publish(snapshot_type const& snapshot) noexcept
-                pre(::foundation::decide::is_non_zero(snapshot.content_hash)) pre(snapshot.kernel != nullptr) {
+            void publish(snapshot_type const& snapshot) noexcept {
+                CRUCIBLE_PRE(::foundation::decide::is_non_zero(snapshot.content_hash));
+                CRUCIBLE_PRE(snapshot.kernel != nullptr);
                 // The content hash is already claimed by CAS before this
                 // endpoint exists.  The two stores must stay in this order:
                 // the kernel store is what makes the row visible to readers.
@@ -140,7 +141,8 @@ public:
                 slot_->kernel_.store(snapshot.kernel, std::memory_order_release);
             }
 
-            void publish_kernel_variant(CompiledKernel* kernel) noexcept pre(kernel != nullptr) {
+            void publish_kernel_variant(CompiledKernel* kernel) noexcept {
+                CRUCIBLE_PRE(kernel != nullptr);
                 slot_->kernel_.store(kernel, std::memory_order_release);
             }
         };
@@ -200,8 +202,8 @@ public:
             return kernel_.load(std::memory_order_acquire);
         }
 
-        [[nodiscard]] CRUCIBLE_INLINE bool try_claim_content_hash(uint64_t& expected, uint64_t desired) noexcept
-            pre(::foundation::decide::is_non_zero(desired)) {
+        [[nodiscard]] CRUCIBLE_INLINE bool try_claim_content_hash(uint64_t& expected, uint64_t desired) noexcept {
+            CRUCIBLE_PRE(::foundation::decide::is_non_zero(desired));
             return content_hash_.compare_exchange_strong(expected, desired, std::memory_order_acq_rel);
         }
 
@@ -230,16 +232,22 @@ public:
         Published = 2,
     };
 
-    explicit KernelCache(uint32_t capacity = 4096)
+    explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
         // A power of two makes `(slot + probe) & mask` the wrap-around, and
         // the 2^31 ceiling keeps `slot_index + probe` inside uint32_t.
-        pre(::foundation::decide::is_power_of_two_le<std::uint32_t>(capacity, std::uint32_t{1u << 31}))
-        : capacity_(capacity) {
-        // The clause above is armed in a release build as well as a debug
+        //
+        // The precondition is armed in a release build as well as a debug
         // one: the release preset evaluates contracts under the `observe`
         // semantic, and the project's violation handler is noreturn and ends
-        // in std::abort, so a violation stops the process either way.
-        //
+        // in std::abort, so a violation stops the process either way.  It is
+        // a contract_assert and not a CRUCIBLE_PRE: under the `ignore`
+        // semantic, CRUCIBLE_PRE tells the optimizer to assume its predicate,
+        // and that assumption would let the optimizer delete the repeat
+        // below.  A contract_assert under `ignore` gives the optimizer no
+        // assumption.  The constructor is not constexpr, so no constant
+        // evaluation reaches the check.
+        contract_assert(::foundation::decide::is_power_of_two_le<std::uint32_t>(capacity, std::uint32_t{1u << 31}));
+
         // The repeat that follows is not redundant. A translation unit can
         // take the `ignore` semantic through CRUCIBLE_CONTRACT_IGNORE_OPTIONS,
         // and then no contract in the headers it includes checks anything. In
@@ -279,7 +287,8 @@ public:
     // because RowHash{0} is a real key that can coexist with any other.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash,
                                                                                 RowHash row_hash) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         [[assume(content_hash.raw() != 0)]];
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
@@ -318,9 +327,10 @@ public:
     // end-of-region marker, so neither can be a key.  The row again needs no
     // guard: RowHash{0} is a real key.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] std::expected<void, InsertError>
-    insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash))
-            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
+    insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
+        CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
+        CRUCIBLE_PRE(kernel != nullptr);
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
         const uint32_t mask = capacity_ - 1;
@@ -381,8 +391,8 @@ public:
     // came from, not how near it is to the core, so it is a provenance tag
     // and not a residency class.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, CompiledKernel*>
-    lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
+    lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_tagged<VendorNeutralLevel>(lookup(content_hash, row_hash));
     }
 
@@ -392,15 +402,15 @@ public:
     // every call site.
     [[nodiscard]] AtLevel<VendorFamilyLevel, CompiledKernel*> lookup_l2(ContentHash content_hash,
                                                                         RowHash /*row_hash*/) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
-        (void)content_hash;
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_tagged<VendorFamilyLevel>(static_cast<CompiledKernel*>(nullptr));
     }
 
     [[nodiscard]] AtLevel<ChipLevel, CompiledKernel*> lookup_l3(ContentHash content_hash,
                                                                 RowHash /*row_hash*/) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash)) {
-        (void)content_hash;
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_tagged<ChipLevel>(static_cast<CompiledKernel*>(nullptr));
     }
 
@@ -413,29 +423,29 @@ public:
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
     AtLevel<VendorNeutralLevel, std::expected<void, InsertError>> publish_l1(ContentHash content_hash, RowHash row_hash,
                                                                              CompiledKernel* kernel)
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::is_non_zero(content_hash))
-            pre(::foundation::decide::not_sentinel_hash(content_hash)) pre(kernel != nullptr) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
+        CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
+        CRUCIBLE_PRE(kernel != nullptr);
         return ::fixy::mint_tagged<VendorNeutralLevel>(insert(content_hash, row_hash, kernel));
     }
 
     [[nodiscard]]
     AtLevel<VendorFamilyLevel, std::expected<void, InsertError>>
-    publish_l2(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept
-        pre(::foundation::decide::is_non_zero(content_hash)) pre(::foundation::decide::not_sentinel_hash(content_hash))
-            pre(kernel != nullptr) {
-        (void)content_hash;
-        (void)kernel;
+    publish_l2(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
+        CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
+        CRUCIBLE_PRE(kernel != nullptr);
         return ::fixy::mint_tagged<VendorFamilyLevel>(
             std::expected<void, InsertError>{std::unexpected(InsertError::NotYetImplemented)});
     }
 
     [[nodiscard]]
     AtLevel<ChipLevel, std::expected<void, InsertError>> publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
-                                                                    CompiledKernel* kernel) noexcept
-        pre(::foundation::decide::is_non_zero(content_hash)) pre(::foundation::decide::not_sentinel_hash(content_hash))
-            pre(kernel != nullptr) {
-        (void)content_hash;
-        (void)kernel;
+                                                                    CompiledKernel* kernel) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
+        CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
+        CRUCIBLE_PRE(kernel != nullptr);
         return ::fixy::mint_tagged<ChipLevel>(
             std::expected<void, InsertError>{std::unexpected(InsertError::NotYetImplemented)});
     }
@@ -526,10 +536,11 @@ private:
 [[nodiscard]] inline BranchNode* add_branch(::foundation::effects::Alloc a, Arena& arena, KernelCache& kernel_cache,
                                             TraceNode* divergence_point, TraceEntry* new_ops, uint32_t new_n,
                                             int64_t old_guard_value, int64_t new_guard_value, Guard guard,
-                                            TraceNode* existing_suffix, const NumericalRecipe* recipe)
-    pre(divergence_point != nullptr) pre(old_guard_value != new_guard_value)
-        pre(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash))
-            pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
+                                            TraceNode* existing_suffix, const NumericalRecipe* recipe) {
+    CRUCIBLE_PRE(divergence_point != nullptr);
+    CRUCIBLE_PRE(old_guard_value != new_guard_value);
+    CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
+    CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     auto* new_region =
         (recipe == nullptr) ? make_region(a, arena, new_ops, new_n) : make_region(a, arena, new_ops, new_n, recipe);
 

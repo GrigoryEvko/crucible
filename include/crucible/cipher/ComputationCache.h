@@ -16,6 +16,7 @@
 // same computation. Two peers that exchange keys must either share a
 // toolchain or fold a discriminator for it into the key.
 
+#include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -171,13 +172,15 @@ template <auto FnPtr, typename Row, typename... Args>
 
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
-void insert_computation_cache(CompiledBody* body) noexcept pre(body != nullptr) {
+void insert_computation_cache(CompiledBody* body) noexcept {
+    CRUCIBLE_PRE(body != nullptr);
     detail::publish_slot<FnPtr, detail::RowBlind, Args...>(body);
 }
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-void insert_computation_cache_in_row(CompiledBody* body) noexcept pre(body != nullptr) {
+void insert_computation_cache_in_row(CompiledBody* body) noexcept {
+    CRUCIBLE_PRE(body != nullptr);
     detail::publish_slot<FnPtr, Row, Args...>(body);
 }
 

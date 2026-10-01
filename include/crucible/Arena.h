@@ -23,13 +23,11 @@ namespace crucible {
 
 class CRUCIBLE_OWNER Arena {
 public:
-    explicit Arena(size_t block_size = size_t{1} << 20) pre(::foundation::decide::positive(block_size))
-        : block_size_{block_size} {
+    explicit Arena(size_t block_size = size_t{1} << 20) : block_size_{block_size} {
+        CRUCIBLE_PRE(::foundation::decide::positive(block_size));
         alloc_new_block_(block_size_);
-        // A post clause whose predicate reads a member through `this` is
-        // skipped at consteval, so every postcondition in this file routes
-        // through the macro instead. The leading 0 is the placeholder return
-        // value for a function that returns void.
+        // The leading 0 is the placeholder return value for a function that
+        // returns void.
         CRUCIBLE_POST(0, block_size_ == block_size);
         CRUCIBLE_POST(0, cur_block_ != nullptr);
         CRUCIBLE_POST(0, offset_ == 0u);
@@ -112,7 +110,8 @@ public:
     template <typename T>
     [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE T* alloc_array_nonzero(::foundation::effects::Alloc a,
                                                                                size_t n) noexcept
-        CRUCIBLE_LIFETIMEBOUND pre(::foundation::decide::positive(n)) {
+        CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(::foundation::decide::positive(n));
         [[assume(n > 0)]];
         const size_t nbytes = ::foundation::sat::mul_sat(n, sizeof(T));
         return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(nbytes),
@@ -137,8 +136,8 @@ public:
 
     template <typename T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>
-    alloc_array_nonzero_pinned(::foundation::effects::Alloc a, size_t n) noexcept
-        CRUCIBLE_LIFETIMEBOUND pre(::foundation::decide::positive(n)) {
+    alloc_array_nonzero_pinned(::foundation::effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(::foundation::decide::positive(n));
         return ::fixy::mint_band<::fixy::AllocClass<::fixy::AllocClassTag_v::Arena, T*>>(alloc_array_nonzero<T>(a, n));
     }
 
@@ -189,7 +188,8 @@ private:
     }
 
     [[gnu::cold]]
-    void alloc_new_block_(size_t nbytes) pre(::foundation::decide::positive(nbytes)) {
+    void alloc_new_block_(size_t nbytes) {
+        CRUCIBLE_PRE(::foundation::decide::positive(nbytes));
         auto* p = static_cast<char*>(std::malloc(nbytes));
         if (p == nullptr) [[unlikely]]
             std::abort();

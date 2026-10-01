@@ -2,6 +2,8 @@
 
 #include <crucible/vis/NetworkSimplex.h>
 
+#include <foundation/contracts/Pre.h>
+
 #include <algorithm>
 #include <utility>
 
@@ -328,6 +330,7 @@ bool is_well_formed_ns_input(uint32_t num_nodes, std::span<const NSEdge> edges) 
 }
 
 NSResult network_simplex(uint32_t num_nodes, std::span<const NSEdge> edges, uint32_t max_pivots) {
+    CRUCIBLE_PRE(is_well_formed_ns_input(num_nodes, edges));
     return NetworkSimplexSolver{num_nodes, edges}.solve(max_pivots);
 }
 

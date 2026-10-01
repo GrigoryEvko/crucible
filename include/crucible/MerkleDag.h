@@ -132,8 +132,8 @@ template <std::size_t MaxLive>
 // not carry: the reference is also the fallback the vector routine takes
 // after its own screen, and re-checking ndim on that path would charge the
 // check twice for a value the caller already vouched for.
-[[nodiscard]] constexpr ::fixy::Saturated<uint64_t> compute_storage_nbytes(ExternalTensorMeta meta)
-    pre(::foundation::decide::in_range<std::uint8_t>(meta.value().ndim, std::uint8_t{0}, std::uint8_t{8})) {
+[[nodiscard]] constexpr ::fixy::Saturated<uint64_t> compute_storage_nbytes(ExternalTensorMeta meta) {
+    CRUCIBLE_PRE(::foundation::decide::in_range<std::uint8_t>(meta.value().ndim, std::uint8_t{0}, std::uint8_t{8}));
     return detail::compute_storage_nbytes_scalar(meta);
 }
 
@@ -268,8 +268,8 @@ struct TraceNode {
     // accessor makes "the hash is computed" a precondition instead.  It spells
     // the return type out because the alias for it needs MerkleHash complete
     // and so is declared below.
-    [[nodiscard]] ::fixy::Refined<::fixy::non_zero, MerkleHash> computed_merkle_hash() const noexcept
-        pre(::foundation::decide::is_non_zero(merkle_hash)) {
+    [[nodiscard]] ::fixy::Refined<::fixy::non_zero, MerkleHash> computed_merkle_hash() const noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(merkle_hash));
         return ::fixy::mint_refined<::fixy::non_zero>(merkle_hash);
     }
 };
@@ -326,8 +326,9 @@ struct RegionNode : TraceNode {
 
     MemoryPlan* plan = nullptr;  // null until liveness analysis runs
 
-    void set_measured_ms(float ms) noexcept pre(ms >= 0.0f)  // >= also rejects NaN
-        pre(!std::isinf(ms)) {
+    void set_measured_ms(float ms) noexcept {
+        CRUCIBLE_PRE(ms >= 0.0f);  // >= also rejects NaN
+        CRUCIBLE_PRE(!std::isinf(ms));
         measured_ms = ms;
     }
 
@@ -338,15 +339,16 @@ struct RegionNode : TraceNode {
     // The field itself stays bare because the layout is locked.  A region
     // built from zero ops hashes to zero by design, and this accessor
     // refuses that case: those callers read content_hash directly.
-    [[nodiscard]] ValidContentHash computed_content_hash() const noexcept
-        pre(::foundation::decide::is_non_zero(content_hash)) {
+    [[nodiscard]] ValidContentHash computed_content_hash() const noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_refined<::fixy::non_zero>(content_hash);
     }
 
     // There is no way back to zero.  The non-zero gate sits on this boundary
     // rather than only inside the counter so that a caller passing zero is
     // reported against set_variant.
-    void set_variant(uint32_t new_id) noexcept pre(::foundation::decide::is_non_zero(new_id)) {
+    void set_variant(uint32_t new_id) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(new_id));
         variant_id.advance(new_id);
         CRUCIBLE_POST(0, variant_id.get() == new_id);
     }
@@ -413,8 +415,8 @@ struct LoopNode : TraceNode {
     // Unlike an empty region, a zero body hash is never legal here: the only
     // factory for a LoopNode folds a non-empty body chain, so zero means the
     // body was never populated.
-    [[nodiscard]] ValidContentHash computed_body_content_hash() const noexcept
-        pre(::foundation::decide::is_non_zero(body_content_hash)) {
+    [[nodiscard]] ValidContentHash computed_body_content_hash() const noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(body_content_hash));
         return ::fixy::mint_refined<::fixy::non_zero>(body_content_hash);
     }
 };
@@ -517,8 +519,9 @@ public:
     // zero would produce the same hash as the NoRecipe path — exactly the
     // confusion the parameter exists to prevent.  UINT64_MAX is reserved as
     // the end-of-region marker and can never be a real recipe hash.
-    explicit ContentHashFold(const NumericalRecipe& recipe) noexcept pre(::foundation::decide::is_non_zero(recipe.hash))
-        pre(!recipe.hash.is_sentinel()) {
+    explicit ContentHashFold(const NumericalRecipe& recipe) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
+        CRUCIBLE_PRE(!recipe.hash.is_sentinel());
         [[assume(recipe.hash.raw() != 0)]];
         [[assume(recipe.hash.raw() != UINT64_MAX)]];
         state_ = detail::combine_ids(state_, recipe.hash.raw());
@@ -591,9 +594,9 @@ private:
 };
 
 [[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops,
-                                                                 const NumericalRecipe* recipe = nullptr) noexcept
-    pre(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash))
-        pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
+                                                                 const NumericalRecipe* recipe = nullptr) noexcept {
+    CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
+    CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     ContentHashFold fold =
         (recipe == nullptr) ? ContentHashFold{ContentHashFold::NoRecipe{}} : ContentHashFold{*recipe};
     for (const auto& op_record : ops) {
@@ -666,8 +669,8 @@ private:
 // with one hashed under the right ones, and the runtime would serve either
 // kernel to either caller.
 [[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             TraceEntry* ops, uint32_t num_ops) noexcept
-    pre(::foundation::decide::valid_span(num_ops, ops)) {
+                                             TraceEntry* ops, uint32_t num_ops) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::valid_span(num_ops, ops));
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -687,9 +690,9 @@ private:
 
 // For a caller that has already folded the hash while streaming the ops.
 [[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             TraceEntry* ops, uint32_t num_ops, ContentHash precomputed_hash) noexcept
-    pre(::foundation::decide::valid_span(num_ops, ops))
-        pre(::foundation::decide::is_non_zero(precomputed_hash) || num_ops == 0) {
+                                             TraceEntry* ops, uint32_t num_ops, ContentHash precomputed_hash) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::valid_span(num_ops, ops));
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || num_ops == 0);
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -710,9 +713,12 @@ private:
 // recipe later must track it separately.  A null recipe is rejected rather
 // than accepted, because the overload above already covers that case.
 [[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             TraceEntry* ops, uint32_t num_ops, const NumericalRecipe* recipe) noexcept
-    pre(::foundation::decide::valid_span(num_ops, ops)) pre(recipe != nullptr)
-        pre(::foundation::decide::is_non_zero(recipe->hash)) pre(!recipe->hash.is_sentinel()) {
+                                             TraceEntry* ops, uint32_t num_ops,
+                                             const NumericalRecipe* recipe) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::valid_span(num_ops, ops));
+    CRUCIBLE_PRE(recipe != nullptr);
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe->hash));
+    CRUCIBLE_PRE(!recipe->hash.is_sentinel());
     auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -741,8 +747,9 @@ private:
 [[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
                                          TraceNode* body, ContentHash body_content_hash, FeedbackEdge* feedback,
                                          uint16_t num_feedback, LoopTermKind term_kind, uint32_t repeat_count,
-                                         float epsilon = 0.0f) noexcept pre(body != nullptr)
-    pre(::foundation::decide::valid_span(num_feedback, feedback))
+                                         float epsilon = 0.0f) noexcept {
+    CRUCIBLE_PRE(body != nullptr);
+    CRUCIBLE_PRE(::foundation::decide::valid_span(num_feedback, feedback));
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
     // so two loops that behave identically would otherwise hash differently.
@@ -766,7 +773,8 @@ private:
     // predicate has no NaN case to get wrong, which is the whole content of
     // this guard.  Lifting it is a one-name change once a second float
     // boundary wants the same test.
-    pre(std::isfinite(epsilon)) pre(epsilon >= 0.0f)
+    CRUCIBLE_PRE(std::isfinite(epsilon));
+    CRUCIBLE_PRE(epsilon >= 0.0f);
     // An UNTIL loop counts the iterations that were observed, and observing
     // convergence means running the body and measuring its output, so the
     // count is at least one.  Zero says the loop never ran, and replay walks
@@ -776,7 +784,7 @@ private:
     //
     // REPEAT keeps zero, where it means what it says: run the body no times
     // and continue.
-    pre(term_kind != LoopTermKind::UNTIL || repeat_count > 0u) {
+    CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
     [[assume(body != nullptr)]];
     auto* node = new(arena.alloc_obj<LoopNode>(a)) LoopNode{};
     node->kind = TraceNodeKind::LOOP;
@@ -849,9 +857,9 @@ inline void recompute_merkle(TraceNode* node) {
 // missed merges, every suffix looking distinct because the two sides folded
 // different things.
 [[nodiscard]] inline TraceNode* find_merge_point(std::span<TraceEntry> new_ops, TraceNode* existing_continuation,
-                                                 const NumericalRecipe* recipe)
-    pre(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash))
-        pre(recipe == nullptr || !recipe->hash.is_sentinel()) {
+                                                 const NumericalRecipe* recipe) {
+    CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
+    CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     constexpr uint32_t MAX_REGIONS = 1024;
     RegionNode* existing_regions[MAX_REGIONS];
     uint32_t num_existing = 0;

@@ -37,12 +37,18 @@ struct RegionCache {
     RegionCache(RegionCache&&) = delete("embedded in Vigil; no reason to move");
     RegionCache& operator=(RegionCache&&) = delete("embedded in Vigil; no reason to move");
 
-    void insert(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr) {
-        // The clause above states the contract and rejects the caller in
-        // both build modes: the release preset evaluates contracts under the
-        // `observe` semantic and the violation handler is noreturn.
-        //
-        // The repeat below covers the one case the clause does not. The
+    void insert(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
+        // The contract assertion states the precondition and rejects the
+        // caller in both build modes: the release preset evaluates contracts
+        // under the `observe` semantic and the violation handler is noreturn.
+        // It is a contract_assert and not a CRUCIBLE_PRE: under the `ignore`
+        // semantic, CRUCIBLE_PRE tells the optimizer to assume its predicate,
+        // and that assumption would let the optimizer delete the repeat
+        // below.  A contract_assert under `ignore` gives the optimizer no
+        // assumption.
+        contract_assert(region != nullptr);
+
+        // The repeat below covers the one case the assertion does not. The
         // semantic is a per-target build option, and one target in this tree
         // already sets `ignore`, which erases every contract in the headers
         // it compiles. The read on the next line would fault on its own even

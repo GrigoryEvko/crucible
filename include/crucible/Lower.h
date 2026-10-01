@@ -6,6 +6,7 @@
 #include <fixy/FixedArray.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
@@ -34,9 +35,9 @@ using lower_trace_required_row =
 // inputs than the entry it came from. The slot list is compacted to match.
 template <typename CallerRow, LowerTraceSource Source>
     requires ::foundation::effects::Subrow<lower_trace_required_row, CallerRow>
-[[nodiscard]] inline LoweredGraph<Source> lower_trace_to_graph(::foundation::effects::Alloc a,
-                                                               LowerTraceGraph<Source> trace, ExprPool& pool,
-                                                               Graph& graph) pre(trace.value() != nullptr) {
+[[nodiscard]] inline LoweredGraph<Source>
+lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> trace, ExprPool& pool, Graph& graph) {
+    CRUCIBLE_PRE(trace.value() != nullptr);
     const TraceGraph& tg = *trace.value();
     const uint32_t num_ops = tg.num_ops.get_assuming_set();
     const uint32_t num_slots = tg.num_slots.get_assuming_set();

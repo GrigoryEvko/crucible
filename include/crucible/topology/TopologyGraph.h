@@ -4,6 +4,7 @@
 #include <crucible/cog/TargetCaps.h>
 #include <fixy/Ctx.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
@@ -122,7 +123,8 @@ public:
 
     [[nodiscard]] constexpr std::size_t edge_count() const noexcept { return edges_.size(); }
 
-    [[nodiscard]] constexpr TopologyEdge const* edge_by_id(EdgeId id) const noexcept pre(!id.is_none()) {
+    [[nodiscard]] constexpr TopologyEdge const* edge_by_id(EdgeId id) const noexcept {
+        CRUCIBLE_PRE(!id.is_none());
         for (auto const& e : edges_) {
             if (e.id == id) return &e;
         }
@@ -132,8 +134,8 @@ public:
     // The return is the number of incident edges found, which can exceed the
     // number of pointers written.  Anything past the end of out is dropped.
     [[nodiscard]] constexpr std::size_t edges_incident_on(cog::CogIdentity const* node,
-                                                          std::span<TopologyEdge const*> out) const noexcept
-        pre(node != nullptr) {
+                                                          std::span<TopologyEdge const*> out) const noexcept {
+        CRUCIBLE_PRE(node != nullptr);
         std::size_t found = 0;
         std::size_t written = 0;
         for (auto const& e : edges_) {

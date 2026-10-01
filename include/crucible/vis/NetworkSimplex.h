@@ -64,9 +64,9 @@ struct NSResult {
 
 // Ranks the nodes of a directed acyclic graph at least cost. The result is
 // Optimal, or NoRanking for a graph with a cycle, or PivotLimit when the
-// optimum needs more than max_pivots pivots.
+// optimum needs more than max_pivots pivots.  The precondition is
+// is_well_formed_ns_input(num_nodes, edges), and the definition checks it.
 [[nodiscard]] NSResult network_simplex(uint32_t num_nodes, std::span<const NSEdge> edges,
-                                       uint32_t max_pivots = std::numeric_limits<uint32_t>::max())
-    pre(is_well_formed_ns_input(num_nodes, edges));
+                                       uint32_t max_pivots = std::numeric_limits<uint32_t>::max());
 
 }  // namespace crucible::vis

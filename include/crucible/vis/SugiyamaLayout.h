@@ -72,8 +72,9 @@ inline constexpr float kMaxLayoutExtent = 1.0e6f;
 // because each comparison with a NaN is false.
 [[nodiscard]] bool is_well_formed_layout_input(std::span<const LayoutNode> nodes, const LayoutParams& params) noexcept;
 
+// The precondition is is_well_formed_layout_input(nodes, params), and the
+// definition checks it.
 [[nodiscard]] LayoutResult sugiyama_layout(std::span<const LayoutNode> nodes, std::span<const LayoutEdge> edges,
-                                           const LayoutParams& params = {})
-    pre(is_well_formed_layout_input(nodes, params));
+                                           const LayoutParams& params = {});
 
 }  // namespace crucible::vis

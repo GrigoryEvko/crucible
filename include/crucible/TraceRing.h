@@ -55,6 +55,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Row.h>
 
 namespace crucible {
@@ -121,16 +122,16 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         // Zero-initialised so the content hash never sees indeterminate bytes.
         ::fixy::FixedArray<int64_t, 5> scalar_values{};
 
-        [[nodiscard, gnu::pure]] ScalarType2 get_scalar_type(uint32_t i) const noexcept
-            pre(::foundation::decide::in_range<uint32_t>(i, 0u, 4u)) {
+        [[nodiscard, gnu::pure]] ScalarType2 get_scalar_type(uint32_t i) const noexcept {
+            CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(i, 0u, 4u));
             if (i < 4) {
                 return static_cast<ScalarType2>((scalar_types >> (i * 2)) & 0x3);
             }
             return static_cast<ScalarType2>((op_flags & op_flag::SCALAR4_TYPE_MASK) >> op_flag::SCALAR4_TYPE_SHIFT);
         }
 
-        void set_scalar_type(uint32_t i, ScalarType2 t) noexcept
-            pre(::foundation::decide::in_range<uint32_t>(i, 0u, 4u)) {
+        void set_scalar_type(uint32_t i, ScalarType2 t) noexcept {
+            CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(i, 0u, 4u));
             const uint8_t bits = static_cast<uint8_t>(t) & 0x3;
             if (i < 4) {
                 const uint8_t shift = static_cast<uint8_t>(i * 2);
@@ -139,6 +140,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                 op_flags = static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK)
                                                 | (bits << op_flag::SCALAR4_TYPE_SHIFT));
             }
+            CRUCIBLE_POST(0, get_scalar_type(i) == static_cast<ScalarType2>(bits));
         }
     };
 
@@ -280,10 +282,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // The three parallel-array outputs are optional and may each be null.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
     drain(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr, ScopeHash* out_scope_hashes = nullptr,
-          CallsiteHash* out_callsite_hashes = nullptr) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                    CAPACITY))
-            pre(::foundation::decide::valid_span(max_count, out)) {
+          CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
+        CRUCIBLE_PRE(::foundation::decide::valid_span(max_count, out));
         if (max_count == 0) [[unlikely]]
             return 0;
 
@@ -331,9 +332,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>
     drain_pinned(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
                  ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                    CAPACITY))
-            pre(::foundation::decide::valid_span(max_count, out)) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
+        CRUCIBLE_PRE(::foundation::decide::valid_span(max_count, out));
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>>(
             drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes));
     }
@@ -346,9 +347,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
     drain_pure(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
                ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                    CAPACITY))
-            pre(::foundation::decide::valid_span(max_count, out)) {
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
+        CRUCIBLE_PRE(::foundation::decide::valid_span(max_count, out));
         return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
     }
 
@@ -358,12 +359,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // having all four arrays populated.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
     try_pop_batch(Entry* out_entries, MetaIndex* out_meta_starts, ScopeHash* out_scope_hashes,
-                  CallsiteHash* out_callsite_hashes, uint32_t max_count) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY pre(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0},
-                                                                                    CAPACITY))
-            pre(max_count == 0
-                || (out_entries != nullptr && out_meta_starts != nullptr && out_scope_hashes != nullptr
-                    && out_callsite_hashes != nullptr)) {
+                  CallsiteHash* out_callsite_hashes, uint32_t max_count) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
+        CRUCIBLE_PRE(max_count == 0
+                     || (out_entries != nullptr && out_meta_starts != nullptr && out_scope_hashes != nullptr
+                         && out_callsite_hashes != nullptr));
         if (max_count == 0) [[unlikely]]
             return 0;
 
@@ -415,12 +415,15 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // Valid only once both threads have stopped. Every counter here moves
     // backwards, which the monotonicity contract otherwise forbids, so the
     // caller must have joined the producer and the consumer first.
-    void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY post(head.get() == 0) post(tail.get() == 0)
-        post(consumer_tail_ == 0) post(cached_tail_.get() == 0) {
+    void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY {
         head.reset_under_quiescence();
         tail.reset_under_quiescence();
         consumer_tail_ = 0;
         cached_tail_.reset_under_quiescence();
+        CRUCIBLE_POST(0, head.get() == 0);
+        CRUCIBLE_POST(0, tail.get() == 0);
+        CRUCIBLE_POST(0, consumer_tail_ == 0);
+        CRUCIBLE_POST(0, cached_tail_.get() == 0);
     }
 };
 

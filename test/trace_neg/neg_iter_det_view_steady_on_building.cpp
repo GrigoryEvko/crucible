@@ -2,7 +2,7 @@
 //
 // Violation: minting a Steady view of an IterationDetector that is still
 // Building (signature_len.get() < K) during constant evaluation, which
-// fires the precondition pre(view_ok(...)) of ::fixy::mint_view.
+// fires the precondition view_ok(...) of ::fixy::mint_view.
 //
 // iter_det_state::Steady requires signature_len.get() == K (= 5).  A fresh
 // detector has signature_len.get() == 0, so the Steady view_ok overload

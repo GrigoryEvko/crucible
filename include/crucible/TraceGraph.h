@@ -40,11 +40,13 @@ struct Edge {
     // The port fields stay plain bytes so the struct keeps its layout lock.
     // These setters carry the bound instead, so an assembly path that writes
     // a port through them cannot store an out-of-range index.
-    void set_src_port(uint8_t p) noexcept pre(::foundation::decide::in_range<uint8_t>(p, 0, kMaxPort)) {
+    void set_src_port(uint8_t p) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::in_range<uint8_t>(p, 0, kMaxPort));
         src_port = p;
         CRUCIBLE_POST(0, src_port == p);
     }
-    void set_dst_port(uint8_t p) noexcept pre(::foundation::decide::in_range<uint8_t>(p, 0, kMaxPort)) {
+    void set_dst_port(uint8_t p) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::in_range<uint8_t>(p, 0, kMaxPort));
         dst_port = p;
         CRUCIBLE_POST(0, dst_port == p);
     }
@@ -109,8 +111,8 @@ struct TraceGraph {
     // The precondition refuses a graph with no ops, where the fold
     // legitimately produces a zero hash. A caller that tolerates that
     // sentinel branches on the op count first and reads the field directly.
-    [[nodiscard]] ValidContentHash computed_content_hash() const noexcept
-        pre(::foundation::decide::is_non_zero(content_hash)) {
+    [[nodiscard]] ValidContentHash computed_content_hash() const noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_refined<::fixy::non_zero>(content_hash);
     }
 

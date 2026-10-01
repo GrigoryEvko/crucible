@@ -239,8 +239,8 @@ set_tests_properties(test_bit_exact_replay_invariant PROPERTIES
 # a second backend.
 crucible_test(test_serialize)
 # Release-mode (NDEBUG) witness: malformed wire bytes are rejected
-# by Serialize.h's hard read_gated branch even when the Refined ctor pre()
-# collapses to [[assume]].  Uses exit codes, not assert() (a no-op under NDEBUG).
+# by Serialize.h's hard read_gated branch even when the precondition of the
+# Refined door collapses to [[assume]].  Uses exit codes, not assert() (a no-op under NDEBUG).
 crucible_test(test_serialize_release_gate)
 set_tests_properties(test_serialize test_serialize_release_gate PROPERTIES
   LABELS "determinism;axiom-detsafe")
@@ -2315,20 +2315,22 @@ crucible_neg_compile_test(neg_call_site_interned_name_to_sanitized
 
 # IterationDetector::SignatureLen is the fixy BoundedMonotonic<uint32_t,
 # K = 5>.  Its constructor, reached only through mint_bounded_monotonic,
-# carries pre(!(T(Max) < initial)), and a value above K fails it in a
-# constant evaluation.  Two fixtures:
+# checks that the initial value is at most K, and a value above K fails
+# that precondition in a constant evaluation.  Two fixtures:
 #   * _above_k     — boundary edge (6 = K+1), catches off-by-one drift
 #     in the bound.
 #   * _uint32_max  — wide miss (UINT32_MAX), catches a regression that
 #     replaces BoundedMonotonic with plain Monotonic and loses the bound.
-# The diagnostic names the constructor's precondition in Mutation.h and
-# not the value, so each fixture pins the predicate site.
+# Each pins the door, the refused value and the precondition of the
+# constructor.
 crucible_neg_compile_test(neg_iter_det_signature_len_above_k
-  "contract predicate is false in constant expression"
-  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+  "__builtin_trap.*is not a constant expression"
+  "fixy::mint_bounded_monotonic<unsigned int, 5>\\(6\\)"
+  "BoundedMonotonic<unsigned int, 5>::within_bound_")
 crucible_neg_compile_test(neg_iter_det_signature_len_uint32_max
-  "contract predicate is false in constant expression"
-  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+  "__builtin_trap.*is not a constant expression"
+  "fixy::mint_bounded_monotonic<unsigned int, 5>\\(4294967295\\)"
+  "BoundedMonotonic<unsigned int, 5>::within_bound_")
 
 # IterationDetector::OpsSinceBoundary is the fixy Monotonic<uint32_t>.
 # advance(smaller) and bump() at numeric_limits::max() fail the two
@@ -2358,8 +2360,9 @@ crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
 #     member.  Catches a container shape the recursive unwrap misses, or
 #     a refactor that adds a cached view field.
 crucible_neg_compile_test(neg_iter_det_view_steady_on_building
-  "contract predicate is false in constant expression"
-  "fixy/ScopedView.h:[0-9]+:[0-9]+: error: contract predicate")
+  "__builtin_trap.*is not a constant expression"
+  "fixy::mint_view<crucible::iter_det_state::Steady, crucible::IterationDetector>\\(detector\\)"
+  "fixy/ScopedView.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 crucible_neg_compile_test(neg_iter_det_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "contains_scoped_view<OffendingContainer>\\(\\)")
@@ -2395,16 +2398,17 @@ crucible_neg_compile_test(neg_ckernel_id_raw_uint8_max
 
 # CKernelTable::SizeCounter is BoundedMonotonic<uint32_t,
 # CKERNEL_TABLE_CAP>.  The door mint_bounded_monotonic must refuse CAP + 1
-# (the edge of the bound) and UINT32_MAX (the wide miss).  GCC names
-# neither the door nor the value when a precondition of a constructor
-# fails in a constant expression.  So the second regex pins the header
-# that holds the precondition.
+# (the edge of the bound) and UINT32_MAX (the wide miss).  The second
+# regex names the door and the refused value, and the third names the
+# precondition of the constructor.
 crucible_neg_compile_test(neg_ckernel_table_size_above_cap
-  "contract predicate is false in constant expression"
-  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+  "__builtin_trap.*is not a constant expression"
+  "fixy::mint_bounded_monotonic<unsigned int, 256>\\(\\(\\(\\(uint32_t\\)crucible::CKERNEL_TABLE_CAP\\) \\+ 1\\)\\)"
+  "BoundedMonotonic<unsigned int, 256>::within_bound_")
 crucible_neg_compile_test(neg_ckernel_table_size_uint32_max
-  "contract predicate is false in constant expression"
-  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+  "__builtin_trap.*is not a constant expression"
+  "fixy::mint_bounded_monotonic<unsigned int, 256>\\(4294967295\\)"
+  "BoundedMonotonic<unsigned int, 256>::within_bound_")
 
 # The global CKernelTable carries source::Singleton provenance.  A raw
 # pointer and a pointer with a different tag must not satisfy a consumer
@@ -2424,11 +2428,13 @@ crucible_neg_compile_test(neg_ckernel_singleton_cross_tag
 #   * _uint32_max: the wide miss (UINT32_MAX).  It fails when the counter
 #     becomes a plain Monotonic<uint32_t>.
 crucible_neg_compile_test(neg_schema_table_size_above_cap
-  "contract predicate is false in constant expression"
-  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+  "__builtin_trap.*is not a constant expression"
+  "fixy::mint_bounded_monotonic<unsigned int, 512>\\(\\(\\(\\(uint32_t\\)crucible::SCHEMA_TABLE_CAP\\) \\+ 1\\)\\)"
+  "BoundedMonotonic<unsigned int, 512>::within_bound_")
 crucible_neg_compile_test(neg_schema_table_size_uint32_max
-  "contract predicate is false in constant expression"
-  "fixy/Mutation.h:[0-9]+:[0-9]+: error: contract predicate")
+  "__builtin_trap.*is not a constant expression"
+  "fixy::mint_bounded_monotonic<unsigned int, 512>\\(4294967295\\)"
+  "BoundedMonotonic<unsigned int, 512>::within_bound_")
 
 # SchemaTable::lookup() returns
 # LookupName = Tagged<Borrowed<const char, SchemaTable>, source::Interned>.
@@ -2716,7 +2722,7 @@ crucible_neg_compile_test(neg_metalog_append_count_uint32_max
 #     degenerate the alias into a plain uint32_t typedef.
 #
 # Defense-in-depth: the `count = std::min(available, max_count)`
-# runtime clamp plus the `pre (max_count <= CAPACITY)` clause
+# runtime clamp plus the precondition max_count <= CAPACITY
 # plus the typed witness all fire at the boundary, exposing the
 # silent clamp at enforce semantics.
 crucible_neg_compile_test(neg_trace_ring_drain_count_above_max
@@ -2733,7 +2739,7 @@ crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
 # overrunning the inline storage.  A corrupt or adversarial Cipher
 # payload can deliver a byte in [9, 255] to the deserialize boundary in
 # Serialize.h::read_meta().  Without a gate there, the byte reaches
-# compute_storage_nbytes, where the `pre(meta.ndim <= 8)` contract
+# compute_storage_nbytes, where the precondition meta.ndim <= 8
 # terminates the program under enforce semantics, or where
 # `[[assume]]` causes UB under ignore on hot-path TUs.
 #
@@ -3963,11 +3969,11 @@ crucible_neg_compile_test(neg_cipher_head_default_construct
 #     allocated RegionNode whose merkle_hash is default-zero and
 #     hasn't yet been populated by recompute_merkle.
 #
-# Defense-in-depth: the runtime gate `pre(merkle_root.raw() != 0)`
+# Defense-in-depth: the runtime precondition is_non_zero(merkle_root)
 # inside Tx::commit is retained — ValidMerkleRoot catches the value
 # at the call site at compile-time via the typed alias path; the
-# existing pre clause catches it at runtime if a caller bypasses the
-# typed path.
+# precondition catches it at runtime if a caller bypasses the typed
+# path.
 crucible_neg_compile_test(neg_merkle_root_zero_literal
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsNonZero\\(\\), crucible::MerkleHash>\\(crucible::MerkleHash\\(0\\)\\)")
@@ -3999,9 +4005,9 @@ crucible_neg_compile_test(neg_merkle_root_default_construct
 #     default-zero and hasn't yet been populated by the streaming
 #     fold.
 #
-# Defense-in-depth: each accessor's `pre(decide::is_non_zero(...))`
+# Defense-in-depth: each accessor's CRUCIBLE_PRE(decide::is_non_zero(...))
 # runtime gate is retained.  ValidContentHash catches the value at
-# the construction call; the pre clause catches it at the accessor
+# the construction call; the precondition catches it at the accessor
 # body's entry.  Both layers must reject for the type-level
 # invariant and the runtime path to disagree.
 crucible_neg_compile_test(neg_content_hash_zero_literal

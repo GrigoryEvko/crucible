@@ -274,12 +274,16 @@ struct GraphNode {
     [[nodiscard, gnu::pure]] bool is_gpu() const noexcept { return device_idx >= 0; }
     // The precondition is what stops a host node from returning its -1
     // sentinel reinterpreted as a large unsigned device index.
-    [[nodiscard, gnu::pure]] uint8_t gpu_idx() const noexcept pre(is_gpu()) { return static_cast<uint8_t>(device_idx); }
+    [[nodiscard, gnu::pure]] uint8_t gpu_idx() const noexcept {
+        CRUCIBLE_PRE(is_gpu());
+        return static_cast<uint8_t>(device_idx);
+    }
 
     // The positive-nred precondition is what keeps the size + ndim offset
     // inside the reduction tail instead of one past the array end.
-    [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND pre(kind == NodeKind::REDUCTION)
-        pre(::foundation::decide::positive(nred)) {
+    [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(kind == NodeKind::REDUCTION);
+        CRUCIBLE_PRE(::foundation::decide::positive(nred));
         return size + ndim;
     }
 
@@ -299,12 +303,15 @@ struct GraphNode {
         return kind == NodeKind::EXTERN || kind == NodeKind::TEMPLATE;
     }
 
-    [[nodiscard]] ComputeBody* compute_body() const CRUCIBLE_LIFETIMEBOUND pre(has_compute_body())
-        pre(body != nullptr) {
+    [[nodiscard]] ComputeBody* compute_body() const CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(has_compute_body());
+        CRUCIBLE_PRE(body != nullptr);
         return static_cast<ComputeBody*>(body);
     }
 
-    [[nodiscard]] ExternInfo* extern_info() const CRUCIBLE_LIFETIMEBOUND pre(has_extern_info()) pre(body != nullptr) {
+    [[nodiscard]] ExternInfo* extern_info() const CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(has_extern_info());
+        CRUCIBLE_PRE(body != nullptr);
         return static_cast<ExternInfo*>(body);
     }
 };

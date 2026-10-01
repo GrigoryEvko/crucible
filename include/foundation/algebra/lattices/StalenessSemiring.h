@@ -22,6 +22,7 @@
 #include <foundation/Saturate.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/contracts/Pre.h>
 
 #include <compare>
 #include <cstdint>
@@ -82,8 +83,8 @@ namespace staleness {
 inline constexpr StalenessSemiring::element_type fresh = StalenessSemiring::bottom();
 inline constexpr StalenessSemiring::element_type infinite = StalenessSemiring::top();
 
-[[nodiscard]] constexpr StalenessSemiring::element_type at(std::uint64_t n) noexcept
-    pre(n < std::numeric_limits<std::uint64_t>::max()) {
+[[nodiscard]] constexpr StalenessSemiring::element_type at(std::uint64_t n) noexcept {
+    CRUCIBLE_PRE(n < std::numeric_limits<std::uint64_t>::max());
     return StalenessSemiring::element_type{n};
 }
 

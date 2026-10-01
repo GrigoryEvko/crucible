@@ -19,6 +19,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 
 #include <cstddef>
@@ -170,11 +171,10 @@ public:
     // one and any search over the log becomes ambiguous. Refusing it here also
     // catches the case where the commit runs before the hash was recomputed.
     [[nodiscard]] bool commit(Owner const&, Transaction* const tx, Transaction::ArenaRegion region,
-                              ContentHash content_hash, MerkleHash merkle_root) noexcept pre(tx != nullptr)
-        pre(region.value() != nullptr) pre(::foundation::decide::is_non_zero(merkle_root)) {
-        // A contract predicate that reads through a parameter's pointee is
-        // skipped when the compiler folds the body at compile time, so every
-        // such check in this file runs from the body rather than a clause.
+                              ContentHash content_hash, MerkleHash merkle_root) noexcept {
+        CRUCIBLE_PRE(tx != nullptr);
+        CRUCIBLE_PRE(region.value() != nullptr);
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(merkle_root));
         if (tx->status != TxStatus::RECORDING && tx->status != TxStatus::CLOSED) {
             CRUCIBLE_POST(0, !false || tx->status == TxStatus::COMMITTED);
             return false;
@@ -195,7 +195,8 @@ public:
 
     // Returns the transaction this one displaces, which is the target a
     // rollback would restore, or null if there was none.
-    [[nodiscard]] Transaction* activate(Owner const&, Transaction* const tx) noexcept pre(tx != nullptr) {
+    [[nodiscard]] Transaction* activate(Owner const&, Transaction* const tx) noexcept {
+        CRUCIBLE_PRE(tx != nullptr);
         if (tx->status != TxStatus::COMMITTED) {
             CRUCIBLE_POST(static_cast<Transaction*>(nullptr), true || tx->status == TxStatus::ACTIVE);
             return nullptr;

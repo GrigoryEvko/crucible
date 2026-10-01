@@ -5,9 +5,9 @@
 //
 // IterationDetector::SignatureLen is ::fixy::BoundedMonotonic<uint32_t, K>
 // with K = 5.  Its constructor, reached only through
-// ::fixy::mint_bounded_monotonic, carries pre(!(T(Max) < initial)), that is
-// initial <= K.  An initial value of 6 makes the predicate false, and the
-// constant evaluation fails.
+// ::fixy::mint_bounded_monotonic, has the precondition
+// std::cmp_less_equal(initial, Max), that is initial <= K.  An initial
+// value of 6 makes the predicate false, and the constant evaluation fails.
 //
 // Companion fixture to neg_iter_det_signature_len_uint32_max.cpp:
 //   - This one is the boundary edge (= K+1, off-by-one).

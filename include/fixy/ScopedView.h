@@ -25,6 +25,7 @@
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -91,7 +92,7 @@ concept CarrierDeclaresViewState = requires(Carrier const& c) {
 template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
     requires CarrierDeclaresViewState<Carrier, Tag>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
-mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{}));
+mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // Without this twin, mint_view<Ready>(Carrier{}) compiles and hands back
 // a view of a carrier that is gone at the end of the statement.  This
@@ -192,7 +193,8 @@ public:
 template <typename Tag, typename Carrier, typename Fresh>
     requires CarrierDeclaresViewState<Carrier, Tag>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
-mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
+mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept {
+    CRUCIBLE_PRE(view_ok(c, std::type_identity<Tag>{}));
     return ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>{c};
 }
 
@@ -216,7 +218,8 @@ using LinearScopedView = Linear<ScopedView<Carrier, Tag, Brand>>;
 template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
     requires CarrierDeclaresViewState<Carrier, Tag>
 [[nodiscard]] constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
-mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept pre(view_ok(c, std::type_identity<Tag>{})) {
+mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept {
+    CRUCIBLE_PRE(view_ok(c, std::type_identity<Tag>{}));
     return mint_linear<ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>>(mint_view<Tag, Carrier, Fresh>(c));
 }
 

@@ -11,6 +11,7 @@
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 
 #include <bit>
@@ -111,15 +112,15 @@ public:
     // Neither bound ever moves outward, so one call establishes a constraint
     // that no later call can loosen.
     //
-    // The value parameters are const because a postcondition may only read a
-    // parameter that is. The postconditions index the vector directly rather
-    // than calling the accessor, which would re-evaluate that accessor's own
-    // contract inside the check.
-    void tighten_range(const SymbolId id, const int64_t lower, const int64_t upper)
-        post(entries_[id.raw()].range_lower >= lower) post(entries_[id.raw()].range_upper <= upper) {
+    // The postconditions index the vector directly rather than calling the
+    // accessor, which would re-evaluate that accessor's own contract inside
+    // the check.
+    void tighten_range(const SymbolId id, const int64_t lower, const int64_t upper) {
         auto& e = entry_at_mut(id);
         if (lower > e.range_lower) e.range_lower = lower;
         if (upper < e.range_upper) e.range_upper = upper;
+        CRUCIBLE_POST(0, entries_[id.raw()].range_lower >= lower);
+        CRUCIBLE_POST(0, entries_[id.raw()].range_upper <= upper);
     }
 
     void set_size_like(SymbolId id) { entry_at_mut(id).sym_flags.set(SymFlags::IS_SIZE_LIKE); }
@@ -180,14 +181,16 @@ private:
     // table the subtraction wraps to the largest size_t and the range check
     // then admits every index.
 
-    [[nodiscard, gnu::pure]] const SymbolEntry& entry_at(SymbolId id) const noexcept pre(id.is_valid()) {
+    [[nodiscard, gnu::pure]] const SymbolEntry& entry_at(SymbolId id) const noexcept {
+        CRUCIBLE_PRE(id.is_valid());
         CRUCIBLE_PRE(!entries_.empty());
         CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(static_cast<std::size_t>(id.raw()), std::size_t{0},
                                                                  entries_.size() - std::size_t{1}));
         return entries_[id.raw()];
     }
 
-    [[nodiscard]] SymbolEntry& entry_at_mut(SymbolId id) noexcept pre(id.is_valid()) {
+    [[nodiscard]] SymbolEntry& entry_at_mut(SymbolId id) noexcept {
+        CRUCIBLE_PRE(id.is_valid());
         CRUCIBLE_PRE(!entries_.empty());
         CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(static_cast<std::size_t>(id.raw()), std::size_t{0},
                                                                  entries_.size() - std::size_t{1}));

@@ -78,7 +78,8 @@ struct CrucibleContext {
     CrucibleContext(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
     CrucibleContext& operator=(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
 
-    [[nodiscard]] bool activate(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr) {
+    [[nodiscard]] bool activate(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(region != nullptr);
         if (!region->plan) [[unlikely]]
             return false;
 
@@ -126,8 +127,8 @@ struct CrucibleContext {
     }
 
     // Safe to call part-way through an iteration.
-    [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos)
-        CRUCIBLE_NO_THREAD_SAFETY pre(alt != nullptr) {
+    [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(alt != nullptr);
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         if (!alt->plan) [[unlikely]]
             return false;
@@ -254,11 +255,14 @@ private:
     }
 
     void migrate_prefix_slots_(const RegionNode* old_region, const RegionNode* alt, const void* old_pool_base,
-                               uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY pre(old_region != nullptr)
-        pre(alt != nullptr) pre(old_region->plan != nullptr) pre(alt->plan != nullptr)
+                               uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(old_region != nullptr);
+        CRUCIBLE_PRE(alt != nullptr);
+        CRUCIBLE_PRE(old_region->plan != nullptr);
+        CRUCIBLE_PRE(alt->plan != nullptr);
         // Checked before any slot is copied, so a plan the bitset cannot track
         // is refused rather than half-migrated.
-        pre(::foundation::decide::in_range<uint32_t>(alt->plan->num_slots, 0u, MIGRATION_MAX_SLOTS)) {
+        CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(alt->plan->num_slots, 0u, MIGRATION_MAX_SLOTS));
         const auto* old_plan = old_region->plan;
         const auto* new_plan = alt->plan;
         [[assume(new_plan->num_slots <= MIGRATION_MAX_SLOTS)]];
@@ -291,10 +295,10 @@ private:
                 // bitset, so neither bound is optional.
                 //
                 // The MIGRATION_MAX_SLOTS half is not implied by the half
-                // before it. What bounds num_slots is a clause on this
-                // function, and a clause evaluates to nothing in a target
-                // built with the contract semantic set to `ignore`, as one
-                // target in this tree is. A plan wider than the bitset would
+                // before it. What bounds num_slots is a precondition of this
+                // function, and a precondition checks nothing in a target
+                // built with the contract semantic set to `ignore`, as some
+                // targets in this tree are. A plan wider than the bitset would
                 // then reach here and write past the end of `visited` on the
                 // stack. These two checks do not depend on that option.
                 CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_plan->num_slots);

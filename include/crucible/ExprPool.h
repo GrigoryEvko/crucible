@@ -14,6 +14,7 @@
 #include <foundation/SwissTableBuffer.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 
 #include <algorithm>
@@ -387,9 +388,9 @@ public:
                   "kDefaultInitialCapacity must be a table capacity of at least one control group");
 
     explicit ExprPool(::foundation::effects::Alloc a, size_t initial_capacity = kDefaultInitialCapacity)
-        pre(initial_capacity <= (std::size_t{1} << 30))
         : arena_(),
-          capacity_{::fixy::mint_refined<::fixy::power_of_two>(rounded_capacity_(initial_capacity))},
+          capacity_{
+              ::fixy::mint_refined<::fixy::power_of_two>(rounded_capacity_(capacity_within_budget_(initial_capacity)))},
           intern_count_{::fixy::mint_monotonic<size_t>(0)} {
         alloc_tables_(capacity_.value());
 
@@ -413,7 +414,8 @@ public:
 
     // Grows the table so that `n_entries` insertions fit without a rehash.
     // A no-op when the capacity already suffices, and safe to repeat.
-    void reserve(size_t n_entries) pre(n_entries <= (((std::size_t{1} << 30) * 7) / 8)) {
+    void reserve(size_t n_entries) {
+        CRUCIBLE_PRE(n_entries <= (((std::size_t{1} << 30) * 7) / 8));
         // The load threshold is n_entries * 8 <= capacity * 7, so the
         // capacity needed is ceil(n_entries * 8 / 7).
         const size_t needed = (n_entries * 8 + 6) / 7;
@@ -421,6 +423,7 @@ public:
         while (target < needed)
             target <<= 1;
         if (target > capacity_.value()) grow_to_(target);
+        CRUCIBLE_POST(0, n_entries * 8 <= capacity_.value() * 7);
     }
 
     // ---- Atom construction ----
@@ -1043,6 +1046,14 @@ private:
     // Rounds up to a power-of-two capacity holding at least one control
     // group.  The constructor precondition caps the input at 1 << 30, so the
     // shift cannot overflow for an admitted caller.
+    // The budget is checked before rounded_capacity_ reads the value, as a
+    // precondition of the constructor.  A capacity past it would make the
+    // loop of rounded_capacity_ shift the bound out of the word.
+    [[nodiscard]] static constexpr size_t capacity_within_budget_(size_t initial_capacity) noexcept {
+        CRUCIBLE_PRE(initial_capacity <= (std::size_t{1} << 30));
+        return initial_capacity;
+    }
+
     [[nodiscard, gnu::const]] static constexpr size_t rounded_capacity_(size_t initial_capacity) noexcept {
         size_t cap = detail::group_width();
         while (cap < initial_capacity)
@@ -1664,8 +1675,9 @@ private:
     // buffer narrower than one group.  The table buffer admits a power of
     // two up to 1 << 30, and a control group can be wider than the sixteen
     // bytes the buffer requires, so each condition is stated.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE void grow_to_(size_t new_capacity)
-        pre(::foundation::is_swiss_table_capacity(new_capacity)) pre(new_capacity >= detail::group_width()) {
+    CRUCIBLE_UNSAFE_BUFFER_USAGE void grow_to_(size_t new_capacity) {
+        CRUCIBLE_PRE(::foundation::is_swiss_table_capacity(new_capacity));
+        CRUCIBLE_PRE(new_capacity >= detail::group_width());
         size_t old_capacity = capacity_.value();
         size_t old_count = intern_count_.get();
         // The local keeps the old buffer alive for the re-insert walk below

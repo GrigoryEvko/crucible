@@ -61,8 +61,10 @@ struct ReplayEngine {
     ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
 
     // An empty region is legitimate, but a non-empty one must have operations.
-    void init(const RegionNode* region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY pre(region != nullptr)
-        pre(pool->is_initialized()) pre(::foundation::decide::valid_span(region->num_ops, region->ops)) {
+    void init(const RegionNode* region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(region != nullptr);
+        CRUCIBLE_PRE(pool->is_initialized());
+        CRUCIBLE_PRE(::foundation::decide::valid_span(region->num_ops, region->ops));
         ops_ = region->ops;
         end_ = region->ops + region->num_ops;
         cursor_ = ops_;
@@ -141,8 +143,9 @@ struct ReplayEngine {
     }
 
     // The pointer for one of the last matched operation's outputs.
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND pre(current_ != nullptr)
-        pre(current_->output_slot_ids != nullptr) {
+    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(current_ != nullptr);
+        CRUCIBLE_PRE(current_->output_slot_ids != nullptr);
         // The count guard is not redundant with the range check: at a count of
         // zero the upper bound below underflows to the largest value and the
         // range admits everything. No index into a zero-output operation
@@ -159,8 +162,9 @@ struct ReplayEngine {
     }
 
     // The same for one of the inputs.
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND pre(current_ != nullptr)
-        pre(current_->input_slot_ids != nullptr) {
+    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+        CRUCIBLE_PRE(current_ != nullptr);
+        CRUCIBLE_PRE(current_->input_slot_ids != nullptr);
         CRUCIBLE_PRE(current_->num_inputs > 0u);
         CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(
             j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <foundation/contracts/Decide.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
@@ -35,8 +36,8 @@ namespace foundation::reflect {
 // in that one case.
 
 template <ScopedEnum E>
-[[nodiscard]] constexpr size_t bits_to_string(std::underlying_type_t<E> mask, char* out, size_t cap) noexcept
-    pre(::foundation::decide::valid_span(cap, out)) {
+[[nodiscard]] constexpr size_t bits_to_string(std::underlying_type_t<E> mask, char* out, size_t cap) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::valid_span(cap, out));
     using U = std::underlying_type_t<E>;
     size_t needed = 0;
     bool first = true;

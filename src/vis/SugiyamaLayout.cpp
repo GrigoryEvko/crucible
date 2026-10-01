@@ -3,6 +3,7 @@
 #include <crucible/vis/SugiyamaLayout.h>
 
 #include <crucible/vis/NetworkSimplex.h>
+#include <foundation/contracts/Pre.h>
 
 #include <algorithm>
 #include <cmath>
@@ -322,6 +323,7 @@ bool is_well_formed_layout_input(std::span<const LayoutNode> nodes, const Layout
 
 LayoutResult sugiyama_layout(std::span<const LayoutNode> nodes, std::span<const LayoutEdge> edges,
                              const LayoutParams& params) {
+    CRUCIBLE_PRE(is_well_formed_layout_input(nodes, params));
     if (nodes.empty()) return {};
     const auto num_input = static_cast<uint32_t>(nodes.size());
     LayeredGraph graph = build_layered_graph(nodes, edges);

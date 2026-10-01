@@ -7,6 +7,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/diag/Catalog.h>
 
 #include <atomic>
@@ -99,7 +100,8 @@ public:
 
     // A null pointer is the never-published state, so publishing one is
     // always a caller mistake.
-    CRUCIBLE_INLINE void publish(T* ptr) noexcept pre(ptr != nullptr) {
+    CRUCIBLE_INLINE void publish(T* ptr) noexcept {
+        CRUCIBLE_PRE(ptr != nullptr);
         T* expected = nullptr;
         // The failure order is relaxed because a failure only has to be
         // detected, not synchronized with.  It means another publisher
@@ -153,7 +155,10 @@ public:
     // This one carries no postcondition.  Another publisher, or a
     // consume, can replace the pointer before the witness reads it, so
     // the witness would be racy.
-    CRUCIBLE_INLINE void publish(T* ptr) noexcept pre(ptr != nullptr) { slot_.store(ptr, std::memory_order_release); }
+    CRUCIBLE_INLINE void publish(T* ptr) noexcept {
+        CRUCIBLE_PRE(ptr != nullptr);
+        slot_.store(ptr, std::memory_order_release);
+    }
 
     [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept { return slot_.load(std::memory_order_acquire); }
 

@@ -37,12 +37,11 @@
 // check.  The runtime arm calls the violation handler, and that call has
 // side effects.
 //
-// Do not use these macros in a free function template whose parameter
-// types are deduced at the call site.  Every consumer translation unit
-// that instantiates the template then references the violation handler,
-// and a static library that does not link the handler fails at link
-// time.  A member of a class template is safe, because it instantiates
-// once per fixed class parameter.
+// Each translation unit that instantiates a template with one of these
+// macros references the violation handler, as a language contract clause
+// does.  The message form also references contract_failed_msg.  So a
+// library or a program that instantiates such a template links
+// `foundation`, which defines the two functions.
 //
 // The violation handler and the reporting function of the message form
 // are in src/foundation/ContractHandler.cpp.  Every binary that links

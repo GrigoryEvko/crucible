@@ -76,13 +76,13 @@ int main(int argc, char** argv) {
         [](const TensorMeta& m) {
             // Volatile barrier breaks any constexpr propagation
             // GCC's contract-checker would otherwise attempt on
-            // the constexpr compute_storage_nbytes — the pre()
-            // clause must evaluate at RUNTIME with our random m,
-            // not be folded at compile time.
+            // the constexpr compute_storage_nbytes — the
+            // precondition must evaluate at RUNTIME with our random
+            // m, not be folded at compile time.
             const TensorMeta* volatile mp = &m;
 
             // Property 1: no crash.  Our generator keeps ndim ≤ 8
-            // satisfying the pre() contract.  If the function
+            // satisfying the precondition.  If the function
             // aborts on any input here, ASan / contract handler
             // fires.
             //

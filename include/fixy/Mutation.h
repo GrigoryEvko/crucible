@@ -433,9 +433,15 @@ class [[nodiscard]] BoundedMonotonic {
     // Exact: the door's concept proved that T holds the bound.
     static constexpr T kMax = static_cast<T>(Max);
 
+    // The bound is checked before the member takes the value, as a
+    // precondition of the constructor.
+    [[nodiscard]] static constexpr T within_bound_(T initial) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        CRUCIBLE_PRE(std::cmp_less_equal(initial, Max));
+        return initial;
+    }
+
     constexpr explicit BoundedMonotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre(std::cmp_less_equal(initial, Max))
-        : inner_{mint_monotonic<T, Cmp>(std::move(initial))} {}
+        : inner_{mint_monotonic<T, Cmp>(within_bound_(std::move(initial)))} {}
 
     template <typename U, auto M, typename C>
         requires BoundedMonotoneCarrier<U, M, C>
@@ -459,8 +465,8 @@ public:
     [[nodiscard]] constexpr const T& get() const noexcept { return inner_.get(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return inner_.current(); }
 
-    constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>)
-        pre(std::cmp_less_equal(new_value, Max)) {
+    constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        CRUCIBLE_PRE(std::cmp_less_equal(new_value, Max));
         inner_.advance(std::move(new_value));
     }
 
@@ -764,7 +770,8 @@ public:
     // before the store.
     [[nodiscard]] T bump_by(T delta) noexcept
         requires std::integral<T> && (kIsLess || kIsGreater)
-    pre(::foundation::decide::non_negative(delta)) {
+    {
+        CRUCIBLE_PRE(::foundation::decide::non_negative(delta));
         T observed = value_.load(std::memory_order_relaxed);
         for (;;) {
             if constexpr (kIsLess) {
@@ -802,7 +809,8 @@ public:
                                                 std::memory_order success_order = std::memory_order_acq_rel,
                                                 std::memory_order failure_order = std::memory_order_acquire) noexcept
         requires(kIsLess || kIsGreater)
-    pre(Cmp{}(expected, desired)) {
+    {
+        CRUCIBLE_PRE(Cmp{}(expected, desired));
         return value_.compare_exchange_strong(expected, desired, success_order, failure_order);
     }
 
@@ -810,7 +818,8 @@ public:
     compare_exchange_advance_weak(T& expected, T desired, std::memory_order success_order = std::memory_order_acq_rel,
                                   std::memory_order failure_order = std::memory_order_acquire) noexcept
         requires(kIsLess || kIsGreater)
-    pre(Cmp{}(expected, desired)) {
+    {
+        CRUCIBLE_PRE(Cmp{}(expected, desired));
         return value_.compare_exchange_weak(expected, desired, success_order, failure_order);
     }
 

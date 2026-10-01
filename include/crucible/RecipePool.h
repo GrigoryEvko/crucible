@@ -16,6 +16,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
@@ -47,12 +48,7 @@ public:
         requires ::foundation::brand::IsFreshBrand<Brand> && ::foundation::effects::Subrow<init_required_row, CallerRow>
     [[gnu::cold]] explicit RecipePool(::fixy::BorrowedRef<Arena, Brand> arena, ::foundation::effects::Init init,
                                       uint32_t initial_capacity = 32, std::type_identity<CallerRow> = {}) noexcept
-        // The lower bound is a load-factor sanity floor. The power-of-two
-        // requirement is structural: the probe below masks instead of
-        // dividing.
-        pre(initial_capacity >= 8)
-            pre(::foundation::decide::is_power_of_two_le<std::uint32_t>(initial_capacity, UINT32_MAX))
-        : RecipePool{erased_door_{}, ArenaBorrow{arena}, init, initial_capacity} {}
+        : RecipePool{erased_door_{}, ArenaBorrow{arena}, init, admitted_capacity_(initial_capacity)} {}
 
     RecipePool(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
     RecipePool& operator=(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
@@ -103,6 +99,16 @@ private:
     // Only the public constructor names this tag, so no caller reaches the
     // erased borrow below.
     struct erased_door_ {};
+
+    // The precondition of the public constructor.  It runs before the
+    // constructor that it delegates to reads the capacity.  The lower bound
+    // is a load-factor sanity floor.  The power-of-two requirement is
+    // structural: the probe masks instead of dividing.
+    [[nodiscard]] static constexpr uint32_t admitted_capacity_(uint32_t initial_capacity) noexcept {
+        CRUCIBLE_PRE(initial_capacity >= 8);
+        CRUCIBLE_PRE(::foundation::decide::is_power_of_two_le<std::uint32_t>(initial_capacity, UINT32_MAX));
+        return initial_capacity;
+    }
 
     [[gnu::cold, gnu::noinline]] RecipePool(erased_door_, ArenaBorrow arena, ::foundation::effects::Init init,
                                             uint32_t initial_capacity) noexcept

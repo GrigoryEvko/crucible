@@ -49,6 +49,7 @@
 #include <fixy/session/VigilMode.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -181,7 +182,8 @@ public:
     // different ownership rules for one ring.
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
                                                            uint32_t n_metas, ScopeHash scope_hash = {},
-                                                           CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
+                                                           CallsiteHash callsite_hash = {}) {
+        CRUCIBLE_PRE(ve.value() != nullptr);
         (void)assert_producer_thread_();
         MetaIndex meta_start;  // default = none()
         if (metas && n_metas > 0) {
@@ -198,9 +200,12 @@ public:
     // Only the hot paths live inline here.  Divergence recovery, consuming a
     // pending region and alignment all sit in noinline helpers, so the hot
     // path needs no callee-saved registers for them.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
-    dispatch_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas, ScopeHash scope_hash = {},
-                CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op(TraceRing::ValidatedEntryPtr ve,
+                                                                                     const TensorMeta* metas,
+                                                                                     uint32_t n_metas,
+                                                                                     ScopeHash scope_hash = {},
+                                                                                     CallsiteHash callsite_hash = {}) {
+        CRUCIBLE_PRE(ve.value() != nullptr);
         // Armed in every build mode, release included. The ring behind this
         // call is single-producer: two threads appending concurrently claim
         // the same slot, and the second overwrites the first with no
@@ -269,7 +274,8 @@ public:
     // again before the ring head can advance.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
     dispatch_op_pure(VigilFgCtx const&, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
-                     ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
+                     ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) {
+        CRUCIBLE_PRE(ve.value() != nullptr);
         return dispatch_op(ve, metas, n_metas, scope_hash, callsite_hash);
     }
 
@@ -603,9 +609,10 @@ private:
     // certified again before record_op will take it, and certifying one that
     // is already certified means minting the second tag with no check behind
     // it. Carrying the pointer keeps the caller's certification.
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(
-        VigilFgCtx const& fg, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
-        ScopeHash scope_hash, CallsiteHash callsite_hash) pre(ve.value() != nullptr) {
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult
+    dispatch_transition_(VigilFgCtx const& fg, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
+                         uint32_t n_metas, ScopeHash scope_hash, CallsiteHash callsite_hash) {
+        CRUCIBLE_PRE(ve.value() != nullptr);
         const TraceRing::Entry& entry = *ve.value();
         // A newer region arriving mid-alignment replaces the pending one and
         // restarts the alignment from zero.  That is correct: the newer
@@ -736,8 +743,8 @@ private:
     // Verifies the prefix match, then delegates the pool detach, the slot
     // migration and the engine advance.  Returns true when the switch
     // succeeded and the engine sits at div_pos.
-    [[nodiscard, gnu::cold]] bool try_switch_region_(VigilFgCtx const& fg, const RegionNode* alt, uint32_t div_pos)
-        pre(alt != nullptr) {
+    [[nodiscard, gnu::cold]] bool try_switch_region_(VigilFgCtx const& fg, const RegionNode* alt, uint32_t div_pos) {
+        CRUCIBLE_PRE(alt != nullptr);
         if (!alt->plan) return false;
 
         // Every op before the divergence point must carry an identical

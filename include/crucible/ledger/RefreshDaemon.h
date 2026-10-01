@@ -51,6 +51,7 @@
 
 #include <crucible/ledger/Ledger.h>
 #include <crucible/ledger/ProbeSupport.h>
+#include <foundation/contracts/Pre.h>
 
 #include <atomic>
 #include <chrono>
@@ -424,12 +425,13 @@ private:
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsRefreshDaemon<Ctx>
 [[nodiscard]] inline std::unique_ptr<RefreshDaemon> mint_refresh_daemon(  // MINT-PATTERN-OK: allocating
-    Ctx const& ctx, RefreshDaemonConfig config) noexcept
+    Ctx const& ctx, RefreshDaemonConfig config) noexcept {
     // Fires in Release. A schedule whose backoff does not back off, or
     // whose idle period is zero, produces a thread that measures without
     // pause on a host that cannot measure, and there is no safe way to
     // continue from it.
-    pre(config.schedule.is_well_formed()) pre(!config.registry.empty()) {
+    CRUCIBLE_PRE(config.schedule.is_well_formed());
+    CRUCIBLE_PRE(!config.registry.empty());
     const HostFacts facts = probe_host_facts(ctx);
     const HostFingerprint fingerprint = fold_fingerprint(facts);
     const CompetenceReport competence = probe_competence(ctx);

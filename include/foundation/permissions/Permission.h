@@ -52,6 +52,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/effects/Ctx.h>
@@ -1205,7 +1206,10 @@ public:
         return try_upgrade_raw_();
     }
 
-    void deposit_exclusive(Permission<Tag, Brand>&& exc) noexcept pre(!parked_.has_value()) {
+    // No postcondition: an upgrade on another thread can take the parked
+    // permission before a witness reads it.
+    void deposit_exclusive(Permission<Tag, Brand>&& exc) noexcept {
+        CRUCIBLE_PRE(!parked_.has_value());
         parked_ = std::move(exc);
         // The count is zero whenever the exclusive-out bit is set, so a
         // plain store of zero clears the bit without discarding a count.

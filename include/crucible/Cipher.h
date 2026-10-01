@@ -375,8 +375,8 @@ public:
     template <typename Ctx>
         requires cipher::CtxFitsCipherCommit<Ctx>
     [[nodiscard]] std::expected<void, std::error_code> record_event(Ctx const& ctx, OpenView const& view,
-                                                                    ContentHash content_hash, uint64_t step_id)
-        pre(::foundation::decide::is_non_zero(content_hash)) {
+                                                                    ContentHash content_hash, uint64_t step_id) {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         const ::fixy::time::MonotonicClock clock =
             ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
         auto committed_at = clock.read();
@@ -384,6 +384,7 @@ public:
             return std::unexpected{committed_at.error()};
         }
         advance_head(view, content_hash, step_id, *committed_at);
+        CRUCIBLE_POST(0, head_ == content_hash);
         return {};
     }
 
