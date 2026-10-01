@@ -118,7 +118,7 @@ Current frameworks: static lookup (op + dtype → library kernel). Same kernel f
 
 Bit-accurate models of ten GPU architectures (MMA-Sim, arXiv 2511.10909) and the FTTN tests (arXiv 2403.00232) show this. In MMA-Sim, only FP64 and FP32 MMA agree on every architecture. The starter recipes `f16_f32accum_tc` and `bf16_f32accum_tc` in `include/crucible/RecipeRegistry.h` have `BITEXACT_TC`, so the hardware does not give the tier that they have.
 
-**KernelCache:** a lock-free open-addressing hash table in `include/crucible/MerkleDag.h` that maps (content_hash, row_hash) → CompiledKernel. The row hash is the effect row of the region, so two regions with identical ops and different rows take different slots. Content-addressing: identical ops on identical shapes produce identical hashes. No production code reads or writes the table at this time, because no code compiles a kernel: `CompiledKernel` has a declaration and no definition. The reuse across runs, models and organizations, the variants for each device and the growth across restarts are planned.
+**KernelCache:** a lock-free open-addressing hash table in `include/crucible/KernelCache.h` that maps (content_hash, row_hash) → CompiledKernel. The row hash is the effect row of the region, so two regions with identical ops and different rows take different slots. Content-addressing: identical ops on identical shapes produce identical hashes. No production code reads or writes the table at this time, because no code compiles a kernel: `CompiledKernel` has a declaration and no definition. The reuse across runs, models and organizations, the variants for each device and the growth across restarts are planned.
 
 **Stream parallelism (planned):** DFG reveals independent ops → launch on different CUDA streams → concurrent SM execution. Schedule compiled statically from topological sort + earliest-start-time assignment. Zero scheduling overhead at runtime.
 
@@ -261,7 +261,7 @@ Central data structure. L3-L6 feed in at this time. In the design, L1 and L2 als
 
 **RegionNodes:** compilable op sequences. **content_hash** = hash(schema_hashes, input shapes/strides/dtypes/devices, scalar values). Identical computation → identical hash, even across models. **merkle_hash** = content_hash + child hashes → O(1) equality for entire subtrees (like git commits).
 
-**BranchNodes:** dynamic behavior. Guard = the op sequence itself. Mismatch at op N → branch arms for different paths. Both arms independently compilable. Shared suffixes share content_hashes and kernels. `BranchNode` and `add_branch` are in `include/crucible/MerkleDag.h`. No production code calls `add_branch` at this time. At a divergence, the Vigil looks for another region in the region cache (`include/crucible/RegionCache.h`).
+**BranchNodes:** dynamic behavior. Guard = the op sequence itself. Mismatch at op N → branch arms for different paths. Both arms independently compilable. Shared suffixes share content_hashes and kernels. `BranchNode` is in `include/crucible/MerkleDag.h`, and `add_branch` is in `include/crucible/KernelCache.h`. No production code calls `add_branch` at this time. At a divergence, the Vigil looks for another region in the region cache (`include/crucible/RegionCache.h`).
 
 In the design, BranchNodes are THE mechanism for everything that changes: architecture mutation (L10), attention replacement (L9), hyperparameter changes (L11), continuous learning (L14). Every adaptation is a branch. Every branch is versioned and rollbackable.
 
@@ -817,7 +817,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 - DAG fixes execution order (topological sort with hash-based tiebreak).
 - Memory plan fixes addresses (pool_base + offset, content-addressed).
 - Philox4x32 RNG: counter-based, platform-independent. Zero RNG state anywhere.
-- KernelCache keyed on `(content_hash, row_hash)` (`include/crucible/MerkleDag.h`).
+- KernelCache keyed on `(content_hash, row_hash)` (`include/crucible/KernelCache.h`).
 - Reduction topology (planned): a pinned binary tree sorted by UUID for BITEXACT recipes. No reduction code exists at this time, because no compute backend exists.
 - No hash-table iteration order dependencies. Sort keys before iterating.
 - No pointer-based ordering. Events have `(cycle, kind, sequence_number)`.
@@ -1497,7 +1497,7 @@ Note: `relaxed` is OK for a thread reading its OWN atomic. Only cross-thread rea
 | RegionNode::compiled (planned use) | bg | fg | one release publish (`PublishOnce`), acquire read |
 | Cipher warm writes (planned) | bg | peers | Raft commit (planned) |
 
-Three rows describe planned use. `KernelCache` (`include/crucible/MerkleDag.h`) has the synchronization of its row, but only tests and benches write or read its slots at this time. The one publish of `RegionNode::compiled` is in `add_branch`, which nothing calls, and no code reads the field. The Cipher has no replication and no Raft. A `Cipher` is not thread-safe, and one thread owns it. Only tests call `Vigil::persist`, which writes to the Cipher, and nothing calls `Vigil::load`.
+Three rows describe planned use. `KernelCache` (`include/crucible/KernelCache.h`) has the synchronization of its row, but only tests and benches write or read its slots at this time. The one publish of `RegionNode::compiled` is in `add_branch`, which nothing calls, and no code reads the field. The Cipher has no replication and no Raft. A `Cipher` is not thread-safe, and one thread owns it. Only tests call `Vigil::persist`, which writes to the Cipher, and nothing calls `Vigil::load`.
 
 ### Async event waiting — the latency hierarchy
 

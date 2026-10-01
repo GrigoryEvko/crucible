@@ -1,4 +1,4 @@
-#include <crucible/MerkleDag.h>
+#include <crucible/KernelCache.h>
 
 #include "bench_harness.h"
 

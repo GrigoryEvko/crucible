@@ -3,7 +3,7 @@
 // Each level tags what it returns with the level as its provenance, so a
 // value from one level is a different type from a value from another.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/KernelCache.h>
 #include <fixy/Tagged.h>
 #include "test_assert.h"
 

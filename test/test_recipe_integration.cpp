@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 #include <crucible/Arena.h>
+#include <crucible/KernelCache.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>

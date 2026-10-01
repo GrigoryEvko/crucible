@@ -1,6 +1,6 @@
 #pragma once
 
-#include <crucible/observe/Metrics.h>
+#include <crucible/observe/MetricsSample.h>
 #include <crucible/vis/TraceVisualizer.h>
 
 #include <string>

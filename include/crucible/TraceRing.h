@@ -45,7 +45,6 @@
 #include <crucible/warden/Registry.h>
 
 #include <fixy/Aliases.h>
-#include <fixy/Axis.h>
 #include <fixy/Bands.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>

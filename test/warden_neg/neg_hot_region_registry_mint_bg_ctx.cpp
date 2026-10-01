@@ -6,6 +6,7 @@
 // or withdrew a region would race an apply() in progress.
 
 #include <crucible/warden/Registry.h>
+#include <fixy/Ctx.h>
 
 int main() {
     ::fixy::BgDrainCtx const bg{::foundation::effects::testing::bg()};

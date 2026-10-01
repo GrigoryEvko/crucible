@@ -11,7 +11,6 @@
 // Registration is safe from any thread, and belongs to construction
 // and teardown rather than to a hot path.
 
-#include <fixy/Ctx.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>

@@ -4,8 +4,6 @@
 
 namespace crucible::observe {
 
-static_assert(std::is_trivially_copyable_v<RuntimeMetrics>);
-static_assert(std::is_trivially_destructible_v<RuntimeMetrics>);
 static_assert(::fixy::concurrent::SnapshotValue<RuntimeMetricsSample>);
 
 namespace detail::metrics_self_test {

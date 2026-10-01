@@ -2,6 +2,10 @@
 
 #include <crucible/warden/Registry.h>
 
+#include <fixy/Ctx.h>
+
+#include <type_traits>
+
 namespace crucible::warden {
 
 static_assert(sizeof(HotRegionRegistryHandle) == 1, "HotRegionRegistryHandle must be the 1-byte authorization token; "

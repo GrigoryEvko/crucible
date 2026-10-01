@@ -1,3 +1,5 @@
+#include <crucible/Arena.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/Transaction.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Effect.h>

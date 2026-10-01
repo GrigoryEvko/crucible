@@ -9,7 +9,7 @@
 // proof of type Owner, and only the owning thread can hold one. A second
 // thread that wants a change sends it to the owner as a message.
 
-#include <crucible/MerkleDag.h>
+#include <crucible/Types.h>
 #include <fixy/CyclicBuffer.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
@@ -30,6 +30,10 @@
 #include <type_traits>
 
 namespace crucible {
+
+// A transaction holds its region by pointer only, so this header does not
+// need the definition from MerkleDag.h.
+struct RegionNode;
 
 enum class TxStatus : uint8_t {
     RECORDING,  // the ring is accepting operations for this transaction

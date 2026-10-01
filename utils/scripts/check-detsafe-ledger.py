@@ -87,6 +87,7 @@ ROOTS: tuple[str, ...] = (
     # content_hash and merkle_hash themselves
     "include/crucible/Types.h",
     "include/crucible/MerkleDag.h",
+    "include/crucible/KernelCache.h",
     "include/crucible/DimHash.h",
     "include/crucible/TraceGraph.h",
     # the IR whose shape the hashes read

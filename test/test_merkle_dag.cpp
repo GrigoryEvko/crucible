@@ -1,3 +1,4 @@
+#include <crucible/KernelCache.h>
 #include <crucible/MerkleDag.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <foundation/effects/Effect.h>

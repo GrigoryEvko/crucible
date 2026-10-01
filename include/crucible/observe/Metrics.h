@@ -1,14 +1,12 @@
 #pragma once
 
-// The payload is fixed-size and trivially copyable so a snapshot can be
-// published by value. A growable or span-backed payload would need heap
-// ownership or leave the reader holding a borrow.
+// The channel that publishes the runtime metrics of observe/MetricsSample.h.
 //
 // The channel is a template over the brand of its reader root.  The site
 // that builds a channel mints that root and names its brand in the channel
 // type, so the readers of one channel cannot present a share of another.
 
-#include <fixy/Stale.h>
+#include <crucible/observe/MetricsSample.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/SwmrSession.h>
 #include <foundation/Brand.h>
@@ -16,7 +14,6 @@
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -34,20 +31,6 @@ struct RuntimeMetricsReaderTag {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-struct RuntimeMetrics {
-    double meb_lambda_max = 0.0;
-    double meb_threshold = 0.0;
-    double wasserstein_ratio = 0.0;
-    double bits_per_step_ratio = 0.0;
-    double dmft_tail_fraction = 0.0;
-    double ntk_alpha = 0.0;
-    double ntk_alpha_drift = 0.0;
-    std::uint32_t delta_g_count = 0;
-    std::uint32_t reserved = 0;
-    std::array<double, 16> delta_g{};
-};
-
-using RuntimeMetricsSample = ::fixy::Stale<RuntimeMetrics>;
 using RuntimeMetricsComputation =
     ::foundation::effects::Computation<::foundation::effects::Row<::foundation::effects::Effect::Bg>, RuntimeMetrics>;
 
@@ -59,14 +42,6 @@ template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand
 using RuntimeMetricsWriter = typename RuntimeMetricsChannel<ReaderBrand, WriterBrand>::WriterHandle;
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 using RuntimeMetricsReader = typename RuntimeMetricsChannel<ReaderBrand, WriterBrand>::ReaderHandle;
-
-[[nodiscard]] inline RuntimeMetricsSample fresh_metrics_sample(RuntimeMetrics metrics) noexcept {
-    return RuntimeMetricsSample::fresh(metrics);
-}
-
-[[nodiscard]] inline RuntimeMetricsSample metrics_sample_at(RuntimeMetrics metrics, std::uint64_t staleness) noexcept {
-    return RuntimeMetricsSample::at(metrics, staleness);
-}
 
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 [[nodiscard]] RuntimeMetricsWriter<ReaderBrand, WriterBrand>

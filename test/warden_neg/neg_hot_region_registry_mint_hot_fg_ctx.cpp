@@ -6,6 +6,7 @@
 // reach them would invite a registry walk at hot-path cadence.
 
 #include <crucible/warden/Registry.h>
+#include <fixy/Ctx.h>
 
 int main() {
     ::fixy::HotFgCtx const fg = ::foundation::effects::testing::foreground();
