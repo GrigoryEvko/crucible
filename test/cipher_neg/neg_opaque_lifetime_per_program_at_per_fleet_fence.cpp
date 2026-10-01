@@ -7,9 +7,7 @@
 // version.  PER_FLEET sits above PER_PROGRAM, so the gate refuses the
 // call.
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>

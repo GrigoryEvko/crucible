@@ -6,9 +6,7 @@
 // and be replayed as if it were new.  PER_PROGRAM sits above PER_REQUEST,
 // so the gate refuses the call.
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>

@@ -11,9 +11,7 @@
 // state of one constrained decode, would reach fleet-durable storage and
 // come back as input to another request on the next replay.
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>

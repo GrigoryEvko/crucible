@@ -5,9 +5,7 @@
 // scope the region lives for.  A bare pointer states no scope, so it does
 // not pass even the widest gate.
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Ctx.h>
 

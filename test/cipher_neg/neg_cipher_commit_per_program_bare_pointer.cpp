@@ -4,9 +4,7 @@
 // outlives one request, so the gate demands a band that states a scope of
 // PER_PROGRAM or wider, and a bare pointer states none.
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Ctx.h>
 

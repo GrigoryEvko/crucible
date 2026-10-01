@@ -4,9 +4,7 @@
 // lattice.  A cipher tier band says where persisted bytes live, not how
 // long the region lives, so it is no lifetime band and states no scope.
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
