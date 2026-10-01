@@ -34,8 +34,11 @@
 // Such a class carries the annotation no_start_over_bytes of
 // foundation/ByteSeal.h, and the walk refuses it wherever it sits: alone, in
 // an array, as a base or as a member.  A class that only carries the
-// annotation or holds a byte_seal includes foundation/ByteSeal.h, which
-// does not include <memory>.
+// annotation or holds a byte_seal includes foundation/ByteSeal.h.
+//
+// start_as_array does not call std::start_lifetime_as_array, so this header
+// does not include <memory>.  It gives the same guarantee with a builtin and
+// the barrier of libstdc++.  The comment on start_as_array tells how.
 //
 // utils/scripts/check-start-lifetime.py refuses a direct use of the two library
 // functions outside a reviewed list.  New code uses start_as_array.
@@ -43,9 +46,9 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/reflect/TypeComponents.h>
 
+#include <bit>
 #include <concepts>
 #include <cstddef>
-#include <memory>
 #include <meta>
 #include <span>
 #include <type_traits>
@@ -103,6 +106,24 @@ using element_for_storage_t = std::conditional_t<std::is_const_v<Storage>, const
 // aligned for T.  The element of the span is const when the storage or T
 // is const.  A single object is a span of one.
 //
+// The function gives the guarantee of std::start_lifetime_as_array
+// ([obj.lifetime], P2590R2).  Each object that it starts has an
+// implicit-lifetime type ([basic.types.general]), and the object
+// representation of each object is the bytes that the storage holds before
+// the call.  The function uses the empty asm statement that libstdc++ 16
+// uses for that function (bits/stl_construct.h).  The statement reads and
+// writes the bytes of the region, and it returns the pointer.  GCC then
+// keeps each store to the bytes before the statement.  It keeps each access
+// through the result after the statement.  The type of an earlier object in
+// the bytes then does not apply to the new objects.  The statement writes no
+// byte and emits no instruction.
+//
+// The operand has the type of an array of unknown bound of unsigned char.
+// GCC reads that type as an access of unknown length (the GCC manual,
+// "Extended Asm"), so the operand needs no variable length array.  The
+// bit_cast removes a const of the storage only for the operand, as the
+// const_cast of libstdc++ does.
+//
 // Volatile storage is refused, because libstdc++ cannot build a span of a
 // volatile class type.  A caller that reads through volatile converts
 // data() to a pointer to volatile, which is an implicit conversion.
@@ -110,10 +131,14 @@ template <ImplicitLifetimeThroughout T, typename Storage>
     requires(!std::is_volatile_v<Storage> && !std::is_volatile_v<T>)
 [[nodiscard]] std::span<element_for_storage_t<Storage, T>> start_as_array(Storage* storage,
                                                                           std::size_t count) noexcept {
-    // libstdc++ names the result in an asm output, and a const element
-    // type fails there.  So the start takes T without its qualifiers, and
-    // the span adds the const back.
-    return {std::start_lifetime_as_array<std::remove_cv_t<T>>(storage, count), count};
+    using Element = element_for_storage_t<Storage, T>;
+    using Untyped = std::conditional_t<std::is_const_v<Storage>, const void, void>;
+    Element* first = static_cast<Element*>(static_cast<Untyped*>(storage));
+    if (count != 0) {
+        auto* const region = std::bit_cast<unsigned char (*)[]>(static_cast<Untyped*>(storage));
+        __asm__ __volatile__("" : "+r"(first), "=m"(*region) : "m"(*region));
+    }
+    return {first, count};
 }
 
 namespace detail {

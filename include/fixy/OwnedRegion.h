@@ -45,7 +45,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdlib>
-#include <memory>
 #include <meta>
 #include <span>
 #include <tuple>

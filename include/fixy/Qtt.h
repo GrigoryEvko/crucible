@@ -81,7 +81,6 @@
 
 #include <concepts>
 #include <cstdlib>
-#include <memory>
 #include <meta>
 #include <string_view>
 #include <type_traits>

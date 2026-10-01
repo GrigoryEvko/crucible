@@ -23,8 +23,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
-#include <memory>
-#include <ranges>
 #include <span>
 #include <utility>
 #include <vector>

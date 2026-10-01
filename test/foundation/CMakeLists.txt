@@ -1259,6 +1259,11 @@ foundation_neg_compile_test(neg_lifetime_start_as_proof_array
 foundation_neg_compile_test(neg_lifetime_start_as_capturing_closure
   "no matching function for call to .start_as_array<.*EpochCarrier>"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = <unnamed>::._anon_[0-9]+\\]")
+# A new object over bytes holds the bytes of the last store to them, also
+# when that store has a different type.  The read runs in a function that
+# GCC does not inline, so a Release build of a start with no barrier reads
+# the first store.
+foundation_test(test_lifetime_start)
 
 # A pool that ends while a share is out aborts.  The attack runs in a
 # child process, and the test passes only on that diagnostic.

@@ -2,6 +2,8 @@
 
 #include <fixy/Qtt.h>
 
+#include <memory>
+
 namespace fixy {
 
 // Both builds are pinned, and each pin is written so the other build

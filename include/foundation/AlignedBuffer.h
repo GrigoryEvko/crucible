@@ -32,7 +32,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
+#include <new>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -138,14 +138,16 @@ public:
     }
 
     // Value-initializes each element, so a T with member initializers gets
-    // the values it declares, and every other T reads zero.
+    // the values it declares, and every other T reads zero.  Complexity:
+    // linear in count.
     [[nodiscard]] static AlignedBuffer allocate_value_initialized(size_type count)
         requires std::is_nothrow_default_constructible_v<T>
     {
         if (count == 0) [[unlikely]]
             return AlignedBuffer{};
         T* const first = static_cast<T*>(allocate_storage_(count));
-        std::uninitialized_value_construct_n(first, count);
+        for (size_type index = 0; index < count; ++index)
+            ::new(static_cast<void*>(first + index)) T();
         return AlignedBuffer{first, count};
     }
 

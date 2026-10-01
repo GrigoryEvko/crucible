@@ -12,12 +12,8 @@
 # include/foundation/Lifetime.h and a negative fixture.  The guard refuses
 # an entry for any other path.  New
 # code calls foundation::lifetime::start_as_array, which refuses a proof
-# subobject at compile time, and needs no entry.
-
-# The checked start.  T is a template parameter, and the function requires
-# ImplicitLifetimeThroughout<T>: T and each subobject of T at each depth is
-# an implicit-lifetime type.
-include/foundation/Lifetime.h:start_lifetime_as_array<std::remove_cv_t<T>>
+# subobject at compile time, and needs no entry.  The checked start does not
+# call the library function, so it has no entry.
 
 # Negative-compile fixtures.  Each one applies std::start_lifetime_as to
 # one proof type and must fail to compile, which proves that the proof

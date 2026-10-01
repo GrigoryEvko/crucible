@@ -30,7 +30,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdlib>
-#include <memory>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -304,7 +303,7 @@ public:
         // qualifier by implicit conversion and then narrows through a
         // volatile void pointer, which keeps the qualifier all the way
         // down without reinterpreting or casting away a qualifier.
-        volatile T* vp = std::addressof(impl_.peek_mut(key_{}));
+        volatile T* vp = __builtin_addressof(impl_.peek_mut(key_{}));
         volatile auto* p = static_cast<volatile unsigned char*>(static_cast<volatile void*>(vp));
         for (std::size_t i = 0; i < sizeof(T); ++i)
             p[i] = 0;
