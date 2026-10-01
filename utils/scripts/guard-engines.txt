@@ -88,7 +88,7 @@ utils/scripts/repo_root.py | none |
 utils/scripts/repo_root.sh | none |
 utils/scripts/report-check-warnings.py | text | the warnings files of the checks
 utils/scripts/session-oracle.sh | git,text | the switch list that opam prints
-utils/scripts/test-launcher.py | text | the budget table, the build kind, the ledger rows of test-time and test-memory, and the records and warnings files that it writes
+utils/scripts/test-launcher.py | text | the budget table, the build kind, the ledger rows of test-time and test-memory, the variable CRUCIBLE_TEST_CORES, and the records and warnings files that it writes
 utils/scripts/throwaway_repo.py | git |
 utils/scripts/tsast.py | kit |
 utils/scripts/tu-sample.py | compiler,json,text | the compile database, the file of --compare, and the diagnostics of a failed compile

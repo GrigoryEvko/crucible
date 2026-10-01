@@ -19,6 +19,27 @@ WHAT THE SCRIPT DOES
     ended: with its status, or on its signal.  A failure to measure, to read
     the budget or to write the record never changes the status.
 
+CORE DUMPS
+    A death test forks a child that aborts, and the parent waits for the
+    child.  The kernel writes the core dump of the child before the wait
+    ends.  On the build host, kernel.core_pattern sends each core dump to
+    systemd-coredump, and the kernel then ignores a core limit of 0.  One
+    dump costs approximately 0.2 s of wall time in the test and 0.25 s of
+    CPU time in the handler, and it leaves a core in the store of the
+    handler.  At a soft core limit of exactly 1 byte, the kernel writes no
+    core dump, to a handler or to a file, and a debugger can still attach.
+    The sanitizer runtimes set the same limit.
+      * Before the script starts the test, it sets its own soft RLIMIT_CORE
+        to 1 byte, so the test and each child of the test get that limit.
+        The hard limit does not change.  At a hard limit of 0, the limit
+        stays 0, and a handler still gets each core.
+      * CRUCIBLE_TEST_CORES=keep keeps the core limit of the environment, for
+        a developer who wants the core of a crash.  For each other value of
+        the variable, the script stops the core dumps and prints a note.
+      * The script ends on the signal of the test with a soft limit of 1
+        byte also when the test keeps its cores.  The core of the script
+        itself has no use.
+
 THE BUDGET ROWS
     test-time is the wall time of the test, and test-memory is the peak
     resident memory of its largest process (utils/scripts/budgets.txt).
@@ -49,6 +70,7 @@ THE BUDGET ROWS
 
 The variables CRUCIBLE_TEST_BUDGETS and CRUCIBLE_TEST_LEDGERS name another
 budget table and another directory of ledgers, for the self-test.
+CRUCIBLE_TEST_CORES is the variable of CORE DUMPS above.
 
     test-launcher.py --self-test
 """
@@ -61,8 +83,44 @@ import cost_meter
 ROWS = ("test-time", "test-memory")
 BUDGETS_ENV = "CRUCIBLE_TEST_BUDGETS"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
+CORES_ENV = "CRUCIBLE_TEST_CORES"
+CORES_KEEP = "keep"
+# The kernel writes no core dump at this soft limit, also when
+# kernel.core_pattern names a handler (fs/coredump.c).
+NO_CORE_LIMIT_BYTES = 1
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 RECORD_SUFFIX = ".test" + cost_meter.RECORD_SUFFIX
+
+
+def stop_core_dumps() -> None:
+    """Set the soft core limit of this process, and of each process that it starts after the call, to 1 byte.
+
+    The hard limit does not change.  A hard limit of 0 is lower than 1 byte,
+    so the call then changes nothing.  A failure of the call changes nothing
+    either, because a core dump costs time and does not change a result.
+    """
+    import resource
+
+    try:
+        _, hard = resource.getrlimit(resource.RLIMIT_CORE)
+        if hard == resource.RLIM_INFINITY or hard >= NO_CORE_LIMIT_BYTES:
+            resource.setrlimit(resource.RLIMIT_CORE, (NO_CORE_LIMIT_BYTES, hard))
+    except (OSError, ValueError):
+        pass
+
+
+def keeps_cores() -> bool:
+    """Tell whether the environment keeps the core dumps of the test, and print a note for a value that is not known.
+
+    Returns:
+        True when CRUCIBLE_TEST_CORES is "keep"
+    """
+    value = os.environ.get(CORES_ENV)
+    if value is None or value == CORES_KEEP:
+        return value == CORES_KEEP
+    print(f"test-launcher: {CORES_ENV} is {value!r}, and only {CORES_KEEP!r} keeps the core dumps of the test",
+          file=sys.stderr)
+    return False
 
 
 def ledger_row(row: str, name: str, kind: str | None) -> tuple[str, str] | None:
@@ -201,6 +259,8 @@ def main(arguments: list[str]) -> None:
         budget = cost_meter.budget_rows(os.environ.get(BUDGETS_ENV) or os.path.join(SCRIPTS, "budgets.txt"), ROWS)
     except (OSError, ValueError):
         budget = {}
+    if not keeps_cores():
+        stop_core_dumps()
     try:
         run = cost_meter.measure(arguments)
     except OSError as error:
@@ -221,6 +281,7 @@ def main(arguments: list[str]) -> None:
         write(command + RECORD_SUFFIX, name, command, run, result)
     except BaseException:  # noqa: BLE001
         pass
+    stop_core_dumps()
     cost_meter.end_like(status)
 
 
@@ -234,6 +295,8 @@ def self_test() -> int:
         0 when every case holds, 2 otherwise
     """
     import json
+    import resource
+    import signal
     import subprocess
     import tempfile
     from pathlib import Path
@@ -269,15 +332,30 @@ def self_test() -> int:
         def ledger(row: str, text: str) -> None:
             (ledgers / f"{row}-ledger.txt").write_text("# kind | test | value | reason\n" + text)
 
-        def launch(target: Path, *args: str, **extra: str) -> tuple[int, str]:
-            # A case that needs a CI runner sets GITHUB_ACTIONS itself, so
-            # each verdict is the same on a CI runner and on the build host.
+        def environment_of(extra: dict[str, str]) -> dict[str, str]:
+            # A case that needs a CI runner or kept cores sets the variable
+            # itself, so each verdict is the same in each environment.
             environment = dict(os.environ, **{BUDGETS_ENV: str(table), LEDGERS_ENV: str(ledgers)})
             environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
+            environment.pop(CORES_ENV, None)
             environment.update(extra)
+            return environment
+
+        def launch(target: Path, *args: str, **extra: str) -> tuple[int, str]:
             proc = subprocess.run([sys.executable, "-S", __file__, "--warnings-dir", str(warnings), str(target),
-                                   *args], env=environment, capture_output=True, text=True, check=False)
+                                   *args], env=environment_of(extra), capture_output=True, text=True, check=False)
             return proc.returncode, proc.stderr
+
+        def launch_for_wait_status(target: Path, **extra: str) -> int:
+            # The wait status itself, because a return code hides the core dump bit.
+            log = root / "wait-status.log"
+            child = os.posix_spawn(sys.executable, [sys.executable, "-S", __file__, "--warnings-dir", str(warnings),
+                                                    str(target)], environment_of(extra),
+                                   file_actions=[(os.POSIX_SPAWN_OPEN, 1, str(log),
+                                                  os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
+                                                 (os.POSIX_SPAWN_DUP2, 1, 2)])
+            _, wait_status = os.waitpid(child, 0)
+            return wait_status
 
         ledger("test-time", "")
         ledger("test-memory", "")
@@ -345,6 +423,51 @@ def self_test() -> int:
                status == 1 and "Remove its row" in said)
         status, said = launch(root / "no-such-test")
         expect("a test that cannot start gives status 127", status == 127 and "cannot start" in said)
+
+        # CORE DUMPS.  This process lowers its own soft core limit to 0, so the
+        # limit that a test sees tells the launcher apart from the
+        # environment.  A core dump that the launcher does not stop reaches
+        # the handler of kernel.core_pattern, which ignores a limit of 0.  At
+        # a hard limit of 0, no process can set 1 byte, and the cases then
+        # check only the limit that the environment gives.
+        _, hard_core = resource.getrlimit(resource.RLIMIT_CORE)
+        resource.setrlimit(resource.RLIMIT_CORE, (0, hard_core))
+        can_stop = hard_core == resource.RLIM_INFINITY or hard_core >= NO_CORE_LIMIT_BYTES
+        stopped = NO_CORE_LIMIT_BYTES if can_stop else 0
+        shebang = f"#!{sys.executable} -S\n"
+        limit_probe = build / "test" / "test_core_limit"
+        limit_probe.write_text(shebang + "import resource, sys\nsoft, hard = resource.getrlimit(resource.RLIMIT_CORE)\n"
+                               "print(f'core-limit {soft} {hard}', file=sys.stderr)\n")
+        child_probe = build / "test" / "test_core_child"
+        child_probe.write_text(shebang + "import os, sys\nchild = os.fork()\nif child == 0:\n    os.abort()\n"
+                               "_, status = os.waitpid(child, 0)\n"
+                               "signal = os.WTERMSIG(status) if os.WIFSIGNALED(status) else 0\n"
+                               "print(f'child-core {int(os.WCOREDUMP(status))} signal {signal}', file=sys.stderr)\n")
+        # This planted test stops its own core dump, so only the launcher can write one.
+        aborter = build / "test" / "test_core_abort"
+        aborter.write_text(shebang + "import os, resource\n_, hard = resource.getrlimit(resource.RLIMIT_CORE)\n"
+                           "if hard == resource.RLIM_INFINITY or hard >= 1:\n"
+                           "    resource.setrlimit(resource.RLIMIT_CORE, (1, hard))\nos.abort()\n")
+        for planted in (limit_probe, child_probe, aborter):
+            planted.chmod(0o755)
+        status, said = launch(limit_probe)
+        expect("a test gets a soft core limit of 1 byte, and the hard core limit of the environment",
+               status == 0 and f"core-limit {stopped} {hard_core}\n" in said and "test-launcher:" not in said)
+        status, said = launch(limit_probe, **{CORES_ENV: CORES_KEEP})
+        expect(f"with {CORES_ENV}={CORES_KEEP}, a test keeps the core limit of the environment",
+               status == 0 and f"core-limit 0 {hard_core}\n" in said and "test-launcher:" not in said)
+        status, said = launch(limit_probe, **{CORES_ENV: "yes"})
+        expect(f"another value of {CORES_ENV} stops the core dumps, with a note",
+               status == 0 and f"core-limit {stopped} {hard_core}\n" in said and f"only {CORES_KEEP!r} keeps" in said)
+        status, said = launch(child_probe)
+        expect("a child of a test that aborts writes no core dump",
+               status == 0 and f" signal {signal.SIGABRT.value}\n" in said
+               and (not can_stop or "child-core 0 " in said))
+        for keep_label, extra in (("", {}), (f", also with {CORES_ENV}={CORES_KEEP}", {CORES_ENV: CORES_KEEP})):
+            wait_status = launch_for_wait_status(aborter, **extra)
+            expect(f"a test that aborts ends the launcher on SIGABRT, and the launcher writes no core dump{keep_label}",
+                   os.WIFSIGNALED(wait_status) and os.WTERMSIG(wait_status) == signal.SIGABRT
+                   and (not can_stop or not os.WCOREDUMP(wait_status)))
     if failures:
         print(f"test-launcher --self-test: FAILED, {len(failures)} case(s) did not hold")
         return 2

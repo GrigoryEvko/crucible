@@ -4,11 +4,14 @@
 # an executable target.  It runs the test, writes its wall time, CPU time and
 # peak memory to EXECUTABLE.test.cost, holds the budget rows test-time and
 # test-memory of utils/scripts/budgets.txt, and exits with the status of the
-# test (the docstring of the launcher gives the rules).  CMake gives the
-# launcher only to a test whose command names an executable target, so a
-# guard, a negative fixture and another script test run with no launcher, and
-# utils/scripts/check-test-time.py reads their wall time from the JUnit
-# report of the run.
+# test (the docstring of the launcher gives the rules).  It gives each test a
+# soft core limit of 1 byte, so a child that aborts writes no core dump,
+# unless CRUCIBLE_TEST_CORES=keep keeps the cores (CORE DUMPS in that
+# docstring).  CMake gives the launcher only to a test whose command names an
+# executable target, so a guard, a negative fixture and another script test
+# run with no launcher, and utils/scripts/check-test-time.py reads their wall
+# time from the JUnit report of the run.  A script test gets no core limit, so
+# a script test must not start a child that aborts.
 #
 # A target reads CMAKE_TEST_LAUNCHER when it is created, so this file comes
 # before the first target, after cmake/BuildLauncher.cmake, which finds

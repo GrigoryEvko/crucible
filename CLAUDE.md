@@ -2202,7 +2202,8 @@ TEST(Axiom_TypeSafe, OpIndexSlotIdNotInterchangeable) {
 3. **Isolated.** Each test builds its own arena / rings / ops. No shared state between tests.
 4. **Fast.** < 100 ms per test (except stress/replay). ~100 tests × 100 ms = 10 s CI — keeps iteration tight.
 5. **No retries.** A flaking test = race condition or bug. Fix it. Never `--repeat until-pass`.
-6. **Every contract has a test that violates it.** Use `EXPECT_DEATH(fn(bad_args), ".*contract.*")` to prove contracts fire.
+6. **Every contract has a test that violates it.** The tree has no `EXPECT_DEATH`. Do the violation in a child process (`fork`), and make sure that `waitpid` shows that the child ended on `SIGABRT`.
+7. **A death test writes no core dump.** On the build host, `kernel.core_pattern` sends each core dump to systemd-coredump, and the kernel then ignores a core limit of 0. Each dump costs approximately 0.2 s in the test and leaves a core that only root can remove. `utils/scripts/test-launcher.py` gives each executable test a soft core limit of 1 byte, and each child of the test gets it. At that limit, the kernel writes no core dump, and a debugger can still attach. To get the core of a crash, set `CRUCIBLE_TEST_CORES=keep`, and the test keeps the core limit of your environment. A script test gets no launcher, so it must not start a child that aborts.
 
 ### Sanitizer preset matrix
 

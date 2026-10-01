@@ -874,27 +874,23 @@ static_assert(ledger_matches_the_campaign(),
               "attack");
 
 // A child that ends on a signal writes a core dump, and the parent waits until
-// the kernel completes it.  When kernel.core_pattern names a handler, as
-// systemd-coredump on the build host, the kernel ignores a core limit of 0 and
-// gives the full core to the handler.  That takes approximately 0.15 s for each
-// child in a build with no sanitizer.  A soft limit of 1 byte stops the dump
-// for a handler and for a file, as the sanitizer runtimes do, and a debugger
-// can still attach.  A hard limit of 0 refuses the call, and the dump then
-// stays as slow as before.
-void stop_core_dump() noexcept {
-    ::rlimit core_limit{};
-    if (::getrlimit(RLIMIT_CORE, &core_limit) != 0) return;
-    core_limit.rlim_cur = 1;
-    static_cast<void>(::setrlimit(RLIMIT_CORE, &core_limit));
-}
-
-// The parent refuses a core dump that stop_core_dump() could stop, so the
-// slow path cannot come back in silence.
+// the kernel completes it.  The test launcher (utils/scripts/test-launcher.py)
+// gives the test a soft core limit of 1 byte, and each child gets that limit,
+// so no child writes a core dump under ctest.  The parent refuses a core dump
+// that the limit could stop, because each dump costs approximately 0.2 s and
+// the slow path must not come back in silence.  A run with
+// CRUCIBLE_TEST_CORES=keep asks for the cores, and a hard limit of 0 cannot
+// become 1 byte, so the parent accepts a core dump in those two runs.
 void refuse_core_dump(int status) noexcept {
+    if (WIFSIGNALED(status) == 0 || WCOREDUMP(status) == 0) return;
     ::rlimit core_limit{};
     const bool can_stop = ::getrlimit(RLIMIT_CORE, &core_limit) == 0 && core_limit.rlim_max >= 1;
-    if (can_stop && WIFSIGNALED(status) != 0 && WCOREDUMP(status) != 0) {
-        std::fprintf(stderr, "an attack child wrote a core dump, and stop_core_dump() did not stop it\n");
+    const char* const cores = std::getenv("CRUCIBLE_TEST_CORES");
+    const bool keeps_cores = cores != nullptr && std::string_view{cores} == "keep";
+    if (can_stop && !keeps_cores) {
+        std::fprintf(stderr,
+                     "an attack child wrote a core dump.  Run the test through ctest, whose launcher sets a soft core "
+                     "limit of 1 byte, or set CRUCIBLE_TEST_CORES=keep to keep the cores\n");
         std::_Exit(2);
     }
 }
@@ -909,7 +905,6 @@ void refuse_core_dump(int status) noexcept {
         std::_Exit(2);
     }
     if (pid == 0) {
-        stop_core_dump();
         attack();
     }
     int status = 0;
@@ -989,7 +984,6 @@ struct captured_end {
         ::close(channel[0]);
         ::dup2(channel[1], STDERR_FILENO);
         ::close(channel[1]);
-        stop_core_dump();
         attack();
     }
     ::close(channel[1]);
