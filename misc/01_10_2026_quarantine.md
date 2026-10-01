@@ -356,6 +356,14 @@ The first part of 0i started early, on 2026-10-01, for the crucible test files w
 3. When one header alone costs more than half of the 20 s, the split cannot help. Report that header to the matching 0h unit, with its `-ftime-report` table.
 4. **Witnesses.** The ctest list is the same before and after. A clean build at `-j192` (or the highest job count that the memory check allows) shows no translation unit above 20 s.
 
+### 7.8c Unit 0j: the fixture and test tail (after units 0c)
+
+**Goal.** Each negative fixture compiles cold in at most 10 s, and each test runs in at most 10 s (owner, 2026-10-01: tests and fixtures must be fast, with a short right tail).
+
+1. Run every fixture cold (`CRUCIBLE_NEG_CACHE=0`) and every test, and list each one above 10 s. At the baseline, the slowest fixtures took 18 s to 29 s (`neg_row_hash_census_undisposed_carrier` 29 s, the vigil and rule fixtures 18 s to 22 s), mostly for the headers that they include.
+2. For each one: include only the header that the fixture attacks, make the tables it does not read lazy (with the 0h units), or split a test into several tests over disjoint cases.
+3. `test/neg_compile_driver.py` reads the include directives of each header as text to record the names that a lookup tried. That breaks the rule that no check reads C++ as text. Replace the scan with the compiler's own list (`-E -dI`, about 0.25 s, and only on a miss). The same pass gives a key for the three fixtures that stop with a fatal error and get no dependency file (`neg_platform_unsupported_architecture`, `neg_platform_apple_aarch64`, `neg_layer_foundation_includes_fixy`), so they can use the store too.
+
 ### 7.9 Stage 0 order and parallelism
 
 | Wave | Units | Needs first |
@@ -364,7 +372,7 @@ The first part of 0i started early, on 2026-10-01, for the crucible test files w
 | S0.1 | 0a lands | every running unit merges main and rebuilds |
 | S0.2 | 0b lands | the check-file convention is on main |
 | 0-II | 0c-F, 0c-W, 0c-S, 0c-C. Then 0c-R | S0.2. 0c-R also needs 0e |
-| 0-III | 0h-foundation, 0h-fixy, 0h-crucible, 0i | every 0c unit |
+| 0-III | 0h-foundation, 0h-fixy, 0h-crucible, 0i, 0j | every 0c unit |
 
 | Unit | Files it owns |
 |---|---|
@@ -383,7 +391,7 @@ Shared files (`CMakeLists.txt`, `test/*/CMakeLists.txt`, CLAUDE.md, the ledger) 
 ### 7.10 The S0 gate
 
 All numbers come from `build-gauge.sh` on the same host as the baseline:
-- The tail: no translation unit, no fixture and no test takes more than 20 s at `-j1` in Debug.
+- The tail: no translation unit takes more than 20 s at `-j1` in Debug. No fixture (cold) and no test takes more than 10 s.
 - The clean Debug build of `all` takes at most 60 s wall at `-j192` (or at the highest job count that the memory check allows, with the job count stated).
 - `ctest` of the full Debug suite takes at most 60 s wall at `-j192` with a cold fixture store. A second run on an unchanged tree compiles no fixture.
 - The total CPU is not a target (owner, 2026-10-01). Only the longest single job counts.
