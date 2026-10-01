@@ -24,8 +24,8 @@
 # and more names are joined by `and`.  Write what the line actually does, not
 # what the surrounding subsystem does.
 
-include/crucible/Cipher.h:::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);  — effects::IO via Cipher::atomic_write_at_ (unlinkat removes the partial tmp file after a failed write, fdatasync or renameat; three sites, one key; the CtxFitsCipherPersistence gate of the open view holds the capability)
-include/crucible/Cipher.h:rrc = ::renameat(parent_dirfd, tmp_relpath.c_str(), parent_dirfd, relpath.c_str());  — effects::IO via Cipher::atomic_write_at_ (renameat swaps the flushed tmp file over the target, both names anchored at one dirfd, under the CtxFitsCipherPersistence gate of the open view)
+src/Cipher.cpp:::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);  — effects::IO via atomic_write_at_ (unlinkat removes the partial tmp file after a failed write, fdatasync or renameat; three sites, one key; the CtxFitsCipherPersistence gate of the open view holds the capability)
+src/Cipher.cpp:rrc = ::renameat(parent_dirfd, tmp_relpath.c_str(), parent_dirfd, relpath.c_str());  — effects::IO via atomic_write_at_ (renameat swaps the flushed tmp file over the target, both names anchored at one dirfd, under the CtxFitsCipherPersistence gate of the open view)
 include/foundation/Platform.h:int fd = ::open("/proc/self/status", O_RDONLY | O_CLOEXEC);  — effects::Init via foundation::detail::is_debugger_present (open /proc/self/status to read TracerPid on an assertion failure)
 include/foundation/Platform.h:ssize_t n = ::read(fd, buf, sizeof(buf) - 1);  — effects::Init via foundation::detail::is_debugger_present (read /proc/self/status)
 include/foundation/Platform.h:::close(fd);  — effects::Init via foundation::detail::is_debugger_present (close /proc/self/status)

@@ -8,7 +8,9 @@
 // surface and the fence behaviour, and the assertions below say so
 // wherever the returned hash is read.
 
+#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
+#include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
 #include "test_assert.h"

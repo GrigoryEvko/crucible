@@ -810,6 +810,25 @@ endif()
 set_target_properties(crucible_vigil PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(crucible PUBLIC crucible_vigil)
 
+# ── The Cipher store: src/Cipher.cpp ──
+#
+# The members of crucible/Cipher.h that read or write files, and the members
+# that encode a region or a session-event batch.  A translation unit that
+# includes Cipher.h then parses no stream, no region serializer and no
+# federation protocol.
+#
+# The store is a library of its own for the reason that the Vigil runtime
+# above gives: its streams and std::filesystem reference __cxa_throw, and
+# utils/scripts/check-no-throw-no-rtti.sh refuses that in libcrucible.a.  The
+# Vigil runtime opens the store, so it links this library.
+add_library(crucible_cipher STATIC src/Cipher.cpp)
+target_include_directories(crucible_cipher PUBLIC include/)
+target_compile_definitions(crucible_cipher PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+target_link_libraries(crucible_cipher PUBLIC foundation)
+set_target_properties(crucible_cipher PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(crucible_vigil PUBLIC crucible_cipher)
+target_link_libraries(crucible PUBLIC crucible_cipher)
+
 # `libstdc++exp.a` holds the parts of libstdc++ 16 that libstdc++.so does
 # not have: the contract runtime, and parts of <print>, <debugging>,
 # <stacktrace> and <text_encoding>.  Each consumer of the dialect links it,

@@ -16,7 +16,10 @@
 #include "../harness.h"
 #include "region.h"
 
+#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
+#include <crucible/MerkleDag.h>
+#include <crucible/cipher/FederationProtocol.h>
 #include <fixy/Ctx.h>
 #include <fixy/session/EventLog.h>
 

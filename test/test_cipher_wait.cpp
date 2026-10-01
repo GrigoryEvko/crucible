@@ -3,7 +3,9 @@
 // return type, so a hot-path consumer that will only accept a spin-class
 // wait refuses the value at compile time instead of stalling on it.
 
+#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
+#include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
 #include "test_assert.h"

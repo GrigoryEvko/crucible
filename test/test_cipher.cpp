@@ -1,4 +1,6 @@
+#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
+#include <crucible/MerkleDag.h>
 
 #include <memory>
 #include <fixy/Ctx.h>

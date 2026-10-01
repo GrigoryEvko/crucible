@@ -16,6 +16,7 @@
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/MetaLog.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
 #include "test_assert.h"
