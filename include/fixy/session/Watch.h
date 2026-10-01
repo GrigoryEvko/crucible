@@ -250,12 +250,11 @@ CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint64_t tls_owner_toke
 
 // The holder stamp of this thread: its one-based slot index, with the
 // low bits of the slot generation above it.  Zero until the thread
-// claims a slot, and for a thread that found no free slot.
+// claims a slot, and for a thread that found no free slot.  The check
+// file of this header checks that the one-based slot index fits the low
+// bits.
 inline constexpr unsigned stamp_index_bits = 11;
 CRUCIBLE_PROCESS_WIDE inline constinit thread_local std::uint16_t tls_holder_stamp = 0;
-
-static_assert(thread_capacity < (1u << stamp_index_bits),
-              "the one-based slot index must fit the low bits of a holder stamp");
 
 // The records that this thread took as holder, each a one-based index
 // packed with its generation.  An entry is only a candidate: the order

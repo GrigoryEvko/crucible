@@ -51,24 +51,6 @@ include/fixy/Stale.h | 1 | 3
 include/fixy/Tagged.h | 2 | 19
 include/fixy/Throws.h | 1 | 0
 include/fixy/Witnessed.h | 1 | 0
-include/fixy/handle/LazyEstablishedChannel.h | 1 | 0
-include/fixy/handle/Once.h | 0 | 2
-include/fixy/handle/OneShotFlag.h | 0 | 2
-include/fixy/handle/PublishCommit.h | 0 | 4
-include/fixy/handle/PublishOnce.h | 0 | 15
-include/fixy/session/Checkpoint.h | 0 | 2
-include/fixy/session/ContentAddressed.h | 1 | 0
-include/fixy/session/Crash.h | 1 | 5
-include/fixy/session/Delegate.h | 0 | 5
-include/fixy/session/EventLog.h | 0 | 5
-include/fixy/session/Handle.h | 0 | 2
-include/fixy/session/Network.h | 0 | 1
-include/fixy/session/NetworkModel.h | 0 | 5
-include/fixy/session/Protocol.h | 0 | 3
-include/fixy/session/Stepping.h | 0 | 8
-include/fixy/session/Subtype.h | 0 | 1
-include/fixy/session/VigilMode.h | 0 | 4
-include/fixy/session/Watch.h | 0 | 1
 include/foundation/AlignedBuffer.h | 1 | 0
 include/foundation/Brand.h | 1 | 0
 include/foundation/ChannelBinding.h | 0 | 12
@@ -113,3 +95,6 @@ keep | include/fixy/os/Mmap.h | static_assert | ::fixy::atom_pack::every_tag_in_
 keep | include/fixy/os/Mmap.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::share,[](std::meta::info share_tag)consteval{return::fixy::atom_pack::has_row(share_table,share_tag);}>() | the walk evaluates the has_row lookup of share_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Mmap.h | static_assert | PrimaryShare<share::Private> | the check evaluates the names_tag lookup of primary_share_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Socket.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::net::socket_kind,[](std::meta::info kind_tag)consteval{return::fixy::atom_pack::has_row(socket_table,kind_tag);}>() | the walk evaluates the has_row lookup of socket_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/session/Protocol.h | static_assert | ::foundation::algebra::transition::read_seal(detail::protocol_registry,^^::foundation::algebra::transition::combinator).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the registrations that the includer wrote before the end of the header, so a combinator that an includer registers before the header changes the result (test/fixy/neg/neg_sess_combinator_registered_twice.cpp)
+keep | include/fixy/session/Protocol.h | static_assert | ::foundation::algebra::transition::read_seal(detail::protocol_registry,^^::foundation::algebra::transition::payload_rule).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the payload rules that the includer wrote before the end of the header, so a rule that an includer writes before the header changes the result (test/fixy/neg/neg_sess_payload_rule_before_seal.cpp)
+keep | include/fixy/session/Subtype.h | static_assert | ::foundation::algebra::transition::read_seal(^^::fixy::session::payload_axioms,^^::foundation::algebra::transition::subsort_axiom).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the axioms that the includer wrote before the end of the header, so an axiom that an includer writes before the header changes the result

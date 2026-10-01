@@ -87,9 +87,6 @@ public:
     }
 };
 
-static_assert(sizeof(SetOnce<int>) == sizeof(int*));
-static_assert(sizeof(SetOnce<void>) == sizeof(void*));
-
 // std::call_once is rejected here.  The library implementation reaches
 // pthread_once, which parks a losing thread in the kernel.  The losers
 // below spin instead, because the winner runs a startup registration

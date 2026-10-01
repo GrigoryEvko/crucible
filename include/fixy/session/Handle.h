@@ -708,10 +708,6 @@ public:
     constexpr ~SessionOpenKey() noexcept {}
 };
 
-static_assert(detail::is_sealed_passkey<HandleKey>() && detail::is_sealed_passkey<SessionOpenKey>(),
-              "a passkey is final, has a private user-provided constructor, no copy, no move and a user-provided "
-              "destructor, so no route but its one friend makes it");
-
 namespace detail {
 
 // Sends the cancellation through the Resource.  The call is unqualified,
@@ -957,10 +953,8 @@ concept keyed_step_has_value_v = !std::is_void_v<keyed_value_t<typename Step::me
 // ── Wire words ───────────────────────────────────────────────────────
 //
 // The Transport carries a word as std::size_t, which holds the 64 bits
-// of a label word on each target this tree supports.
-
-static_assert(sizeof(std::size_t) == sizeof(std::uint64_t),
-              "a label word has 64 bits, and the Transport carries it as std::size_t");
+// of a label word on each target this tree supports.  The check file of
+// this header pins the width.
 
 // True when each label branch of the Select or the Offer names a label
 // key, so its wire words are label words.  It is a concept, so no program

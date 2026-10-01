@@ -535,7 +535,3 @@ struct foundation::contracts::armed_cell<::fixy::session::is_implementable_on> {
         ::fixy::session::Implementability<::fixy::session::detail::network::witness::OneMessage,
                                           ::fixy::session::Network::Local>>;
 };
-
-static_assert(::fixy::session::network_refusal_v<::fixy::session::detail::network::witness::OneMessage,
-                                                 ::fixy::session::Network::Local>
-              == ::fixy::session::NetworkRefusal::PeerOnLocal);

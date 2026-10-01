@@ -104,8 +104,6 @@ using ModeTransition = typename detail::mode_transition<From, To>::type;
 using ModeProtocol =
     Loop<Select<Send<ModeRecordingToCompiled, Continue>, Send<ModeCompiledToRecording, Continue>, End>>;
 
-static_assert(is_well_formed_v<ModeProtocol>);
-
 class ModeCell : public ::foundation::Pinned<ModeCell> {
     std::atomic<Mode> value_{Mode::RECORDING};
 
@@ -152,21 +150,16 @@ private:
     }
 };
 
-static_assert(sizeof(ModeCell) == sizeof(std::atomic<Mode>));
-static_assert(AtomicMachineCell<ModeCell>);
-
-using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, ModeCell&, DefaultAbandonmentPolicy>;
-
 // The handle borrows the cell mutably.  The transport that a Send branch
 // needs is publish_from_session of the cell, and it is not const, so a
 // handle over a const cell could walk only the End branch.  The Resource
 // is a reference to the Pinned cell, not a pointer, so no copy of it
 // reaches the cell.  One factory drives each branch of the protocol it
-// names.
+// names.  The check file of this header checks the Resource type.
 //
 // Observing the mode does not need a handle and stays const: that is
 // atomic_machine_state(cell), which takes a const reference.
-static_assert(std::is_same_v<typename ModeSessionHandle::resource_type, ModeCell&>);
+using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, ModeCell&, DefaultAbandonmentPolicy>;
 
 // The factory is a constrained template rather than a plain function
 // taking the cell directly.  The concept pins the parameter to exactly

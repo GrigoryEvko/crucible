@@ -1167,23 +1167,8 @@ static_assert(::foundation::algebra::transition::read_seal(detail::protocol_regi
               "combinator registration that its seal does not count.  Every combinator of the session layer is "
               "registered in fixy/session/Protocol.h.");
 
-namespace detail {
-
-// True when every registration of the registry is coherent.  It reads no
-// shape while the seal is broken, so a registration outside the seal
-// gives the one diagnostic above.  The registry is a parameter, so the
-// compiler cannot fold the read before the test of the seal.
-[[nodiscard]] consteval bool registry_is_coherent(std::meta::info registry) {
-    namespace tr = ::foundation::algebra::transition;
-    if (tr::read_seal(registry, ^^tr::combinator).fault != tr::seal_fault::none) return true;
-    return tr::check_registry(registry).reason == tr::incoherence::none;
-}
-
-}  // namespace detail
-
-static_assert(detail::registry_is_coherent(detail::protocol_registry),
-              "fixy::session::diagnostic [Protocol_Incoherent_Registration]: a registration in "
-              "fixy::session::combinators is incoherent.");
+// The check file of this header checks that each registration of the
+// sealed registry is coherent.
 
 // The seal counts every payload rule of the registry.  A rule that stands
 // before this header, in a namespace that a different header opened
