@@ -51,15 +51,20 @@
 # Modes:
 #
 #   --check        Emit the tests from golden.csv in memory and compare
-#                  them with the committed tests.  This mode needs no
-#                  oracle and no compiler.  CI runs it.
+#                  them with the committed tests.  A generated file that
+#                  golden.csv does not emit is drift too.  This mode
+#                  needs no oracle and no compiler.  CI runs it.
 #   --self-test    Compile the emitted tests, which must pass.  Then
 #                  compile a copy with one wrong row planted in each
 #                  test, which must fail and name the planted case.
 #                  Then make sure that the drift check sees a one-line
-#                  change.  Give the compiler as the second argument.
-#   --emit         Write the emitted tests from golden.csv.  Use it after
-#                  a note in golden.csv changes.
+#                  change and a stale generated file.  The compiles run
+#                  in parallel, at most 64 at one time, and the peak of
+#                  memory is about 40 GB.  Give the compiler as the
+#                  second argument.
+#   --emit         Write the emitted tests from golden.csv, and remove
+#                  each generated file that golden.csv does not emit.
+#                  Use it after a note in golden.csv changes.
 #   --regenerate   Run the oracles and the probes, shrink every divergence,
 #                  and write golden.csv and the emitted tests.  Give the
 #                  compiler as the second argument.  CI does not run it.

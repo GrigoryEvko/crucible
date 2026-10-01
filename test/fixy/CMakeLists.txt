@@ -2940,9 +2940,18 @@ fixy_test(test_session_crash_attack)
 # asynchronous context semantics against the paper's non-live contexts,
 # the accepted types, the contexts each refusal prevents, generated
 # global types and a grid of merges, and it pins the one attack that
-# succeeds on purpose.
+# succeeds on purpose.  Its attacks are in several source files, by
+# group, so that no translation unit compiles all of them.
 fixy_test(test_session_global_types)
-fixy_test(test_session_global_attack)
+fixy_test(test_session_global_attack test_session_global_attack.cpp test_session_global_attack_hand.cpp
+  test_session_global_attack_generated.cpp test_session_global_attack_four_roles.cpp
+  test_session_global_attack_two_roles_0.cpp test_session_global_attack_two_roles_1.cpp
+  test_session_global_attack_two_roles_2.cpp test_session_global_attack_two_roles_3.cpp
+  test_session_global_attack_two_roles_4.cpp test_session_global_attack_two_roles_5.cpp
+  test_session_global_attack_two_roles_6.cpp test_session_global_attack_grid_0.cpp
+  test_session_global_attack_grid_1.cpp test_session_global_attack_grid_2.cpp
+  test_session_global_attack_grid_3.cpp test_session_global_attack_grid_4.cpp
+  test_session_global_attack_grid_5.cpp test_session_global_attack_grid_6.cpp)
 
 # ── Transition systems and operational correspondence ─────────────────
 #

@@ -2,6 +2,7 @@
 // Do not edit.  Regenerate with utils/scripts/session-oracle.sh --regenerate, or
 // re-emit after a note change with utils/scripts/session-oracle.sh --emit.
 // clang-format off: the emitter owns this layout, and session_oracle_check compares it byte for byte.
+// Shard 0 of the 1 shards of test_session_oracle_fixy_keyed_projection.  It holds main().
 //
 // Projection and liveness of global types whose choices carry the labels 3k+1
 // in an order that depends on the path.  Each row pins fixy's answer.  The

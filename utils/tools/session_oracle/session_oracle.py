@@ -85,11 +85,13 @@ import contextlib
 import dataclasses
 import io
 import logging
+import os
 import subprocess
 import sys
 import tarfile
 import tempfile
 from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,7 +102,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from repo_root import REPO_ROOT  # noqa: E402
-from emit import GoldenError, Row, emit_all, read_golden, write_golden  # noqa: E402
+from emit import SHARD_BUDGET, GoldenError, Row, emit_all, read_golden, shard_file, write_golden  # noqa: E402
 from execution import equal_up_to_unfolding, explore  # noqa: E402
 from model import (GBranch, GEnd, GMsg, GRec, GVar, Global, Local,  # noqa: E402
                    UntranslatableError, action_ok, canonical_roles, contractive, has_empty_choice,
@@ -1296,22 +1298,45 @@ def _runtime_flags(cxx: str) -> list[str]:
     return ["-pthread", f"-Wl,-rpath,{Path(lib).parent}"] if lib else ["-pthread"]
 
 
+def _cxx_flags(include: Path) -> list[str]:
+    """Return the flags of each compile of an emitted test or a measured program, with ``include`` as the include tree."""
+    return ["-std=c++26", "-freflection", "-fcontracts", "-fconstexpr-ops-limit=100000000",
+            f"-I{include}", f"-I{TEST_DIR}", "-fdiagnostics-color=never"]
+
+
+def compile_object(cxx: str, include: Path, source: Path, obj: Path) -> subprocess.CompletedProcess[str]:
+    """Compile ``source``, which can include wire_driver.h, into the object file ``obj``."""
+    return subprocess.run([cxx, *_cxx_flags(include), "-c", str(source), "-o", str(obj)],
+                          capture_output=True, text=True)
+
+
+def link_and_run(cxx: str, objects: list[Path], binary: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Link ``objects`` into ``binary``, and run it with ``args``.
+
+    A failed link returns the linker's result.  The run has a time limit
+    of ten minutes.
+    """
+    # -fcontracts links the library that holds the default contract violation handler.
+    linked = subprocess.run([cxx, "-fcontracts", *(str(obj) for obj in objects), "-o", str(binary),
+                             *_runtime_flags(cxx)], capture_output=True, text=True)
+    if linked.returncode != 0:
+        return linked
+    return subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=600)
+
+
 def build_and_run(cxx: str, include: Path, source: str, args: list[str]) -> subprocess.CompletedProcess[str]:
     """Compile ``source`` beside wire_driver.h, link it, and run it with ``args``.
 
-    A failed build returns the compiler's result.  The run has a time limit
-    of ten minutes.
+    A failed build returns the compiler's result.
     """
     with tempfile.TemporaryDirectory(prefix="session_oracle_run_") as tmp:
         src = Path(tmp) / "run.cpp"
         src.write_text(source, encoding="utf-8")
-        binary = Path(tmp) / "run"
-        built = subprocess.run([cxx, "-std=c++26", "-freflection", "-fcontracts", "-fconstexpr-ops-limit=100000000",
-                                f"-I{include}", f"-I{TEST_DIR}", "-fdiagnostics-color=never", str(src), "-o",
-                                str(binary), *_runtime_flags(cxx)], capture_output=True, text=True)
+        obj = Path(tmp) / "run.o"
+        built = compile_object(cxx, include, src, obj)
         if built.returncode != 0:
             return built
-        return subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=600)
+        return link_and_run(cxx, [obj], Path(tmp) / "run", args)
 
 
 def wire_pairs(c: Case, sync_rows: dict[tuple[str, str], Row]) -> list[str]:
@@ -1350,7 +1375,7 @@ def evaluate_wire(cases: list[Case], sync_rows: list[Row], env: Env) -> dict[str
     child process.
     """
     from concurrent.futures import ThreadPoolExecutor
-    from emit import wire_label, wire_pair, wire_source
+    from emit import wire_label, wire_pair, wire_shards
     by_key = {(r.case, r.role): r for r in sync_rows if r.family == "fixy.keyed_subtype_sync"}
     work = [(c, wire_pairs(c, by_key)) for c in cases]
     work = [(c, roles) for c, roles in work if roles]
@@ -1359,7 +1384,9 @@ def evaluate_wire(cases: list[Case], sync_rows: list[Row], env: Env) -> dict[str
         c, roles = item
         text = show_global(c.g)
         entries = [(wire_label(c.ident, role), *wire_pair(text, role), "-") for role in roles]
-        proc = build_and_run(env.cxx, env.include, wire_source(entries), ["--measure"])
+        # One block, so the program is one shard.
+        (source,) = wire_shards([entries])
+        proc = build_and_run(env.cxx, env.include, source, ["--measure"])
         if proc.returncode != 0:
             raise RuntimeError(f"wire case {c.ident}: the program failed:\n{(proc.stdout + proc.stderr)[-3000:]}")
         outcomes: dict[str, str] = {}
@@ -2276,8 +2303,13 @@ def _regenerate(cxx: str, workers: int, do_shrink: bool, include: Path, measured
 
 
 def _write_tests(rows: list[Row]) -> None:
-    for name, text in emit_all(rows).items():
+    """Write each file that ``rows`` emit, and remove each generated file that they no longer emit."""
+    files = emit_all(rows)
+    for name, text in files.items():
         (TEST_DIR / name).write_text(text, encoding="utf-8")
+    for path in TEST_DIR.glob("generated_*"):
+        if path.name not in files:
+            path.unlink()
 
 
 DERIVED_FAMILIES = ("keskin.live", "sprout.implementable")
@@ -2344,11 +2376,18 @@ def derive(cxx: str | None, workers: int) -> int:
 # ── Check and self-test ──────────────────────────────────────────────
 
 
-def drifted(rows: list[Row], directory: Path) -> list[str]:
-    """Return the emitted tests whose committed text in ``directory`` differs."""
-    return [name for name, text in emit_all(rows).items()
-            if not (directory / name).is_file()
-            or (directory / name).read_text(encoding="utf-8") != text]
+def drifted(files: dict[str, str], directory: Path) -> list[str]:
+    """Return the drift of ``directory`` from the emitted ``files``.
+
+    The drift is each emitted file whose committed text differs or is
+    missing, then each generated file in ``directory`` that ``files`` does
+    not hold, in name order.
+    """
+    changed = [name for name, text in files.items()
+               if not (directory / name).is_file()
+               or (directory / name).read_text(encoding="utf-8") != text]
+    stale = sorted(path.name for path in directory.glob("generated_*") if path.name not in files)
+    return changed + stale
 
 
 def check() -> int:
@@ -2358,10 +2397,10 @@ def check() -> int:
     except (GoldenError, ValueError) as exc:
         print(f"session_oracle check: {exc}", file=sys.stderr)
         return 1
-    drift = drifted(rows, TEST_DIR)
+    drift = drifted(emit_all(rows), TEST_DIR)
     if drift:
-        print("session_oracle check: these tests differ from what golden.csv emits: "
-              + ", ".join(drift) + ".  Run utils/scripts/session-oracle.sh --emit.", file=sys.stderr)
+        print("session_oracle check: these files differ from what golden.csv emits, or golden.csv does not "
+              "emit them: " + ", ".join(drift) + ".  Run utils/scripts/session-oracle.sh --emit.", file=sys.stderr)
         return 1
     import semantics
     try:
@@ -2378,125 +2417,206 @@ def check() -> int:
 
 
 def _compile(cxx: str, source: Path, include: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [cxx, "-std=c++26", "-freflection", "-fcontracts", "-fconstexpr-ops-limit=100000000",
-         f"-I{include}", "-fsyntax-only", "-fdiagnostics-color=never", str(source)],
-        capture_output=True, text=True)
+    """Compile ``source`` for its static assertions only."""
+    return subprocess.run([cxx, *_cxx_flags(include), "-fsyntax-only", str(source)], capture_output=True, text=True)
 
 
 def _plant(rows: list[Row]) -> tuple[list[Row], dict[str, str]]:
     """Return a copy of ``rows`` with one wrong agree row in each emitted test.
 
-    The map gives, for each emitted file, the label that the planted row's
-    assertion prints.
+    The map gives, for the stem of each emitted test, the label that the
+    planted row's assertion prints.
     """
     planted = list(rows)
     labels: dict[str, str] = {}
 
-    def plant(file: str, pick, wrong) -> None:  # type: ignore[no-untyped-def]
+    def plant(stem: str, pick, wrong) -> None:  # type: ignore[no-untyped-def]
         for i, row in enumerate(planted):
             if pick(row):
                 planted[i] = dataclasses.replace(row, ours=wrong(row))
                 role = f" role {row.role}" if row.role != "-" else ""
-                labels[file] = f"session_oracle {row.family} case {row.case}{role}:"
+                labels[stem] = f"session_oracle {row.family} case {row.case}{role}:"
                 return
-        raise RuntimeError(f"self-test: no agree row to plant in {file}")
+        raise RuntimeError(f"self-test: no agree row to plant in the test {stem}")
 
-    plant("generated_fixy_duality.cpp",
+    plant("fixy_duality",
           lambda r: r.family == "fixy.is_dual" and r.status == "agree",
           lambda r: "false" if r.ours == "true" else "true")
-    plant("generated_fixy_projection.cpp",
+    plant("fixy_projection",
           lambda r: r.family == "fixy.global_wf" and r.status == "agree",
           lambda r: "false" if r.ours == "true" else "true")
-    plant("generated_fixy_subtype.cpp",
+    plant("fixy_subtype",
           lambda r: r.family == "fixy.subtype_sync" and r.status == "agree",
           lambda r: "false" if r.ours == "true" else "true")
-    plant("generated_fixy_keyed_subtype.cpp",
+    plant("fixy_keyed_subtype",
           lambda r: r.family == "fixy.keyed_subtype_sync" and r.status == "agree",
           lambda r: "false" if r.ours == "true" else "true")
-    plant("generated_fixy_keyed_projection.cpp",
+    plant("fixy_keyed_projection",
           lambda r: r.family == "fixy.keyed_live" and r.status == "agree" and r.ours in ("true", "false"),
           lambda r: "false" if r.ours == "true" else "true")
-    plant("generated_fixy_crash.cpp",
+    plant("fixy_crash",
           lambda r: r.family == "fixy.crash_live" and r.status == "agree",
           lambda r: "false" if r.ours == "true" else "true")
-    plant("generated_fixy_enroute.cpp",
+    plant("fixy_enroute",
           lambda r: r.family == "fixy.enroute_live" and r.status == "agree",
           lambda r: "false" if r.ours == "true" else "true")
-    plant("generated_fixy_wire.cpp",
+    plant("fixy_wire",
           lambda r: r.family == "fixy.wire" and r.status == "agree",
           lambda r: "abort")
-    missing = set(emit_all(rows)) - set(labels)
+    missing = set(SHARD_BUDGET) - set(labels)
     if missing:
         raise RuntimeError(f"self-test: no planted row for {sorted(missing)}")
     return planted, labels
 
 
-def self_test(cxx: str, at: str | None = None) -> int:
+def self_test(cxx: str, at: str | None, jobs: int) -> int:
     """Prove the emitted tests pass and a planted disagreement fails.
 
-    The clean tests compile in parallel against the tree of ``at``, the
-    working tree by default (measured_tree).  Each planted row is compiled
-    in a test that holds only the rows of its own case, so the check costs
-    one small compile for each emitted file.
+    The tests compile against the tree of ``at``, the working tree by
+    default (measured_tree), with at most ``jobs`` compiles at one time.
+    Each planted row is compiled in a test that holds only the rows of its
+    own case, so the check costs one small compile for each emitted test.
     """
     with measured_tree(at) as (include, _):
-        return _self_test(cxx, include)
+        return _self_test(cxx, include, jobs)
 
 
 # The emitted tests whose assertions run: the test is a program that
 # fails when a row differs.  Every other emitted test fails to compile.
-RUNTIME_TESTS = frozenset({"generated_fixy_wire.cpp"})
+RUNTIME_TESTS = frozenset({"fixy_wire"})
+
+# The compiles of the self-test at one time.  Each shard parses its
+# headers, and that parse costs more than its cases, so the self-test
+# compiles many shards at once.  The longest shard then sets the wall
+# time.  One compile holds at most about 1 GB of memory, so the peak of
+# the self-test is about 40 GB.
+SELF_TEST_JOBS = 64
 
 
-def _self_test(cxx: str, include: Path) -> int:
-    from concurrent.futures import ThreadPoolExecutor
-    from emit import emit_self_check
+@dataclass(frozen=True, slots=True)
+class _SelfTestUnit:
+    """One test that the self-test builds: its name in a failure, its stem, and the path of each shard."""
+
+    name: str
+    stem: str
+    shards: tuple[Path, ...]
+
+
+def _write_unit(root: Path, name: str, stem: str, shards: list[str]) -> _SelfTestUnit:
+    """Write the shards of one test into their own directory under ``root``."""
+    directory = root / name.replace(" ", "_")
+    directory.mkdir()
+    paths = tuple(directory / shard_file(stem, index) for index in range(len(shards)))
+    for path, text in zip(paths, shards, strict=True):
+        path.write_text(text, encoding="utf-8")
+    return _SelfTestUnit(name, stem, paths)
+
+
+class _SelfTestBuild:
+    """The compiles of the self-test, on one pool of workers.
+
+    submit puts each shard of a unit into the pool at once, so the shards
+    of one test compile while the self-test emits the next test.  result
+    waits for the shards of a unit, links and runs a runtime test, and
+    returns the result of the unit: its first failed compile, or else its
+    run, or else its first compile.
+    """
+
+    __slots__ = ("_cxx", "_futures", "_include", "_pool")
+
+    def __init__(self, cxx: str, include: Path, pool: ThreadPoolExecutor) -> None:
+        self._cxx = cxx
+        self._include = include
+        self._pool = pool
+        self._futures: dict[Path, Future[subprocess.CompletedProcess[str]]] = {}
+
+    def submit(self, unit: _SelfTestUnit) -> _SelfTestUnit:
+        """Put each shard of ``unit`` into the pool.  Return the unit."""
+        for path in unit.shards:
+            self._futures[path] = self._pool.submit(self._compile_shard, unit.stem, path)
+        return unit
+
+    def _compile_shard(self, stem: str, path: Path) -> subprocess.CompletedProcess[str]:
+        if stem in RUNTIME_TESTS:
+            return compile_object(self._cxx, self._include, path, path.with_suffix(".o"))
+        return _compile(self._cxx, path, self._include)
+
+    def result(self, unit: _SelfTestUnit) -> subprocess.CompletedProcess[str]:
+        """Wait for the shards of ``unit``, and return its result."""
+        compiles = [self._futures[path].result() for path in unit.shards]
+        failed = next((proc for proc in compiles if proc.returncode != 0), None)
+        if failed is not None:
+            return failed
+        if unit.stem in RUNTIME_TESTS:
+            return link_and_run(self._cxx, [path.with_suffix(".o") for path in unit.shards],
+                                unit.shards[0].parent / "run", [])
+        return compiles[0]
+
+
+def _drift_self_test(rows: list[Row], copy: Path) -> list[str]:
+    """Return the failures of the drift comparison on planted drift in ``copy``.
+
+    The comparison must see a one-line change in a committed file, and a
+    generated file that the golden file does not emit.
+    """
+    files = emit_all(rows)
+    copy.mkdir()
+    for name, text in files.items():
+        (copy / name).write_text(text, encoding="utf-8")
+    victim = sorted(files)[0]
+    (copy / victim).write_text((copy / victim).read_text(encoding="utf-8") + "// drift\n", encoding="utf-8")
+    stale = shard_file("fixy_stale", 0)
+    (copy / stale).write_text("// a shard that the golden file does not emit\n", encoding="utf-8")
+    if drifted(files, copy) != [victim, stale]:
+        return [f"the drift check does not report the changed {victim} and the stale {stale}"]
+    return []
+
+
+# The shard size of the wire rows in the self-test.  The self-test
+# compiles a wire shard with no debug information and no sanitizer, so a
+# wire row costs less there than in the Debug build, and larger shards
+# give fewer compiles of the same headers.  The rows and their order stay
+# as golden.csv gives them.  The build compiles the committed shards.
+SELF_TEST_WIRE_BUDGET = 50_000
+
+
+def _self_test(cxx: str, include: Path, jobs: int) -> int:
+    from emit import emit_family, emit_self_check
     _, rows = read_golden(GOLDEN)
     failures: list[str] = emit_self_check()
-
-    def verify(name: str, path: Path) -> subprocess.CompletedProcess[str]:
-        if name in RUNTIME_TESTS:
-            return build_and_run(cxx, include, path.read_text(encoding="utf-8"), [])
-        return _compile(cxx, path, include)
-
-    with tempfile.TemporaryDirectory(prefix="session_oracle_selftest_") as tmp:
+    planted, labels = _plant(rows)
+    with (tempfile.TemporaryDirectory(prefix="session_oracle_selftest_") as tmp,
+          ThreadPoolExecutor(max_workers=jobs) as pool):
         root = Path(tmp)
-        clean = emit_all(rows)
-        for name, text in clean.items():
-            (root / name).write_text(text, encoding="utf-8")
-        with ThreadPoolExecutor(max_workers=len(clean)) as pool:
-            results = list(pool.map(lambda n: (n, verify(n, root / n)), clean))
-        for name, proc in results:
-            if proc.returncode != 0:
-                failures.append(f"clean {name} fails:\n{(proc.stdout + proc.stderr)[-2000:]}")
-        planted, labels = _plant(rows)
-        for name, label in labels.items():
+        build = _SelfTestBuild(cxx, include, pool)
+        # The runtime tests go first, because each one links and runs after its compiles.
+        clean = [build.submit(_write_unit(root, f"clean {stem}", stem,
+                                          emit_family(rows, stem, SELF_TEST_WIRE_BUDGET)))
+                 for stem in sorted(SHARD_BUDGET, key=lambda name: name not in RUNTIME_TESTS)]
+        caught: dict[str, _SelfTestUnit] = {}
+        for stem, label in labels.items():
             case = label.split(" case ", 1)[1].split()[0].rstrip(":")
             subset = [r for r in planted if r.case == case]
-            path = root / f"planted_{name}"
-            path.write_text(emit_all(subset)[name], encoding="utf-8")
-            proc = verify(name, path)
+            caught[stem] = build.submit(_write_unit(root, f"planted {stem}", stem,
+                                                    emit_family(subset, stem, SELF_TEST_WIRE_BUDGET)))
+        # The drift comparison is Python work, so it runs while the compiles run.
+        failures += _drift_self_test(rows, root / "drift")
+        for unit in clean:
+            proc = build.result(unit)
+            if proc.returncode != 0:
+                failures.append(f"{unit.name} fails:\n{(proc.stdout + proc.stderr)[-2000:]}")
+        for stem, label in labels.items():
+            proc = build.result(caught[stem])
             if proc.returncode == 0:
-                failures.append(f"planted {name} passes; the planted row is not caught")
+                failures.append(f"planted {stem} passes; the planted row is not caught")
             elif label not in proc.stderr:
-                failures.append(f"planted {name} fails, but not on the planted row ({label})")
-        # The drift comparison must see a one-line change in a committed test.
-        copy = root / "drift"
-        copy.mkdir()
-        for name, text in clean.items():
-            (copy / name).write_text(text, encoding="utf-8")
-        victim = sorted(clean)[0]
-        (copy / victim).write_text((copy / victim).read_text(encoding="utf-8") + "// drift\n",
-                                   encoding="utf-8")
-        if drifted(rows, copy) != [victim]:
-            failures.append(f"the drift check does not report a changed {victim}")
+                failures.append(f"planted {stem} fails, but not on the planted row ({label})")
     if failures:
         for failure in failures:
             print(f"session_oracle self-test: FAIL: {failure}", file=sys.stderr)
         return 1
     print("session_oracle self-test: the clean tests pass, each planted row is caught, "
-          "and the drift check sees a one-line change")
+          "and the drift check sees a one-line change and a stale shard")
     return 0
 
 
@@ -2505,7 +2625,9 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("mode", choices=("regenerate", "derive", "emit", "check", "self-test", "install-toolchain"))
     parser.add_argument("--cxx", help="the project compiler (regenerate, self-test)")
-    parser.add_argument("--jobs", type=int, default=32, help="parallel probe compiles")
+    parser.add_argument("--jobs", type=int, default=None,
+                        help="parallel compiles of the probes (regenerate, derive; 32 without the option) or of "
+                             f"the tests (self-test; {SELF_TEST_JOBS}, or the CPU count when it is smaller)")
     parser.add_argument("--no-shrink", action="store_true",
                         help="regenerate without the minimal corpus, for a quick look")
     parser.add_argument("--at", metavar="REV",
@@ -2515,11 +2637,12 @@ def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     if args.mode in ("regenerate", "self-test") and not args.cxx:
         parser.error(f"{args.mode} needs --cxx")
+    probe_jobs = args.jobs or 32
     if args.mode == "regenerate":
-        regenerate(args.cxx, args.jobs, do_shrink=not args.no_shrink, at=args.at)
+        regenerate(args.cxx, probe_jobs, do_shrink=not args.no_shrink, at=args.at)
         return check()
     if args.mode == "derive":
-        return derive(args.cxx, args.jobs)
+        return derive(args.cxx, probe_jobs)
     if args.mode == "emit":
         _write_tests(read_golden(GOLDEN)[1])
         return check()
@@ -2529,7 +2652,7 @@ def main(argv: list[str]) -> int:
         import toolchain
         LOG.info("the crash-stop toolchain is in %s", toolchain.install())
         return 0
-    return self_test(args.cxx, args.at)
+    return self_test(args.cxx, args.at, args.jobs or min(SELF_TEST_JOBS, os.cpu_count() or 1))
 
 
 if __name__ == "__main__":

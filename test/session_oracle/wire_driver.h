@@ -34,6 +34,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <initializer_list>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -207,10 +208,21 @@ void walk(H handle, Endpoint& self) {
     }
 }
 
-// One run of the endpoint of protocol A against the endpoint of protocol
-// B, in a child process.  Returns the outcome.
-template <typename A, typename B, unsigned Seed>
-[[nodiscard]] std::string_view run_pair() {
+// The start of one endpoint: it walks its protocol from the first step.
+using EndpointStart = void (*)(Endpoint&);
+
+template <typename P>
+void walk_from_start(Endpoint& self) {
+    walk(fs::mint_session_handle<P, Wire, fs::check::Off>(Wire{}), self);
+}
+
+// One run of the endpoint that left_start walks against the endpoint that
+// right_start walks, in a child process, with the seed of both endpoints.
+// Returns the outcome.  This function is not a template, so a translation
+// unit compiles the fork, the two threads and the wait one time, and each
+// row adds only the start of each endpoint.
+[[nodiscard]] inline std::string_view run_endpoints(EndpointStart left_start, EndpointStart right_start,
+                                                    unsigned seed) {
     std::fflush(nullptr);
     const pid_t child = ::fork();
     if (child < 0) {
@@ -221,10 +233,10 @@ template <typename A, typename B, unsigned Seed>
         ::alarm(10);
         Queue a_to_b;
         Queue b_to_a;
-        Endpoint a{&a_to_b, &b_to_a, Seed};
-        Endpoint b{&b_to_a, &a_to_b, Seed};
-        std::thread left{[&] { walk(fs::mint_session_handle<A, Wire, fs::check::Off>(Wire{}), a); }};
-        std::thread right{[&] { walk(fs::mint_session_handle<B, Wire, fs::check::Off>(Wire{}), b); }};
+        Endpoint a{&a_to_b, &b_to_a, seed};
+        Endpoint b{&b_to_a, &a_to_b, seed};
+        std::thread left{[&] { left_start(a); }};
+        std::thread right{[&] { right_start(b); }};
         left.join();
         right.join();
         std::_Exit(static_cast<int>(exit_code::ok));
@@ -244,26 +256,43 @@ template <typename A, typename B, unsigned Seed>
     }
 }
 
+// One run of the endpoint of protocol A against the endpoint of protocol
+// B, in a child process.  Returns the outcome.
+template <typename A, typename B, unsigned Seed>
+[[nodiscard]] std::string_view run_pair() {
+    return run_endpoints(&walk_from_start<A>, &walk_from_start<B>, Seed);
+}
+
 struct Row {
     const char* label;
     std::string_view (*run)();
     const char* pinned;
 };
 
-// With --measure, print the outcome of each row.  Otherwise compare each
-// outcome with its pinned outcome, print each difference, and return 1
-// when one differs.
-inline int check_all(std::span<const Row> rows, int argc, char** argv) {
-    const bool measure = argc > 1 && std::strcmp(argv[1], "--measure") == 0;
+// Run one row.  With should_measure, print its outcome and return false.
+// Otherwise compare the outcome with the pinned outcome, and print the
+// difference and return true when the two differ.
+[[nodiscard]] inline bool run_differs(const Row& row, bool should_measure) {
+    const std::string_view outcome = row.run();
+    if (should_measure) {
+        std::printf("%s %.*s\n", row.label, static_cast<int>(outcome.size()), outcome.data());
+        return false;
+    }
+    if (outcome == row.pinned) return false;
+    std::fprintf(stderr, "%s the run gives %.*s, and the golden file pins %s\n", row.label,
+                 static_cast<int>(outcome.size()), outcome.data(), row.pinned);
+    return true;
+}
+
+// Run the rows of each shard of a wire test, in order.  With --measure,
+// print the outcome of each row.  Otherwise compare each outcome with its
+// pinned outcome, print each difference, and return 1 when one differs.
+inline int check_all(std::initializer_list<std::span<const Row>> shards, int argc, char** argv) {
+    const bool should_measure = argc > 1 && std::strcmp(argv[1], "--measure") == 0;
     int failed = 0;
-    for (const Row& row : rows) {
-        const std::string_view outcome = row.run();
-        if (measure) {
-            std::printf("%s %.*s\n", row.label, static_cast<int>(outcome.size()), outcome.data());
-        } else if (outcome != row.pinned) {
-            std::fprintf(stderr, "%s the run gives %.*s, and the golden file pins %s\n", row.label,
-                         static_cast<int>(outcome.size()), outcome.data(), row.pinned);
-            failed = 1;
+    for (const std::span<const Row> rows : shards) {
+        for (const Row& row : rows) {
+            if (run_differs(row, should_measure)) failed = 1;
         }
     }
     return failed;
