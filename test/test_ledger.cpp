@@ -15,6 +15,7 @@
 #include "test_assert.h"
 
 #include <array>
+#include <bit>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -745,6 +746,38 @@ void test_store_is_bounded() {
     std::printf("  test_store_is_bounded:                     PASSED\n");
 }
 
+// ── Layout ────────────────────────────────────────────────────────────
+
+// With -ftrivial-auto-var-init=zero, GCC writes zero to each padding byte of
+// each automatic Ledger that has an initializer, and of each Ledger that a
+// return statement makes.  It writes one store for each padding hole of each
+// of the 256 entries, with no loop.  __builtin_clear_padding writes zero to
+// the same bytes.  If each byte of an entry keeps its value after the call,
+// the entry has no padding byte.
+void test_entry_has_no_padding_byte() {
+    constexpr unsigned char kFill = 0xA5;
+    std::array<unsigned char, sizeof(ledger::LedgerEntry)> filled{};
+    filled.fill(kFill);
+    auto entry = std::bit_cast<ledger::LedgerEntry>(filled);
+    __builtin_clear_padding(&entry);
+    const auto kept = std::bit_cast<std::array<unsigned char, sizeof(ledger::LedgerEntry)>>(entry);
+    std::size_t padding_byte_count = 0;
+    for (const unsigned char byte : kept) {
+        if (byte != kFill) {
+            ++padding_byte_count;
+        }
+    }
+    if (padding_byte_count != 0u) {
+        std::fprintf(stderr,
+                     "test_ledger: LedgerEntry has %zu padding bytes.  Make each one a member, as Verdict.h "
+                     "does with pad.\n",
+                     padding_byte_count);
+    }
+    assert(padding_byte_count == 0u);
+
+    std::printf("  test_entry_has_no_padding_byte:            PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -765,6 +798,7 @@ int main() {
     test_refresh_plan_and_run();
     test_refusals_name_the_bar_they_missed();
     test_store_is_bounded();
-    std::printf("test_ledger: 16 groups, all passed\n");
+    test_entry_has_no_padding_byte();
+    std::printf("test_ledger: 17 groups, all passed\n");
     return 0;
 }

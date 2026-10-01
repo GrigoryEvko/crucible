@@ -442,16 +442,25 @@ enum class LedgerError : std::uint8_t {
 // A measured verdict value, marked as produced by this host's calibration.
 using CalibratedVerdictValue = ::fixy::Tagged<VerdictValue, ::fixy::tags::source::Calibrated>;
 
+// The fields go from the largest alignment to the smallest, and pad holds the
+// last seven bytes.  As a result, the compiler adds no padding byte to the
+// entry.  A Ledger holds 256 entries.  With -ftrivial-auto-var-init=zero, GCC
+// writes zero to each padding hole of each automatic Ledger that has an
+// initializer, and of each Ledger that a return statement makes.  It writes
+// one store for each hole of each entry, in sequence and with no loop.  Four
+// holes in each entry make approximately 900 KB of machine code in one
+// function that returns a Ledger.  test/test_ledger.cpp makes sure that the
+// entry has no padding byte.
 struct LedgerEntry {
-    VerdictId id = VerdictId::TimerFloorNanos;
-
     // Tagged Calibrated for the same reason cog::TargetCaps tags its
     // measured fields: a reader that sees an untagged number cannot tell a
     // vendor datasheet figure from something this host actually did.
     CalibratedVerdictValue value = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(VerdictValue{});
 
-    Confidence confidence = Confidence::Unknown;
+    std::uint64_t measured_at_unix_seconds = 0;
     VerdictEvidence evidence{};
+    VerdictTtl ttl{};
+    VerdictId id = VerdictId::TimerFloorNanos;
 
     // The competence word AS IT WAS when the measurement ran, not as it is
     // now. A host that was degraded at measurement time produced a degraded
@@ -459,8 +468,8 @@ struct LedgerEntry {
     // the number.
     std::uint16_t competence_defects_at_measurement = 0;
 
-    std::uint64_t measured_at_unix_seconds = 0;
-    VerdictTtl ttl{};
+    Confidence confidence = Confidence::Unknown;
+    std::uint8_t pad[7]{};
 
     [[nodiscard]] constexpr bool is_expired_at(std::uint64_t now_unix_seconds) const noexcept {
         if (ttl.never_expires()) {
@@ -497,13 +506,13 @@ admit_entry(VerdictId id, VerdictValue value, VerdictEvidence const& evidence, C
         return std::unexpected(LedgerError::ClockUnavailable);
     }
     return LedgerEntry{
-        .id = id,
         .value = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(value),
-        .confidence = confidence,
-        .evidence = evidence,
-        .competence_defects_at_measurement = competence.defect_word(),
         .measured_at_unix_seconds = measured_at_unix_seconds,
+        .evidence = evidence,
         .ttl = verdict_trait(id).ttl,
+        .id = id,
+        .competence_defects_at_measurement = competence.defect_word(),
+        .confidence = confidence,
     };
 }
 
