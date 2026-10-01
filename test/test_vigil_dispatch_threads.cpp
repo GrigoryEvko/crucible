@@ -3,6 +3,7 @@
 
 #include "vigil_dispatch.h"
 
+#include <crucible/SchemaTable.h>
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
@@ -37,14 +38,13 @@ void test_second_producer_is_rejected() {
 
         // Claims this thread as the producer.
         auto first = make_op(0, 0);
-        auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(first.entry), first.metas, first.n_metas);
+        auto r0 = crucible::test::dispatch_synthetic(vigil, first.entry, first.metas, first.n_metas);
         assert(r0.action == DispatchResult::Action::RECORD);
 
         std::thread intruder([&vigil, &rejected] {
             rejected = crucible::test::aborts([&vigil] {
                 auto second = make_op(0, 1);
-                (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(second.entry), second.metas,
-                                        second.n_metas);
+                (void)crucible::test::dispatch_synthetic(vigil, second.entry, second.metas, second.n_metas);
             });
         });
         intruder.join();
@@ -59,10 +59,10 @@ void test_second_producer_is_rejected() {
     // gate and not a blanket refusal.
     Vigil vigil;
     auto d = make_op(0, 0);
-    auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+    auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
     assert(r.action == DispatchResult::Action::RECORD);
     auto again = make_op(0, 1);
-    auto r2 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(again.entry), again.metas, again.n_metas);
+    auto r2 = crucible::test::dispatch_synthetic(vigil, again.entry, again.metas, again.n_metas);
     assert(r2.action == DispatchResult::Action::RECORD);
 
     std::printf("  test_second_producer_is_rejected: PASSED\n");

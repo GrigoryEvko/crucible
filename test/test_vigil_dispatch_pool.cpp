@@ -30,14 +30,14 @@ void test_dispatch_data_flow() {
     align_and_activate(vigil, 3);
 
     auto d0 = make_op(4, 0);
-    auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d0.entry), d0.metas, d0.n_metas);
+    auto r0 = crucible::test::dispatch_synthetic(vigil, d0.entry, d0.metas, d0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     assert(r0.status == ReplayStatus::MATCH);
     std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), 0x42, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         auto d = make_op(4, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
         assert(r.status == ReplayStatus::MATCH);
 
@@ -50,7 +50,7 @@ void test_dispatch_data_flow() {
     }
 
     auto d7 = make_op(4, NUM_OPS - 1);
-    auto r7 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d7.entry), d7.metas, d7.n_metas);
+    auto r7 = crucible::test::dispatch_synthetic(vigil, d7.entry, d7.metas, d7.n_metas);
     assert(r7.action == DispatchResult::Action::COMPILED);
     assert(r7.status == ReplayStatus::COMPLETE);
 
@@ -84,7 +84,7 @@ void test_dispatch_pool_bounds() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(4, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
 
         auto* p = static_cast<uint8_t*>(vigil.output_ptr(vigil.mint_producer_context(), 0));

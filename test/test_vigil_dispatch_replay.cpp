@@ -31,7 +31,7 @@ void test_dispatch_basic() {
     uint32_t complete_count = 0;
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(4, i);
-        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto result = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
 
         if (result.status == ReplayStatus::MATCH)
@@ -59,7 +59,7 @@ void test_dispatch_divergence() {
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(4, i);
-        auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto result = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
         assert(result.status == ReplayStatus::MATCH);
     }
@@ -75,13 +75,13 @@ void test_dispatch_divergence() {
     bad_metas[0] = make_meta(fake_ptr(4, 2));
     bad_metas[1] = make_meta(fake_ptr(4, 3));
 
-    auto result = vigil.dispatch_op(crucible::test::certify_synthetic_entry(bad_entry), bad_metas, 2);
+    auto result = crucible::test::dispatch_synthetic(vigil, bad_entry, bad_metas, 2);
     assert(result.action == DispatchResult::Action::RECORD);
     assert(result.status == ReplayStatus::DIVERGED);
     assert(vigil.diverged_count() == 1);
 
     auto d = make_op(4, 4);
-    auto result2 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+    auto result2 = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
     assert(result2.action == DispatchResult::Action::RECORD);
     assert(!vigil.context().is_compiled());
 
@@ -106,7 +106,7 @@ void test_dispatch_recovery() {
     bad.num_outputs = 1;
     TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
 
-    auto r_div = vigil.dispatch_op(crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
+    auto r_div = crucible::test::dispatch_synthetic(vigil, bad, &bad_meta, 1);
     assert(r_div.action == DispatchResult::Action::RECORD);
     assert(r_div.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());
@@ -126,7 +126,7 @@ void test_dispatch_recovery() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(18, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 

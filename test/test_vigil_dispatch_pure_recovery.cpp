@@ -31,7 +31,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         const VigilFgCtx fg = vigil.mint_producer_context();
         for (uint32_t i = 0; i < 3; ++i) {
             auto d = make_op(4, i);
-            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
             assert(r.status == ReplayStatus::MATCH);
         }
@@ -46,14 +46,14 @@ void test_dispatch_pure_divergence_and_recovery() {
         bad_metas[0] = make_meta(fake_ptr(4, 2));
         bad_metas[1] = make_meta(fake_ptr(4, 3));
 
-        auto rdiv = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(bad_entry), bad_metas, 2);
+        auto rdiv = crucible::test::dispatch_pure_synthetic(vigil, fg, bad_entry, bad_metas, 2);
         assert(rdiv.action == DispatchResult::Action::RECORD);
         assert(rdiv.status == ReplayStatus::DIVERGED);
         assert(vigil.diverged_count() == 1);
         assert(!vigil.context().is_compiled());
 
         auto d = make_op(4, 4);
-        auto r2 = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r2 = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
         assert(r2.action == DispatchResult::Action::RECORD);
     }
 
@@ -74,7 +74,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
 
         const VigilFgCtx fg = vigil.mint_producer_context();
-        auto rdiv = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
+        auto rdiv = crucible::test::dispatch_pure_synthetic(vigil, fg, bad, &bad_meta, 1);
         assert(rdiv.action == DispatchResult::Action::RECORD);
         assert(rdiv.status == ReplayStatus::DIVERGED);
         assert(!vigil.context().is_compiled());
@@ -87,25 +87,25 @@ void test_dispatch_pure_divergence_and_recovery() {
         feed_trigger(vigil, 16);
         flush_and_wait_region_published(vigil);
 
-        // Realignment is open-coded rather than delegated to the helper,
-        // because the helper drives dispatch_op and this leg has to be
-        // driven through the wrapper as well.
+        // Realignment is open-coded rather than delegated to
+        // align_and_activate, because that helper drives dispatch_op and
+        // this leg has to be driven through the wrapper as well.
         for (uint32_t i = 0; i < K; ++i) {
             auto d = make_op(17, i);
-            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::RECORD);
         }
         assert(vigil.context().is_compiled());
 
         for (uint32_t i = K; i < NUM_OPS; ++i) {
             auto d = make_op(17, i);
-            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(18, i);
-            auto r = vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }
@@ -124,8 +124,7 @@ void test_dispatch_pure_divergence_and_recovery() {
         for (uint32_t iter = 4; iter < 6; ++iter) {
             for (uint32_t i = 0; i < NUM_OPS; ++i) {
                 auto d = make_op(iter, i);
-                auto r =
-                    vigil.dispatch_op_pure(fg, crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                auto r = crucible::test::dispatch_pure_synthetic(vigil, fg, d.entry, d.metas, d.n_metas);
                 assert(r.action == DispatchResult::Action::COMPILED);
                 assert(r.status == ReplayStatus::MATCH || r.status == ReplayStatus::COMPLETE);
             }

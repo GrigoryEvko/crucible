@@ -93,9 +93,9 @@ void test_t02_context_matrix() {
 void test_t03_api_surface_pinned() {
     BackgroundThread* bt_ptr = nullptr;
     using ReturnT = decltype(bt_ptr->run_in_row(std::declval<::fixy::BgLoadCtx const&>()));
-    static_assert(std::is_same_v<ReturnT, void>, "run_in_row(ctx) returns void, matching run(ctx).");
+    static_assert(std::is_same_v<ReturnT, void>, "run_in_row(ctx) returns void.");
     static_assert(noexcept(bt_ptr->run_in_row(std::declval<::fixy::BgLoadCtx const&>())),
-                  "run_in_row(ctx) is noexcept, matching run(ctx).");
+                  "run_in_row(ctx) is noexcept, because the pipeline thread runs it as its entry.");
 
     std::printf("  T03 api_surface_pinned:                    PASSED\n");
 }

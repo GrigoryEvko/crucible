@@ -779,6 +779,37 @@ else()
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=0)
 endif()
 
+# ── The Vigil runtime: src/Vigil.cpp and src/BackgroundThread.cpp ──
+#
+# The cold bodies of crucible/Vigil.h and crucible/BackgroundThread.h: the
+# construction of a Vigil, the background pipeline, the trace graph build
+# and the memory plan.  A translation unit that includes the two headers
+# then compiles no part of the pipeline.
+#
+# These bodies are a library of their own, and libcrucible.a does not hold
+# them.  The pipeline starts its threads through std::jthread, and the
+# constructor opens the store through std::string and std::filesystem.
+# Those instantiations define the virtual table of std::thread::_State_impl
+# and reference __cxa_throw and __cxa_rethrow, so the check of
+# utils/scripts/check-no-throw-no-rtti.sh refuses them.  That check reads
+# libcrucible.a and libfoundation.a.  The same code compiled into each test
+# and into the vessel when it was header code, and the check did not read it
+# there either.
+#
+# The bodies compile with the definitions that crucible gives its
+# consumers, so each header reads the same macros in both places.
+add_library(crucible_vigil STATIC
+  src/BackgroundThread.cpp
+  src/Vigil.cpp)
+target_include_directories(crucible_vigil PUBLIC include/)
+target_compile_definitions(crucible_vigil PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+target_link_libraries(crucible_vigil PUBLIC foundation)
+if (CRUCIBLE_HAVE_BPF)
+  target_link_libraries(crucible_vigil PUBLIC crucible_perf)
+endif()
+set_target_properties(crucible_vigil PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(crucible PUBLIC crucible_vigil)
+
 # `libstdc++exp.a` holds the parts of libstdc++ 16 that libstdc++.so does
 # not have: the contract runtime, and parts of <print>, <debugging>,
 # <stacktrace> and <text_encoding>.  Each consumer of the dialect links it,

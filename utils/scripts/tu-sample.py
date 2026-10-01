@@ -74,7 +74,7 @@ SAMPLE: tuple[tuple[str, bool], ...] = (
     ("test/test_arena.cpp", False),
     ("src/canopy/Lifeguard.cpp", False),
     ("test/fixy/test_collision.cpp", False),
-    ("test/test_vigil.cpp", False),
+    ("test/test_region_cache_repeated.cpp", False),
     ("test/test_cipher.cpp", False),
     ("test/fixy/test_session_handle.cpp", False),
     ("test/fixy/test_owned_region.cpp", False),

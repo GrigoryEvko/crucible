@@ -89,14 +89,14 @@ void feed_trigger(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint3
 void align_and_activate(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
     }
     assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 }

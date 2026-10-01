@@ -31,17 +31,17 @@ void test_cache_switch_mid_iter() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 5, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
     auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    auto r_div = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
+    auto r_div = crucible::test::dispatch_synthetic(vigil, dB3.entry, dB3.metas, dB3.n_metas);
     assert(r_div.action == DispatchResult::Action::RECORD);
     assert(r_div.status == ReplayStatus::DIVERGED);
 
@@ -56,7 +56,7 @@ void test_cache_switch_mid_iter() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -64,18 +64,18 @@ void test_cache_switch_mid_iter() {
     // show up at op 3.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
     auto dA3 = make_op(SHAPE_A, 0, 19, 3);
-    auto r_switch = vigil.dispatch_op(crucible::test::certify_synthetic_entry(dA3.entry), dA3.metas, dA3.n_metas);
+    auto r_switch = crucible::test::dispatch_synthetic(vigil, dA3.entry, dA3.metas, dA3.n_metas);
 
     assert(r_switch.action == DispatchResult::Action::COMPILED && "Expected instant cache switch to variant A");
 
     for (uint32_t i = 4; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -100,7 +100,7 @@ void test_cache_miss_fallback() {
     bad.num_outputs = 1;
     TensorMeta bad_meta = make_meta(fake_ptr(99, 99, 0), 512);
 
-    auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(bad), &bad_meta, 1);
+    auto r = crucible::test::dispatch_synthetic(vigil, bad, &bad_meta, 1);
     assert(r.action == DispatchResult::Action::RECORD);
     assert(r.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());

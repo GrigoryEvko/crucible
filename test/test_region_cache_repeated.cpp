@@ -30,15 +30,15 @@ void test_cache_repeated_switching() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
 
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 5, i);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
     auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(dB3.entry), dB3.metas, dB3.n_metas);
+    (void)crucible::test::dispatch_synthetic(vigil, dB3.entry, dB3.metas, dB3.n_metas);
 
     for (uint32_t iter = 10; iter < 16; iter++)
         feed_record(vigil, SHAPE_B, 1, iter);
@@ -51,7 +51,7 @@ void test_cache_repeated_switching() {
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
 
     for (uint32_t cycle = 0; cycle < 4; cycle++) {
@@ -61,17 +61,17 @@ void test_cache_repeated_switching() {
 
         for (uint32_t i = 0; i < 3; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         auto d3 = make_op(active_shapes, variant, iter, 3);
-        auto r3 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d3.entry), d3.metas, d3.n_metas);
+        auto r3 = crucible::test::dispatch_synthetic(vigil, d3.entry, d3.metas, d3.n_metas);
         assert(r3.action == DispatchResult::Action::COMPILED && "Cache switch failed during repeated alternation");
 
         for (uint32_t i = 4; i < NUM_OPS; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }

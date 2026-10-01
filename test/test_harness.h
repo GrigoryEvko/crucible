@@ -48,4 +48,23 @@ inline void flush_and_wait_region_published(Vigil& vigil) {
     return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
 
+// Certifies an Entry that a test built, and gives it to dispatch_op.
+//
+// Vigil::dispatch_op is always inlined, so each call site copies the whole
+// hot path into the test function.  This helper is never inlined, so a test
+// translation unit compiles that copy one time, and its back end stays
+// short.  The behaviour is that of a direct call.
+[[nodiscard, gnu::noinline]] inline DispatchResult dispatch_synthetic(Vigil& vigil, const TraceRing::Entry& entry,
+                                                                      const TensorMeta* metas, uint32_t n_metas) {
+    return vigil.dispatch_op(certify_synthetic_entry(entry), metas, n_metas);
+}
+
+// The same for dispatch_op_pure, which also takes the context of the
+// producer claim of the Vigil.
+[[nodiscard, gnu::noinline]] inline DispatchResult dispatch_pure_synthetic(Vigil& vigil, VigilFgCtx const& fg,
+                                                                           const TraceRing::Entry& entry,
+                                                                           const TensorMeta* metas, uint32_t n_metas) {
+    return vigil.dispatch_op_pure(fg, certify_synthetic_entry(entry), metas, n_metas);
+}
+
 }  // namespace crucible::test

@@ -25,14 +25,14 @@ void align_and_complete_iteration(Vigil& vigil, const std::vector<OpDef>& ops) {
     static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
     for (uint32_t i = 0; i < AK; i++) {
         auto ap = build_pkt(ops[i], 3);
-        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
+        auto ar = crucible::test::dispatch_synthetic(vigil, ap.entry, ap.metas, ap.n_metas);
         assert(ar.action == DispatchResult::Action::RECORD);
     }
     assert(vigil.context().is_compiled());
     // The rest of the same iteration runs compiled.
     for (size_t i = AK; i < ops.size(); i++) {
         auto ap = build_pkt(ops[i], 3);
-        auto ar = vigil.dispatch_op(crucible::test::certify_synthetic_entry(ap.entry), ap.metas, ap.n_metas);
+        auto ar = crucible::test::dispatch_synthetic(vigil, ap.entry, ap.metas, ap.n_metas);
         assert(ar.action == DispatchResult::Action::COMPILED);
     }
     std::printf("  aligned (%u ops) + partial iteration compiled\n", AK);
@@ -44,6 +44,8 @@ void run_compiled_iterations(Vigil& vigil, const std::vector<OpDef>& ops) {
     for (uint32_t iter = 4; iter < 1004; iter++) {
         for (size_t i = 0; i < ops.size(); i++) {
             auto p = build_pkt(ops[i], iter);
+            // The timed loop calls dispatch_op directly, so the time is that
+            // of the inlined hot path and not that of a helper call.
             auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
@@ -66,12 +68,12 @@ void verify_data_flow(Vigil& vigil, const std::vector<OpDef>& ops) {
     // reading it back through the other is what shows the slots were
     // planned to coincide.
     auto p0 = build_pkt(ops[0], 9999);
-    auto r0 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p0.entry), p0.metas, p0.n_metas);
+    auto r0 = crucible::test::dispatch_synthetic(vigil, p0.entry, p0.metas, p0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), 0xAB, 64);
 
     auto p1 = build_pkt(ops[1], 9999);
-    auto r1 = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p1.entry), p1.metas, p1.n_metas);
+    auto r1 = crucible::test::dispatch_synthetic(vigil, p1.entry, p1.metas, p1.n_metas);
     assert(r1.action == DispatchResult::Action::COMPILED);
 
     auto* d = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
@@ -85,7 +87,7 @@ void verify_data_flow(Vigil& vigil, const std::vector<OpDef>& ops) {
     // Finish the iteration so the pipeline is left at a boundary.
     for (size_t i = 2; i < ops.size(); i++) {
         auto p = build_pkt(ops[i], 9999);
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
+        (void)crucible::test::dispatch_synthetic(vigil, p.entry, p.metas, p.n_metas);
     }
 
     std::printf("  data_flow: %s\n", flow_ok ? "VERIFIED" : "FAILED");

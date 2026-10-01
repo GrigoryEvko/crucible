@@ -83,7 +83,7 @@ void align_and_activate(Vigil& vigil, uint32_t iter) {
         // RECORDING through every alignment op before the last one.
         assert(!vigil.is_compiled() && "the mode must not report a replay before the context activates");
         auto d = make_op(iter, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
     }
     assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
@@ -91,7 +91,7 @@ void align_and_activate(Vigil& vigil, uint32_t iter) {
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 }
