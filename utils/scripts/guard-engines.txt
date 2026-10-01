@@ -17,6 +17,7 @@ test/neg_compile_driver_test.py | compiler,json,text | the output of test/neg_co
 utils/scripts/audit-decide-cite-ratio.py | tsast,git | the history of Decide.h
 utils/scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline utils/scripts/contracts-baseline.json
 utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest summary
+utils/scripts/cache_dir.py | none |
 utils/scripts/check-allowlist-keys.sh | text | the keys of the allowlists, and the paths in the Markdown guidance
 utils/scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile
 utils/scripts/check-banned-calls.py | tsast,text | the allowlist rows and utils/scripts/fixy-only-paths.txt

@@ -138,20 +138,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
-from preprocessed import Store, files_of  # noqa: E402
+from preprocessed import Store, chunk_text  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 ALLOWLIST = "utils/scripts/unchecked-access-allowlist.txt"
 SCAN_ROOTS = ("include", "src", "test", "vessel", "utils/tools", "bench", "examples")
 MEMBER_ROOTS = ("include/foundation/", "include/fixy/", "include/crucible/")
-# Bumped when the rules change, so the expanded run does not reuse an old result.
-SCAN_VERSION = 1
 # The leaves that spell one part of a name.
 NAME_LEAVES = ("identifier", "field_identifier", "type_identifier", "namespace_identifier")
 # The declarations that give access_context a second name.
 ALIASES = ("using_declaration", "alias_declaration", "type_definition")
+# The names that open the door, apart from a macro whose body opens it.
+UNCHECKED = frozenset({"unchecked"})
+DOOR_NAMES = UNCHECKED | {"access_context"}
 # The directives whose name node mentions a macro without a use of it.
 MACRO_MENTIONS = frozenset({"preproc_def", "preproc_function_def", "preproc_ifdef", "preproc_defined"})
 # The tokens that end a statement of a macro body that does not parse.
@@ -277,13 +279,14 @@ def node_doors(root: tsast.Node, line_of: Callable[[tsast.Node], int],
     Complexity: linear in the number of nodes.
     """
     found: list[Door] = []
-    for leaf in root.descendants(*NAME_LEAVES):
-        if leaf.text == "unchecked" and names_member(leaf):
+    for leaf in root.descendants_named(DOOR_NAMES | door_macros, *NAME_LEAVES):
+        text = leaf.text
+        if text == "unchecked" and names_member(leaf):
             found.append((line_of(leaf), "a use of unchecked"))
-        elif leaf.text == "access_context" and leaf.ancestor_of_type(*ALIASES) is not None:
+        elif text == "access_context" and leaf.ancestor_of_type(*ALIASES) is not None:
             found.append((line_of(leaf), "a using-declaration or an alias of access_context"))
-        elif leaf.text in door_macros and is_macro_use(leaf):
-            found.append((line_of(leaf), f"a use of the macro {leaf.text}, which opens the door"))
+        elif text in door_macros and is_macro_use(leaf):
+            found.append((line_of(leaf), f"a use of the macro {text}, which opens the door"))
     for node in root.descendants("reflect_expression"):
         operand = next((c for c in node.children if c.type != "comment"), None)
         parts = None if operand is None else name_parts(operand)
@@ -385,7 +388,7 @@ def door_macro_names(bodies: Sequence[tsast.MacroBody]) -> frozenset[str]:
 
 def uses_unchecked(node: tsast.Node) -> bool:
     """Return whether a use of the member unchecked occurs below node, in the sense of rule 1."""
-    return any(leaf.text == "unchecked" and names_member(leaf) for leaf in node.descendants(*NAME_LEAVES))
+    return any(names_member(leaf) for leaf in node.descendants_named(UNCHECKED, *NAME_LEAVES))
 
 
 def namespace_names(trees: Iterable[tsast.Tree]) -> frozenset[tuple[str, ...]]:
@@ -753,52 +756,66 @@ def expansion_rows(texts: Sequence[str]) -> tuple[str, list[int]]:
     return "\n".join(texts), starts
 
 
+def expansion_results(batch: list[tuple[str, str, str, list[str]]]) -> list[dict]:
+    """Return the doors and the open targets of each expansion text of a batch, in rows of the joined text.
+
+    Store.map_batches runs this function in a worker process.  Each item is
+    (store directory, key, path, chunk digests).  An expansion that the
+    parser cannot read gives its diagnostic.
+
+    Complexity: one parse of each text, linear in its nodes.
+    """
+    joined = [expansion_rows([chunk_text(Path(store), digest) for digest in digests])
+              for store, _key, _path, digests in batch]
+    labels = [(f"{path} (expansion {key[:12]})", text)
+              for (_store, key, path, _digests), (text, _starts) in zip(batch, joined, strict=True)]
+    found: list[dict] = []
+    for (_text, starts), tree in zip(joined, tsast.parse_texts(labels), strict=True):
+        if tree.diagnostic is not None:
+            found.append({"unread": tree.diagnostic})
+        else:
+            found.append({"starts": starts,
+                          "doors": [[line - 1, shape] for line, shape in node_doors(tree.root, lambda n: n.line)],
+                          "members": [[node.start[0], access, name] for node, access, name in class_members(tree)]})
+    return found
+
+
 def expanded(root: Path, compile_db: Path, scope: frozenset[str],
              problems: list[str]) -> tuple[dict[str, list[Door]], list[Target]]:
     """Read the doors and the open targets of each distinct expansion of each file in scope.
 
-    The result of each expansion is cached beside the compile database under
-    the store key of the expansion, with rows of the joined text.  The lines
-    of the chunks map a row to a line of the file.  The text is expanded, so
-    rule 5 has no macro left to find.
+    The result of each expansion text stays in the results of the store,
+    under the key of the expansion and a name that hashes this guard and the
+    parser, with rows of the joined text.  The lines of the chunks map a row
+    to a line of the file.  The text is expanded, so rule 5 has no macro left
+    to find.
 
     Complexity: linear in the preprocessed output of the units, plus one
-    parse for each expansion that is not in the cache.
+    parse for each expansion text that the store does not hold.
     """
     store = Store(compile_db, root)
-    cache = compile_db.parent / "unchecked-access-cache"
-    cache.mkdir(exist_ok=True)
+    stored = store.results("no-unchecked-access", Path(__file__), tsast.parser_identity())
     results: dict[str, dict] = {}
     pending: dict[str, tuple[str, list[str]]] = {}
     seen: list[tuple[str, str, list[int]]] = []
-    for unit in store.units():
-        if unit.failure is not None:
-            problems.append(f"PREPROC   {unit.failure} — the guard cannot read the expansions of this unit.")
+    for expansion in store.expansions():
+        path, key = expansion.path, expansion.key
+        if path not in scope:
             continue
-        for path, (key, chunks) in files_of(unit).items():
-            if path not in scope:
-                continue
-            seen.append((path, key, [chunk.line for chunk in chunks]))
-            if key in results or key in pending:
-                continue
-            try:
-                results[key] = json.loads((cache / f"{SCAN_VERSION}-{key}.json").read_text())
-            except (OSError, ValueError):
-                pending[key] = (path, [store.text(chunk.digest) for chunk in chunks])
-    keys = list(pending)
-    joined = [expansion_rows(pending[key][1]) for key in keys]
-    items = [(f"{pending[key][0]} (expansion {key[:12]})", text) for key, (text, _) in zip(keys, joined)]
-    for key, (_, starts), tree in zip(keys, joined, tsast.parse_texts(items)):
-        if tree.diagnostic is not None:
-            result = {"unread": tree.diagnostic}
+        seen.append((path, key, [chunk.line for chunk in expansion.chunks]))
+        if key in results or key in pending:
+            continue
+        cached = stored.get(key)
+        if isinstance(cached, dict):
+            results[key] = cached
         else:
-            result = {"starts": starts,
-                      "doors": [[line - 1, shape] for line, shape in node_doors(tree.root, lambda n: n.line)],
-                      "members": [[node.start[0], access, name] for node, access, name in class_members(tree)]}
-        staging = cache / f"{SCAN_VERSION}-{key}.{os.getpid()}.tmp"
-        staging.write_text(json.dumps(result))
-        os.replace(staging, cache / f"{SCAN_VERSION}-{key}.json")
-        results[key] = result
+            pending[key] = (path, [chunk.digest for chunk in expansion.chunks])
+    problems += [f"PREPROC   {failure} — the guard cannot read the expansions of this unit."
+                 for failure in store.failures]
+    items = [(str(store.directory), key, path, digests) for key, (path, digests) in pending.items()]
+    for item, result in zip(items, store.map_batches(expansion_results, items), strict=True):
+        stored.put(item[1], result)
+        results[item[1]] = result
     doors: dict[str, list[Door]] = {}
     targets: list[Target] = []
     unread: set[str] = set()
@@ -890,7 +907,20 @@ def check(root: Path, compile_db: Path | None = None) -> int:
 
 
 def self_test() -> int:
+    """Plant a repository with a scratch cache root, and prove each verdict.
+
+    Returns:
+        0 when every case holds, 2 otherwise
+    """
+    with cache_dir.scratch_root() as caches:
+        return planted_cases(caches)
+
+
+def planted_cases(caches: Path) -> int:
     """Plant a repository, prove each verdict, and prove the verdict does not depend on the working directory.
+
+    Args:
+        caches: The scratch root of the caches, where the store keeps its results
 
     Returns:
         0 when every case holds, 2 otherwise
@@ -1132,8 +1162,8 @@ def self_test() -> int:
                 expect(root, 1, "REFUSED   include/foundation/Counter.h:3 — a writable private static data member: "
                                 "counter_", f"the {attempt} expanded run refuses a macro member in a class",
                        True, database, absent="Counter.h:2")
-            if not any((root / "build" / "unchecked-access-cache").glob("*.json")):
-                failures.append("the expanded pass wrote no cache entry")
+            if not any((caches / "preprocessed" / "results").glob("no-unchecked-access-*/*/*.json")):
+                failures.append("the expanded pass wrote no result to the store")
             write(root, "src/Glue.cpp", '#include "include/foundation/Counter.h"\n#include "missing.h"\n')
             expect(root, 1, "PREPROC", "a unit that the preprocessor rejects fails the run", True, database)
             (root / "src/Glue.cpp").unlink()

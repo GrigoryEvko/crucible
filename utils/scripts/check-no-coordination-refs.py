@@ -47,6 +47,8 @@ THE ENGINE
         docstrings and f-string text included.
       * Every other file (shell, CMake, YAML, allowlists, JSON, Markdown) has
         no parser here, and its text is read line by line.
+    The store of utils/scripts/preprocessed.py keeps the references of each
+    file under a hash of its bytes, so a warm run parses no file.
 
 EXIT STATUS
     0  clean
@@ -57,6 +59,7 @@ EXIT STATUS
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import subprocess
@@ -67,8 +70,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
+from preprocessed import text_results  # noqa: E402
 
 # The scan reads every tracked file, except the paths below.  This file plants
 # references in its self-test.  The notes under misc/ are out of scope, and the
@@ -144,94 +149,100 @@ def scoped_files(root: Path) -> list[Path]:
     )
 
 
-def cpp_prose(root: Path, files: list[Path]) -> Iterator[tuple[Path, int, str]]:
-    """Yield every prose line of the C++ files, from their parse trees.
+def cpp_prose(tree: tsast.Tree) -> Iterator[tuple[int, str]]:
+    """Yield every prose line of one C++ file, from its parse tree.
 
     Args:
-        root: The repository root
-        files: Repo-relative C++ files
+        tree: The parse of the file
 
     Yields:
-        (file, one-based line, text) for each line of each prose span
-
-    Raises:
-        Unreadable: If a file does not parse clean
+        (one-based line, text) for each line of each prose span
     """
-    try:
-        trees = list(tsast.parse([root / f for f in files]))
-    except tsast.ParseError as exc:
-        raise Unreadable(str(exc)) from exc
-    for relative, tree in zip(files, trees):
-        spans: list[tuple[int, str]] = [
-            (node.line, node.text) for node in tree.find("comment", "string_literal", "raw_string_literal")
-        ]
-        for call in tree.find("preproc_call"):
-            argument = call.child_by_field("argument")
-            if argument is not None:
-                spans.append((argument.line, argument.text))
-        for body in tree.find("preproc_arg"):
-            parent = body.parent
-            if parent is None or parent.type not in ("preproc_def", "preproc_function_def"):
-                continue
-            for token in tsast.pp_tokens(body.text, first_row=body.start[0]):
-                if token.kind == "string":
-                    spans.append((token.row + 1, token.text))
-        for line, text in spans:
-            for offset, part in enumerate(text.split("\n")):
-                yield relative, line + offset, part
+    spans: list[tuple[int, str]] = [
+        (node.line, node.text) for node in tree.find("comment", "string_literal", "raw_string_literal")
+    ]
+    for call in tree.find("preproc_call"):
+        argument = call.child_by_field("argument")
+        if argument is not None:
+            spans.append((argument.line, argument.text))
+    for body in tree.find("preproc_arg"):
+        parent = body.parent
+        if parent is None or parent.type not in ("preproc_def", "preproc_function_def"):
+            continue
+        for token in tsast.pp_tokens(body.text, first_row=body.start[0]):
+            if token.kind == "string":
+                spans.append((token.row + 1, token.text))
+    for line, text in spans:
+        for offset, part in enumerate(text.split("\n")):
+            yield line + offset, part
 
 
-def python_prose(root: Path, relative: Path) -> Iterator[tuple[Path, int, str]]:
+def python_prose(relative: Path, data: bytes) -> Iterator[tuple[int, str]]:
     """Yield every prose line of one Python file, from its tokens.
 
     Args:
-        root: The repository root
-        relative: The repo-relative Python file
+        relative: The repo-relative Python file, for a report
+        data: The bytes of the file
 
     Yields:
-        (file, one-based line, text) for each line of each comment or string
+        (one-based line, text) for each line of each comment or string
 
     Raises:
         Unreadable: If the file does not tokenize
     """
-    source = (root / relative).read_text(encoding="utf-8")
     try:
+        # The universal newlines of a file read as text: each \r\n and each \r is \n.
+        source = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
-    except (tokenize.TokenError, SyntaxError) as exc:
+    except (tokenize.TokenError, SyntaxError, UnicodeDecodeError) as exc:
         raise Unreadable(f"{relative}: {exc}") from exc
     for token in tokens:
         if token.type in PYTHON_PROSE:
             for offset, part in enumerate(token.string.split("\n")):
-                yield relative, token.start[0] + offset, part
+                yield token.start[0] + offset, part
 
 
-def text_lines(root: Path, relative: Path) -> Iterator[tuple[Path, int, str]]:
+def text_lines(data: bytes) -> Iterator[tuple[int, str]]:
     """Yield every line of a file that has no parser here.
 
     A file that is not UTF-8 text is binary and holds no prose.
 
     Args:
-        root: The repository root
-        relative: The repo-relative file
+        data: The bytes of the file
 
     Yields:
-        (file, one-based line, text) for each line
+        (one-based line, text) for each line
     """
-    data = (root / relative).read_bytes()
     if b"\0" in data:
         return
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return
-    for number, line in enumerate(text.split("\n"), start=1):
-        yield relative, number, line
+    yield from enumerate(text.split("\n"), start=1)
+
+
+def references(lines: Iterator[tuple[int, str]]) -> list[list]:
+    """Return [line, text] for each prose line that names a reference."""
+    return [[line, text] for line, text in lines if REFERENCE.search(text)]
+
+
+def result_key(kind: str, data: bytes) -> str:
+    """Return the name of the stored result of one file: a hash of how the scan reads it and of its bytes."""
+    return hashlib.sha256(kind.encode() + b"\0" + data).hexdigest()
 
 
 def scan(root: Path) -> tuple[int, list[str]]:
     """Report every coordination reference in the prose of the files in scope.
 
-    Complexity: O(total bytes in scope) plus one parse of the C++ files.
+    The store of utils/scripts/preprocessed.py keeps the references of each
+    file under a hash of its bytes and of the way the scan reads it, and
+    under a name that hashes this guard and the parser.  So a warm run reads
+    and hashes each file, and parses none.  A file that the scan cannot read
+    gets no stored result, so each run reports it again.
+
+    Complexity: O(total bytes in scope) plus one parse of each C++ file that
+    the store does not hold.
 
     Args:
         root: The repository root
@@ -245,18 +256,38 @@ def scan(root: Path) -> tuple[int, list[str]]:
     # the link, so a reference in a linked document is not reported twice.
     links = {f for f in files if (root / f).is_symlink()}
     targets = [(link, 1, str((root / link).readlink())) for link in sorted(links)]
-    # A file that the kit cannot parse, such as generated BPF C, is read line
-    # by line, so no file in scope goes unread.
-    cpp = [f for f in files if f not in links and tsast.is_in_cpp_scope(f)]
-    others = [f for f in files if f not in links and not tsast.is_in_cpp_scope(f)]
     hits: list[tuple[Path, int, str]] = [hit for hit in targets if REFERENCE.search(hit[2])]
+    results = text_results("no-coordination-refs", Path(__file__), tsast.parser_identity())
+    missed_cpp: list[Path] = []
     try:
-        for relative, line, text in cpp_prose(root, cpp):
-            if REFERENCE.search(text):
-                hits.append((relative, line, text))
-        for relative in others:
-            lines = python_prose(root, relative) if relative.suffix == ".py" else text_lines(root, relative)
-            hits.extend(hit for hit in lines if REFERENCE.search(hit[2]))
+        for relative in files:
+            if relative in links:
+                continue
+            data = (root / relative).read_bytes()
+            # A file that the kit cannot parse, such as generated BPF C, is
+            # read line by line, so no file in scope goes unread.
+            if tsast.is_in_cpp_scope(relative):
+                kind = "cpp"
+            else:
+                kind = "python" if relative.suffix == ".py" else "text"
+            stored = None if results is None else results.get(result_key(kind, data))
+            if isinstance(stored, list):
+                found = stored
+            elif kind == "cpp":
+                missed_cpp.append(relative)
+                continue
+            else:
+                found = references(python_prose(relative, data) if kind == "python" else text_lines(data))
+                if results is not None:
+                    results.put(result_key(kind, data), found)
+            hits.extend((relative, line, text) for line, text in found)
+        for relative, tree in zip(missed_cpp, tsast.parse([root / f for f in missed_cpp]), strict=True):
+            found = references(cpp_prose(tree))
+            if results is not None:
+                results.put(result_key("cpp", tree.source), found)
+            hits.extend((relative, line, text) for line, text in found)
+    except tsast.ParseError as exc:
+        return 2, [f"check-no-coordination-refs: cannot read a file in scope: {exc}"]
     except Unreadable as exc:
         return 2, [f"check-no-coordination-refs: cannot read a file in scope: {exc}"]
     report = [f"{relative.as_posix()}:{line}: {text.strip()}" for relative, line, text in sorted(set(hits))]
@@ -378,7 +409,7 @@ def self_test() -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
-    with tempfile.TemporaryDirectory() as work:
+    with cache_dir.scratch_root(), tempfile.TemporaryDirectory() as work:
         root = Path(work)
         throwaway_repo.init(root)
         write(root, "include/fixy/PlantedBreadcrumbs.h", "".join(f"// {line}\n" for line in PLANTED_REFERENCES))

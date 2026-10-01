@@ -73,23 +73,26 @@ scope: the export and the build of a guard run, or the scratch file of
 another tool, can appear under the tree and vanish while this guard reads
 it.  A file or a macro body that the parser cannot read is read from its
 preprocessing tokens, so no use is lost.  The tokens then bound the argument
-list by its angle brackets.
+list by its angle brackets.  The store of utils/scripts/preprocessed.py
+keeps the uses and the include targets of each file text, so a warm run
+parses no file.
 
 The preprocessed pass runs with --compile-db.  It reads the output of the
 compiler of each database entry with -E and the flags of the build, from
-the shared store of utils/scripts/preprocessed.py in preprocessed-cache/ beside
-the compile database, so this guard and check-proof-routes.py preprocess
-each translation unit one time between them.  Preprocessing expands token
-pasting and macro bodies, follows an #include whose operand is a macro, and
-finds each header through the -I flags of the build.  The pass parses each
-distinct expansion of a file that names the function, and the line markers
-of the output give each use its file and line, so a use in a header counts
-once, however many translation units include it.  For each file and key,
-the count is the larger count of the two passes, so an arm that this host
-does not compile still counts.  A preprocessor failure refuses the run,
-because a translation unit the guard cannot read can hold a use.
-START_LIFETIME_JOBS sets the number of parallel preprocessor runs, and the
-default is the number of processors, at most 16.
+the shared store of utils/scripts/preprocessed.py, so every guard, build
+directory and work tree preprocesses each translation unit one time.
+Preprocessing expands token pasting and macro bodies, follows an #include
+whose operand is a macro, and finds each header through the -I flags of the
+build.  The pass parses each distinct expansion of a file that names the
+function, and the line markers of the output give each use its file and
+line, so a use in a header counts once, however many translation units
+include it.  The store keeps the uses of each expansion text, so a warm run
+parses nothing.  For each file and key, the count is the larger count of the
+two passes, so an arm that this host does not compile still counts.  A
+preprocessor failure refuses the run, because a translation unit the guard
+cannot read can hold a use.  START_LIFETIME_JOBS sets the number of parallel
+preprocessor runs and of the worker processes of each pass, and the default
+is the number of processors, at most 16.
 
 What this guard does not see, stated rather than implied
 --------------------------------------------------------
@@ -124,6 +127,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -139,9 +143,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
-from preprocessed import Store, files_of  # noqa: E402
+from preprocessed import Expansion, Store, chunk_text, map_batches, text_results  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 NAMES = frozenset({"start_lifetime_as", "start_lifetime_as_array"})
@@ -311,18 +316,59 @@ def include_targets(tree: tsast.Tree) -> list[tuple[str, str]]:
     return found
 
 
-def with_defines(trees: list[tsast.Tree]) -> list[tsast.Tree]:
-    """The trees that hold a #define, whose bodies the pass parses on their own."""
-    return [tree for tree in trees if any(True for _ in tree.find("preproc_def", "preproc_function_def"))]
+def has_define(tree: tsast.Tree) -> bool:
+    """True when the tree holds a #define, whose body the pass parses on its own."""
+    return any(True for _ in tree.find("preproc_def", "preproc_function_def"))
+
+
+def jobs() -> int:
+    """The number of worker processes of each pass: START_LIFETIME_JOBS, else the processors, at most 16."""
+    return int(os.environ.get("START_LIFETIME_JOBS", "0") or 0) or min(16, os.cpu_count() or 1)
+
+
+def file_facts(paths: Sequence[Path]) -> list[tuple[str, dict]]:
+    """Parse files, and return the SHA-256 of each text with the uses and the include targets that it holds.
+
+    The uses of a file include the uses in the body of each #define that it
+    holds.  A file that the parser cannot read gives the uses of its tokens.
+    A result depends on the text of its file alone.  Only the trees that
+    hold a #define stay in memory until their bodies are parsed.
+    preprocessed.map_batches runs this function in a worker process.
+
+    Complexity: linear in the nodes of each parse and of each macro body.
+    """
+    found: list[tuple[str, dict]] = []
+    defining: list[tsast.Tree] = []
+    owner: dict[int, int] = {}
+    for tree in tsast.parse(paths, strict=False):
+        if tree.diagnostic is None:
+            uses = node_uses(tree.root, lambda node: node.line)
+            if has_define(tree):
+                owner[id(tree)] = len(found)
+                defining.append(tree)
+        else:
+            uses = token_uses(tsast.pp_tokens(tree.source.decode(errors="replace")))
+        found.append((hashlib.sha256(tree.source).hexdigest(),
+                      {"uses": [list(use) for use in uses], "includes": [list(item) for item in include_targets(tree)]}))
+    for body in tsast.macro_bodies(defining):
+        if body.is_parsed:
+            uses = node_uses(body.root, lambda node: body.origin(node)[0] + 1)
+        else:
+            uses = token_uses(tsast.pp_tokens(body.text, body.first_row))
+        found[owner[id(body.define.tree)]][1]["uses"].extend(list(use) for use in uses)
+    return found
 
 
 def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
     """Record each use in scope, and follow each include directive to the file it names when that file is in scope.
 
     The scope is the tracked files and the sources of the compile database.
-    Each file is parsed once, in rounds: a round parses the files that the
-    last round found.  Complexity: linear in the total size of the files in
-    scope and of their macro bodies.
+    The pass reads the files in rounds: a round reads the files that the
+    last round found.  The store keeps the uses and the include targets of
+    each text under its SHA-256 and a name that hashes this guard and the
+    parser, so a warm run parses nothing.  Complexity: one hash of each file
+    in scope, plus one parse of each file and of each of its macro bodies
+    that the store does not hold.
     """
     uses: Uses = defaultdict(list)
     listed = {p.resolve() for p in listed_files(root) if p.is_file()}
@@ -330,33 +376,31 @@ def lexical_scan(root: Path, compile_db: Path | None) -> Uses:
     in_scope = listed | sources
     pending = {p for p in listed if is_source(p)} | sources
     seen: set[Path] = set()
+    results = text_results("start-lifetime-lexical", Path(__file__), tsast.parser_identity())
     while pending:
         batch = sorted(pending - seen)
         seen |= pending
         pending = set()
-        clean: list[tsast.Tree] = []
-        for tree in tsast.parse(batch, strict=False):
-            path = Path(tree.path)
-            where = shown(root, path)
-            if tree.diagnostic is None:
-                found = node_uses(tree.root, lambda node: node.line)
-                clean.append(tree)
+        facts: dict[Path, dict] = {}
+        missed: list[Path] = []
+        for path in batch:
+            cached = None if results is None else results.get(hashlib.sha256(path.read_bytes()).hexdigest())
+            if isinstance(cached, dict):
+                facts[path] = cached
             else:
-                found = token_uses(tsast.pp_tokens(path.read_bytes().decode(errors="replace")))
-            for line, key in found:
+                missed.append(path)
+        for path, (key, fact) in zip(missed, map_batches(file_facts, missed, jobs()), strict=True):
+            facts[path] = fact
+            if results is not None:
+                results.put(key, fact)
+        for path in batch:
+            where = shown(root, path)
+            for line, key in facts[path]["uses"]:
                 uses[f"{where}:{key}"].append(line)
-            for delimiter, name in include_targets(tree):
+            for delimiter, name in facts[path]["includes"]:
                 target = resolve_include(root, path, delimiter, name)
                 if target is not None and target not in seen and target in in_scope:
                     pending.add(target)
-        for body in tsast.macro_bodies(with_defines(clean)):
-            where = shown(root, Path(body.define.tree.path))
-            if body.is_parsed:
-                found = node_uses(body.root, lambda node: body.origin(node)[0] + 1)
-            else:
-                found = token_uses(tsast.pp_tokens(body.text, body.first_row))
-            for line, key in found:
-                uses[f"{where}:{key}"].append(line)
     return uses
 
 
@@ -370,51 +414,78 @@ def expansion_rows(texts: Sequence[str]) -> tuple[str, list[int]]:
     return "\n".join(texts), starts
 
 
+def expansion_uses(batch: list[tuple[str, str, str, list[str]]]) -> list[dict]:
+    """Return the uses in each expansion text of a batch, by row of the joined text, and the row of each chunk.
+
+    Store.map_batches runs this function in a worker process.  Each item is
+    (store directory, key, path, chunk digests).  A text that does not name
+    the function has no use and is not parsed.  Complexity: one parse of
+    each text that names the function, linear in its nodes.
+    """
+    texts = [[chunk_text(Path(store), digest) for digest in digests] for store, _key, _path, digests in batch]
+    found: list[dict] = [{"starts": [], "uses": []} for _item in batch]
+    named = [index for index, parts in enumerate(texts) if any("start_lifetime_as" in part for part in parts)]
+    rows = [expansion_rows(texts[index]) for index in named]
+    labels = [(f"{batch[index][2]} (expansion {batch[index][1][:12]})", text)
+              for index, (text, _starts) in zip(named, rows, strict=True)]
+    for index, (text, starts), tree in zip(named, rows, tsast.parse_texts(labels), strict=True):
+        if tree.diagnostic is None:
+            uses = node_uses(tree.root, lambda node: node.line)
+        else:
+            uses = token_uses(tsast.pp_tokens(text))
+        found[index] = {"starts": starts, "uses": [[row_line, use_key] for row_line, use_key in uses]}
+    return found
+
+
 def preprocessed_scan(root: Path, compile_db: Path, failures: list[str]) -> tuple[Expanded, int, int, float]:
     """Read each database entry from the shared store of utils/scripts/preprocessed.py.
 
-    The store preprocesses a unit one time for this guard and
-    check-proof-routes.py together.  Each distinct expansion of a file that
-    names the function is parsed one time for each run, however many units
-    hold it.  Complexity: linear in the number of units times the files each
-    reads, plus one parse of each distinct expansion that names the
-    function.
+    The store preprocesses a unit one time for every guard that reads it.
+    Each distinct expansion of a file is read one time for each run, however
+    many units hold it.  The store keeps the uses of each expansion text
+    under a name that hashes this guard and the parser, so a warm run reads
+    no text and parses nothing.  Complexity: linear in the number of units
+    times the files each reads, plus one parse of each new expansion text
+    that names the function.
     """
-    store = Store(compile_db, root, int(os.environ.get("START_LIFETIME_JOBS", "0") or 0))
+    store = Store(compile_db, root, jobs())
+    results = store.results("start-lifetime", Path(__file__), tsast.parser_identity())
     begin = time.monotonic()
-    units = cached = 0
-    pending: dict[tuple[str, str], tuple[list[str], list[int]]] = {}
-    for unit in store.units():
-        units += 1
-        cached += unit.from_cache
-        if unit.failure is not None:
-            failures.append(unit.failure)
+    order: list[Expansion] = []
+    found_of: dict[str, dict] = {}
+    pending: dict[str, Expansion] = {}
+    seen: set[tuple[str, str]] = set()
+    for expansion in store.expansions():
+        if (expansion.path, expansion.key) in seen:
             continue
-        for path, (key, chunks) in files_of(unit).items():
-            if (path, key) in pending:
-                continue
-            texts = [store.text(chunk.digest) for chunk in chunks]
-            if any("start_lifetime_as" in text for text in texts):
-                pending[(path, key)] = (texts, [chunk.line for chunk in chunks])
-    uses: Expanded = defaultdict(set)
-    keys = list(pending)
-    joined = [expansion_rows(pending[key][0]) for key in keys]
-    items = [(f"{path} (expansion {key[:12]})", text) for (path, key), (text, _) in zip(keys, joined)]
-    for expansion, (text, starts), tree in zip(keys, joined, tsast.parse_texts(items)):
-        path = expansion[0]
-        lines = pending[expansion][1]
-        if tree.diagnostic is None:
-            found = node_uses(tree.root, lambda node: node.line)
+        seen.add((expansion.path, expansion.key))
+        order.append(expansion)
+        if expansion.key in found_of or expansion.key in pending:
+            continue
+        cached = results.get(expansion.key)
+        if isinstance(cached, dict):
+            found_of[expansion.key] = cached
         else:
-            found = token_uses(tsast.pp_tokens(text))
+            pending[expansion.key] = expansion
+    failures.extend(store.failures)
+    items = [(str(store.directory), key, expansion.path, [chunk.digest for chunk in expansion.chunks])
+             for key, expansion in pending.items()]
+    for item, result in zip(items, store.map_batches(expansion_uses, items), strict=True):
+        found_of[item[1]] = result
+        results.put(item[1], result)
+    uses: Expanded = defaultdict(set)
+    for expansion in order:
+        result = found_of[expansion.key]
+        starts = result["starts"]
+        lines = [chunk.line for chunk in expansion.chunks]
         ordinals: dict[int, int] = defaultdict(int)
-        for row_line, use_key in found:
+        for row_line, use_key in result["uses"]:
             row = row_line - 1
             chunk = bisect.bisect_right(starts, row) - 1
             line = lines[chunk] + row - starts[chunk]
-            uses[f"{path}:{use_key}"].add((line, ordinals[line]))
+            uses[f"{expansion.path}:{use_key}"].add((line, ordinals[line]))
             ordinals[line] += 1
-    return uses, units, cached, time.monotonic() - begin
+    return uses, store.unit_count, store.cached_count, time.monotonic() - begin
 
 
 def read_allowlist(allowlist: Path) -> dict[str, tuple[int, int]]:
@@ -585,6 +656,16 @@ PREPROCESSED_KEYS = LEXICAL_KEYS + (
 
 
 def self_test() -> int:
+    """Plant each route and each known bypass in a scratch cache root, and prove the verdicts.
+
+    Returns:
+        0 when every case holds, 2 otherwise
+    """
+    with cache_dir.scratch_root():
+        return planted_cases()
+
+
+def planted_cases() -> int:
     """Plant each route and each known bypass, and prove the verdicts.
 
     Returns:

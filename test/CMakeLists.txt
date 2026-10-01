@@ -589,9 +589,11 @@ set_tests_properties(proof_routes proof_routes_self_test PROPERTIES
     LABELS "ci_guard"
     SKIP_RETURN_CODE 3)
 # utils/scripts/preprocessed.py preprocesses each unit of the compile database
-# one time for check-start-lifetime.py and check-proof-routes.py together.
-# The self-test proves that a warm run reads the store, that a changed
-# header makes its units stale, and that two runs at one time share work.
+# one time for every guard that reads the preprocessed output, in a store that
+# every build directory and every work tree share.  The self-test proves that
+# a warm run reads the store, that a second work tree reads the units of the
+# first, that a changed header makes its units stale, that two runs at one
+# time share work, and that an eviction keeps the store under its bound.
 add_test(NAME preprocessed_store_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/preprocessed.py --self-test)
 set_tests_properties(preprocessed_store_self_test PROPERTIES
@@ -1024,6 +1026,24 @@ add_test(NAME federation_admission
 set_tests_properties(federation_admission federation_admission_self_test PROPERTIES
     LABELS "forgery;ci_guard;ast"
     SKIP_RETURN_CODE 3)
+
+# The four guards that read the preprocessed store start on a full store.
+# Eight setup tests fill it, each one the entries whose index is its shard
+# modulo eight, so no one test preprocesses the whole database.  ctest adds
+# the setup tests to a run that selects one of the four guards.
+set(CRUCIBLE_STORE_SHARDS 8)
+math(EXPR crucible_last_store_shard "${CRUCIBLE_STORE_SHARDS} - 1")
+foreach(crucible_store_shard RANGE ${crucible_last_store_shard})
+  add_test(NAME preprocessed_store_fill_${crucible_store_shard}
+           COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/preprocessed.py
+                   --fill ${CMAKE_BINARY_DIR}/compile_commands.json
+                   --shard ${crucible_store_shard} --of ${CRUCIBLE_STORE_SHARDS})
+  set_tests_properties(preprocessed_store_fill_${crucible_store_shard} PROPERTIES
+      LABELS "ci_guard"
+      FIXTURES_SETUP preprocessed_store)
+endforeach()
+set_tests_properties(start_lifetime proof_routes no_unchecked_access federation_admission PROPERTIES
+    FIXTURES_REQUIRED preprocessed_store)
 
 crucible_test(test_vessel_api_typed)
 crucible_test(test_storage_nbytes_simd)
@@ -5308,6 +5328,32 @@ add_test(NAME mutation_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/tools/mutation/run.py selftest
           --compiler ${CMAKE_CXX_COMPILER} ${_mutation_ninja})
 set_tests_properties(mutation_self_test PROPERTIES LABELS "ci_guard;ast" SKIP_RETURN_CODE 3)
+
+# Each guard test of this directory starts on a full tree cache.  Eight setup
+# tests parse the C++ files of the tree, each one the files of its shard, with
+# their macro bodies (THE SHARDED FILL in utils/scripts/tsast.py).  Without
+# them, each guard that starts cold parses each file again.  ctest adds the
+# setup tests to a run that selects one guard test.  This block reads the
+# tests of the directory, so it stays after the last guard test.
+set(CRUCIBLE_TREE_SHARDS 8)
+math(EXPR crucible_last_tree_shard "${CRUCIBLE_TREE_SHARDS} - 1")
+foreach(crucible_tree_shard RANGE ${crucible_last_tree_shard})
+  add_test(NAME tsast_tree_fill_${crucible_tree_shard}
+           COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/tsast.py
+                   --fill --shard ${crucible_tree_shard} --of ${CRUCIBLE_TREE_SHARDS})
+  set_tests_properties(tsast_tree_fill_${crucible_tree_shard} PROPERTIES
+      LABELS "ci_guard"
+      FIXTURES_SETUP tsast_trees
+      SKIP_RETURN_CODE 3)
+endforeach()
+get_property(crucible_directory_tests DIRECTORY PROPERTY TESTS)
+foreach(crucible_guard_test IN LISTS crucible_directory_tests)
+  get_test_property(${crucible_guard_test} LABELS crucible_guard_labels)
+  get_test_property(${crucible_guard_test} FIXTURES_SETUP crucible_guard_setup)
+  if("ci_guard" IN_LIST crucible_guard_labels AND NOT crucible_guard_setup)
+    set_property(TEST ${crucible_guard_test} APPEND PROPERTY FIXTURES_REQUIRED tsast_trees)
+  endif()
+endforeach()
 
 add_subdirectory(foundation)
 add_subdirectory(fixy)

@@ -101,7 +101,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import preprocessed  # noqa: E402  (the path insert above has to come first)
+import cache_dir  # noqa: E402  (the path insert above has to come first)
+import preprocessed  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 
@@ -355,54 +356,92 @@ def macro_sites(root: Path, trees: list[tsast.Tree], members: set[str]) -> list[
     return sites
 
 
+def expansion_sites(batch: list[tuple[str, str, str, list[str], list[str]]]) -> list[dict]:
+    """Return the sites of each expansion text of a batch, by row of the joined text, and the row of each chunk.
+
+    Store.map_batches runs this function in a worker process.  Each item is
+    (store directory, key, path, chunk digests, member names).  A text that
+    names neither the class nor a member name has no site and is not
+    parsed.  A text that the parser cannot read gives its diagnostic.
+
+    Complexity: one parse of each text that names the class or a member
+    name, linear in its nodes.
+    """
+    found: list[dict] = [{"rows": [], "sites": []} for _item in batch]
+    named: list[tuple[int, str, list[int]]] = []
+    for index, (store, _key, _path, digests, members) in enumerate(batch):
+        texts = [preprocessed.chunk_text(Path(store), digest) for digest in digests]
+        needles = (*members, CLASS)
+        if not any(needle in text for text in texts for needle in needles):
+            continue
+        rows: list[int] = []
+        row = 0
+        for text in texts:
+            rows.append(row)
+            row += text.count("\n") + 1
+        named.append((index, "\n".join(texts), rows))
+    trees = tsast.parse_texts([(batch[index][2], text) for index, text, _rows in named])
+    for (index, _text, rows), tree in zip(named, trees, strict=True):
+        if tree.diagnostic is not None:
+            found[index] = {"unread": tree.diagnostic}
+            continue
+        path, members = batch[index][2], set(batch[index][4])
+        raw = [*class_head_sites(tree.root, path, members, lambda node: node.start[0]),
+               *declarator_sites(tree.root, path, members, lambda node: node.start[0])]
+        found[index] = {"rows": rows, "sites": [[site.line - 1, site.text, site.reason] for site in raw]}
+    return found
+
+
 def expanded_sites(root: Path, compile_db: Path, members: set[str], problems: list[str]) -> list[Site]:
     """Return the sites of the macro-expanded text of each file of a compile database.
 
     Each distinct expansion of a file is read one time.  A site is reported
     at the file line that the preprocessor gives for its text, which is the
-    line of the macro use.
+    line of the macro use.  The store keeps the sites of each expansion text
+    under a name that hashes this guard, the parser and the member names, so
+    a warm run reads no text.
 
     Complexity: one preprocessed pass over the database, which the store
-    shares with the other guards, plus one parse of each expanded text that
-    names the class or a member name.
+    shares with the other guards, plus one parse of each new expanded text
+    that names the class or a member name.
     """
     store = preprocessed.Store(compile_db, root)
-    needles = tuple(sorted(members | {CLASS}))
-    pending: list[tuple[str, str, list[tuple[int, int]]]] = []
+    results = store.results("federation-admission", Path(__file__), tsast.parser_identity(),
+                            json.dumps(sorted(members)))
+    order: list[preprocessed.Expansion] = []
+    found_of: dict[str, dict] = {}
+    pending: dict[str, tuple[str, list[str]]] = {}
     seen: set[tuple[str, str]] = set()
-    for unit in store.units():
-        if unit.failure is not None:
-            problems.append(f"federation_admission: {unit.file} does not preprocess, so what its macros define is "
-                            f"unknown.\n  {unit.failure}")
+    for expansion in store.expansions():
+        path, key = expansion.path, expansion.key
+        if path == AUTHORED or (path, key) in seen:
             continue
-        for path, (key, chunks) in preprocessed.files_of(unit).items():
-            if path == AUTHORED or (path, key) in seen:
-                continue
-            seen.add((path, key))
-            texts = [store.text(chunk.digest) for chunk in chunks]
-            if not any(needle in text for text in texts for needle in needles):
-                continue
-            starts: list[tuple[int, int]] = []
-            row = 0
-            for chunk, text in zip(chunks, texts, strict=True):
-                starts.append((row, chunk.line))
-                row += text.count("\n") + 1
-            pending.append((path, "\n".join(texts), starts))
+        seen.add((path, key))
+        order.append(expansion)
+        if key in found_of or key in pending:
+            continue
+        cached = results.get(key)
+        if isinstance(cached, dict):
+            found_of[key] = cached
+        else:
+            pending[key] = (path, [chunk.digest for chunk in expansion.chunks])
+    problems += [f"federation_admission: {unit.file} does not preprocess, so what its macros define is "
+                 f"unknown.\n  {unit.failure}" for unit in store.failed]
+    items = [(str(store.directory), key, path, digests, sorted(members)) for key, (path, digests) in pending.items()]
+    for item, result in zip(items, store.map_batches(expansion_sites, items), strict=True):
+        found_of[item[1]] = result
+        results.put(item[1], result)
     sites: list[Site] = []
-    trees = tsast.parse_texts([(path, text) for path, text, _starts in pending])
-    for (path, _text, starts), tree in zip(pending, trees, strict=True):
-        if tree.diagnostic is not None:
-            problems.append(f"federation_admission: the macro expansion of {path} does not parse, so what it "
-                            f"defines is unknown.\n  {tree.diagnostic}")
+    for expansion in order:
+        result = found_of[expansion.key]
+        if "unread" in result:
+            problems.append(f"federation_admission: the macro expansion of {expansion.path} does not parse, so "
+                            f"what it defines is unknown.\n  {result['unread']}")
             continue
-
-        def row_of(node: tsast.Node, starts: list[tuple[int, int]] = starts) -> int:
-            """Map a row of the expanded text to the zero-based row of the file line it came from."""
-            begin, line = max((start for start in starts if start[0] <= node.start[0]), default=(0, 1))
-            return line - 1 + node.start[0] - begin
-
-        sites += class_head_sites(tree.root, path, members, row_of)
-        sites += declarator_sites(tree.root, path, members, row_of)
+        starts = list(zip(result["rows"], (chunk.line for chunk in expansion.chunks), strict=False))
+        for raw_row, text, reason in result["sites"]:
+            begin, line = max((start for start in starts if start[0] <= raw_row), default=(0, 1))
+            sites.append(Site(expansion.path, line + raw_row - begin, text, reason))
     return sites
 
 
@@ -488,6 +527,16 @@ def run(root: Path, compile_db: Path | None = None) -> int:
 
 
 def self_test() -> int:
+    """Plant each forgery and each legal use with a scratch cache root, and examine each verdict.
+
+    Returns:
+        0 when every case holds, 2 otherwise
+    """
+    with cache_dir.scratch_root():
+        return planted_cases()
+
+
+def planted_cases() -> int:
     """Plant each forgery and each legal use, and examine each verdict.
 
     Returns:

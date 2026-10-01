@@ -74,6 +74,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
+from preprocessed import split_command  # noqa: E402
 
 REPO_ROOT = tsast.REPO_ROOT
 SOURCE_ROOTS = ("include", "src", "vessel", "utils/tools", "test", "bench", "examples")
@@ -122,7 +123,7 @@ def compile_flags(entry: dict) -> list[str]:
     """Return the argument vector of one compile-database entry."""
     if "arguments" in entry:
         return list(entry["arguments"])
-    return shlex.split(entry.get("command", ""))
+    return split_command(entry.get("command", ""))
 
 
 def build_violations(build_dir: Path, root: Path) -> tuple[list[Violation], list[str]]:

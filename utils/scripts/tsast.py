@@ -75,6 +75,30 @@ WHY THE ANONYMOUS TOKENS COME FROM THE GAPS
     The gap lexer costs nothing at parse time, and it runs only for the nodes
     a guard asks about.
 
+THE TREE CACHE
+    parse() and parse_texts() keep each tree in the "tsast" cache of
+    utils/scripts/cache_dir.py.  The name of an entry is the SHA-256 of the
+    bytes of the text, of the CLI and grammar binaries of the kit, and of
+    this module.  A changed text, kit or reader of the CLI output gives a
+    different name, so a cached tree is never stale.  The CLI reads a copy of
+    the bytes that the name hashes, so a file that changes during the run
+    cannot put a tree under the name of other text.  A warm run loads the
+    flat arrays of each tree and starts no CLI.  When many texts miss, worker
+    processes parse them in parallel.  A path that cannot be read sends the
+    whole call to the CLI, which reports it as before.  CRUCIBLE_CACHE_DIR=off
+    turns the cache off.
+
+    Measured on 2026-10-01 over the 2,944 C++ files of this tree, 3.9 million
+    nodes, under a load average of about 200: the CLI and the reader of its
+    output take 13.1 s, and a load of the same trees takes 0.9 s.
+
+THE SHARDED FILL
+    tsast.py --fill --shard K --of N parses each C++ file of shard K that the
+    cache does not hold, with its macro bodies.  ctest runs the N shards as
+    setup tests of the guard tests.  The fill parses each file one time, and
+    each guard that starts after it finds the trees in the cache.  Without
+    the fill, each guard that starts cold parses each file again.
+
 NAMES, SCOPES AND DECLARATIONS
     The helpers after cpp_files() read the tree for the questions that the
     guards ask: the parts of a qualified name, the namespaces that enclose a
@@ -86,16 +110,25 @@ NAMES, SCOPES AND DECLARATIONS
 
 from __future__ import annotations
 
+import array
+import hashlib
+import json
+import multiprocessing
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from concurrent.futures import ProcessPoolExecutor
+from itertools import compress
 from pathlib import Path
 from typing import NamedTuple
 
+import cache_dir
 from repo_root import REPO_ROOT
 
 # One output line for one node.  The type is non-greedy so that a `MISSING ";"`
@@ -404,8 +437,13 @@ class Node:
     def descendants(self, *types: str) -> Iterator[Node]:
         """Yield every node below this one whose type is one of the given types.
 
-        The walk is iterative, so a deeply nested header cannot exhaust the
-        Python stack.  This tree reaches depth 119.
+        The arrays hold the nodes in preorder, so the nodes below this one
+        are the index range from this node to the end of its subtree, in
+        source order.  The walk filters that range and needs no stack, so a
+        deeply nested header cannot exhaust the Python stack.  This tree
+        reaches depth 119.  It filters the range in slices that grow, so a
+        caller that stops at the first match reads little of a large
+        subtree.
 
         Args:
             types: One or more grammar node types
@@ -413,13 +451,53 @@ class Node:
         Yields:
             Each matching node, in source order
         """
+        tree = self.tree
         want = frozenset(types)
-        stack = list(reversed(self.tree.kids[self.index]))
-        while stack:
-            i = stack.pop()
-            if self.tree.types[i] in want:
-                yield Node(self.tree, i)
-            stack.extend(reversed(self.tree.kids[i]))
+        start = self.index + 1
+        last = tree.subtree_end(self.index)
+        step = 64
+        while start < last:
+            stop = min(start + step, last)
+            for index in compress(range(start, stop), map(want.__contains__, tree.types[start:stop])):
+                yield Node(tree, index)
+            start = stop
+            step = min(step * 4, 1 << 16)
+
+    def descendants_named(self, names: frozenset[str], *types: str) -> Iterator[Node]:
+        """Yield every node below this one of one of the given types whose text is one of the names.
+
+        The text of a node is compared as descendants() and Node.text give
+        it, with each line splice kept.  A node on one row is compared as
+        bytes, and only when its span has the byte length of a name, so a
+        walk over every identifier decodes almost none of them.
+
+        Complexity: O(n) in the size of the subtree.
+
+        Args:
+            names: The texts to find
+            types: One or more grammar node types
+
+        Yields:
+            Each matching node, in source order
+        """
+        tree = self.tree
+        encoded = frozenset(name.encode("utf-8") for name in names)
+        lengths = frozenset(len(name) for name in encoded)
+        source = tree.source
+        starts = tree._starts()
+        srow, scol, erow, ecol = tree.srow, tree.scol, tree.erow, tree.ecol
+        for node in self.descendants(*types):
+            index = node.index
+            row = srow[index]
+            if erow[index] != row:
+                if node.text in names:
+                    yield node
+                continue
+            width = ecol[index] - scol[index]
+            if width in lengths:
+                offset = starts[row] + scol[index]
+                if source[offset:offset + width] in encoded:
+                    yield node
 
     def ancestor_of_type(self, *types: str) -> Node | None:
         """Return the nearest enclosing node of one of the given types, or None.
@@ -533,6 +611,7 @@ class Tree:
     __slots__ = (
         "path", "types", "fields", "srow", "scol", "erow", "ecol",
         "parent", "kids", "diagnostic", "_source", "_line_starts", "_comment_rows",
+        "_ends", "_namespace_paths",
     )
 
     def __init__(self, path: Path) -> None:
@@ -554,6 +633,34 @@ class Tree:
         self._source: bytes | None = None
         self._line_starts: list[int] | None = None
         self._comment_rows: dict[int, list[Node]] | None = None
+        # The index after the last node of each subtree, made on first use.
+        self._ends: list[int] | None = None
+        # The namespace path inside each namespace_definition, filled on use.
+        self._namespace_paths: dict[tuple[int, bool], tuple[str, ...]] = {}
+
+    def subtree_end(self, index: int) -> int:
+        """Return the index after the last node below a node: its subtree is the range from it to here.
+
+        The arrays hold the nodes in preorder, so a subtree is contiguous.
+        The first call makes the ends of every node in one pass from the
+        last node back, O(n) in the number of nodes.
+
+        Args:
+            index: The index of a node
+
+        Returns:
+            The end of the index range of its subtree
+        """
+        ends = self._ends
+        if ends is None:
+            parents = self.parent
+            ends = list(range(1, len(parents) + 1))
+            for child in range(len(parents) - 1, 0, -1):
+                owner = parents[child]
+                if ends[child] > ends[owner]:
+                    ends[owner] = ends[child]
+            self._ends = ends
+        return ends[index]
 
     @property
     def root(self) -> Node:
@@ -625,9 +732,8 @@ class Tree:
             Each matching node, in source order
         """
         want = frozenset(types)
-        for i, node_type in enumerate(self.types):
-            if node_type in want:
-                yield Node(self, i)
+        for index in compress(range(len(self.types)), map(want.__contains__, self.types)):
+            yield Node(self, index)
 
     def __len__(self) -> int:
         """Return the number of named nodes in the file."""
@@ -641,9 +747,10 @@ class Tree:
 def parse(paths: Sequence[Path], *, strict: bool = True) -> Iterator[Tree]:
     """Parse files with the pinned kit and yield one Tree for each of them.
 
-    One CLI process serves the whole list, so the grammar loads once.  Trees
-    arrive in the order of `paths`, and each one is freed when the caller moves
-    on, which keeps a whole-tree scan inside a few MB.
+    The tree cache (THE TREE CACHE above) gives each tree that it holds, and
+    the CLI parses the rest.  Trees arrive in the order of `paths`, and each
+    one is freed when the caller moves on, which keeps a whole-tree scan
+    inside a few MB of trees.
 
     Args:
         paths: The files to parse, relative to the repo root or absolute
@@ -655,10 +762,40 @@ def parse(paths: Sequence[Path], *, strict: bool = True) -> Iterator[Tree]:
 
     Raises:
         KitMissing: If the pinned kit is not installed
-        ParseError: If strict is true and an unrostered file reports an error
+        ParseError: If strict is true and an unrostered file reports an error,
+            or if the CLI cannot read a path
     """
     if not paths:
         return
+    kit_dir()
+    cache = cache_dir.cache_root(TREE_CACHE)
+    if cache is not None:
+        try:
+            items = [(Path(p), (REPO_ROOT / p).read_bytes()) for p in paths]
+        except OSError:
+            items = None
+        if items is not None:
+            for tree in _cached_trees(cache, items):
+                yield _strict_policy(tree, strict)
+            return
+    yield from _parse_cli(paths, strict)
+
+
+def _parse_cli(paths: Sequence[Path], strict: bool) -> Iterator[Tree]:
+    """Parse files with one CLI process and yield one Tree for each of them, with no cache.
+
+    One CLI process serves the whole list, so the grammar loads once.
+
+    Args:
+        paths: The files to parse, relative to the repo root or absolute
+        strict: As for parse()
+
+    Yields:
+        One Tree for each input path, in input order
+
+    Raises:
+        ParseError: As for parse()
+    """
     kit = kit_dir()
     listing = "\n".join(str(p) for p in paths) + "\n"
 
@@ -769,8 +906,24 @@ def _finish(tree: Tree, diagnostics: dict[str, str], strict: bool) -> Tree:
     Raises:
         ParseError: If strict is true and this file is not rostered
     """
+    tree.diagnostic = diagnostics.pop(str(tree.path), None)
+    return _strict_policy(tree, strict)
+
+
+def _strict_policy(tree: Tree, strict: bool) -> Tree:
+    """Apply the strict policy to a tree that has its diagnostic.
+
+    Args:
+        tree: A finished tree
+        strict: When true, raise for an unrostered parse error
+
+    Returns:
+        The same tree
+
+    Raises:
+        ParseError: If strict is true, the tree has a diagnostic, and its file is not rostered
+    """
     key = str(tree.path)
-    tree.diagnostic = diagnostics.pop(key, None)
     if tree.diagnostic is not None and strict and key not in UNPARSEABLE:
         raise ParseError(
             f"{key} reports a tree-sitter parse error and is not listed in "
@@ -779,6 +932,314 @@ def _finish(tree: Tree, diagnostics: dict[str, str], strict: bool) -> Tree:
             "Do not add a roster entry without naming the reason."
         )
     return tree
+
+
+# ── The tree cache ───────────────────────────────────────────────────────────
+
+# The name of the cache in utils/scripts/cache_dir.py.
+TREE_CACHE = "tsast"
+# The size limit of the cache.  One state of this tree takes about 100 MB.
+TREE_CACHE_BYTES = 2 << 30
+# The layout of an entry.  A change to the layout gives every entry a new name.
+_TREE_FORMAT = b"tsast-tree-1"
+_TREE_MAGIC = b"TSA1"
+# At least this many misses, or misses of four times _BATCH_BYTES, go to
+# worker processes, and each worker task parses at most _BATCH texts and
+# _BATCH_BYTES bytes with one CLI process.
+_PARALLEL_MISSES = 128
+_BATCH = 64
+# A text of this size or more parses in a task of its own, so two slow
+# texts never wait for each other in one worker.
+_BATCH_BYTES = 64 << 10
+# The host is shared, so a call starts at most this many workers.
+_MAX_WORKERS = 16
+_TREE_IDENTITY: bytes | None = None
+
+
+def _tree_identity() -> bytes:
+    """Return the part of each entry name that is the same for every text: the kit, this module and the layout.
+
+    Complexity: one hash of the two kit binaries and of this file, one time
+    for each process.
+    """
+    global _TREE_IDENTITY
+    if _TREE_IDENTITY is None:
+        kit = kit_dir()
+        digest = hashlib.sha256(_TREE_FORMAT)
+        digest.update(f"{sys.byteorder}:{array.array('I').itemsize}".encode())
+        for item in (kit / "bin" / "tree-sitter", kit / "lib" / "cpp.so", Path(__file__)):
+            digest.update(hashlib.sha256(item.read_bytes()).digest())
+        _TREE_IDENTITY = digest.digest()
+    return _TREE_IDENTITY
+
+
+def parser_identity() -> str:
+    """Return the hexadecimal hash of the kit binaries and of this module.
+
+    A cached result that a guard calculates from a parse depends on this
+    identity, so the guard puts it in the name of the result.
+    """
+    return _tree_identity().hex()
+
+
+def _entry_of(directory: Path, key: str) -> Path:
+    """Return the path of the entry of one key."""
+    return directory / key[:2] / key
+
+
+def _diagnostic_tail(diagnostic: str | None) -> str | None:
+    """Return the part of a CLI diagnostic line after the path: the timing and the first bad node."""
+    if diagnostic is None:
+        return None
+    tab = diagnostic.find("\t")
+    return diagnostic[tab:] if tab >= 0 else "\t" + diagnostic
+
+
+def _store_tree(directory: Path, key: str, tree: Tree) -> None:
+    """Write one parsed tree to the cache under its key.
+
+    Args:
+        directory: The directory of the cache
+        key: The name of the entry
+        tree: The tree that the CLI gave for the text of the key
+    """
+    names = sorted(set(tree.types) | {field for field in tree.fields if field is not None})
+    number = {name: index for index, name in enumerate(names)}
+    header = json.dumps({"names": names, "tail": _diagnostic_tail(tree.diagnostic)}).encode()
+    columns = [
+        array.array("H", [number[kind] for kind in tree.types]),
+        array.array("H", [0 if field is None else number[field] + 1 for field in tree.fields]),
+        array.array("I", tree.srow), array.array("I", tree.scol),
+        array.array("I", tree.erow), array.array("I", tree.ecol),
+        array.array("i", tree.parent),
+    ]
+    body = b"".join(column.tobytes() for column in columns)
+    cache_dir.write_atomic(_entry_of(directory, key),
+                           _TREE_MAGIC + len(header).to_bytes(4, "little") + header + body)
+
+
+def _load_tree(entry: Path, path: Path, data: bytes) -> Tree | None:
+    """Load one tree from its entry, or return None when the entry is gone or damaged.
+
+    Complexity: linear in the number of nodes.
+
+    Args:
+        entry: The path of the entry
+        path: The path or the label that the tree reports
+        data: The text of the tree, which the entry name hashes
+    """
+    try:
+        raw = entry.read_bytes()
+        info = entry.stat()
+        size = int.from_bytes(raw[4:8], "little")
+        if raw[:4] != _TREE_MAGIC:
+            return None
+        meta = json.loads(raw[8:8 + size])
+        body = memoryview(raw)[8 + size:]
+        count, remainder = divmod(len(body), 24)
+        if remainder or count == 0:
+            return None
+        kinds = array.array("H")
+        kinds.frombytes(body[:2 * count])
+        fields = array.array("H")
+        fields.frombytes(body[2 * count:4 * count])
+        columns = []
+        for index, code in enumerate("IIIIi"):
+            column = array.array(code)
+            column.frombytes(body[4 * count * (index + 1):4 * count * (index + 2)])
+            columns.append(column)
+        names = meta["names"]
+        tree = Tree(path)
+        tree.types = [names[kind] for kind in kinds]
+        field_names = [None, *names]
+        tree.fields = [field_names[field] for field in fields]
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return None
+    tree.srow, tree.scol, tree.erow, tree.ecol, tree.parent = columns
+    kids: list[list[int]] = [[] for _ in range(count)]
+    parents = tree.parent
+    for index in range(1, count):
+        kids[parents[index]].append(index)
+    tree.kids = kids
+    tail = meta.get("tail")
+    tree.diagnostic = None if tail is None else f"{path}{tail}"
+    tree._source = data
+    cache_dir.mark_used(entry, info.st_mtime)
+    return tree
+
+
+def _parse_batch(batch: list[tuple[str, str]], directory: str) -> None:
+    """Parse the texts of one batch with one CLI process and store each tree, in a worker process.
+
+    Args:
+        batch: (path of a copy of the text, key) for each text
+        directory: The directory of the cache
+    """
+    trees = _parse_cli([Path(path) for path, _key in batch], False)
+    for (_path, key), tree in zip(batch, trees, strict=True):
+        _store_tree(Path(directory), key, tree)
+
+
+def _cached_trees(directory: Path, items: Sequence[tuple[Path, bytes]]) -> Iterator[Tree]:
+    """Yield one tree for each (path, text) pair, from the cache or from the CLI, in input order.
+
+    The CLI reads a copy of each text that misses, so the entry name always
+    hashes the text that the CLI parsed.  Many misses go to worker
+    processes, and a few go to one CLI stream.
+
+    Complexity: one hash of each text, one load of each hit, and one parse
+    of each miss.
+
+    Args:
+        directory: The directory of the cache
+        items: The path or label of each tree, and its text
+
+    Yields:
+        One Tree for each item, with no strict policy applied
+    """
+    identity = _tree_identity()
+    keys = [hashlib.sha256(identity + data).hexdigest() for _path, data in items]
+    misses = [index for index, key in enumerate(keys) if not _entry_of(directory, key).is_file()]
+    with tempfile.TemporaryDirectory(prefix="tsast-") as scratch:
+        copies: dict[int, Path] = {}
+        for index in misses:
+            copies[index] = Path(scratch) / f"{index}.cpp"
+            copies[index].write_bytes(items[index][1])
+        missed_bytes = sum(len(items[index][1]) for index in misses)
+        is_parallel = len(misses) > 1 and (len(misses) >= _PARALLEL_MISSES or missed_bytes >= 4 * _BATCH_BYTES)
+        if is_parallel:
+            _store_misses(directory, [(copies[index], keys[index], len(items[index][1])) for index in misses],
+                          min(_MAX_WORKERS, os.cpu_count() or 1))
+        streamed = set() if is_parallel else set(misses)
+        stream = _parse_cli([copies[index] for index in misses], False) if streamed else iter(())
+        for index, (path, data) in enumerate(items):
+            if index in streamed:
+                tree = _relabel(next(stream), path, data)
+                _store_tree(directory, keys[index], tree)
+            else:
+                tree = (_load_tree(_entry_of(directory, keys[index]), path, data)
+                        or _reparse(directory, keys[index], path, data))
+            yield tree
+        # The CLI checks its exit and its count of trees after the last one.
+        for _extra in stream:
+            raise ParseError("the tree-sitter CLI gave more trees than the texts it read")
+    _evict_trees(directory)
+
+
+def _store_misses(directory: Path, misses: Sequence[tuple[Path, str, int]], workers: int) -> None:
+    """Parse texts in worker processes and store each tree under its key.
+
+    The largest texts go first, each batch with at most _BATCH texts and
+    _BATCH_BYTES bytes, so one large file does not wait behind a full batch.
+    With one worker, the batches run in this process.
+
+    Args:
+        directory: The directory of the cache
+        misses: (path of a copy of the text, key, size of the text) for each text
+        workers: The largest number of worker processes
+    """
+    batches: list[list[tuple[str, str]]] = []
+    weight = 0
+    for copy, key, size in sorted(misses, key=lambda miss: -miss[2]):
+        if not batches or len(batches[-1]) >= _BATCH or weight + size > _BATCH_BYTES:
+            batches.append([])
+            weight = 0
+        batches[-1].append((str(copy), key))
+        weight += size
+    count = min(workers, len(batches))
+    if count <= 1:
+        for batch in batches:
+            _parse_batch(batch, str(directory))
+        return
+    method = "fork" if threading.active_count() == 1 else "forkserver"
+    with ProcessPoolExecutor(count, mp_context=multiprocessing.get_context(method)) as pool:
+        list(pool.map(_parse_batch, batches, [str(directory)] * len(batches)))
+
+
+def fill_trees(shard: int, count: int, root: Path = REPO_ROOT) -> tuple[int, int]:
+    """Parse and store each C++ file of one shard of a tree that the tree cache does not hold.
+
+    The files are the files under the root with a suffix in CPP_SUFFIXES,
+    from tracked_files().  The shards take the files in turn in the order of
+    their size, so each shard parses about the same number of bytes.  Each
+    file that misses also gets the trees of its macro bodies.  Each shard
+    starts at most _MAX_WORKERS / count workers.
+
+    Complexity: one hash of each file of the shard, plus one parse of each
+    file and of each macro body that the cache does not hold.
+
+    Args:
+        shard: The index of the shard, from 0
+        count: The number of shards
+        root: The root of the tree
+
+    Returns:
+        (files that the shard parsed, files of the shard)
+    """
+    directory = cache_dir.cache_root(TREE_CACHE)
+    if directory is None:
+        return 0, 0
+    kit_dir()
+    paths = [root / name for name in tracked_files(root) if name.endswith(CPP_SUFFIXES)]
+    paths = [path for path in paths if path.is_file()]
+    mine = sorted(paths, key=lambda path: (-path.stat().st_size, path.as_posix()))[shard::count]
+    items = [(path, path.read_bytes()) for path in mine]
+    identity = _tree_identity()
+    keys = [hashlib.sha256(identity + data).hexdigest() for _path, data in items]
+    misses = [index for index, key in enumerate(keys) if not _entry_of(directory, key).is_file()]
+    with tempfile.TemporaryDirectory(prefix="tsast-") as scratch:
+        copies = []
+        for index in misses:
+            copy = Path(scratch) / f"{index}.cpp"
+            copy.write_bytes(items[index][1])
+            copies.append((copy, keys[index], len(items[index][1])))
+        _store_misses(directory, copies, max(1, _MAX_WORKERS // count))
+    defining = [tree for tree in _cached_trees(directory, [items[index] for index in misses])
+                if tree.diagnostic is None and any(True for _ in tree.find("preproc_def", "preproc_function_def"))]
+    macro_bodies(defining)
+    return len(misses), len(items)
+
+
+def _fill_main(argv: list[str]) -> int:
+    """Run one shard of the tree fill from the command line, and report what it parsed."""
+    import argparse
+    parser = argparse.ArgumentParser(prog="tsast.py --fill", description="Fill the tree cache for one shard.")
+    parser.add_argument("--shard", type=int, required=True, help="the index of the shard, from 0")
+    parser.add_argument("--of", type=int, required=True, help="the number of shards")
+    args = parser.parse_args(argv)
+    if not 0 <= args.shard < args.of:
+        print(f"tsast --fill: the shard {args.shard} is not in 0..{args.of - 1}.  Give --shard K --of N with "
+              f"0 <= K < N.", file=sys.stderr)
+        return 2
+    parsed, total = fill_trees(args.shard, args.of)
+    print(f"tsast --fill: shard {args.shard} of {args.of} parsed {parsed} of its {total} file(s).")
+    return 0
+
+
+def _relabel(tree: Tree, path: Path, data: bytes) -> Tree:
+    """Give a tree from the CLI the path and the text of its item, with its diagnostic under that path."""
+    tail = _diagnostic_tail(tree.diagnostic)
+    tree.path = path
+    tree.diagnostic = None if tail is None else f"{path}{tail}"
+    tree._source = data
+    return tree
+
+
+def _reparse(directory: Path, key: str, path: Path, data: bytes) -> Tree:
+    """Parse one text whose entry went away or is damaged, store it, and return its tree."""
+    with tempfile.TemporaryDirectory(prefix="tsast-") as scratch:
+        copy = Path(scratch) / "0.cpp"
+        copy.write_bytes(data)
+        tree = next(_parse_cli([copy], False))
+    _store_tree(directory, key, tree)
+    return _relabel(tree, path, data)
+
+
+def _evict_trees(directory: Path) -> None:
+    """Hold the tree cache under its size and age limits, one time for each eviction interval."""
+    with cache_dir.eviction_turn(directory) as has_turn:
+        if has_turn:
+            cache_dir.remove(cache_dir.victims(cache_dir.entries(directory), TREE_CACHE_BYTES))
 
 
 # The one suffix policy of every C++ scan.  A BPF program is C (`.bpf.c`), and
@@ -1068,30 +1529,50 @@ def namespace_path(node: Node, *, skip_inline: bool = False) -> tuple[str, ...]:
     Returns:
         The namespace names in order
     """
-    groups: list[list[str]] = []
     owner = node.ancestor_of_type("namespace_definition")
-    while owner is not None:
-        name = owner.child_by_field("name")
-        segments: list[str] = []
-        if name is None:
-            if not (skip_inline and "inline" in owner.gap_tokens()):
-                segments.append("")
-        elif name.type == "namespace_identifier":
-            if not (skip_inline and "inline" in owner.gap_tokens()):
-                segments.append(_leaf_text(name))
-        else:
-            # `namespace a::inline b` marks one segment of a nested name inline.
-            is_inline = False
-            for text in name.tokens():
-                if text == "inline":
-                    is_inline = True
-                elif text != "::":
-                    if not (skip_inline and is_inline):
-                        segments.append(text)
-                    is_inline = False
-        groups.append(segments)
-        owner = owner.ancestor_of_type("namespace_definition")
-    return tuple(segment for group in reversed(groups) for segment in group)
+    return () if owner is None else _path_inside(owner, skip_inline)
+
+
+def _path_inside(owner: Node, skip_inline: bool) -> tuple[str, ...]:
+    """Return the namespace path that a node directly inside a namespace_definition has, one time for each tree.
+
+    Every node in one namespace body has the same path, so the tree keeps
+    the path of each namespace_definition that a call reached.
+
+    Args:
+        owner: A namespace_definition
+        skip_inline: As for namespace_path()
+
+    Returns:
+        The path of the enclosing namespaces, then the segments of owner
+    """
+    memo = owner.tree._namespace_paths
+    key = (owner.index, skip_inline)
+    found = memo.get(key)
+    if found is not None:
+        return found
+    name = owner.child_by_field("name")
+    segments: list[str] = []
+    if name is None:
+        if not (skip_inline and "inline" in owner.gap_tokens()):
+            segments.append("")
+    elif name.type == "namespace_identifier":
+        if not (skip_inline and "inline" in owner.gap_tokens()):
+            segments.append(_leaf_text(name))
+    else:
+        # `namespace a::inline b` marks one segment of a nested name inline.
+        is_inline = False
+        for text in name.tokens():
+            if text == "inline":
+                is_inline = True
+            elif text != "::":
+                if not (skip_inline and is_inline):
+                    segments.append(text)
+                is_inline = False
+    outer = owner.ancestor_of_type("namespace_definition")
+    found = (() if outer is None else _path_inside(outer, skip_inline)) + tuple(segments)
+    memo[key] = found
+    return found
 
 
 def is_test_namespace(path: Sequence[str]) -> bool:
@@ -2505,11 +2986,12 @@ class NameIndex:
 # ── In-memory parses and macro bodies ────────────────────────────────────────
 
 def parse_texts(items: Sequence[tuple[str, str]], *, strict: bool = False) -> Iterator[Tree]:
-    """Parse source texts held in memory, one CLI run for all of them.
+    """Parse source texts held in memory, from the tree cache or with one CLI run for the rest.
 
-    Each text goes to a file in a private temporary directory, which the
-    generator removes when it finishes.  Each Tree keeps its text, so its
-    slices do not read a file, and its path is the label the caller gave.
+    Each text that the cache does not hold goes to a file in a private
+    temporary directory, which the generator removes when it finishes.  Each
+    Tree keeps its text, so its slices do not read a file, and its path is
+    the label the caller gave.
 
     Args:
         items: (label, text) pairs.  The label becomes Tree.path.
@@ -2523,6 +3005,15 @@ def parse_texts(items: Sequence[tuple[str, str]], *, strict: bool = False) -> It
         ParseError: If strict is true and a text parses with an error
     """
     if not items:
+        return
+    cache = cache_dir.cache_root(TREE_CACHE)
+    if cache is not None:
+        kit_dir()
+        encoded = [(Path(label), text.encode("utf-8")) for label, text in items]
+        for (label, _text), tree in zip(items, _cached_trees(cache, encoded), strict=True):
+            if strict and tree.diagnostic is not None:
+                raise ParseError(f"{label} parses with an error:\n  {tree.diagnostic}")
+            yield tree
         return
     with tempfile.TemporaryDirectory(prefix="tsast-") as scratch:
         paths: list[Path] = []
@@ -2708,6 +3199,32 @@ def _body_root(tree: Tree, root_type: str) -> Node:
     return tree.root if found is None else found
 
 
+def _prefill_wrappers(bodies: Sequence[str]) -> None:
+    """Parse each wrapper of each body that the tree cache does not hold yet, in one parallel run.
+
+    macro_bodies tries the wrappers one stage after the other.  A large body
+    that fails a wrapper would wait for the parse of the next one, so a body
+    whose first wrapper misses the cache gets all of its wrappers parsed
+    together here.  The loop of macro_bodies then reads each stage from the
+    cache.  With the caches off, this does nothing.
+
+    Args:
+        bodies: The joined text of each body
+    """
+    cache = cache_dir.cache_root(TREE_CACHE)
+    if cache is None or not bodies:
+        return
+    kit_dir()
+    identity = _tree_identity()
+    first_prefix, first_suffix = _WRAPPERS[0][1], _WRAPPERS[0][2]
+    cold = [body for body in bodies if not _entry_of(
+        cache, hashlib.sha256(identity + (first_prefix + body + first_suffix).encode("utf-8")).hexdigest()).is_file()]
+    items = [(f"macro-prefill-{index}", prefix + body + suffix)
+             for index, body in enumerate(cold) for _root_type, prefix, suffix in _WRAPPERS]
+    for _tree in parse_texts(items):
+        pass
+
+
 def macro_bodies(trees: Iterable[Tree]) -> list[MacroBody]:
     """Parse the replacement list of every `#define` in the given trees.
 
@@ -2741,6 +3258,7 @@ def macro_bodies(trees: Iterable[Tree]) -> list[MacroBody]:
             joined, positions = _remove_splices(text, values[0].start)
             pending.append((define, "" if name is None else _leaf_text(name), macro_parameters(define),
                             text, joined, values[0].start[0], values[0].start[1], positions))
+    _prefill_wrappers([entry[4] for entry in pending])
     results: dict[int, MacroBody] = {}
     remaining = list(range(len(pending)))
     for stage, (root_type, prefix, suffix) in enumerate(_WRAPPERS):
@@ -2990,6 +3508,7 @@ def _self_test() -> int:
         _self_test_helpers(check, parse_text, Path(work))
         _self_test_macros(check, parse_text)
         _self_test_lookup(check, parse_text)
+        _self_test_cache(check, Path(work))
 
     # Negative control: a rostered file is admitted, and it really does carry an
     # error, so the roster entry is not stale.
@@ -3439,6 +3958,112 @@ def _self_test_helpers(
     )
 
 
+def _self_test_cache(check: Callable[..., None], work: Path) -> None:
+    """Check the tree cache: a hit is the tree of the CLI, a changed or damaged entry misses, and the bound holds.
+
+    Args:
+        check: The recorder of the enclosing self-test
+        work: The scratch directory
+    """
+    global _parse_cli
+    real_cli = _parse_cli
+    calls: list[int] = []
+
+    def counted(paths: Sequence[Path], strict: bool) -> Iterator[Tree]:
+        """Count each CLI run of this process, then run the CLI."""
+        calls.append(len(paths))
+        return real_cli(paths, strict)
+
+    def shape(tree: Tree) -> tuple:
+        """Return every array of a tree, and the part of its diagnostic after the path."""
+        return (tree.types, tree.fields, list(tree.srow), list(tree.scol), list(tree.erow), list(tree.ecol),
+                list(tree.parent), tree.kids, _diagnostic_tail(tree.diagnostic) is not None, tree.source)
+
+    texts = [(f"cache{index}.cpp", f"namespace n{index} {{ int cached_{index} = {index}; }}\n")
+             for index in range(_PARALLEL_MISSES + 3)]
+    texts.append(("broken.cpp", "void f() { g(1) { } }\n"))
+    saved = os.environ.get(cache_dir.ROOT_VARIABLE)
+    _parse_cli = counted
+    try:
+        os.environ[cache_dir.ROOT_VARIABLE] = "off"
+        reference = [shape(tree) for tree in parse_texts(texts)]
+        with cache_dir.scratch_root() as root:
+            cold = [shape(tree) for tree in parse_texts(texts)]
+            entries = cache_dir.entries(root / TREE_CACHE)
+            check("a cold parse of many texts gives the trees of the CLI and stores one entry for each",
+                  cold == reference and len(entries) == len(texts))
+            calls.clear()
+            warm = list(parse_texts(texts))
+            check("a warm parse runs no CLI and gives the trees of the CLI",
+                  not calls and [shape(tree) for tree in warm] == reference)
+            check("a warm tree keeps its diagnostic under its own label",
+                  warm[-1].diagnostic is not None and warm[-1].diagnostic.startswith("broken.cpp\t")
+                  and "ERROR" in warm[-1].diagnostic)
+            calls.clear()
+            changed = list(parse_texts([("cache0.cpp", "int changed_text;\n")]))
+            check("a changed text misses and gives its own tree",
+                  calls == [1] and [leaf.text for leaf in changed[0].root.descendants("identifier")]
+                  == ["changed_text"])
+            key = hashlib.sha256(_tree_identity() + texts[1][1].encode()).hexdigest()
+            _entry_of(root / TREE_CACHE, key).write_bytes(b"TSA1\x00")
+            calls.clear()
+            again = list(parse_texts([texts[1]]))
+            check("a damaged entry counts as a miss", calls == [1] and shape(again[0]) == reference[1])
+            source = work / "cached_file.cpp"
+            source.write_text("int from_a_file;\n", encoding="utf-8")
+            first = shape(next(parse([source])))
+            calls.clear()
+            second = next(parse([source]))
+            check("a file parses from the cache the second time, with its own path and text",
+                  not calls and shape(second) == first and second.path == source
+                  and second.root.children[0].text == "int from_a_file;")
+            now = time.time()
+            aged = [cache_dir.Entry(Path(f"/old{index}"), 10, now - 2 * cache_dir.MAX_AGE) for index in range(2)]
+            fresh = [cache_dir.Entry(Path(f"/new{index}"), 10, now - index) for index in range(3)]
+            chosen = {entry.path.name for entry in cache_dir.victims(aged + fresh, 15, now=now)}
+            check("an eviction removes each entry past the age limit, then the oldest past the size limit",
+                  chosen == {"old0", "old1", "new2", "new1"})
+            stamp = root / TREE_CACHE / "evicted"
+            stamp.unlink()
+            with cache_dir.eviction_turn(root / TREE_CACHE) as first_turn:
+                stamp.unlink()
+                with cache_dir.eviction_turn(root / TREE_CACHE) as locked_out:
+                    pass
+                stamp.touch()
+            with cache_dir.eviction_turn(root / TREE_CACHE) as too_soon:
+                pass
+            check("one process takes a due eviction turn, a second one does not wait for the lock, and a third "
+                  "waits for the interval", first_turn and not locked_out and not too_soon)
+            planted = work / "fill"
+            planted.mkdir()
+            sources = {"a.h": "#define FILL_TWICE(x) ((x) + (x))\nint filled_a;\n", "b.cpp": "int filled_b;\n",
+                       "c.hpp": "namespace filled { int c; }\n", "d.cc": "int filled_d = FILL_TWICE(2);\n"}
+            for name, text in sources.items():
+                (planted / name).write_text(text, encoding="utf-8")
+            (planted / "notes.txt").write_text("int not_cpp;\n", encoding="utf-8")
+            first_shards = [fill_trees(shard, 2, planted) for shard in range(2)]
+            second_shards = [fill_trees(shard, 2, planted) for shard in range(2)]
+            calls.clear()
+            filled = list(parse(sorted(planted / name for name in sources)))
+            bodies = macro_bodies(filled)
+            check("two fill shards parse each C++ file one time between them, a second fill parses none, and a "
+                  "guard after the fill runs no CLI for a file or a macro body",
+                  sum(parsed for parsed, _total in first_shards) == len(sources)
+                  and sum(total for _parsed, total in first_shards) == len(sources)
+                  and all(parsed == 0 for parsed, _total in second_shards)
+                  and not calls and [body.name for body in bodies] == ["FILL_TWICE"] and bodies[0].is_parsed)
+        with cache_dir.scratch_root() as root:
+            os.environ[cache_dir.ROOT_VARIABLE] = "off"
+            list(parse_texts(texts[:2]))
+            check("with the caches off, a parse writes no entry", not any(root.iterdir()))
+    finally:
+        _parse_cli = real_cli
+        if saved is None:
+            os.environ.pop(cache_dir.ROOT_VARIABLE, None)
+        else:
+            os.environ[cache_dir.ROOT_VARIABLE] = saved
+
+
 def _self_test_macros(check: Callable[..., None], parse_text: Callable[[str, str], Tree]) -> None:
     """Check the in-memory parse, the macro-body parse and the token name reader.
 
@@ -3745,6 +4370,8 @@ if __name__ == "__main__":
     try:
         if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
             sys.exit(_self_test())
+        if len(sys.argv) > 1 and sys.argv[1] == "--fill":
+            sys.exit(_fill_main(sys.argv[2:]))
         print(__doc__)
         print(f"kit: {kit_dir()}")
     except KitMissing as exc:

@@ -84,18 +84,21 @@ its own node, so neither can form a site.  The lexical pass parses each C
 and C++ source file that git tracks.  An untracked file is out of scope:
 the export and the build of a guard run, or the scratch file of another
 tool, can appear under the tree and vanish while this guard reads it.  The
+facts of each file text stay in the results of the store of
+utils/scripts/preprocessed.py, so a warm run parses no file.  The
 preprocessed pass runs with
 --compile-db: it runs each entry of the compile database through the
 preprocessor with the flags of the build, and it parses each distinct
 expansion of each file, so a shape that a macro or token pasting forms is
 seen too.  The output comes from the shared store of
-utils/scripts/preprocessed.py, so this guard and check-start-lifetime.py
-preprocess each translation unit one time between them.  The records of an
-expansion stay in proof-routes-cache/ beside the compile database, under
-the key of the file's chunk list, so a header that many units expand the
-same way is parsed one time.  For each key the count is the larger count of
-the two passes.  A preprocessor failure, and a file or an expansion that the
-parser cannot read, refuses the run.
+utils/scripts/preprocessed.py, so every guard, build directory and work tree
+preprocesses each translation unit one time.  The records of an expansion
+stay in the results of the store, under the key of the file's chunk list and
+a name that hashes this guard and the parser, so a header that many units
+expand the same way is parsed one time, and a warm run parses no expansion.
+For each key the count is the larger count of the two passes.  A
+preprocessor failure, and a file or an expansion that the parser cannot
+read, refuses the run.
 
 A negative fixture of test/layer compiles against a staged layer root, an
 include directory that links only to the layers below it, and one of them
@@ -142,6 +145,7 @@ Usage
 """
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -154,9 +158,10 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
-from preprocessed import Store, files_of, joined  # noqa: E402
+from preprocessed import Expansion, Store, chunk_text, text_results  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 SOURCE_SUFFIXES = frozenset({".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx", ".inl", ".ipp", ".tpp",
@@ -170,9 +175,6 @@ NAMESPACE_SCOPE = frozenset({"translation_unit", "namespace_definition", "declar
 FIXTURE = re.compile(r"^test/(?:[^/]+/)*(?:neg|[^/]+_neg)/[^/]+$")
 BPF = re.compile(r"^include/crucible/[^/]+/bpf/|\.bpf\.c$")
 ENTRY = re.compile(r"^(?P<key>.*?)(?: x(?P<count>[1-9][0-9]*))?$")
-# Bumped when a rule reads the source differently, so an older cache entry
-# is not reused.
-SCAN_VERSION = 3
 
 CASTS = frozenset({"static_cast", "reinterpret_cast", "bit_cast"})
 ALLOCATORS = frozenset({"allocator", "allocator_traits", "polymorphic_allocator"})
@@ -545,6 +547,45 @@ def defined_primaries(tree: tsast.Tree) -> set[str]:
     return found
 
 
+def tree_facts(tree: tsast.Tree) -> dict | None:
+    """Return what the guard reads from one parse, or None when the parser cannot read it.
+
+    The facts are the records of the file, the templates that it befriends,
+    the primaries that it defines and its namespace-scope aliases.  They
+    depend on the text of the file alone.
+    """
+    if tree.diagnostic is not None:
+        return None
+    return {"records": extract(tree), "friends": sorted(template_friends(tree)),
+            "primaries": sorted(defined_primaries(tree)),
+            "aliases": [[alias, names] for alias, names in namespace_aliases(tree)]}
+
+
+def file_facts(root: Path, scope: list[str]) -> list[tuple[str, dict | None]]:
+    """Return the facts of each file in scope, in order, from the store or from one parse.
+
+    The store of utils/scripts/preprocessed.py keeps the facts of each text
+    under its SHA-256 and a name that hashes this guard and the parser, so
+    a warm run parses no file.  Complexity: one hash of each file, plus one
+    parse of each file that the store does not hold.
+    """
+    results = text_results("proof-routes-lexical", Path(__file__), tsast.parser_identity())
+    found: dict[str, dict | None] = {}
+    missed: list[str] = []
+    for rel in scope:
+        stored = None if results is None else results.get(hashlib.sha256((root / rel).read_bytes()).hexdigest())
+        if isinstance(stored, dict) and "facts" in stored:
+            found[rel] = stored["facts"]
+        else:
+            missed.append(rel)
+    for rel, tree in zip(missed, tsast.parse([root / rel for rel in missed], strict=False), strict=True):
+        facts = tree_facts(tree)
+        found[rel] = facts
+        if results is not None:
+            results.put(hashlib.sha256(tree.source).hexdigest(), {"facts": facts})
+    return [(rel, found[rel]) for rel in scope]
+
+
 def preprocessed_records(root: Path, compile_db: Path, failures: list[str],
                          tracked: frozenset[str]) -> list[tuple[str, list[list]]]:
     """The records of each file in the preprocessed output of each database entry, as (path, records).
@@ -557,41 +598,49 @@ def preprocessed_records(root: Path, compile_db: Path, failures: list[str],
     cannot read refuses the run.
 
     Complexity: linear in the number of units times the files each reads,
-    plus one parse for each distinct expansion of a file."""
+    plus one parse for each new distinct expansion text."""
     store = Store(compile_db, root, int(os.environ.get("PROOF_ROUTES_JOBS", "0") or 0))
-    cache_dir = compile_db.parent / "proof-routes-cache"
-    cache_dir.mkdir(exist_ok=True)
+    results = store.results("proof-routes", Path(__file__), tsast.parser_identity())
     records_of: dict[str, list[list]] = {}
-    pending: dict[str, tuple[str, list]] = {}
+    pending: dict[str, Expansion] = {}
     expansions: list[tuple[str, str]] = []
-    for unit in store.units():
-        if unit.failure is not None:
-            failures.append(unit.failure)
+    seen: set[tuple[str, str]] = set()
+    for expansion in store.expansions():
+        path = expansion.path
+        if path not in tracked or not in_scope(path) or (path, expansion.key) in seen:
             continue
-        for path, (file_key, chunks) in files_of(unit).items():
-            if path not in tracked or not in_scope(path):
-                continue
-            expansions.append((path, file_key))
-            if file_key in records_of or file_key in pending:
-                continue
-            try:
-                records_of[file_key] = json.loads((cache_dir / f"{SCAN_VERSION}-{file_key}.json").read_text())
-            except (OSError, ValueError):
-                pending[file_key] = (path, chunks)
-    keys = list(pending)
-    texts = [(f"{pending[key][0]} (expansion {key[:12]})", joined(store, pending[key][1])) for key in keys]
-    for key, tree in zip(keys, tsast.parse_texts(texts, strict=False)):
-        if tree.diagnostic is not None:
-            failures.append(f"{pending[key][0]}: the parser cannot read one expansion of this file, so its routes "
-                            f"are unknown")
+        seen.add((path, expansion.key))
+        expansions.append((path, expansion.key))
+        if expansion.key in records_of or expansion.key in pending:
             continue
-        found = extract(tree)
-        cache_file = cache_dir / f"{SCAN_VERSION}-{key}.json"
-        staging = cache_file.with_suffix(f".{os.getpid()}.tmp")
-        staging.write_text(json.dumps(found))
-        os.replace(staging, cache_file)
+        cached = results.get(expansion.key)
+        if isinstance(cached, list):
+            records_of[expansion.key] = cached
+        else:
+            pending[expansion.key] = expansion
+    failures.extend(store.failures)
+    items = [(str(store.directory), key, expansion.path, [chunk.digest for chunk in expansion.chunks])
+             for key, expansion in pending.items()]
+    for (_store, key, path, _digests), found in zip(items, store.map_batches(expansion_records, items), strict=True):
+        if found is None:
+            failures.append(f"{path}: the parser cannot read one expansion of this file, so its routes are unknown")
+            continue
         records_of[key] = found
+        results.put(key, found)
     return [(path, records_of[key]) for path, key in expansions if key in records_of]
+
+
+def expansion_records(batch: list[tuple[str, str, str, list[str]]]) -> list[list[list] | None]:
+    """Return the records of each expansion text of a batch, or None for a text that the parser cannot read.
+
+    Store.map_batches runs this function in a worker process.  Each item is
+    (store directory, key, path, chunk digests).  Complexity: one parse of
+    each text, linear in its nodes.
+    """
+    texts = [(f"{path} (expansion {key[:12]})", "\n".join(chunk_text(Path(store), digest) for digest in digests))
+             for store, key, path, digests in batch]
+    return [None if tree.diagnostic is not None else extract(tree)
+            for tree in tsast.parse_texts(texts, strict=False)]
 
 
 def preprocessed_counts(expansions: list[tuple[str, list[list]]], proofs, friends, primaries) -> dict[str, int]:
@@ -714,19 +763,18 @@ def scan(root: Path, compile_db: Path | None, binary: str | None, allowlist: Pat
     primaries: dict[str, set[str]] = defaultdict(set)
     exported: list[tuple[str, list[str]]] = []
     failures: list[str] = []
-    for tree in tsast.parse([root / path for path in scope], strict=False):
-        rel = Path(tree.path).relative_to(root).as_posix()
-        if tree.diagnostic is not None:
+    for rel, facts in file_facts(root, scope):
+        if facts is None:
             if rel not in tsast.UNPARSEABLE:
                 failures.append(f"{rel}: the parser cannot read this file, so its routes are unknown")
             continue
-        records_of[rel] = extract(tree)
+        records_of[rel] = facts["records"]
         if rel.startswith("include/"):
-            friend_set |= template_friends(tree)
-            for name in defined_primaries(tree):
+            friend_set.update(facts["friends"])
+            for name in facts["primaries"]:
                 primaries[name].add(rel)
         if Path(rel).suffix in HEADER_SUFFIXES:
-            exported += namespace_aliases(tree)
+            exported += [(alias, names) for alias, names in facts["aliases"]]
     friends = frozenset(friend_set)
     # A header can declare the alias that another file casts to, so each
     # namespace-scope alias of a header joins the proof names before any
@@ -829,7 +877,17 @@ def planted_records(text: str) -> tuple[list[list], frozenset[str]]:
 
 
 def self_test() -> int:
-    """Plant each route in a scratch tree and prove the verdicts."""
+    """Plant each route in a scratch tree, with a scratch cache root, and prove the verdicts."""
+    with cache_dir.scratch_root() as caches:
+        return planted_cases(caches)
+
+
+def planted_cases(caches: Path) -> int:
+    """Plant each route in a scratch tree and prove the verdicts.
+
+    Args:
+        caches: The scratch root of the caches, where the store keeps its manifests and results
+    """
     failures: list[str] = []
     proofs = frozenset({"Door"})
     records, friends = planted_records(SELF_TEST_SOURCE)
@@ -959,9 +1017,9 @@ def self_test() -> int:
                         or "PROOF-ROUTE unread input" in report.stderr):
                     failures.append(f"the {attempt} preprocessed pass missed a union formed by token pasting:\n"
                                     f"{report.stderr}")
-            if not any((root / "proof-routes-cache").glob("*.json")):
-                failures.append("the preprocessed pass wrote no cache entry")
-            if not any((root / "preprocessed-cache" / "units").glob("*.json")):
+            if not any((caches / "preprocessed" / "results").glob("proof-routes-*/*/*.json")):
+                failures.append("the preprocessed pass wrote no result to the store")
+            if not any((caches / "preprocessed" / "units").glob("*/*.json")):
                 failures.append("the preprocessed pass did not use the shared store")
             # A layer fixture compiles against a staged root that links only to
             # a lower layer, and it includes a higher one.  The pass reads it
