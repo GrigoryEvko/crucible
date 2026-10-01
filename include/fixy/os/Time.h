@@ -38,10 +38,6 @@
 #include <linux/ptp_clock.h>
 #include <sys/ioctl.h>
 
-#if defined(__x86_64__)
-#include <x86intrin.h>
-#endif
-
 namespace fixy::time {
 
 // sf names ::fixy, where the clock-source wrapper and the pin proof live.
@@ -94,9 +90,11 @@ concept ClockBacked = (clockid_for(Source) >= 0);
 
 namespace detail {
 
+// The two x86_64 reads call the builtins that __rdtsc, __rdtscp and
+// _mm_lfence wrap, so no includer pays for the parse of an intrinsics header.
 [[nodiscard]] CRUCIBLE_INLINE std::uint64_t read_raw_tsc() noexcept {
 #if defined(__x86_64__)
-    return __rdtsc();
+    return __builtin_ia32_rdtsc();
 #elif defined(__aarch64__)
     std::uint64_t value = 0;
     asm volatile("mrs %0, cntvct_el0" : "=r"(value));
@@ -109,8 +107,8 @@ namespace detail {
 [[nodiscard]] CRUCIBLE_INLINE std::uint64_t read_raw_tsc_serialized() noexcept {
 #if defined(__x86_64__)
     unsigned aux = 0;
-    const std::uint64_t value = __rdtscp(&aux);  // ordered against earlier instructions
-    _mm_lfence();  // ordered against later instructions
+    const std::uint64_t value = __builtin_ia32_rdtscp(&aux);  // ordered against earlier instructions
+    __builtin_ia32_lfence();  // ordered against later instructions
     return value;
 #elif defined(__aarch64__)
     asm volatile("isb" ::: "memory");  // the counter read must not float above earlier work

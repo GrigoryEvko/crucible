@@ -1201,10 +1201,13 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wno-psabi                          # 193b portable wide-vector facade
 
     # ── 3.13  GCC hardening flags (11) ───────────────────────
+    # A Debug build does not take 196 and 197.  The two flags defend a
+    # binary against fault injection, and they find no defect in a test.
+    # On a heavy translation unit they cost 20% to 46% of the back end.
     ${_CRUCIBLE_CFI_FLAGS}              # 194  control-flow integrity (x86 CET / arm BTI+PAC)
     -fstack-clash-protection            # 195  stack clash guard pages
-    -fharden-compares                   # 196  redundant compare checks
-    -fharden-conditional-branches       # 197  redundant branch checks
+    $<$<NOT:$<CONFIG:Debug>>:-fharden-compares>              # 196  redundant compare checks
+    $<$<NOT:$<CONFIG:Debug>>:-fharden-conditional-branches>  # 197  redundant branch checks
     -fno-delete-null-pointer-checks     # 198  keep null checks
     -fdiagnostics-color=always          # 199  colored output
     -ftemplate-backtrace-limit=0        # 200  full template errors
@@ -1332,11 +1335,14 @@ endif()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 5: Debug-only — auto-init
+#
+# No build takes -fharden-control-flow-redundancy.  It defends a binary
+# against fault injection, it finds no defect in a test, and it cannot
+# instrument a function that calls setjmp.
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(crucible_dialect INTERFACE
     -ftrivial-auto-var-init=zero        # 229  zero-fill uninit stack (P2795R5)
-    -fharden-control-flow-redundancy    # 230  redundant CFG checks
   )
 endif()
 

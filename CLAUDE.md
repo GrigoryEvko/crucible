@@ -778,7 +778,7 @@ class Arena {
 - Background owns TraceRing tail + MetaLog tail.
 - Cross-thread signals: atomic acquire/release ONLY. Never `memory_order_relaxed`.
 - `compare_exchange_strong` with `acq_rel` on RMW.
-- Spin on atomic load with `CRUCIBLE_SPIN_PAUSE` (→ `_mm_pause` on x86, `yield` on ARM).
+- Spin on atomic load with `CRUCIBLE_SPIN_PAUSE` (→ `__builtin_ia32_pause()`, the PAUSE that `_mm_pause` wraps, on x86, `yield` on ARM).
 - BANNED on hot path: `sleep_for`, `yield`, `futex`, `eventfd`, `condition_variable`, `atomic::wait/notify`, any timeout.
 
 ```cpp
@@ -998,7 +998,6 @@ flags is the wrong repair; the opt-out table in §III says why for each.
 -ftrivial-auto-var-init=zero         P2795R5 — zero-init stack, kills InitSafe class
 -fstack-protector-strong             stack canaries
 -fstack-clash-protection             stack clash mitigation (~0.1% cost)
--fharden-control-flow-redundancy     GCC CFG hardening
 -fcf-protection=full                 Intel CET / ARM BTI+PAC
 -fno-omit-frame-pointer              readable traces (<1% cost)
 -fno-plt                             direct calls
@@ -1013,6 +1012,12 @@ flags is the wrong repair; the opt-out table in §III says why for each.
 -D_FORTIFY_SOURCE=3                  glibc bounds checks
 -D_GLIBCXX_ASSERTIONS                libstdc++ cheap asserts (release-safe)
 ```
+
+Each build type other than Debug also takes `-fharden-compares` and
+`-fharden-conditional-branches` (`CMakeLists.txt` section 3.13). No build takes
+`-fharden-control-flow-redundancy`. These flags defend a binary against fault
+injection, and they find no defect in a test. On a heavy translation unit, they
+cost 20% to 46% of the back end.
 
 ### Debug preset
 
@@ -1162,7 +1167,8 @@ Non-error warnings (informational, not yet hard):
 #define CRUCIBLE_MUSTTAIL     [[gnu::musttail]]
 
 // ── Spin pause (hot wait) ─────────────────────────
-// x86: _mm_pause() — 10-40ns via MESI invalidation
+// x86: __builtin_ia32_pause(), the PAUSE that _mm_pause() wraps, with no
+//      intrinsics header — 10-40ns via MESI invalidation
 // ARM: yield instruction
 CRUCIBLE_SPIN_PAUSE
 ```
@@ -2290,7 +2296,7 @@ The two counter reads in `include/fixy/os/Time.h` each keep an `#error` arm. The
 
 ### When the assumptions change
 
-- **New architecture** (RISC-V, Power): audit every `alignas(64)`, every `_mm_pause`, every endian-sensitive `bit_cast`.
+- **New architecture** (RISC-V, Power): audit every `alignas(64)`, `CRUCIBLE_SPIN_PAUSE`, every counter read in `fixy/os/Time.h`, every endian-sensitive `bit_cast`.
 - **Apple Silicon target**: cache line is 128 B. All `alignas(64)` becomes `alignas(CRUCIBLE_CACHE_LINE)` where the macro resolves per platform.
 - **ARM 16 KB pages** (Apple, some Android): audit huge-page / `mmap` / `MADV_HUGEPAGE` code.
 - **32-bit or 128-bit target**: not supported. Reject.

@@ -55,12 +55,8 @@ extern "C" inline void abort_probe_handler(int) {
 
 // Runs body and reports whether it aborted. A body that returns normally
 // reports false, which is the failure the caller is usually looking for.
-//
-// The control-flow-redundancy hardening the project builds with cannot
-// instrument a function that calls setjmp, and says so as an error. The
-// attribute turns it off for this one function rather than for the test.
 template <typename Body>
-[[nodiscard, gnu::optimize("no-harden-control-flow-redundancy")]] bool aborts(Body&& body) {
+[[nodiscard]] bool aborts(Body&& body) {
     struct sigaction want{};
     struct sigaction previous{};
     want.sa_handler = abort_probe_handler;

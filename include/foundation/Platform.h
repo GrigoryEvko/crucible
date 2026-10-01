@@ -118,10 +118,11 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 // The pause hint tells the core that the loop it is in is a spin. It changes
 // power draw and the pipeline-flush penalty on loop exit, not the wait itself.
 // The platform floor admits x86_64 and aarch64 only, and each has a hint.
+// The x86_64 hint is the builtin that _mm_pause wraps, so no translation unit
+// pays for the parse of an intrinsics header.
 
 #if defined(__x86_64__)
-#include <immintrin.h>
-#define CRUCIBLE_SPIN_PAUSE _mm_pause()
+#define CRUCIBLE_SPIN_PAUSE __builtin_ia32_pause()
 #elif defined(__aarch64__)
 #define CRUCIBLE_SPIN_PAUSE __asm__ volatile("yield")
 #endif

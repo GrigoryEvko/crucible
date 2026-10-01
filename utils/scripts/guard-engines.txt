@@ -15,6 +15,7 @@ test/guard_attacks/test_use_after_move_attacks.py | tsast |
 test/neg_compile_driver.py | compiler,json,text | the compile database and the diagnostics of the compiler
 utils/scripts/audit-decide-cite-ratio.py | tsast,git | the history of Decide.h
 utils/scripts/audit-pre-callsite-count.py | tsast,json | the contract baseline utils/scripts/contracts-baseline.json
+utils/scripts/build-gauge.sh | compiler,git,text | the ninja log, the /usr/bin/time report and the ctest summary
 utils/scripts/check-allowlist-keys.sh | text | the keys of the allowlists, and the paths in the Markdown guidance
 utils/scripts/check-atom-roster-joined.sh | compiler,text | the diagnostics of the sentinel compile
 utils/scripts/check-banned-calls.py | tsast,text | the allowlist rows and utils/scripts/fixy-only-paths.txt
@@ -74,6 +75,7 @@ utils/scripts/repo_root.sh | none |
 utils/scripts/session-oracle.sh | git,text | the switch list that opam prints
 utils/scripts/throwaway_repo.py | git |
 utils/scripts/tsast.py | kit |
+utils/scripts/tu-sample.py | compiler,json,text | the compile database, the file of --compare, and the diagnostics of a failed compile
 utils/tools/mutation/gates.py | tsast |
 utils/tools/mutation/run.py | tsast,cmake-api,json,compiler,text | the compile database, the file API reply, the compiler and test output, and the exemption rows
 utils/tools/session_oracle/emit.py | text | the rows of the golden CSV and the type spellings in them
