@@ -5264,6 +5264,22 @@ add_test(NAME check_report_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check_report.py --self-test)
 set_tests_properties(check_report_self_test PROPERTIES LABELS "ci_guard")
 
+# heavy_includes — a header under include/ includes no heavy standard header.
+# A header is heavy when its compile time alone is more than the time of
+# <meta> alone times the factor of the row heavy-include of
+# utils/scripts/budgets.txt.  utils/scripts/header-costs.txt holds the
+# measured times.  Each include that the tree holds today is a row of
+# utils/scripts/heavy-includes-ledger.txt and gives a warning.  A new one is
+# an error.
+add_test(NAME heavy_includes_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-heavy-includes.py --self-test)
+add_test(NAME heavy_includes
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-heavy-includes.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(heavy_includes heavy_includes_self_test PROPERTIES
+    LABELS "ci_guard"
+    SKIP_RETURN_CODE 3)
+
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a

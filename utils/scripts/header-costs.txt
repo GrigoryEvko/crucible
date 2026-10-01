@@ -1,0 +1,178 @@
+# utils/scripts/header-costs.txt — the measured cost of each standard and system header.
+# utils/scripts/check-heavy-includes.py reads this table, and --measure BUILD_DIR writes it.
+#
+# A row:  <header> | seconds | preprocessed lines
+#         <header> | unmeasured | reason
+#
+# The seconds are the median of three runs of the user plus system CPU time of a translation
+# unit that includes only the header, with -fsyntax-only and the flags of test/foundation/test_row_hash.cpp.
+# The lines are the non-empty lines of the -E -P output of the same unit.  A header is heavy when
+# it costs more than <meta> times the factor of the row heavy-include of utils/scripts/budgets.txt.
+#
+# Measured 2026-10-01 on AMD EPYC 9655 96-Core Processor, 376 threads, load average 789.  An empty translation unit costs 0.01 s.
+
+<algorithm> | 0.17 | 27907
+<any> | 0.04 | 3480
+<arm_neon.h> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: arm_neon.h: No such file or directory
+<array> | 0.30 | 27822
+<atomic> | 0.09 | 9365
+<barrier> | 0.45 | 44122
+<bit> | 0.03 | 3284
+<bitset> | 0.32 | 28586
+<bpf/bpf.h> | 0.02 | 2441
+<bpf/bpf_core_read.h> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: invalid conversion from ‘void*’ to ‘void* (*)(void*, const void*)’ [-fpermissive]
+<bpf/bpf_helpers.h> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: invalid conversion from ‘void*’ to ‘void* (*)(void*, const void*)’ [-fpermissive]
+<bpf/bpf_tracing.h> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: invalid conversion from ‘void*’ to ‘void* (*)(void*, const void*)’ [-fpermissive]
+<bpf/libbpf.h> | 0.04 | 3559
+<bpf/libbpf_legacy.h> | 0.02 | 2117
+<cassert> | 0.02 | 63
+<ccomplex> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<ccomplex> is deprecated in C++17, use <complex> instead" [-Werror=cpp]
+<cctype> | 0.02 | 204
+<cerrno> | 0.01 | 59
+<cfenv> | 0.01 | 159
+<cfloat> | 0.01 | 53
+<charconv> | 0.05 | 4033
+<chrono> | 1.12 | 70628
+<cinttypes> | 0.02 | 213
+<ciso646> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<ciso646> is not a standard header since C++20, use <version> to detect implementation-specific macros" [-Werror=cpp]
+<climits> | 0.02 | 62
+<clocale> | 0.02 | 105
+<cmath> | 0.38 | 33852
+<codecvt> | 0.38 | 37523
+<compare> | 0.04 | 3416
+<complex.h> | 0.99 | 62020
+<complex> | 0.95 | 62018
+<concepts> | 0.03 | 2495
+<condition_variable> | 0.52 | 51559
+<contracts> | 0.03 | 2824
+<coroutine> | 0.04 | 3583
+<cpuid.h> | 0.02 | 38
+<csetjmp> | 0.02 | 85
+<csignal> | 0.04 | 1378
+<cstdalign> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<cstdalign> is deprecated in C++17, remove the #include" [-Werror=cpp]
+<cstdarg> | 0.02 | 59
+<cstdbool> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<cstdbool> is deprecated in C++17, remove the #include" [-Werror=cpp]
+<cstddef> | 0.02 | 155
+<cstdint> | 0.02 | 178
+<cstdio> | 0.03 | 736
+<cstdlib> | 0.03 | 984
+<cstring> | 0.02 | 468
+<ctgmath> | unmeasured | it does not compile alone with the flags of test/foundation/test_row_hash.cpp: #warning "<ctgmath> is deprecated in C++17, use <complex> or <cmath> instead" [-Werror=cpp]
+<ctime> | 0.02 | 282
+<cuchar> | 0.03 | 868
+<cwchar> | 0.02 | 776
+<cwctype> | 0.02 | 224
+<cxxabi.h> | 0.02 | 567
+<debugging> | 0.01 | 62
+<deque> | 0.32 | 30825
+<emmintrin.h> | 0.04 | 3840
+<exception> | 0.03 | 2863
+<execution> | 0.67 | 77502
+<expected> | 0.05 | 6299
+<fcntl.h> | 0.02 | 360
+<fenv.h> | 0.02 | 143
+<filesystem> | 0.98 | 62106
+<flat_map> | 0.62 | 70778
+<flat_set> | 0.43 | 48252
+<format> | 0.82 | 50714
+<forward_list> | 0.15 | 19341
+<fstream> | 0.84 | 54455
+<functional> | 0.42 | 41516
+<future> | 0.64 | 53791
+<generator> | 0.49 | 52700
+<immintrin.h> | 0.58 | 62192
+<initializer_list> | 0.01 | 89
+<inplace_vector> | 0.33 | 35958
+<iomanip> | 0.87 | 54504
+<ios> | 0.40 | 40836
+<iosfwd> | 0.03 | 977
+<iostream> | 0.84 | 53096
+<istream> | 0.85 | 53084
+<iterator> | 0.38 | 38627
+<latch> | 0.08 | 8173
+<limits> | 0.02 | 1217
+<linux/io_uring.h> | 0.02 | 879
+<linux/mempolicy.h> | 0.01 | 10
+<linux/netlink.h> | 0.01 | 169
+<linux/ptp_clock.h> | 0.02 | 129
+<list> | 0.14 | 19729
+<locale> | 0.43 | 43912
+<map> | 0.31 | 31600
+<math.h> | 0.41 | 33922
+<mdspan> | 0.34 | 31332
+<memory> | 0.52 | 49400
+<memory_resource> | 0.37 | 35189
+<meta> | 0.37 | 34799
+<mmintrin.h> | 0.02 | 659
+<mutex> | 0.15 | 17513
+<new> | 0.02 | 209
+<nmmintrin.h> | 0.05 | 4501
+<numbers> | 0.03 | 2278
+<numeric> | 0.11 | 15240
+<optional> | 0.11 | 13229
+<ostream> | 0.93 | 51737
+<pmmintrin.h> | 0.05 | 3913
+<print> | 0.81 | 50911
+<pthread.h> | 0.02 | 878
+<queue> | 0.52 | 58916
+<random> | 0.59 | 55286
+<ranges> | 0.48 | 51530
+<ratio> | 0.03 | 2733
+<regex> | 0.65 | 77448
+<sched.h> | 0.01 | 185
+<scoped_allocator> | 0.12 | 15109
+<semaphore> | 0.11 | 11291
+<set> | 0.15 | 21571
+<shared_mutex> | 0.08 | 8550
+<signal.h> | 0.03 | 1319
+<simd> | 0.46 | 42024
+<smmintrin.h> | 0.05 | 4501
+<source_location> | 0.02 | 94
+<span> | 0.29 | 28214
+<spanstream> | 0.85 | 53407
+<sstream> | 0.82 | 54052
+<stack> | 0.50 | 55075
+<stacktrace> | 0.89 | 55543
+<stdatomic.h> | 0.09 | 9446
+<stdbit.h> | 0.04 | 3610
+<stdckdint.h> | 0.03 | 2528
+<stdexcept> | 0.30 | 27522
+<stdfloat> | 0.01 | 61
+<stdlib.h> | 0.02 | 1017
+<stop_token> | 0.46 | 47632
+<streambuf> | 0.36 | 38171
+<string> | 0.29 | 27506
+<string_view> | 0.29 | 27506
+<syncstream> | 0.91 | 55889
+<sys/auxv.h> | 0.02 | 461
+<sys/ioctl.h> | 0.01 | 10
+<sys/mman.h> | 0.01 | 108
+<sys/prctl.h> | 0.01 | 77
+<sys/resource.h> | 0.01 | 217
+<sys/sendfile.h> | 0.02 | 298
+<sys/socket.h> | 0.02 | 538
+<sys/stat.h> | 0.02 | 261
+<sys/syscall.h> | 0.01 | 0
+<sys/types.h> | 0.02 | 292
+<system_error> | 0.30 | 27780
+<text_encoding> | 0.34 | 35460
+<tgmath.h> | 0.95 | 62020
+<thread> | 0.94 | 57961
+<time.h> | 0.01 | 209
+<tmmintrin.h> | 0.04 | 4078
+<tuple> | 0.10 | 14005
+<type_traits> | 0.02 | 2210
+<typeindex> | 0.04 | 3570
+<typeinfo> | 0.01 | 157
+<unistd.h> | 0.02 | 752
+<unordered_map> | 0.31 | 32709
+<unordered_set> | 0.32 | 32567
+<utility> | 0.05 | 5451
+<valarray> | 0.46 | 47527
+<variant> | 0.06 | 8231
+<vector> | 0.37 | 31966
+<version> | 0.01 | 53
+<wmmintrin.h> | 0.04 | 3862
+<x86gprintrin.h> | 0.04 | 1407
+<x86intrin.h> | 0.59 | 63155
+<xmmintrin.h> | 0.04 | 3840
