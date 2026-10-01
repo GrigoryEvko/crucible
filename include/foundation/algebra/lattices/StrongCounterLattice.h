@@ -70,7 +70,7 @@
 // numeric order at the template head.  A value graded by its version uses
 // the order dual, as fixy/EpochVersioned.h does through DualLattice.h.
 
-#include <foundation/Lifetime.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Saturate.h>
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>

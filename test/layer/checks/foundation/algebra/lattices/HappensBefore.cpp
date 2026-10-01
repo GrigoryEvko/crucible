@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/HappensBefore.h>
 
+#include <foundation/Lifetime.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::happens_before_self_test {

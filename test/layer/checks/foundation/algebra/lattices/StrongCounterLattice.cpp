@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 
+#include <foundation/Lifetime.h>
+
 namespace foundation::algebra::lattices {
 
 namespace detail::strong_counter_lattice_self_test {

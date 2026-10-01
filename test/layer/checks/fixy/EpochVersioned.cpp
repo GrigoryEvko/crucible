@@ -2,6 +2,8 @@
 
 #include <fixy/EpochVersioned.h>
 
+#include <foundation/Lifetime.h>
+
 namespace fixy {
 
 namespace detail::epoch_versioned_self_test {

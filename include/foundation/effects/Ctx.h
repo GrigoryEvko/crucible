@@ -15,7 +15,7 @@
 // for that axis.  A channel or a fork that wants a budget takes it as its
 // own parameter.  A context describes the surrounding scope, not a value.
 
-#include <foundation/Lifetime.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>

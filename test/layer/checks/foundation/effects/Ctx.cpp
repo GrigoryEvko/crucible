@@ -2,6 +2,8 @@
 
 #include <foundation/effects/Ctx.h>
 
+#include <foundation/Lifetime.h>
+
 namespace foundation::effects {
 
 namespace detail::ctx_witnesses {

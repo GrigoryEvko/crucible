@@ -2,6 +2,8 @@
 
 #include <fixy/Budgeted.h>
 
+#include <foundation/Lifetime.h>
+
 namespace fixy {
 
 namespace detail::budgeted_self_test {

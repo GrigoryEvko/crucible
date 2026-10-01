@@ -33,7 +33,7 @@
 // The preconditions are CRUCIBLE_PRE in the function bodies, so they
 // fire during constant evaluation too.
 
-#include <foundation/Lifetime.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>

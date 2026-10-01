@@ -31,15 +31,16 @@
 // refuses it as a subobject at every depth.
 //
 // A class can also refuse a lifetime start while it stays implicit-lifetime.
-// A value that must come only from its own doors, such as a count or a
-// version, keeps a trivial copy constructor so that the ABI passes it in a
-// register, and that trivial constructor makes it implicit-lifetime.  Such a
-// class carries the annotation no_start_over_bytes, and the walk refuses it
-// wherever it sits: alone, in an array, as a base or as a member.
+// Such a class carries the annotation no_start_over_bytes of
+// foundation/ByteSeal.h, and the walk refuses it wherever it sits: alone, in
+// an array, as a base or as a member.  A class that only carries the
+// annotation or holds a byte_seal includes foundation/ByteSeal.h, which
+// does not include <memory>.
 //
 // utils/scripts/check-start-lifetime.py refuses a direct use of the two library
 // functions outside a reviewed list.  New code uses start_as_array.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
@@ -50,40 +51,6 @@
 #include <type_traits>
 
 namespace foundation::lifetime {
-
-// The annotation of a class whose lifetime must never start over bytes.
-// Spell it on the class: struct [[=::foundation::lifetime::no_start_over_bytes{}]] X.
-struct no_start_over_bytes {};
-
-// A member that closes the two byte routes to the class that holds it, and
-// keeps the call ABI of that class.
-//
-// std::bit_cast builds a trivially copyable class from bytes, and the
-// checked lifetime start builds an implicit-lifetime class over bytes.
-// Neither calls a constructor, so neither meets the door of a proof.  A
-// proof that the ABI passes in a register keeps trivial copy and move
-// constructors and a trivial destructor.  GCC also counts a class whose
-// copies and moves are all deleted as trivially copyable.  Such a class
-// holds one seal:
-//
-//     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
-//
-// The assignments of the seal are user-provided, so the assignments of the
-// class are not trivial, and the class is not trivially copyable.  The seal
-// carries no_start_over_bytes, so the checked lifetime start refuses the
-// class.  The copy and move constructors and the destructor of the seal are
-// trivial, so the Itanium ABI still passes the class in registers.  The
-// seal adds no byte, and a class that holds only a seal stays empty.  A
-// class that holds a sealed member is sealed through that member, and a
-// second seal in it can need a byte of its own.
-struct[[= no_start_over_bytes{}]] byte_seal {
-    constexpr byte_seal() noexcept = default;
-    constexpr byte_seal(const byte_seal&) noexcept = default;
-    constexpr byte_seal(byte_seal&&) noexcept = default;
-    constexpr byte_seal& operator=(const byte_seal&) noexcept { return *this; }
-    constexpr byte_seal& operator=(byte_seal&&) noexcept { return *this; }
-    ~byte_seal() = default;
-};
 
 namespace detail {
 
