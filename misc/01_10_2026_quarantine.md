@@ -235,6 +235,8 @@ Stage 1 can start while Stage 0 unit 0h still runs, because unit 0h edits header
 
 **Goal.** Make each build and each test run at least two times faster, before hundreds of guard runs start. Every later stage multiplies the cost of one build. The speed comes from how the tree uses C++ (rules R13 to R17), not from a changed compiler (D10).
 
+**The right tail comes first (owner, 2026-10-01).** Builds and tests run at a high job count (up to `-j192`), so the wall time is the longest single job, not the total CPU divided by the jobs. A change that makes one long job short is worth more than a change that makes the total smaller. A split that adds total CPU to remove a long job is correct. The targets: no translation unit and no test takes more than 20 s at `-j1` in Debug. At the baseline, the tail was one 315 s translation unit, sixteen more above 40 s, seventeen guards above 20 s (the longest 192 s) and fixtures up to 29 s. Every ordinary test took less than 5 s.
+
 **Entry.** Wave E finished. The QPLUG plugin is on main. The baseline of section 3 is measured.
 
 **What the baseline shows.** A header runs its own compile-time checks again in every translation unit that includes it. That repeated work is about half of all front-end time, and the 2,062 negative fixtures pay it too, on every ctest run. The rest is a small set of outliers: one generated file that alone sets the build wall time, two files whose back end explodes, and six slow guards.
@@ -297,11 +299,11 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 
 ### 7.4 Unit 0d: shards and splits
 
-**Goal.** No translation unit compiles for more than 60 s at `-j1` in Debug (R17), so the build wall time is the total work divided by the job count.
+**Goal.** No translation unit that this unit owns compiles for more than 20 s at `-j1` in Debug (R17).
 
-1. **The session oracle.** The generated files in `test/session_oracle/` come out of their generator as shards. Choose the shard size so that each shard compiles in at most 30 s. The shards of one family are source files of the one executable of that family, so the ctest names do not change. The number of rows and each answer stay the same.
+1. **The session oracle.** The generated files in `test/session_oracle/` come out of their generator as shards. Choose the shard size so that each shard compiles in at most 20 s. The shards of one family are source files of the one executable of that family, so the ctest names do not change. The number of rows and each answer stay the same.
 2. **Heavy test files.** Split `test/fixy/test_session_global_attack.cpp` and each other test file that compiles for more than 60 s mostly in the front end, by subject, into several source files of the same executable. The ctest names and every case stay the same. Files whose back end is the cause go to unit 0e.
-3. **The oracle self-test.** `session_oracle_self_test` (`utils/scripts/session-oracle.sh --self-test`) takes 192 s. Make it take at most 45 s with the same verdicts.
+3. **The oracle self-test.** `session_oracle_self_test` (`utils/scripts/session-oracle.sh --self-test`) takes 192 s. Make it take at most 20 s with the same verdicts.
 4. **Witnesses.** The ctest list is the same before and after. The row counts of the oracle are the same. The clean build wall time falls, and the ninja log shows no translation unit above 60 s.
 
 ### 7.5 Unit 0e: the back-end outliers
@@ -328,9 +330,9 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 
 ### 7.7 Unit 0g: the slow guards
 
-**Goal.** The tests other than the fixtures finish in at most 60 s wall at `-j48`, and no guard takes more than 45 s.
+**Goal.** No guard takes more than 20 s wall on a warm store.
 
-1. Measure each of `no_unchecked_access`, `proof_routes`, `start_lifetime`, `federation_admission`, `atom_roster_joined_self_test` (125 s to 163 s at the baseline). Find where the time goes. `session_oracle_self_test` (192 s) belongs to unit 0d, which owns the oracle scripts.
+1. Measure each of `no_unchecked_access`, `proof_routes`, `start_lifetime`, `federation_admission`, `atom_roster_joined_self_test` (125 s to 163 s at the baseline). Find where the time goes. Then do the same for each other guard above 20 s: `trait_guard` 45 s, `banned_calls` 41 s, `no_ffast_math` 40 s, `no_combine_ids_duplicate` 40 s, `syscall_capability` 37 s, `host_owners` 36 s, `detail_namespace` 35 s, `no_coordination_refs` 34 s, `parse_clean` 24.5 s, `atom_roster_joined` 22.5 s, `derived_pins` 21.6 s. A shared cache that serves many guards comes first. `session_oracle_self_test` (192 s) belongs to unit 0d, which owns the oracle scripts.
 2. `utils/scripts/preprocessed.py`: one shared, content-keyed store in `~/.cache/crucible/preprocessed/`, with a size limit and an age limit, shared by every guard and every worktree. Scan each distinct (file, content hash) chunk one time, not one time for each translation unit that includes it.
 3. Keep what each guard covers. Each guard gives the same verdict on the same tree, and each self-test and plant still passes.
 
@@ -343,6 +345,15 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 3. Remove `<thread>`, `<chrono>` and `<functional>` from base headers where a builtin or a lower header gives the same thing. `foundation/effects/Ctx.h` uses `<thread>` for thread identity only. `__builtin_thread_pointer()` compared as an address gives a unique identity for each live thread. Do a test that two live threads never get the same identity, and that one thread always gets the same identity.
 4. Each change keeps every answer: the row-hash goldens do not move unless a reflected name changes, and then the unit regenerates them and lists each moved identity.
 
+### 7.8b Unit 0i: the tail splits (after units 0c)
+
+**Goal.** No translation unit of the tree takes more than 20 s at `-j1` in Debug.
+
+1. Build `all` from clean on main after the 0c units land, and list each translation unit above 20 s from the ninja log. At the baseline the list held, among others: test_vigil_dispatch 66 s, test_region_cache 58 s, test_vigil 47 s, test_mlp_trace 46 s, test_vit 42 s, test_resnet 42 s, test_vigil_deadline_watchdog 38 s, test_transaction_owner 38 s, vessel_api 36 s, rejections_generated 35 s, test_background_thread_run_in_row 33 s, test_owned_region 32 s, test_end_to_end 29 s.
+2. Split each test file on the list by subject into several source files of the same executable. The ctest names and every case stay the same. A generated file comes out of its generator as shards.
+3. When one header alone costs more than half of the 20 s, the split cannot help. Report that header to the matching 0h unit, with its `-ftime-report` table.
+4. **Witnesses.** The ctest list is the same before and after. A clean build at `-j192` (or the highest job count that the memory check allows) shows no translation unit above 20 s.
+
 ### 7.9 Stage 0 order and parallelism
 
 | Wave | Units | Needs first |
@@ -351,7 +362,7 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 | S0.1 | 0a lands | every running unit merges main and rebuilds |
 | S0.2 | 0b lands | the check-file convention is on main |
 | 0-II | 0c-F, 0c-W, 0c-S, 0c-C. Then 0c-R | S0.2. 0c-R also needs 0e |
-| 0-III | 0h-foundation, 0h-fixy, 0h-crucible | every 0c unit |
+| 0-III | 0h-foundation, 0h-fixy, 0h-crucible, 0i | every 0c unit |
 
 | Unit | Files it owns |
 |---|---|
@@ -363,15 +374,17 @@ Each unit reports `tu-sample.py` before and after, and the change of the clean b
 | 0f | `test/neg_compile_driver.py` |
 | 0g | the five guard scripts of 7.7, `utils/scripts/preprocessed.py` |
 | 0h-* | header bodies of its layer, not their checks |
+| 0i | the test files on its list and their CMake rows, except the files of 0d and 0e |
 
 Shared files (`CMakeLists.txt`, `test/*/CMakeLists.txt`, CLAUDE.md, the ledger) go in through `--replace` pairs (section 5.5).
 
 ### 7.10 The S0 gate
 
 All numbers come from `build-gauge.sh` on the same host as the baseline:
-- The clean Debug build of `all` takes at most 50% of the baseline CPU time (77 CPU-minutes) and at most 150 s wall at `-j48`. No translation unit takes more than 60 s.
-- A cold run of the negative fixtures takes at most 40% of the baseline CPU time (194 CPU-minutes). A second run on an unchanged tree takes at most 10% of the first.
-- The other tests take at most 90 s wall.
+- The tail: no translation unit, no fixture and no test takes more than 20 s at `-j1` in Debug.
+- The clean Debug build of `all` takes at most 60 s wall at `-j192` (or at the highest job count that the memory check allows, with the job count stated).
+- `ctest` of the full Debug suite takes at most 60 s wall at `-j192` with a cold fixture store. A second run on an unchanged tree compiles no fixture.
+- The total CPU of the build and of the cold fixture run is reported, and it is not more than the baseline.
 - The header-checks guard is in error mode with an empty ledger, apart from reasoned rows.
 - The full suite passes in the Debug, Release, TSan and UBSan-strict presets, with identical results for every determinism test.
 
