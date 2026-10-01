@@ -2447,8 +2447,10 @@ These library types make the axioms from §II true at compile time. They are in 
 Every header is self-contained. Two cold bodies are in the library `foundation`, so
 that an includer does not compile them: the abort of `Permission.h` in
 `src/foundation/Permission.cpp`, and the thread start of `PermissionFork.h` in
-`src/foundation/PermissionFork.cpp`. One cold body is in the library `fixy`: the
-sysfs probe of `fixy/concurrent/Topology.h` in `src/fixy/concurrent/Topology.cpp`.
+`src/foundation/PermissionFork.cpp`. Two cold bodies are in the library `fixy`: the
+sysfs probe of `fixy/concurrent/Topology.h` in `src/fixy/concurrent/Topology.cpp`,
+and the door of `fixy/os/ThreadTasks.h` in `src/fixy/os/ThreadTasks.cpp`, which
+starts the stage threads of `fixy/concurrent/Pipeline.h`.
 The other headers are header-only. The dependency rule is the layer
 rule, and `utils/scripts/check-layer-boundary.py` enforces it: `foundation` names only
 `foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`

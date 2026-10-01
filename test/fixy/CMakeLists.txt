@@ -3859,7 +3859,7 @@ fixy_neg_compile_test(neg_pipeline_mint_not_a_stage
   "the expression .\\(IsStage<Stages> && \\.\\.\\.\\).*, int\\}\\].* evaluated to .false.")
 fixy_neg_compile_test(neg_pipeline_mint_chain_break
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
-  "pipeline_chain_check<std::tuple<typename std::remove_cvref<_Tps>::type \\.\\.\\.> >\\)\\(\\{\\}\\)"
+  "pipeline_chain_check<std::tuple<typename std::remove_cvref<[A-Za-z_]+>::type \\.\\.\\.> >\\)\\(\\{\\}\\)"
   "&float_to_double\\(<unnamed>::FakeConsumer<float>&&")
 # One payload on two channels.  The payloads of the two stages agree, so
 # only the channel that each handle names can refuse the chain.  The two

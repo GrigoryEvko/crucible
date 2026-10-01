@@ -4,8 +4,8 @@
 // Each stage body is a drain loop: it keeps taking from the channel behind it
 // until that channel closes, so the first stage never returns, and the stage
 // that would close its channel never starts.  A thread per stage is therefore
-// the normal path, and the threads are joined by the array that holds them
-// when run returns.
+// the normal path, and the door of fixy/os/ThreadTasks.h joins the threads
+// before run returns.
 //
 // A stage can opt out of that, but only if its body is a single bounded call
 // rather than a drain loop, and only if the working sets are known and small
@@ -37,6 +37,7 @@
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -50,7 +51,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -706,20 +706,38 @@ private:
         ((void)std::move(std::get<Is>(stages_)).run(), ...);
     }
 
+    // The frame of one threaded stage: the stage in the tuple of the runner,
+    // and the CPU that the stage takes, or -1.
+    template <class Stage>
+    struct stage_frame_ {
+        Stage* stage = nullptr;
+        int cpu = -1;
+    };
+
+    // Runs on the thread of one stage.  The thread moves the stage out of
+    // the tuple, so the stage lives on its own thread and ends there.  The
+    // caller waits in the join, so it does not touch the tuple while a
+    // thread reads it.
+    template <class Stage>
+    static void run_threaded_stage_(void* frame) noexcept {
+        stage_frame_<Stage> const& source = *static_cast<stage_frame_<Stage>*>(frame);
+        Stage stage = std::move(*source.stage);
+        pin_current_pipeline_thread_(stage.ctx(), source.cpu);
+        std::move(stage).run();
+    }
+
     // The CPUs come from the mask of the caller at each run.  Two pipelines
     // of one size then do not share their cores, and a mask that the caller
-    // sets after the first run still applies.
+    // sets after the first run still applies.  The threads start and join in
+    // src/fixy/os/ThreadTasks.cpp, so a translation unit that includes this
+    // header does not compile <thread>.
     template <class Ctx, std::size_t... Is>
     void run_threaded_(Ctx const& ctx, std::index_sequence<Is...>) && noexcept {
         const std::array<int, sizeof...(Is)> affinity_cpus = pipeline_affinity_cpus_<sizeof...(Is)>(ctx);
-
-        // Each thread takes its stage by move.  The array destructor at the
-        // end of this function joins them all.
-        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
-            [stage = std::move(std::get<Is>(stages_)), cpu = affinity_cpus[Is]](std::stop_token) mutable noexcept {
-                pin_current_pipeline_thread_(stage.ctx(), cpu);
-                std::move(stage).run();
-            }}...};
+        std::tuple<stage_frame_<Stages>...> frames{stage_frame_<Stages>{&std::get<Is>(stages_), affinity_cpus[Is]}...};
+        std::array<::fixy::spawn::detail::thread_task, sizeof...(Is)> const tasks{
+            ::fixy::spawn::detail::thread_task{&std::get<Is>(frames), &run_threaded_stage_<Stages>}...};
+        ::fixy::spawn::detail::run_thread_tasks(tasks);
     }
 
     std::tuple<Stages...> stages_;

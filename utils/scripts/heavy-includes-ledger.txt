@@ -60,7 +60,6 @@ include/fixy/Borrowed.h | <ranges>
 include/fixy/Budgeted.h | <memory>
 include/fixy/EpochVersioned.h | <memory>
 include/fixy/SelfContained.h | <ranges>
-include/fixy/concurrent/Pipeline.h | <thread>
 
 keep | include/crucible/canopy/bpf/common.h | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it
 keep | include/crucible/cntp/bpf/common.h | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it

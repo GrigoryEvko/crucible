@@ -422,8 +422,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # foundation headers, so that an includer does not compile them: the
 # diagnostic sink, the abort of a saturated permission pool, and the threads
 # of a spawning permission fork.  `fixy` is a static library for the same
-# reason: it holds the cold bodies of fixy headers, at this time the one
-# probe of the machine topology.
+# reason: it holds the cold bodies of fixy headers, the probe of the machine
+# topology and the door that starts the stage threads of a pipeline.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp
@@ -443,6 +443,7 @@ target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
   src/fixy/concurrent/Topology.cpp
+  src/fixy/os/ThreadTasks.cpp
 )
 target_include_directories(fixy PUBLIC include/)
 target_link_libraries(fixy PUBLIC foundation)
