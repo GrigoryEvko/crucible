@@ -4,9 +4,10 @@
 include/crucible/warden/Hardening.h publishes hardening_syscall_atoms, a
 type-level tuple of fixy/atoms/Syscall.h atoms that names every privileged
 system call the apply path issues.  The tuple is the auditable claim about
-what this code does to the kernel.  A tuple_size static_assert and a test
-compare the list with a second copy of the same list, so neither reads the
-call sites.  This guard does: it derives the set of system calls that the
+what this code does to the kernel.  A tuple_size static_assert in the check
+file of the header (test/layer/checks/crucible/warden/Hardening.cpp) and a
+test compare the list with a second copy of the same list, so neither reads
+the call sites.  This guard does: it derives the set of system calls that the
 header issues and fails when that set and the tuple disagree in either
 direction.  A smaller tuple understates the claim, and a larger one
 overstates it.
@@ -69,6 +70,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tsast  # noqa: E402
 
 HEADER = "include/crucible/warden/Hardening.h"
+# The check file of HEADER, which holds the tuple_size static_assert of the grant tuple.
+CHECK_FILE = "test/layer/checks/crucible/warden/Hardening.cpp"
 CATALOG = "include/fixy/atoms/Syscall.h"
 TUPLE = "hardening_syscall_atoms"
 HELPER_SUFFIX = "_sys"
@@ -316,9 +319,9 @@ def check(root: Path) -> int:
         print(f"SYSCALL-GRANT wrong helper: {problem}", file=sys.stderr)
     if missing or extra or problems:
         print(f"check-syscall-grant-coverage: {TUPLE} in {HEADER} disagrees with the call sites.  For a new "
-              f"call, add per<SyscallId::<name>> to the tuple, raise the tuple_size assert and extend "
-              f"test/test_hardening_syscall_atoms.cpp.  For a grant with no call, remove the grant, or say in a "
-              f"comment beside it which header issues the call.", file=sys.stderr)
+              f"call, add per<SyscallId::<name>> to the tuple, raise the tuple_size assert in {CHECK_FILE} and "
+              f"extend test/test_hardening_syscall_atoms.cpp.  For a grant with no call, remove the grant, or say "
+              f"in a comment beside it which header issues the call.", file=sys.stderr)
         return 1
     print(f"check-syscall-grant-coverage: clean — {TUPLE} names exactly the system calls issued in {HEADER}.",
           file=sys.stderr)

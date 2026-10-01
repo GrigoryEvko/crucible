@@ -17,7 +17,7 @@ THE CHECK FILE
     same enclosing namespaces, so that each name resolves as before.
     test/layer/CMakeLists.txt compiles the check file in place of the
     one-line sentinel of its header, against the include root of its
-    layer, in the default build.
+    layer, in each build.
 
 WHAT THE GUARD READS
     The parse tree of the pinned tree-sitter kit (utils/scripts/tsast.py),
@@ -33,6 +33,17 @@ WHAT THE GUARD READS
         body, an extern "C++" body and an arm of a preprocessor
         conditional are namespace scope.  A static_assert inside a
         self-test namespace counts with that namespace, not alone.
+      * A macro that makes a check.  The guard reads the replacement list
+        of each #define of each header under include/ as preprocessing
+        tokens, and counts the self-test namespaces and the static_asserts
+        that it writes outside each brace that is not a namespace or an
+        extern "C++" body.  A macro that names such a macro makes its
+        checks too.  An invocation of such a macro at namespace scope in a
+        header, outside a self-test namespace, counts each check of one
+        expansion.  The key of each one is the spelling of the invocation.
+      * A static_assert whose condition is the literal `true` checks
+        nothing.  It is the device that makes a macro end in a semicolon at
+        its call site, and it does not count.
 
 THE LEDGER
     utils/scripts/header-checks-ledger.txt holds two kinds of row.
@@ -63,9 +74,11 @@ THE HEADERS THAT CANNOT COMPILE ALONE
     shorter.
 
 WHAT THE GUARD CANNOT SEE
-    A static_assert in the body of a macro has no scope until the macro
-    expands, so the guard does not count it.  Every arm of an #if counts,
-    because the kit does not preprocess.
+    A macro body has no scope until the macro expands, so the guard counts
+    the checks of a macro at each invocation and not at its #define.  A
+    macro that a file outside include/ defines, and a name that a macro
+    builds with `##`, are not read.  Every arm of an #if counts, because
+    the kit does not preprocess.
 
 Usage
     check-header-checks.py                         compare the tree with the ledger
@@ -139,12 +152,17 @@ LEDGER_HEADER = (
 
 @dataclass(frozen=True)
 class Check:
-    """One self-test namespace or one namespace-scope static_assert of a header."""
+    """One self-test namespace or one namespace-scope static_assert of a header.
+
+    via names the macro whose invocation makes the check, or is empty for a
+    check that the header writes itself.
+    """
 
     path: str
     row: int
     kind: str
     key: str
+    via: str = ""
 
 
 @dataclass(frozen=True)
@@ -170,6 +188,28 @@ class Ledger:
     keeps: list[Keep]
     malformed: list[str]
     bad_keeps: list[str]
+
+
+@dataclass(frozen=True)
+class MacroChecks:
+    """The checks that one expansion of a macro writes at namespace scope."""
+
+    namespaces: int
+    asserts: int
+
+
+@dataclass(frozen=True)
+class MacroBody:
+    """What the replacement list of one #define writes outside each brace that is not a namespace body.
+
+    uses holds each identifier there, with True when `(` follows it, so a
+    name of another macro can add the checks of that macro.
+    """
+
+    is_function_like: bool
+    namespaces: int
+    asserts: int
+    uses: tuple[tuple[str, bool], ...]
 
 
 @dataclass
@@ -200,7 +240,7 @@ def is_at_namespace_scope(node: tsast.Node) -> bool:
     Complexity: linear in the depth of the node.
 
     Args:
-        node: A static_assert_declaration
+        node: A static_assert_declaration, or the statement or invocation of a macro
 
     Returns:
         True when each ancestor is a namespace body, a linkage body, an arm
@@ -212,6 +252,150 @@ def is_at_namespace_scope(node: tsast.Node) -> bool:
             return False
         owner = owner.parent
     return True
+
+
+def tests_literal_true(texts: list[str]) -> bool:
+    """Say whether the tokens of a static_assert, from its keyword on, test the literal `true` and nothing else."""
+    return len(texts) >= 4 and texts[1] == "(" and texts[2] == "true" and texts[3] in (",", ")")
+
+
+def macro_body(define: tsast.Node) -> MacroBody:
+    """Read what the replacement list of one #define writes outside each brace that is not a namespace body.
+
+    A brace that follows `namespace NAME` or `extern "STRING"` opens a
+    namespace scope, and each other brace opens a class, a function, a
+    block or an initializer.  A self-test namespace counts at its brace,
+    and a check inside it counts with it.  A parameter of the macro is not
+    a use of another macro.
+
+    Complexity: linear in the number of tokens of the replacement list.
+
+    Args:
+        define: A preproc_def or preproc_function_def node
+
+    Returns:
+        The checks and the identifiers that the replacement list writes at namespace scope
+    """
+    values = [child for child in define.children if child.field == "value"]
+    tokens = tsast.pp_tokens(define.tree.slice(values[0].start, values[-1].end), values[0].start[0]) if values else []
+    texts = [token.text for token in tokens]
+    parameters = frozenset(tsast.macro_parameters(define))
+    braces: list[str] = []
+    opening = "other"
+    namespaces = 0
+    asserts = 0
+    uses: list[tuple[str, bool]] = []
+    index = 0
+    while index < len(tokens):
+        text = texts[index]
+        is_at_scope = all(kind == "namespace" for kind in braces)
+        if text == "{":
+            braces.append(opening)
+            opening = "other"
+        elif text == "}":
+            if braces:
+                braces.pop()
+        elif text == "namespace":
+            cursor = index + 1
+            names: list[str] = []
+            while cursor < len(tokens) and (tokens[cursor].kind == "identifier" or texts[cursor] == "::"):
+                if tokens[cursor].kind == "identifier":
+                    names.append(texts[cursor])
+                cursor += 1
+            if cursor < len(tokens) and texts[cursor] == "{":
+                is_self_test = any(is_self_test_segment(name) for name in names)
+                namespaces += is_self_test and is_at_scope
+                opening = "self-test" if is_self_test else "namespace"
+            index = cursor
+            continue
+        elif text == "extern" and index + 2 < len(tokens) and tokens[index + 1].kind == "string" \
+                and texts[index + 2] == "{":
+            opening = "namespace"
+            index += 2
+            continue
+        elif text == "static_assert":
+            asserts += is_at_scope and not tests_literal_true(texts[index:index + 4])
+        elif tokens[index].kind == "identifier" and is_at_scope and text not in parameters:
+            uses.append((text, index + 1 < len(tokens) and texts[index + 1] == "("))
+        index += 1
+    return MacroBody(define.type == "preproc_function_def", namespaces, asserts, tuple(uses))
+
+
+def macro_table(trees: list[tsast.Tree]) -> dict[str, MacroChecks]:
+    """Return the checks that one expansion of each macro of the headers writes, for each macro that writes one.
+
+    A macro that names another macro adds the checks of that macro, and a
+    function-like macro adds them only when `(` follows its name.  A name
+    that two headers define takes the larger count of each kind.  A chain
+    that names a macro again stops there, as the preprocessor stops.
+
+    Complexity: linear in the tokens of the replacement lists, times the
+    depth of the longest chain of macros.
+
+    Args:
+        trees: The parse trees of the headers
+
+    Returns:
+        The checks of each macro that writes at least one check
+    """
+    bodies: dict[str, list[MacroBody]] = {}
+    for tree in trees:
+        for define in tree.find("preproc_def", "preproc_function_def"):
+            name = define.child_by_field("name")
+            if name is not None:
+                bodies.setdefault(tsast.spelled(name), []).append(macro_body(define))
+    memo: dict[str, MacroChecks] = {}
+
+    def total(name: str, active: frozenset[str]) -> MacroChecks:
+        """Return the checks of one macro, with the macros that it names."""
+        if name in memo:
+            return memo[name]
+        namespaces = 0
+        asserts = 0
+        for body in bodies[name]:
+            own_namespaces, own_asserts = body.namespaces, body.asserts
+            for used, is_called in body.uses:
+                if used in active or used not in bodies:
+                    continue
+                if any(other.is_function_like for other in bodies[used]) and not is_called:
+                    continue
+                inner = total(used, active | {used})
+                own_namespaces += inner.namespaces
+                own_asserts += inner.asserts
+            namespaces = max(namespaces, own_namespaces)
+            asserts = max(asserts, own_asserts)
+        memo[name] = MacroChecks(namespaces, asserts)
+        return memo[name]
+
+    table = {name: total(name, frozenset({name})) for name in bodies}
+    return {name: checks for name, checks in table.items() if checks.namespaces or checks.asserts}
+
+
+def macro_sites(tree: tsast.Tree) -> list[tuple[tsast.Node, str]]:
+    """Return each invocation of a macro in a tree that can stand at namespace scope, with the name of the macro.
+
+    The kit reads `NAME(...)` at namespace scope as a macro invocation, and
+    `NAME;` as an expression statement.
+
+    Args:
+        tree: The parse tree of a header
+
+    Returns:
+        (the invocation or its statement, the name of the macro) for each one
+    """
+    sites: list[tuple[tsast.Node, str]] = []
+    for node in tree.find("macro_invocation"):
+        name = node.child_by_field("name")
+        if name is not None:
+            sites.append((node, tsast.spelled(name)))
+    for node in tree.find("expression_statement"):
+        items = tsast.non_comment_children(node)
+        head = items[0] if items else None
+        if head is not None and head.type == "call_expression":
+            head = head.child_by_field("function")
+        if head is not None and head.type == "identifier":
+            sites.append((node, tsast.spelled(head)))
+    return sites
 
 
 def check_file_of(header: str) -> str:
@@ -245,7 +429,7 @@ def header_of_check(root: Path, check_file: str) -> str | None:
     return None
 
 
-def header_checks(tree: tsast.Tree, rel: str) -> tuple[list[Check], list[str]]:
+def header_checks(tree: tsast.Tree, rel: str, macros: dict[str, MacroChecks]) -> tuple[list[Check], list[str]]:
     """Return each self-test namespace and each namespace-scope static_assert of one header.
 
     Complexity: linear in the number of nodes of the file.
@@ -253,6 +437,7 @@ def header_checks(tree: tsast.Tree, rel: str) -> tuple[list[Check], list[str]]:
     Args:
         tree: The parse tree of the header
         rel: The header, relative to the repository root
+        macros: The checks of each macro of the headers that writes one
 
     Returns:
         The checks in source order, and one message for each namespace
@@ -280,7 +465,18 @@ def header_checks(tree: tsast.Tree, rel: str) -> tuple[list[Check], list[str]]:
         if any(is_self_test_segment(segment) for segment in tsast.namespace_path(node)):
             continue
         condition = node.child_by_field("condition")
-        checks.append(Check(rel, node.line, ASSERT, tsast.spelled(condition if condition is not None else node)))
+        key = tsast.spelled(condition if condition is not None else node)
+        if key != "true":
+            checks.append(Check(rel, node.line, ASSERT, key))
+    for site, name in macro_sites(tree):
+        made = macros.get(name)
+        if made is None or not is_at_namespace_scope(site):
+            continue
+        if any(is_self_test_segment(segment) for segment in tsast.namespace_path(site)):
+            continue
+        key = tsast.spelled(site).removesuffix(";")
+        checks.extend([Check(rel, site.line, NAMESPACE, key, name)] * made.namespaces)
+        checks.extend([Check(rel, site.line, ASSERT, key, name)] * made.asserts)
     checks.sort(key=lambda check: (check.row, check.kind))
     return checks, unread
 
@@ -323,13 +519,16 @@ def scan(root: Path) -> Scan:
                      and tsast.is_in_cpp_scope(path.relative_to(root))) if base.is_dir() else []
     checks: list[Check] = []
     failures: list[str] = []
+    trees: list[tsast.Tree] = []
     for tree in tsast.parse(headers, strict=False):
-        rel = Path(tree.path).relative_to(root).as_posix()
         if tree.diagnostic is not None:
-            failures.append(f"{rel}: the parser cannot read this file, so the guard cannot count its checks.  "
-                            f"{tree.diagnostic.strip()}")
+            failures.append(f"{Path(tree.path).relative_to(root).as_posix()}: the parser cannot read this file, so "
+                            f"the guard cannot count its checks.  {tree.diagnostic.strip()}")
             continue
-        found, unread = header_checks(tree, rel)
+        trees.append(tree)
+    macros = macro_table(trees)
+    for tree in trees:
+        found, unread = header_checks(tree, Path(tree.path).relative_to(root).as_posix(), macros)
         checks.extend(found)
         failures.extend(unread)
 
@@ -453,8 +652,17 @@ def per_header(checks: list[Check]) -> dict[str, tuple[int, int]]:
     return {path: (pair[0], pair[1]) for path, pair in counts.items()}
 
 
-def describe(check: Check) -> str:
-    """Return one line that names a check and its place."""
+def describe(check: Check, count: int = 1) -> str:
+    """Return one line that names a check and its place.
+
+    Args:
+        check: The check
+        count: The number of equal checks that one invocation of a macro makes
+    """
+    if check.via:
+        made = "self-test namespace(s)" if check.kind == NAMESPACE else "namespace-scope static_assert(s)"
+        return (f"{check.path}:{check.row}: the invocation of the macro {check.via} makes {count} {made}.  "
+                f"--list prints its key")
     if check.kind == NAMESPACE:
         return f"{check.path}:{check.row}: the self-test namespace {check.key}"
     return f"{check.path}:{check.row}: a namespace-scope static_assert({check.key})"
@@ -493,10 +701,13 @@ def check(root: Path, ledger_path: Path) -> int:
                   f"static_assert inside a class or a template stays in the header.  A check whose result depends "
                   f"on the translation unit that includes the header can stay, with a keep row and its reason.",
                   file=sys.stderr)
+            shown: dict[Check, int] = {}
             for item in checks:
                 if item.path == path and (item.kind == NAMESPACE and have[0] > allowed[0]
                                           or item.kind == ASSERT and have[1] > allowed[1]):
-                    print(f"            {describe(item)}", file=sys.stderr)
+                    shown[item] = shown.get(item, 0) + 1
+            for item, count in shown.items():
+                print(f"            {describe(item, count)}", file=sys.stderr)
         elif have != allowed:
             stale += 1
             print(f"STALE     {path} holds {have[0]} self-test namespace(s) and {have[1]} namespace-scope "
@@ -744,11 +955,34 @@ def self_test() -> int:
         ("}  // namespace foundation", None, ""),
         ('static_assert(7 == 7, "global scope");', ASSERT, "a static_assert at global scope"),
         ("#define PLANTED_CHECK static_assert(8 == 8)", None, "a static_assert in a macro body"),
+        ("#define PLANTED_PAIR(T) static_assert(sizeof(T) > 0, #T); static_assert(alignof(T) > 0)", None,
+         "two static_asserts in the body of a function-like macro"),
+        ("#define PLANTED_NESTED(T) PLANTED_PAIR(T)", None, "a macro body that names another macro"),
+        ('#define PLANTED_TRUE(T) struct T##_tag {}; static_assert(true, "a semicolon at the call site")', None,
+         "a macro body whose one static_assert tests the literal true"),
+        ("#define PLANTED_IN_CLASS(T) struct T##_holder { static_assert(sizeof(T) > 0); }", None,
+         "a macro body that writes a static_assert inside a class"),
+        ("#define PLANTED_SELF_TEST namespace planted_macro_self_test { static_assert(9 == 9); }", None,
+         "a macro body that writes a self-test namespace"),
+        ("PLANTED_CHECK;", ASSERT, "an object-like macro that writes a static_assert, at global scope"),
+        ("namespace foundation {", None, ""),
+        ("PLANTED_PAIR(int);", ASSERT, "a function-like macro that writes two static_asserts"),
+        ("PLANTED_NESTED(long)", ASSERT, "a macro that names a macro that writes static_asserts"),
+        ("PLANTED_TRUE(planted);", None, "a macro whose one static_assert tests the literal true"),
+        ("PLANTED_IN_CLASS(char);", None, "a macro that writes a static_assert inside a class"),
+        ("PLANTED_SELF_TEST;", NAMESPACE, "a macro that writes a self-test namespace"),
+        ("struct Macro { PLANTED_PAIR(int); };", None, "a macro that writes static_asserts, in a class body"),
+        ("inline void macro_body() { PLANTED_PAIR(int); }", None,
+         "a macro that writes static_asserts, in a function body"),
+        ("namespace detail::macro_self_test { PLANTED_PAIR(short); }", NAMESPACE,
+         "a self-test namespace that holds a macro that writes static_asserts"),
+        ("}  // namespace foundation", None, ""),
     ]
     kept_header = "#pragma once\nnamespace crucible {\nstatic_assert(sizeof(long) == 8);\n" \
                   "static_assert(sizeof(char) == 1);\n}  // namespace crucible\n"
     keep_row = "keep | include/crucible/Kept.h | static_assert | sizeof(long)==8 | the planted reason"
-    matching = ("include/crucible/Kept.h | 0 | 1\ninclude/foundation/Planted.h | 3 | 4\n" + keep_row + "\n")
+    planted_row = "include/foundation/Planted.h | 5 | 9"
+    matching = ("include/crucible/Kept.h | 0 | 1\n" + planted_row + "\n" + keep_row + "\n")
     with tempfile.TemporaryDirectory() as work:
         root = Path(work)
         files = {
@@ -780,10 +1014,22 @@ def self_test() -> int:
                 expect(f"not counted: {label}", not any(row == line for row, _ in rows), True)
             else:
                 expect(f"counted: {label}", (line, kind) in rows)
-        expect("the keys name each namespace in full and each condition by its spelling",
+        expect("the keys name each namespace in full, each condition by its spelling and each macro by its "
+               "invocation",
                {item.key for item in found.checks if item.path == "include/foundation/Planted.h"} == {
                    "foundation::detail::planted_self_test", "foundation::self_test", "foundation::fn_test",
-                   "sizeof(int)==4", "3==3", "4==4", "7==7"})
+                   "sizeof(int)==4", "3==3", "4==4", "7==7", "PLANTED_CHECK", "PLANTED_PAIR(int)",
+                   "PLANTED_NESTED(long)", "PLANTED_SELF_TEST", "foundation::detail::macro_self_test"})
+        made = [(item.key, item.kind, item.via) for item in found.checks if item.via]
+        expect("an invocation counts each check of one expansion, through a macro that it names too",
+               sorted(made) == sorted([("PLANTED_CHECK", ASSERT, "PLANTED_CHECK"),
+                                       ("PLANTED_PAIR(int)", ASSERT, "PLANTED_PAIR"),
+                                       ("PLANTED_PAIR(int)", ASSERT, "PLANTED_PAIR"),
+                                       ("PLANTED_NESTED(long)", ASSERT, "PLANTED_NESTED"),
+                                       ("PLANTED_NESTED(long)", ASSERT, "PLANTED_NESTED"),
+                                       ("PLANTED_SELF_TEST", NAMESPACE, "PLANTED_SELF_TEST")]))
+        inside = next(line for line, (text, _, _) in enumerate(planted, start=1) if "detail::macro_self_test" in text)
+        expect("a macro inside a self-test namespace counts with the namespace", (inside, ASSERT) not in rows, True)
         expect("the planted tree has no parse failure and no bad check file",
                not found.failures and not found.bad_check_files, True)
 
@@ -802,16 +1048,22 @@ def self_test() -> int:
         expect("a planted self-test namespace in a clean header fails",
                code == 1 and "the self-test namespace fixy::detail::clean_self_test" in report)
         (root / "include/fixy/Clean.h").write_text(clean_planted, encoding="utf-8")
-        for text, label in (("include/foundation/Planted.h | 3 | 3", "static_assert"),
-                            ("include/foundation/Planted.h | 2 | 4", "self-test namespace")):
-            ledger.write_text(matching.replace("include/foundation/Planted.h | 3 | 4", text), encoding="utf-8")
+        for text, label in (("include/foundation/Planted.h | 5 | 8", "static_assert"),
+                            ("include/foundation/Planted.h | 4 | 9", "self-test namespace")):
+            ledger.write_text(matching.replace(planted_row, text), encoding="utf-8")
             code, report = captured(lambda: check(root, ledger))
             expect(f"one more {label} than the row permits fails",
                    code == 1 and "NEW CHECK include/foundation/Planted.h" in report)
-        ledger.write_text(matching.replace("include/foundation/Planted.h | 3 | 4\n", ""), encoding="utf-8")
+        ledger.write_text(matching.replace(planted_row + "\n", ""), encoding="utf-8")
         expect("a header with checks and no row fails", captured(lambda: check(root, ledger))[0] == 1)
-        ledger.write_text(matching.replace("include/foundation/Planted.h | 3 | 4", "include/foundation/Planted.h | 3 | 5"),
-                          encoding="utf-8")
+        (root / "include/fixy/Clean.h").write_text(clean_planted + "PLANTED_PAIR(Clean);\n", encoding="utf-8")
+        code, report = captured(lambda: check(root, ledger))
+        expect("a macro that writes static_asserts, planted in a clean header, fails",
+               code == 1 and "NEW CHECK include/fixy/Clean.h holds 0 self-test namespace(s) and 2" in report
+               and "include/fixy/Clean.h:3: the invocation of the macro PLANTED_PAIR makes 2 namespace-scope "
+                   "static_assert(s)" in report, True)
+        (root / "include/fixy/Clean.h").write_text(clean_planted, encoding="utf-8")
+        ledger.write_text(matching.replace(planted_row, "include/foundation/Planted.h | 5 | 10"), encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
         expect("a row above the tree fails as stale and asks for a regenerate in the same commit",
                code == 2 and "Regenerate this row in the same commit" in report, True)
@@ -843,7 +1095,7 @@ def self_test() -> int:
         written = ledger.read_text(encoding="utf-8")
         expect("--write gives a ledger that passes, with the header and the keep row",
                code == 0 and captured(lambda: check(root, ledger))[0] == 0 and written.startswith(LEDGER_HEADER)
-               and keep_row in written and "include/foundation/Planted.h | 3 | 4" in written)
+               and keep_row in written and planted_row in written)
 
         clean_check = (root / f"{CHECKS}/fixy/Clean.cpp").read_text(encoding="utf-8")
         for text, label in ((clean_check.replace("<fixy/Clean.h>", "<foundation/Planted.h>"),

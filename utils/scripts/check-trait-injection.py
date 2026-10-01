@@ -56,7 +56,8 @@ FAMILY D: THE ORPHAN RULE OF THE TWO LAYERS
       * test/, where a fixture forges on purpose to prove that a gate
         refuses the forgery.  A file under test/fuzz/ is not admitted: a
         fuzz harness drives production code with production types, and
-        it has no reason to forge.
+        it has no reason to forge.  A check file under test/layer/checks/
+        is not admitted either: see THE CHECK FILES below.
       * the authoring set of an extension point in EXTENSION_POINTS, a
         template that other files specialize by design, each with its
         reason.  An extension point that no site needs is stale.
@@ -76,9 +77,9 @@ FAMILY E: A GATE READS NO OPEN TEMPLATE
     Family D sees only the files that git tracks, and the language admits a
     specialization in any file.  So a gate of the two layers must not read a
     template that a translation unit can specialize.  A gate is a concept
-    definition or a requires clause in a header of the two layers.  An open
-    read in a gate is a name that resolves to a layer template of one of
-    three kinds:
+    definition or a requires clause in a header of the two layers, or in
+    the check file of such a header.  An open read in a gate is a name that
+    resolves to a layer template of one of three kinds:
       * a variable template: `template <> inline constexpr bool X_v<Fake> =
         true;` changes the answer
       * a function template: an explicit specialization of a function
@@ -99,6 +100,17 @@ FAMILY E: A GATE READS NO OPEN TEMPLATE
     or a row that no gate reads, is stale and fails until --refresh writes
     the new count.  A row whose second field is `open` stays open on purpose,
     and its third field gives the reason.
+
+THE CHECK FILES
+    test/layer/checks/<layer>/<path>.cpp holds the self-test namespaces and
+    the namespace-scope static_asserts of include/<layer>/<path>.h, and each
+    build compiles it as part of its layer.  The guard reads a check file as
+    its header: the check file may specialize what its header owns, a glob
+    of an authoring set or of an extension point admits it when the glob
+    admits its header, and it takes no exemption of test/.  A gate of the
+    check file of a header of the two layers is a gate of Family E, so an
+    open read that moves from a header to its check file keeps its count.
+    The layer templates are still the templates that the headers define.
 
 WHAT READS THE SITES
     The parse tree of the pinned tree-sitter kit (utils/scripts/tsast.py), over each
@@ -136,7 +148,8 @@ AUTHORING SETS ARE PER RELATION
     set is a one-line edit that a reviewer sees.  test/ may declare Family B
     and C edges, because the negative-compile fixtures and the sentinels are
     the witnesses that the relations stay fail-closed.  No authoring set
-    admits a file under test/fuzz/.
+    admits a file under test/fuzz/.  A check file matches the globs as its
+    header does, and the glob test/* does not admit it.
 
 Usage
     check-trait-injection.py              scan the tree
@@ -171,6 +184,10 @@ LAYER_ROOTS = ("include/foundation/", "include/fixy/")
 TEST_TREE = "test/"
 # The directory under test/ that takes no exemption of test/: the fuzz harnesses.
 FUZZ_TREE = "test/fuzz/"
+# The check files: test/layer/checks/<layer>/<path>.cpp for include/<layer>/<path>.h.
+# The guard reads each one as its header, so it takes no exemption of test/.
+CHECK_TREE = "test/layer/checks/"
+HEADER_TREE = "include/"
 SUBSTRATE_PATHS = ("include/foundation/algebra/*", "include/fixy/*",
                    "test/fixy/test_cheat_probe.cpp",
                    "test/fixy/neg/neg_cheat_graded_modality_injection.cpp")
@@ -243,7 +260,8 @@ OPEN_MARK = "open"
 LEDGER_HEADER = (
     "# utils/scripts/open-gate-reads.txt — the open reads of each template that a gate of\n"
     "# include/foundation or include/fixy reads, read by utils/scripts/check-trait-injection.py\n"
-    "# (Family E).  A gate is a concept definition or a requires clause.  An open read\n"
+    "# (Family E).  A gate is a concept definition or a requires clause, in a header or in the\n"
+    "# check file of a header (test/layer/checks/foundation, test/layer/checks/fixy).  An open read\n"
     "# names a variable template, a function template, or a class template for its value\n"
     "# or its type: a translation unit can specialize each, and the specialization changes\n"
     "# the answer of the gate.\n"
@@ -273,14 +291,28 @@ def listed_files(root: Path) -> list[str]:
     return [path for path in tsast.tracked_files(root) if tsast.is_in_cpp_scope(path) and (root / path).is_file()]
 
 
+def read_as(path: str) -> str:
+    """Return the path that the guard reads a file as: the header of a check file, and the path itself otherwise.
+
+    test/layer/checks/<layer>/<path>.cpp holds the checks that left
+    include/<layer>/<path>.h, so it takes the rights of that header.
+    """
+    if path.startswith(CHECK_TREE) and path.endswith(".cpp"):
+        return HEADER_TREE + path[len(CHECK_TREE):-len(".cpp")] + ".h"
+    return path
+
+
 def authored(relation: Relation, path: str) -> bool:
-    """Report whether a path lies in the authoring set of a relation.  A path under FUZZ_TREE never does."""
-    return not path.startswith(FUZZ_TREE) and any(fnmatch.fnmatchcase(path, glob) for glob in relation.globs)
+    """Report whether a path lies in the authoring set of a relation.  A path under FUZZ_TREE never does.
+
+    A check file matches the globs as its header does.
+    """
+    return not path.startswith(FUZZ_TREE) and any(fnmatch.fnmatchcase(read_as(path), glob) for glob in relation.globs)
 
 
 def in_test_tree(path: str) -> bool:
-    """Report whether a path takes the exemptions of test/: a path under TEST_TREE and outside FUZZ_TREE."""
-    return path.startswith(TEST_TREE) and not path.startswith(FUZZ_TREE)
+    """Report whether a path takes the exemptions of test/: a path under TEST_TREE, outside FUZZ_TREE and CHECK_TREE."""
+    return path.startswith(TEST_TREE) and not path.startswith((FUZZ_TREE, CHECK_TREE))
 
 
 def template_name(node: tsast.Node) -> str | None:
@@ -424,11 +456,14 @@ class Orphans:
         return self.defined.get(qualified) or self.declared.get(qualified, set())
 
     def is_admitted(self, qualified: QualifiedName, rel: str) -> bool:
-        """Report whether a file may specialize a layer template, and record the extension point it uses."""
-        if rel in self.owners(qualified) or in_test_tree(rel):
+        """Report whether a file may specialize a layer template, and record the extension point it uses.
+
+        A check file is admitted where its header is admitted.
+        """
+        if read_as(rel) in self.owners(qualified) or in_test_tree(rel):
             return True
         point = self.extension_points.get(qualified)
-        if point is not None and any(fnmatch.fnmatchcase(rel, glob) for glob in point[0]):
+        if point is not None and any(fnmatch.fnmatchcase(read_as(rel), glob) for glob in point[0]):
             self.used_extensions.add(qualified)
             return True
         return False
@@ -646,14 +681,14 @@ def gate_templates(gate: tsast.Node, orphans: Orphans, aliases: list[tsast.Names
 
 
 def gate_reads(trees: list[tuple[str, tsast.Tree]], orphans: Orphans) -> list[GateRead]:
-    """Return each open read of each gate of the two layers, in path and line order.
+    """Return each open read of each gate of the two layers and of their check files, in path and line order.
 
-    Complexity: linear in the size of the headers of the two layers.
+    Complexity: linear in the size of the headers and the check files of the two layers.
     """
     functions = frozenset(qualified for qualified, kind in orphans.kinds.items() if kind == "function")
     reads: list[GateRead] = []
     for rel, tree in trees:
-        if not rel.startswith(LAYER_ROOTS):
+        if not read_as(rel).startswith(LAYER_ROOTS):
             continue
         aliases, usings = tsast.namespace_aliases(tree), tsast.using_names(tree)
         local = tsast.NameIndex()
@@ -823,8 +858,9 @@ def run(root: Path, extension_points: dict[QualifiedName, tuple[tuple[str, ...],
             print(f"trait_guard[{site.label}]: authoring set is: {' '.join(relation.globs)}", file=sys.stderr)
         else:
             print(f"trait_guard[{site.label}]: a template of include/foundation or include/fixy is specialized "
-                  f"only in the file that defines it, in test/ outside {FUZZ_TREE}, or at an extension point of "
-                  f"EXTENSION_POINTS", file=sys.stderr)
+                  f"only in the file that defines it, in test/ outside {FUZZ_TREE} and {CHECK_TREE}, or at an "
+                  f"extension point of EXTENSION_POINTS.  A check file is admitted where its header is",
+                  file=sys.stderr)
     for line in unread + stale + ledger_errors + above + stale_rows:
         print(line, file=sys.stderr)
     if forged or unread:
@@ -972,6 +1008,16 @@ def self_test() -> int:
             "template <> inline constexpr bool is_exec_ctx_v<Fake> = true;\n"
             "}\n"
             "template <> void foundation::permissions::mint_permission_root<IoRegion>() {}\n"),
+        # A check file is read as its header, so it takes no exemption of
+        # test/.  An extension point admits it as it admits its header.
+        "test/layer/checks/fixy/Cells.cpp": (
+            "#include <fixy/Cells.h>\n"
+            "template <> struct foundation::contracts::armed_cell<9> {};\n"
+            "template <> inline constexpr bool foundation::effects::is_exec_ctx_v<CheckForged> = true;\n"
+            "namespace fixy { template <> struct retag_policy<CheckFrom, CheckTo> {}; }\n"
+            "namespace fixy::tags::admitted_retags {\n}\n"
+            "using CheckGate = foundation::effects::is_planted_gate<Wide, Narrow>;\n"
+            "template <> const bool CheckGate::value = true;\n"),
         # A fuzz harness takes no exemption of test/.
         "test/fuzz/planted_forge.cpp": (
             "namespace fixy { template <> struct retag_policy<X, Y> {}; }\n"
@@ -1008,6 +1054,10 @@ def self_test() -> int:
         ("FakeGate (a class template specialization named through an alias)", "src/planted/orphan_class.cpp", 8),
         ("foundation::effects::is_exec_ctx_v", "src/planted/orphan_macro.cpp", 1),
         ("foundation::effects::is_exec_ctx_v", "src/planted/orphan_macro.cpp", 2),
+        ("foundation::effects::is_exec_ctx_v", "test/layer/checks/fixy/Cells.cpp", 3),
+        ("retag_policy", "test/layer/checks/fixy/Cells.cpp", 4),
+        ("admitted_retags", "test/layer/checks/fixy/Cells.cpp", 5),
+        ("CheckGate (a class template specialization named through an alias)", "test/layer/checks/fixy/Cells.cpp", 8),
         ("retag_policy", "test/fuzz/planted_forge.cpp", 1),
         ("foundation::effects::is_exec_ctx_v", "test/fuzz/planted_forge.cpp", 2),
         ("FakeGate (a class template specialization named through an alias)", "test/fuzz/planted_forge.cpp", 4),
@@ -1047,6 +1097,12 @@ def self_test() -> int:
             "namespace fixy::machine { template <> struct machine_transition<From, To> : std::true_type {}; }\n"),
         "include/fixy/Refined.h": "namespace fixy::refined::admitted_implications {\n}\n",
         "test/planted_test.cpp": "namespace fixy { template <> struct retag_policy<X, Y> {}; }\n",
+        # A check file may do what its header may do: specialize a template
+        # that the header owns, and reopen the relation that the header authors.
+        "test/layer/checks/foundation/effects/Ctx.cpp": (
+            "#include <foundation/effects/Ctx.h>\n"
+            "template <> inline constexpr bool foundation::effects::is_exec_ctx_v<OwnedByTheHeader> = true;\n"),
+        "test/layer/checks/fixy/Tagged.cpp": "#include <fixy/Tagged.h>\nnamespace fixy::tags::admitted_retags {\n}\n",
     }
     ledger = ("fixy/Tagged.h:admitted_retags  — The prose names template <> struct retag_policy<From, To> and "
               "struct is_graded_specialization<W>, and it specializes nothing.\n")
@@ -1219,6 +1275,27 @@ def self_test_gates(expect: Callable[..., None], captured: Callable[[Callable[[]
         code, _report = captured(lambda: refresh(root))
         expect("a refresh does not write a template with no row", code == 1 and
                ledger.read_text(encoding="utf-8") == before, True)
+
+        # A gate that moves to the check file of its header stays a gate.  A
+        # check file of include/crucible holds no gate of the two layers.
+        moved = root / "test" / "layer" / "checks" / "foundation" / "gates.cpp"
+        moved.parent.mkdir(parents=True)
+        moved.write_text("#include <foundation/gates.h>\nnamespace foundation::gates {\n"
+                         "template <class T> concept MovedReadsVariable = open_v<T>;\n}\n", encoding="utf-8")
+        outside = root / "test" / "layer" / "checks" / "crucible" / "gates.cpp"
+        outside.parent.mkdir(parents=True)
+        outside.write_text("namespace foundation::gates {\ntemplate <class T> concept OutsideReadsVariable = open_v<T>;\n}\n",
+                           encoding="utf-8")
+        gates = []
+        scan(root, {}, gates)
+        expect("a gate in the check file of a layer header is an open read, and a gate in the check file of a "
+               "crucible header is not",
+               [(read.path, read.line) for read in gates if read.path.startswith("test/")]
+               == [("test/layer/checks/foundation/gates.cpp", 3)])
+        ledger.write_text(exact, encoding="utf-8")
+        code, report = captured(lambda: run(root, {}))
+        expect("an open read in a check file above its ledger row fails",
+               code == 1 and "3 gate(s) read the open template foundation::gates::open_v" in report, True)
 
 
 def main(argv: list[str]) -> int:

@@ -789,12 +789,11 @@ endif()
 # These bodies are a library of their own, and libcrucible.a does not hold
 # them.  The pipeline starts its threads through std::jthread, and the
 # constructor opens the store through std::string and std::filesystem.
-# Those instantiations define the virtual table of std::thread::_State_impl
-# and reference __cxa_throw and __cxa_rethrow, so the check of
-# utils/scripts/check-no-throw-no-rtti.sh refuses them.  That check reads
-# libcrucible.a and libfoundation.a.  The same code compiled into each test
-# and into the vessel when it was header code, and the check did not read it
-# there either.
+# Those instantiations define the virtual table of std::thread::_State_impl,
+# and the std::set of fixy/concurrent/Topology.h references __cxa_throw and
+# __cxa_rethrow.  The check of utils/scripts/check-no-throw-no-rtti.sh reads
+# this library too, and utils/scripts/no-throw-no-rtti-allowlist.txt admits
+# each of those references with its reason.
 #
 # The bodies compile with the definitions that crucible gives its
 # consumers, so each header reads the same macros in both places.

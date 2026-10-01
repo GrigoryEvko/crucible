@@ -1,6 +1,7 @@
 # utils/scripts/open-gate-reads.txt — the open reads of each template that a gate of
 # include/foundation or include/fixy reads, read by utils/scripts/check-trait-injection.py
-# (Family E).  A gate is a concept definition or a requires clause.  An open read
+# (Family E).  A gate is a concept definition or a requires clause, in a header or in the
+# check file of a header (test/layer/checks/foundation, test/layer/checks/fixy).  An open read
 # names a variable template, a function template, or a class template for its value
 # or its type: a translation unit can specialize each, and the specialization changes
 # the answer of the gate.
@@ -9,6 +10,8 @@
 #   <template> | open | <reason>     a template that stays open on purpose.
 #
 # Run check-trait-injection.py --refresh in the commit that removes a read.
+fixy::ClockSource::satisfies | 1
+fixy::SchedClass::runnable_on | 1
 fixy::atom::detail::atom_refusal_v | 1
 fixy::atom::detail::effect_grade_row_ | 1
 fixy::atom::fp::detail::settings_from_ | 1
@@ -43,6 +46,7 @@ fixy::concurrent::is_consumer_handle_v | 4
 fixy::concurrent::is_producer_handle_v | 3
 fixy::concurrent::is_swmr_reader_v | 2
 fixy::concurrent::is_swmr_writer_v | 3
+fixy::concurrent::mint_stage | 1
 fixy::concurrent::stage_input_count_v | 1
 fixy::concurrent::stage_output_count_v | 1
 fixy::corpus::classified_bg_without_declassify::matches | 1
@@ -65,11 +69,21 @@ fixy::is_fn_v | 3
 fixy::is_owned_region_v | 1
 fixy::is_stale_v | 2
 fixy::machine_transition_v | 1
+fixy::mint_band | 1
+fixy::mint_budget_authority | 1
+fixy::mint_linear_view | 1
+fixy::mint_version_source | 1
+fixy::mint_view | 1
+fixy::mint_witnessed_under | 1
+fixy::mmap::advise_release_aware | 1
 fixy::mmap::detail::all_atom_tags_known_v | 1
 fixy::mmap::detail::is_primary_with_share_v | 1
 fixy::mmap::detail::pack_has_anonymous_v | 1
 fixy::mmap::detail::region_mint_admits_v | 1
 fixy::refined::bound_fits | 1
+fixy::relax | 1
+fixy::sanitize::path_traversal::sanitize_path_no_dotdot | 1
+fixy::select_fresher | 2
 fixy::session::config::detail::entry_of | 1
 fixy::session::config::is_configuration_v | 5
 fixy::session::detail::delegation_readable_gate | 1
@@ -87,8 +101,9 @@ fixy::session::is_content_addressed_v | 1
 fixy::session::is_implementable_on | 1
 fixy::session::protocol_is_at_v | 1
 fixy::session::type_display_name_v | 1
+foundation::AlignedBuffer | 2
 foundation::algebra::Graded::can_regrade_ | 2
-foundation::algebra::Graded::inject | 2
+foundation::algebra::Graded::inject | 3
 foundation::algebra::claim_orientation_v | 2
 foundation::algebra::claim_subject_v | 1
 foundation::algebra::detail::lattice_laws::laws_hold | 1
@@ -96,9 +111,12 @@ foundation::algebra::detail::lattice_laws::semiring_laws_hold | 1
 foundation::algebra::lattice_name | 2
 foundation::algebra::lattices::SeqPrefixLattice::grade_of | 1
 foundation::algebra::lattices::monotone_bounds | 1
+foundation::algebra::verify_bounded_lattice_axioms_at | 1
+foundation::algebra::verify_lattice_axioms_at | 1
 foundation::diag::has_insights_v | 1
 foundation::diag::has_substantive_insights_v | 1
 foundation::diag::is_diagnostic_class_v | 5
+foundation::effects::Computation | 1
 foundation::effects::detail::bare_tag_info_ | 1
 foundation::effects::detail::extract_admits_payload_v | 8
 foundation::effects::detail::is_axis_tag_ | 1
@@ -107,9 +125,14 @@ foundation::effects::detail::names_each_axis_once_ | 1
 foundation::effects::detail::pack_sums_fit_ | 1
 foundation::effects::detail::rows_sum_fit_ | 1
 foundation::effects::detail::sums_fit_pairwise_ | 1
+foundation::effects::extract_bare | 1
+foundation::lifetime::start_as_array | 1
 foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
 foundation::permissions::has_split_pack_authoring_witness_v | open | the witness of a split manifest, an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
+foundation::permissions::mint_read_loan | open | the reads are self-test concepts in the check file of ReadView.h that ask whether a call of the loan mint compiles.  No mint reads them, and the mint is the door that they probe
+foundation::permissions::with_read_view | open | the reads are self-test concepts in the check file of ReadView.h that ask whether a call of the read door compiles.  No mint reads them, and the door is what they probe
 foundation::reflect::any_component_satisfies | 1
 foundation::reflect::arity_v | 2
+foundation::reflect::bits_to_string | 1
 foundation::reflect::detail::identity_verdict_of | 1
 foundation::reflect::enumerator_name | 1

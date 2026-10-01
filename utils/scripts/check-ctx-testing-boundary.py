@@ -27,8 +27,16 @@ WHAT COUNTS AS A USE
 SCOPE
     The C++ files under include/foundation, include/fixy, include/crucible,
     src, vessel, utils/tools and examples.  test/ and bench/ are not read,
-    because taking the test path is what they are for.  A file in scope that
-    the parser cannot read fails the guard, because its uses are unknown.
+    because taking the test path is what they are for.  The check files
+    under test/layer/checks/ are test code of this kind.  Each build
+    compiles a check file only into object libraries that nothing links:
+    the sentinel of its layer, and for a check file with a walk, the unit
+    test/layer/walks_across_headers.cpp.  So a use of the door in a check
+    file reaches no code that ships.  A self-test
+    that moves from a header to its check file takes its uses out of the
+    shipped header, and the entry of the header shrinks.  A file in scope
+    that the parser cannot read fails the guard, because its uses are
+    unknown.
 
 THE ALLOWLIST
     utils/scripts/ctx-testing-boundary-allowlist.txt admits the uses of a file:

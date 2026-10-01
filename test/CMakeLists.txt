@@ -296,8 +296,12 @@ crucible_test(test_cipher_commit_lifetime)
 crucible_test(test_chase_lev_deque)
 # The two properties -fno-exceptions and -fno-rtti stood for, held on the
 # artifact of THIS build rather than asserted by flags neither preset has
-# ever carried.  The self-test needs the project compiler, because the
-# system g++ may be too old for the fixtures.
+# ever carried.  The gate reads three static libraries: crucible,
+# foundation and crucible_vigil.  It does not read crucible_perf,
+# crucible_cipher or crucible_vis.
+# utils/scripts/no-throw-no-rtti-allowlist.txt admits the throws and the
+# classes that a library header makes.  The self-test needs the project
+# compiler, because the system g++ may be too old for the fixtures.
 add_test(NAME no_throw_no_rtti_self_test
   COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh --self-test)
 set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
@@ -306,7 +310,7 @@ set_tests_properties(no_throw_no_rtti_self_test PROPERTIES
   SKIP_RETURN_CODE 3)
 add_test(NAME no_throw_no_rtti
   COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-throw-no-rtti.sh
-          $<TARGET_FILE:crucible> $<TARGET_FILE:foundation>)
+          $<TARGET_FILE:crucible> $<TARGET_FILE:foundation> $<TARGET_FILE:crucible_vigil>)
 set_tests_properties(no_throw_no_rtti PROPERTIES
   LABELS "ci_guard"
   SKIP_RETURN_CODE 3)

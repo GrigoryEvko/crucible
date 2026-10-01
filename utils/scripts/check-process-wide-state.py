@@ -26,7 +26,16 @@ THE PATTERN
     holds no candidate.
 
 WHAT THE CHECK READS
-    Every C++ file under include/, src/ and vessel/.  A candidate is a
+    Every C++ file under include/, src/ and vessel/.  It does not read the
+    check files under test/layer/checks/.  A check file holds the self-test
+    namespaces and the namespace-scope static_asserts of one header.  Each
+    build compiles it only into object libraries that nothing links: the
+    sentinel of its layer, and for a check file with a walk, the unit
+    test/layer/walks_across_headers.cpp.  An object of a check file
+    therefore has no copy in a shared library, and the hazard of THE
+    PATTERN does not exist for it.  The move of a check from its header
+    to its check file removes the copies that each library made.  A
+    candidate is a
     variable with static or thread storage duration whose object is not
     const: a variable at namespace scope, an inline static data member, the
     out-of-class definition of a static data member, and a static or

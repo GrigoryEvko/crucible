@@ -1,0 +1,11 @@
+# utils/scripts/no-throw-no-rtti-allowlist.txt — the throws and the polymorphic classes that
+# utils/scripts/check-no-throw-no-rtti.sh admits in an artifact.  One row each:
+#
+#   throw  | <artifact file name> | <text of the function name> | <reason>
+#   vtable | <artifact file name> | <text of the class name>    | <reason>
+#
+# A row matches when the demangled name of the function or the class holds its text.  A row
+# whose artifact the run scans and that matches nothing is stale and fails, so the list only
+# shrinks.  A reason holds no `|`.
+throw | libcrucible_vigil.a | std::_Rb_tree<std::vector<int, std::allocator<int> > | fixy/concurrent/Topology.h keeps the L3 groups that it found in a std::set<std::vector<int>>.  An insert copies a vector into a new node, and libstdc++ catches a failed allocation inside the node and throws it again.  The constructor of the topology catches each throw of its sysfs reads, so no throw leaves it.  A deduplication over the vector of groups, with no set, removes this row
+vtable | libcrucible_vigil.a | std::thread::_State_impl< | std::jthread starts each thread through std::thread::_State_impl, a polymorphic class template of libstdc++.  The background pipeline starts its stage threads with std::jthread by design (CLAUDE.md §IX)

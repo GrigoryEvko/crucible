@@ -14,11 +14,21 @@
 #   One check that stays in its header, because its result depends on the translation unit that
 #   includes the header.  The key of a namespace is its full name.  The key of a static_assert is
 #   the spelling of its condition, as --list prints it.  The reason is mandatory.
+include/crucible/CKernel.h | 0 | 1
+include/crucible/Graph.h | 0 | 2
+include/crucible/MerkleDag.h | 0 | 10
+include/crucible/NumericalRecipe.h | 0 | 1
+include/crucible/SchemaTable.h | 0 | 1
+include/crucible/SymbolTable.h | 0 | 1
+include/crucible/TensorMeta.h | 0 | 2
+include/crucible/TraceGraph.h | 0 | 1
+include/crucible/Types.h | 0 | 27
 include/crucible/ledger/ProbeSupport.h | 1 | 2
 include/crucible/ledger/RefreshDaemon.h | 1 | 5
 include/crucible/ledger/probes/CacheTier.h | 1 | 0
 include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
+include/fixy/Insights.h | 0 | 24
 
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Linear<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads

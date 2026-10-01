@@ -15,6 +15,10 @@
 # to derive the branded templates from the parse tree.  The list of nine
 # names that it replaced did not see OwnedMmap, NumaPlacement or the
 # other templates that carry a brand.
+#
+# On 2026-10-01 the check files of the two layers joined the roots.  The
+# rows of test/layer/checks/ hold the sites that moved there with the
+# checks of their headers.
 include/fixy/OwnedMmap.h	1
 include/fixy/session/Payload.h	14
 include/foundation/permissions/Permission.h	1
@@ -105,3 +109,13 @@ test/foundation/test_permission_shared_xor_exclusive.cpp	1
 test/foundation/test_permissions_compile.cpp	2
 test/foundation/test_read_view.cpp	15
 test/foundation/test_read_view_escape_attacks.cpp	1
+test/layer/checks/fixy/Borrowed.cpp	55
+test/layer/checks/fixy/OwnedRegion.cpp	13
+test/layer/checks/fixy/Qtt.cpp	2
+test/layer/checks/fixy/ScopedView.cpp	6
+test/layer/checks/fixy/SharedRegion.cpp	1
+test/layer/checks/fixy/os/Mmap.cpp	1
+test/layer/checks/fixy/os/NumaPlacement.cpp	1
+test/layer/checks/foundation/effects/Computation.cpp	3
+test/layer/checks/foundation/permissions/Permission.cpp	52
+test/layer/checks/foundation/permissions/ReadView.cpp	29

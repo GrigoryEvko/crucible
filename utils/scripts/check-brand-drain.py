@@ -31,6 +31,15 @@ WHICH TEMPLATE A SPELLING NAMES
     branded template of that last name.  A macro body has no enclosing
     scope until it expands, so a spelling in a body counts the same way.
 
+WHICH FILES HOLD THE SITES
+    The headers and the tests of the two layers: include/foundation,
+    include/fixy, test/foundation and test/fixy.  The check files of the
+    two layers, test/layer/checks/foundation and test/layer/checks/fixy,
+    belong to their layer too.  A check file holds the self-test namespaces
+    and the namespace-scope static_asserts that left its header, and each
+    build compiles it with that layer.  A site that moves from a header to
+    its check file stays a site.
+
 THE RULE
     A site is a spelling of a branded template whose argument list stops at
     or before the brand, or names DefaultBrand.  utils/scripts/brand-drain.txt
@@ -77,7 +86,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tsast  # noqa: E402
 
-ROOTS = ("include/foundation", "include/fixy", "test/foundation", "test/fixy")
+ROOTS = ("include/foundation", "include/fixy", "test/foundation", "test/fixy", "test/layer/checks/foundation",
+         "test/layer/checks/fixy")
 TEMPLATE_ROOT = "include"
 LEDGER = "utils/scripts/brand-drain.txt"
 SUFFIXES = (".h", ".cpp")
@@ -101,6 +111,10 @@ LEDGER_HEADER = (
     "# to derive the branded templates from the parse tree.  The list of nine\n"
     "# names that it replaced did not see OwnedMmap, NumaPlacement or the\n"
     "# other templates that carry a brand.\n"
+    "#\n"
+    "# On 2026-10-01 the check files of the two layers joined the roots.  The\n"
+    "# rows of test/layer/checks/ hold the sites that moved there with the\n"
+    "# checks of their headers.\n"
 )
 
 
@@ -561,6 +575,26 @@ def self_test() -> int:
 
         ledger.write_text("include/fixy/Planted.h\t16\n", encoding="utf-8")
         expect("a ledger that matches passes", captured(lambda: check(root, ledger))[0] == 0)
+
+        # A check file of a layer header is part of that layer.  A check file
+        # of include/crucible is outside the roots, as its header is.
+        moved = root / "test/layer/checks/fixy/Planted.cpp"
+        moved.parent.mkdir(parents=True)
+        moved.write_text("#include <fixy/Planted.h>\nPermission<Tag> moved_bare;\nPermission<Tag, Fresh> moved_branded;\n",
+                         encoding="utf-8")
+        outside_check = root / "test/layer/checks/crucible/Outside.cpp"
+        outside_check.parent.mkdir(parents=True)
+        outside_check.write_text("#include <crucible/Outside.h>\nPermission<Tag> outside_bare;\n", encoding="utf-8")
+        in_checks = [(site.path, site.row) for site in scan(root)[0] if site.path.startswith("test/layer/checks/")]
+        expect("counted: a site in the check file of a layer header", in_checks == [(moved.relative_to(root).as_posix(), 2)])
+        expect("not counted: a site in the check file of a crucible header",
+               not any(path.startswith("test/layer/checks/crucible/") for path, _row in in_checks), True)
+        code, report = captured(lambda: check(root, ledger))
+        expect("a site that a check file adds and the ledger does not name fails",
+               code == 1 and "NEW SITE  test/layer/checks/fixy/Planted.cpp: 1" in report, True)
+        moved.unlink()
+        outside_check.unlink()
+
         ledger.write_text("include/fixy/Planted.h\t15\n", encoding="utf-8")
         code, report = captured(lambda: check(root, ledger))
         expect("one more site than the ledger permits fails", code == 1 and "NEW SITE  include/fixy/Planted.h: 16"
