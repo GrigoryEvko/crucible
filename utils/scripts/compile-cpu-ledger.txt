@@ -1,0 +1,13 @@
+# utils/scripts/compile-cpu-ledger.txt — the compile jobs that can take more CPU time than the error
+# threshold of compile-cpu (utils/scripts/budgets.txt).  utils/scripts/check-compile-cost.py reads it.
+#
+# A row:  kind | object | seconds | reason
+#   kind     the build kind of BUILD_DIR/build-kind.txt, for example x86_64-debug-asan
+#   object   the object, relative to the build directory
+#   seconds  the CPU time at the last --write
+#   reason   why the job can take that time.  A row needs a reason
+#
+# In a build of its kind, a row gives a warning while its object stays over the error threshold, and
+# an error when the object is at or under it.  A record of a ccache hit holds no time, and the check
+# does not judge it.  python3 utils/scripts/check-compile-cost.py --check compile-cpu --build-dir DIR
+# --write [--reason TEXT] writes the rows of the kind of a build again from that build.

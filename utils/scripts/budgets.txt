@@ -14,7 +14,9 @@ compile-cpu    | 10 | 20 | s  | the user and system CPU time of one compile job,
 compile-memory | 2  | 4  | GB | the peak resident memory of one compile job, from the build launcher.  The launcher fails a job over the error threshold that no ledger row admits
 link-time      | 2  | 5  | s  | the user and system CPU time of one link, from the build launcher.  The launcher stops a link at three times the error threshold
 link-memory    | 0.5 | 1 | GB | the peak resident memory of one link, from the build launcher.  The launcher fails a link over the error threshold that no ledger row admits
-function-size  | 64 | 256 | KB | the size of the largest function in one object of the Debug build
+function-size  | 64 | 256 | KB | the size of the largest function in one object.  The Debug build with ASan has the largest functions
+object-text    | 512 | 768 | KB | the machine code of one object: the sum of its allocated, executable sections
+header-alone   | 8  | 12 | MB | the bytes that one header of include/ includes when it compiles alone, from the ninja dependency log of its sentinel
 test-time      | 5  | 20 | s  | the wall time of one test in one ctest run
 fixture-cpu    | 5  | 15 | s  | the user CPU time of one negative-fixture compile that the result store does not hold (test/neg_compile_driver.py)
 padded-list    | 63 | 63 | elements | the element count of a fixed list whose element type has a padding bit (utils/scripts/check-padded-lists.py). A count above it gives a finding

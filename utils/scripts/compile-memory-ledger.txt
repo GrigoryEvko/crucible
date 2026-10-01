@@ -1,13 +1,17 @@
 # utils/scripts/compile-memory-ledger.txt — the compile jobs that can take more peak memory than the
 # error threshold of compile-memory (utils/scripts/budgets.txt).  utils/scripts/build-launcher.py fails
 # a compile job over that threshold unless a row of this ledger admits its object for the kind of the
-# build.
+# build.  utils/scripts/check-compile-cost.py reads the ledger too.
 #
 # A row:  kind | object | GB | reason
 #   kind     the build kind of BUILD_DIR/build-kind.txt, for example x86_64-debug-asan
 #   object   the object, relative to the build directory
-#   GB       the peak resident memory of the compile job, in GB of 2^30 bytes
+#   GB       the peak resident memory at the last --write, in GB of 2^30 bytes
 #   reason   why the job can take that memory.  A row needs a reason
 #
 # A compile job over the error threshold that a row admits gives a warning, and the job does not fail.
-# A ccache hit runs no compiler, so the launcher does not judge it.
+# A ccache hit runs no compiler, so neither the launcher nor the check judges it.  In a build of its
+# kind, the check gives a warning for a row while its object stays over the error threshold, and an
+# error when the object is at or under it.  python3 utils/scripts/check-compile-cost.py --check
+# compile-memory --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a build again
+# from that build.

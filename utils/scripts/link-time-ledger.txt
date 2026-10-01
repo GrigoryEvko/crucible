@@ -1,0 +1,13 @@
+# utils/scripts/link-time-ledger.txt — the links that can take more CPU time than the error threshold
+# of link-time (utils/scripts/budgets.txt).  utils/scripts/check-compile-cost.py reads it.
+#
+# A row:  kind | output | seconds | reason
+#   kind     the build kind of BUILD_DIR/build-kind.txt, for example x86_64-debug-asan
+#   output   the executable or the shared library, relative to the build directory
+#   seconds  the CPU time at the last --write
+#   reason   why the link can take that time.  A row needs a reason
+#
+# In a build of its kind, a row gives a warning while its output stays over the error threshold, and
+# an error when the output is at or under it.  python3 utils/scripts/check-compile-cost.py --check
+# link-time --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a build again from
+# that build.

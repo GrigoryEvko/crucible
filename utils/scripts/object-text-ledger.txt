@@ -1,0 +1,13 @@
+# utils/scripts/object-text-ledger.txt — the objects that can hold more machine code than the error
+# threshold of object-text (utils/scripts/budgets.txt).  utils/scripts/check-compile-cost.py reads it.
+#
+# A row:  kind | object | KB | reason
+#   kind     the build kind of BUILD_DIR/build-kind.txt, for example x86_64-debug-asan
+#   object   the object, relative to the build directory
+#   KB       the sum of its allocated, executable sections at the last --write
+#   reason   why the object can hold that code.  A row needs a reason
+#
+# In a build of its kind, a row gives a warning while its object stays over the error threshold, and
+# an error when the object is at or under it.  python3 utils/scripts/check-compile-cost.py --check
+# object-text --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a build again from
+# that build.

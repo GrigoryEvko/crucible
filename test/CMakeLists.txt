@@ -5336,6 +5336,32 @@ add_test(NAME build_launcher_test
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/build_launcher_test.py --cxx ${CRUCIBLE_REAL_CXX})
 set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 
+# The cost checks of utils/scripts/check-compile-cost.py read the records of
+# the launcher and the outputs of this build:
+#   compile_cpu, compile_memory  the CPU time and the peak memory of each compile job
+#   link_time, link_memory       the CPU time and the peak memory of each link
+#   function_size                the largest function of each object
+#   object_text                  the machine code of each object
+#   header_alone                 the bytes that each header of include/ includes alone,
+#                                from the ninja dependency log of its sentinel
+# A ledger row applies only to the build of its kind, and each check reads
+# the kind from build-kind.txt of this build.
+set(_compile_cost_ninja "")
+if(CMAKE_GENERATOR MATCHES "Ninja")
+  set(_compile_cost_ninja ${CMAKE_MAKE_PROGRAM})
+endif()
+foreach(_compile_cost_check compile-cpu compile-memory link-time link-memory function-size object-text header-alone)
+  string(REPLACE "-" "_" _compile_cost_test "${_compile_cost_check}")
+  add_test(NAME ${_compile_cost_test}
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-compile-cost.py --check ${_compile_cost_check}
+            --build-dir ${CMAKE_BINARY_DIR} --ninja "${_compile_cost_ninja}"
+            --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+  set_tests_properties(${_compile_cost_test} PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+endforeach()
+add_test(NAME compile_cost_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-compile-cost.py --self-test)
+set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
+
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a

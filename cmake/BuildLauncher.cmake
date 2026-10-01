@@ -8,6 +8,7 @@
 # and holds no time.  The launcher also holds the budget of the step: a step
 # over the memory error threshold fails, and RLIMIT_CPU stops a step that
 # runs away (the docstring of the launcher gives the rules).
+# utils/scripts/check-compile-cost.py reads the records and the outputs.
 #
 # This file comes after each block that sets or clears the compiler
 # launcher: the ccache block, the PGO block and the quarantine plugin.  It
@@ -23,11 +24,12 @@
 #
 # python3 -S skips the site module, which saves about 5 ms of each step.  A
 # host with no python3 builds with no launcher, because a measurement never
-# stops a build.  The build then writes no record.
+# stops a build.  The checks of check-compile-cost.py then find no record, and
+# they fail.
 #
 # The build kind names the preset of the build for the ledger rows, because
-# the sizes and the times depend on it.  The launcher reads it from
-# build-kind.txt in the build directory.  The options
+# the sizes and the times depend on it.  The launcher and the checks read it
+# from build-kind.txt in the build directory.  The options
 # that make the kind come after this file, so a call at the end of the root
 # directory writes the file.
 

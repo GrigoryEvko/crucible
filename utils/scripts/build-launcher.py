@@ -15,7 +15,8 @@ WHAT THE SCRIPT DOES
     cost_meter.py), and it exits with the status of the command.  When the
     command ends on a signal, the script ends on the same signal.  A failure
     to measure or to write the record never changes the status and prints
-    nothing.  A command with no -o, or a compile with no -c, runs in its own
+    nothing.  utils/scripts/check-compile-cost.py finds a missing record, and
+    it fails.  A command with no -o, or a compile with no -c, runs in its own
     place, and the script records nothing.
 
 THE BUDGET ROWS
