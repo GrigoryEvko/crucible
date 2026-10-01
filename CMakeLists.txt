@@ -70,6 +70,18 @@ if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
   # ccache does not hash base_dir, so an entry that a launcher with another
   # base_dir stored can still give such a dependency file.  The namespace
   # keeps the entries of this launcher apart from those entries.
+  #
+  # The launcher also sets depend_mode to false, which is the ccache default
+  # and the mode of CI.  When the hashes of the included files give no hit,
+  # ccache then hashes the output of the preprocessor.  A change that keeps
+  # that output, such as a change of a comment on its own line, then gets a
+  # hit.  The output keeps the number of each line and the column of each
+  # token, so a change that moves code gets no hit.  The hit needs an entry
+  # for the same output, so the first change after a hit in the direct mode
+  # gets no hit.  A change of a comment in foundation/Platform.h rebuilt 844
+  # objects in 2.8 s and 171 CPU seconds in place of 29 s and 2,219 CPU
+  # seconds.  A change of code pays one more run of the preprocessor: 2,448
+  # CPU seconds in place of 2,387.
   execute_process(
       COMMAND "${CRUCIBLE_REAL_CXX}" -print-prog-name=cc1plus
       OUTPUT_VARIABLE CRUCIBLE_CC1PLUS
@@ -91,7 +103,7 @@ if(CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
   list(GET CMAKE_CXX_COMPILER_LAUNCHER 0 CRUCIBLE_CCACHE)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${CRUCIBLE_CCACHE}"
       "compiler_check=string:${CRUCIBLE_DRIVER_SHA256}-${CRUCIBLE_CC1PLUS_SHA256}"
-      "base_dir=${CMAKE_SOURCE_DIR}" "namespace=source-base-dir")
+      "base_dir=${CMAKE_SOURCE_DIR}" "namespace=source-base-dir" "depend_mode=false")
   message(STATUS "ccache: ${CRUCIBLE_CCACHE} (compiler launcher enabled, cc1plus ${CRUCIBLE_CC1PLUS})")
 elseif(CRUCIBLE_USE_CCACHE)
   message(STATUS "ccache: not found on PATH — proceeding without launcher")
