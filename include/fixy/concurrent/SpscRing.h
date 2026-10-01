@@ -11,7 +11,6 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 
-#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -89,10 +88,11 @@ public:
         const std::uint64_t free_slots = Capacity - (h - t);
         if (free_slots == 0) [[unlikely]]
             return 0;
-        const std::size_t count = std::min<std::size_t>(items.size(), free_slots);
+        const std::size_t count = free_slots < items.size() ? free_slots : items.size();
 
         const std::uint64_t start_pos = h & MASK;
-        const std::size_t first = std::min<std::size_t>(count, Capacity - start_pos);
+        const std::size_t room_to_end = Capacity - start_pos;
+        const std::size_t first = room_to_end < count ? room_to_end : count;
         const std::size_t second = count - first;
 
         std::memcpy(buffer_.data() + start_pos, items.data(), first * sizeof(T));
@@ -112,10 +112,11 @@ public:
         const std::uint64_t available = h - t;
         if (available == 0) [[unlikely]]
             return 0;
-        const std::size_t count = std::min<std::size_t>(out.size(), available);
+        const std::size_t count = available < out.size() ? available : out.size();
 
         const std::uint64_t start_pos = t & MASK;
-        const std::size_t first = std::min<std::size_t>(count, Capacity - start_pos);
+        const std::size_t room_to_end = Capacity - start_pos;
+        const std::size_t first = room_to_end < count ? room_to_end : count;
         const std::size_t second = count - first;
 
         std::memcpy(out.data(), buffer_.data() + start_pos, first * sizeof(T));

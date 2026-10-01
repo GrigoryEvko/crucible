@@ -51,6 +51,7 @@
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>

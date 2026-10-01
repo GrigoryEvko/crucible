@@ -5,6 +5,7 @@
 #include <crucible/TraceRing.h>
 #include <foundation/Platform.h>
 
+#include <algorithm>
 #include <atomic>
 #include "test_assert.h"
 #include <chrono>

@@ -12,7 +12,6 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -238,7 +237,7 @@ public:
     }
 
     void acknowledge_piggybacks(std::uint16_t count) noexcept {
-        const std::uint16_t n = std::min(count, piggyback_count_);
+        const std::uint16_t n = piggyback_count_ < count ? piggyback_count_ : count;
         for (std::uint16_t i = n; i < piggyback_count_; ++i) {
             const auto dst = static_cast<std::size_t>(static_cast<std::uint16_t>(i - n));
             piggyback_[dst] = piggyback_[static_cast<std::size_t>(i)];

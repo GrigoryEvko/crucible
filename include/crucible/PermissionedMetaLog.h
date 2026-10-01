@@ -30,7 +30,6 @@
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -190,7 +189,7 @@ public:
             ::crucible::MetaLog& log = ch_->log_;
             const std::uint32_t t = log.tail.peek_relaxed();
             const std::uint32_t available = log.head.get() - t;
-            const std::uint32_t count = std::min(available, max_items);
+            const std::uint32_t count = max_items < available ? max_items : available;
 
             for (std::uint32_t i = 0; i < count; ++i) {
                 std::invoke(body, log.at(t + i));

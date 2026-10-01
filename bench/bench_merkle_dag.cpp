@@ -11,6 +11,7 @@
 //
 // Simulates ResNet-18 (481 ops) and GPT-style (1110 ops) iteration sizes.
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstdio>

@@ -8,7 +8,6 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -170,9 +169,10 @@ harvest_per_link(Ctx const& ctx, cog::CogIdentity const& nic, std::span<const cn
     if (observed.sample_count < policy.min_samples || observed.p95_btl_bw_bps >= baseline_bps.value()) {
         return drift;
     }
+    constexpr std::uint64_t parts_per_million = 1000000;
     const std::uint64_t missing = baseline_bps.value() - observed.p95_btl_bw_bps;
-    drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(
-        std::min<std::uint64_t>(1000000, (missing * std::uint64_t{1000000}) / baseline_bps.value()));
+    const std::uint64_t drop_ppm = (missing * parts_per_million) / baseline_bps.value();
+    drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(drop_ppm < parts_per_million ? drop_ppm : parts_per_million);
     drift.degraded = drift.bandwidth_drop_ppm >= policy.bandwidth_drop_ppm;
     return drift;
 }

@@ -56,7 +56,6 @@
 #include <foundation/NoObject.h>
 #include <foundation/Saturate.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -176,8 +175,10 @@ public:
 
         // What the process may run on, which under a CPU quota is less
         // than what the host has.
-        const std::size_t cores_avail = std::max(std::size_t{1}, topo.process_cpu_count());
-        const std::size_t cores_per_socket = std::max(std::size_t{1}, topo.cores_per_socket());
+        const std::size_t process_cpus = topo.process_cpu_count();
+        const std::size_t socket_cores = topo.cores_per_socket();
+        const std::size_t cores_avail = process_cpus == 0 ? 1 : process_cpus;
+        const std::size_t cores_per_socket = socket_cores == 0 ? 1 : socket_cores;
 
         ParallelismDecision dec;
         dec.tier = classify(ws);
@@ -194,11 +195,9 @@ public:
         // The set fits one socket's shared L3, so the workers stay on
         // that socket and the coherence traffic never leaves it.
         if (dec.tier == Tier::L3Resident) {
-            const std::size_t want = std::min({
-                cores_per_socket,
-                cores_avail,
-                parallelism_rule_detail::kL3ResidentMaxFactor,
-            });
+            constexpr std::size_t max_factor = parallelism_rule_detail::kL3ResidentMaxFactor;
+            const std::size_t usable_on_socket = cores_avail < cores_per_socket ? cores_avail : cores_per_socket;
+            const std::size_t want = max_factor < usable_on_socket ? max_factor : usable_on_socket;
             dec.kind = ParallelismDecision::Kind::Parallel;
             dec.factor = parallelism_rule_detail::round_to_factor_ladder(want);
             dec.numa = NumaPolicy::NumaLocal;
@@ -208,8 +207,11 @@ public:
         // Bandwidth-bound.  The factor follows how many L2-sized pieces
         // the set divides into, and spreading over nodes recruits their
         // memory controllers.
-        const std::size_t l2 = std::max(std::size_t{1}, topo.l2_per_core_bytes());
-        const std::size_t want = std::min(cores_avail, std::max(std::size_t{1}, ws / l2));
+        const std::size_t l2_bytes = topo.l2_per_core_bytes();
+        const std::size_t l2 = l2_bytes == 0 ? 1 : l2_bytes;
+        const std::size_t l2_pieces = ws / l2;
+        const std::size_t pieces = l2_pieces == 0 ? 1 : l2_pieces;
+        const std::size_t want = pieces < cores_avail ? pieces : cores_avail;
         dec.kind = ParallelismDecision::Kind::Parallel;
         dec.factor = parallelism_rule_detail::round_to_factor_ladder(want);
         dec.numa = (topo.numa_nodes() > 1) ? NumaPolicy::NumaSpread : NumaPolicy::NumaIgnore;

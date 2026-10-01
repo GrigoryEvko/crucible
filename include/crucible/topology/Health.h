@@ -13,7 +13,6 @@
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Instance.h>
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -209,11 +208,11 @@ namespace detail {
     if (sum == 0) {
         return std::uint16_t{1};
     }
-    return static_cast<std::uint16_t>(std::min<std::uint32_t>(sum, UINT16_MAX));
+    return static_cast<std::uint16_t>(clamp_u32(sum, UINT16_MAX));
 }
 
 [[nodiscard]] constexpr std::uint32_t risk_component(std::uint32_t risk, std::uint16_t weight) noexcept {
-    std::uint64_t const weighted = static_cast<std::uint64_t>(std::min(risk, 1000u)) * weight;
+    std::uint64_t const weighted = static_cast<std::uint64_t>(clamp_u32(risk, 1000u)) * weight;
     return clamp_u32(weighted, std::numeric_limits<std::uint32_t>::max());
 }
 
@@ -390,7 +389,8 @@ public:
         if (!(phi > 0.0)) {
             return PhiMilli{0};
         }
-        double const milli = std::min(phi * 1000.0, 1000000.0);
+        double const scaled = phi * 1000.0;
+        double const milli = 1000000.0 < scaled ? 1000000.0 : scaled;
         return PhiMilli{static_cast<std::uint32_t>(milli)};
     }
 };
@@ -500,14 +500,16 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
             issues.set(HealthIssue::ThermalWarn);
             auto const delta =
                 static_cast<std::uint32_t>(slot.thermal.temperature_millicelsius - policy_.thermal_warn_millicelsius);
-            auto const span = static_cast<std::uint32_t>(
-                std::max(1, policy_.thermal_critical_millicelsius - policy_.thermal_warn_millicelsius));
-            risk = std::min(1000u, 500u + detail::clamp_u32((static_cast<std::uint64_t>(delta) * 500u) / span, 500u));
+            auto const thermal_band = policy_.thermal_critical_millicelsius - policy_.thermal_warn_millicelsius;
+            auto const span = static_cast<std::uint32_t>(thermal_band < 1 ? 1 : thermal_band);
+            risk = detail::clamp_u32(500u + detail::clamp_u32((static_cast<std::uint64_t>(delta) * 500u) / span, 500u),
+                                     1000u);
         }
         if (slot.thermal.clock_degraded_pct >= policy_.clock_degraded_pct) {
             issues.set(HealthIssue::ClockDegraded);
-            risk = std::max(risk, static_cast<std::uint32_t>(std::min(
-                                      1000u, static_cast<std::uint32_t>(slot.thermal.clock_degraded_pct) * 10u)));
+            std::uint32_t const clock_risk =
+                detail::clamp_u32(static_cast<std::uint32_t>(slot.thermal.clock_degraded_pct) * 10u, 1000u);
+            risk = risk < clock_risk ? clock_risk : risk;
         }
         return risk;
     }
@@ -525,7 +527,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
         std::uint64_t const corrected_delta = slot.ecc.corrected.get() - slot.prior_ecc.corrected.get();
         if (corrected_delta >= policy_.corrected_ecc_warn_delta) {
             issues.set(HealthIssue::CorrectedEccTrend);
-            return std::min(1000u, static_cast<std::uint32_t>(400u + corrected_delta * 10u));
+            return detail::clamp_u32(static_cast<std::uint32_t>(400u + corrected_delta * 10u), 1000u);
         }
         return 0;
     }
@@ -549,8 +551,9 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
         }
         if (out_ppm >= policy_.drop_warn_ppm) {
             issues.set(HealthIssue::DropRateWarn);
-            std::uint32_t const span = std::max(1u, policy_.drop_critical_ppm - policy_.drop_warn_ppm);
-            return std::min(1000u, 400u + ((out_ppm - policy_.drop_warn_ppm) * 600u) / span);
+            std::uint32_t const drop_band = policy_.drop_critical_ppm - policy_.drop_warn_ppm;
+            std::uint32_t const span = drop_band == 0 ? 1u : drop_band;
+            return detail::clamp_u32(400u + ((out_ppm - policy_.drop_warn_ppm) * 600u) / span, 1000u);
         }
         return 0;
     }
@@ -566,8 +569,9 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
         }
         if (slot.wear.used_ppm >= policy_.wear_warn_ppm) {
             issues.set(HealthIssue::WearWarn);
-            std::uint32_t const span = std::max(1u, policy_.wear_critical_ppm - policy_.wear_warn_ppm);
-            return std::min(1000u, 300u + ((slot.wear.used_ppm - policy_.wear_warn_ppm) * 700u) / span);
+            std::uint32_t const wear_band = policy_.wear_critical_ppm - policy_.wear_warn_ppm;
+            std::uint32_t const span = wear_band == 0 ? 1u : wear_band;
+            return detail::clamp_u32(300u + ((slot.wear.used_ppm - policy_.wear_warn_ppm) * 700u) / span, 1000u);
         }
         return 0;
     }
@@ -675,8 +679,9 @@ public:
         }
 
         std::uint32_t drop_ppm = 0;
+        std::uint32_t const quarantine_milli = policy_.quarantine_phi.raw();
         std::uint32_t const phi_risk =
-            std::min(1000u, (phi.raw() * 1000u) / std::max(1u, policy_.quarantine_phi.raw()));
+            detail::clamp_u32((phi.raw() * 1000u) / (quarantine_milli == 0 ? 1u : quarantine_milli), 1000u);
         std::uint32_t const thermal = thermal_risk(*slot, issues);
         std::uint32_t const ecc = ecc_risk(*slot, issues);
         std::uint32_t const drop = drop_risk(*slot, issues, drop_ppm);
@@ -688,7 +693,7 @@ public:
                                      + detail::risk_component(drop, policy_.weights.drop)
                                      + detail::risk_component(wear, policy_.weights.wear);
         std::uint32_t const risk = weighted / detail::normalized_weight(policy_.weights);
-        HealthScore const score{static_cast<std::uint16_t>(1000u - std::min(risk, 1000u))};
+        HealthScore const score{static_cast<std::uint16_t>(1000u - detail::clamp_u32(risk, 1000u))};
 
         HealthSnapshot snapshot{
             .cog_uuid = peer.uuid,

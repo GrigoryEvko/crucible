@@ -8,8 +8,8 @@
 // fixy::Refined<fixy::bounded_above<TraceRing::CAPACITY>, uint32_t>
 // with TraceRing::CAPACITY == (1u << 16) == 65'536.  Values above
 // CAPACITY are meaningless (the consumer never has more than CAPACITY
-// entries available, so the inner std::min(available, max_count)
-// silently clamps), but the silent clamp masks call-site arithmetic
+// entries available, so the inner clamp of max_count to the available
+// count is silent), but the silent clamp masks call-site arithmetic
 // errors that the type-level gate catches at construction.
 //
 // Companion fixture: neg_trace_ring_drain_count_uint32_max.cpp

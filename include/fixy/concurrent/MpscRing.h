@@ -23,7 +23,6 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -179,7 +178,7 @@ public:
         // producer's unsigned gate underflows and reads as full
         // forever.  Clamping rather than rejecting keeps the
         // partial-fill contract.
-        const std::size_t cap = std::min<std::size_t>(out.size(), Capacity);
+        const std::size_t cap = Capacity < out.size() ? Capacity : out.size();
         if (cap == 0) return 0;
 
         const std::uint64_t pos0 = tail_.peek_relaxed();
@@ -198,7 +197,7 @@ public:
             const std::size_t avail_in_word =
                 (~shifted == 0) ? (64 - bit_idx) : static_cast<std::size_t>(std::countr_zero(~shifted));
             const std::size_t remaining = cap - R;
-            const std::size_t take = std::min(avail_in_word, remaining);
+            const std::size_t take = remaining < avail_in_word ? remaining : avail_in_word;
             if (take == 0) break;
             R += take;
             // Stopping short of the word's run means a clear bit ended
@@ -260,7 +259,9 @@ private:
         while (start < end) {
             const std::size_t word_idx = start >> 6;
             const std::size_t bit_offset = start & 63;
-            const std::size_t bits_in_word = std::min<std::size_t>(64 - bit_offset, end - start);
+            const std::size_t word_room = 64 - bit_offset;
+            const std::size_t range_left = end - start;
+            const std::size_t bits_in_word = range_left < word_room ? range_left : word_room;
             const std::uint64_t mask =
                 (bits_in_word == 64) ? kAllSet : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
             ready_[word_idx].fetch_or(mask, std::memory_order_release);
@@ -287,7 +288,9 @@ private:
         while (start < end) {
             const std::size_t word_idx = start >> 6;
             const std::size_t bit_offset = start & 63;
-            const std::size_t bits_in_word = std::min<std::size_t>(64 - bit_offset, end - start);
+            const std::size_t word_room = 64 - bit_offset;
+            const std::size_t range_left = end - start;
+            const std::size_t bits_in_word = range_left < word_room ? range_left : word_room;
             const std::uint64_t mask =
                 (bits_in_word == 64) ? kAllSet : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
             ready_[word_idx].fetch_and(~mask, std::memory_order_release);

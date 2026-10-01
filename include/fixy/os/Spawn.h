@@ -65,7 +65,6 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <meta>
@@ -256,7 +255,7 @@ template <std::size_t N>
 [[nodiscard]] std::size_t parallel_for_thread_count(::fixy::concurrent::WorkBudget budget) noexcept {
     const ::fixy::concurrent::ParallelismDecision decision = ::fixy::concurrent::ParallelismRule::recommend(budget);
     if (!decision.is_parallel()) return 1;
-    return std::min(N, decision.factor);
+    return decision.factor < N ? decision.factor : N;
 }
 
 }  // namespace detail

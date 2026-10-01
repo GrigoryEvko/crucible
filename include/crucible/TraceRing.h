@@ -33,7 +33,6 @@
 // order that thread produced. Refer to the serialisation note in
 // vessel/torch/crucible_native.py.
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -292,13 +291,14 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t t = consumer_tail_;
 
         const uint32_t available = static_cast<uint32_t>(h - t);
-        const uint32_t count = std::min(available, max_count);
+        const uint32_t count = max_count < available ? max_count : available;
         if (count == 0) [[unlikely]]
             return 0;
 
         // A run that wraps the end of the ring splits into at most two.
         const uint32_t start = static_cast<uint32_t>(t) & MASK;
-        const uint32_t first = std::min(count, CAPACITY - start);
+        const uint32_t room_to_end = CAPACITY - start;
+        const uint32_t first = room_to_end < count ? room_to_end : count;
         const uint32_t second = count - first;
 
         std::memcpy(out, &entries[start], first * sizeof(Entry));
@@ -371,13 +371,14 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t t = consumer_tail_;
 
         const uint32_t available = static_cast<uint32_t>(h - t);
-        const uint32_t count = std::min(available, max_count);
+        const uint32_t count = max_count < available ? max_count : available;
         if (count == 0) [[unlikely]]
             return 0;
 
         // A run that wraps the end of the ring splits into at most two.
         const uint32_t start = static_cast<uint32_t>(t) & MASK;
-        const uint32_t first = std::min(count, CAPACITY - start);
+        const uint32_t room_to_end = CAPACITY - start;
+        const uint32_t first = room_to_end < count ? room_to_end : count;
         const uint32_t second = count - first;
 
         std::memcpy(out_entries, &entries[start], first * sizeof(Entry));

@@ -9,7 +9,7 @@
 // with TraceRing::CAPACITY == (1u << 16) == 65'536.  UINT32_MAX is
 // 65 537× the cap.  Without the gate, a caller that loaded a uint32_t
 // max_count from disk / env / FFI without bounds-checking would
-// silently slip the runtime overflow at the inner std::min, masking
+// silently slip the runtime overflow at the inner clamp, masking
 // the real call-site arithmetic bug behind a silent clamp.
 //
 // Companion fixture: neg_trace_ring_drain_count_above_max.cpp

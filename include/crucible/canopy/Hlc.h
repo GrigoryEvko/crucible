@@ -6,7 +6,6 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
 #include <atomic>
 #include <compare>
 #include <cstdint>
@@ -188,10 +187,11 @@ public:
 
     [[nodiscard]] static constexpr HlcTimestamp recv_event(HlcTimestamp old, HlcTimestamp peer,
                                                            std::uint64_t physical_now) noexcept {
-        const std::uint64_t l_new = std::max({old.physical_ns, peer.physical_ns, physical_now});
+        const std::uint64_t later_stamp = old.physical_ns < peer.physical_ns ? peer.physical_ns : old.physical_ns;
+        const std::uint64_t l_new = later_stamp < physical_now ? physical_now : later_stamp;
 
         if (l_new == old.physical_ns && l_new == peer.physical_ns) {
-            return bumped_(l_new, std::max(old.counter, peer.counter));
+            return bumped_(l_new, old.counter < peer.counter ? peer.counter : old.counter);
         }
         if (l_new == old.physical_ns) {
             return bumped_(l_new, old.counter);
