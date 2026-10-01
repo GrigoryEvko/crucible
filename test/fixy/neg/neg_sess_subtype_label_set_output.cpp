@@ -2,7 +2,6 @@
 // supertype does not send.  Branches pair by label, in any order, so the
 // relation finds the extra label wherever it stands and refuses it.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
 // These types have external linkage.  The session folds their stable

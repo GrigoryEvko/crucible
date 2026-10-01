@@ -2,7 +2,6 @@
 // sends label words, and the positional Offer dispatches on positions,
 // so the relation refuses the pair in this direction too.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
 // These types have external linkage.  The session folds their stable

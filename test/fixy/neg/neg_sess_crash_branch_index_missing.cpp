@@ -1,7 +1,7 @@
 // The crash branch index exists only for an Offer that has a crash
 // branch for the peer.
 
-#include <fixy/session/CrashTransport.h>
+#include <fixy/session/Crash.h>
 
 namespace s = fixy::session;
 

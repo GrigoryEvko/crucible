@@ -3,7 +3,6 @@
 // payload it receives, and the subtype has no branch with that payload
 // (rule Sub-&).  The refusal names the class of the failure.
 
-#include <fixy/session/Crash.h>
 #include <fixy/session/Subtype.h>
 
 namespace {

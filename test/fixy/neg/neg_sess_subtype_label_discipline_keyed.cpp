@@ -2,7 +2,6 @@
 // puts positions.  The two cannot face one peer, so a keyed choice never
 // refines a positional one.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
 // These types have external linkage.  The session folds their stable

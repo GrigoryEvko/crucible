@@ -4,7 +4,6 @@
 // check refuses two label keys of one word, and it stays as the guard
 // against a collision of two stable ids.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 
 namespace s = fixy::session;

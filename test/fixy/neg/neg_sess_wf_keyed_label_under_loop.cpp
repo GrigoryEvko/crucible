@@ -3,7 +3,6 @@
 // its label step.  The label step of this branch is also the entry of the
 // loop, where it is a Select of its own, and the gate refuses the branch.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 
 namespace s = fixy::session;

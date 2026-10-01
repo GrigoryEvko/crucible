@@ -6,7 +6,7 @@
 // nothing.  refined_with refuses it as its predicate, so no binding can
 // name it, and no rule can read it as a witness.
 
-#include <fixy/Fn.h>
+#include <fixy/Atom.h>
 
 int main() {
     [[maybe_unused]] ::fixy::atom::refined_with<::fixy::pole::pred::True>* vacuous_witness = nullptr;

@@ -6,7 +6,7 @@
 // specialization does not compile.
 //
 // Expected diagnostic: specialization of an alias template.
-#include <fixy/session/Handle.h>
+#include <fixy/session/Protocol.h>
 
 namespace neg_sess_loop_ctx_inner_specialized_types {
 using Receives = ::fixy::session::Loop<::fixy::session::Recv<int, ::fixy::session::Continue>>;

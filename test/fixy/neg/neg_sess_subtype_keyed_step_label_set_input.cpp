@@ -2,7 +2,6 @@
 // and L1 does not receive the label L2 that the keyed Recv of the
 // supertype receives, so it does not refine that step.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
 // These types have external linkage.  The session folds their stable

@@ -2,7 +2,6 @@
 // which the Select of the supertype, of the labels L0 and L1, does not
 // send, so it does not refine that Select.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
 // These types have external linkage.  The session folds their stable

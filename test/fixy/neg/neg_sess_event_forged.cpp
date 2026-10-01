@@ -2,7 +2,7 @@
 // which produce valid events.  A caller cannot build one with a control
 // byte of its own choosing.
 
-#include <fixy/session/Recording.h>
+#include <fixy/session/EventLog.h>
 
 namespace s = fixy::session;
 

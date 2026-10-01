@@ -1,7 +1,7 @@
 // The crash label en route from a live role.  Only a crashed sender has
 // the crash pseudo-message en route.
 
-#include <fixy/session/Projection.h>
+#include <fixy/session/Global.h>
 
 namespace {
 

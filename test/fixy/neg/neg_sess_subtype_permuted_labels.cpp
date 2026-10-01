@@ -5,7 +5,6 @@
 // A keyed choice sends a label word, so its branches pair by label and a
 // permutation of them is the same protocol.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
 namespace {

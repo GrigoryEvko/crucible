@@ -2,7 +2,6 @@
 // subtype does not receive.  The subtype must receive each label of the
 // supertype, wherever it stands.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Subtype.h>
 
 // These types have external linkage.  The session folds their stable

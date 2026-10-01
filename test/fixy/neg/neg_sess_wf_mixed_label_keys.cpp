@@ -3,7 +3,6 @@
 // its position, so the choice has no single kind of wire word, and the
 // gate names the rule that the choice breaks.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 
 namespace s = fixy::session;

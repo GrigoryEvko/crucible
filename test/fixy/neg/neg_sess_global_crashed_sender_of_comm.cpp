@@ -2,7 +2,7 @@
 // nothing: role removal turns its transmission into the crash
 // pseudo-message, an en-route node.
 
-#include <fixy/session/Projection.h>
+#include <fixy/session/Global.h>
 
 namespace {
 

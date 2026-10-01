@@ -3,7 +3,6 @@
 // branch past its label step, and the pin above that step has no place
 // on the wire.  The gate refuses the branch.
 
-#include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 
 namespace s = fixy::session;

@@ -1,7 +1,7 @@
 // A crash branch with a payload.  The crash label is a pseudo-message,
 // so no value can arrive with it.
 
-#include <fixy/session/Projection.h>
+#include <fixy/session/Global.h>
 
 namespace {
 

@@ -1,7 +1,7 @@
 // A transmission whose only branch is the crash branch.  No role sends
 // the crash label, so Bob could only wait for Alice to crash.
 
-#include <fixy/session/Projection.h>
+#include <fixy/session/Global.h>
 
 namespace {
 
