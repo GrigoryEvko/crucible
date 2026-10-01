@@ -218,6 +218,4 @@ private:
     ::fixy::AppendOnly<char*> blocks_ = ::fixy::mint_append_only<char*>();
 };
 
-static_assert(sizeof(Arena) == 64, "Arena must fit within one cache line");
-
 }  // namespace crucible

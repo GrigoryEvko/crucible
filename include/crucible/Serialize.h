@@ -46,8 +46,6 @@ using ExternalCdagVersion = ::fixy::Tagged<uint32_t, ::fixy::tags::source::Exter
 // fold of its operations matches the content hash that the image records,
 // which is the discharge of the Replayed to Loaded edge.
 using LoadedRegionNode = ::fixy::Tagged<RegionNode*, ::fixy::tags::source::Loaded>;
-static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
-static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
 // 10 (2026-09-15): the content-hash fold changed mixer.  Every region on
 // disk carries a content hash the current code no longer computes, so a
 // version-9 file would deserialize into regions whose hashes disagree with
@@ -346,12 +344,7 @@ inline Guard read_guard(Reader& r) {
     return guard;
 }
 
-static_assert(sizeof(Guard) == 12,
-              "write_guard and read_guard move every field of Guard.  A new field needs a line in each.");
-
 inline constexpr size_t kTensorSlotWireBytes = 40;
-static_assert(sizeof(TensorSlot) == kTensorSlotWireBytes,
-              "write_slot and read_slot move every field of TensorSlot.  A new field needs a line in each.");
 
 inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, ContentHash content_hash) {
     w.w(CDAG_MAGIC);

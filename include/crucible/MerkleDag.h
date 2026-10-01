@@ -69,7 +69,6 @@ struct TensorSlot {
     uint8_t pad2[4]{};
 };
 
-static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
 
 // External slots keep the allocations they already have: they are counted in
@@ -89,7 +88,6 @@ struct MemoryPlan {
     int32_t world_size = 0;  // 0 when not distributed
 };
 
-static_assert(sizeof(MemoryPlan) == 48, "MemoryPlan must be 48 bytes — the on-disk format matches this layout");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 
 // True when the byte ranges of the slots live at op `op` are pairwise
@@ -239,7 +237,6 @@ struct Guard {
     CRUCIBLE_PURE uint64_t hash() const noexcept { return crucible::reflect_hash(*this); }
 };
 
-static_assert(sizeof(Guard) == 12, "Guard must be 12 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(Guard);
 
 enum class TraceNodeKind : uint8_t {
@@ -283,7 +280,6 @@ struct TraceNode {
     }
 };
 
-static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
 
 // Zero is the "never built" hash.  A TERMINAL node legitimately carries
@@ -362,8 +358,6 @@ struct RegionNode : TraceNode {
     }
 };
 
-static_assert(sizeof(RegionNode) == 80, "RegionNode must be 80 bytes — the persisted layout matches this");
-
 // A guard point where execution can diverge.  Arms are kept sorted by value.
 struct BranchNode : TraceNode {
     Guard guard;
@@ -390,8 +384,6 @@ struct BranchNode : TraceNode {
     }
 };
 
-static_assert(sizeof(BranchNode) == 56, "BranchNode must be 56 bytes — the persisted layout matches this");
-
 // Carries one of the loop body's outputs back to one of its inputs for the
 // next iteration.
 struct FeedbackEdge {
@@ -399,7 +391,6 @@ struct FeedbackEdge {
     uint16_t input_idx = 0;
 };
 
-static_assert(sizeof(FeedbackEdge) == 4, "FeedbackEdge must be 4 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(FeedbackEdge);
 
 // Cyclic computation held inside the acyclic DAG: an acyclic body sub-DAG
@@ -434,7 +425,6 @@ struct LoopNode : TraceNode {
     }
 };
 
-static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line)");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
 
 // An empty edge set hashes to 0 and any non-empty set hashes non-zero.  The

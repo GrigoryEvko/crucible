@@ -46,14 +46,12 @@ struct SymbolEntry {
     uint32_t _pad = 0;
 };
 
-static_assert(sizeof(SymbolEntry) == 32, "SymbolEntry should be 32 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolEntry);
 
 // An identifier this table hands out is known to index this table. One that
 // arrives from a file or across a language boundary is not, and has to be
 // validated before it reaches the accessors below.
 using InternalSymbolId = ::fixy::Tagged<SymbolId, ::fixy::tags::source::FromInternal>;
-static_assert(sizeof(InternalSymbolId) == sizeof(SymbolId));
 
 class CRUCIBLE_OWNER SymbolTable {
 public:

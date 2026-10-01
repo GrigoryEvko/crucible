@@ -192,9 +192,6 @@ struct InstIndex {
     [[nodiscard, gnu::const]] constexpr uint16_t raw() const noexcept { return v; }
 };
 
-static_assert(sizeof(InstIndex) == sizeof(uint16_t), "InstIndex must stay 2 bytes to preserve sizeof(Inst) == 8");
-static_assert(std::is_standard_layout_v<InstIndex>);
-
 // One micro-op in SSA form.  Operand slots are used as:
 //   LOAD:   operands[0] = input buffer index
 //   Unary:  operands[0] = source
@@ -206,8 +203,6 @@ struct Inst {
     std::array<InstIndex, 3> operands{};
 };
 
-static_assert(sizeof(Inst) == 8, "Inst must be 8 bytes");
-static_assert(offsetof(Inst, operands) == 2, "Inst's operands start after the op byte and the dtype byte");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Inst);
 
 // A kernel body as a flat array of SSA instructions, directly emittable as
@@ -314,7 +309,6 @@ struct GraphNode {
     }
 };
 
-static_assert(sizeof(GraphNode) == 64, "GraphNode must be 64 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 
 // Every allocation comes from the arena and dies with the Graph.  Nodes sit

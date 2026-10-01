@@ -84,12 +84,6 @@ struct TraceOpRecord {
     uint8_t inference_mode = 0;
 };
 
-// The strong hash types are the size of the integers they wrap, so the record
-// stays byte-compatible with a file written before they were introduced.
-static_assert(sizeof(TraceOpRecord) == 80, "TraceOpRecord must be 80 bytes");
-static_assert(std::is_trivially_copyable_v<TraceOpRecord>);
-static_assert(std::is_standard_layout_v<TraceOpRecord>);
-
 struct LoadedTrace {
     // Parallel arrays, indexed by the same operation position.
     std::vector<TraceRing::Entry> entries;
@@ -112,8 +106,6 @@ struct LoadedTrace {
 // A metadata record is read field by field from its bytes, at the offsets
 // of TensorMeta.  The shortest historical record carries every field up to
 // the output index, and the fields past its end keep their zero value.
-static_assert(std::is_standard_layout_v<TensorMeta>, "the record offsets below come from offsetof");
-static_assert(offsetof(TensorMeta, output_nr) < 144, "the shortest record must carry every byte-sized field");
 
 inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 

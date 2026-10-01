@@ -21,20 +21,9 @@ inline constexpr uint8_t kMaxTensorNDim = 8;
 // validator retags it.
 using ExternalDataPtr = ::fixy::Tagged<void*, ::fixy::tags::source::External>;
 
-static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
-              "Tagged<void*, source::External> must EBO-collapse so TensorMeta "
-              "stays layout-stable");
-static_assert(std::is_trivially_copyable_v<ExternalDataPtr>);
-static_assert(std::is_standard_layout_v<ExternalDataPtr>);
-
 // This value derives from an autograd object's identity, which is local to
 // one process. It must never be used as a key that outlives the run.
 using GradFnHash = ::fixy::Tagged<uint64_t, ::crucible::hash_family::FamilyB>;
-
-static_assert(sizeof(GradFnHash) == sizeof(uint64_t), "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
-                                                      "TensorMeta stays layout-stable");
-static_assert(std::is_trivially_copyable_v<GradFnHash>);
-static_assert(std::is_standard_layout_v<GradFnHash>);
 
 // An extent is capped so that multiplying it by the widest element size
 // cannot overflow int64_t, which is what the storage-span arithmetic does.
@@ -45,10 +34,6 @@ inline constexpr int64_t kTensorDimElementByteBudget = 16;
 inline constexpr int64_t kMaxTensorDimExtent = std::numeric_limits<int64_t>::max() / kTensorDimElementByteBudget;
 
 using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, int64_t>;
-
-static_assert(sizeof(TensorDim) == sizeof(int64_t), "Refined<bounded_above<kMaxTensorDimExtent>, int64_t> must "
-                                                    "EBO-collapse so TensorMeta stays layout-stable");
-static_assert(std::is_standard_layout_v<TensorDim>);
 
 struct TensorDimArray {
 private:
@@ -85,11 +70,6 @@ public:
 
     [[nodiscard]] constexpr const int64_t* raw_data() const noexcept { return lanes_; }
 };
-
-static_assert(sizeof(TensorDimArray) == sizeof(int64_t) * kMaxTensorNDim,
-              "TensorDimArray must remain the same 64-byte lane block as int64_t[8]");
-static_assert(std::is_trivially_copyable_v<TensorDimArray>);
-static_assert(std::is_standard_layout_v<TensorDimArray>);
 
 // A size or a stride comes from PyTorch, a trace or a file. The bound is a
 // contract assertion ahead of the mint, because the mint alone only assumes
@@ -148,7 +128,6 @@ struct TensorMeta {
     GradFnHash grad_fn_hash{};  // 0 means no grad_fn
 };
 
-static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
 
 [[nodiscard]] inline constexpr ExternalDataPtr external_data_ptr(void* ptr) noexcept {

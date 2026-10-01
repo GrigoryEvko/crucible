@@ -47,8 +47,4 @@ struct Steady {};
     return detector.signature_len.get() == IterationDetector::K;
 }
 
-static_assert(::fixy::no_scoped_view_field_check<IterationDetector>(),
-              "IterationDetector must not contain a ScopedView field. A view is a non-owning witness bounded "
-              "by its carrier's lifetime, and storing one as a member defeats that bound.");
-
 }  // namespace crucible

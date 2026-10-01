@@ -24,8 +24,6 @@ namespace crucible {
 // past it names no real hardware.
 inline constexpr auto valid_regs_per_thread = ::fixy::bounded_above<uint16_t{255}>;
 using ValidRegsPerThread = ::fixy::Refined<valid_regs_per_thread, uint16_t>;
-static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
-              "ValidRegsPerThread must be the same size as the value it wraps");
 
 // The number of threads a scheduler dispatches together: a warp, a wavefront,
 // or a sub-group depending on the vendor.
@@ -37,7 +35,6 @@ static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
 // intractable on any plausible silicon.
 inline constexpr auto valid_warp_size = ::fixy::all_of<::fixy::power_of_two, ::fixy::bounded_above<uint16_t{128}>>;
 using ValidWarpSize = ::fixy::Refined<valid_warp_size, uint16_t>;
-static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t), "ValidWarpSize must be the same size as the value it wraps");
 
 // A dimensionless ratio that both producers below construct in [0, 1] by
 // construction, and that the two stored fields adopt so the bound survives
@@ -47,8 +44,6 @@ static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t), "ValidWarpSize must be 
 // after.
 inline constexpr auto valid_utilization = ::fixy::in_range<0.0f, 1.0f>;
 using ValidUtilization = ::fixy::Refined<valid_utilization, float>;
-static_assert(sizeof(ValidUtilization) == sizeof(float),
-              "ValidUtilization must be the same size as the value it wraps");
 
 // The evaluators below are pure arithmetic over values the caller already
 // owns.  Each one takes the caller's context and admits only a context whose

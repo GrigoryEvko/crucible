@@ -100,8 +100,6 @@ struct alignas(16) NumericalRecipe {
     // Filled in when the recipe is interned, not at construction.
     RecipeHash hash;
 };
-static_assert(sizeof(NumericalRecipe) == 16, "NumericalRecipe must stay 16 bytes: both the intern table and the "
-                                             "kernel nodes that point at it depend on the layout");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NumericalRecipe);
 
 // The hash covers the eight semantic bytes and excludes the hash field

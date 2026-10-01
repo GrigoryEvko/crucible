@@ -14,37 +14,6 @@
 #   One check that stays in its header, because its result depends on the translation unit that
 #   includes the header.  The key of a namespace is its full name.  The key of a static_assert is
 #   the spelling of its condition, as --list prints it.  The reason is mandatory.
-include/crucible/Arena.h | 0 | 1
-include/crucible/CKernel.h | 0 | 2
-include/crucible/CallSiteTable.h | 0 | 2
-include/crucible/Cipher.h | 0 | 4
-include/crucible/CostModel.h | 0 | 3
-include/crucible/CrucibleContext.h | 0 | 3
-include/crucible/DimHash.h | 0 | 6
-include/crucible/Expr.h | 0 | 4
-include/crucible/Graph.h | 0 | 5
-include/crucible/IterationDetectorState.h | 0 | 1
-include/crucible/MerkleDag.h | 0 | 8
-include/crucible/MetaLogSession.h | 1 | 0
-include/crucible/NumericalRecipe.h | 0 | 1
-include/crucible/Ops.h | 0 | 1
-include/crucible/PermissionedMetaLog.h | 1 | 0
-include/crucible/Philox.h | 0 | 2
-include/crucible/PoolAllocator.h | 0 | 3
-include/crucible/Reflect.h | 0 | 7
-include/crucible/ReplayEngine.h | 0 | 2
-include/crucible/SchemaTable.h | 0 | 1
-include/crucible/Serialize.h | 0 | 4
-include/crucible/SingletonInitGraph.h | 1 | 0
-include/crucible/SwissTable.h | 0 | 12
-include/crucible/SymbolTable.h | 0 | 2
-include/crucible/TensorMeta.h | 0 | 12
-include/crucible/TraceGraph.h | 0 | 1
-include/crucible/TraceLoader.h | 0 | 5
-include/crucible/TraceRing.h | 0 | 6
-include/crucible/Transaction.h | 0 | 4
-include/crucible/Types.h | 0 | 12
-include/crucible/Vigil.h | 0 | 1
 include/crucible/canopy/Crdt.h | 0 | 7
 include/crucible/canopy/Hlc.h | 0 | 12
 include/crucible/canopy/HyParView.h | 0 | 3

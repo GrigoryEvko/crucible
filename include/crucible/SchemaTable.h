@@ -267,8 +267,6 @@ private:
     }
 };
 
-static_assert(::fixy::no_scoped_view_field_check<SchemaTable>());
-
 // The global is sealed before any second thread starts, so a registration
 // must mint its mutable view before that point.  A view minted after it is
 // empty.

@@ -381,10 +381,7 @@ private:
     RegistrationSeal seal_;
 };
 
-static_assert(::fixy::no_scoped_view_field_check<CKernelTable>());
-
 using CKernelTableSingleton = ::fixy::Tagged<CKernelTable*, ::fixy::tags::source::Singleton>;
-static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
 
 // One table for the process.  A registration in one shared library and a
 // classification in another reach the same table.
