@@ -14,31 +14,117 @@
 # header compiles alone.  They are in the default build, so a break stops
 # the build and not only a test.
 #
+# The crucible layer can name each layer, so its sentinels compile against
+# the full include root.  A crucible header that cannot compile alone has a
+# row in crucible-not-standalone.txt, `header | reason`, and no sentinel.
+# The test layer_not_standalone compiles each listed header alone and fails
+# when one compiles, so the list can only become shorter.  A reason has no
+# semicolon, because CMake reads a semicolon as a list separator.
+#
+# The check file of a header is the sentinel of that header.
+# checks/<layer>/<path>.cpp holds the self-test namespaces and the
+# namespace-scope static_asserts of include/<layer>/<path>.h, and its first
+# line of code includes that header.  One translation unit evaluates those
+# checks one time, and an includer of the header does not evaluate them
+# again.  utils/scripts/check-header-checks.py keeps the checks out of the
+# headers and examines the first line of each check file.  This file refuses
+# a check file that has no header.
+#
 # The two negative fixtures show that the sentinel fails: a foundation
 # header that includes a fixy header, and a foundation header that names a
 # fixy type through a declaration that it expects its includer to supply.
 
 set(_layer_roots "${CMAKE_BINARY_DIR}/layer-roots")
+set(_layer_include "${CMAKE_SOURCE_DIR}/include")
+set(_layer_checks "${CMAKE_CURRENT_SOURCE_DIR}/checks")
 
 # The layers that each layer may name, lowest first.
 set(_layer_names_foundation foundation)
 set(_layer_names_fixy foundation fixy)
 
-foreach(_layer foundation fixy)
-  set(_root "${_layer_roots}/${_layer}")
-  file(MAKE_DIRECTORY "${_root}")
-  foreach(_named IN LISTS _layer_names_${_layer})
-    file(REMOVE "${_root}/${_named}")
-    file(CREATE_LINK "${CMAKE_SOURCE_DIR}/include/${_named}" "${_root}/${_named}" SYMBOLIC)
-  endforeach()
+# The crucible headers that cannot compile alone, relative to include/.
+set(_not_standalone_list "${CMAKE_CURRENT_SOURCE_DIR}/crucible-not-standalone.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_not_standalone_list}")
+file(STRINGS "${_not_standalone_list}" _not_standalone_rows ENCODING UTF-8)
+set(_not_standalone "")
+foreach(_row IN LISTS _not_standalone_rows)
+  string(STRIP "${_row}" _row)
+  if(_row STREQUAL "" OR _row MATCHES "^#")
+    continue()
+  endif()
+  string(FIND "${_row}" " | " _cut)
+  if(_cut EQUAL -1)
+    message(FATAL_ERROR "test/layer/crucible-not-standalone.txt: the row `${_row}` has no ` | `.  A row is "
+                        "`crucible/<path>.h | reason`.")
+  endif()
+  string(SUBSTRING "${_row}" 0 ${_cut} _header)
+  math(EXPR _reason_at "${_cut} + 3")
+  string(SUBSTRING "${_row}" ${_reason_at} -1 _reason)
+  string(STRIP "${_header}" _header)
+  string(STRIP "${_reason}" _reason)
+  if(NOT _header MATCHES "^crucible/.+\\.h$" OR NOT EXISTS "${_layer_include}/${_header}")
+    message(FATAL_ERROR "test/layer/crucible-not-standalone.txt: ${_header} is not a header under "
+                        "include/crucible.  Remove the row.")
+  endif()
+  if(_reason STREQUAL "")
+    message(FATAL_ERROR "test/layer/crucible-not-standalone.txt: the row of ${_header} gives no reason.  Say "
+                        "why the header cannot compile alone.")
+  endif()
+  if(_header IN_LIST _not_standalone)
+    message(FATAL_ERROR "test/layer/crucible-not-standalone.txt: ${_header} has two rows.  Remove one.")
+  endif()
+  list(APPEND _not_standalone "${_header}")
+endforeach()
 
-  # One sentinel per public header.  file(CONFIGURE) rewrites a sentinel only
-  # when its text changes, so a configure run does not force a rebuild.
+# Each check file belongs to one header, and that header compiles alone.
+file(GLOB_RECURSE _check_files CONFIGURE_DEPENDS LIST_DIRECTORIES false RELATIVE "${_layer_checks}"
+     "${_layer_checks}/*")
+foreach(_check IN LISTS _check_files)
+  if(NOT _check MATCHES "^(foundation|fixy|crucible)/.+\\.cpp$")
+    message(FATAL_ERROR "test/layer/checks/${_check}: a check file is test/layer/checks/<layer>/<path>.cpp, for "
+                        "the header include/<layer>/<path>.h.  Rename the file, or move it out of test/layer/checks.")
+  endif()
+  string(REGEX REPLACE "\\.cpp$" ".h" _header "${_check}")
+  if(NOT EXISTS "${_layer_include}/${_header}")
+    message(FATAL_ERROR "test/layer/checks/${_check}: no header include/${_header} exists.  A check file belongs "
+                        "to one header.  Move the check file with its header, or delete it.")
+  endif()
+  if(_header IN_LIST _not_standalone)
+    message(FATAL_ERROR "test/layer/checks/${_check}: include/${_header} has a row in "
+                        "test/layer/crucible-not-standalone.txt, so its check file cannot compile.  Make the "
+                        "header compile alone, and remove its row, before you give it a check file.")
+  endif()
+endforeach()
+
+foreach(_layer foundation fixy crucible)
+  if(_layer STREQUAL "crucible")
+    set(_root "${_layer_include}")
+  else()
+    set(_root "${_layer_roots}/${_layer}")
+    file(MAKE_DIRECTORY "${_root}")
+    foreach(_named IN LISTS _layer_names_${_layer})
+      file(REMOVE "${_root}/${_named}")
+      file(CREATE_LINK "${_layer_include}/${_named}" "${_root}/${_named}" SYMBOLIC)
+    endforeach()
+  endif()
+
+  # One sentinel per public header: its check file when it has one, and a
+  # generated one-line file when it has none.  file(CONFIGURE) rewrites a
+  # generated sentinel only when its text changes, so a configure run does
+  # not force a rebuild.
   file(GLOB_RECURSE _headers CONFIGURE_DEPENDS
-       RELATIVE "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/include/${_layer}/*.h")
+       RELATIVE "${_layer_include}" "${_layer_include}/${_layer}/*.h")
   list(SORT _headers)
   set(_sentinels "")
   foreach(_header IN LISTS _headers)
+    if(_header IN_LIST _not_standalone)
+      continue()
+    endif()
+    string(REGEX REPLACE "\\.h$" ".cpp" _check "${_header}")
+    if(EXISTS "${_layer_checks}/${_check}")
+      list(APPEND _sentinels "${_layer_checks}/${_check}")
+      continue()
+    endif()
     string(MAKE_C_IDENTIFIER "${_header}" _stem)
     set(_sentinel "${CMAKE_CURRENT_BINARY_DIR}/sentinels/${_layer}/${_stem}.cpp")
     file(CONFIGURE OUTPUT "${_sentinel}" CONTENT "#include <${_header}>\n" @ONLY)
@@ -52,6 +138,15 @@ foreach(_layer foundation fixy)
   target_link_libraries(layer_sentinel_${_layer} PRIVATE crucible_dialect)
   target_include_directories(layer_sentinel_${_layer} PRIVATE "${_root}")
 endforeach()
+
+# Each header of crucible-not-standalone.txt still fails to compile alone.
+# The test compiles it with the command of the crucible sentinels.  The
+# command comes from the compile database, so the test needs no target of
+# its own, and no unit that fails to preprocess enters the database.
+add_test(NAME layer_not_standalone
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-checks.py
+          --standalone ${CMAKE_BINARY_DIR})
+set_tests_properties(layer_not_standalone PROPERTIES LABELS "ci_guard;substrate" SKIP_RETURN_CODE 3)
 
 # A fixture compiles against the root of the foundation layer, as a
 # foundation header would, and the test passes when the compiler refuses it

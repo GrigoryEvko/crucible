@@ -21,8 +21,8 @@ test/foundation/test_identity_attacks.cpp:union:Either
 # Probe unions of the checked lifetime start.  Each one is local to a
 # consteval self-test and proves that the walk refuses a union member, and
 # no object of it is built at run time.
-include/foundation/Lifetime.h:union:MarkedOrByte
-include/foundation/Lifetime.h:union:ProofOrByte
+test/layer/checks/foundation/Lifetime.cpp:union:MarkedOrByte
+test/layer/checks/foundation/Lifetime.cpp:union:ProofOrByte
 
 # Probe unions of the attack and ledger tests.  Each one holds a proof
 # type on purpose: the tests prove that the discipline refuses the union,

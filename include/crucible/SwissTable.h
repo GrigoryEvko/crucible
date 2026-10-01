@@ -29,7 +29,7 @@
 namespace crucible {
 namespace detail {
 
-static constexpr int8_t kEmpty = static_cast<int8_t>(0x80);
+inline constexpr int8_t kEmpty = static_cast<int8_t>(0x80);
 
 using GroupWidth = ::fixy::PowerOfTwo<std::size_t>;
 

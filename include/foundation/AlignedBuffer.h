@@ -212,7 +212,7 @@ private:
 namespace detail::aligned_buffer_self_test {
 
 // A class that holds a proof, whose lifetime cannot start over bytes.
-using ::foundation::lifetime::detail::lifetime_self_test::HoldsProof;
+using ::foundation::lifetime::detail::HoldsProof;
 
 // A count that refuses a start over bytes and builds from its own default
 // constructor, the shape of a provenance tag.

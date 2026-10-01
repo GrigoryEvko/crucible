@@ -145,7 +145,7 @@ private:
 namespace detail::swiss_table_buffer_self_test {
 
 // A class that holds a proof, whose lifetime cannot start over bytes.
-using ::foundation::lifetime::detail::lifetime_self_test::HoldsProof;
+using ::foundation::lifetime::detail::HoldsProof;
 
 static_assert(!std::is_copy_constructible_v<SwissTableBuffer<void*>>);
 static_assert(!std::is_copy_assignable_v<SwissTableBuffer<void*>>);

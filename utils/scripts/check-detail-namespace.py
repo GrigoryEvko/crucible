@@ -6,8 +6,11 @@ gate of its own: the gate is the public door that calls it.  A file that
 names the detail function directly skips the gate.  So a use of
 ::foundation::...::detail or ::fixy::...::detail outside the two layers is
 refused.  The layers are include/foundation, include/fixy and their sources,
-src/foundation and src/fixy.  Every other C++ file under the scan roots is
-in scope: include/crucible, src, vessel, bench, utils/tools, examples and test.
+src/foundation and src/fixy.  The check file of a header of the two layers,
+under test/layer/checks/foundation or test/layer/checks/fixy, holds the
+checks of that header, so it is a part of the layer of its header.  Every
+other C++ file under the scan roots is in scope: include/crucible, src,
+vessel, bench, utils/tools, examples and test.
 
 WHAT COUNTS AS A USE
     The guard reads each file from the parse of utils/scripts/tsast.py, and it
@@ -95,7 +98,8 @@ ALLOWLIST = "utils/scripts/detail-namespace-allowlist.txt"
 SCAN_ROOTS = ("include", "src", "test", "vessel", "utils/tools", "bench", "examples")
 # The directory under test/ whose files take no row: the fuzz harnesses.
 FUZZ_TREE = "test/fuzz/"
-LAYER_ROOTS = ("include/foundation/", "include/fixy/", "src/foundation/", "src/fixy/")
+LAYER_ROOTS = ("include/foundation/", "include/fixy/", "src/foundation/", "src/fixy/", "test/layer/checks/foundation/",
+               "test/layer/checks/fixy/")
 LAYERS = frozenset({"foundation", "fixy"})
 NEG_FIXTURE = re.compile(r"(?:^|/)(?:neg|[^/]+_neg)/")
 MACROS = ("preproc_def", "preproc_function_def")
@@ -577,6 +581,11 @@ def self_test() -> int:
         write(root, "test/fixy/test_probe.cpp",
               "auto first = ::foundation::effects::detail::Key{};\nauto second = foundation::effects::detail::Key{};\n")
         write(root, "test/fixy/neg/neg_reach.cpp", "auto forged = ::foundation::effects::detail::Key{};\n")
+        # The check file of a fixy header holds the checks of that header,
+        # so it is a part of the fixy layer.
+        write(root, "test/layer/checks/fixy/session/Core.cpp",
+              "#include <fixy/session/Core.h>\nnamespace fixy::session {\nnamespace detail::core_self_test {\n"
+              "static_assert(sizeof(::foundation::effects::detail::Key) == 1);\n}\n}\n")
         write(root, "src/Clean.cpp",
               "// ::foundation::effects::detail::Key is refused outside the layers.\n"
               'const char* s = "::foundation::effects::detail::Key";\n'
@@ -596,10 +605,10 @@ def self_test() -> int:
               "    std::vector<int> b;\n    helper(Key{});\n}\n")
         write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n"
                                "test/fixy/test_directive.cpp ::foundation::effects::detail x1 — one directive\n")
-        expect(root, 0, "3 use(s) of a detail namespace", "a use inside the layers, reviewed tests, a fixture, a "
-                                                            "comment, a string, a fixy namespace under crucible, a "
-                                                            "public door, a macro string and a crucible detail "
-                                                            "after a layer directive pass", True)
+        expect(root, 0, "3 use(s) of a detail namespace", "a use inside the layers, the check file of a layer header, "
+                                                            "reviewed tests, a fixture, a comment, a string, a fixy "
+                                                            "namespace under crucible, a public door, a macro string "
+                                                            "and a crucible detail after a layer directive pass", True)
         (root / "test/fixy/test_directive.cpp").unlink()
         write(root, ALLOWLIST, "# planted\ntest/fixy/test_probe.cpp ::foundation::effects::detail x2 — a probe\n")
 
@@ -633,6 +642,7 @@ def self_test() -> int:
             "include/crucible/Base.h": "struct Derived : fixy::session::detail::Core {};\n",
             "vessel/Decltype.cpp": "decltype(::foundation::effects::detail::Key{}) key;\n",
             "test/fuzz/boundary/Reach.cpp": "auto key = ::foundation::effects::detail::Key{};\n",
+            "test/layer/checks/crucible/Reach.cpp": "auto core = ::fixy::session::detail::Core{};\n",
         }
         for rel, text in forgeries.items():
             write(root, rel, text)

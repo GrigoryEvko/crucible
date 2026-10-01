@@ -68,7 +68,6 @@ fixy::is_fn_v | 3
 fixy::is_owned_region_v | 1
 fixy::is_stale_v | 2
 fixy::machine_transition_v | 1
-fixy::mint_band | 1
 fixy::mint_budget_authority | 1
 fixy::mint_linear_view | 1
 fixy::mint_version_source | 1
@@ -80,7 +79,6 @@ fixy::mmap::detail::is_primary_with_share_v | 1
 fixy::mmap::detail::pack_has_anonymous_v | 1
 fixy::mmap::detail::region_mint_admits_v | 1
 fixy::refined::bound_fits | 1
-fixy::relax | 1
 fixy::sanitize::path_traversal::sanitize_path_no_dotdot | 1
 fixy::select_fresher | 2
 fixy::session::config::detail::entry_of | 1
@@ -125,7 +123,6 @@ foundation::effects::detail::pack_sums_fit_ | 1
 foundation::effects::detail::rows_sum_fit_ | 1
 foundation::effects::detail::sums_fit_pairwise_ | 1
 foundation::effects::extract_bare | 1
-foundation::lifetime::start_as_array | 1
 foundation::permissions::can_split_into_pack_v | open | a split manifest is an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
 foundation::permissions::has_split_pack_authoring_witness_v | open | the witness of a split manifest, an extension point by design, and utils/scripts/check-splits-orphan.py admits each specialization only beside the tags that it names
 foundation::permissions::mint_read_loan | open | the reads are self-test concepts in ReadView.h that ask whether a call of the loan mint compiles; no mint reads them, and the mint is the door that they probe

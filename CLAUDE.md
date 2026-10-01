@@ -2320,11 +2320,21 @@ The CI test for this property, `cross_vendor_step_invariant`, is planned. It can
 ### Header discipline
 
 1. **`#pragma once`** on every header. No include guards.
-2. **Self-contained.** Every header compiles standalone. Add required includes directly; never rely on transitive pull-in.
+2. **Self-contained.** Every header compiles standalone. Add required includes directly; never rely on transitive pull-in. The sentinels of `test/layer/CMakeLists.txt` compile each header of `include/` alone in the default build. A crucible header that cannot compile alone has a row in `test/layer/crucible-not-standalone.txt` with its reason. The test `layer_not_standalone` fails when a listed header compiles alone, so the list can only become shorter.
 3. **IWYU** (include-what-you-use). If a `.cpp` uses `std::span`, include `<span>` — not via some project header that happens to pull it.
 4. **No circular includes.** Refactor: one side gets a forward declaration, full include in the `.cpp` only.
 5. **Forward declare in headers whenever possible.** Full definitions only when needed (inline methods, templates, `sizeof`).
 6. **No precompiled headers.** PCH hides dependency bugs and complicates CMake. If build is slow, audit headers.
+
+### Compile time
+
+Each translation unit that includes a header compiles that header again. These rules keep that cost low.
+
+1. **A header does not check itself in each includer.** A header holds no self-test namespace and no `static_assert` at namespace scope. The check file of the header holds them: `test/layer/checks/<layer>/<path>.cpp` for `include/<layer>/<path>.h`. Its first line of code includes its own header, and it keeps each check unchanged, in the same enclosing namespaces. `test/layer/CMakeLists.txt` compiles the check file one time, in the default build, in place of the sentinel of the header. A `static_assert` inside a class or a template stays in the header, because it applies to each instantiation. `utils/scripts/check-header-checks.py` (the test `header_checks`) enforces the rule. `utils/scripts/header-checks-ledger.txt` holds the checks that have not moved, and its counts can only decrease. A check whose result depends on the translation unit that includes the header stays, with a keep row and its reason.
+2. **Compile-time tables are lazy.** A reflection walk, a roster or a table that not every includer reads is a variable template, or it is inside a template. Then only a translation unit that reads it evaluates it.
+3. **No heavy inline body in a header.** Each includer analyzes a non-template inline function again. A body that is cold or large goes to a source file.
+4. **Builtins before headers.** A base header does not include an intrinsics header, `<thread>` or `<chrono>` for one function. Use the builtin, for example `__builtin_ia32_pause`, `__builtin_ia32_rdtsc`, `__atomic_load_n` or `__builtin_memcpy`.
+5. **No giant translation unit and no giant function.** A generator writes its output as shards. Split a test file that compiles for more than 60 s at `-j1` by subject. Split a function that is large enough to make the debug-information passes explode.
 
 ### Include order convention
 

@@ -443,7 +443,6 @@ void cipher_tier_lattice_runs_at_run_time() {
 void tolerance_lattice_runs_at_run_time() {
     using namespace fa;
     using namespace fl;
-    using namespace fl::detail::tolerance_lattice_self_test;
     Tolerance a = Tolerance::RELAXED;
     Tolerance b = Tolerance::BITEXACT;
     [[maybe_unused]] bool l1 = ToleranceLattice::leq(a, b);

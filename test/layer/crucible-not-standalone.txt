@@ -1,0 +1,29 @@
+# The crucible headers that cannot compile alone, one row each:
+#
+#   crucible/<path>.h | reason
+#
+# test/layer/CMakeLists.txt gives each listed header no sentinel.  The test
+# layer_not_standalone compiles each listed header alone and fails when one
+# compiles, so a row goes in the commit that makes its header compile alone.
+# The list can only become shorter.  A reason has no semicolon.
+
+# BPF C headers.  clang compiles them for the BPF target, as part of a BPF
+# program.  They are not C++, and vmlinux.h declares a field named operator.
+crucible/canopy/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/cntp/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/cntp/dataplane/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/cntp/dataplane/bpf/net_common.h | a BPF C header that includes common.h, which includes vmlinux.h
+crucible/cog/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/observe/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/perf/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/perf/bpf/vmlinux.h | the BPF type information of the kernel, as generated C
+crucible/topology/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/warden/bpf/common.h | a BPF C header that includes vmlinux.h
+
+# The ledger probes include bench_harness.h from bench/, which is not on the
+# include path of a crucible header.
+crucible/ledger/ProbeSupport.h | it includes bench_harness.h, which is not on the include path
+crucible/ledger/RefreshDaemon.h | it includes ProbeSupport.h, which includes bench_harness.h
+crucible/ledger/probes/CacheTier.h | it includes ProbeSupport.h, which includes bench_harness.h
+crucible/ledger/probes/HugePage.h | it includes ProbeSupport.h, which includes bench_harness.h
+crucible/ledger/probes/VectorWidth.h | it includes ProbeSupport.h, which includes bench_harness.h
