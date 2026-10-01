@@ -2387,9 +2387,15 @@ Each translation unit that includes a header compiles that header again. These r
 - Anonymous namespaces for TU-local helpers. Not the `static` keyword (deprecated for this purpose).
 - Don't use `using X::foo;` to leak implementation details from a nested namespace to a parent.
 
-### C++20 Modules — deferred
+### C++20 Modules and precompiled headers — not used
 
-GCC 16 has ABI-stable modules but we defer: CMake/ninja integration still maturing, debug info less mature than headers, and the header-only hot path already gives cross-TU inlining without LTO. No build uses LTO at this time. Revisit when clean-rebuild exceeds ~30 s or modules become part of the public API. Until then: `#include`-based, header-only hot, split cold.
+The tree uses `#include` only. A measurement on 2026-10-01 tried a precompiled header for each include prefix of the negative fixtures, and C++20 header units with include translation for the whole tree. Both changed results, so neither landed:
+
+- GCC 16 drops the native `pre` and `post` specifiers of a function template and of a member of a class template when it writes a header unit or a precompiled header. This is one reason for the rule that the tree uses `CRUCIBLE_PRE` and `CRUCIBLE_POST` only.
+- A header unit does not see what its includer declares before the include, so an eager seal check in a header stops working. `source_location_of` can also name a different file.
+- GCC 16 has many module defects: internal compiler errors, a module file that GCC cannot read again in C++26 mode, a lost `= delete("reason")` text, and template instances that do not merge.
+
+Header units cut the CPU time of the fixtures by about 4.5 times, so try them again with GCC 17. Check the reflection results and the contract results first.
 
 ### One-definition rule (ODR) discipline
 
