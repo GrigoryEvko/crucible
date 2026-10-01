@@ -24,7 +24,6 @@
 #include <cerrno>
 #include <cstdint>
 #include <expected>
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -320,7 +319,7 @@ public:
 
     [[nodiscard]] std::expected<void, int> restore() && noexcept {
         if (!is_held_) return {};
-        if (owner_ != std::this_thread::get_id()) [[unlikely]] {
+        if (owner_ != ::foundation::effects::detail::producer_claim::calling_thread_identity()) [[unlikely]] {
             return std::unexpected(EPERM);
         }
         is_held_ = false;
@@ -335,7 +334,9 @@ private:
     // Holds no mask: the call asked for no pin.
     PriorAffinity() noexcept = default;
     explicit PriorAffinity(::cpu_set_t const& mask) noexcept
-        : mask_{mask}, owner_{std::this_thread::get_id()}, is_held_{true} {}
+        : mask_{mask},
+          owner_{::foundation::effects::detail::producer_claim::calling_thread_identity()},
+          is_held_{true} {}
 
     template <eff::IsExecCtx FriendCtx>
         requires CtxFitsRuntimeAffinity<FriendCtx>
@@ -343,7 +344,9 @@ private:
         -> std::expected<PriorAffinity, int>;
 
     ::cpu_set_t mask_{};
-    std::thread::id owner_{};
+    // The identity of the thread that pinned, from foundation/effects/Ctx.h.
+    // Zero names no thread.
+    std::uintptr_t owner_ = 0;
     bool is_held_ = false;
 };
 
