@@ -876,7 +876,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 | Feature | Ban via | Reason |
 |---|---|---|
-| Exceptions | **not a flag** — `utils/scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `include/fixy/concurrent/Topology.h`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and `utils/scripts/no-throw-no-rtti-allowlist.txt` admits the function of each other such throw, with its reason |
+| Exceptions | **not a flag** — `utils/scripts/check-no-throw-no-rtti.sh` | `-fno-exceptions` is NOT in this build and never was. It would not compile `src/fixy/concurrent/Topology.cpp`, whose eight catch sites turn a failed sysfs read into a conservative topology rather than a crash. Nothing in the tree throws: error paths are `std::expected` or a cold `[[noreturn]]` helper that calls `std::abort()` (§XII). The guard reads each static library of the tree, and it refuses a reference to `__cxa_throw` or `__cxa_rethrow`, also one that a library header makes. It admits a throw of `std::bad_alloc` or `std::bad_array_new_length`, and `utils/scripts/no-throw-no-rtti-allowlist.txt` admits the function of each other such throw, with its reason |
 | RTTI | **not a flag** — `utils/scripts/check-no-throw-no-rtti.sh` | `-fno-rtti` is NOT in this build either, and on this tree it is a no-op: zero `dynamic_cast`, zero `typeid`, zero `std::type_info`, and every `virtual` lives in a planning document. Dispatch is a `kind` enum plus `static_cast`. The guard checks that the artifact references no `__dynamic_cast` and defines no typeinfo or vtable, other than those of a class that `utils/scripts/no-throw-no-rtti-allowlist.txt` admits: the `std::thread::_State_impl` classes that `std::jthread` uses |
 | Coroutines on hot path | discipline | Heap allocation, unpredictable latency |
 | `volatile` for concurrency | P1152R4 deprecated | `volatile` does not order; use `std::atomic` |
@@ -2428,7 +2428,9 @@ These library types make the axioms from §II true at compile time. They are in 
 Every header is self-contained. Two cold bodies are in the library `foundation`, so
 that an includer does not compile them: the abort of `Permission.h` in
 `src/foundation/Permission.cpp`, and the thread start of `PermissionFork.h` in
-`src/foundation/PermissionFork.cpp`. The other headers are header-only. The dependency rule is the layer
+`src/foundation/PermissionFork.cpp`. One cold body is in the library `fixy`: the
+sysfs probe of `fixy/concurrent/Topology.h` in `src/fixy/concurrent/Topology.cpp`.
+The other headers are header-only. The dependency rule is the layer
 rule, and `utils/scripts/check-layer-boundary.py` enforces it: `foundation` names only
 `foundation` and `std`, `fixy` names `foundation`, `fixy` and `std`, `crucible`
 names anything below it.

@@ -407,7 +407,9 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # `foundation` or `fixy` without `crucible`.  It also holds the cold bodies of
 # foundation headers, so that an includer does not compile them: the
 # diagnostic sink, the abort of a saturated permission pool, and the threads
-# of a spawning permission fork.  `fixy` is header-only.
+# of a spawning permission fork.  `fixy` is a static library for the same
+# reason: it holds the cold bodies of fixy headers, at this time the one
+# probe of the machine topology.
 add_library(foundation STATIC
   src/foundation/ContractHandler.cpp
   src/foundation/DiagRuntime.cpp
@@ -425,8 +427,16 @@ set_target_properties(foundation PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # consumer's link line.
 target_link_libraries(crucible PUBLIC foundation)
 
-add_library(fixy INTERFACE)
-target_link_libraries(fixy INTERFACE foundation)
+add_library(fixy STATIC
+  src/fixy/concurrent/Topology.cpp
+)
+target_include_directories(fixy PUBLIC include/)
+target_link_libraries(fixy PUBLIC foundation)
+set_target_properties(fixy PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# The crucible headers call the topology probe of fixy, so crucible links
+# fixy, and libfixy.a follows libcrucible.a on a consumer's link line.
+target_link_libraries(crucible PUBLIC fixy)
 
 # -Walloc-size-larger-than and libstdc++: the list that could not hold.
 #
@@ -820,21 +830,22 @@ endif()
 # These bodies are a library of their own, and libcrucible.a does not hold
 # them.  The pipeline starts its threads through std::jthread, and the
 # constructor opens the store through std::string and std::filesystem.
-# Those instantiations define the virtual table of std::thread::_State_impl,
-# and the std::set of fixy/concurrent/Topology.h references __cxa_throw and
-# __cxa_rethrow.  The check of utils/scripts/check-no-throw-no-rtti.sh reads
-# this library too.  It admits the throw of a failed allocation, and
-# utils/scripts/no-throw-no-rtti-allowlist.txt admits the rethrow and the
-# virtual table, each with its reason.
+# Those instantiations define the virtual table of std::thread::_State_impl.
+# The check of utils/scripts/check-no-throw-no-rtti.sh reads this library
+# too.  It admits the throw of a failed allocation, and
+# utils/scripts/no-throw-no-rtti-allowlist.txt admits the virtual table with
+# its reason.
 #
 # The bodies compile with the definitions that crucible gives its
-# consumers, so each header reads the same macros in both places.
+# consumers, so each header reads the same macros in both places.  The
+# pipeline reads the cache clusters of fixy/concurrent/Topology.h, whose probe
+# is in libfixy.a, so this library links fixy, and fixy links foundation.
 add_library(crucible_vigil STATIC
   src/BackgroundThread.cpp
   src/Vigil.cpp)
 target_include_directories(crucible_vigil PUBLIC include/)
 target_compile_definitions(crucible_vigil PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
-target_link_libraries(crucible_vigil PUBLIC foundation)
+target_link_libraries(crucible_vigil PUBLIC fixy)
 if (CRUCIBLE_HAVE_BPF)
   target_link_libraries(crucible_vigil PUBLIC crucible_perf)
 endif()

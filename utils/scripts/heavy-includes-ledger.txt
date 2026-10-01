@@ -61,10 +61,6 @@ include/fixy/Budgeted.h | <memory>
 include/fixy/EpochVersioned.h | <memory>
 include/fixy/SelfContained.h | <ranges>
 include/fixy/concurrent/Pipeline.h | <thread>
-include/fixy/concurrent/Topology.h | <filesystem>
-include/fixy/concurrent/Topology.h | <fstream>
-include/fixy/concurrent/Topology.h | <sstream>
-include/fixy/concurrent/Topology.h | <thread>
 include/fixy/os/Sched.h | <thread>
 
 keep | include/crucible/canopy/bpf/common.h | <bpf/bpf_helpers.h> | a BPF C header. clang compiles it for the BPF target, and no C++ translation unit includes it

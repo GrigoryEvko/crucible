@@ -8,7 +8,7 @@
 # existed.  Both properties nevertheless hold.  Adding the flags is the
 # wrong repair:
 #
-#   -fno-exceptions would not compile include/fixy/concurrent/Topology.h
+#   -fno-exceptions would not compile src/fixy/concurrent/Topology.cpp
 #   at all, whose eight catch sites turn a failed sysfs read into a
 #   conservative topology instead of a crash.  Where it did compile it would
 #   replace a handled library failure with a bare std::terminate.
@@ -390,7 +390,7 @@ int throwing_entry(int input) {
 }
 EOF
         # A catch WITHOUT a throw.  Must NOT be reported: this is the
-        # Topology.h shape, and a scanner that flagged it would forbid the
+        # Topology.cpp shape, and a scanner that flagged it would forbid the
         # documented boundary.
         cat >"$tmp_root/catches.cpp" <<'EOF'
 extern int may_fail(int);
