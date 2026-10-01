@@ -74,6 +74,7 @@ struct GfTables {
     std::array<std::array<std::uint8_t, 256>, 256> mul{};
 };
 
+template <class Field>
 [[nodiscard]] consteval GfTables make_gf_tables() noexcept {
     GfTables tables{};
 
@@ -106,11 +107,25 @@ struct GfTables {
     return tables;
 }
 
-inline constexpr GfTables gf = make_gf_tables();
+// The evaluation of the tables takes about 16.5 million operations.  So the
+// tables are a variable template, and each function that reads them is a
+// template too, over a parameter that no caller names.  Only a translation
+// unit that instantiates a codec then evaluates the tables, and a function
+// that is not a template must not read them.  The initializer depends on
+// the parameter, because GCC evaluates a call that does not depend on it
+// where the template stands.
+template <class Field = void>
+inline constexpr GfTables gf = make_gf_tables<Field>();
 
-[[nodiscard, gnu::const]] constexpr std::uint8_t mul(std::uint8_t a, std::uint8_t b) noexcept { return gf.mul[a][b]; }
+template <class Field = void>
+[[nodiscard, gnu::const]] constexpr std::uint8_t mul(std::uint8_t a, std::uint8_t b) noexcept {
+    return gf<Field>.mul[a][b];
+}
 
-[[nodiscard, gnu::const]] constexpr std::uint8_t inv(std::uint8_t a) noexcept { return gf.inv[a]; }
+template <class Field = void>
+[[nodiscard, gnu::const]] constexpr std::uint8_t inv(std::uint8_t a) noexcept {
+    return gf<Field>.inv[a];
+}
 
 template <std::size_t N>
 using SquareMatrix = std::array<std::array<std::uint8_t, N>, N>;
@@ -187,6 +202,7 @@ struct alignas(32) NibbleTables {
     alignas(32) std::array<std::uint8_t, 32> hi{};
 };
 
+template <class Field = void>
 [[nodiscard]] inline NibbleTables make_nibble_tables(std::uint8_t coeff) noexcept {
     NibbleTables tables{};
     for (std::uint8_t i = 0; i < 16; ++i) {
@@ -221,6 +237,7 @@ CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size
     }
 }
 
+template <class Field = void>
 CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
     namespace lifetime = ::foundation::lifetime;
     if (coeff == 0) {
@@ -265,6 +282,7 @@ CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size
     }
 }
 
+template <class Field = void>
 CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
     namespace lifetime = ::foundation::lifetime;
     if (coeff == 0) {
@@ -302,6 +320,7 @@ CRUCIBLE_HOT void xor_bytes_scalar(std::byte* dst, std::byte const* src, std::si
     }
 }
 
+template <class Field = void>
 CRUCIBLE_HOT void mul_xor(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
     if (coeff == 0) {
         return;
@@ -379,7 +398,7 @@ public:
             auto* parity = output_with_parity.data() + (static_cast<std::size_t>(K) + p) * shard_bytes;
             for (std::size_t d = 0; d < K; ++d) {
                 auto const* data = output_with_parity.data() + d * shard_bytes;
-                detail::mul_xor(parity, data, generator_[static_cast<std::size_t>(K) + p][d], shard_bytes);
+                detail::mul_xor(parity, data, generator()[static_cast<std::size_t>(K) + p][d], shard_bytes);
             }
         }
         return {};
@@ -419,7 +438,7 @@ public:
         detail::SquareMatrix<K> decode_matrix{};
         detail::SquareMatrix<K> inverse{};
         for (std::size_t row = 0; row < K; ++row) {
-            decode_matrix[row] = generator_[selected[row]];
+            decode_matrix[row] = generator()[selected[row]];
         }
         if (!detail::invert_matrix<K>(decode_matrix, inverse)) {
             return std::unexpected(FecError::SingularMatrix);
@@ -456,7 +475,15 @@ public:
     }
 
 private:
-    inline static constexpr auto generator_ = detail::make_generator_matrix<K, M>();
+    // The generator matrix of this shape.  It is a static local of a member
+    // function and not a static data member, so a translation unit that
+    // only names the class evaluates neither the matrix nor the field tables
+    // that the matrix reads.  The local is constexpr, so it has constant
+    // initialization and no guard.
+    [[nodiscard]] static constexpr detail::GeneratorMatrix<K, M> const& generator() noexcept {
+        static constexpr detail::GeneratorMatrix<K, M> matrix = detail::make_generator_matrix<K, M>();
+        return matrix;
+    }
 };
 
 template <std::uint8_t K, std::uint8_t M>
