@@ -3,6 +3,8 @@
 
 THE CHECKS
     compile-cpu     The user and system CPU time of one compile job.
+    compile-instructions
+                    The user instructions of one compile job, in G (10^9).
     compile-memory  The peak resident memory of one compile job, in GB of 2^30 bytes.
     link-time       The user and system CPU time of one link.
     link-memory     The peak resident memory of one link, in GB.
@@ -25,18 +27,30 @@ WHAT THE CHECKS READ
     the outputs that exist, so a target that the build does not make (a
     negative fixture) has no output to read.
 
-    The four time and memory checks read the record OUTPUT.cost that
-    utils/scripts/build-launcher.py writes beside each output (the format is
-    in utils/scripts/cost_meter.py).  A record that says "hit" comes from a
-    ccache hit, and it holds no time: the check counts it, and does not judge
-    it.  An output with no record, a record in another format, or a record
-    whose output size is not the size of the output is an error, because that
-    output did not come through the launcher.  When no output has a record,
-    the launcher is not wired, and the check gives one error.  The launcher
-    itself stops a step over the memory error threshold and a step that runs
-    past three times the time error threshold.  These checks see the time
-    error threshold after the build, and they see a record that a launcher
-    with another budget table wrote.
+    The five time, instruction and memory checks read the record OUTPUT.cost
+    that utils/scripts/build-launcher.py writes beside each output (the
+    format is in utils/scripts/cost_meter.py).  A record that says "hit"
+    comes from a ccache hit, and it holds no time: the check counts it, and
+    does not judge it.  An output with no record, a record in another format,
+    or a record whose output size is not the size of the output is an error,
+    because that output did not come through the launcher.  When no output
+    has a record, the launcher is not wired, and the check gives one error.
+    The launcher itself stops a step over the memory error threshold and a
+    step that runs past three times the time error threshold.  These checks
+    see the time error threshold after the build, and they see a record that
+    a launcher with another budget table wrote.
+
+THE INSTRUCTION COUNT HOLDS THE ERROR LEVEL OF A COMPILE
+    The CPU time of a compile rises with the load of the host: at a load of
+    770 on the build host, two compiles took 20.8 s and 22.6 s, over the
+    error threshold of compile-cpu, with no change in the tree.  The number
+    of user instructions does not change with the load (cost_meter.py, THE
+    INSTRUCTION COUNT).  So when the record of a compile holds an
+    instruction count, compile-instructions judges the count with the error
+    level, and compile-cpu gives a warning, not an error, for a CPU time
+    over its error threshold.  A record with no count (a host with no exact
+    counter) keeps the error of compile-cpu.  When no record of the build
+    holds a count, compile-instructions does not apply to the build.
 
     function-size and object-text read the section headers and the symbol
     table of each object (ELF64, little endian).  The largest function is the
@@ -103,9 +117,10 @@ Usage
     check-compile-cost.py --self-test
 
 Exit 0 with no finding or with warnings only, 1 with an error, 2 on a usage
-error or a failed self-test, 3 when header-alone does not apply to the build:
-the ninja generator did not make it, so it has no dependency log, or it holds
-no sentinel object, because the build made only some targets.
+error or a failed self-test, 3 when header-alone does not apply to the build
+(the ninja generator did not make it, so it has no dependency log, or it holds
+no sentinel object, because the build made only some targets), or when
+compile-instructions does not apply (no compile record holds a count).
 """
 
 from __future__ import annotations
@@ -134,11 +149,14 @@ from repo_root import REPO_ROOT  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
 LAUNCHER = SCRIPTS / "build-launcher.py"
-CHECKS = ("compile-cpu", "compile-memory", "link-time", "link-memory", "function-size", "object-text",
-          "header-alone")
-# The step and the measure of each time or memory check.
-TIMED = {"compile-cpu": ("compile", "time"), "compile-memory": ("compile", "memory"),
-         "link-time": ("link", "time"), "link-memory": ("link", "memory")}
+CHECKS = ("compile-cpu", "compile-instructions", "compile-memory", "link-time", "link-memory", "function-size",
+          "object-text", "header-alone")
+# The step and the measure of each time, instruction or memory check.
+TIMED = {"compile-cpu": ("compile", "time"), "compile-instructions": ("compile", "instructions"),
+         "compile-memory": ("compile", "memory"), "link-time": ("link", "time"), "link-memory": ("link", "memory")}
+# The time check whose error level an instruction count in the record holds, and the row of the count.
+COUNT_HOLDS_ERROR = {"compile-cpu": "compile-instructions"}
+GIGA = 1e9
 RESULTS = frozenset({"built", "failed", "rejected", "hit"})
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
 SENTINEL_MARK = "/layer_sentinel_"
@@ -169,12 +187,17 @@ class Output:
 
 @dataclass(frozen=True, slots=True)
 class Measure:
-    """One measured value of one item, with the words that tell what it is."""
+    """One measured value of one item, with the words that tell what it is.
+
+    `error_row` names the row whose exact count holds the error level of the
+    item, or is empty when this check holds it.
+    """
 
     item: str
     path: str
     value: float
     message: str
+    error_row: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,22 +352,33 @@ def read_record(output: Output, step: str) -> tuple[dict[str, object] | None, st
     return record, None
 
 
+def instruction_count(cost: dict[str, object]) -> int | None:
+    """Return the exact user instructions of a cost block, or None when the block holds no count."""
+    count = cost.get("instructions")
+    return count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else None
+
+
 def timed_measures(context: Context, outputs: list[Output]) -> tuple[list[Measure], set[str],
                                                                      list[check_report.Finding], str]:
-    """Read the time or the memory of each step from its record.
+    """Read the time, the instructions or the memory of each step from its record.
 
     Args:
-        context: The run of a time or memory check
+        context: The run of a time, instruction or memory check
         outputs: The outputs of the step of the check
 
     Returns:
         The measures, the items of the ccache hits, the errors for the records that cannot count, and the
         summary line
+
+    Raises:
+        NotApplicable: If the check counts instructions and no record that holds a cost holds a count
     """
     step, quantity = TIMED[context.check]
     noun = "compile job" if step == "compile" else "link"
+    count_row = COUNT_HOLDS_ERROR.get(context.check, "")
     measures: list[Measure] = []
     hits: set[str] = set()
+    uncounted = 0
     problems: list[tuple[Output, str]] = []
     for output in outputs:
         item = shown_path(output.path, context.build_dir)
@@ -356,13 +390,28 @@ def timed_measures(context: Context, outputs: list[Output]) -> tuple[list[Measur
             hits.add(item)
             continue
         cost = record["cost"]
-        if quantity == "time":
+        count = instruction_count(cost)
+        error_row = ""
+        if quantity == "instructions":
+            if count is None:
+                uncounted += 1
+                continue
+            value = count / GIGA
+            words = (f"the {noun} of {item} ran {value:.1f} G user instructions ({float(cost['cpu_s']):.1f} s CPU "
+                     f"at a load of {float(cost.get('load', -1)):.0f})")
+        elif quantity == "time":
             value = float(cost["cpu_s"])
             words = f"the {noun} of {item} took {value:.1f} s CPU ({float(cost['wall_s']):.1f} s wall)"
+            error_row = count_row if count is not None else ""
         else:
             value = float(cost["peak_rss_kb"]) / cost_meter.KB_PER_GB
             words = f"the {noun} of {item} took {value:.2f} GB of peak memory"
-        measures.append(Measure(item, shown_path(output.source or output.path, context.root), value, words))
+        measures.append(Measure(item, shown_path(output.source or output.path, context.root), value, words,
+                                error_row))
+    if quantity == "instructions" and not measures and uncounted:
+        raise NotApplicable(f"no record of the {uncounted} compile jobs that ran holds an instruction count, because "
+                            f"the host gives no exact counter (utils/scripts/cost_meter.py, THE INSTRUCTION COUNT).  "
+                            f"compile-cpu keeps the error level")
     findings: list[check_report.Finding] = []
     if outputs and len(problems) == len(outputs):
         findings.append(error_at(context.check, shown_path(context.build_dir, context.root),
@@ -378,6 +427,8 @@ def timed_measures(context: Context, outputs: list[Output]) -> tuple[list[Measur
                                      f"the output {shown_path(output.path, context.build_dir)}: {text}"))
     summary = (f"{context.check}: {len(outputs)} outputs, {len(measures)} measured, {len(hits)} ccache hits with "
                f"no time, {len(problems)} without a usable record")
+    if quantity == "instructions":
+        summary += f", {uncounted} with no exact count"
     return measures, hits, findings, summary
 
 
@@ -665,6 +716,13 @@ def judge(context: Context, budget: check_report.Budget, measures: list[Measure]
         measured.add(measure.item)
         level = check_report.classify(measure.value, budget)
         row = rows.get(measure.item)
+        if row is None and level == "error" and measure.error_row:
+            findings.append(check_report.Finding(
+                "warning", measure.path, 0, context.check,
+                f"{measure.message}, over the error threshold {budget.error:g} {budget_unit}.  The record holds an "
+                f"instruction count, so the row {measure.error_row} holds the error level of this step, and the CPU "
+                f"time, which rises with the load of the host, gives a warning only"))
+            continue
         if row is None:
             if level is not None:
                 limit = budget.error if level == "error" else budget.warn
@@ -879,6 +937,7 @@ class Scratch:
         self.ledgers.mkdir()
         (self.build / cost_meter.KIND_FILE).write_text(f"{self.KIND}\n", encoding="utf-8")
         self.budgets.write_text("compile-cpu | 10 | 20 | s | t\ncompile-memory | 2 | 4 | GB | m\n"
+                                "compile-instructions | 50 | 100 | G instructions | i\n"
                                 "link-time | 2 | 5 | s | t\nlink-memory | 0.5 | 1 | GB | m\n"
                                 "function-size | 64 | 256 | KB | f\nobject-text | 512 | 768 | KB | o\n"
                                 "header-alone | 8 | 12 | MB | h\n", encoding="utf-8")
@@ -893,14 +952,15 @@ class Scratch:
         self.launcher = load_launcher()
 
     def record(self, step: str, output: Path, source: Path | None, result: str, cpu_s: float,
-               peak_gb: float) -> None:
+               peak_gb: float, instructions: int | None = None) -> None:
         """Write the record of one output with the writer of the launcher."""
-        run = cost_meter.Measurement(0, cpu_s, 0.0, cpu_s, int(peak_gb * cost_meter.KB_PER_GB), 1.0, 1.0, None)
+        run = cost_meter.Measurement(0, cpu_s, 0.0, cpu_s, int(peak_gb * cost_meter.KB_PER_GB), 1.0, 1.0, None,
+                                     instructions)
         self.launcher.write(step, str(output), None if source is None else str(source), run, result)
 
     def unit(self, name: str, *, functions: list[tuple[str, int]] | None = None, loose_text: int = 0,
              result: str | None = "built", cpu_s: float = 1.0, peak_gb: float = 0.2,
-             sentinel: bool = False) -> Path:
+             sentinel: bool = False, instructions: int | None = None) -> Path:
         """Plant one compile job: a source, its object, its row and its record."""
         source = self.root / ("test/layer/checks" if sentinel else "src") / f"{name}.cpp"
         source.parent.mkdir(parents=True, exist_ok=True)
@@ -912,7 +972,7 @@ class Scratch:
                           "output": str(object_path)})
         self.write_database()
         if result is not None:
-            self.record("compile", object_path, source, result, cpu_s, peak_gb)
+            self.record("compile", object_path, source, result, cpu_s, peak_gb, instructions)
         return object_path
 
     def program(self, name: str, *, kind: str = "EXECUTABLE", result: str | None = "built", cpu_s: float = 0.5,
@@ -1057,6 +1117,49 @@ def self_test_cases() -> int:
         status, found, _ = tree.run("compile-cpu")
         expect("compile-cpu: a missing ledger is an error", status == 1)
         tree.ledger("compile-cpu", "")
+
+        # compile-instructions, and the error level of compile-cpu when a record holds a count.
+        giga = int(GIGA)
+        status, found, output = tree.run("compile-instructions")
+        expect("compile-instructions: a build whose records hold no count exits 3",
+               status == NOT_APPLICABLE and not found and "no exact counter" in output)
+        counted = Scratch(root / "counted")
+        counted.unit("light", cpu_s=2.0, instructions=10 * giga)
+        status, found, output = counted.run("compile-instructions")
+        expect("compile-instructions: 10 G instructions give no finding", status == 0 and not found)
+        counted.unit("uncounted", cpu_s=25.0)
+        status, found, output = counted.run("compile-instructions")
+        expect("compile-instructions: a record with no count is not judged, and the summary counts it",
+               status == 0 and not found and "1 with no exact count" in output)
+        status, found, _ = counted.run("compile-cpu")
+        expect("compile-cpu: a 25 s job with no count keeps the error",
+               status == 1 and [f.level for f in found if f.path == "src/uncounted.cpp"] == ["error"])
+        counted.unit("loaded", cpu_s=25.0, instructions=60 * giga)
+        status, found, _ = counted.run("compile-cpu")
+        loaded = [f for f in found if f.path == "src/loaded.cpp"]
+        expect("compile-cpu: a 25 s job whose record holds a count gives a warning that names compile-instructions",
+               len(loaded) == 1 and loaded[0].level == "warning" and "compile-instructions" in loaded[0].message)
+        status, found, _ = counted.run("compile-instructions")
+        expect("compile-instructions: 60 G instructions give a warning at the source",
+               status == 0 and levels(found) == ["warning"] and found[0].path == "src/loaded.cpp"
+               and "60.0 G user instructions" in found[0].message)
+        counted.unit("heavy", cpu_s=5.0, instructions=120 * giga)
+        status, found, _ = counted.run("compile-instructions")
+        expect("compile-instructions: 120 G instructions give an error", status == 1
+               and [f.level for f in found if f.path == "src/heavy.cpp"] == ["error"])
+        with check_report.github_actions(True):
+            status, found, _ = counted.run("compile-instructions")
+            expect("compile-instructions: on a CI runner, an instruction error stays an error", status == 1)
+        counted.ledger("compile-instructions", f"{debug} | CMakeFiles/lib.dir/heavy.cpp.o | 120 | a planted reason\n")
+        status, found, _ = counted.run("compile-instructions")
+        expect("compile-instructions: a row turns the error into a warning", status == 0
+               and any("a planted reason" in f.message for f in found))
+        counted.ledger("compile-instructions", f"{debug} | CMakeFiles/lib.dir/light.cpp.o | 120 | a planted reason\n")
+        status, found, _ = counted.run("compile-instructions")
+        expect("compile-instructions: a row of an item under the error threshold is an error",
+               status == 1 and any(f.path.endswith("compile-instructions-ledger.txt") and f.level == "error"
+                                   for f in found))
+        counted.ledger("compile-instructions", "")
 
         hits = Scratch(root / "hits")
         hits.unit("cached", result="hit")

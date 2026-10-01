@@ -1,0 +1,15 @@
+# utils/scripts/compile-instructions-ledger.txt — the compile jobs that can run more user instructions
+# than the error threshold of compile-instructions (utils/scripts/budgets.txt).
+# utils/scripts/check-compile-cost.py reads it.
+#
+# A row:  kind | object | G instructions | reason
+#   kind            the build kind of BUILD_DIR/build-kind.txt, for example x86_64-debug-asan
+#   object          the object, relative to the build directory
+#   G instructions  the user instructions of the compile at the last --write, in units of 10^9
+#   reason          why the job runs that many instructions.  A row needs a reason
+#
+# In a build of its kind, a row gives a warning while its object stays over the error threshold, and
+# an error when the object is at or under it.  A record of a ccache hit and a record with no count
+# hold no instructions, and the check does not judge them.  python3 utils/scripts/check-compile-cost.py
+# --check compile-instructions --build-dir DIR --write [--reason TEXT] writes the rows of the kind of a
+# build again from that build.

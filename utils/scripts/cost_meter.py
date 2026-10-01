@@ -3,8 +3,9 @@
 utils/scripts/build-launcher.py imports this module for each compile and
 each link of the build.  A launcher in front of a test imports it in the same
 way.  The module imports only os, sys and time, so an import costs about one
-millisecond.  It imports signal and resource only to run a command, and
-utils/scripts/check_report.py only to write a finding line.
+millisecond.  It imports signal and resource only to run a command, _ctypes
+only to count instructions, and utils/scripts/check_report.py only to write a
+finding line.
 
 MEASURE
     measure(command, environment, cpu_limit_s) runs a command with the
@@ -21,7 +22,32 @@ MEASURE
     for it.  With a CPU limit, each process of the command gets
     RLIMIT_CPU of that many seconds, so a process that runs away ends on
     SIGKILL and does not run for minutes.  On a CI runner, limit_cpu() sets
-    no limit (A CI RUNNER below tells why).
+    no limit (A CI RUNNER below tells why).  With count_instructions, the
+    measurement also holds the user instructions of the command (THE
+    INSTRUCTION COUNT below).
+
+THE INSTRUCTION COUNT
+    The CPU time of one compile rises with the load of the host, because two
+    threads share each core.  The number of user instructions does not: four
+    compiles of test/test_arena.cpp at a load of 1,030 on the build host gave
+    6.3692 G to 6.3704 G instructions (0.02 %).  open_instruction_counter()
+    opens a hardware counter of the instructions in user mode with
+    perf_event_open, through _ctypes, which costs approximately 0.5 ms to
+    import.  The counter is off in this process, each process that this
+    process starts after the call gets a copy of it, and the copy starts to
+    count when that process calls exec.  So the count holds the command and
+    each process that it starts, and not this process.  The kernel adds the
+    count of each process to the counter when the process ends.  With
+    perf_event_paranoid at 2, the kernel lets each user count its own
+    processes in user mode.  read_instruction_counter() gives the count only
+    when the counter ran for the full time that it was on.  A count that the
+    kernel had to share with other counters, or a counter that a core type
+    of a hybrid CPU did not have, is an estimate, and the function then
+    gives None.  The function gives None also when the kernel or a seccomp
+    filter refuses perf_event_open (a container, a virtual machine with no
+    hardware counter), when the architecture is not in PERF_EVENT_OPEN, and
+    when the environment sets CRUCIBLE_COUNT_INSTRUCTIONS to 0.  A count is
+    exact or absent.
 
 A CI RUNNER
     The thresholds of the time rows (TIME_ROWS: compile-cpu, link-time,
@@ -49,7 +75,9 @@ THE RECORD
       exit          the status of the command, or minus the signal number
       cost          for each result except "hit": cpu_s, user_s, system_s,
                     wall_s, peak_rss_kb, load (the one-minute load average at
-                    the start) and end (seconds since the epoch)
+                    the start) and end (seconds since the epoch), and
+                    instructions (the user instructions of the step) when
+                    the measurement holds an exact count
       last_cost     for "hit": the cost block of the earlier record, when it
                     had one, so a hit does not erase the last real measure
     cost_block() writes the cost block, and carried_cost() reads it back as
@@ -84,16 +112,33 @@ TIME_ROWS = frozenset({"compile-cpu", "link-time", "test-time", "fixture-cpu"})
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
 CI_DEMOTION = ("The check demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the time "
                "thresholds apply to the build host, and a CI runner is slower")
+# CRUCIBLE_COUNT_INSTRUCTIONS=0 opens no instruction counter, as on a host with no counter.
+INSTRUCTIONS_ENV = "CRUCIBLE_COUNT_INSTRUCTIONS"
+# The number of the system call perf_event_open on each architecture of the tree.
+PERF_EVENT_OPEN = {"x86_64": 298, "aarch64": 241}
+# The fields of struct perf_event_attr that the counter sets, in the layout of
+# PERF_ATTR_SIZE_VER0, which each kernel accepts: PERF_TYPE_HARDWARE,
+# PERF_COUNT_HW_INSTRUCTIONS, and a read of the count with the time that the
+# counter was on and the time that it ran.
+PERF_ATTR_SIZE = 64
+PERF_TYPE_HARDWARE = 0
+PERF_COUNT_HW_INSTRUCTIONS = 1
+PERF_READ_TIMES = 0x1 | 0x2
+# disabled, inherit, exclude_kernel, exclude_hv, enable_on_exec.
+PERF_ATTR_FLAGS = (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 12)
+PERF_FLAG_FD_CLOEXEC = 8
 
 
 class Measurement:
     """The status and the resource use of one command."""
 
-    __slots__ = ("exit_code", "user_s", "system_s", "wall_s", "peak_rss_kb", "load", "end", "cpu_limit_s")
+    __slots__ = ("exit_code", "user_s", "system_s", "wall_s", "peak_rss_kb", "load", "end", "cpu_limit_s",
+                 "instructions")
 
     def __init__(self, exit_code: int, user_s: float, system_s: float, wall_s: float, peak_rss_kb: int,
-                 load: float, end: float, cpu_limit_s: int | None) -> None:
-        """Hold the values of one run, and the CPU limit that each process of the run had, or None."""
+                 load: float, end: float, cpu_limit_s: int | None, instructions: int | None = None) -> None:
+        """Hold the values of one run, the CPU limit that each process of the run had or None, and the exact user
+        instructions of the run or None."""
         self.exit_code = exit_code
         self.user_s = user_s
         self.system_s = system_s
@@ -102,6 +147,7 @@ class Measurement:
         self.load = load
         self.end = end
         self.cpu_limit_s = cpu_limit_s
+        self.instructions = instructions
 
     @property
     def reached_cpu_limit(self) -> bool:
@@ -179,8 +225,70 @@ def limit_cpu(seconds: float) -> int | None:
     return limit
 
 
-def measure(command: list[str], environment: dict[str, str] | None = None,
-            cpu_limit_s: float | None = None) -> Measurement:
+def open_instruction_counter() -> int | None:
+    """Open a counter of the user instructions of each process that this process starts after the call.
+
+    THE INSTRUCTION COUNT in the module docstring gives the rules.  Close the
+    counter with read_instruction_counter().
+
+    Returns:
+        The file descriptor of the counter, or None when the host gives no counter
+    """
+    number = PERF_EVENT_OPEN.get(os.uname().machine)
+    if number is None or os.environ.get(INSTRUCTIONS_ENV) == "0":
+        return None
+    try:
+        import _ctypes
+    except ImportError:
+        return None
+
+    class CLong(_ctypes._SimpleCData):
+        _type_ = "l"
+
+    class Function(_ctypes.CFuncPtr):
+        _flags_ = _ctypes.FUNCFLAG_CDECL | _ctypes.FUNCFLAG_USE_ERRNO
+        _restype_ = CLong
+
+    class Library:
+        _handle = _ctypes.dlopen(None, os.RTLD_NOW)
+
+    fields = ((PERF_TYPE_HARDWARE, 4), (PERF_ATTR_SIZE, 4), (PERF_COUNT_HW_INSTRUCTIONS, 8), (0, 8), (0, 8),
+              (PERF_READ_TIMES, 8), (PERF_ATTR_FLAGS, 8))
+    attr = b"".join(value.to_bytes(width, "little") for value, width in fields)
+    attr += bytes(PERF_ATTR_SIZE - len(attr))
+    try:
+        syscall = Function(("syscall", Library()))
+        result = syscall(CLong(number), attr, CLong(0), CLong(-1), CLong(-1), CLong(PERF_FLAG_FD_CLOEXEC))
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+    # ctypes gives a C long result as an int, because CLong derives directly from _SimpleCData.
+    descriptor = result if isinstance(result, int) else result.value
+    return descriptor if descriptor >= 0 else None
+
+
+def read_instruction_counter(descriptor: int) -> int | None:
+    """Read the count of a counter of open_instruction_counter() after each counted process ended, and close it.
+
+    Args:
+        descriptor: The file descriptor of the counter
+
+    Returns:
+        The user instructions of the counted processes, or None when the count is not exact
+    """
+    try:
+        data = os.read(descriptor, 24)
+    except OSError:
+        data = b""
+    finally:
+        os.close(descriptor)
+    if len(data) != 24:
+        return None
+    value, enabled, running = (int.from_bytes(data[start:start + 8], "little") for start in (0, 8, 16))
+    return value if running == enabled else None
+
+
+def measure(command: list[str], environment: dict[str, str] | None = None, cpu_limit_s: float | None = None,
+            count_instructions: bool = False) -> Measurement:
     """Run one command, wait for it, and return its status and its resource use.
 
     From the call on, this process ignores SIGINT (the module docstring tells why).
@@ -189,6 +297,7 @@ def measure(command: list[str], environment: dict[str, str] | None = None,
         command: The command and its arguments.  The first word is found on PATH
         environment: The environment of the command, or None for the environment of the caller
         cpu_limit_s: The CPU limit of each process of the command, or None for no limit
+        count_instructions: Whether to count the user instructions of the command
 
     Returns:
         The measurement.  An exit code of 127 means that the command did not start
@@ -203,15 +312,22 @@ def measure(command: list[str], environment: dict[str, str] | None = None,
     except OSError:
         load = -1.0
     applied_limit = limit_cpu(cpu_limit_s) if cpu_limit_s is not None else None
+    counter = open_instruction_counter() if count_instructions else None
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     started = time.perf_counter()
-    child = os.posix_spawnp(command[0], command, os.environ if environment is None else environment,
-                            setsigdef=(signal.SIGINT,))
+    try:
+        child = os.posix_spawnp(command[0], command, os.environ if environment is None else environment,
+                                setsigdef=(signal.SIGINT,))
+    except OSError:
+        if counter is not None:
+            os.close(counter)
+        raise
     _, status, usage = os.wait4(child, 0)
     wall_s = time.perf_counter() - started
+    instructions = read_instruction_counter(counter) if counter is not None else None
     exit_code = -os.WTERMSIG(status) if os.WIFSIGNALED(status) else os.WEXITSTATUS(status)
     return Measurement(exit_code, usage.ru_utime, usage.ru_stime, wall_s, usage.ru_maxrss, load, time.time(),
-                       applied_limit)
+                       applied_limit, instructions)
 
 
 def end_like(exit_code: int) -> None:
@@ -257,10 +373,11 @@ def quote(text: str) -> str:
 
 
 def cost_block(run: Measurement) -> str:
-    """Return the cost block of one measurement as JSON text."""
+    """Return the cost block of one measurement as JSON text, with its instructions when it holds an exact count."""
+    instructions = "" if run.instructions is None else f', "instructions": {run.instructions}'
     return (f'{{"cpu_s": {run.cpu_s:.3f}, "user_s": {run.user_s:.3f}, "system_s": {run.system_s:.3f}, '
             f'"wall_s": {run.wall_s:.3f}, "peak_rss_kb": {run.peak_rss_kb}, "load": {run.load:.2f}, '
-            f'"end": {run.end:.3f}}}')
+            f'"end": {run.end:.3f}{instructions}}}')
 
 
 def carried_cost(record_path: str) -> str | None:

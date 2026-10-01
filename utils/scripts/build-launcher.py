@@ -12,7 +12,10 @@ WHAT THE SCRIPT DOES
     It runs the command through utils/scripts/cost_meter.py, with the same
     standard streams, so the output of the step is the output of the
     command.  It writes the record OUTPUT.cost (the format is in
-    cost_meter.py), and it exits with the status of the command.  When the
+    cost_meter.py), and it exits with the status of the command.  The record
+    of a compile also holds the user instructions of the compile when the
+    host gives an exact count (cost_meter.py, THE INSTRUCTION COUNT), which
+    costs approximately 1 ms.  When the
     command ends on a signal, the script ends on the same signal.  A failure
     to measure or to write the record never changes the status and prints
     nothing.  utils/scripts/check-compile-cost.py finds a missing record, and
@@ -29,6 +32,9 @@ THE BUDGET ROWS
         so.  Below the limit, a time over the warning threshold gives a
         warning line.  The error threshold itself is a check after the build,
         because the CPU time of one step depends on the load of the host.
+        When the record of a compile holds an instruction count, that check
+        gives the error level to the count (the row compile-instructions),
+        and the CPU time gives a warning only.
         On a GitHub runner, the step gets no limit, and a step past three
         times the error threshold gives a warning line that says that the
         time error was demoted (utils/scripts/cost_meter.py, A CI RUNNER).
@@ -244,7 +250,7 @@ def main() -> None:
         outer_log = os.environ.get("CCACHE_STATSLOG")
         environment = dict(os.environ, CCACHE_STATSLOG=stats_path)
     try:
-        run = cost_meter.measure(arguments, environment, cpu_limit)
+        run = cost_meter.measure(arguments, environment, cpu_limit, count_instructions=step == "compile")
     except OSError as error:
         print(f"build-launcher: the command {arguments[0]} cannot start: {error}", file=sys.stderr)
         sys.exit(127)

@@ -10,7 +10,10 @@ the thresholds and the admitted outputs.  A case examines the status, the
 output and the record of the launcher.  Each case runs with no
 GITHUB_ACTIONS, except two cases that set it to "true": on a CI runner, a
 compile past the CPU limit runs to its end with a warning, and a compile over
-the memory error threshold still fails.
+the memory error threshold still fails.  Two cases read the instruction
+count of a compile record: the record holds the count when this host gives
+an exact counter (utils/scripts/cost_meter.py, THE INSTRUCTION COUNT), and
+no count with CRUCIBLE_COUNT_INSTRUCTIONS=0.
 
 With `--cxx`, two more cases use the real compiler.  One compiles and links.
 The other compiles a constant evaluation that runs away, and the compile must
@@ -41,6 +44,7 @@ sys.dont_write_bytecode = True
 SCRIPTS = Path(__file__).resolve().parents[1] / "utils" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import check_report  # noqa: E402
+import cost_meter  # noqa: E402
 
 LAUNCHER = SCRIPTS / "build-launcher.py"
 KIND = "test-kind"
@@ -130,7 +134,8 @@ class Bench:
         self.env = dict(os.environ, CRUCIBLE_BUILD_BUDGETS=str(self.budgets), CRUCIBLE_BUILD_LEDGERS=str(self.ledgers))
         # A case that needs a CI runner sets GITHUB_ACTIONS itself, so each
         # verdict is the same on a CI runner and on the build host.
-        for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY", "GITHUB_ACTIONS"):
+        for name in ("CCACHE_STATSLOG", "CCACHE_DISABLE", "CCACHE_RECACHE", "CCACHE_READONLY", "GITHUB_ACTIONS",
+                     cost_meter.INSTRUCTIONS_ENV):
             self.env.pop(name, None)
 
     def argv(self, tool: list[str], link: bool = False, output: Path | None = None) -> list[str]:
@@ -195,6 +200,17 @@ def main(argv: list[str]) -> int:
                and first.get("output_bytes") == bench.object.stat().st_size
                and float(first["cost"]["cpu_s"]) > 0 and first.get("source") == str(bench.source))
         expect("the stats log of the call is removed", not Path(f"{bench.object}.ccache-stats").exists())
+        probe = cost_meter.open_instruction_counter()
+        host_counts = probe is not None
+        if probe is not None:
+            os.close(probe)
+        counted = first["cost"].get("instructions")
+        expect(f"a compile record holds the user instructions of the compile exactly when the host gives a counter "
+               f"(this host: {'a counter' if host_counts else 'no counter'})",
+               (isinstance(counted, int) and counted > 0) if host_counts else counted is None)
+        bench.launch(bench.tool, **{cost_meter.INSTRUCTIONS_ENV: "0"})
+        expect(f"with {cost_meter.INSTRUCTIONS_ENV}=0, a compile record holds no instruction count",
+               bench.record().get("result") == "built" and "instructions" not in bench.record()["cost"])
 
         result = bench.launch(bench.tool, PLANTED_MODE="fail")
         expect("a failed compile passes status 1 and gives a failed record",
@@ -295,9 +311,10 @@ def main(argv: list[str]) -> int:
         bench.launch(bench.tool)
         result = bench.launch(bench.tool, link=True, output=linked)
         link_record = bench.record(linked)
-        expect("a link gives a built record of step link, with no source",
+        expect("a link gives a built record of step link, with no source and no instruction count",
                result.returncode == 0 and link_record.get("step") == "link" and link_record.get("result") == "built"
-               and "source" not in link_record and link_record.get("output") == str(linked))
+               and "source" not in link_record and link_record.get("output") == str(linked)
+               and "instructions" not in link_record["cost"])
         bench.table("link-time | 1000 | 2000 | s | t\nlink-memory | 0.0001 | 0.0002 | GB | m\n")
         result = bench.launch(bench.tool, link=True, output=linked)
         found_line = last_finding(result.stderr)

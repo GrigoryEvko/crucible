@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test the result store and the CPU budget of test/neg_compile_driver.py.
+"""Test the result store and the cost budget of test/neg_compile_driver.py.
 
 Each check makes a small tree of headers, fixtures and a compile database in a
 temporary directory, with a store of its own.  It runs the driver as CTest does,
@@ -429,16 +429,24 @@ class StoreTest:
                     f"a stored exit code 0 fails the fixture: {compiled[0]}")
 
     def check_cpu_budget(self) -> None:
-        """The driver reports the CPU time of a compile against the row fixture-cpu, and the entry keeps it."""
+        """With no instruction count, the driver judges the CPU time of a compile with the row fixture-cpu.
+
+        CRUCIBLE_COUNT_INSTRUCTIONS=0 gives each compile no count, as a host
+        with no counter does.  The entry keeps the CPU time.
+        """
         table = self.root / "budgets.txt"
         ledger = self.root / "fixture-cpu-ledger.txt"
+        count_ledger = self.root / "fixture-instructions-ledger.txt"
         warnings = self.root / "warnings"
         ledger.write_text("# no row\n")
-        env = {"CRUCIBLE_NEG_BUDGETS": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(ledger)}
+        count_ledger.write_text("# no row\n")
+        env = {"CRUCIBLE_NEG_BUDGETS": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(ledger),
+               "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(count_ledger), "CRUCIBLE_COUNT_INSTRUCTIONS": "0"}
 
         def budget(warn: float, error: float) -> None:
-            """Write a budget table with one row fixture-cpu."""
-            table.write_text(f"fixture-cpu | {warn} | {error} | s | the CPU time of one fixture compile\n")
+            """Write a budget table with the row fixture-cpu and a quiet row fixture-instructions."""
+            table.write_text(f"fixture-cpu | {warn} | {error} | s | the CPU time of one fixture compile\n"
+                             f"fixture-instructions | 0 | 0 | G | a row that a compile with no count does not read\n")
 
         def finding(text: str, level: str) -> str | None:
             """Return the first finding line of the level in a standard output, or None."""
@@ -449,8 +457,9 @@ class StoreTest:
         entry = self.entry_path(quiet[3])
         stored = driver.decode_entry(entry.read_bytes()) if entry is not None and entry.is_file() else None
         self.expect(quiet[0] == 0 and finding(quiet[1], "warning") is None and stored is not None
-                    and stored["user_s"] > 0, f"a compile under the budget gives no finding and stores its CPU time: "
-                                             f"{quiet[0]} {quiet[3]}")
+                    and stored["user_s"] > 0 and stored["instructions"] is None,
+                    f"a compile under the budget gives no finding and stores its CPU time and no count: "
+                    f"{quiet[0]} {quiet[3]}")
         budget(0, 2000)
         warned = self.run("neg_size", *SIZE, warnings_dir=warnings, **env)
         own_file = warnings / "fixture-cpu.neg_size.txt"
@@ -506,6 +515,75 @@ class StoreTest:
         self.expect(missing[0] == 1 and line is not None and "has no row fixture-cpu" in line,
                     f"on a CI runner, a budget that cannot be read still fails: {missing[0]} {line}")
 
+    def check_instruction_budget(self) -> None:
+        """With an instruction count, the row fixture-instructions holds the error level, and the CPU time warns only."""
+        if driver._cost_meter_module().open_instruction_counter() is None:
+            self.skip("the host gives no exact instruction counter (utils/scripts/cost_meter.py)")
+            return
+        table = self.root / "budgets.txt"
+        cpu_ledger = self.root / "fixture-cpu-ledger.txt"
+        ledger = self.root / "fixture-instructions-ledger.txt"
+        warnings = self.root / "warnings"
+        cpu_ledger.write_text("# no row\n")
+        ledger.write_text("# no row\n")
+        env = {"CRUCIBLE_NEG_BUDGETS": str(table), "CRUCIBLE_NEG_CPU_LEDGER": str(cpu_ledger),
+               "CRUCIBLE_NEG_INSTRUCTIONS_LEDGER": str(ledger)}
+
+        def budget(cpu: tuple[float, float], count: tuple[float, float]) -> None:
+            """Write a budget table with the rows fixture-cpu and fixture-instructions."""
+            table.write_text(f"fixture-cpu | {cpu[0]} | {cpu[1]} | s | the CPU time of one fixture compile\n"
+                             f"fixture-instructions | {count[0]} | {count[1]} | G | the instructions of one compile\n")
+
+        def finding(text: str, level: str, check: str) -> str | None:
+            """Return the first finding line of the level and the check in a standard output, or None."""
+            return next((line for line in text.splitlines() if f": {level}: [{check}] " in line), None)
+
+        budget((0, 0), (1000, 2000))
+        loaded = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
+        entry = self.entry_path(loaded[3])
+        stored = driver.decode_entry(entry.read_bytes()) if entry is not None and entry.is_file() else None
+        line = finding(loaded[1], "warning", "fixture-cpu")
+        self.expect(loaded[0] == 0 and line is not None and "fixture-instructions holds the error level" in line
+                    and finding(loaded[1], "error", "fixture-cpu") is None and stored is not None
+                    and isinstance(stored["instructions"], int) and stored["instructions"] > 0,
+                    f"a compile with a count over the CPU error threshold passes with a warning, and its entry keeps "
+                    f"the count: {loaded[0]} {line} {loaded[3]}")
+        budget((1000, 2000), (0, 2000))
+        warned = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
+        own_file = warnings / "fixture-instructions.neg_convert.txt"
+        line = finding(warned[1], "warning", "fixture-instructions")
+        self.expect(warned[0] == 0 and self.has(warned[3], "the result comes from the store") and line is not None
+                    and "the stored compile of the fixture neg_convert ran" in line and own_file.is_file()
+                    and own_file.read_text().strip() == line,
+                    f"a stored count above the warning threshold warns in the file of its fixture: {warned[0]} {line}")
+        budget((1000, 2000), (0, 0))
+        failed = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
+        line = finding(failed[1], "error", "fixture-instructions")
+        self.expect(failed[0] == 1 and line is not None and "more than the error threshold 0 G" in line
+                    and self.has(failed[3], "compiled (the stored compile ran more user instructions than the error")
+                    and self.has(failed[3], "not stored (the compile ran more user instructions than the error"),
+                    f"a count above the error threshold fails, and the driver does not store it: {failed[0]} "
+                    f"{failed[3]}")
+        ci_run = self.run("neg_convert", *CONVERT, warnings_dir=warnings, GITHUB_ACTIONS="true", **env)
+        self.expect(ci_run[0] == 1 and finding(ci_run[1], "error", "fixture-instructions") is not None,
+                    f"on a CI runner, a count above the error threshold still fails: {ci_run[0]}")
+        ledger.write_text("neg_convert | a planted reason\n")
+        listed = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
+        line = finding(listed[1], "warning", "fixture-instructions")
+        self.expect(listed[0] == 0 and line is not None and "a planted reason" in line,
+                    f"a fixture with a ledger row above the error threshold warns: {listed[0]} {line}")
+        budget((1000, 2000), (1000, 2000))
+        stale = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
+        line = finding(stale[1], "error", "fixture-instructions")
+        self.expect(stale[0] == 1 and line is not None and "Remove its row from utils/scripts/fixture-instructions"
+                    in line, f"a ledger row of a fixture at or below the error threshold fails: {stale[0]} {line}")
+        ledger.write_text("# no row\n")
+        table.write_text("fixture-cpu | 1000 | 2000 | s | the CPU time of one fixture compile\n")
+        missing = self.run("neg_convert", *CONVERT, **env)
+        line = finding(missing[1], "error", "fixture-instructions")
+        self.expect(missing[0] == 1 and line is not None and "has no row fixture-instructions" in line,
+                    f"a budget table with no row fixture-instructions fails: {missing[0]} {line}")
+
     def check_eviction(self) -> None:
         """A store above its limit removes the entries that it did not use for the longest time."""
         bucket = self.store / "entries" / "00"
@@ -543,6 +621,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_stored_output_is_evaluated,
     StoreTest.check_eviction,
     StoreTest.check_cpu_budget,
+    StoreTest.check_instruction_budget,
 )
 
 SEARCH_LIST = """\

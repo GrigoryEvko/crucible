@@ -1323,14 +1323,15 @@ endfunction()
 # probe names and the header that a fatal error misses, puts a shared object of
 # cc1plus on LD_LIBRARY_PATH, changes the compiler during a compile, compiles
 # with a host language that has a GCC catalog, and damages and changes an
-# entry.  It also gives the driver a budget table and a ledger of its own, and
-# checks the warning, the error and the ledger rows of the CPU budget of a
-# compile.  Each check waits about one second for the files of its tree to
-# age, and the checks run as FIXTURE_STORE_SELF_TEST_PARTS parts at the same
-# time.  Part K runs each check whose position modulo the count of parts is K.
-# Exit 3 reports a skip when the compiler cannot run, or when the host cannot
-# give the condition of each check of the part.
-set(FIXTURE_STORE_SELF_TEST_PARTS 16)
+# entry.  It also gives the driver a budget table and ledgers of its own, and
+# checks the warning, the error and the ledger rows of the CPU budget and of
+# the instruction budget of a compile.  Each check waits about one second for
+# the files of its tree to age, and the checks run as
+# FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
+# whose position modulo the count of parts is K.  Exit 3 reports a skip when
+# the compiler cannot run, or when the host cannot give the condition of each
+# check of the part, for example an instruction counter.
+set(FIXTURE_STORE_SELF_TEST_PARTS 17)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   add_test(NAME fixture_store_self_test_${part}
@@ -5385,6 +5386,8 @@ set_tests_properties(build_launcher_test PROPERTIES LABELS "ci_guard")
 # The cost checks of utils/scripts/check-compile-cost.py read the records of
 # the launcher and the outputs of this build:
 #   compile_cpu, compile_memory  the CPU time and the peak memory of each compile job
+#   compile_instructions         the user instructions of each compile job, which hold the
+#                                error level of a compile when its record has a count
 #   link_time, link_memory       the CPU time and the peak memory of each link
 #   function_size                the largest function of each object
 #   object_text                  the machine code of each object
@@ -5396,7 +5399,8 @@ set(_compile_cost_ninja "")
 if(CMAKE_GENERATOR MATCHES "Ninja")
   set(_compile_cost_ninja ${CMAKE_MAKE_PROGRAM})
 endif()
-foreach(_compile_cost_check compile-cpu compile-memory link-time link-memory function-size object-text header-alone)
+foreach(_compile_cost_check compile-cpu compile-instructions compile-memory link-time link-memory function-size
+        object-text header-alone)
   string(REPLACE "-" "_" _compile_cost_test "${_compile_cost_check}")
   add_test(NAME ${_compile_cost_test}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-compile-cost.py --check ${_compile_cost_check}

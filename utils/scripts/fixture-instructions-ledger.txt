@@ -1,0 +1,10 @@
+# utils/scripts/fixture-instructions-ledger.txt — the negative fixtures whose cold compile runs more
+# user instructions than the error threshold of the row fixture-instructions of utils/scripts/budgets.txt.
+# test/neg_compile_driver.py reads it after each compile and each result from its store that has an
+# instruction count.
+#
+# A row:  fixture | note
+#
+# A fixture with a row gives a warning, so the debt stays visible.  A fixture with a row whose compile
+# runs no more instructions than the error threshold fails its test.  Remove the row in the commit that
+# makes the fixture fast.
