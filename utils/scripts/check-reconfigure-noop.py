@@ -8,18 +8,23 @@ change.  This check finds both.
 WHAT THE CHECK DOES
     1. It builds BUILD_DIR with `cmake --build`, so that the build is
        current before the check measures it.
-    2. It records the symbolic links in BUILD_DIR and the ninja log.
+    2. It records the symbolic links in BUILD_DIR.
     3. It configures BUILD_DIR again, with `cmake -S SOURCE -B BUILD_DIR`.
        Each symbolic link whose target did not change must keep its inode
        and its change time, because a configure run must write only what it
        changes.
-    4. It builds BUILD_DIR two times with `cmake --build`.  Each build may
+    4. It records the ninja log, after the configure.  A configure run
+       restats the outputs of the CMake run of Ninja (build.ninja and the
+       other files that CMake writes), so their log records change in a build
+       directory where Ninja once ran CMake.  A record of the log before the
+       configure would show those changes as edges that ran.
+    5. It builds BUILD_DIR two times with `cmake --build`.  Each build may
        run only the glob check of CMake (CMakeFiles/cmake.verify_globs).  A
        change of the ninja log record of any other output is an error.  A
        record of build.ninja tells that CMake configured again during the
        build, so a glob with CONFIGURE_DEPENDS or a configure dependency
        changed with no source change.
-    5. It reads the dependency log of Ninja (`ninja -t deps`).  Each
+    6. It reads the dependency log of Ninja (`ninja -t deps`).  Each
        recorded dependency must exist.  A dependency that does not exist
        makes its object dirty on each build.  A compiler launcher that gives
        the dependency file of another build directory, such as ccache with a
@@ -311,10 +316,10 @@ def evaluate(build: Path, jobs: int, root: Path) -> tuple[list[check_report.Find
     if not (build / NINJA_LOG).is_file():
         return [finding(place, f"the build wrote no {NINJA_LOG}, so the check cannot see which edges ran.")], ""
     links_before = read_links(build)
-    log = read_ninja_log(build)
     code, output = run([tree.cmake, "-S", str(tree.source), "-B", str(build)])
     if code != 0:
         return [finding(place, "the second configure fails.")], tail(output)
+    log = read_ninja_log(build)
     findings: list[check_report.Finding] = []
     for path, state in sorted(read_links(build).items()):
         old = links_before.get(path)
@@ -375,6 +380,7 @@ add_custom_target(copy ALL DEPENDS copy.txt)
 
 PLANTS = {
     "clean": "",
+    "regenerated": "",
     "link": ('file(REMOVE "${CMAKE_BINARY_DIR}/again")\n'
              'file(CREATE_LINK "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/again" SYMBOLIC)\n'),
     "rewrite": ('file(WRITE "${CMAKE_BINARY_DIR}/written.txt" "same\\n")\n'
@@ -440,6 +446,15 @@ def self_test(cmake: str, ninja: str) -> int:
             build, problem = plant_project(work, plant, cmake, ninja)
             if problem:
                 return plant, [], problem
+            if plant == "regenerated":
+                # A build after a change of a configure dependency makes Ninja
+                # run CMake, so the ninja log holds the outputs of that run.
+                run([cmake, "--build", str(build)])
+                listing = work / "source" / "CMakeLists.txt"
+                listing.write_text(listing.read_text(encoding="utf-8") + "# changed\n", encoding="utf-8")
+                code, output = run([cmake, "--build", str(build)])
+                if code != 0 or "Re-running CMake" not in output:
+                    return plant, [], f"the build after the change did not run CMake:\n{output}"
             found, _ = evaluate(build, 2, work)
             return plant, found, ""
         finally:
@@ -459,6 +474,8 @@ def self_test(cmake: str, ninja: str) -> int:
         return bool(found) and all(item.level == "error" and test(item) for item in found)
 
     expect("no finding: a configure that writes only what it changes, a glob and a link", messages("clean") == [])
+    expect("no finding: a build directory where Ninja ran CMake before the check",
+           messages("regenerated") == [] and not results["regenerated"][1])
     expect("an error: a link that the configure makes again",
            only("link", lambda item: item.path == "build/again" and "made this link again" in item.message))
     expect("an error: a file that the configure writes again, and the edge that reads it",
