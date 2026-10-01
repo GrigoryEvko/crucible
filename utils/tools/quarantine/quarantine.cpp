@@ -79,6 +79,8 @@
 // The contract rule cannot see a specifier in a preprocessor arm that the unit
 // does not compile, or on a member function of a local class in a template
 // when the class declares the function and does not define it.
+// utils/scripts/check-contract-form.py reads the parse tree of each tracked
+// file, and it finds these specifiers too.
 
 #include <algorithm>
 #include <cerrno>

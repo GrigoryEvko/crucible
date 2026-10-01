@@ -20,9 +20,10 @@ WHAT THE GUARD READS
     reads as bounded_above.
 
     A precondition is a CRUCIBLE_PRE, CRUCIBLE_PRE_FAST or CRUCIBLE_PRE_MSG
-    call in the body of that function, or a P2900 pre specifier of its
-    declarator.  A precondition in a lambda inside the body belongs to the
-    lambda, not to the function.
+    call in the body of that function.  A precondition in a lambda inside the
+    body belongs to the lambda, not to the function.  The tree has no P2900
+    pre specifier: the quarantine plugin and check-contract-form.py reject
+    one.
 
     A re-test is a call inside a precondition whose callee is decide::NAME,
     where NAME cites the predicate (CITES below), and whose arguments name
@@ -138,11 +139,8 @@ def is_owned_by(node: tsast.Node, function: tsast.Node) -> bool:
 
 
 def preconditions(function: tsast.Node) -> list[tsast.Node]:
-    """The precondition nodes of one function definition: its pre specifiers and its CRUCIBLE_PRE calls."""
+    """The precondition nodes of one function definition: its CRUCIBLE_PRE calls."""
     found: list[tsast.Node] = []
-    declarator = function.child_by_field("declarator")
-    if declarator is not None:
-        found.extend(clause for clause in tsast.contract_clauses(declarator) if clause.tokens()[0] == "pre")
     body = function.child_by_field("body")
     if body is not None:
         for call in body.descendants("call_expression"):
@@ -170,9 +168,7 @@ def retests(precondition: tsast.Node, name: str, cites: frozenset[str]) -> str |
 
 def is_marked(precondition: tsast.Node) -> bool:
     """Report whether a precondition carries the suppression marker on its statement."""
-    holder = precondition if precondition.type == "function_contract_specifier" \
-        else tsast.enclosing_statement(precondition)
-    return tsast.has_marker(holder, MARKER)
+    return tsast.has_marker(tsast.enclosing_statement(precondition), MARKER)
 
 
 def violations_of(tree: tsast.Tree, shown: str, aliases: dict[str, set[str]]) -> list[Violation]:
@@ -255,8 +251,8 @@ inline void marked(Refined<positive, int> n) {
 """
 
 # Six re-tests, one on each line of CAUGHT_LINES: a plain parameter, a nested
-# predicate, a const parameter, an alias, a P2900 clause on a SealedRefined
-# parameter, and a cite split over two lines.
+# predicate, a const parameter, an alias, a SealedRefined parameter, and a
+# cite split over two lines.
 CAUGHT_FIXTURE = """#pragma once
 namespace crucible::planted {
 template <typename P, typename T> struct Refined { T value_; };
@@ -277,7 +273,8 @@ inline void const_parameter(Refined<positive, int> const n) {
 inline void through_alias(PositiveInt n) {
     CRUCIBLE_PRE_MSG(decide::positive(n), "re-test");
 }
-inline int p2900_clause(SealedRefined<non_zero, int> d) pre(decide::is_non_zero(d)) {
+inline int sealed(SealedRefined<non_zero, int> d) {
+    CRUCIBLE_PRE(decide::is_non_zero(d));
     return 10;
 }
 inline void split_over_lines(Refined<positive, int> n) {
@@ -286,7 +283,7 @@ inline void split_over_lines(Refined<positive, int> n) {
 }
 }  // namespace crucible::planted
 """
-CAUGHT_LINES = {10, 13, 16, 19, 21, 25}
+CAUGHT_LINES = {10, 13, 16, 19, 22, 26}
 
 
 def plant(root: Path) -> None:

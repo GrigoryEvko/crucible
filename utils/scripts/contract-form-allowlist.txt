@@ -1,0 +1,12 @@
+# contract-form-allowlist.txt: the files that utils/scripts/check-contract-form.py admits.
+#
+# A row is `path | reason`.  The subject of each listed file is the P2900
+# contract specifier itself, so the file holds one.  A listed file that holds
+# no specifier is an error, so the list only shrinks.
+
+cmake/probes/contract_cache.cpp | a probe of a compiler fix to the pre specifier, and execute_process compiles it without the plugin
+test/foundation/neg/neg_contract_specifier_post.cpp | a negative fixture of the contract rule of the plugin
+test/foundation/neg/neg_contract_specifier_pre.cpp | a negative fixture of the contract rule of the plugin
+test/foundation/neg/neg_contract_specifier_template_member.cpp | a negative fixture of the contract rule of the plugin
+utils/tools/quarantine/test/contracts.cpp | the test of the plugin holds each form of the specifier
+utils/tools/quarantine/test/include/fixy/Contracted.h | the test of the plugin holds a specifier in substrate code

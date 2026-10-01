@@ -433,8 +433,8 @@ set_tests_properties(contract_decide_cite_ratio contract_decide_cite_ratio_self_
 # A Refined or SealedRefined parameter carries the proof of its predicate.
 # A precondition in the same function that cites the decide:: procedure of
 # that predicate on that parameter re-tests a proved fact, and the guard
-# refuses it.  The guard reads parameters, aliases, CRUCIBLE_PRE calls and
-# P2900 pre clauses from the parse tree.
+# refuses it.  The guard reads parameters, aliases and CRUCIBLE_PRE calls
+# from the parse tree.
 add_test(NAME refined_pre_subsumption_self_test
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-refined-pre-subsumption.py
           --self-test)
@@ -443,6 +443,29 @@ add_test(NAME refined_pre_subsumption
 set_tests_properties(refined_pre_subsumption refined_pre_subsumption_self_test PROPERTIES
   LABELS "ci_guard;ast"
   SKIP_RETURN_CODE 3)
+# The contract rule: no file has a P2900 pre or post specifier.  The
+# quarantine plugin rejects one in each compile.  This guard reads the parse
+# tree of each tracked C++ file, so it also reads each preprocessor arm and
+# each file that no build compiles.  utils/scripts/contract-form-allowlist.txt
+# admits the files whose subject is the specifier.
+add_test(NAME contract_form_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-contract-form.py --self-test)
+add_test(NAME contract_form
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-contract-form.py
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(contract_form contract_form_self_test PROPERTIES
+  LABELS "ci_guard;ast"
+  SKIP_RETURN_CODE 3)
+# GCC 16 does not keep the P2900 specifier of a template in a header unit or
+# in a precompiled header, and CRUCIBLE_PRE and CRUCIBLE_POST stay.  The test
+# requires the same contract error from an include, a header unit and a
+# precompiled header of a template in the macro form, and from a header unit
+# of fixy/Mutation.h.  Its control requires that a header unit loses the
+# specifier form, so it fails when a compiler keeps the specifier.
+add_test(NAME contract_header_unit
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/contract_header_unit_test.py
+          --cxx ${CRUCIBLE_REAL_CXX} --include ${CMAKE_SOURCE_DIR}/include)
+set_tests_properties(contract_header_unit PROPERTIES LABELS "foundation")
 # The §XXI mint pattern.  utils/scripts/check-mint-pattern.py holds each mint to
 # the five axes nodiscard, constexpr, noexcept, requires and ctxfit, read
 # from the parse tree, and it refuses a dead or malformed exemption.
