@@ -1276,26 +1276,16 @@ public:
     // measures on.
     [[nodiscard]] PinResult pin_calling_thread() const noexcept { return pin_(); }
 
+    // The policy, the pin and the report of a measurement are cold work
+    // outside the timed loops.  Three members that are not templates do that
+    // work: open_ before the loops, start_window_ before the sampled loop and
+    // close_ after it.  Each instantiation of measure holds only its two
+    // loops, so a translation unit compiles the cold work one time and not one
+    // time for each body.
     template <typename Body>
     [[nodiscard]] Report measure(Body&& body) const {
-        // Resolve the policy: explicit .hardening() wins, else env var
-        // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none, else the
-        // direct pin_() path.
-        crucible::warden::AppliedPolicy hardening_guard;
-        PinResult pin{};
-        // The bench applies a policy at the start of a measurement, which is
-        // startup work, so it holds the startup load context.
-        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
-        if (have_hardening_) {
-            hardening_guard = crucible::warden::mint_hardening(startup, hardening_);
-            pin = PinResult::one(CpuId{hardening_guard.pinned_cpu()});
-        } else if (auto env = env_hardening_(); env.has_value()) {
-            hardening_guard = crucible::warden::mint_hardening(startup, *env);
-            pin = PinResult::one(CpuId{hardening_guard.pinned_cpu()});
-        } else {
-            pin = pin_();
-        }
-        const CpuId pinned_cpu = pin.cpu;
+        MeasureOpening opening = open_();
+        const CpuId pinned_cpu = opening.pin.cpu;
 
         const double nspc = Timer::ns_per_cycle();
         const uint64_t ovh = Timer::overhead_cycles();
@@ -1343,31 +1333,13 @@ public:
             }
         }
 
-        const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
-
-#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const ::crucible::perf::Senses* senses = detail::senses_instance();
-        const ::crucible::perf::SenseHub* hub = senses->sense_hub();
-        ::crucible::perf::Snapshot bpf_pre{};
-        ::crucible::perf::Snapshot bpf_post{};
-        // SchedSwitch — see detail::senses_instance() docblock for cost
-        // analysis.  Pre/post are ~1 ns volatile loads each; the walk
-        // happens at print time on bg thread, never per-iteration.
-        const ::crucible::perf::SchedSwitch* sw = senses->sched_switch();
-        uint64_t sched_pre_idx = 0;
-        uint64_t sched_post_idx = 0;
-#endif
-
         // Pre-sized to S; if the wall-cap cutoff fires early, we trim to
         // `filled` below so downstream stats (sort, percentile) only see
         // real samples — never default-zero trailing slots.
         std::vector<double> ns_samples(S);
         size_t filled = 0;
 
-#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        if (hub != nullptr) bpf_pre = hub->read();
-        if (sw != nullptr) sched_pre_idx = sw->timeline_write_index();
-#endif
+        const SampleWindow window = start_window_(pinned_cpu);
         const auto wall0 = std::chrono::steady_clock::now();
 
         for (size_t i = 0; i < S; ++i) {
@@ -1404,16 +1376,90 @@ public:
                 }
             }
         }
+        return close_(std::move(opening), window, std::move(ns_samples), filled, batch, wall0);
+    }
+
+private:
+    // What open_ holds for the whole measurement: the policy guard, which
+    // reverts the policy when the measurement ends, and the pin.
+    struct MeasureOpening {
+        crucible::warden::AppliedPolicy hardening_guard;
+        PinResult pin{};
+    };
+
+    // What start_window_ reads just before the sampled loop: the clock of
+    // the pinned CPU and, with BPF, the counters that close_ subtracts.
+    struct SampleWindow {
+        uint64_t freq_start = 0;
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+        const ::crucible::perf::SenseHub* hub = nullptr;
+        // SchedSwitch — see detail::senses_instance() docblock for cost
+        // analysis.  Pre/post are ~1 ns volatile loads each; the walk
+        // happens at print time on bg thread, never per-iteration.
+        const ::crucible::perf::SchedSwitch* sw = nullptr;
+        ::crucible::perf::Snapshot bpf_pre{};
+        uint64_t sched_pre_idx = 0;
+#endif
+    };
+
+    // Resolves the policy and pins the thread.  The policy wins when the
+    // builder set one; else the variable CRUCIBLE_BENCH_HARDENING
+    // (production, cloud_vm, dev_quiet or none) names one; else pin_()
+    // pins the thread directly.
+    [[nodiscard, gnu::noinline]] MeasureOpening open_() const noexcept {
+        MeasureOpening opening{};
+        // The bench applies a policy at the start of a measurement, which is
+        // startup work, so it holds the startup load context.
+        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+        if (have_hardening_) {
+            opening.hardening_guard = crucible::warden::mint_hardening(startup, hardening_);
+            opening.pin = PinResult::one(CpuId{opening.hardening_guard.pinned_cpu()});
+        } else if (auto env = env_hardening_(); env.has_value()) {
+            opening.hardening_guard = crucible::warden::mint_hardening(startup, *env);
+            opening.pin = PinResult::one(CpuId{opening.hardening_guard.pinned_cpu()});
+        } else {
+            opening.pin = pin_();
+        }
+        return opening;
+    }
+
+    [[nodiscard, gnu::noinline]] static SampleWindow start_window_(CpuId pinned_cpu) {
+        SampleWindow window{};
+        window.freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+        const ::crucible::perf::Senses* senses = detail::senses_instance();
+        window.hub = senses->sense_hub();
+        window.sw = senses->sched_switch();
+        if (window.hub != nullptr) window.bpf_pre = window.hub->read();
+        if (window.sw != nullptr) window.sched_pre_idx = window.sw->timeline_write_index();
+#endif
+        return window;
+    }
+
+    // Ends the measurement and builds its report from the samples that the
+    // sampled loop filled.
+    [[nodiscard, gnu::noinline]] Report close_(MeasureOpening opening, SampleWindow const& window,
+                                               std::vector<double> ns_samples, size_t filled, size_t batch,
+                                               std::chrono::steady_clock::time_point wall0) const {
         ns_samples.resize(filled);
+        const CpuId pinned_cpu = opening.pin.cpu;
+        const uint64_t freq_start = window.freq_start;
 
         const auto wall1 = std::chrono::steady_clock::now();
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+        const ::crucible::perf::SenseHub* hub = window.hub;
+        const ::crucible::perf::SchedSwitch* sw = window.sw;
+        ::crucible::perf::Snapshot const& bpf_pre = window.bpf_pre;
+        const uint64_t sched_pre_idx = window.sched_pre_idx;
+        ::crucible::perf::Snapshot bpf_post{};
+        uint64_t sched_post_idx = 0;
         if (hub != nullptr) bpf_post = hub->read();
         if (sw != nullptr) sched_post_idx = sw->timeline_write_index();
 #endif
         const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
         // The measurement ends here, and so does the pin.  A failed restore
         // leaves the pin in place, and the next Run pins again in any case.
+        PinResult& pin = opening.pin;
         (void)pin.restore();
 
         // Drift: compare first-half vs second-half p50 as a proxy for
@@ -1537,7 +1583,6 @@ public:
         return r;
     }
 
-private:
     enum class Pin : uint8_t {
         Auto,
         Explicit,
