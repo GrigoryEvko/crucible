@@ -68,6 +68,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -872,6 +873,32 @@ static_assert(ledger_matches_the_campaign(),
               "the ledger and the campaign disagree: a successful attack has no row, or a row names no successful "
               "attack");
 
+// A child that ends on a signal writes a core dump, and the parent waits until
+// the kernel completes it.  When kernel.core_pattern names a handler, as
+// systemd-coredump on the build host, the kernel ignores a core limit of 0 and
+// gives the full core to the handler.  That takes approximately 0.15 s for each
+// child in a build with no sanitizer.  A soft limit of 1 byte stops the dump
+// for a handler and for a file, as the sanitizer runtimes do, and a debugger
+// can still attach.  A hard limit of 0 refuses the call, and the dump then
+// stays as slow as before.
+void stop_core_dump() noexcept {
+    ::rlimit core_limit{};
+    if (::getrlimit(RLIMIT_CORE, &core_limit) != 0) return;
+    core_limit.rlim_cur = 1;
+    static_cast<void>(::setrlimit(RLIMIT_CORE, &core_limit));
+}
+
+// The parent refuses a core dump that stop_core_dump() could stop, so the
+// slow path cannot come back in silence.
+void refuse_core_dump(int status) noexcept {
+    ::rlimit core_limit{};
+    const bool can_stop = ::getrlimit(RLIMIT_CORE, &core_limit) == 0 && core_limit.rlim_max >= 1;
+    if (can_stop && WIFSIGNALED(status) != 0 && WCOREDUMP(status) != 0) {
+        std::fprintf(stderr, "an attack child wrote a core dump, and stop_core_dump() did not stop it\n");
+        std::_Exit(2);
+    }
+}
+
 [[nodiscard]] Outcome run_in_child(void (*attack)()) {
     std::fflush(stderr);
     // SPAWN-PROCESS-OK: an attack that the policy catches ends the
@@ -882,6 +909,7 @@ static_assert(ledger_matches_the_campaign(),
         std::_Exit(2);
     }
     if (pid == 0) {
+        stop_core_dump();
         attack();
     }
     int status = 0;
@@ -889,6 +917,7 @@ static_assert(ledger_matches_the_campaign(),
         std::fprintf(stderr, "waitpid failed\n");
         std::_Exit(2);
     }
+    refuse_core_dump(status);
     if (WIFSIGNALED(status) != 0) return Outcome::Caught;
     const int code = WEXITSTATUS(status);
     if (code == kDeadlockExit) return Outcome::Deadlock;
@@ -960,6 +989,7 @@ struct captured_end {
         ::close(channel[0]);
         ::dup2(channel[1], STDERR_FILENO);
         ::close(channel[1]);
+        stop_core_dump();
         attack();
     }
     ::close(channel[1]);
@@ -976,6 +1006,7 @@ struct captured_end {
         std::fprintf(stderr, "waitpid failed\n");
         std::_Exit(2);
     }
+    refuse_core_dump(status);
     end.is_clean_exit = WIFEXITED(status) != 0 && WEXITSTATUS(status) == 0;
     return end;
 }
