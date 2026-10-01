@@ -414,8 +414,12 @@ public:
 
     // Grows the table so that `n_entries` insertions fit without a rehash.
     // A no-op when the capacity already suffices, and safe to repeat.
+    //
+    // The bound is a contract assertion and not a CRUCIBLE_PRE, for the
+    // reason that grow_to_ gives: a capacity past it reaches the always-on
+    // check of SwissTableBuffer::allocate, and no assumption may come first.
     void reserve(size_t n_entries) {
-        CRUCIBLE_PRE(n_entries <= (((std::size_t{1} << 30) * 7) / 8));
+        contract_assert(n_entries <= (((std::size_t{1} << 30) * 7) / 8));
         // The load threshold is n_entries * 8 <= capacity * 7, so the
         // capacity needed is ceil(n_entries * 8 / 7).
         const size_t needed = (n_entries * 8 + 6) / 7;
@@ -1048,9 +1052,11 @@ private:
     // shift cannot overflow for an admitted caller.
     // The budget is checked before rounded_capacity_ reads the value, as a
     // precondition of the constructor.  A capacity past it would make the
-    // loop of rounded_capacity_ shift the bound out of the word.
+    // loop of rounded_capacity_ shift the bound out of the word.  It is a
+    // contract assertion and not a CRUCIBLE_PRE, for the reason that grow_to_
+    // gives.
     [[nodiscard]] static constexpr size_t capacity_within_budget_(size_t initial_capacity) noexcept {
-        CRUCIBLE_PRE(initial_capacity <= (std::size_t{1} << 30));
+        contract_assert(initial_capacity <= (std::size_t{1} << 30));
         return initial_capacity;
     }
 
@@ -1675,9 +1681,17 @@ private:
     // buffer narrower than one group.  The table buffer admits a power of
     // two up to 1 << 30, and a control group can be wider than the sixteen
     // bytes the buffer requires, so each condition is stated.
+    //
+    // The two are contract assertions and not CRUCIBLE_PRE.  Under the
+    // `ignore` semantic a CRUCIBLE_PRE gives its condition to the optimizer
+    // as an assumption.  The optimizer can then delete the always-on check
+    // of the same capacity in SwissTableBuffer::allocate and the probe bound
+    // below.  A contract assertion under `ignore` gives no assumption.  For
+    // the same reason, the new table is allocated before the capacity goes
+    // into its refined member, whose mint gives an assumption too.
     CRUCIBLE_UNSAFE_BUFFER_USAGE void grow_to_(size_t new_capacity) {
-        CRUCIBLE_PRE(::foundation::is_swiss_table_capacity(new_capacity));
-        CRUCIBLE_PRE(new_capacity >= detail::group_width());
+        contract_assert(::foundation::is_swiss_table_capacity(new_capacity));
+        contract_assert(new_capacity >= detail::group_width());
         size_t old_capacity = capacity_.value();
         size_t old_count = intern_count_.get();
         // The local keeps the old buffer alive for the re-insert walk below
@@ -1686,8 +1700,8 @@ private:
         int8_t* old_ctrl = old_backing.ctrl().data();
         const Expr** old_slots = old_backing.slots().data();
 
+        alloc_tables_(new_capacity);
         capacity_ = ::fixy::mint_refined<::fixy::power_of_two>(new_capacity);
-        alloc_tables_(capacity_.value());
 
         size_t slot_mask = capacity_.value() - 1;
         size_t reinserted = 0;

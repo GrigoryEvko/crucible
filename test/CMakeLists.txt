@@ -271,6 +271,12 @@ crucible_test(test_reflect)
 crucible_test(test_pool_allocator)
 crucible_test(test_replay_engine)
 crucible_test(test_crucible_context)
+# The migration of a region switch refuses a plan wider than its bitset,
+# under the contract semantic of the preset and under the ignore semantic,
+# where a CRUCIBLE_PRE gives its condition to the optimizer as an assumption.
+crucible_test(test_crucible_context_migration)
+crucible_test(test_crucible_context_migration_ignore test_crucible_context_migration.cpp)
+target_compile_options(test_crucible_context_migration_ignore PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
 # Each group of tests is a source file of its own, so that no translation
 # unit compiles all of them.
 crucible_test(test_vigil_dispatch test_vigil_dispatch.cpp test_vigil_dispatch_threads.cpp
@@ -1117,6 +1123,11 @@ crucible_test(test_vessel_api_typed)
 crucible_test(test_storage_nbytes_simd)
 crucible_test(test_trace_ring_pop_batch)
 crucible_test(test_expr_pool_fast_symbol)
+# A reserve past the capacity bound is refused before the table is allocated,
+# under the contract semantic of the preset and under the ignore semantic.
+crucible_test(test_expr_pool_capacity)
+crucible_test(test_expr_pool_capacity_ignore test_expr_pool_capacity.cpp)
+target_compile_options(test_expr_pool_capacity_ignore PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
 # Each group of tests that drives a Vigil is a source file of its own, so
 # that no translation unit compiles all of them.
 crucible_test(test_region_cache test_region_cache.cpp test_region_cache_switch.cpp test_region_cache_migration.cpp

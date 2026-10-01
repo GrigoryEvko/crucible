@@ -452,10 +452,10 @@ private:
     ::fixy::fs::Dirfd root_dirfd_{};
     ContentHash head_{};
 
-    [[nodiscard]] const std::string& root_str() const noexcept {
-        [[assume(root_.has_value())]];
-        return root_.get_assuming_set().value();
-    }
+    // get_assuming_set checks that the root is set in a Debug build, and it
+    // gives that fact to the optimizer in a Release build.  An assumption
+    // here, before that check, would let the optimizer delete the check.
+    [[nodiscard]] const std::string& root_str() const noexcept { return root_.get_assuming_set().value(); }
     ::fixy::OrderedAppendOnly<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess> log_ =
         ::fixy::mint_ordered_append_only<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess>();
     // The entries in the order of use, least recent first.  The capacity is

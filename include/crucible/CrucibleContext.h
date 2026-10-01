@@ -9,7 +9,6 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
-#include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 
@@ -260,12 +259,17 @@ private:
         CRUCIBLE_PRE(alt != nullptr);
         CRUCIBLE_PRE(old_region->plan != nullptr);
         CRUCIBLE_PRE(alt->plan != nullptr);
-        // Checked before any slot is copied, so a plan the bitset cannot track
-        // is refused rather than half-migrated.
-        CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(alt->plan->num_slots, 0u, MIGRATION_MAX_SLOTS));
         const auto* old_plan = old_region->plan;
         const auto* new_plan = alt->plan;
-        [[assume(new_plan->num_slots <= MIGRATION_MAX_SLOTS)]];
+        const uint32_t old_num_slots = old_plan->num_slots;
+        const uint32_t new_num_slots = new_plan->num_slots;
+        // The bound of the bitset below.  The check runs in each build and
+        // before any slot is copied, so a plan that the bitset cannot track
+        // is refused and not half-migrated.  It is not a CRUCIBLE_PRE: under
+        // the `ignore` semantic a CRUCIBLE_PRE gives its condition to the
+        // optimizer as an assumption, and no check of that condition after
+        // the assumption is certain to stay.
+        CRUCIBLE_FATAL_INVARIANT(new_num_slots <= MIGRATION_MAX_SLOTS);
         uint64_t visited[(MIGRATION_MAX_SLOTS + 63) / 64]{};
 
         for (uint32_t i = 0; i < div_pos; i++) {
@@ -290,19 +294,12 @@ private:
 
                 if (!old_sid.is_valid() || !new_sid.is_valid()) continue;
 
-                // Each id indexes its own plan's slot array on the next
-                // line, and the new one then indexes a fixed-size stack
-                // bitset, so neither bound is optional.
-                //
-                // The MIGRATION_MAX_SLOTS half is not implied by the half
-                // before it. What bounds num_slots is a precondition of this
-                // function, and a precondition checks nothing in a target
-                // built with the contract semantic set to `ignore`, as some
-                // targets in this tree are. A plan wider than the bitset would
-                // then reach here and write past the end of `visited` on the
-                // stack. These two checks do not depend on that option.
-                CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_plan->num_slots);
-                CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_plan->num_slots && new_sid.raw() < MIGRATION_MAX_SLOTS);
+                // Each id indexes the slot array of its own plan on the next
+                // line, and the new id then indexes the bitset on the stack.
+                // The check of the new id and the check of the plan bound
+                // above keep the bitset index below MIGRATION_MAX_SLOTS.
+                CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_num_slots);
+                CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_num_slots);
 
                 if (old_plan->slots[old_sid.raw()].is_external || new_plan->slots[new_sid.raw()].is_external) continue;
 
