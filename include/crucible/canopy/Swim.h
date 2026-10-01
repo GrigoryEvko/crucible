@@ -410,10 +410,6 @@ private:
     mutable std::uint16_t live_count_ = 0;
 };
 
-static_assert(!std::is_default_constructible_v<SwimMembership<8>>);
-static_assert(!std::is_copy_constructible_v<SwimMembership<8>>);
-static_assert(!std::is_move_constructible_v<SwimMembership<8>>);
-
 // The two admission doors.  Raw discovery output becomes a member
 // identity here, and a received event becomes gossip here.
 [[nodiscard]] constexpr SwimPeer admit_swim_peer(cog::CogIdentity peer) noexcept {

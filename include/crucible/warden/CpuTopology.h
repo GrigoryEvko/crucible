@@ -147,15 +147,6 @@ inline constexpr std::size_t kMaxCpuCount = 8192;
 
 }  // namespace detail
 
-// glibc has fixed this at 1024 ever since the fixed-size CPU set macros
-// shipped. A host with more CPUs than that needs the dynamic-set calls,
-// which nothing here uses. A smaller value on some other library would
-// make the fallback below truncate in silence, so it is caught here.
-#ifdef __linux__
-static_assert(CPU_SETSIZE >= 1024, "The allowed_cpus fallback iterates a fixed-size CPU set and assumes it "
-                                   "holds at least 1024 CPUs.");
-#endif
-
 // glibc answers _SC_NPROCESSORS_ONLN with a read of
 // /sys/devices/system/cpu/online, so this query also takes the context.
 // One on failure, which is the conservative answer.

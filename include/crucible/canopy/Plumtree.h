@@ -410,10 +410,6 @@ private:
     std::uint16_t history_cursor_ = 0;
 };
 
-static_assert(!std::is_default_constructible_v<PlumtreeBroadcast<4, 8>>);
-static_assert(!std::is_copy_constructible_v<PlumtreeBroadcast<4, 8>>);
-static_assert(!std::is_move_constructible_v<PlumtreeBroadcast<4, 8>>);
-
 template <std::size_t MaxPeers, std::size_t MaxHistory, std::size_t HyMaxActive, std::size_t HyMaxPassive>
     requires PlumtreeFitsOverlay<MaxPeers, MaxHistory, HyMaxActive, HyMaxPassive>
 [[nodiscard]] constexpr PlumtreeBroadcast<MaxPeers, MaxHistory>

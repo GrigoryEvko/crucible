@@ -907,12 +907,4 @@ concept Crdt = requires(C& c, C const& other, typename C::state_type state) {
     { C::merge(c.state(), other.state()) } -> std::same_as<typename C::state_type>;
 };
 
-static_assert(Crdt<GSet<int, 8>>);
-static_assert(Crdt<OrSet<int, std::uint64_t, 8>>);
-static_assert(Crdt<LwwRegister<int, HlcTimestamp>>);
-static_assert(Crdt<GCounter<4>>);
-static_assert(Crdt<PNCounter<4>>);
-static_assert(Crdt<MVRegister<int, 4, 4>>);
-static_assert(Crdt<RgaList<int, std::uint64_t, 8>>);
-
 }  // namespace crucible::canopy

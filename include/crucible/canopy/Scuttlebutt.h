@@ -524,9 +524,6 @@ private:
     std::uint64_t merge_count_ = 0;
 };
 
-static_assert(!std::is_copy_constructible_v<ScuttlebuttSync<4, 4>>);
-static_assert(!std::is_move_constructible_v<ScuttlebuttSync<4, 4>>);
-
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
 [[nodiscard]] constexpr ScuttlebuttSync<MaxPeers, MaxKeys>

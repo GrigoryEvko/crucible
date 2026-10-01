@@ -381,9 +381,4 @@ unwrap(IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>> message) noexcept
         .template retag<::fixy::tags::source::IntegrityVerified>();
 }
 
-static_assert(sizeof(IntegrityHash) == sizeof(std::uint64_t));
-static_assert(sizeof(IntegrityOwnedPayload<std::span<const std::byte>>) == sizeof(std::span<const std::byte>));
-static_assert(sizeof(IntegrityWrappedMessage<std::span<const std::byte>>)
-              == sizeof(std::span<const std::byte>) + sizeof(std::uint64_t));
-
 }  // namespace crucible::cntp

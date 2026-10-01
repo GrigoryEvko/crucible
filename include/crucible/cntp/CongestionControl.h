@@ -104,11 +104,6 @@ private:
     std::uint8_t size_ = 0;
 };
 
-static_assert(sizeof(SocketFd) == sizeof(int));
-static_assert(std::is_trivially_copyable_v<KernelCcName>);
-static_assert(!std::is_aggregate_v<KernelCcName>,
-              "KernelCcName must not be an aggregate: from() is the only path that may set the length");
-
 struct CcSelection {
     CcAlgorithm algorithm = CcAlgorithm::Cubic;
     KernelCcName kernel_name{};
@@ -346,31 +341,16 @@ template <::foundation::effects::IsExecCtx Ctx>
     return selection->algorithm;
 }
 
+// The contexts that the check files of this header and of IncastControl.h
+// test the socket-option gates with.
 namespace detail::socket_option_invariants {
 
 using ::fixy::atom::syscall::SyscallId;
 namespace fe = ::foundation::effects;
 
-// The row that the catalog gives to the network family, stated here as
-// a pin.  mint_socket reads the same row for ::socket.
-static_assert(std::is_same_v<socket_option_row_t, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<socket_option_row_t, fe::lift_row_t<::fixy::atom::syscall::per<SyscallId::socket>>>);
-
 using IoBlockCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO, fe::Effect::Block>>;
 using IoOnlyCtx = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::IO>>;
 using BgOnlyCtx = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Alloc>>;
-
-static_assert(CtxFitsSocketOption<IoBlockCtx>);
-static_assert(!CtxFitsSocketOption<IoOnlyCtx>, "a context without Block must not take the socket lock.");
-static_assert(!CtxFitsSocketOption<BgOnlyCtx>, "a context without IO must not enter the kernel.");
-static_assert(!CtxFitsSocketOption<int>);
-
-// The key has no public constructor, no copy and no move, so a body that
-// takes it is reachable only through a gated form.
-static_assert(!std::is_default_constructible_v<SocketOptionKey>);
-static_assert(!std::is_copy_constructible_v<SocketOptionKey>);
-static_assert(!std::is_move_constructible_v<SocketOptionKey>);
-static_assert(!std::is_aggregate_v<SocketOptionKey>);
 
 }  // namespace detail::socket_option_invariants
 

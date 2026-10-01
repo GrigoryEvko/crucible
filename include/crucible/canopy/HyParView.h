@@ -354,10 +354,6 @@ private:
     std::uint64_t rng_counter_ = 0;
 };
 
-static_assert(!std::is_default_constructible_v<HyParViewMembership<4, 8>>);
-static_assert(!std::is_copy_constructible_v<HyParViewMembership<4, 8>>);
-static_assert(!std::is_move_constructible_v<HyParViewMembership<4, 8>>);
-
 // The admission door of a raw identity.  A zero uuid names no peer.
 [[nodiscard]] constexpr std::expected<HyParViewPeer, HyParViewError>
 admit_hyparview_peer(cog::CogIdentity peer) noexcept {

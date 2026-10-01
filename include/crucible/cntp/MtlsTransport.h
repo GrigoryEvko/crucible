@@ -187,9 +187,6 @@ private:
     std::uint8_t size_ = 0;
 };
 
-static_assert(MtlsDnsName::max_bytes <= std::numeric_limits<std::uint8_t>::max(),
-              "MtlsDnsName::size_ must be able to name every byte it admits");
-
 struct MtlsSha256Fingerprint {
     static constexpr std::size_t bytes_count = 32;
 
@@ -260,10 +257,6 @@ struct MtlsPolicy {
         return {};
     }
 };
-
-static_assert(sizeof(MtlsPeerCount) == sizeof(std::uint8_t));
-static_assert(MtlsPolicy::max_peer_names <= std::numeric_limits<std::uint8_t>::max(),
-              "MtlsPeerCount must be able to name every allowlist slot");
 
 struct MtlsConfig {
     MtlsCertificate ca_cert;
@@ -425,19 +418,5 @@ std::expected<std::size_t, MtlsError> mtls_recv(MtlsConnection& connection, std:
 [[nodiscard, deprecated("CRUCIBLE_STUB: no TLS_TX/TLS_RX socket option is installed; "
                         "returns MtlsError::KtlsOffloadDeferred")]]
 std::expected<void, MtlsError> enable_ktls_offload(MtlsConnection& connection, NicInterfaceName iface) noexcept;
-
-static_assert(sizeof(MtlsCertificate) == sizeof(MtlsCertificateBytes));
-static_assert(sizeof(MtlsPrivateKey) == sizeof(MtlsPrivateKeyBytes));
-static_assert(sizeof(MtlsCertificateFingerprint) == sizeof(MtlsSha256Fingerprint));
-static_assert(sizeof(AuthenticatedMtlsPeer) == sizeof(MtlsPeerIdentity));
-static_assert(!std::copy_constructible<MtlsPrivateKeyBytes>);
-static_assert(!std::copy_constructible<MtlsConfig>);
-static_assert(std::move_constructible<MtlsConfig>);
-static_assert(SupportedMtlsVersion<TlsVersion::V13>);
-static_assert(!SupportedMtlsVersion<TlsVersion::V12>);
-static_assert(ApprovedMtlsCipherSuite<MtlsCipherSuite::TlsAes256GcmSha384>);
-static_assert(!ApprovedMtlsCipherSuite<MtlsCipherSuite::LegacyRsa3desSha>);
-static_assert(ApprovedMtlsKeyAlgorithm<MtlsKeyAlgorithm::Ed25519>);
-static_assert(!ApprovedMtlsKeyAlgorithm<MtlsKeyAlgorithm::RsaPkcs1>);
 
 }  // namespace crucible::cntp

@@ -80,11 +80,6 @@ private:
     std::uint16_t value_ = 0;
 };
 
-static_assert(sizeof(SlotCount<4>) == sizeof(std::uint16_t));
-static_assert(!std::is_assignable_v<SlotCount<4>&, std::uint16_t>, "a count past the bound must stay unrepresentable");
-static_assert(!std::is_constructible_v<SlotCount<4>, std::uint16_t>,
-              "a count past the bound must stay unrepresentable");
-
 // A dense run of values and its count.  Only slots[0, count) are live,
 // and the tail keeps the FixedArray default.  The slots are public, so a
 // holder can write a live value.  The count cannot pass Capacity.

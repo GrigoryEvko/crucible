@@ -124,9 +124,6 @@ private:
     std::uint8_t size_ = 0;
 };
 
-static_assert(DiscoveryReport::max_statuses <= std::numeric_limits<std::uint8_t>::max(),
-              "DiscoveryReport::size_ must be able to name every slot");
-
 struct DiscoveryNodeFact {
     cog::Uuid uuid{};
     cog::CogLevel level = cog::CogLevel::L0_Atomic;
@@ -403,18 +400,5 @@ parse_ethtool_features(ExternalDiscoveryText text) noexcept;
 
 [[nodiscard]] std::expected<DiscoverySourceStatus, DiscoveryError>
 parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept;
-
-static_assert(sizeof(ExternalDiscoveryText) == sizeof(std::string_view));
-static_assert(sizeof(VendorDiscoveryString) == sizeof(std::string_view));
-static_assert(DiscoveryShape<1, 1>);
-static_assert(!DiscoveryShape<0, 1>);
-static_assert(std::is_trivially_destructible_v<DiscoveryNodeFact>);
-static_assert(std::is_trivially_destructible_v<DiscoveryEdgeFact>);
-static_assert(!std::is_default_constructible_v<DefaultDiscoverySnapshot>,
-              "a snapshot is built only by mint_discovery_snapshot");
-static_assert(CtxFitsDiscoveryInit<::fixy::ColdInitCtx>);
-static_assert(!CtxFitsDiscoveryInit<::fixy::BgDrainCtx>);
-static_assert(CtxFitsDiscoveryBg<::fixy::BgDrainCtx>);
-static_assert(!CtxFitsDiscoveryBg<::fixy::ColdInitCtx>);
 
 }  // namespace crucible::topology

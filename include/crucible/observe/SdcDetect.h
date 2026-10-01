@@ -77,12 +77,6 @@ struct SdcEvent {
     cog::Uuid comparison_cog{};
 };
 
-// A refined field keeps no byte route into it, so the config is not
-// trivially copyable.  Its copies stay trivial, so a config still passes
-// by value in registers.
-static_assert(std::is_trivially_copy_constructible_v<SdcConfig> && std::is_trivially_destructible_v<SdcConfig>);
-static_assert(std::is_trivially_copyable_v<SdcEvent>);
-
 template <class Ctx>
 concept CtxFitsSdcMint =
     ::foundation::effects::IsExecCtx<Ctx>
@@ -311,11 +305,5 @@ template <class Ctx, std::size_t MaxCogs, std::size_t MaxEvents>
 [[nodiscard]] constexpr SdcDetector<MaxCogs, MaxEvents> mint_sdc_detector(Ctx const&, SdcConfig config) noexcept {
     return SdcDetector<MaxCogs, MaxEvents>{config};
 }
-
-static_assert(CtxFitsSdcMint<::fixy::ColdInitCtx>);
-static_assert(!CtxFitsSdcMint<::fixy::BgDrainCtx>);
-static_assert(CtxFitsSdcRun<::fixy::BgDrainCtx>);
-static_assert(!CtxFitsSdcRun<::fixy::HotFgCtx>);
-static_assert(!std::is_constructible_v<SdcDetector<1, 1>, SdcConfig>);
 
 }  // namespace crucible::observe

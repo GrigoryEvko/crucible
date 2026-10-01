@@ -28,13 +28,6 @@ struct HlcTimestamp {
 using HlcClockTimestamp = ::fixy::Tagged<HlcTimestamp, ::fixy::tags::source::Hlc>;
 using ExternalHlcTimestamp = ::fixy::Tagged<HlcTimestamp, ::fixy::tags::source::External>;
 
-static_assert(sizeof(HlcTimestamp) == 16);
-static_assert(std::is_trivially_copyable_v<HlcTimestamp>);
-static_assert(std::is_trivially_destructible_v<HlcTimestamp>);
-static_assert(sizeof(HlcClockTimestamp) == sizeof(HlcTimestamp));
-static_assert(std::is_trivially_copyable_v<HlcClockTimestamp>);
-static_assert(std::is_trivially_destructible_v<HlcClockTimestamp>);
-
 namespace detail {
 
 __extension__ using uint128_t = unsigned __int128;
@@ -156,8 +149,6 @@ private:
     mutable Cell cell_{};
 #endif
 };
-
-static_assert(alignof(AtomicPackedHlcState) >= 16);
 
 }  // namespace detail
 
@@ -289,12 +280,6 @@ private:
 
     alignas(64) detail::AtomicPackedHlcState state_{};
 };
-
-static_assert(alignof(Hlc) == 64);
-static_assert(sizeof(Hlc) == 64);
-static_assert(!std::is_default_constructible_v<Hlc>);
-static_assert(!std::is_copy_constructible_v<Hlc>);
-static_assert(!std::is_move_constructible_v<Hlc>);
 
 [[nodiscard]] constexpr Hlc mint_hlc(::foundation::effects::Init) noexcept { return Hlc{}; }
 

@@ -851,8 +851,9 @@ set_tests_properties(stub_discipline stub_discipline_self_test PROPERTIES
 # The lock-free discipline of the cross-thread atomics (CLAUDE.md §IX).
 # utils/scripts/check-lock-free-asserts.py reads each std::atomic, atomic_ref and
 # standard atomic alias of canopy, cntp, topology and warden from the parse
-# tree, and fails when the file has no sibling
-# static_assert(std::atomic<T>::is_always_lock_free) for its type.  Without
+# tree, and fails when neither the file nor its check file under
+# test/layer/checks has a static_assert(std::atomic<T>::is_always_lock_free)
+# for its type.  Without
 # the assert, libatomic can put a mutex behind the atomic on another target
 # with no warning.  Exit 3 when the kit is absent reports a skip.
 add_test(NAME lock_free_asserts_self_test
@@ -1546,19 +1547,19 @@ crucible_neg_compile_test(neg_quarantine_direct_construct
     ".constexpr crucible::warden::QuarantinePolicy<MaxCogs, MaxEvents>::QuarantinePolicy\\(crucible::warden::QuarantineConfig\\) \\[with long unsigned int MaxCogs = 2. long unsigned int MaxEvents = 8\\]. is private within this context"
     "declared private here")
 crucible_neg_compile_test(neg_quarantine_record_fg_ctx
-    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::on_health_event\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::topology::HealthSnapshot&, int\\)."
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2[^>]*>::on_health_event\\(const fixy::HotFgCtx&, crucible::cog::CogIdentity&, crucible::topology::HealthSnapshot&, int\\)."
     "required for the satisfaction of .CtxFitsQuarantineRecord<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_test(neg_quarantine_record_init_ctx
-    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::record_recovery_probe\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::observe::ProbeOutcome&, int\\)."
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2[^>]*>::record_recovery_probe\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::observe::ProbeOutcome&, int\\)."
     "required for the satisfaction of .CtxFitsQuarantineRecord<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
 crucible_neg_compile_test(neg_quarantine_override_bg_ctx
-    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(fixy::BgDrainCtx, "
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2[^>]*>::operator_override\\(fixy::BgDrainCtx, "
     "required for the satisfaction of .CtxFitsQuarantineOverride<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
 crucible_neg_compile_test(neg_quarantine_override_hot_fg_ctx
-    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(const fixy::HotFgCtx&, "
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2[^>]*>::operator_override\\(const fixy::HotFgCtx&, "
     "required for the satisfaction of .CtxFitsQuarantineOverride<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_test(neg_quarantine_override_missing_permission
-    "no matching function for call to .crucible::warden::QuarantinePolicy<2>::operator_override\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::warden::QuarantineState, int, int\\)."
+    "no matching function for call to .crucible::warden::QuarantinePolicy<2[^>]*>::operator_override\\(const fixy::ColdInitCtx&, crucible::cog::CogIdentity&, crucible::warden::QuarantineState, int, int\\)."
     "candidate expects 6 arguments, 5 provided")
 crucible_neg_compile_test(neg_quarantine_operator_authority_no_ctx
     "static assertion failed: mint_permission_root<Tag>\\(\\) without an ExecCtx is only valid for permission_row<Tag> == Row<>"
@@ -2018,13 +2019,13 @@ crucible_neg_compile_test(neg_pingmesh_direct_construct
     "is private within this context"
     "Pingmesh<MaxPeers, Significant, MaxLatencyNs>::Pingmesh\\(crucible::topology::PingmeshConfig\\)")
 crucible_neg_compile_test(neg_pingmesh_enable_pair_bg_ctx
-    "no matching function for call to .crucible::topology::Pingmesh<2>::enable_pair\\(fixy::BgDrainCtx, crucible::cog::Uuid, crucible::cog::Uuid\\)"
+    "no matching function for call to .crucible::topology::Pingmesh<2[^>]*>::enable_pair\\(fixy::BgDrainCtx, crucible::cog::Uuid, crucible::cog::Uuid\\)"
     "CtxFitsPingmeshMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg")
 crucible_neg_compile_test(neg_pingmesh_record_fg_ctx
-    "no matching function for call to .crucible::topology::Pingmesh<2>::record_measurement\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
+    "no matching function for call to .crucible::topology::Pingmesh<2[^>]*>::record_measurement\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
     "CtxFitsPingmeshRecord<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_test(neg_pingmesh_raw_measurement
-    "no matching function for call to .crucible::topology::Pingmesh<2>::record_measurement\\(fixy::BgDrainCtx, crucible::topology::PingmeshMeasurement&\\)"
+    "no matching function for call to .crucible::topology::Pingmesh<2[^>]*>::record_measurement\\(fixy::BgDrainCtx, crucible::topology::PingmeshMeasurement&\\)"
     "cannot convert .raw. \\(type .crucible::topology::PingmeshMeasurement.\\) to type .const crucible::topology::DeclaredPingmeshMeasurement&.")
 crucible_neg_compile_test(neg_pingmesh_zero_peer_capacity
     "static assertion failed: Pingmesh<MaxPeers> requires at least two peers"
@@ -3320,7 +3321,7 @@ crucible_neg_compile_test(neg_pacing_raw_config_ensure
 #     neg_path_swap_commit_pointer_resource: the new resource is a
 #     SessionResource.
 crucible_neg_compile_test(neg_path_swap_raw_plan_begin
-  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::BgLoadCtx&, crucible::cntp::PathSwapPlan&, int.."
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::begin_swap.fixy::BgLoadCtx&, crucible::cntp::PathSwapPlan&, int.."
   "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
 crucible_neg_compile_test(neg_path_swap_plan_raw_path_id
   "could not convert .0. from .uint64_t."
@@ -3335,22 +3336,22 @@ crucible_neg_compile_test(neg_path_swapper_direct
   ".constexpr crucible::cntp::PathSwapper<MaxEvents>::PathSwapper.. .with long unsigned int MaxEvents = 8.. is private within this context"
   "PathSwap.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_test(neg_path_swap_commit_fg_ctx
-  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::HotFgCtx&"
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::commit_sender.fixy::HotFgCtx&"
   "required for the satisfaction of .CtxFitsPathSwapTransition<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_test(neg_path_swap_begin_init_ctx
-  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::ColdInitCtx&"
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::begin_swap.fixy::ColdInitCtx&"
   "required for the satisfaction of .CtxFitsPathSwapTransition<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >.")
 crucible_neg_compile_test(neg_path_swap_begin_drain_ctx
-  "no matching function for call to .crucible::cntp::PathSwapper<>::begin_swap.fixy::BgDrainCtx&"
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::begin_swap.fixy::BgDrainCtx&"
   "required for the satisfaction of .CtxMayBlock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
 crucible_neg_compile_test(neg_path_swap_plan_read_hot_ctx
-  "no matching function for call to .crucible::cntp::PathSwapper<>::plan.fixy::HotFgCtx&."
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::plan.fixy::HotFgCtx&."
   "required for the satisfaction of .CtxFitsPathSwapRead<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
-  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgLoadCtx&"
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::commit_sender.fixy::BgLoadCtx&"
   "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = Wire&.")
 crucible_neg_compile_test(neg_path_swap_commit_pointer_resource
-  "no matching function for call to .crucible::cntp::PathSwapper<>::commit_sender.fixy::BgLoadCtx&"
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::commit_sender.fixy::BgLoadCtx&"
   "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = PointerWire.")
 
 # ─── topology::CongestionTelemetry and its worker ────────────────────
@@ -3673,10 +3674,10 @@ crucible_neg_compile_test(neg_connection_pool_direct
   ".constexpr crucible::cntp::ConnectionPool<T, MaxRemotes, MaxPerRemote, MaxEvents>::ConnectionPool.crucible::cntp::PoolConfig. .with crucible::cntp::TransportClass T = crucible::cntp::TransportClass::Tcp.* is private within this context"
   "ConnectionPoolRuntime.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_test(neg_connection_pool_hot_ctx_lease
-  "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1>::lease.fixy::HotFgCtx&"
+  "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1[^>]*>::lease.fixy::HotFgCtx&"
   "required for the satisfaction of .CtxFitsConnectionPoolRuntime<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 crucible_neg_compile_test(neg_connection_pool_drain_ctx_lease
-  "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1>::lease.fixy::BgDrainCtx&"
+  "no matching function for call to .crucible::cntp::ConnectionPool<crucible::cntp::TransportClass::Tcp, 1, 1[^>]*>::lease.fixy::BgDrainCtx&"
   "required for the satisfaction of .CtxMayBlock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")
 crucible_neg_compile_test(neg_connection_pool_lease_rewrite
   "passing .const crucible::cntp::Connection<crucible::cntp::TransportClass::Tcp>. as .this. argument discards qualifiers"

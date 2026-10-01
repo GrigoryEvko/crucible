@@ -214,19 +214,10 @@ public:
     [[nodiscard]] size_t size() const noexcept { return HotRegionRegistry::instance().size(); }
 };
 
-static_assert(sizeof(HotRegionRegistryHandle) == 1, "HotRegionRegistryHandle must be the 1-byte authorization token; "
-                                                    "the underlying registry state lives in the Pinned singleton.");
-
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHotRegionRegistryMint<Ctx>
 [[nodiscard]] constexpr HotRegionRegistryHandle mint_hot_region_registry_handle(Ctx const&) noexcept {
     return HotRegionRegistryHandle{};
 }
-
-static_assert(CtxFitsHotRegionRegistryMint<::fixy::ColdInitCtx>);
-static_assert(!CtxFitsHotRegionRegistryMint<::fixy::BgDrainCtx>);
-static_assert(!CtxFitsHotRegionRegistryMint<::fixy::HotFgCtx>);
-static_assert(!std::is_default_constructible_v<HotRegionRegistryHandle>,
-              "A handle built without the mint would carry an authorization nobody checked.");
 
 }  // namespace crucible::warden

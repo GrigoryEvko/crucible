@@ -2,11 +2,17 @@
 """check-lock-free-asserts — each cross-thread atomic has a sibling lock-free assert, read from the parse tree.
 
 CLAUDE.md §IX: each `std::atomic<T>` in a cross-thread substrate header has a
-sibling `static_assert(std::atomic<T>::is_always_lock_free)` in the same
-file.  When std::atomic<T> is not lock-free on a target, libatomic puts a
-mutex behind it with no warning, and a single acquire or release becomes a
-lock of 200-300 ns.  The assert costs nothing at run time and fails the
-build on that target.
+sibling `static_assert(std::atomic<T>::is_always_lock_free)`.  When
+std::atomic<T> is not lock-free on a target, libatomic puts a mutex behind
+it with no warning, and a single acquire or release becomes a lock of
+200-300 ns.  The assert costs nothing at run time and fails the build on
+that target.
+
+A header holds no static_assert at namespace scope
+(utils/scripts/check-header-checks.py), so the sibling assert of a header
+lives in its check file, test/layer/checks/<layer>/<path>.cpp for
+include/<layer>/<path>.h.  One translation unit of each build compiles the
+check file, so the assert still fails that build on such a target.
 
 SCOPE
     include/crucible/{canopy,cntp,topology,warden}/, where each atomic is
@@ -22,12 +28,13 @@ WHAT COUNTS AS AN ATOMIC
     lock-free by definition, so they need no assert.
 
 WHAT COUNTS AS AN ASSERT
-    A static_assert of the file whose condition holds
-    `<atomic of T>::is_always_lock_free`, alone or in a conjunction, with
-    the same spellings as above.  One assert covers each atomic of the same
-    type in the file.  Two types match when their spellings from the parse
-    tree match after a leading `std::` or `::std::` is removed, so white
-    space and comments inside a type do not matter.
+    A static_assert of the file, or of the check file of the file, whose
+    condition holds `<atomic of T>::is_always_lock_free`, alone or in a
+    conjunction, with the same spellings as above.  One assert covers each
+    atomic of the same type in the file.  Two types match when their
+    spellings from the parse tree match after a leading `std::` or `::std::`
+    is removed, so white space and comments inside a type do not matter.  A
+    check file that the parser cannot read is a violation.
 
 WHAT THE PARSER CANNOT READ
     The type of an atomic in a macro body depends on the arguments of the
@@ -60,6 +67,8 @@ import tsast  # noqa: E402
 
 SCOPE = ("include/crucible/canopy", "include/crucible/cntp", "include/crucible/topology",
          "include/crucible/warden")
+INCLUDE = "include"
+CHECKS = "test/layer/checks"
 ATOMIC_TEMPLATES = frozenset({"atomic", "atomic_ref"})
 # The standard aliases of std::atomic<T>, as alias name to T, spelled as
 # tsast.spelled spells a type: one space between two words.
@@ -175,7 +184,8 @@ def macro_atomics(body: tsast.MacroBody) -> Iterator[int]:
             yield token.row
 
 
-def missing_in(tree: tsast.Tree, bodies: list[tsast.MacroBody]) -> Iterator[tuple[int, str]]:
+def missing_in(tree: tsast.Tree, bodies: list[tsast.MacroBody],
+               checked: frozenset[str] = frozenset()) -> Iterator[tuple[int, str]]:
     """Yield each atomic spelling of a parsed file whose type has no sibling assert, as (row, type).
 
     Complexity: linear in the number of nodes of the file.
@@ -183,8 +193,9 @@ def missing_in(tree: tsast.Tree, bodies: list[tsast.MacroBody]) -> Iterator[tupl
     Args:
         tree: The parsed file
         bodies: The macro bodies of the file
+        checked: The types that the check file of the file asserts
     """
-    covered = asserted_types(tree)
+    covered = asserted_types(tree) | checked
     marked = {node.start[0] for node in tree.find("comment") if has_marker_reason(node)}
     for node in tree.find("template_type", "type_identifier"):
         if node.ancestor_of_type("static_assert_declaration") is not None:
@@ -212,25 +223,49 @@ def scope_files(root: Path) -> list[Path]:
     return sorted(found)
 
 
+def check_file_of(root: Path, path: Path) -> Path:
+    """Return the check file of a header of the scope.
+
+    Args:
+        root: The scan root
+        path: A file under include/
+
+    Returns:
+        test/layer/checks/<layer>/<path>.cpp for include/<layer>/<path>.h
+    """
+    inner = path.relative_to(root / INCLUDE)
+    return root / CHECKS / inner.with_suffix(".cpp")
+
+
 def scan(root: Path) -> list[str]:
     """Find each atomic of the scope that has no sibling lock-free assert.
 
-    Complexity: linear in the total size of the files in scope.
+    Complexity: linear in the total size of the files in scope and of their check files.
     """
     violations: list[str] = []
     trees: list[tsast.Tree] = []
-    for tree in tsast.parse(scope_files(root), strict=False):
+    files = scope_files(root)
+    for tree in tsast.parse(files, strict=False):
         if tree.diagnostic is not None:
             rel = Path(tree.path).relative_to(root).as_posix()
             violations.append(f"{rel}: the parser cannot read this file. {tree.diagnostic.strip()}")
             continue
         trees.append(tree)
+    checked: dict[Path, frozenset[str]] = {}
+    check_files = [check_file_of(root, path) for path in files if check_file_of(root, path).is_file()]
+    for tree in tsast.parse(check_files, strict=False):
+        rel = Path(tree.path).relative_to(root).as_posix()
+        if tree.diagnostic is not None:
+            violations.append(f"{rel}: the parser cannot read this check file. {tree.diagnostic.strip()}")
+            continue
+        checked[Path(tree.path)] = frozenset(asserted_types(tree))
     bodies: dict[int, list[tsast.MacroBody]] = {}
     for body in tsast.macro_bodies(trees):
         bodies.setdefault(id(body.define.tree), []).append(body)
     for tree in trees:
         rel = Path(tree.path).relative_to(root).as_posix()
-        for row, value in sorted(set(missing_in(tree, bodies.get(id(tree), [])))):
+        from_check_file = checked.get(check_file_of(root, Path(tree.path)), frozenset())
+        for row, value in sorted(set(missing_in(tree, bodies.get(id(tree), []), from_check_file))):
             violations.append(f"{rel}:{row + 1}: std::atomic<{value}> has no sibling "
                               f"static_assert(std::atomic<{value}>::is_always_lock_free) in the file.")
     return violations
@@ -246,9 +281,9 @@ def check(root: Path) -> int:
     for violation in violations:
         print(f"LOCK-FREE-MISSING: {violation}", file=sys.stderr)
     if violations:
-        print("check-lock-free-asserts: add static_assert(std::atomic<T>::is_always_lock_free, \"...\") beside "
-              "the declarations of that type, one per type and file.  For an atomic that is not cross-thread, "
-              "mark the declaration `// LOCK-FREE-OK: <reason>`.", file=sys.stderr)
+        print("check-lock-free-asserts: add static_assert(std::atomic<T>::is_always_lock_free, \"...\") to the "
+              f"check file of the header, {CHECKS}/<layer>/<path>.cpp, one per type and header.  For an atomic "
+              "that is not cross-thread, mark the declaration `// LOCK-FREE-OK: <reason>`.", file=sys.stderr)
         return 1
     print("check-lock-free-asserts: clean — each atomic in canopy, cntp, topology and warden has a sibling "
           "lock-free assert.", file=sys.stderr)
@@ -350,6 +385,33 @@ def self_test() -> int:
         header.write_text("#pragma once\nstruct Bar { std::atomic<int> head_{0}; };\n"
                           "static_assert(std::atomic<int>::is_always_lock_free);\n", encoding="utf-8")
         expect("a covered tree passes", captured(root)[0] == 0, True)
+
+        # The assert of a header lives in its check file.
+        header.write_text("#pragma once\nstruct Bar { std::atomic<int> head_{0}; std::atomic<long> tail_{0}; };\n",
+                          encoding="utf-8")
+        check_file = root / CHECKS / "crucible/canopy/Planted.cpp"
+        check_file.parent.mkdir(parents=True)
+        check_file.write_text("#include <crucible/canopy/Planted.h>\n"
+                              "static_assert(std::atomic<int>::is_always_lock_free);\n", encoding="utf-8")
+        reported = {violation for violation in scan(root) if violation.startswith("include/crucible/canopy/")}
+        expect("an assert in the check file covers its type in the header",
+               not any("std::atomic<int>" in violation for violation in reported), True)
+        expect("an assert in the check file does not cover another type",
+               any("std::atomic<long>" in violation for violation in reported))
+        (root / "include/crucible/canopy/Other.h").write_text("#pragma once\nstd::atomic<int> other_{0};\n",
+                                                               encoding="utf-8")
+        expect("the check file of one header does not cover another header",
+               any(violation.startswith("include/crucible/canopy/Other.h:") for violation in scan(root)))
+        (root / "include/crucible/canopy/Other.h").unlink()
+        check_file.write_text("#include <crucible/canopy/Planted.h>\n"
+                              "static_assert(std::atomic<int>::is_always_lock_free);\n"
+                              "static_assert(std::atomic<long>::is_always_lock_free);\n", encoding="utf-8")
+        expect("a header whose check file asserts each type passes", captured(root)[0] == 0, True)
+        check_file.write_text("void f() { g(1) { } }\n", encoding="utf-8")
+        expect("a check file the parser cannot read fails the check", captured(root)[0] == 1)
+        check_file.unlink()
+        header.write_text("#pragma once\nstruct Bar { std::atomic<int> head_{0}; };\n"
+                          "static_assert(std::atomic<int>::is_always_lock_free);\n", encoding="utf-8")
         (root / "include/crucible/warden/Broken.h").parent.mkdir(parents=True)
         (root / "include/crucible/warden/Broken.h").write_text("void f() { g(1) { } }\n", encoding="utf-8")
         expect("a file the parser cannot read fails the check", captured(root)[0] == 1)

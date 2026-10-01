@@ -482,10 +482,6 @@ private:
     std::uint64_t sequence_ = 0;
 };
 
-static_assert(!std::is_constructible_v<LifeguardSwim<4, 8, 4, 8>, SwimPeer>);
-static_assert(!std::is_copy_constructible_v<LifeguardSwim<4, 8, 4, 8>>);
-static_assert(!std::is_move_constructible_v<LifeguardSwim<4, 8, 4, 8>>);
-
 template <std::size_t MaxPeers, std::size_t MaxPiggyback, std::size_t RttWindow, std::size_t MaxEvents>
     requires LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
 [[nodiscard]] constexpr LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>

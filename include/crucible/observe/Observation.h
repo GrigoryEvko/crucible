@@ -41,9 +41,6 @@ struct Observation {
     std::uint64_t sequence = 0;
 };
 
-static_assert(std::is_trivially_copyable_v<Observation>);
-static_assert(std::is_trivially_destructible_v<Observation>);
-
 using ObservationSnapshot = ::fixy::concurrent::AtomicSnapshot<Observation>;
 
 [[nodiscard]] constexpr Observation make_observation(ObservationKind kind, ObservationSource source,

@@ -283,10 +283,4 @@ mint_gossip_multicast_plan(Ctx const& ctx, NicInterfaceName iface, dataplane::Xd
         })};
 }
 
-static_assert(sizeof(DeclaredGossipTopic) == sizeof(GossipTopicKey));
-static_assert(sizeof(DeclaredGossipMulticastPlan) == sizeof(GossipMulticastSpec));
-static_assert(std::has_unique_object_representations_v<GossipTopicKey>);
-static_assert(dataplane::BpfKey<GossipTopicKey>);
-static_assert(dataplane::BpfScalar<GossipNeighborTarget>);
-
 }  // namespace crucible::cntp
