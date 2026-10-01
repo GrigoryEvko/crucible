@@ -38,6 +38,7 @@ utils/scripts/check-fullness-guard.py | tsast,text | the allowlist rows
 utils/scripts/check-git-isolation.py | python-ast,ast-grep-bash,json |
 utils/scripts/check-guard-engines.py | python-ast,ast-grep-bash,json,text | the rows of this roster
 utils/scripts/check-header-checks.py | tsast,compiler,json,text | the ledger rows, the rows of test/layer/crucible-not-standalone.txt and the exit status of the compiler
+utils/scripts/check-header-constexpr-ops.py | compiler,json,text | the budget table, the rows of test/layer/header-constexpr-ops.txt and of test/layer/crucible-not-standalone.txt, and the diagnostics of the compiler
 utils/scripts/check-heavy-includes.py | tsast,compiler,text | the cost table utils/scripts/header-costs.txt, the ledger rows, the budget table, and in --measure the diagnostics and the -E output of the compiler
 utils/scripts/check-host-owners.py | tsast,text | the roster utils/scripts/host-owner-roster.txt
 utils/scripts/check-layer-boundary.py | tsast |

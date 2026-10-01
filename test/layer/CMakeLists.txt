@@ -30,6 +30,24 @@
 # headers and examines the first line of each check file.  This file refuses
 # a check file that has no header.
 #
+# Each header also compiles alone in a one-line unit, with
+# -fconstexpr-ops-limit at the error threshold of the row
+# header-constexpr-ops in utils/scripts/budgets.txt.  A constant evaluation
+# that runs where the header stands runs again in each translation unit that
+# includes the header, so an evaluation of more operations stops the build.
+# A variable template or a template that no code instantiates costs nothing
+# there.  The one-line unit of a header with no check file is its sentinel,
+# which each build compiles.  The one-line units of the headers with a check
+# file are the objects of layer_alone_<layer>, because the checks of a check
+# file can need more operations than the header.  The target layer_alone
+# builds them, `all` does not, and the default leg of CI builds the target.
+# A row of header-constexpr-ops.txt,
+# `<layer>/<path>.h | limit | reason`, gives one header a higher limit, and
+# the test header_constexpr_ops refuses a row that its header no longer
+# needs.  GCC gives no warning form of the limit, so the limit is an error
+# only.  The guard header_checks gives the warnings: it finds each eager
+# evaluation in the parse tree.
+#
 # The two negative fixtures show that the sentinel fails: a foundation
 # header that includes a fixy header, and a foundation header that names a
 # fixy type through a declaration that it expects its includer to supply.
@@ -74,6 +92,72 @@ foreach(_row IN LISTS _not_standalone_rows)
     message(FATAL_ERROR "test/layer/crucible-not-standalone.txt: ${_header} has two rows.  Remove one.")
   endif()
   list(APPEND _not_standalone "${_header}")
+endforeach()
+
+# The operation limit of a header alone: the error threshold of the row
+# header-constexpr-ops in utils/scripts/budgets.txt.
+set(_budget_table "${CMAKE_SOURCE_DIR}/utils/scripts/budgets.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_budget_table}")
+file(STRINGS "${_budget_table}" _ops_budget_rows REGEX "^header-constexpr-ops[ \t]*[|]" ENCODING UTF-8)
+list(LENGTH _ops_budget_rows _ops_budget_count)
+if(NOT _ops_budget_count EQUAL 1)
+  message(FATAL_ERROR "utils/scripts/budgets.txt: the table holds ${_ops_budget_count} rows header-constexpr-ops, "
+                      "and test/layer needs one.  A row is `header-constexpr-ops | warn | error | operations | "
+                      "meaning`.")
+endif()
+string(REPLACE "|" ";" _ops_budget_cells "${_ops_budget_rows}")
+list(LENGTH _ops_budget_cells _ops_budget_cell_count)
+if(NOT _ops_budget_cell_count EQUAL 5)
+  message(FATAL_ERROR "utils/scripts/budgets.txt: the row header-constexpr-ops has ${_ops_budget_cell_count} cells, "
+                      "and a row has five.  The meaning has no semicolon.")
+endif()
+list(GET _ops_budget_cells 2 _ops_limit)
+string(STRIP "${_ops_limit}" _ops_limit)
+if(NOT _ops_limit MATCHES "^[1-9][0-9]*$")
+  message(FATAL_ERROR "utils/scripts/budgets.txt: the error threshold `${_ops_limit}` of header-constexpr-ops is "
+                      "not a whole number of operations.")
+endif()
+
+# The headers that need a higher limit, relative to include/, with the limit
+# of each one.
+set(_ops_list "${CMAKE_CURRENT_SOURCE_DIR}/header-constexpr-ops.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ops_list}")
+file(STRINGS "${_ops_list}" _ops_rows ENCODING UTF-8)
+set(_ops_headers "")
+foreach(_row IN LISTS _ops_rows)
+  string(STRIP "${_row}" _row)
+  if(_row STREQUAL "" OR _row MATCHES "^#")
+    continue()
+  endif()
+  if(NOT _row MATCHES "^([^ |]+) [|] ([0-9]+) [|] (.*)$")
+    message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: the row `${_row}` is malformed.  A row is "
+                        "`<layer>/<path>.h | limit | reason`.")
+  endif()
+  set(_header "${CMAKE_MATCH_1}")
+  set(_limit "${CMAKE_MATCH_2}")
+  string(STRIP "${CMAKE_MATCH_3}" _reason)
+  if(NOT _header MATCHES "^(foundation|fixy|crucible)/.+\\.h$" OR NOT EXISTS "${_layer_include}/${_header}")
+    message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: ${_header} is not a header under include/.  Remove "
+                        "the row.")
+  endif()
+  if(_header IN_LIST _not_standalone)
+    message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: ${_header} has a row in "
+                        "test/layer/crucible-not-standalone.txt, so it has no unit that compiles it alone.  Remove "
+                        "its row.")
+  endif()
+  if(_reason STREQUAL "")
+    message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: the row of ${_header} gives no reason.  Say which "
+                        "evaluation needs the higher limit.")
+  endif()
+  if(_limit LESS_EQUAL _ops_limit)
+    message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: the limit ${_limit} of ${_header} is not more than "
+                        "the threshold ${_ops_limit} of utils/scripts/budgets.txt.  Remove the row.")
+  endif()
+  if(_header IN_LIST _ops_headers)
+    message(FATAL_ERROR "test/layer/header-constexpr-ops.txt: ${_header} has two rows.  Remove one.")
+  endif()
+  list(APPEND _ops_headers "${_header}")
+  set("_ops_limit_of_${_header}" "${_limit}")
 endforeach()
 
 # Each check file belongs to one header, and that header compiles alone.
@@ -140,6 +224,11 @@ if(_namespace_macros)
   string(APPEND _opens_layer_namespace "|[^A-Za-z_0-9](${_macro_names})[ \t]*[(]")
 endif()
 
+# The one-line units of the headers with a check file cost about 500 s of
+# CPU and 4 s of wall time in a clean Debug build at -j128, so `all` does not
+# build them.  The default leg of CI builds this target.
+add_custom_target(layer_alone)
+
 set(_walk_header_lines "")
 foreach(_layer foundation fixy crucible)
   if(_layer STREQUAL "crucible")
@@ -163,13 +252,16 @@ foreach(_layer foundation fixy crucible)
   endif()
 
   # One sentinel per public header: its check file when it has one, and a
-  # generated one-line file when it has none.  file(CONFIGURE) rewrites a
-  # generated sentinel only when its text changes, so a configure run does
-  # not force a rebuild.
+  # generated one-line file when it has none.  Each header gets the one-line
+  # file, with the operation limit of a header alone, and the one-line file
+  # of a header with a check file goes to layer_alone_<layer>.
+  # file(CONFIGURE) rewrites a generated file only when its text changes, so
+  # a configure run does not force a rebuild.
   file(GLOB_RECURSE _headers CONFIGURE_DEPENDS
        RELATIVE "${_layer_include}" "${_layer_include}/${_layer}/*.h")
   list(SORT _headers)
   set(_sentinels "")
+  set(_alone_units "")
   foreach(_header IN LISTS _headers)
     if(_header IN_LIST _not_standalone)
       continue()
@@ -183,31 +275,46 @@ foreach(_layer foundation fixy crucible)
     else()
       string(APPEND _walk_header_lines "#include <${_header}>\n")
     endif()
-    string(REGEX REPLACE "\\.h$" ".cpp" _check "${_header}")
-    if(EXISTS "${_layer_checks}/${_check}")
-      list(APPEND _sentinels "${_layer_checks}/${_check}")
-      continue()
-    endif()
     string(MAKE_C_IDENTIFIER "${_header}" _stem)
     set(_sentinel "${CMAKE_CURRENT_BINARY_DIR}/sentinels/${_layer}/${_stem}.cpp")
     file(CONFIGURE OUTPUT "${_sentinel}" CONTENT "#include <${_header}>\n" @ONLY)
-    list(APPEND _sentinels "${_sentinel}")
+    set(_header_limit "${_ops_limit}")
+    if(_header IN_LIST _ops_headers)
+      set(_header_limit "${_ops_limit_of_${_header}}")
+    endif()
+    # A source property comes last on the compile line, so this limit wins
+    # over the limit of the whole build.
+    set_source_files_properties("${_sentinel}" PROPERTIES COMPILE_OPTIONS "-fconstexpr-ops-limit=${_header_limit}")
+    string(REGEX REPLACE "\\.h$" ".cpp" _check "${_header}")
+    if(EXISTS "${_layer_checks}/${_check}")
+      list(APPEND _sentinels "${_layer_checks}/${_check}")
+      list(APPEND _alone_units "${_sentinel}")
+    else()
+      list(APPEND _sentinels "${_sentinel}")
+    endif()
   endforeach()
   if(NOT _sentinels)
     message(FATAL_ERROR "test/layer: include/${_layer} has no header, so the layer sentinel would compile nothing")
   endif()
 
+  set(_layer_targets layer_sentinel_${_layer})
   add_library(layer_sentinel_${_layer} OBJECT ${_sentinels})
-  target_link_libraries(layer_sentinel_${_layer} PRIVATE crucible_dialect)
-  target_include_directories(layer_sentinel_${_layer} PRIVATE "${_root}")
-  # A crucible header reads the definitions that the crucible library gives
-  # its consumers, for example CRUCIBLE_HAVE_BPF and
-  # CRUCIBLE_SENSE_HUB_EXTENDED.  The sentinels take the same definitions, so
-  # a check under one of them compiles as each consumer compiles it.
-  if(_layer STREQUAL "crucible")
-    target_compile_definitions(layer_sentinel_crucible PRIVATE
-      $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+  if(_alone_units)
+    add_library(layer_alone_${_layer} OBJECT EXCLUDE_FROM_ALL ${_alone_units})
+    add_dependencies(layer_alone layer_alone_${_layer})
+    list(APPEND _layer_targets layer_alone_${_layer})
   endif()
+  foreach(_target IN LISTS _layer_targets)
+    target_link_libraries(${_target} PRIVATE crucible_dialect)
+    target_include_directories(${_target} PRIVATE "${_root}")
+    # A crucible header reads the definitions that the crucible library
+    # gives its consumers, for example CRUCIBLE_HAVE_BPF and
+    # CRUCIBLE_SENSE_HUB_EXTENDED.  The sentinels take the same definitions,
+    # so a check under one of them compiles as each consumer compiles it.
+    if(_layer STREQUAL "crucible")
+      target_compile_definitions(${_target} PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)
+    endif()
+  endforeach()
 endforeach()
 
 # The walks of the check files, across the headers.  A check file includes
@@ -234,6 +341,16 @@ add_test(NAME layer_not_standalone
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-checks.py
           --standalone ${CMAKE_BINARY_DIR})
 set_tests_properties(layer_not_standalone PROPERTIES LABELS "ci_guard;substrate" SKIP_RETURN_CODE 3)
+
+# Each one-line unit has its operation limit, and each row of
+# header-constexpr-ops.txt is still necessary: its header compiles alone at
+# the limit of the row and not at the threshold.  Each row gives a warning.
+add_test(NAME header_constexpr_ops_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-constexpr-ops.py --self-test)
+add_test(NAME header_constexpr_ops
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-header-constexpr-ops.py ${CMAKE_BINARY_DIR}
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(header_constexpr_ops header_constexpr_ops_self_test PROPERTIES LABELS "ci_guard;substrate")
 
 # A fixture compiles against the root of the foundation layer, as a
 # foundation header would, and the test passes when the compiler refuses it

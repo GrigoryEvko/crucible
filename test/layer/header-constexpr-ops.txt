@@ -1,0 +1,21 @@
+# The headers that need a constant evaluation of more operations than the
+# limit of a header alone, one row each:
+#
+#   <layer>/<path>.h | limit | reason
+#
+# test/layer/CMakeLists.txt compiles each header alone with
+# -fconstexpr-ops-limit at the error threshold of the row
+# header-constexpr-ops in utils/scripts/budgets.txt.  An evaluation of more
+# operations runs where the header stands, in each translation unit that
+# includes the header, so it stops the build.  A row gives its header the
+# limit of the row in place of that threshold.  The limit of a row is more
+# than the threshold.  The test header_constexpr_ops compiles each listed
+# header alone at the threshold, and it fails when the header compiles, so
+# a row goes in the commit that makes its evaluation lazy or small.  The
+# list can only become shorter.  A reason has no semicolon.
+
+# make_gf_tables builds the 256 by 256 multiplication table of GF(2^8) at
+# namespace scope, in about 16.5 million operations and 1 s of each
+# translation unit that includes the header.
+crucible/cntp/Fec.h | 20000000 | gf, the table of make_gf_tables, is an inline constexpr variable at namespace scope, and its evaluation takes about 16.5 million operations
+crucible/cntp/Fountain.h | 20000000 | it includes crucible/cntp/Fec.h, whose table gf takes about 16.5 million operations

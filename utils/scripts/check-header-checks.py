@@ -130,8 +130,9 @@ WHAT THE GUARD CANNOT SEE
     an #if counts, because the kit does not preprocess.  The syntax cannot
     tell a cheap call from an expensive one, and it cannot see an eager
     instantiation, for example a non-template function that reads a
-    variable template.  The test header_constexpr_ops measures the exact
-    form: each header alone compiles at a low -fconstexpr-ops-limit.
+    variable template.  The build gives the exact form: test/layer compiles
+    each header alone at a low -fconstexpr-ops-limit, and the test
+    header_constexpr_ops holds the list of the higher limits.
 
 Usage
     check-header-checks.py [--warnings-dir DIR]    compare the tree with the ledger

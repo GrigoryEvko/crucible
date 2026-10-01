@@ -514,6 +514,13 @@ jobs:
           cmake --build --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
           ${{ matrix.preset == 'analyzer' && '--target crucible' || '' }}
 
+      # Each header with a check file compiles alone at the operation limit of
+      # a header alone (test/layer/CMakeLists.txt).  The target is outside
+      # `all`, because it adds about 4 s of wall time to a clean build.
+      - name: Build the headers alone at the operation limit
+        if: ${{ matrix.preset == 'default' }}
+        run: cmake --build --preset default -j ${{ matrix.jobs }} --target layer_alone
+
       - name: ccache stats
         run: ccache -s
 
