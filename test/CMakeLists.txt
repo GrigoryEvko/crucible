@@ -5385,6 +5385,16 @@ add_test(NAME compile_cost_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-compile-cost.py --self-test)
 set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
 
+# affected_tests_self_test — utils/scripts/run-affected-tests.py builds a tree
+# and runs only the tests whose inputs changed since their last pass.  It is
+# the test command of the inner loop (CLAUDE.md §XV).  CI and the checks before
+# a landing run the full suite.  The self-test plants each kind of input in a
+# scratch tree with a CTestTestfile.cmake that it writes.
+add_test(NAME affected_tests_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/run-affected-tests.py --self-test
+          --ctest ${CMAKE_CTEST_COMMAND})
+set_tests_properties(affected_tests_self_test PROPERTIES LABELS "ci_guard")
+
 # vessel_acceptance is the acceptance gate of the PyTorch vessel under
 # vessel/torch.  utils/scripts/check-vessel-acceptance.py builds the vessel targets
 # and accepts the vessel of this build only when the vessel compiles against a
