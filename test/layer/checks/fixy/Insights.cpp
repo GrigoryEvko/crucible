@@ -58,24 +58,42 @@ static_assert(strict_pole_name_<Axis::Effect>() == "Row");
 static_assert(strict_pole_name_<Axis::Regime>() == "Unconstrained");
 static_assert(strict_pole_name_<Axis::Type>() == "the payload type the binding names");
 
-// The six corpus entries are insighted, at Fatal.
-[[nodiscard]] consteval bool every_corpus_entry_is_insighted_() noexcept {
-    bool all_insighted = true;
+// The six corpus entries are insighted, at Fatal, and each text of each
+// entry clears the floor of insights_quality_thresholds, the floor that
+// CRUCIBLE_DIAG_INSIGHTS_QV states.  The fault names the first entry and
+// field that fail, and it is empty when each one holds.
+[[nodiscard]] consteval std::string_view corpus_insight_fault_() {
     static constexpr auto entries =
         std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^::fixy::corpus::Entries)));
+    std::string fault;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto entry : entries) {
         using Entry = [:entry:];
-        all_insighted = all_insighted && ::foundation::diag::HasSubstantiveInsights<Entry>
-                     && ::foundation::diag::insight_provider<Entry>::severity == ::foundation::diag::Severity::Fatal;
+        using Provider = ::foundation::diag::insight_provider<Entry>;
+        using Floor = ::foundation::diag::insights_quality_thresholds<Entry>;
+        const std::string name{std::meta::display_string_of(entry)};
+        if (!fault.empty()) {
+            continue;
+        }
+        if (!::foundation::diag::is_diagnostic_class_v<Entry>) {
+            fault = name + " is not a diagnostic class of the catalog.";
+        } else if (Provider::severity != ::foundation::diag::Severity::Fatal) {
+            fault = name + " has an insight severity that is not Fatal.";
+        } else if (Provider::why_this_matters.size() < Floor::min_why_chars) {
+            fault = name + ": the insight why_this_matters is too short.  Be substantive.";
+        } else if (Provider::symptom_pattern.size() < Floor::min_symptom_chars) {
+            fault = name + ": the insight symptom_pattern is too short.  Be substantive.";
+        } else if (Provider::correct_example.size() < Floor::min_correct_chars) {
+            fault = name + ": the insight correct_example is too short.  Show real C++.";
+        } else if (Provider::violating_example.size() < Floor::min_violating_chars) {
+            fault = name + ": the insight violating_example is too short.  Show the anti-pattern.";
+        }
     }
 #pragma GCC diagnostic pop
-    return all_insighted;
+    return std::define_static_string(fault);
 }
 
-static_assert(every_corpus_entry_is_insighted_(),
-              "fixy/Insights.h: a corpus entry has no insight provider, or one below the substance floor, or "
-              "one that is not Fatal.");
+static_assert(corpus_insight_fault_().empty(), corpus_insight_fault_());
 
 }  // namespace fixy::insights::detail::insights_self_test

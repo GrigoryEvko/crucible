@@ -33,7 +33,6 @@ include/crucible/ledger/RefreshDaemon.h | 1 | 5
 include/crucible/ledger/probes/CacheTier.h | 1 | 0
 include/crucible/ledger/probes/HugePage.h | 1 | 0
 include/crucible/ledger/probes/VectorWidth.h | 1 | 0
-include/fixy/Insights.h | 0 | 24
 function static_assert | include/crucible/Graph.h | 1
 function static_assert | include/foundation/effects/Effect.h | 1
 eager evaluation | include/crucible/observe/Health.h | 1
