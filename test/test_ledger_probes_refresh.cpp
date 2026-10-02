@@ -17,7 +17,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <expected>
+#include <filesystem>
 #include <memory>
+#include <string>
+#include <system_error>
+
+#include <unistd.h>
 
 using namespace crucible;
 using crucible::ledger::CompetenceReport;
@@ -274,20 +279,37 @@ int main() {
     // The daemon commits to the store, and the store's root comes from the
     // environment. Without this the test would write a stub verdict into
     // whatever real ledger the machine is using and the next process to
-    // read it would be served a fabricated twenty nanoseconds. setenv
-    // rather than a parameter, so the path sanitizer the discovery runs
-    // through is still exercised.
-    char directory_template[] = "/tmp/crucible-probe-test-XXXXXX";
-    const char* directory = ::mkdtemp(directory_template);
-    assert(directory != nullptr);
-    assert(::setenv("XDG_CACHE_HOME", directory, 1) == 0);
+    // read it would be served a fabricated twenty nanoseconds. An
+    // environment variable rather than a parameter, so the path sanitizer
+    // the discovery runs through is still exercised.
+    //
+    // A run that aborts runs no destructor and leaves its directory.  The
+    // planted directory stands for one: no process can have the id
+    // 999999999, because it is above the largest process id of Linux.  The
+    // last six characters come from the id of this process, so two runs at
+    // the same time plant two different directories.
+    std::error_code error;
+    std::string planted = std::to_string(1000000 + ::getpid() % 1000000);
+    planted = "/tmp/crucible-probe-test-999999999-" + planted.substr(1);
+    (void)std::filesystem::create_directory(planted, error);
+    assert(std::filesystem::is_directory(planted, error));
+    std::string directory;
+    {
+        const ledger_probe_fixtures::ScopedCacheHome cache_home;
+        directory = cache_home.path();
+        assert(!std::filesystem::exists(planted, error));
 
-    std::printf("test_ledger_probes_refresh:\n");
-    test_an_unfit_host_is_never_probed();
-    test_sibling_verdicts_share_one_measurement();
-    test_backoff_grows_only_when_nothing_was_admitted();
-    test_daemon_publishes_a_view_a_reader_can_use();
-    test_daemon_thread_starts_and_stops();
+        std::printf("test_ledger_probes_refresh:\n");
+        test_an_unfit_host_is_never_probed();
+        test_sibling_verdicts_share_one_measurement();
+        test_backoff_grows_only_when_nothing_was_admitted();
+        test_daemon_publishes_a_view_a_reader_can_use();
+        test_daemon_thread_starts_and_stops();
+    }
+
+    // The cache root is gone when the guard ends, so a run leaves no
+    // directory behind.
+    assert(!std::filesystem::exists(directory, error));
     std::printf("test_ledger_probes_refresh: 5 groups, all passed\n");
     return 0;
 }
