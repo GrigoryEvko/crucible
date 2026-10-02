@@ -6,8 +6,9 @@ It reads the rule table through layer_rules.py and writes these files under
 the directory OUT:
 
     facts.txt     The rows that decide a finding: each layer, allow, door,
-                  admit and quarantine row, with the restrictions of each admit
-                  row and with no reason, no comment and no `until` family.
+                  admit, quarantine and language row, with the restrictions of
+                  each admit row and with no reason, no comment and no `until`
+                  family.
                   The lines are sorted.  The stamp of each compile command
                   holds the hash of this file, so a change of a fact compiles
                   each unit again, and a change of a reason compiles nothing.
@@ -82,6 +83,7 @@ def facts_text(table: layer_rules.RuleTable) -> str:
             words.append(f"in {' '.join(sorted(admit.in_paths))}")
         lines.append(f"admit {' '.join(words)}")
     lines += [f"quarantine {path}" for path in table.quarantines]
+    lines += [f"language {layer} {' '.join(sorted(paths))}" for layer, paths in table.languages]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 
@@ -237,6 +239,10 @@ def self_test() -> int:
         written, _ = run(reordered.replace("arity 1", "arity 2"))
         expect("a changed restriction changes facts.txt",
                (out / "facts.txt").read_text(encoding="utf-8") != facts)
+
+        run(reordered + "language low include/low/Low.h\n")
+        expect("a language row is a fact",
+               "language low include/low/Low.h\n" in (out / "facts.txt").read_text(encoding="utf-8"))
 
         (root / "app" / "util.h").unlink()
         _, removed = run(base_table)

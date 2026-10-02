@@ -18,7 +18,7 @@ from pathlib import Path
 
 TABLE = Path(__file__).resolve().parent / "layer-rules.txt"
 MODES = ("report", "error")
-ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce")
+ROW_KINDS = ("layer", "allow", "door", "admit", "quarantine", "enforce", "language")
 
 
 class TableError(ValueError):
@@ -64,6 +64,9 @@ class RuleTable:
     admits: tuple[Admit, ...]
     quarantines: tuple[str, ...]
     enforces: tuple[tuple[str, str], ...]
+    # The layer whose allowance caps the outside includes, and the paths of
+    # each language row.
+    languages: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def layer_named(self, name: str) -> Layer | None:
         """Return the layer with NAME, or None."""
@@ -187,9 +190,12 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     admits: list[Admit] = []
     quarantines: list[str] = []
     enforces: list[tuple[str, str]] = []
+    languages: list[tuple[str, tuple[str, ...]]] = []
     class_paths: dict[str, str] = {}
     allow_lines: list[tuple[str, str]] = []
     in_path_lines: list[tuple[str, str]] = []
+    language_lines: list[tuple[str, str]] = []
+    language_paths: list[tuple[str, str]] = []
     for number, line in enumerate(text.splitlines(), start=1):
         content = line.strip()
         if not content or content.startswith("#"):
@@ -245,6 +251,16 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
                 raise TableError(f"{where}: the path {args[0]} is also in {class_paths[args[0]]}")
             class_paths[args[0]] = "a quarantine row"
             quarantines.append(args[0])
+        elif kind == "language":
+            if len(args) < 2:
+                raise TableError(f"{where}: a language row is 'language LAYER PATH...'")
+            for path in args[1:]:
+                _check_path(path, where)
+                if any(known == path for known, _ in language_paths):
+                    raise TableError(f"{where}: the path {path} has a second language row")
+                language_paths.append((path, where))
+            languages.append((args[0], tuple(args[1:])))
+            language_lines.append((args[0], where))
         else:
             if len(args) != 2 or args[1] not in MODES:
                 raise TableError(f"{where}: an enforce row is 'enforce PATH MODE', and MODE is report or error")
@@ -256,12 +272,19 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     for layer_name, where in allow_lines:
         if layer_name not in known:
             raise TableError(f"{where}: the allow row names the layer {layer_name}, and no layer row gives it")
+    for layer_name, where in language_lines:
+        if layer_name not in known:
+            raise TableError(f"{where}: the language row names the layer {layer_name}, and no layer row gives it")
     for path, where in in_path_lines:
         if not any(holds(layer_path, path) for layer in layers for layer_path in layer.paths):
-            raise TableError(f"{where}: the path {path} after `in` is in no layer.  The plugin reads no base file, "
-                             f"so an `in` path must be a path of the base")
+            raise TableError(f"{where}: the path {path} after `in` is in no layer.  An `in` path must be a path of "
+                             f"the base")
+    for path, where in language_paths:
+        if not any(holds(layer_path, path) for layer in layers for layer_path in layer.paths):
+            raise TableError(f"{where}: the path {path} of the language row is in no layer.  A path of the "
+                             f"language must be a path of the base")
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
-                     tuple(enforces))
+                     tuple(enforces), tuple(languages))
 
 
 def load(path: Path = TABLE) -> RuleTable:

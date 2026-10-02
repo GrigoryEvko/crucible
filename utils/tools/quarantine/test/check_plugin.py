@@ -131,6 +131,10 @@ MALFORMED_TABLES = (
     ("a path with an empty component", "quarantine a//\n"),
     ("an unknown enforce mode", "enforce a/ fatal\n"),
     ("a path with two enforce rows", "enforce a/ error\nenforce a/ report\n"),
+    ("a language row with no path", "layer one 0 a/\nlanguage one\n"),
+    ("a language row of no layer", "layer one 0 a/\nlanguage none a/x.h\n"),
+    ("a language path outside the base", "layer one 0 a/\nquarantine b/\nlanguage one b/x.h\n"),
+    ("a path in two language rows", "layer one 0 a/\nlanguage one a/x.h\nlanguage one a/x.h\n"),
     ("a reason with no row kind", "| a reason\n"),
 )
 
@@ -369,6 +373,7 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_include_rules,
         run_library_names,
         run_restrictions,
+        run_language,
         run_table_readers,
         run_section,
         run_dependencies,
@@ -789,6 +794,46 @@ def run_restrictions(section: Section) -> None:
     debug = next(results)
     section.expect("a unit that defines _GLIBCXX_DEBUG fails, because <meta> is admitted unless it does",
                    debug.returncode != 0 and "the unit defines _GLIBCXX_DEBUG" in debug.stderr, debug.stderr[-2000:])
+
+
+# (the macro of a plant of fixy/high/Language.h, the kind of its error, a text
+# in the entity)
+LANGUAGE_PLANTS = (
+    ("PLANT_LANGUAGE_HIGH_HEADER", "layer_header",
+     "<cstdint> in the layer high, a file of the language with the allowance of the layer low"),
+    ("PLANT_LANGUAGE_SYSTEM_HEADER", "layer_header", "<unistd.h> in the layer high"),
+    ("PLANT_LANGUAGE_DOOR_HEADER", "door_header", "<sys/socket.h> has the door src/fixy/SocketDoor.cpp"),
+    ("PLANT_LANGUAGE_MEMBER", "std_object", "std::vector"),
+    ("PLANT_LANGUAGE_LOCAL", "std_object", "std::vector"),
+    ("PLANT_LANGUAGE_PARAMETER", "std_object", "std::source_location"),
+    ("PLANT_LANGUAGE_ALIAS", "std_entity", "std::vector"),
+    ("PLANT_LANGUAGE_TYPEDEF", "std_entity", "std::ptrdiff_t"),
+    ("PLANT_LANGUAGE_BASE", "std_entity", "std::vector"),
+    ("PLANT_LANGUAGE_TEMPLATE", "std_object", "std::vector"),
+)
+
+
+def run_language(section: Section) -> None:
+    """Compile language_user.cpp in report mode with language.txt, with no plant and with each plant.
+
+    The included fixy/high/Language.h is a file of the language.  With no
+    plant it has no finding, also for its raw pointer, its array and the name
+    that a row with `in` admits there.  Each plant is an error in report mode,
+    in the file of the language.
+    """
+    report_mode = {"root": str(HERE), "mode": "report", "rules": str(HERE / "language.txt")}
+    calls: list[tuple[object, ...]] = [("language_user.cpp", report_mode)]
+    calls += [("language_user.cpp", report_mode, ("-S", "-o", os.devnull), (f"-D{macro}",))
+              for macro, _, _ in LANGUAGE_PLANTS]
+    results = iter(section.compile_all(calls))
+    clean = next(results)
+    section.expect("a file of the language with no plant compiles with no error and no note",
+                   clean.returncode == 0 and "quarantine:" not in clean.stderr, clean.stderr[-2000:])
+    for macro, kind, text in LANGUAGE_PLANTS:
+        planted = next(results)
+        errors = [row for row in quarantine_errors(planted.stderr, kind) if "include/fixy/high/Language.h:" in row]
+        section.expect(f"a file of the language with {macro} fails in report mode with a {kind} of {text}",
+                       planted.returncode != 0 and len(errors) == 1 and text in errors[0], planted.stderr[-2000:])
 
 
 def run_table_readers(section: Section) -> None:

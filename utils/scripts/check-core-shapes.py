@@ -709,7 +709,10 @@ def compile_probe(entry: Entry, obj: Path, include_dir: Path | None = None) -> N
     The command writes `obj`, and an include directory given here comes before
     each other one.  Each other word stays: the quarantine plugin writes only
     the section of the object, because the command gives it no report
-    directory.
+    directory.  A compile with an include directory puts a copy of a header
+    of the base outside the source root in front of the original.  The plugin
+    refuses that include in fixy/Core.h, a file of the language, so that
+    compile loads no plugin.
 
     Raises:
         CannotRun: If the compile fails
@@ -722,7 +725,9 @@ def compile_probe(entry: Entry, obj: Path, include_dir: Path | None = None) -> N
             words += ["-o", str(obj)]
             index += 2
             continue
-        words.append(word)
+        is_plugin_word = word.startswith(("-fplugin=", "-fplugin-arg-")) or word == "-DCRUCIBLE_QUARANTINE_ACTIVE"
+        if include_dir is None or not is_plugin_word:
+            words.append(word)
         index += 1
     result = subprocess.run(words, capture_output=True, text=True, cwd=entry.directory)
     if result.returncode != 0:

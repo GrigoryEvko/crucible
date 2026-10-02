@@ -7,8 +7,9 @@
 // THE RULE TABLE
 //     utils/scripts/layer-rules.txt gives the layers of the base, the headers
 //     that each layer can include, the door of each system header, the
-//     admitted entities of the standard library, the quarantined directories
-//     and the enforce mode of each path.  Its head comment gives the format,
+//     admitted entities of the standard library, the quarantined directories,
+//     the enforce mode of each path and the files of the language (the base
+//     files that a language row holds).  Its head comment gives the format,
 //     and utils/scripts/layer_rules.py reads the same format.  The plugin
 //     takes the table as rules=PATH.
 //
@@ -23,7 +24,9 @@
 //     The longest path of a layer row or a quarantine row decides.  The
 //     plugin gives an error for each unclassified file that a unit reads.
 //     The contract rule and the opt-out regions apply to each file under the
-//     source root.  The quarantine rule applies to a quarantined file only.
+//     source root.  The quarantine rule applies to a quarantined file only, and
+//     its rule for the type of a declaration also applies to a base file of the
+//     language.
 //     A place of the quarantine rule falls through a generated file to the
 //     point where its macro expands, as it falls through a system header.
 //     The plugin takes the build directory as build=PATH.
@@ -107,6 +110,9 @@ struct FileEntry {
     std::string real;  // the real path, empty for a scratch buffer
     int layer = -1;  // the index of the layer row of a base file
     bool is_error_mode = false;  // the enforce mode of the file is error
+    // The index of the layer of the language row of a base file of the
+    // language, whose allowance caps the outside includes, or -1.
+    int language_layer = -1;
 };
 
 // The files that can own a place.
@@ -147,6 +153,11 @@ struct EnforceRow {
     bool is_error = false;
 };
 
+struct LanguageRow {
+    int layer = -1;  // the index of the layer whose allowance caps the outside includes
+    std::vector<std::string> paths;
+};
+
 // The kind of a use that a row with `until FAMILY` admits starts with this
 // text, and the entry of the row as the table spells it follows.
 inline constexpr const char* kPendingKindPrefix = "replace_pending:";
@@ -177,6 +188,7 @@ struct RuleTable {
     std::vector<AdmitRow> admits;
     std::vector<std::string> quarantines;
     std::vector<EnforceRow> enforces;
+    std::vector<LanguageRow> languages;
 };
 
 struct Place {
@@ -282,6 +294,16 @@ inline void classify_by_table(FileEntry& entry) {
     }
     if (!is_found) {
         entry.file_class = FileClass::unclassified;
+    }
+    std::size_t language_length = 0;
+    for (const LanguageRow& row : core.table.languages) {
+        for (const std::string& path : row.paths) {
+            if (entry.file_class == FileClass::base && row_holds(path, entry.relative)
+                && path.size() > language_length) {
+                entry.language_layer = row.layer;
+                language_length = path.size();
+            }
+        }
     }
     std::size_t mode_length = 0;
     bool has_mode = false;
@@ -880,6 +902,8 @@ inline bool load_rule_table(const std::string& path) {
     std::vector<std::pair<std::string, int>> allow_layers;  // the layer name of each allow row, and its line
     std::vector<std::string> allow_headers;
     std::vector<std::pair<std::string, int>> in_path_lines;  // each path after `in`, and its line
+    std::vector<std::pair<std::string, int>> language_layers;  // the layer name of each language row, and its line
+    std::vector<std::pair<std::string, int>> language_path_lines;  // each path of a language row, and its line
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const char* message) {
@@ -991,8 +1015,30 @@ inline bool load_rule_table(const std::string& path) {
                 }
             }
             table.enforces.push_back(EnforceRow{args[0], args[1] == "error"});
+        } else if (kind == "language") {
+            if (args.size() < 2) {
+                refuse("a language row is 'language LAYER PATH...'");
+                continue;
+            }
+            LanguageRow language;
+            for (std::size_t index = 1; index < args.size(); ++index) {
+                if (!is_plain_path(args[index])) {
+                    refuse("a path must be relative to the source root, with no '.', '..' or empty component");
+                    continue;
+                }
+                for (const auto& [known, known_line] : language_path_lines) {
+                    if (known == args[index]) {
+                        refuse("the path has a second language row");
+                    }
+                }
+                language_path_lines.emplace_back(args[index], line_number);
+                language.paths.push_back(args[index]);
+            }
+            language_layers.emplace_back(args[0], line_number);
+            table.languages.push_back(std::move(language));
         } else {
-            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine and enforce");
+            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, enforce and "
+                   "language");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {
@@ -1010,21 +1056,37 @@ inline bool load_rule_table(const std::string& path) {
         }
         table.allows.emplace_back(layer, allow_headers[index]);
     }
-    // The plugin reads no base file, so a path after `in` must be a base path.
-    for (const auto& [in_path, in_line] : in_path_lines) {
-        bool is_base = false;
-        for (const LayerRow& layer : table.layers) {
-            for (const std::string& layer_path : layer.paths) {
-                is_base = is_base || row_holds(layer_path, in_path);
+    for (std::size_t index = 0; index < language_layers.size(); ++index) {
+        for (std::size_t known = 0; known < table.layers.size(); ++known) {
+            if (table.layers[known].name == language_layers[index].first) {
+                table.languages[index].layer = static_cast<int>(known);
             }
         }
-        if (!is_base) {
-            error("quarantine: %s:%d: the path %s after %<in%> is in no layer; an %<in%> path must be a path of the "
-                  "base",
-                  path.c_str(), in_line, in_path.c_str());
+        if (table.languages[index].layer < 0) {
+            error("quarantine: %s:%d: the language row names the layer %s, and no layer row gives it", path.c_str(),
+                  language_layers[index].second, language_layers[index].first.c_str());
             is_valid = false;
         }
     }
+    // A row with `in` admits only in a base file of the language, and a
+    // language row holds base files only.
+    auto refuse_outside_base = [&](const std::vector<std::pair<std::string, int>>& paths, const char* what) {
+        for (const auto& [row_path, row_line] : paths) {
+            bool is_base = false;
+            for (const LayerRow& layer : table.layers) {
+                for (const std::string& layer_path : layer.paths) {
+                    is_base = is_base || row_holds(layer_path, row_path);
+                }
+            }
+            if (!is_base) {
+                error("quarantine: %s:%d: the path %s of %s is in no layer; it must be a path of the base",
+                      path.c_str(), row_line, row_path.c_str(), what);
+                is_valid = false;
+            }
+        }
+    };
+    refuse_outside_base(in_path_lines, "an in restriction");
+    refuse_outside_base(language_path_lines, "a language row");
     if (!is_valid) {
         return false;
     }

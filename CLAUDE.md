@@ -3054,7 +3054,9 @@ The owner approved each verdict on 2026-10-02. `test/layer/admitted_flag_matrix.
 
 To get the findings of a change, build the targets that compile the changed files, before and after the change. Then compare the output of `python3 utils/scripts/quarantine_sections.py OBJECT...` for their objects. Each object holds the findings of its unit in the section `.crucible.quarantine`, so a cache hit of ccache gives the findings too.
 
-The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In each build, a finding in a file with the mode `error` is a compile error. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger. A change of the mode of a file compiles again only the units with a finding in that file, and a change of a reason or of a comment compiles nothing. `utils/scripts/quarantine_stamps.py` writes the inputs that make this so.
+The `enforce` rows of the rule table give each quarantined directory a mode, `report` or `error`. A file that no `enforce` row holds has the mode `report`. In each build, a finding in a file with the mode `error` is a compile error.
+
+The `language` row of the rule table holds `include/foundation/core/` and `include/fixy/Core.h`, the files of the language. In each build and each mode, the plugin gives a compile error in such a file for an include outside the allowance of the layer F0 primitives, for a system header, and for a declaration whose type holds a library type that no `admit` row admits there. The head comment of the rule table gives the rule. At this time, each `enforce` row has the mode `report`. A directory changes to `error` when it has no finding outside the opt-out ledger. A change of the mode of a file compiles again only the units with a finding in that file, and a change of a reason or of a comment compiles nothing. `utils/scripts/quarantine_stamps.py` writes the inputs that make this so.
 
 ### The ratchet (R11)
 

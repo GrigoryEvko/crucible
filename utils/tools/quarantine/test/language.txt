@@ -1,0 +1,20 @@
+# The rule table of the part of check_plugin.py for the language rule.  The
+# file of the language is in the layer high, and its language row caps its
+# outside includes at the allowance of the layer low.
+
+layer low 0 include/fixy/
+layer high 1 include/fixy/high/
+
+allow low <cstddef>
+allow low <source_location>
+allow low <vector>
+allow high <cstdint>
+
+door <sys/socket.h> src/fixy/SocketDoor.cpp
+
+admit std::nullptr_t in include/fixy/high/Language.h | the type of nullptr, admitted only in the file of the language
+admit std::source_location until Report | the place of a call
+
+quarantine language_user.cpp
+
+language low include/fixy/high/Language.h

@@ -44,9 +44,10 @@
 #         concepts      A header admits only the concepts that it declares
 #         unless MACRO  The plugin refuses each unit that defines MACRO
 #         in PATH...    The entry admits only in the files under the PATHs.
-#                       Each PATH is a path of the base, and the plugin reads
-#                       no base file, so the row admits nothing in a
-#                       quarantined file
+#                       Each PATH is a path of the base, so the row admits
+#                       nothing in a quarantined file.  The plugin reads a
+#                       file of the language (a language row), and the row
+#                       admits in one under a PATH
 #       A qualified name admits the entity and each name in it, such as
 #       std::tuple_size<T>::value for std::tuple_size.  It admits no other
 #       name that starts with the same text: std::tuple_size_v needs its own
@@ -61,6 +62,16 @@
 #       is a line of the section .crucible.quarantine of the object.  A change
 #       of the mode of a file compiles again only the units with a finding in
 #       that file, and a change of a reason or of a comment compiles nothing.
+#   language LAYER PATH...
+#       Each base file under a PATH is a file of the language.  It can include
+#       a header outside the source root only if the allow rows give it to
+#       LAYER or a lower layer, and to its own layer.  The type of each
+#       declaration in it, also a local one, uses no library class,
+#       enumeration or typedef that no admit row admits there.  A row with `in`
+#       admits in a file of the language under one of its paths, and a row
+#       with `until` admits nothing there.  Each finding in a file of the
+#       language is a compile error in each build.  A PATH is in one language
+#       row at most, and it must be a path of the base
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -161,3 +172,5 @@ enforce src/ report
 enforce test/ report
 enforce utils/tools/ report
 enforce vessel/ report
+
+language F0_primitives include/foundation/core/ include/fixy/Core.h
