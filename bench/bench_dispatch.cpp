@@ -152,6 +152,20 @@ void wait_region_published(Vigil& vigil) {
     return align_and_activate(vigil, 3);
 }
 
+// The benches below measure a plan for one CPU device with no distribution,
+// which is what MemoryPlan and TensorSlot give by default.  The arena gives
+// raw storage, so a plan or a slot that the setup does not construct holds
+// the bytes that the arena held before.
+void check_single_cpu_plan(const MemoryPlan& plan) {
+    CRUCIBLE_BENCH_CHECK(plan.device_type == DeviceType::CPU && plan.device_idx == -1);
+    CRUCIBLE_BENCH_CHECK(plan.rank == -1 && plan.world_size == 0 && plan.device_capability == 0);
+}
+
+void check_cpu_slot(const TensorSlot& slot) {
+    CRUCIBLE_BENCH_CHECK(slot.device_type == DeviceType::CPU && slot.device_idx == -1);
+    CRUCIBLE_BENCH_CHECK(slot.layout == Layout::Strided);
+}
+
 // ── Reusable BenchRegion for isolated engine/context/region-cache runs ──
 //
 // Build a full RegionNode with valid TensorMetas, slot IDs, and a
@@ -198,6 +212,7 @@ struct BenchRegion {
 
         auto* slots = arena.alloc_array<TensorSlot>(test.alloc, n_ops);
         for (uint32_t i = 0; i < n_ops; i++) {
+            std::construct_at(&slots[i]);
             slots[i].offset_bytes = i * 4096;
             slots[i].nbytes = 4096;
             slots[i].slot_id = SlotId{i};
@@ -205,6 +220,7 @@ struct BenchRegion {
             slots[i].death_op = OpIndex{i < n_ops - 1 ? i + 1 : i};
             slots[i].dtype = ScalarType::Float;
             slots[i].is_external = false;
+            check_cpu_slot(slots[i]);
         }
 
         plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
@@ -212,6 +228,7 @@ struct BenchRegion {
         plan->num_slots = n_ops;
         plan->num_external = 0;
         plan->pool_bytes = n_ops * 4096;
+        check_single_cpu_plan(*plan);
         region->plan = plan;
     }
 };
@@ -278,6 +295,7 @@ int main() {
         constexpr uint32_t NSLOTS = 16;
         auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NSLOTS);
         for (uint32_t i = 0; i < NSLOTS; i++) {
+            std::construct_at(&slots[i]);
             slots[i].offset_bytes = i * 256;
             slots[i].nbytes = 256;
             slots[i].slot_id = SlotId{i};
@@ -285,12 +303,14 @@ int main() {
             slots[i].death_op = OpIndex{0};
             slots[i].dtype = ScalarType::Float;
             slots[i].is_external = false;
+            check_cpu_slot(slots[i]);
         }
-        auto* plan = arena.alloc_obj<MemoryPlan>(test.alloc);
+        auto* plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
         plan->slots = slots;
         plan->num_slots = NSLOTS;
         plan->num_external = 0;
         plan->pool_bytes = NSLOTS * 256;
+        check_single_cpu_plan(*plan);
 
         PoolAllocator pool;
         pool.init(plan);
@@ -549,10 +569,11 @@ int main() {
                 ops[i].shape_hash = ShapeHash{SHAPE[i].raw() + r * 0x100};
             }
             auto* region = make_region(test.alloc, arena, ops, NUM_OPS);
-            auto* plan = arena.alloc_obj<MemoryPlan>(test.alloc);
+            auto* plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
             plan->slots = nullptr;
             plan->num_slots = 0;
             plan->pool_bytes = 0;
+            check_single_cpu_plan(*plan);
             region->plan = plan;
             regions[r] = region;
         }
