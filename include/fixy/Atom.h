@@ -673,15 +673,12 @@ inline constexpr auto roster_members_v =
     std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^Roster)));
 
 // Reads the enum, so an axis value that is not an enumerator fails
-// here without a hand list of the enumerators.
+// here without a hand list of the enumerators.  The loop runs only when a
+// call evaluates it, so an includer that checks no roster walks no enum.
 [[nodiscard]] consteval bool is_axis_enumerator_(Axis value) noexcept {
-    static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : axes) {
-        if (value == [:en:]) return true;
+    for (const std::meta::info enumerator : std::meta::enumerators_of(^^::fixy::Axis)) {
+        if (std::meta::extract<Axis>(std::meta::constant_of(enumerator)) == value) return true;
     }
-#pragma GCC diagnostic pop
     return false;
 }
 

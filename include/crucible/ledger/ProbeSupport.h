@@ -472,9 +472,6 @@ private:
 inline constexpr std::uint64_t kMemoLifetimeSeconds = 120;
 inline constexpr std::uint64_t kMemoLifetimeNanos = kMemoLifetimeSeconds * 1000ull * 1000ull * 1000ull;
 
-static_assert(kMemoLifetimeSeconds < kFragmentationTtlSeconds,
-              "a memo that outlives the shortest TTL could serve a verdict the ledger calls stale");
-
 [[nodiscard]] inline std::uint64_t monotonic_nanos() noexcept {
     const auto since_epoch = std::chrono::steady_clock::now().time_since_epoch();
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(since_epoch).count());
@@ -528,65 +525,5 @@ template <class Ctx>
     }
     return ::fixy::sched::apply_affinity_to_cpu(ctx, cpu).has_value();
 }
-
-namespace probe_support_detail::self_test {
-
-// A tie is a tie whichever way it is written.
-static_assert(gain_percent(100.0, 100.0) == 100u);
-static_assert(gain_percent(200.0, 100.0) == 200u, "half the time is twice the speed");
-static_assert(gain_percent(100.0, 200.0) == 50u);
-// An unusable input answers zero, which reads as a refusal rather than
-// as a tie. A tie and a failed measurement must not share a spelling.
-static_assert(gain_percent(0.0, 100.0) == 0u);
-static_assert(gain_percent(100.0, 0.0) == 0u);
-static_assert(gain_percent(-1.0, 100.0) == 0u);
-
-// The conjunction, both ways round. Statistically distinguishable but
-// narrow is a tie; wide but indistinguishable is a tie.
-inline constexpr VariantComparison s_significant_but_narrow{
-    .baseline_p50_ns = 100.0,
-    .candidate_p50_ns = 99.0,
-    .candidate_gain_percent = 101u,
-    .is_statistically_distinguishable = true,
-    .is_practically_wide = false,
-};
-static_assert(s_significant_but_narrow.is_a_tie());
-static_assert(!s_significant_but_narrow.candidate_wins());
-
-inline constexpr VariantComparison s_wide_but_unsupported{
-    .baseline_p50_ns = 100.0,
-    .candidate_p50_ns = 50.0,
-    .candidate_gain_percent = 200u,
-    .is_statistically_distinguishable = false,
-    .is_practically_wide = true,
-};
-static_assert(s_wide_but_unsupported.is_a_tie());
-static_assert(!s_wide_but_unsupported.candidate_wins());
-
-inline constexpr VariantComparison s_real_win{
-    .baseline_p50_ns = 100.0,
-    .candidate_p50_ns = 50.0,
-    .candidate_gain_percent = 200u,
-    .is_statistically_distinguishable = true,
-    .is_practically_wide = true,
-};
-static_assert(!s_real_win.is_a_tie());
-static_assert(s_real_win.candidate_wins());
-
-// A candidate that is decisively SLOWER is not a tie and is not a win.
-inline constexpr VariantComparison s_real_loss{
-    .baseline_p50_ns = 100.0,
-    .candidate_p50_ns = 200.0,
-    .candidate_gain_percent = 50u,
-    .is_statistically_distinguishable = true,
-    .is_practically_wide = true,
-};
-static_assert(!s_real_loss.is_a_tie());
-static_assert(!s_real_loss.candidate_wins());
-
-static_assert(!std::is_copy_constructible_v<ProbeRegion>);
-static_assert(std::is_nothrow_move_constructible_v<ProbeRegion>);
-
-}  // namespace probe_support_detail::self_test
 
 }  // namespace crucible::ledger

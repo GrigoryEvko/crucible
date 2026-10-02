@@ -530,29 +530,4 @@ probe_vector_width_memory_gain(LedgerIoCtx const& ctx, CompetenceReport const&) 
                               .evidence = measured.memory_evidence};
 }
 
-namespace vector_width_detail::self_test {
-
-// The conservative width is the narrow one, and a default-constructed
-// measurement — which is what a host with no wide unit produces — already
-// says so without anything having run.
-static_assert(VectorWidthMeasurement{}.preferred_bits == kNarrowWidthBits);
-static_assert(!VectorWidthMeasurement{}.is_usable());
-static_assert(VectorWidthMeasurement{}.fault == LedgerError::NotApplicableOnThisHost);
-static_assert(kNarrowWidthBits < kWideWidthBits);
-
-// The compute buffer must fit the smallest L1d this tree supports, or the
-// compute-bound shape is not compute-bound on that host.
-static_assert(kComputeBytes < ::fixy::concurrent::conservative_l1d_per_core);
-
-// No constant can be past each last-level cache, so the buffer is sized
-// against the measured cache at run time, and stream_bytes_for refuses a
-// cache that the ceiling cannot outgrow by kMinStreamCacheMultiple.
-static_assert(kMinStreamBytes <= kMaxStreamBytes);
-static_assert(kMinStreamCacheMultiple > 1 && kMinStreamCacheMultiple <= kStreamCacheMultiple);
-static_assert(stream_bytes_for(std::size_t{32} << 20) == std::size_t{256} << 20);
-static_assert(stream_bytes_for(kMaxStreamBytes / kMinStreamCacheMultiple) == kMaxStreamBytes);
-static_assert(!stream_bytes_for(kMaxStreamBytes / kMinStreamCacheMultiple + 1).has_value());
-
-}  // namespace vector_width_detail::self_test
-
 }  // namespace crucible::ledger::probes

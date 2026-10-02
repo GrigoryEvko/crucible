@@ -910,7 +910,6 @@ private:
             auto* body = node->compute_body();
             // Inst is trivially copyable and exactly one word, so each
             // instruction folds in as a single value.
-            static_assert(sizeof(Inst) == 8);
             for (uint16_t k = 0; k < body->num_ops; ++k) {
                 uint64_t packed_inst;
                 std::memcpy(&packed_inst, &body->ops[k], 8);

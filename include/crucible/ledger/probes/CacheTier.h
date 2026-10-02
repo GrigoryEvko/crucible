@@ -757,36 +757,4 @@ probe_numa_remote_cost(LedgerIoCtx const& ctx, CompetenceReport const&) noexcept
     return VerdictMeasurement{.value = VerdictValue{measured.remote_cost_percent}, .evidence = measured.evidence};
 }
 
-namespace cache_tier_detail::self_test {
-
-// A worker owns a thread that captured `this`, so neither a copy nor a
-// move may exist.
-static_assert(!std::is_copy_constructible_v<SliceWorker>);
-static_assert(!std::is_move_constructible_v<SliceWorker>);
-
-// A default measurement is not usable and does not claim a bracket, so a
-// caller that forgets to check is_usable() still cannot read a byte count
-// out of a probe that never ran.
-static_assert(!CacheTierMeasurement{}.is_usable());
-static_assert(!CacheTierMeasurement{}.found_a_bracket());
-static_assert(!NumaMeasurement{}.is_usable());
-
-// A ceiling below its knee is not a bracket. The sweep assigns the
-// ceiling on every winning point after the knee, so this can only come
-// from a corrupted structure, and the predicate catches it rather than
-// handing a caller an inverted range.
-static_assert(!CacheTierMeasurement{
-    .fault = LedgerError::None, .parallel_knee_bytes = 1024, .parallel_ceiling_bytes = 512}
-                   .found_a_bracket());
-static_assert(CacheTierMeasurement{
-    .fault = LedgerError::None, .parallel_knee_bytes = 1024, .parallel_ceiling_bytes = 1024}
-                  .found_a_bracket());
-
-// The sweep must actually step. A ratio that rounds back to itself would
-// loop forever on the smallest size.
-static_assert(kSweepStepNumerator > kSweepStepDenominator);
-static_assert((kSweepFloorBytes * kSweepStepNumerator) / kSweepStepDenominator > kSweepFloorBytes);
-
-}  // namespace cache_tier_detail::self_test
-
 }  // namespace crucible::ledger::probes

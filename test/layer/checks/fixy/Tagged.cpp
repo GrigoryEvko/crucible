@@ -88,9 +88,10 @@ static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Tagged<int, ta
 // the one place a new edge must be acknowledged by hand: an edge is
 // admitted the moment it is declared, and this pin is what makes the
 // declaration a reviewed two-place edit.
-static_assert(admitted_retag_count == 22, "fixy::tags::admitted_retags holds a different number of edges than "
-                                          "this pin.  An edge was added or removed: review it as the security "
-                                          "change it is, then move the pin.");
+static_assert(admitted_retag_count == ::foundation::fail_closed::edge_count<^^tags::admitted_retags>(),
+              "fixy::tags::admitted_retags holds a different number of edges than admitted_retag_count.  An edge "
+              "was added or removed: review it as the security change it is, then write the new count in the "
+              "initializer of admitted_retag_count.");
 static_assert(::foundation::fail_closed::every_edge_is_admitted<^^tags::admitted_retags>(),
               "every edge declared in fixy::tags::admitted_retags must be admitted by the "
               "fail-closed check that reads the same namespace");

@@ -55,4 +55,8 @@ static_assert(!AxisIsClassified<static_cast<Axis>(axis_count)>,
 static_assert(std::is_same_v<axis_traits<Axis::Observability>::strict, axis_traits<Axis::Effect>::strict>,
               "Observability's derived pole must round-trip to Effect's strict pole.");
 
+static_assert(axis_count == std::meta::enumerators_of(^^Axis).size(),
+              "axis_count is a literal count of the enumerators of Axis, so that no includer of the header walks "
+              "the enum.  Write the new count in its initializer.");
+
 }  // namespace fixy

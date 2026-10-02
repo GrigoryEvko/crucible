@@ -20,7 +20,7 @@ enum class HealthMetricSlot : std::uint32_t {
 
 inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x48450000u;
 // One observation for each slot.
-inline constexpr std::size_t kTopologyHealthObservationCount = std::meta::enumerators_of(^^HealthMetricSlot).size();
+inline constexpr std::size_t kTopologyHealthObservationCount = 4;
 
 using TopologyHealthObservationSet = std::array<ObservationSnapshot, kTopologyHealthObservationCount>;
 using TopologyHealthObservationBatch = std::array<Observation, kTopologyHealthObservationCount>;

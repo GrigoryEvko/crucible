@@ -383,9 +383,10 @@ struct NeverFrom {};
 struct NeverTo {};
 }  // namespace detail::retag_sentinel
 
-// The number of edges of the catalog, derived from the namespace.  The
-// check file of this header pins it, so a new edge is a reviewed
-// two-place edit.
-inline constexpr std::size_t admitted_retag_count = ::foundation::fail_closed::edge_count<^^tags::admitted_retags>();
+// The number of edges of the catalog.  It is a literal, so that no
+// includer walks the namespace.  The check file of this header derives the
+// count from the namespace and pins this literal to it, so a new edge is a
+// reviewed two-place edit.
+inline constexpr std::size_t admitted_retag_count = 22;
 
 }  // namespace fixy

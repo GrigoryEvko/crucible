@@ -86,9 +86,11 @@ static_assert(!IsSecret<int>);
 // against admitted_policy_count moves in the same change.
 static_assert(::foundation::fail_closed::Sealed<^^tags::secret_policy::admitted_policies>);
 
-static_assert(admitted_policy_count == 6, "fixy::tags::secret_policy::admitted_policies holds a different "
-                                          "number of edges than this pin.  A policy was added or removed: "
-                                          "review it as the audit-trail change it is, then move the pin.");
+static_assert(admitted_policy_count
+                  == ::foundation::fail_closed::edge_count<^^tags::secret_policy::admitted_policies>(),
+              "fixy::tags::secret_policy::admitted_policies holds a different number of edges than "
+              "admitted_policy_count.  A policy was added or removed: review it as the audit-trail change it is, "
+              "then write the new count in the initializer of admitted_policy_count.");
 static_assert(::foundation::fail_closed::every_edge_is_admitted<^^tags::secret_policy::admitted_policies>(),
               "every edge declared in fixy::tags::secret_policy::admitted_policies must be admitted by "
               "the fail-closed check that reads the same namespace");

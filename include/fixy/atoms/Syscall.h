@@ -296,15 +296,13 @@ using syscall_family_row_t = ::foundation::effects::row_union_t<
 // holds no row.
 [[nodiscard]] consteval bool is_catalogued_call_(sc::SyscallId id) noexcept { return syscall_rows_naming_(id) == 1; }
 
-// A value of SyscallFamily that names a family of the chain.
+// A value of SyscallFamily that names a family of the chain.  The loop
+// runs only when a call evaluates it.
 [[nodiscard]] consteval bool is_catalogued_family_(sc::SyscallFamily family) noexcept {
-    bool known = false;
-    static constexpr auto families = std::define_static_array(std::meta::enumerators_of(^^sc::SyscallFamily));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto family_member : families) { known = known || ([:family_member:] == family); }
-#pragma GCC diagnostic pop
-    return known;
+    for (const std::meta::info family_member : std::meta::enumerators_of(^^sc::SyscallFamily)) {
+        if (std::meta::extract<sc::SyscallFamily>(std::meta::constant_of(family_member)) == family) return true;
+    }
+    return false;
 }
 
 }  // namespace fixy::atom::detail

@@ -160,7 +160,7 @@ enum class Axis : std::uint8_t {
     MemoryScope = 32,  // L  (Crucible extension)
 };
 
-inline constexpr std::size_t axis_count = std::meta::enumerators_of(^^Axis).size();
+inline constexpr std::size_t axis_count = 33;
 
 // The name of an axis is its enumerator identifier, read by reflection,
 // so a new axis is named the moment it is declared.  A value outside

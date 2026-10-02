@@ -329,11 +329,11 @@ concept IsSecret = ::foundation::reflect::IsInstanceOf<T, ^^Secret>;
 template <typename T>
 inline constexpr bool is_secret_v = IsSecret<T>;
 
-// The number of edges of the policy relation, derived from the
-// namespace.  The check file of this header pins it, so a new policy is
-// a reviewed edit.
-inline constexpr std::size_t admitted_policy_count =
-    ::foundation::fail_closed::edge_count<^^tags::secret_policy::admitted_policies>();
+// The number of edges of the policy relation.  It is a literal, so that
+// no includer walks the namespace.  The check file of this header derives
+// the count from the namespace and pins this literal to it, so a new
+// policy is a reviewed edit.
+inline constexpr std::size_t admitted_policy_count = 6;
 
 namespace detail::secret_policy_relation {
 

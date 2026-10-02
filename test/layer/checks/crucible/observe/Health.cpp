@@ -22,4 +22,8 @@ static_assert(
     }(),
     "topology_health_observations does not give observation i the metric id of slot i.");
 
+static_assert(kTopologyHealthObservationCount == std::meta::enumerators_of(^^HealthMetricSlot).size(),
+              "kTopologyHealthObservationCount is a literal count of the enumerators of HealthMetricSlot, so that "
+              "no includer of the header walks the enum.  Write the new count in its initializer.");
+
 }  // namespace crucible::observe

@@ -19,20 +19,8 @@
 #   One item that stays in its header, because its result depends on the translation unit that
 #   includes the header.  The kind is namespace, static_assert, function static_assert or eager
 #   evaluation.  The key is the one that --list prints.  The reason is mandatory.
-include/crucible/ledger/ProbeSupport.h | 1 | 1
-include/crucible/ledger/RefreshDaemon.h | 1 | 5
-include/crucible/ledger/probes/CacheTier.h | 1 | 0
-include/crucible/ledger/probes/HugePage.h | 1 | 0
-include/crucible/ledger/probes/VectorWidth.h | 1 | 0
-function static_assert | include/crucible/Graph.h | 1
-eager evaluation | include/crucible/observe/Health.h | 1
-eager evaluation | include/fixy/Atom.h | 2
-eager evaluation | include/fixy/Axis.h | 1
-eager evaluation | include/fixy/Refined.h | 3
-eager evaluation | include/fixy/Secret.h | 1
-eager evaluation | include/fixy/Tagged.h | 1
-eager evaluation | include/fixy/atoms/Syscall.h | 4
-eager evaluation | include/fixy/session/Handle.h | 1
+eager evaluation | include/fixy/Refined.h | 1
+eager evaluation | include/fixy/atoms/Syscall.h | 2
 eager evaluation | include/foundation/algebra/lattices/MemoryScopeLattice.h | 2
 
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivially_destructible_v<Affine<int>> | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
@@ -40,6 +28,8 @@ keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||!std::is_trivi
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||sizeof(Affine<long long>)<=sizeof(long long)+alignof(long long) | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||sizeof(Linear<int>)<=sizeof(int)+alignof(int) | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
 keep | include/fixy/Qtt.h | static_assert | !qtt_consume_tracked||sizeof(Linear<void*>)<=sizeof(void*)+alignof(void*) | a pin of the tracked build, which only a unit that sets CRUCIBLE_QTT_TRACK_CONSUME reads
+keep | include/fixy/Refined.h | eager evaluation | fixy::refined::steps_from::members | the walk reads admitted_implications where the header defines steps_from, so a member that an includer declares before the header changes the result, and the seal of admitted_implications names such a member
+keep | include/fixy/Refined.h | eager evaluation | fixy::refined::steps_from::template for(members) | the walk reads admitted_implications where the header defines steps_from, so a member that an includer declares before the header changes the result, and the seal of admitted_implications names such a member
 keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::atomicity,[](std::meta::info commit_tag)consteval{return::fixy::atom_pack::names_tag(atomicity_tags,commit_tag);}>() | the walk evaluates the names_tag lookup of atomicity_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::flag,[](std::meta::info flag_tag)consteval{return::fixy::atom_pack::has_row(flag_table,flag_tag);}>() | the walk evaluates the has_row lookup of flag_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Fs.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::open_mode,[](std::meta::info mode_tag)consteval{return::fixy::atom_pack::has_row(open_mode_table,mode_tag);}>() | the walk evaluates the has_row lookup of open_mode_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
@@ -51,6 +41,7 @@ keep | include/fixy/os/Mmap.h | static_assert | ::fixy::atom_pack::every_tag_in_
 keep | include/fixy/os/Mmap.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::mmap::share,[](std::meta::info share_tag)consteval{return::fixy::atom_pack::has_row(share_table,share_tag);}>() | the walk evaluates the has_row lookup of share_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Mmap.h | static_assert | PrimaryShare<share::Private> | the check evaluates the names_tag lookup of primary_share_tags in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
 keep | include/fixy/os/Socket.h | static_assert | ::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::net::socket_kind,[](std::meta::info kind_tag)consteval{return::fixy::atom_pack::has_row(socket_table,kind_tag);}>() | the walk evaluates the has_row lookup of socket_table in each includer, so an explicit specialization of that lookup after the header is an error (fixy/os/AtomPack.h)
+keep | include/fixy/session/Handle.h | eager evaluation | fixy::session::session_payload_families | the walk reads the combinator registry of fixy/session/Protocol.h where the header stands, so a combinator that an includer registers before the header changes the result
 keep | include/fixy/session/Protocol.h | static_assert | ::foundation::algebra::transition::read_seal(detail::protocol_registry,^^::foundation::algebra::transition::combinator).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the registrations that the includer wrote before the end of the header, so a combinator that an includer registers before the header changes the result (test/fixy/neg/neg_sess_combinator_registered_twice.cpp)
 keep | include/fixy/session/Protocol.h | static_assert | ::foundation::algebra::transition::read_seal(detail::protocol_registry,^^::foundation::algebra::transition::payload_rule).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the payload rules that the includer wrote before the end of the header, so a rule that an includer writes before the header changes the result (test/fixy/neg/neg_sess_payload_rule_before_seal.cpp)
 keep | include/fixy/session/Subtype.h | static_assert | ::foundation::algebra::transition::read_seal(^^::fixy::session::payload_axioms,^^::foundation::algebra::transition::subsort_axiom).fault==::foundation::algebra::transition::seal_fault::none | the seal counts the axioms that the includer wrote before the end of the header, so an axiom that an includer writes before the header changes the result

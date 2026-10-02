@@ -51,6 +51,25 @@ void test_page_policy_is_verified_against_the_kernel() {
 
 }  // namespace
 
+namespace crucible::ledger::probes {
+
+namespace huge_page_detail::self_test {
+
+static_assert(!HugePageMeasurement{}.is_usable());
+static_assert(HugePageMeasurement{}.fault == LedgerError::NotApplicableOnThisHost);
+
+// The chase region must be far past what a base-page TLB covers, or the
+// payback measurement cannot see a page size at all.
+static_assert(kChaseRegionBytes / 4096u > 60000u, "the chase must outrun any plausible base-page TLB");
+// The fault region must be a whole number of huge pages, or a sample
+// averages over a fractional one.
+static_assert(kFaultRegionBytes % (2ull * 1024ull * 1024ull) == 0u);
+static_assert(kFaultSampleCount >= kMinSampleCount);
+
+}  // namespace huge_page_detail::self_test
+
+}  // namespace crucible::ledger::probes
+
 int main() {
     std::printf("test_ledger_probes_huge_page:\n");
     test_page_policy_is_verified_against_the_kernel();
