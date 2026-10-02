@@ -1345,14 +1345,14 @@ endfunction()
 # with a host language that has a GCC catalog, and damages and changes an
 # entry.  It also gives the driver a budget table and ledgers of its own, and
 # checks the warning, the error and the ledger rows of the CPU budget and of
-# the instruction budget of a compile, and the record of the inputs of each
-# run.  Each check waits about one second for
+# the instruction budget of a compile, the record of the inputs of each run, and
+# the kept command of a fixture.  Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
 # whose position modulo the count of parts is K.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 18)
+set(FIXTURE_STORE_SELF_TEST_PARTS 19)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   add_test(NAME fixture_store_self_test_${part}

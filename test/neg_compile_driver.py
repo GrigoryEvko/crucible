@@ -7,6 +7,14 @@ scratch directory of the fixture.  It does not call Ninja.  CTest runs many
 fixtures at the same time, and each `cmake --build` call writes to the same
 Ninja log and to the same build graph.
 
+The parse of the compile database takes about 20 ms, a fifth of a run that
+uses the store.  So the driver keeps the command of the fixture in
+`NAME.command` in the scratch directory, with the device, the inode, the size
+and the two change times of the database.  It uses that file only while the
+five fields are the same.  It writes the file only when the database did not
+change in the settle period of the store, so a change in the same clock tick
+cannot hide.
+
 How the regexes apply
 ---------------------
 GCC shows the source line of a diagnostic again, below the message.  A regex
@@ -422,21 +430,41 @@ def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:
     return argv
 
 
-def find_compile_command(build_dir: Path, source: Path) -> tuple[list[str], Path] | None:
+def find_compile_command(build_dir: Path, source: Path, memo: Path) -> tuple[list[str], Path] | None:
     """Return the command and the working directory of `source` in the compile database.
 
-    The search compares the file names as text first, and it resolves each name
-    only when no name is equal.  The cost is O(n) in the rows of the database.
+    `memo` keeps the answer with the stat fields of the database, and the
+    function uses it while the fields are the same (the module text).  The
+    search compares the file names as text first, and it resolves each name
+    only when no name is equal.  The cost is O(n) in the rows of the database,
+    and O(1) with a correct memo.
     """
-    rows = json.loads((build_dir / "compile_commands.json").read_text())
+    database = build_dir / "compile_commands.json"
+    fields = _stat_fields(os.stat(database))
     text = str(source)
+    try:
+        recorded = json.loads(memo.read_text())
+        if (recorded["database"] == fields and recorded["source"] == text
+                and all(isinstance(arg, str) for arg in recorded["command"]) and recorded["command"]):
+            return list(recorded["command"]), Path(recorded["directory"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    rows = json.loads(database.read_text())
     match = next((row for row in rows if row["file"] == text), None)
     if match is None:
         match = next((row for row in rows if Path(row["file"]).resolve() == source), None)
     if match is None:
         return None
-    command = match.get("arguments") or shlex.split(match["command"])
-    return list(command), Path(match.get("directory", build_dir))
+    command = list(match.get("arguments") or shlex.split(match["command"]))
+    directory = Path(match.get("directory", build_dir))
+    after = os.stat(database)
+    if _stat_fields(after) == fields and after.st_ctime_ns < _now_ns() - _SETTLE_NS:
+        try:
+            _write_atomic(memo, json.dumps({"database": fields, "source": text, "command": command,
+                                            "directory": str(directory)}).encode("ascii"))
+        except OSError:
+            pass
+    return command, directory
 
 
 def compile_environment(base: Mapping[str, str]) -> dict[str, str]:
@@ -1732,6 +1760,7 @@ def _record_compile(store: ResultStore, key: str, result: CompileResult, missing
 
 _INPUTS_FORMAT = 1
 _INPUTS_SUFFIX = ".inputs"
+_COMMAND_SUFFIX = ".command"
 
 
 def write_inputs_record(scratch: Path, fixture_name: str, result: CompileResult, is_stored: bool) -> None:
@@ -1935,14 +1964,13 @@ def main(arguments: list[str]) -> int:
         print(f"the fixture name {fixture_name!r} is not a word of letters, digits, '_' and '-'", file=sys.stderr)
         return 2
 
-    found = find_compile_command(build_dir, source)
+    scratch = build_dir / "neg-compile" / fixture_name
+    scratch.mkdir(parents=True, exist_ok=True)
+    found = find_compile_command(build_dir, source, scratch / f"{fixture_name}{_COMMAND_SUFFIX}")
     if found is None:
         print(f"no compile command for {source}", file=sys.stderr)
         return 2
     command, directory = found
-
-    scratch = build_dir / "neg-compile" / fixture_name
-    scratch.mkdir(parents=True, exist_ok=True)
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
     argv = compile_argv(command, output, depfile)

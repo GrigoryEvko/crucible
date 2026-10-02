@@ -634,6 +634,33 @@ class StoreTest:
                     f"a fatal error with the store off writes the inputs of the -M -MG pass: {fatal_head} "
                     f"{fatal_paths}")
 
+    def check_command_memo(self) -> None:
+        """The driver keeps the command of a fixture, and uses it only while the compile database is the same."""
+        memo = self.build / "neg-compile" / "neg_size" / f"neg_size{driver._COMMAND_SUFFIX}"
+        database = self.build / "compile_commands.json"
+        fresh = self.run("neg_size", *SIZE, **self.started_at(database))
+        self.expect(fresh[0] == 0 and not memo.exists(),
+                    f"the driver keeps no command while the compile database is new: {fresh[0]} {fresh[3]}")
+        first = self.run("neg_size", *SIZE)
+        try:
+            recorded = json.loads(memo.read_text())
+        except (OSError, ValueError):
+            recorded = {}
+        command = recorded.get("command")
+        self.expect(first[0] == 0 and isinstance(command, list), f"the driver keeps the command: {first[0]} {recorded}")
+        if not isinstance(command, list):
+            return
+        recorded["command"] = [*command, "-Dint=char"]
+        memo.write_text(json.dumps(recorded))
+        planted = self.run("neg_size", *SIZE)
+        self.expect(planted[0] == 1 and "compiled successfully" in planted[2],
+                    f"the driver uses the kept command while the compile database is the same: {planted[0]} "
+                    f"{planted[3]}")
+        database.write_text(database.read_text())
+        rewritten = self.run("neg_size", *SIZE)
+        self.expect(rewritten[0] == 0 and self.has(rewritten[3], "the result comes from the store"),
+                    f"a rewritten compile database replaces the kept command: {rewritten[0]} {rewritten[3]}")
+
     def check_eviction(self) -> None:
         """A write into a bucket above its share removes the entries of that bucket unused for the longest time.
 
@@ -690,6 +717,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_cpu_budget,
     StoreTest.check_instruction_budget,
     StoreTest.check_inputs_record,
+    StoreTest.check_command_memo,
 )
 
 SEARCH_LIST = """\
