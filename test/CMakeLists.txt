@@ -5636,11 +5636,12 @@ set_tests_properties(budget_history PROPERTIES SKIP_RETURN_CODE 3)
 add_test(NAME quarantine_sections_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/quarantine_sections.py --self-test)
 # quarantine_ratchet — utils/scripts/check-quarantine-ratchet.py counts the
-# distinct findings of the sections of the objects of all in each directory and
-# kind, against utils/scripts/quarantine-ledger.txt.  A count above or below its
-# row fails.  It exits 3 for a build whose compiles do not load the quarantine
-# plugin, for a build of another configuration than the ledger, and for a build
-# that made only some targets.
+# distinct findings of the sections of the objects of all in each file and kind,
+# against utils/scripts/quarantine-ledger.txt.  A count above or below its row
+# fails, and so does a finding in a file that the ledger does not hold.  It exits
+# 3 for a build whose compiles do not load the quarantine plugin, for a build of
+# a configuration that the ledger does not have, and for a build that made only
+# some targets.
 add_test(NAME quarantine_ratchet
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-quarantine-ratchet.py --build-dir ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})

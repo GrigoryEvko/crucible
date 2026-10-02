@@ -27,7 +27,10 @@ THE FINDINGS
       warning on each run, which names each commit that added rows after the
       newest commit at the lowest count.  A ledger of a row with the unit %
       holds the baselines of a check against a baseline, which --write writes
-      again.  It admits nothing, and the guard does not count its rows.
+      again.  It admits nothing, and the guard does not count its rows.  The
+      rows of utils/scripts/quarantine-ledger.txt are the counts of the files
+      that utils/scripts/check-quarantine-ratchet.py writes, and the guard does
+      not count them either.
     * A commit that raised a threshold, and whose body holds no measurement of
       the row, gives an error.  A row of the admission ledger that names the
       commit, the row and the column changes the error to a warning.
@@ -97,6 +100,7 @@ BUDGETS = "utils/scripts/budgets.txt"
 LEDGER_GLOB = "utils/scripts/*-ledger.txt"
 LEDGER_SUFFIX = "-ledger.txt"
 ADMISSIONS = "utils/scripts/budget-history-ledger.txt"
+QUARANTINE_LEDGER = "utils/scripts/quarantine-ledger.txt"
 COLUMNS = ("warn", "error")
 WORKING_TREE = "the working tree"
 NOT_APPLICABLE = 3
@@ -470,7 +474,7 @@ def evaluate_ledgers(history: History, budgets: dict[str, Row]) -> list[check_re
     findings: list[check_report.Finding] = []
     for path in history.ledgers:
         row_name = Path(path).name.removesuffix(LEDGER_SUFFIX)
-        if budgets.get(row_name, Row(0, 0, "")).unit == BASELINE_UNIT:
+        if path == QUARANTINE_LEDGER or budgets.get(row_name, Row(0, 0, "")).unit == BASELINE_UNIT:
             continue
         states: list[float | None] = []
         rises: list[tuple[int, Rise]] = []

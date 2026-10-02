@@ -549,8 +549,8 @@ jobs:
         if: ${{ matrix.run_tests }}
         run: ctest --preset ${{ matrix.preset }} -j ${{ matrix.jobs }}
 
-      # The ratchet of the quarantine: the findings of each directory and kind
-      # can only decrease (utils/scripts/check-quarantine-ratchet.py and
+      # The ratchet of the quarantine: the findings of each file and kind can
+      # only decrease (utils/scripts/check-quarantine-ratchet.py and
       # utils/scripts/quarantine-ledger.txt).  The ledger counts the x86_64
       # build of the default preset, so only that leg runs the step.  The test
       # quarantine_ratchet runs the check too, and this step prints the counts.
