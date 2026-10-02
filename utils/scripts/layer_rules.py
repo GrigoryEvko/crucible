@@ -35,13 +35,23 @@ class Layer:
 
 
 @dataclasses.dataclass(frozen=True)
+class Admit:
+    """One admit row: the entry, the family that replaces it (or ""), the reason and the line."""
+
+    entry: str
+    until: str
+    reason: str
+    line: int
+
+
+@dataclasses.dataclass(frozen=True)
 class RuleTable:
     """The rows of one rule table, in the order of the file."""
 
     layers: tuple[Layer, ...]
     allows: tuple[tuple[str, str], ...]
     doors: tuple[tuple[str, str], ...]
-    admits: tuple[tuple[str, str, int], ...]  # the entry, the reason and the line
+    admits: tuple[Admit, ...]
     quarantines: tuple[str, ...]
     enforces: tuple[tuple[str, str], ...]
 
@@ -114,7 +124,7 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
     layers: list[Layer] = []
     allows: list[tuple[str, str]] = []
     doors: list[tuple[str, str]] = []
-    admits: list[tuple[str, str, int]] = []
+    admits: list[Admit] = []
     quarantines: list[str] = []
     enforces: list[tuple[str, str]] = []
     class_paths: dict[str, str] = {}
@@ -160,9 +170,10 @@ def parse(text: str, name: str = "layer-rules.txt") -> RuleTable:
                 raise TableError(f"{where}: the header {args[0]} has a second door")
             doors.append((args[0], args[1]))
         elif kind == "admit":
-            if len(args) != 1 or not reason:
-                raise TableError(f"{where}: an admit row is 'admit ENTRY | REASON', and the reason is necessary")
-            admits.append((args[0], reason, number))
+            if len(args) not in (1, 3) or (len(args) == 3 and args[1] != "until") or not reason:
+                raise TableError(f"{where}: an admit row is 'admit ENTRY | REASON' or 'admit ENTRY until FAMILY | "
+                                 f"REASON', and the reason is necessary")
+            admits.append(Admit(args[0], args[2] if len(args) == 3 else "", reason, number))
         elif kind == "quarantine":
             if len(args) != 1:
                 raise TableError(f"{where}: a quarantine row is 'quarantine PATH'")

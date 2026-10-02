@@ -809,8 +809,11 @@ inline bool load_rule_table(const std::string& path) {
             }
             table.doors.push_back(std::move(door));
         } else if (kind == "admit") {
-            if (args.size() != 1 || reason.empty()) {
-                refuse("an admit row is 'admit ENTRY | REASON', and the reason is necessary");
+            // The word after `until` names the family that replaces the entry.
+            // It changes nothing in the plugin.
+            if ((args.size() != 1 && args.size() != 3) || (args.size() == 3 && args[1] != "until") || reason.empty()) {
+                refuse("an admit row is 'admit ENTRY | REASON' or 'admit ENTRY until FAMILY | REASON', and the reason "
+                       "is necessary");
                 continue;
             }
             if (is_header(args[0])) {

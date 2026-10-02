@@ -21,9 +21,10 @@ THE RULES
     1. A row has nine fields: NAME | ORIGIN | FLAGS | PREDICTABLE | SAFE |
        USES | COST | VERDICT | REASON.  No field is empty, and no name has two
        rows.
-    2. ORIGIN is `admitted` or `candidate`.  A row is `admitted` when, and only
-       when, its name is an entry of the admitted list.  Each entry of the list
-       has a row.
+    2. ORIGIN is `admitted`, `candidate` or `dropped`.  A row is `admitted`
+       when, and only when, its name is an entry of the admitted list.  Each
+       entry of the list has a row.  A `dropped` row names an entry that the
+       audit removed from the list, and its verdict is DROP.
     3. The name of a `candidate` row is in CANDIDATES, the candidates of
        appendix A, and each candidate has a row.
     4. FLAGS is `invariant` or starts with `varies:`.  PREDICTABLE and SAFE
@@ -34,6 +35,10 @@ THE RULES
        `// name: NAME`, and each section names a row.
     7. A section with the comment `// varies: MACRO` has a row whose FLAGS
        starts with `varies:` and names MACRO.
+    8. The admitted list applies each verdict.  A KEEP verdict has an entry,
+       and a DROP verdict has none.  A verdict `REPLACE: FAMILY` has the entry
+       `admit NAME until FAMILY`, and each entry with `until` has the verdict
+       REPLACE of that family.
 
 Each finding is an error.  The tree holds no violation, so the check has no
 ledger.
@@ -124,7 +129,7 @@ def error(path: Path, line: int, message: str) -> check_report.Finding:
     return check_report.Finding("error", str(path), line, CHECK, message)
 
 
-def read_admitted(root: Path, admitted: Path) -> tuple[dict[str, int], list[check_report.Finding]]:
+def read_admitted(root: Path, admitted: Path) -> tuple[dict[str, layer_rules.Admit], list[check_report.Finding]]:
     """Read the admit rows of the rule table, which are the entries of the admitted list.
 
     Args:
@@ -132,13 +137,52 @@ def read_admitted(root: Path, admitted: Path) -> tuple[dict[str, int], list[chec
         admitted: The rule table, relative to the root
 
     Returns:
-        The line of each entry, and one finding when the table does not obey its format
+        Each admit row by its entry, and one finding when the table does not obey its format
     """
     try:
         table = layer_rules.parse((root / admitted).read_text(encoding="utf-8"), admitted.name)
     except layer_rules.TableError as failure:
         return {}, [error(admitted, 0, f"the rule table does not obey its format: {failure}.  Correct the row.")]
-    return {entry: line for entry, _, line in table.admits}, []
+    return {admit.entry: admit for admit in table.admits}, []
+
+
+def verdict_findings(admitted: Path, table: Path, rows: dict[str, Row],
+                     entries: dict[str, layer_rules.Admit]) -> list[check_report.Finding]:
+    """Return the findings of rule 8: the admitted list applies each verdict.
+
+    Args:
+        admitted: The rule table, relative to the root
+        table: The audit table, relative to the root
+        rows: Each row of the audit table by its name
+        entries: Each admit row of the rule table by its entry
+
+    Returns:
+        One finding for each verdict that the admitted list does not apply
+    """
+    findings: list[check_report.Finding] = []
+    for name, row in rows.items():
+        verdict = VERDICT.fullmatch(row.cells["VERDICT"])
+        if verdict is None:
+            continue
+        entry = entries.get(name)
+        family = verdict["family"]
+        if row.cells["VERDICT"] == "KEEP" and entry is None:
+            findings.append(error(table, row.line, f"the verdict of {name} is KEEP, and {admitted} has no admit row "
+                                                   f"for it.  Add `admit {name} | REASON`."))
+        elif row.cells["VERDICT"] == "DROP" and entry is not None:
+            findings.append(error(admitted, entry.line, f"the verdict of {name} is DROP, and the row admits it.  "
+                                                        "Remove the row."))
+        elif family is not None and (entry is None or entry.until != family):
+            findings.append(error(table, row.line, f"the verdict of {name} is REPLACE: {family}, and {admitted} has "
+                                                   f"no row `admit {name} until {family}`.  Write that row."))
+    for name, entry in entries.items():
+        row = rows.get(name)
+        verdict = VERDICT.fullmatch(row.cells["VERDICT"]) if row is not None else None
+        if entry.until and (verdict is None or verdict["family"] != entry.until):
+            findings.append(error(admitted, entry.line, f"the row admits {name} until {entry.until}, and the audit "
+                                                        f"verdict of {name} is not REPLACE: {entry.until}.  Correct "
+                                                        "the row or the verdict."))
+    return findings
 
 
 def read_table(root: Path, table: Path) -> tuple[dict[str, Row], list[check_report.Finding]]:
@@ -192,9 +236,12 @@ def form_findings(table: Path, number: int, cells: dict[str, str]) -> list[check
     """
     findings: list[check_report.Finding] = []
     name = cells["NAME"]
-    if cells["ORIGIN"] not in ("admitted", "candidate"):
-        findings.append(error(table, number, f"the ORIGIN of {name} is `{cells['ORIGIN']}`.  It is `admitted` or "
-                                             "`candidate`."))
+    if cells["ORIGIN"] not in ("admitted", "candidate", "dropped"):
+        findings.append(error(table, number, f"the ORIGIN of {name} is `{cells['ORIGIN']}`.  It is `admitted`, "
+                                             "`candidate` or `dropped`."))
+    elif cells["ORIGIN"] == "dropped" and cells["VERDICT"] != "DROP":
+        findings.append(error(table, number, f"the ORIGIN of {name} is `dropped`, and its verdict is not DROP.  "
+                                             "Correct the ORIGIN or the verdict."))
     if cells["FLAGS"] != "invariant" and not cells["FLAGS"].startswith("varies:"):
         findings.append(error(table, number, f"the FLAGS of {name} is `invariant` or starts with `varies:`."))
     for column in ("PREDICTABLE", "SAFE"):
@@ -280,10 +327,11 @@ def evaluate(root: Path, admitted: Path = ADMITTED, table: Path = TABLE,
     sections, matrix_findings = read_matrix(root, matrix)
     findings.extend(table_findings)
     findings.extend(matrix_findings)
-    for entry, number in entries.items():
+    findings.extend(verdict_findings(admitted, table, rows, entries))
+    for entry, admit in entries.items():
         if entry not in rows:
-            findings.append(error(admitted, number, f"the admitted entry {entry} has no row in {table}.  Audit the "
-                                                    "entry and add its row."))
+            findings.append(error(admitted, admit.line, f"the admitted entry {entry} has no row in {table}.  Audit "
+                                                        "the entry and add its row."))
     for candidate in sorted(CANDIDATES - rows.keys()):
         findings.append(error(table, 0, f"the candidate {candidate} of appendix A has no row.  Audit the candidate "
                                         "and add its row."))
@@ -292,6 +340,9 @@ def evaluate(root: Path, admitted: Path = ADMITTED, table: Path = TABLE,
         if origin == "admitted" and name not in entries:
             findings.append(error(table, row.line, f"the row of {name} says `admitted`, and {admitted} has no such "
                                                    "entry.  Correct the ORIGIN, or remove the row."))
+        if origin == "dropped" and name in entries:
+            findings.append(error(table, row.line, f"the row of {name} says `dropped`, and {admitted} holds the "
+                                                   "name.  Remove the admit row, or write `admitted`."))
         if origin == "candidate":
             if name in entries:
                 findings.append(error(table, row.line, f"the row of {name} says `candidate`, and {admitted} holds "
@@ -331,7 +382,7 @@ def self_test() -> int:
         if not holds:
             failures.append(name)
 
-    def row(name: str, origin: str, flags: str = "invariant", verdict: str = "KEEP") -> str:
+    def row(name: str, origin: str, flags: str = "invariant", verdict: str = "DROP") -> str:
         """Return one row with plain fields."""
         return f"{name} | {origin} | {flags} | yes | yes | 1 total | 0 | {verdict} | a reason\n"
 
@@ -350,7 +401,7 @@ def self_test() -> int:
             return [finding.text() for finding in found]
 
         clean_table = (row("std::move", "admitted", verdict="KEEP-RESTRICTED: one argument")
-                       + row("<meta>", "admitted", flags="varies: -D_GLIBCXX_DEBUG breaks it")
+                       + row("<meta>", "admitted", flags="varies: -D_GLIBCXX_DEBUG breaks it", verdict="KEEP")
                        + candidate_rows)
         clean_matrix = ("// name: std::move\nstatic_assert(true);\n"
                         "// name: <meta>\n// a note\n// varies: _GLIBCXX_DEBUG\nstatic_assert(true);\n"
@@ -408,9 +459,46 @@ def self_test() -> int:
         expect("a second section of one name is an error",
                any("std::byte has a second section" in text
                    for text in run(clean_table, clean_matrix + "// name: std::byte\nstatic_assert(true);\n")))
-        (root / "list.txt").write_text("admit std::move\n", encoding="utf-8")
+        clean_list = (root / "list.txt").read_text(encoding="utf-8")
+
+        def run_list(listed: str, table: str, matrix: str = clean_matrix) -> list[str]:
+            """Evaluate one rule table with one audit table, and give the clean rule table back."""
+            (root / "list.txt").write_text(listed, encoding="utf-8")
+            try:
+                return run(table, matrix)
+            finally:
+                (root / "list.txt").write_text(clean_list, encoding="utf-8")
+
         expect("a rule table that does not obey its format is an error",
-               any("does not obey its format" in text for text in run(clean_table, clean_matrix)))
+               any("does not obey its format" in text for text in run_list("admit std::move\n", clean_table)))
+        expect("a KEEP verdict with no admit row is an error",
+               any("verdict of <meta> is KEEP" in text
+                   for text in run_list(clean_list.replace("admit <meta> | reflection\n", ""), clean_table)))
+        expect("a DROP verdict with an admit row is an error",
+               any("verdict of std::byte is DROP" in text
+                   for text in run_list(clean_list + "admit std::byte | a type\n", clean_table)))
+        expect("a REPLACE verdict with no row of its family is an error",
+               any("has no row `admit std::move until Scalar`" in text
+                   for text in run(clean_table.replace("KEEP-RESTRICTED: one argument", "REPLACE: Scalar"),
+                                   clean_matrix)))
+        expect("a REPLACE verdict with the row of its family gives no finding",
+               run_list(clean_list.replace("admit std::move |", "admit std::move until Scalar |"),
+                        clean_table.replace("KEEP-RESTRICTED: one argument", "REPLACE: Scalar")) == [])
+        expect("a row with `until` and a verdict that is not REPLACE is an error",
+               any("until Report, and the audit verdict" in text
+                   for text in run_list(clean_list.replace("admit <meta> |", "admit <meta> until Report |"),
+                                        clean_table)))
+        dropped_table = clean_table.replace(row("std::move", "admitted", verdict="KEEP-RESTRICTED: one argument"),
+                                            row("std::move", "dropped"))
+        expect("a dropped entry with no admit row gives no finding",
+               run_list(clean_list.replace("admit std::move | a cast\n", ""), dropped_table) == [])
+        expect("a dropped entry that the rule table still admits is an error",
+               any("says `dropped`" in text for text in run(dropped_table, clean_matrix)))
+        expect("a dropped row whose verdict is not DROP is an error",
+               any("is `dropped`, and its verdict is not DROP" in text
+                   for text in run_list(clean_list.replace("admit std::move | a cast\n", ""),
+                                        dropped_table.replace(row("std::move", "dropped"),
+                                                              row("std::move", "dropped", verdict="KEEP")))))
     if failures:
         print(f"check-admitted-audit --self-test: FAILED, {len(failures)} case(s)", file=sys.stderr)
         return 2

@@ -25,7 +25,12 @@
 #       The file OWNER is the one file of the source root that can include
 #       the header HEADER.
 #   admit ENTRY | REASON
-#       A quarantined file can name the standard library entity ENTRY.  A
+#   admit ENTRY until FAMILY | REASON
+#       A quarantined file can name the standard library entity ENTRY.  The
+#       second form names the family of the base that replaces the entry.  The
+#       row goes when that family lands, and `rg 'until FAMILY'` finds the rows
+#       of one family.  utils/scripts/check-admitted-audit.py makes sure that
+#       each such row has the verdict REPLACE of the same family.  A
 #       qualified name admits the entity and each name in it, such as
 #       std::tuple_size<T>::value for std::tuple_size.  It admits no other
 #       name that starts with the same text: std::tuple_size_v needs its own
@@ -79,13 +84,12 @@ door <sys/ioctl.h> include/fixy/os/Time.h
 admit <type_traits> | a type trait is a compile-time query, and it makes no object
 admit <concepts> | a concept is a compile-time predicate, and it makes no object
 admit <meta> | reflection runs at compile time only
-admit <limits> | numeric_limits gives compile-time constants of fundamental types
+admit <limits> until Scalar | numeric_limits gives compile-time constants of fundamental types
 admit std::move | a cast to an rvalue reference, and it makes no object
 admit std::forward | a cast that keeps the value category, and it makes no object
-admit std::move_if_noexcept | a cast to a reference, and it makes no object
 admit std::as_const | a cast to a const reference, and it makes no object
 admit std::to_underlying | a cast of an enumerator to the integer of its enumeration
-admit std::bit_cast | a copy of the bits into the type that the declaration of the result checks
+admit std::bit_cast until Scalar | a copy of the bits into the type that the declaration of the result checks
 admit std::declval | an unevaluated operand only
 admit std::integer_sequence | a pack of compile-time integers, with no data
 admit std::make_integer_sequence | an alias of std::integer_sequence
@@ -94,7 +98,8 @@ admit std::make_index_sequence | an alias of std::integer_sequence
 admit std::index_sequence_for | an alias of std::integer_sequence
 admit std::tuple_size | a compile-time trait of the tuple protocol
 admit std::tuple_element | a compile-time trait of the tuple protocol
-admit std::unreachable | a hint to the optimizer, and it makes no object
+admit std::unreachable until Report | a hint to the optimizer, and it makes no object
+admit std::source_location until Report | the place of a call, which the compiler gives at compile time
 admit std::size_t | a typedef of unsigned long on the two targets
 admit std::ptrdiff_t | a typedef of long on the two targets
 admit std::int8_t | a typedef of signed char on the two targets

@@ -88,6 +88,8 @@ MALFORMED_TABLES = (
     ("a door whose owner is a directory", "door <x.h> a/\n"),
     ("a header with two doors", "door <x.h> a.cpp\ndoor <x.h> b.cpp\n"),
     ("an admit row with no reason", "admit std::move\n"),
+    ("an admit row with `until` and no family", "admit std::move until | a cast\n"),
+    ("an admit row with a word that is not `until`", "admit std::move after Scalar | a cast\n"),
     ("an absolute path", "quarantine /a/\n"),
     ("a path with a parent component", "quarantine a/../b/\n"),
     ("a path with an empty component", "quarantine a//\n"),
@@ -661,6 +663,11 @@ def run_table_readers(section: Section) -> None:
         section.expect(f"layer_rules.py refuses {name}", is_refused_by_python)
         section.expect(f"the plugin refuses {name}",
                        compiled.returncode != 0 and "error: quarantine: " in compiled.stderr, compiled.stderr[-2000:])
+    until_table = tables / "until.txt"
+    until_table.write_text("admit <type_traits> | traits\nadmit std::move until Scalar | a cast\n"
+                           "quarantine plant_std.cpp\n", encoding="utf-8")
+    until = section.compile("plant_std.cpp", {"root": str(HERE), "mode": "error", "rules": str(until_table)})
+    section.expect("an admit row with `until` still admits its entry", until.returncode == 0, until.stderr[-2000:])
     for name, path in (("the test table", TEST_RULES), ("the tree table", layer_rules.TABLE)):
         try:
             layer_rules.load(path)
