@@ -30,6 +30,12 @@
 //     A place of the quarantine rule falls through a generated file to the
 //     point where its macro expands, as it falls through a system header.
 //     The plugin takes the build directory as build=PATH.
+//     The real path decides the class, and the system flag of a line map
+//     does not: a file under the root that -isystem or #pragma GCC
+//     system_header marks is not a library file (in_library_file_at).  A file
+//     under the root holds no #line directive, no line marker and no #pragma
+//     GCC system_header, because each one changes the file, the line or the
+//     system flag of the code after it (quarantine.cpp, THE PROVENANCE).
 //
 // THE CONTRACT RULE
 //     A P2900 contract specifier (`pre` or `post` on a function declaration)
@@ -45,9 +51,10 @@
 //     PLUGIN_FINISH_PARSE_FUNCTION
 //                            each function definition, also a template, a
 //                            lambda and a member of a local class.
-//     PLUGIN_FINISH_UNIT     one walk of every namespace that a system header
-//                            does not own.  It finds a template and a member of
-//                            a class template that has no definition.
+//     PLUGIN_FINISH_UNIT     one walk of every namespace, also of a library
+//                            namespace that a file under the root opens again.
+//                            It finds a template and a member of a class
+//                            template that has no definition.
 //
 //     The rule cannot see a specifier in a preprocessor arm that the unit does
 //     not compile, or on a member function of a local class in a template when
@@ -350,6 +357,19 @@ inline const FileEntry& classify_file(const char* file) {
     return *entry;
 }
 
+// True when the token at LOCATION is spelled in a system header outside the
+// source root.  A file under the root is never a library file: -isystem and
+// #pragma GCC system_header do not make it one, so the rules and the walks
+// read it as each other file of the tree.
+inline bool in_library_file_at(location_t location) {
+    if (!in_system_header_at(location)) {
+        return false;
+    }
+    location_t spelled = linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, nullptr);
+    expanded_location where = expand_location(spelled);
+    return where.file == nullptr || classify_file(where.file).file_class == FileClass::outside;
+}
+
 // An error for each file of the root that the unit read and that no row of
 // the rule table holds.
 inline void report_unclassified() {
@@ -400,7 +420,7 @@ inline Place place_of(location_t location, Scope scope) {
 // applies, and one finding stays for each spelling: a template and its
 // instantiations share the specifier, and so do the uses of one macro.
 inline void record_contract(bool is_precondition, location_t location) {
-    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION || in_system_header_at(location)) {
+    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION || in_library_file_at(location)) {
         return;
     }
     location_t spelled = linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, nullptr);
@@ -452,12 +472,6 @@ inline void check_contracts(tree decl) {
     }
 }
 
-// The anonymous namespace of the unit is not a library namespace, even when a
-// system header opens it first.
-inline bool is_library_namespace(tree ns) {
-    return ns == std_node || (DECL_NAME(ns) != NULL_TREE && in_system_header_at(DECL_SOURCE_LOCATION(ns)));
-}
-
 inline void walk_contract_class(tree type);
 
 inline void walk_contract_template(tree template_decl) {
@@ -487,7 +501,7 @@ inline void walk_contract_template(tree template_decl) {
 
 inline void walk_contract_decl(tree decl) {
     if (decl == NULL_TREE || !DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)
-        || in_system_header_at(DECL_SOURCE_LOCATION(decl))) {
+        || in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
         return;
     }
     switch (TREE_CODE(decl)) {
@@ -531,10 +545,12 @@ inline void walk_contract_class(tree type) {
     }
 }
 
-// One walk of each namespace that a system header does not own.  The two
-// other hooks of the rule see each function definition and each declaration
-// outside a template.  This walk finds a function template, a member template
-// and a member of a class template that has no definition.
+// One walk of each namespace.  The two other hooks of the rule see each
+// function definition and each declaration outside a template.  This walk
+// finds a function template, a member template and a member of a class
+// template that has no definition.  A file under the root can open a library
+// namespace too, such as std, so the walk reads each namespace and skips each
+// declaration of a library file.
 inline void walk_contract_namespace(tree ns) {
     if (!core.contract_walked.insert(ns).second) {
         return;
@@ -554,7 +570,7 @@ inline void walk_contract_namespace(tree ns) {
             continue;
         }
         if (TREE_CODE(member) == NAMESPACE_DECL) {
-            if (DECL_NAMESPACE_ALIAS(member) == NULL_TREE && !is_library_namespace(member)) {
+            if (DECL_NAMESPACE_ALIAS(member) == NULL_TREE) {
                 walk_contract_namespace(member);
             }
             continue;

@@ -294,6 +294,7 @@ struct LibraryClasses {
 
 using IncludeCallback = void (*)(cpp_reader*, location_t, const unsigned char*, const char*, int, const cpp_token**);
 using MacroCallback = void (*)(cpp_reader*, location_t, cpp_hashnode*);
+using FileChangeCallback = void (*)(cpp_reader*, const line_map_ordinary*);
 
 // The state of the quarantine rule.  plugin_core.h holds the state that the
 // two rules share: the root, the rule table, the files, the findings and the
@@ -316,6 +317,13 @@ struct State {
     // The include rules.
     IncludeCallback previous_include = nullptr;
     PendingInclude pending;
+
+    // The provenance: the callback of the front end, the start of the main
+    // file, and the location of the last #include directive, which the entry
+    // of its target follows.
+    FileChangeCallback previous_file_change = nullptr;
+    bool is_main_started = false;
+    location_t include_directive = UNKNOWN_LOCATION;
 
     // The expansions of assert.
     MacroCallback previous_used = nullptr;
@@ -353,7 +361,7 @@ const FileEntry* language_file_of(location_t location) {
 bool is_worth_a_walk(location_t location) {
     Place place = place_of(location, Scope::quarantine);
     return place.file_class == FileClass::quarantined || (place.file != nullptr && place.file->language_layer >= 0)
-        || (location > BUILTINS_LOCATION && !in_system_header_at(location)
+        || (location > BUILTINS_LOCATION && !in_library_file_at(location)
             && linemap_location_from_macro_expansion_p(line_table, location));
 }
 
@@ -377,9 +385,16 @@ void add_finding(const char* kind, bool is_name, const Place& place, const std::
     core.findings.push_back(std::move(finding));
 }
 
-bool is_system_assert(const cpp_hashnode* node) {
-    return node != nullptr && cpp_user_macro_p(node) && node->value.macro != nullptr && node->value.macro->syshdr
-        && std::strcmp(reinterpret_cast<const char*>(NODE_NAME(node)), "assert") == 0;
+// The macro assert of a system header outside the root.  A file under the
+// root that marks itself as a system header and defines assert does not hide
+// the tokens of its definition.
+bool is_system_assert(cpp_hashnode* node) {
+    if (node == nullptr || !cpp_user_macro_p(node) || node->value.macro == nullptr || !node->value.macro->syshdr
+        || std::strcmp(reinterpret_cast<const char*>(NODE_NAME(node)), "assert") != 0) {
+        return false;
+    }
+    expanded_location definition = expand_location(cpp_macro_definition_location(node));
+    return definition.file == nullptr || classify_file(definition.file).file_class == FileClass::outside;
 }
 
 // True when a macro of a system header spells the token at LOCATION inside an
@@ -389,7 +404,7 @@ bool is_system_assert(const cpp_hashnode* node) {
 // so it stays a finding.  Complexity: O(depth of the macro expansion).
 bool is_inside_system_assert(location_t location) {
     if (!linemap_location_from_macro_expansion_p(line_table, location)
-        || !in_system_header_at(linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, nullptr))) {
+        || !in_library_file_at(linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, nullptr))) {
         return false;
     }
     location_t current = location;
@@ -540,8 +555,9 @@ tree top_namespace(tree decl) {
 }
 
 // A declaration of namespace std is standard, wherever it is.  Any other
-// declaration of a system header is standard when a namespace holds it, as
-// __gnu_cxx does, and part of the C library when it is global.
+// declaration of a system header outside the root is standard when a
+// namespace holds it, as __gnu_cxx does, and part of the C library when it is
+// global.
 Library library_of(tree decl) {
     if (decl == NULL_TREE || !DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
         return Library::none;
@@ -550,7 +566,7 @@ Library library_of(tree decl) {
     if (top == std_node) {
         return Library::standard;
     }
-    if (!in_system_header_at(DECL_SOURCE_LOCATION(decl))) {
+    if (!in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
         return Library::none;
     }
     return top == global_namespace ? Library::c_library : Library::standard;
@@ -972,9 +988,7 @@ tree library_type_name_in(tree type, int depth, const FileEntry* language = null
     return NULL_TREE;
 }
 
-bool is_standard_class(tree type) {
-    return type != NULL_TREE && library_of(TYPE_MAIN_DECL(type)) == Library::standard;
-}
+bool is_standard_class(tree type) { return type != NULL_TREE && library_of(TYPE_MAIN_DECL(type)) == Library::standard; }
 
 // The finding of a class that CLASSES gives as pending, at LOCATION.  SUFFIX
 // follows the name of the class in the entity, such as the member of a
@@ -1903,13 +1917,14 @@ void walk_namespace(tree ns);
 
 void walk_namespace_member(tree decl) {
     switch (TREE_CODE(decl)) {
+        // A library namespace too: a file under the root can open std again.
         case NAMESPACE_DECL:
             if (DECL_NAMESPACE_ALIAS(decl) != NULL_TREE) {
                 tree target = ORIGINAL_NAMESPACE(decl);
                 if (target != NULL_TREE && top_namespace(target) == std_node) {
                     record(Kind::std_entity, DECL_SOURCE_LOCATION(decl), qualified_name(target));
                 }
-            } else if (!is_library_namespace(decl)) {
+            } else {
                 walk_namespace(decl);
             }
             return;
@@ -1928,7 +1943,18 @@ void walk_namespace_member(tree decl) {
         default:
             break;
     }
-    if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl) || in_system_header_at(DECL_SOURCE_LOCATION(decl))) {
+    if (!DECL_P(decl) || DECL_IS_UNDECLARED_BUILTIN(decl)) {
+        return;
+    }
+    if (in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
+        // A file under the root can specialize a class template of the
+        // library, such as std::hash, and the specialization is no member of
+        // its namespace.
+        tree result = TREE_CODE(decl) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(decl) : NULL_TREE;
+        if (result != NULL_TREE && TREE_CODE(result) == TYPE_DECL && DECL_IMPLICIT_TYPEDEF_P(result)
+            && CLASS_TYPE_P(TREE_TYPE(result))) {
+            walk_specializations(decl);
+        }
         return;
     }
     switch (TREE_CODE(decl)) {
@@ -2251,6 +2277,7 @@ void on_include(cpp_reader* reader, location_t location, const unsigned char* di
     if (state.previous_include != nullptr) {
         state.previous_include(reader, location, directive, name, is_angle, comments);
     }
+    state.include_directive = location;
     finish_pending_include(nullptr);
     auto header = is_angle != 0 && name != nullptr ? state.admitted_headers.find(name) : state.admitted_headers.end();
     state.admitted_header_pending = header != state.admitted_headers.end() ? header->second : nullptr;
@@ -2277,6 +2304,92 @@ void on_macro_used(cpp_reader* reader, location_t location, cpp_hashnode* node) 
     if (is_system_assert(node) && identifier_spelled_at(location) == "assert") {
         record(Kind::assert_expansion, location, "assert");
     }
+}
+
+// THE PROVENANCE.  libcpp calls the file change callback for each file that
+// the preprocessor enters or leaves, and for each rename of a line map that a
+// directive makes: #line, a line marker and #pragma GCC system_header.
+// libcpp makes the other renames of a map itself, with no callback.  Before
+// the main file starts, the front end renames the map to <built-in> and
+// <command-line>, enters the files of -include, and renames the map back to
+// the main file, the file of the first map.  The front end sets its own
+// callback after plugin_init, so the plugin chains it at PLUGIN_START_UNIT.
+
+// An error for a rename that a directive of a file under the root makes.  The
+// map before the rename holds the directive.
+void check_rename(const line_map_ordinary* map) {
+    if (!state.is_main_started) {
+        const line_map_ordinary* main_map = LINEMAPS_ORDINARY_MAP_AT(line_table, 0);
+        state.is_main_started =
+            main_map != map && std::strcmp(ORDINARY_MAP_FILE_NAME(main_map), ORDINARY_MAP_FILE_NAME(map)) == 0;
+        return;
+    }
+    unsigned used = LINEMAPS_ORDINARY_USED(line_table);
+    if (used < 2) {
+        return;
+    }
+    const line_map_ordinary* holder = LINEMAPS_ORDINARY_MAP_AT(line_table, used - 2);
+    const FileEntry& file = classify_file(ORDINARY_MAP_FILE_NAME(holder));
+    if (file.file_class == FileClass::outside) {
+        return;
+    }
+    location_t start = MAP_START_LOCATION(map);
+    error_at(start > MAP_START_LOCATION(holder) ? start - 1 : UNKNOWN_LOCATION,
+             "quarantine: %qs holds a %<#line%> directive, a line marker or %<#pragma GCC system_header%>.  Each one "
+             "changes the file, the line or the system flag of the code after it, so a file under the source root "
+             "does not hold one",
+             file.relative.c_str());
+}
+
+// An error for a line marker of a file under the root that enters a file.  An
+// #include directive of the same line comes before each entry that is no
+// line marker.
+void check_entry(const line_map_ordinary* map) {
+    location_t directive = state.include_directive;
+    state.include_directive = UNKNOWN_LOCATION;
+    location_t from = linemap_included_from(map);
+    if (!state.is_main_started || from == UNKNOWN_LOCATION) {
+        return;
+    }
+    expanded_location includer = expand_location(from);
+    if (includer.file == nullptr) {
+        return;
+    }
+    const FileEntry& file = classify_file(includer.file);
+    if (file.file_class == FileClass::outside) {
+        return;
+    }
+    expanded_location announced = expand_location(directive);
+    bool is_directive = directive != UNKNOWN_LOCATION && announced.file != nullptr && announced.line == includer.line
+                     && &classify_file(announced.file) == &file;
+    if (!is_directive) {
+        error_at(from,
+                 "quarantine: a line marker of %qs enters %qs.  A file under the source root enters a file only with "
+                 "%<#include%>, so each finding keeps its file and its line",
+                 file.relative.c_str(), ORDINARY_MAP_FILE_NAME(map));
+    }
+}
+
+// The file change callback of libcpp: the provenance checks of the new map,
+// after the callback of the front end.
+void on_file_change(cpp_reader* reader, const line_map_ordinary* map) {
+    if (state.previous_file_change != nullptr) {
+        state.previous_file_change(reader, map);
+    }
+    if (map == nullptr) {
+        return;
+    }
+    if (map->reason == LC_RENAME || map->reason == LC_RENAME_VERBATIM) {
+        check_rename(map);
+    } else if (map->reason == LC_ENTER) {
+        check_entry(map);
+    }
+}
+
+void on_start_unit(void*, void*) {
+    cpp_callbacks* callbacks = cpp_get_callbacks(parse_in);
+    state.previous_file_change = callbacks->file_change;
+    callbacks->file_change = on_file_change;
 }
 
 // Each file that the preprocessor enters.  The file that the last directive
@@ -2411,6 +2524,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     state.previous_used = callbacks->used;
     callbacks->used = on_macro_used;
     register_callback(plugin_info->base_name, PLUGIN_INCLUDE_FILE, on_include_file, nullptr);
+    register_callback(plugin_info->base_name, PLUGIN_START_UNIT, on_start_unit, nullptr);
     register_contract_rule(plugin_info->base_name);
     register_callback(plugin_info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);

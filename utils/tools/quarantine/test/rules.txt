@@ -29,6 +29,9 @@ quarantine gaps.cpp
 quarantine gapsother/
 quarantine header_exact.cpp
 quarantine include_exact.cpp
+quarantine isystem_user.cpp
+quarantine line_directive.cpp
+quarantine line_marker.cpp
 quarantine low_includes_high.cpp
 quarantine meta_info.cpp
 quarantine nonclass.cpp
@@ -40,6 +43,8 @@ quarantine raw_pragma.cpp
 quarantine reason_without_class.cpp
 quarantine region_outside_root.cpp
 quarantine region_without_reason.cpp
+quarantine reopened_std.cpp
+quarantine system_marked.cpp
 quarantine unclosed_region.cpp
 quarantine violations.cpp
 quarantine fixy/

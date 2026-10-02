@@ -50,12 +50,18 @@ and the opt-out regions apply to it, and the quarantine rule does not.  The
 test writes a source root with a build directory in its scratch directory,
 and compiles a unit of that root in each mode.
 
+A #line directive, a line marker and #pragma GCC system_header in a file of
+the root each fail the compile.  A file of the root that -isystem marks stays
+a file of the root, and a library namespace that a quarantined file opens
+again gets the walk of each other namespace.
+
 The plugin builds first.  Then the parts of the test run at the same time:
 the findings, the base files, the malformed regions, the modes, the contract
 rule, the generated files, the include rules, the library names, the
-restrictions, the readers of the table, the section, the dependencies, the
-enforce modes through ccache and the flags of the build.  Each part writes its
-own files, and main prints the verdicts of the parts in that order.
+provenance, the restrictions, the readers of the table, the section, the
+dependencies, the enforce modes through ccache and the flags of the build.
+Each part writes its own files, and main prints the verdicts of the parts in
+that order.
 
 usage: check_plugin.py --cxx CXX --source QUARANTINE.cpp --rules TABLE [--build-dir BUILD]
                        -- BUILD_FLAGS...
@@ -372,6 +378,7 @@ def run(checker: Checker, rules: Path) -> list[Section]:
         run_generated_files,
         run_include_rules,
         run_library_names,
+        run_provenance,
         run_restrictions,
         run_language,
         run_table_readers,
@@ -751,6 +758,63 @@ def run_library_names(section: Section) -> None:
     exact = results[-1]
     section.expect("a directive that enters no file resolves through the search chain, not by the end of a path",
                    exact.returncode == 0 and "upward_include" not in exact.stderr, exact.stderr[-2000:])
+
+
+# (fixture, extra flags, a text that the error holds, with ASCII quotes): each
+# directive that changes the file, the line or the system flag of the code
+# after it is an error in report mode.
+PROVENANCE_ERRORS = (
+    ("line_directive.cpp", (), "'line_directive.cpp' holds a '#line' directive"),
+    ("line_marker.cpp", (), "a line marker of 'line_marker.cpp' enters 'fake_system.h'"),
+    ("system_marked.cpp", (), "'gapsother/marked/SystemMarked.h' holds a '#line' directive"),
+)
+
+
+def ascii_quotes(text: str) -> str:
+    """Return TEXT with the typographic quotes of GCC in a UTF-8 locale as ASCII quotes."""
+    return text.replace("‘", "'").replace("’", "'")
+# (fixture, extra flags, line, kind, a text in the entity, or None for no
+# finding of the kind on the line): a file of the root stays a file of the
+# root under -isystem, and a library namespace that a quarantined file opens
+# again is walked.
+PROVENANCE_FINDINGS = (
+    ("isystem_user.cpp", ("-isystem", str(HERE / "gapsother/sys")), "gapsother/sys/Marked.h", 8,
+     "raw_pointer_object", "int*"),
+    ("isystem_user.cpp", ("-isystem", str(HERE / "gapsother/sys")), "isystem_user.cpp", 7, "std_entity", None),
+    ("reopened_std.cpp", (), "reopened_std.cpp", 14, "raw_pointer_object", "int*"),
+    ("reopened_std.cpp", (), "reopened_std.cpp", 19, "std_object", "std::vector"),
+    ("reopened_std.cpp", (), "reopened_std.cpp", 24, "raw_pointer_object", "int*"),
+)
+
+
+def run_provenance(section: Section) -> None:
+    """Compile each fixture of a directive that changes a place, and each fixture of a library file that is not one.
+
+    Each directive of PROVENANCE_ERRORS fails the compile in report mode.  The
+    compiles of PROVENANCE_FINDINGS write their reports to directories of their
+    own, and the part compares each report with the rows.
+    """
+    report_mode = {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES)}
+    calls: list[tuple[object, ...]] = [(fixture, report_mode, ("-S", "-o", os.devnull), extra)
+                                       for fixture, extra, _ in PROVENANCE_ERRORS]
+    reported = sorted({(fixture, extra) for fixture, extra, _, _, _, _ in PROVENANCE_FINDINGS})
+    for index, (fixture, extra) in enumerate(reported):
+        out = section.work / f"provenance-{index}"
+        calls.append((fixture, {**report_mode, "out": str(out)}, ("-S", "-o", os.devnull), extra))
+    results = section.compile_all(calls)
+    for (fixture, _, text), compiled in zip(PROVENANCE_ERRORS, results, strict=False):
+        section.expect(f"{fixture} fails in report mode: {text}",
+                       compiled.returncode != 0 and text in ascii_quotes(compiled.stderr), compiled.stderr[-2000:])
+    findings: dict[tuple[str, tuple[str, ...]], list[Finding]] = {}
+    for index, ((fixture, extra), compiled) in enumerate(zip(reported, results[len(PROVENANCE_ERRORS):], strict=True)):
+        section.expect(f"{fixture} {' '.join(extra)} compiles in report mode".replace("  ", " "),
+                       compiled.returncode == 0, compiled.stderr[-2000:])
+        findings[(fixture, extra)] = read_reports(section.work / f"provenance-{index}")
+    for fixture, extra, file, line, kind, text in PROVENANCE_FINDINGS:
+        hits = [f for f in findings[(fixture, extra)] if f.file == file and f.line == line and f.kind == kind]
+        holds = not hits if text is None else any(text in f.entity for f in hits)
+        what = f"no {kind}" if text is None else f"{kind} {text}"
+        section.expect(f"{what} at {file}:{line}", holds, "; ".join(map(str, hits)))
 
 
 # (the macro of the plant of a restriction, the kind, a text in the entity)
