@@ -1552,6 +1552,13 @@ endif()
 #      A green Release test run is therefore weaker evidence about
 #      production than it looks.
 # ═══════════════════════════════════════════════════════════════
+#
+# A consumer with the property CRUCIBLE_CONTRACT_IGNORE gets no semantic
+# flag from this block.  crucible_contract_ignore_target() of
+# cmake/ContractSemantic.cmake sets the property and gives the target the
+# ignore flag.  This flag is a usage requirement, and CMake puts it after the
+# options of the consumer.  GCC uses the last flag, so without the property
+# the ignore flag of the consumer has no effect.
 if(CMAKE_BUILD_TYPE MATCHES "Release")
   if(CRUCIBLE_VERIFY)
     set(_crucible_release_contract_semantic enforce)
@@ -1560,7 +1567,8 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
   endif()
   target_compile_options(crucible_dialect INTERFACE
     -ftrivial-auto-var-init=zero        # 231  zero-fill (cheaper)
-    -fcontract-evaluation-semantic=${_crucible_release_contract_semantic}  # 231a  see SECTION 6
+    # 231a  see SECTION 6
+    "$<$<NOT:$<BOOL:$<TARGET_PROPERTY:${CRUCIBLE_CONTRACT_IGNORE_PROPERTY}>>>:-fcontract-evaluation-semantic=${_crucible_release_contract_semantic}>"
   )
 endif()
 
@@ -1749,10 +1757,10 @@ endif()
 # is an error when bench/ was never added, and bench/ is added only
 # under that option.  One consequence is worth stating plainly: with
 # the plain `release` preset (CRUCIBLE_BENCH=OFF) this block does
-# nothing, so every TU in that build evaluates its contracts.  The two
-# exceptions are the test_pre_post_cost sentinel, which measures the
-# ignore arm, and test_swiss_table_buffer_ignore, which shows that the
-# plain checks still abort (test/foundation/CMakeLists.txt).
+# nothing, so every TU in that build evaluates its contracts.  The
+# exceptions are the four test targets that call
+# crucible_contract_ignore_target() of cmake/ContractSemantic.cmake, in
+# test/CMakeLists.txt and test/foundation/CMakeLists.txt.
 if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
   set(CRUCIBLE_CONTRACT_IGNORE_TUS
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_trace_ring.cpp     # TraceRing push/pop

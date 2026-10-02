@@ -7,14 +7,16 @@
 // commit returned ENOSYS on every call would pass each fixture, and the
 // second case here refuses it.
 //
-// Everything runs in a directory mkdtemp made under /tmp and removes on
-// the way out.  What the kernel can refuse — an unwritable /tmp — is
-// skipped rather than failed.
+// Everything runs in a scratch directory under /tmp (scratch_dir.h), which
+// the test removes on the way out.  What the kernel can refuse — an
+// unwritable /tmp — is skipped rather than failed.
 
 #include <fixy/OwnedFile.h>
 #include <fixy/Path.h>
 #include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
+
+#include "../scratch_dir.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -53,28 +55,7 @@ using IoBlockCtx =
     return std::move(*laundered);
 }
 
-// The scratch directory, removed with everything in it when the test
-// ends, whichever way it ends.
-class ScratchDir final {
-    std::string path_;
-
-public:
-    ScratchDir() {
-        char pattern[] = "/tmp/fixy-fs-test-XXXXXX";
-        if (const char* made = ::mkdtemp(pattern); made != nullptr) path_ = made;
-    }
-    ~ScratchDir() {
-        if (path_.empty()) return;
-        std::error_code ignored;
-        std::filesystem::remove_all(path_, ignored);
-    }
-    ScratchDir(const ScratchDir&) = delete;
-    ScratchDir& operator=(const ScratchDir&) = delete;
-
-    [[nodiscard]] bool is_ready() const noexcept { return !path_.empty(); }
-    [[nodiscard]] std::string file(const char* name) const { return path_ + "/" + name; }
-    [[nodiscard]] const std::string& dir() const noexcept { return path_; }
-};
+using crucible::test::ScratchDir;
 
 inline constexpr std::size_t kPayloadBytes = 4096;
 
@@ -257,7 +238,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 [[nodiscard]] int dirfd_opens_and_flushes_the_entry(const ScratchDir& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
 
-    auto dir = fs::open_dirfd(ctx, sanitized(scratch.dir()));
+    auto dir = fs::open_dirfd(ctx, sanitized(scratch.path()));
     if (!dir) {
         std::fprintf(stderr, "open_dirfd on the scratch directory failed (%s)\n", dir.error().message().c_str());
         return 1;
@@ -352,7 +333,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 }  // namespace
 
 int main() {
-    ScratchDir scratch;
+    const ScratchDir scratch{"fixy-fs-test"};
     if (!scratch.is_ready()) {
         std::fprintf(stderr, "[skipped] cannot make a scratch directory under /tmp (errno %d)\n", errno);
         return 0;

@@ -787,7 +787,10 @@ public:
 
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU
-    // needs for coalesced access.
+    // needs for coalesced access.  The birth_op of each internal slot is at
+    // most its death_op, and the death_op is at most UINT32_MAX - 3.  The
+    // function stops the process when a slot breaks this rule, because the
+    // sweep would index past its arrays.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan* compute_memory_plan(::foundation::effects::Alloc a,
                                                                                TensorSlot* slots, uint32_t num_slots)
         CRUCIBLE_NO_THREAD_SAFETY;

@@ -7,7 +7,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include <unistd.h>
+#include "../scratch_dir.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -296,26 +296,18 @@ void test_cores_on_node_out_of_range() {
     CRUCIBLE_TEST_REQUIRE(t.cores_on_node(99999).empty());
 }
 
-// A sysfs tree in a temporary directory, removed when the object goes
-// out of scope.  It holds only the files the NUMA probe reads.
+// A sysfs tree in a scratch directory (scratch_dir.h), removed when the
+// object goes out of scope.  It holds only the files the NUMA probe reads.
 class FakeSysfsTree {
 public:
-    explicit FakeSysfsTree(std::string_view name)
-        : root_{std::filesystem::temp_directory_path()
-                / (std::string{name} + "_" + std::to_string(static_cast<long>(::getpid())))} {
-        std::error_code ignored;
-        std::filesystem::remove_all(root_, ignored);
+    explicit FakeSysfsTree(std::string_view name) : scratch_{name}, root_{scratch_.path()} {
+        CRUCIBLE_TEST_REQUIRE(scratch_.is_ready());
         std::filesystem::create_directories(root_ / "devices/system/cpu");
         std::filesystem::create_directories(root_ / "devices/system/node");
     }
 
     FakeSysfsTree(const FakeSysfsTree&) = delete("the tree owns one directory on disk");
     FakeSysfsTree& operator=(const FakeSysfsTree&) = delete("the tree owns one directory on disk");
-
-    ~FakeSysfsTree() {
-        std::error_code ignored;
-        std::filesystem::remove_all(root_, ignored);
-    }
 
     void add_cpus(int count) const {
         for (int cpu = 0; cpu < count; ++cpu) {
@@ -344,6 +336,7 @@ private:
         out << contents << '\n';
     }
 
+    crucible::test::ScratchDir scratch_;
     std::filesystem::path root_;
 };
 

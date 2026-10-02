@@ -12,16 +12,41 @@
 #   - The flag without the define removes the checks and the hints to the
 #     optimizer.
 #
-# Use CRUCIBLE_CONTRACT_IGNORE_OPTIONS whole, as the compile options of a
-# target or of a source file.  After the last target,
-# crucible_check_contract_ignore_pairs() examines each scope of the build.
-# It rejects a scope that has one of the two items without the other.
+# GCC uses the last -fcontract-evaluation-semantic of a compile line.  The
+# Release build gives crucible_dialect its semantic as a usage requirement
+# (CMakeLists.txt, SECTION 6), and CMake puts the usage requirements of the
+# linked targets after the options of the target itself.  So the options of
+# a target cannot change the semantic that crucible_dialect gives.
+#
+# crucible_contract_ignore_target() takes a whole target off contract
+# checks.  It gives the target the property CRUCIBLE_CONTRACT_IGNORE, and
+# crucible_dialect gives no semantic to a target with that property.  It
+# also gives the target CRUCIBLE_CONTRACT_IGNORE_OPTIONS.  The ignore flag
+# is then the one semantic flag of each compile of the target.  A source
+# file takes CRUCIBLE_CONTRACT_IGNORE_OPTIONS whole through its own
+# COMPILE_OPTIONS property, which CMake puts last on the compile line.
+#
+# After the last target, crucible_check_contract_ignore_pairs() examines
+# each scope of the build.  It rejects a scope that has one of the two items
+# without the other, and a target that has the two items without the
+# property.  The ci_guard test contract_semantic reads the compile database,
+# and it rejects a compile whose last semantic flag does not agree with the
+# define.
 
 set(CRUCIBLE_CONTRACT_IGNORE_FLAG -fcontract-evaluation-semantic=ignore)
 set(CRUCIBLE_CONTRACT_IGNORE_DEFINE CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)
+set(CRUCIBLE_CONTRACT_IGNORE_PROPERTY CRUCIBLE_CONTRACT_IGNORE)
 set(CRUCIBLE_CONTRACT_IGNORE_OPTIONS
   ${CRUCIBLE_CONTRACT_IGNORE_FLAG}
   -D${CRUCIBLE_CONTRACT_IGNORE_DEFINE}=1)
+
+# Takes each translation unit of TARGET off contract checks, in each build
+# type.  The target gets CRUCIBLE_CONTRACT_IGNORE_OPTIONS and the property
+# that removes the build-type semantic of crucible_dialect from it.
+function(crucible_contract_ignore_target target)
+  set_property(TARGET ${target} PROPERTY ${CRUCIBLE_CONTRACT_IGNORE_PROPERTY} TRUE)
+  target_compile_options(${target} PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
+endfunction()
 
 # Sets OUT to an error text when ITEMS, the compile options and the compile
 # definitions of one scope, have one item of the pair without the other.
@@ -63,11 +88,14 @@ endfunction()
 # the configure step when one of them has one item of the pair without the
 # other.  A scope is the global flags of the build type, the properties of a
 # directory, the properties of a target, the usage requirements of a target,
-# or the properties of a source file in a target.  Call it after the last
-# target of the build.
+# or the properties of a source file in a target.  It also stops the
+# configure step when the options of a target hold the ignore flag and the
+# target does not have the property of crucible_contract_ignore_target().
+# Call it after the last target of the build.
 # Complexity: linear in the directories, the targets and their sources.
 function(crucible_check_contract_ignore_pairs)
   set(split_scopes "")
+  set(unmarked_targets "")
   string(TOUPPER "${CMAKE_BUILD_TYPE}" build_type)
   crucible_contract_ignore_note(split_scopes "the global flags"
     "${CMAKE_CXX_FLAGS};${CMAKE_CXX_FLAGS_${build_type}}")
@@ -85,6 +113,10 @@ function(crucible_check_contract_ignore_pairs)
       get_target_property(options ${target} COMPILE_OPTIONS)
       get_target_property(definitions ${target} COMPILE_DEFINITIONS)
       crucible_contract_ignore_note(split_scopes "the target ${target}" "${options};${definitions}")
+      get_target_property(is_marked ${target} ${CRUCIBLE_CONTRACT_IGNORE_PROPERTY})
+      if(options MATCHES "${CRUCIBLE_CONTRACT_IGNORE_FLAG}" AND NOT is_marked)
+        list(APPEND unmarked_targets "${target}")
+      endif()
       get_target_property(options ${target} INTERFACE_COMPILE_OPTIONS)
       get_target_property(definitions ${target} INTERFACE_COMPILE_DEFINITIONS)
       crucible_contract_ignore_note(split_scopes "the usage requirements of ${target}" "${options};${definitions}")
@@ -112,5 +144,15 @@ function(crucible_check_contract_ignore_pairs)
       "Each scope below has one item of CRUCIBLE_CONTRACT_IGNORE_OPTIONS "
       "(cmake/ContractSemantic.cmake) without the other.  Give the scope the "
       "full list, or remove the two items from it:\n  ${text}")
+  endif()
+  if(unmarked_targets)
+    list(JOIN unmarked_targets "\n  " text)
+    message(FATAL_ERROR
+      "The options of each target below hold ${CRUCIBLE_CONTRACT_IGNORE_FLAG}, "
+      "but the target does not have the property "
+      "${CRUCIBLE_CONTRACT_IGNORE_PROPERTY}.  The build-type semantic of "
+      "crucible_dialect then comes after the ignore flag, and GCC uses the last "
+      "flag.  Call crucible_contract_ignore_target(TARGET) of "
+      "cmake/ContractSemantic.cmake in place of target_compile_options:\n  ${text}")
   endif()
 endfunction()

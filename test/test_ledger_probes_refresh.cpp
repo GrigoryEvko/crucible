@@ -10,6 +10,7 @@
 #include <crucible/ledger/ProbeSupport.h>
 #include <crucible/ledger/RefreshDaemon.h>
 
+#include "scratch_dir.h"
 #include "test_assert.h"
 #include "test_ledger_probes_fixtures.h"
 
@@ -20,6 +21,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 #include <unistd.h>
@@ -35,6 +37,9 @@ using ledger_probe_fixtures::probe_ctx;
 using ledger_probe_fixtures::unfit_host;
 
 namespace {
+
+// The prefix of the cache root of this test under /tmp.
+constexpr std::string_view kCachePrefix = "crucible-probe-test";
 
 int g_stub_probe_calls = 0;
 
@@ -290,12 +295,13 @@ int main() {
     // the same time plant two different directories.
     std::error_code error;
     std::string planted = std::to_string(1000000 + ::getpid() % 1000000);
-    planted = "/tmp/crucible-probe-test-999999999-" + planted.substr(1);
+    planted = std::string{crucible::test::ScratchDir::kDirectory} + "/" + std::string{kCachePrefix} + "-999999999-"
+            + planted.substr(1);
     (void)std::filesystem::create_directory(planted, error);
     assert(std::filesystem::is_directory(planted, error));
     std::string directory;
     {
-        const ledger_probe_fixtures::ScopedCacheHome cache_home;
+        const crucible::test::ScopedCacheHome cache_home{kCachePrefix};
         directory = cache_home.path();
         assert(!std::filesystem::exists(planted, error));
 

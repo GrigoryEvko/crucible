@@ -21,6 +21,8 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/Io.h>
 
+#include "../scratch_dir.h"
+
 #include <linux/io_uring.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -34,6 +36,7 @@
 #include <filesystem>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -66,27 +69,10 @@ inline constexpr std::size_t kPayloadBytes = 4096;
     return std::move(*laundered);
 }
 
-// The scratch directory, removed with everything in it when the test
-// ends, whichever way it ends.
-class ScratchDir final {
-    std::string path_;
+using crucible::test::ScratchDir;
 
-public:
-    ScratchDir() {
-        char pattern[] = "/tmp/fixy-io-test-XXXXXX";
-        if (const char* made = ::mkdtemp(pattern); made != nullptr) path_ = made;
-    }
-    ~ScratchDir() {
-        if (path_.empty()) return;
-        std::error_code ignored;
-        std::filesystem::remove_all(path_, ignored);
-    }
-    ScratchDir(const ScratchDir&) = delete("a scratch directory is removed one time");
-    ScratchDir& operator=(const ScratchDir&) = delete("a scratch directory is removed one time");
-
-    [[nodiscard]] bool is_ready() const noexcept { return !path_.empty(); }
-    [[nodiscard]] std::string file(const char* name) const { return path_ + "/" + name; }
-};
+// The prefix of the scratch directories of this test under /tmp.
+inline constexpr std::string_view kScratchPrefix = "fixy-io-test";
 
 // The source and the destination of one transfer: two files in a scratch
 // directory, the source filled with a pattern.  An empty handle in either
@@ -206,7 +192,7 @@ struct TransferFiles final {
         pattern[index] = static_cast<std::uint8_t>((index * 13u + 5u) & 0xFFu);
     }
 
-    ScratchDir scratch;
+    const ScratchDir scratch{kScratchPrefix};
     if (!scratch.is_ready()) {
         std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
         return 0;
@@ -250,7 +236,7 @@ struct TransferFiles final {
         pattern[index] = static_cast<std::uint8_t>((index * 31u + 17u) & 0xFFu);
     }
 
-    ScratchDir scratch;
+    const ScratchDir scratch{kScratchPrefix};
     if (!scratch.is_ready()) {
         std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
         return 0;

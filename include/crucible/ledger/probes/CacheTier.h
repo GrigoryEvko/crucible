@@ -108,6 +108,23 @@ inline constexpr std::size_t kMaxSweepPoints = 64;
     return std::clamp<std::size_t>(wanted, kMinSampleCount, 512u);
 }
 
+// The smallest pass that a run times one at a time.  A core loads at most
+// four lines in each cycle, so a pass of this many lines takes at least 8192
+// cycles, eight times the floor at which the pilot of the harness stops at a
+// batch of one.  A split pass of the same set reads half of the lines on the
+// measuring core, so it takes at least 4096 cycles.  A run of such a pass
+// sets the batch to one, and the harness then does not run its pilot, which
+// would time one hundred passes to find the same batch.  A smaller pass keeps
+// the pilot, because it can take less time than the floor.
+inline constexpr std::size_t kOnePassLineCount = 32768;
+
+// Gives run a batch of one when a pass reads line_count lines or more.
+inline void batch_by_pass(bench::Run& run, std::size_t line_count) noexcept {
+    if (line_count >= kOnePassLineCount) {
+        (void)run.batch(1);
+    }
+}
+
 // ── The kernel ────────────────────────────────────────────────────────
 //
 // One 64-bit load per 64-byte line, four independent accumulators. Reading
@@ -430,6 +447,7 @@ struct SweepPass {
 
         auto inline_run = bench::Run{"ledger.cache_tier.inline"};
         (void)inline_run.samples(samples).warmup(8).max_wall_ms(2000);
+        batch_by_pass(inline_run, lines);
         if (self_cpu >= 0) {
             (void)inline_run.core(self_cpu);
         }
@@ -441,6 +459,7 @@ struct SweepPass {
         worker.assign(words + (half * 8u), lines - half);
         auto split_run = bench::Run{"ledger.cache_tier.split"};
         (void)split_run.samples(samples).warmup(8).max_wall_ms(2000);
+        batch_by_pass(split_run, lines);
         if (self_cpu >= 0) {
             (void)split_run.core(self_cpu);
         }
@@ -645,6 +664,7 @@ struct SweepPass {
     auto measure_region = [&](const char* name, ProbeRegion const& region) {
         auto run = bench::Run{name};
         (void)run.samples(std::max<std::size_t>(kMinSampleCount, 48u)).warmup(2).max_wall_ms(10000);
+        batch_by_pass(run, lines);
         if (self_cpu >= 0) {
             (void)run.core(self_cpu);
         }

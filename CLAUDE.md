@@ -1412,7 +1412,7 @@ Every hot operation has a structural cost shape — what it must do per call. Cr
 | MetaLog append | one acquire/release pair on isolated cache lines | SPSC, write-combined |
 | Cross-core signal wait | bounded by MESI cache-line transfer cost | floor is the interconnect; cross-socket worse than intra-socket |
 | Swiss-table lookup (hit) | one open-addressed probe with SIMD compare | Open addressing + SIMD probe |
-| Contract check at boundary | one branch under `semantic=observe`; nothing under `ignore` | only four bench TUs and two tests use `ignore` (§XII) |
+| Contract check at boundary | one branch under `semantic=observe`; nothing under `ignore` | only four bench TUs and four test targets use `ignore` (§XII) |
 | Syscall | kernel-mediated transition | Banned on hot path |
 | `malloc` | allocator round-trip | Banned on hot path |
 
@@ -1961,16 +1961,20 @@ The semantic is set by the build system, never in the source. Debug gets the
 compiler default `enforce`. Release gets `observe`, which evaluates the clause
 and reports through `handle_contract_violation`. The `verify` preset sets
 `CRUCIBLE_VERIFY`, and its Release build gets `enforce`. A translation unit
-leaves that policy only through `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`, and two
-places in the tree apply that list:
+leaves that policy only through `CRUCIBLE_CONTRACT_IGNORE_OPTIONS`, in one of
+two ways:
 
 - SECTION 6b at the foot of `CMakeLists.txt` applies it to the four bench TUs
   in `CRUCIBLE_CONTRACT_IGNORE_TUS`, and only in a Release build with
   `CRUCIBLE_BENCH`.
-- `test/foundation/CMakeLists.txt` applies it to two targets in every build.
-  `test_pre_post_cost` measures the ignore arm of `CRUCIBLE_PRE`.
-  `test_swiss_table_buffer_ignore` shows that the capacity check and the size
-  check of the Swiss table buffer still abort when no contract clause checks.
+- `crucible_contract_ignore_target()` of `cmake/ContractSemantic.cmake`
+  applies it to four test targets in every build. In
+  `test/foundation/CMakeLists.txt`, `test_pre_post_cost` measures the ignore
+  arm of `CRUCIBLE_PRE`, and `test_swiss_table_buffer_ignore` shows that the
+  capacity check and the size check of the Swiss table buffer still abort when
+  no contract clause checks. In `test/CMakeLists.txt`,
+  `test_crucible_context_migration_ignore` and `test_expr_pool_capacity_ignore`
+  run the tests of their source file under the ignore semantic.
 
 `observe` does not mean the program keeps running. P2900 says the handler returns
 and execution resumes, but this project's `handle_contract_violation`
@@ -1980,7 +1984,8 @@ so a program that wants true log-and-continue overrides it with a returning
 definition — that is a production failure-policy decision, not a build flag.
 
 ```cmake
-# CMakeLists.txt SECTION 6 — Release default, INTERFACE on the crucible_dialect target
+# CMakeLists.txt SECTION 6 — Release default, INTERFACE on the crucible_dialect target,
+# for each consumer without the property CRUCIBLE_CONTRACT_IGNORE
 -fcontract-evaluation-semantic=observe
 
 # CMakeLists.txt SECTION 6b — the opt-out list, one line per exempt TU
@@ -1991,7 +1996,15 @@ set_source_files_properties(${CRUCIBLE_CONTRACT_IGNORE_TUS}
 
 In SECTION 6b, the mechanism is the source-file property `COMPILE_OPTIONS`.
 CMake puts it last on the compile line, and GCC uses the last
-`-fcontract-evaluation-semantic` that it reads.
+`-fcontract-evaluation-semantic` that it reads. The options of a target come
+before the usage requirements of the targets that it links, so they cannot
+change the semantic of `crucible_dialect`. `crucible_contract_ignore_target()`
+gives the target the property `CRUCIBLE_CONTRACT_IGNORE`, and SECTION 6 gives no
+semantic flag to a target with that property. The configure step rejects a
+target whose options hold the ignore flag without that property. The test
+`contract_semantic` (`utils/scripts/check-contract-semantic.py`) reads the
+compile database, and it fails when the last semantic flag of a compile does not
+agree with the define `CRUCIBLE_CONTRACT_SEMANTIC_IGNORE`.
 
 Do NOT use `#pragma GCC contract_evaluation_semantic`. No file in `include/` or
 `src/` uses it, and it cannot work for this tree. The hot path is header-only,

@@ -964,11 +964,21 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
 
     if (num_slots == 0) return plan;
 
+    // The caller gives the slots, so the lifetime of each internal slot is
+    // checked here, where the slots enter the sweep.  The sweep indexes its
+    // arrays by birth_op and by death_op + 1, and it sizes them from the
+    // largest death_op + 2.  A birth after the death indexes past the
+    // arrays.  A death above MAX_DEATH_OP, also the none() value of
+    // OpIndex, makes the sizes wrap.  An external slot keeps its own
+    // allocation, and the sweep does not read its lifetime.
+    static constexpr uint32_t MAX_DEATH_OP = UINT32_MAX - 3;
     uint32_t max_op = 0;
     for (uint32_t s = 0; s < num_slots; s++) {
         if (slots[s].is_external) {
             plan->num_external++;
         } else {
+            CRUCIBLE_FATAL_INVARIANT(slots[s].birth_op.raw() <= slots[s].death_op.raw());
+            CRUCIBLE_FATAL_INVARIANT(slots[s].death_op.raw() <= MAX_DEATH_OP);
             if (plan->device_type == DeviceType::CPU && slots[s].device_type != DeviceType::CPU) {
                 plan->device_type = slots[s].device_type;
                 plan->device_idx = slots[s].device_idx;
@@ -980,11 +990,12 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     uint32_t num_internal = num_slots - plan->num_external;
     if (num_internal == 0) return plan;
 
-    // Bucket the slots by birth_op and by death_op + 1.  The sweep
-    // range is [0, max_op].
+    // Bucket the slots by birth_op and by death_op + 1.  The sweep range
+    // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
+    // so num_ops and num_ops + 1 are positive and do not wrap.
     uint32_t num_ops = max_op + 1;
-    auto* birth_count = arena.alloc_array<uint32_t>(a, num_ops);
-    auto* death_count = arena.alloc_array<uint32_t>(a, num_ops);
+    auto* birth_count = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
+    auto* death_count = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
     std::memset(birth_count, 0, num_ops * sizeof(uint32_t));
     std::memset(death_count, 0, num_ops * sizeof(uint32_t));
 
@@ -995,18 +1006,8 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         if (free_at < num_ops) death_count[free_at]++;
     }
 
-    // num_ops is at least one by construction: the early return above
-    // guarantees at least one internal slot, and max_op was set from that
-    // slot's death_op plus one.  num_ops + 1 cannot wrap either, because
-    // death_op is a uint32_t and the increment already happened, so
-    // max_op is at most UINT32_MAX - 1.  The analyzer cannot see that
-    // chain, hence the assumptions.
-    [[assume(num_ops > 0)]];
-    [[assume(num_ops < UINT32_MAX)]];
-    auto* birth_off = arena.alloc_array<uint32_t>(a, num_ops + 1);
-    auto* death_off = arena.alloc_array<uint32_t>(a, num_ops + 1);
-    [[assume(birth_off != nullptr)]];
-    [[assume(death_off != nullptr)]];
+    auto* birth_off = arena.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
+    auto* death_off = arena.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
     birth_off[0] = 0;
     death_off[0] = 0;
     for (uint32_t o = 0; o < num_ops; o++) {
@@ -1014,11 +1015,11 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         death_off[o + 1] = death_off[o] + death_count[o];
     }
 
-    auto* born_slots = arena.alloc_array<uint32_t>(a, num_internal);
-    auto* dead_slots = arena.alloc_array<uint32_t>(a, num_internal);
+    auto* born_slots = arena.alloc_array_nonzero<uint32_t>(a, num_internal);
+    auto* dead_slots = arena.alloc_array_nonzero<uint32_t>(a, num_internal);
     // Cursors start as copies of the offsets and advance during scatter.
-    auto* birth_cur = arena.alloc_array<uint32_t>(a, num_ops);
-    auto* death_cur = arena.alloc_array<uint32_t>(a, num_ops);
+    auto* birth_cur = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
+    auto* death_cur = arena.alloc_array_nonzero<uint32_t>(a, num_ops);
     std::memcpy(birth_cur, birth_off, num_ops * sizeof(uint32_t));
     std::memcpy(death_cur, death_off, num_ops * sizeof(uint32_t));
 

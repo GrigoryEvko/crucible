@@ -276,7 +276,7 @@ crucible_test(test_crucible_context)
 # where a CRUCIBLE_PRE gives its condition to the optimizer as an assumption.
 crucible_test(test_crucible_context_migration)
 crucible_test(test_crucible_context_migration_ignore test_crucible_context_migration.cpp)
-target_compile_options(test_crucible_context_migration_ignore PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
+crucible_contract_ignore_target(test_crucible_context_migration_ignore)
 # Each group of tests is a source file of its own, so that no translation
 # unit compiles all of them.
 crucible_test(test_vigil_dispatch test_vigil_dispatch.cpp test_vigil_dispatch_threads.cpp
@@ -1133,7 +1133,7 @@ crucible_test(test_expr_pool_fast_symbol)
 # under the contract semantic of the preset and under the ignore semantic.
 crucible_test(test_expr_pool_capacity)
 crucible_test(test_expr_pool_capacity_ignore test_expr_pool_capacity.cpp)
-target_compile_options(test_expr_pool_capacity_ignore PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
+crucible_contract_ignore_target(test_expr_pool_capacity_ignore)
 # Each group of tests that drives a Vigil is a source file of its own, so
 # that no translation unit compiles all of them.
 crucible_test(test_region_cache test_region_cache.cpp test_region_cache_switch.cpp test_region_cache_migration.cpp
@@ -5370,6 +5370,18 @@ add_test(NAME no_unity_pch
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-no-unity-pch.py
           --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
 set_tests_properties(no_unity_pch no_unity_pch_self_test PROPERTIES LABELS "ci_guard")
+
+# contract_semantic — the last contract semantic flag of each compile agrees
+# with the define CRUCIBLE_CONTRACT_SEMANTIC_IGNORE.  GCC uses the last flag,
+# and CRUCIBLE_PRE reads the define.  The configure step sees each scope but
+# not the order of the final compile line, so the check reads the compile
+# database of this build.
+add_test(NAME contract_semantic_self_test
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-contract-semantic.py --self-test)
+add_test(NAME contract_semantic
+  COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-contract-semantic.py
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+set_tests_properties(contract_semantic contract_semantic_self_test PROPERTIES LABELS "ci_guard")
 
 # padded_lists — the element type of a large fixed list has no padding bit.
 # With -ftrivial-auto-var-init=zero, GCC writes one store for each padding

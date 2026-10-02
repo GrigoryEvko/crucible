@@ -30,6 +30,7 @@ utils/scripts/check-ci-guard-labels.py | json | the test list of ctest --show-on
 utils/scripts/check-clang-format.sh | text | the diagnostics of clang-format and the file list of fd
 utils/scripts/check-compile-cost.py | compiler,json,text | the records of the build launcher, the ELF tables of the objects, the file API reply, the ninja dependency log, the ledger rows and the budget table
 utils/scripts/check-contract-form.py | tsast,text | the allowlist rows
+utils/scripts/check-contract-semantic.py | json,text | the compile commands of the compile database
 utils/scripts/check-ct-disassembly.py | tsast,compiler,text | the objdump disassembly of the compiled wrappers
 utils/scripts/check-ctx-init-door.py | tsast,text | the rows of the two door allowlists
 utils/scripts/check-ctx-testing-boundary.py | tsast,text | the allowlist rows

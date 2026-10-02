@@ -506,8 +506,6 @@ public:
     explicit ContentHashFold(const NumericalRecipe& recipe) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
         CRUCIBLE_PRE(!recipe.hash.is_sentinel());
-        [[assume(recipe.hash.raw() != 0)]];
-        [[assume(recipe.hash.raw() != UINT64_MAX)]];
         state_ = detail::combine_ids(state_, recipe.hash.raw());
     }
 
@@ -770,7 +768,6 @@ private:
     // REPEAT keeps zero, where it means what it says: run the body no times
     // and continue.
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
-    [[assume(body != nullptr)]];
     auto* node = new(arena.alloc_obj<LoopNode>(a)) LoopNode{};
     node->kind = TraceNodeKind::LOOP;
     node->body = body;

@@ -54,7 +54,6 @@ public:
                                                                                 RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(content_hash.raw() != 0);
-        [[assume(content_hash.raw() != 0)]];
         const std::uint64_t lookup_hash = content_hash.raw();
         const std::uint64_t lookup_row = row_hash.raw();
         const std::uint32_t mask = capacity_ - 1;

@@ -289,7 +289,6 @@ public:
                                                                                 RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
-        [[assume(content_hash.raw() != 0)]];
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
         const uint32_t mask = capacity_ - 1;

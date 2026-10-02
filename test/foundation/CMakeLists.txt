@@ -644,8 +644,8 @@ foundation_test(test_contract_handler)
 # __stop_ symbols bound one probe each.  See test_pre_post_cost.cpp.
 add_executable(test_pre_post_cost test_pre_post_cost.cpp)
 target_link_libraries(test_pre_post_cost PRIVATE foundation)
-target_compile_options(test_pre_post_cost PRIVATE -O3 -ffunction-sections
-  ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
+target_compile_options(test_pre_post_cost PRIVATE -O3 -ffunction-sections)
+crucible_contract_ignore_target(test_pre_post_cost)
 add_test(NAME test_pre_post_cost COMMAND test_pre_post_cost)
 set_tests_properties(test_pre_post_cost PROPERTIES LABELS "foundation")
 
@@ -1729,7 +1729,7 @@ foundation_test(test_aligned_buffer)
 # clause checks anything.  The capacity check and the size check are plain
 # code, so each still aborts.
 foundation_test(test_swiss_table_buffer_ignore test_swiss_table_buffer.cpp)
-target_compile_options(test_swiss_table_buffer_ignore PRIVATE ${CRUCIBLE_CONTRACT_IGNORE_OPTIONS})
+crucible_contract_ignore_target(test_swiss_table_buffer_ignore)
 
 foundation_neg_compile_test(neg_swiss_table_buffer_proof_slot
   "template constraint failure for .template<class SlotPtr>  requires  SwissTableSlot<SlotPtr> class foundation::SwissTableBuffer."

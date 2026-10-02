@@ -147,9 +147,14 @@ namespace huge_page_detail {
     return huge_kib == 0u;
 }
 
+// Each body of this probe takes milliseconds: a fault-in maps and touches
+// 64 MiB, and a chase takes a million steps.  So one pass takes much more
+// time than the floor of the timer.  With the explicit batch of one pass, the
+// harness does not run its pilot, which would time one hundred passes of the
+// body to find the same batch.
 [[nodiscard]] inline bench::Run configured_run(const char* name, std::size_t samples, std::size_t wall_ms) noexcept {
     bench::Run run{name};
-    (void)run.samples(samples).warmup(2).max_wall_ms(wall_ms);
+    (void)run.samples(samples).warmup(2).batch(1).max_wall_ms(wall_ms);
     const int core = probe_settings().pin_core;
     if (core >= 0) {
         (void)run.core(core);

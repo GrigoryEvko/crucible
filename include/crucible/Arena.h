@@ -112,7 +112,6 @@ public:
                                                                                size_t n) noexcept
         CRUCIBLE_LIFETIMEBOUND {
         CRUCIBLE_PRE(::foundation::decide::positive(n));
-        [[assume(n > 0)]];
         const size_t nbytes = ::foundation::sat::mul_sat(n, sizeof(T));
         return static_cast<T*>(alloc(a, ::fixy::mint_refined<::fixy::positive>(nbytes),
                                      ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(T)})));

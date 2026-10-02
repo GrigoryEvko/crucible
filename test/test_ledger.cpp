@@ -13,6 +13,7 @@
 #include <foundation/reflect/EnumName.h>
 
 #include "padding_bytes.h"
+#include "scratch_dir.h"
 #include "test_assert.h"
 
 #include <array>
@@ -22,6 +23,9 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <system_error>
+
+#include <unistd.h>
 
 using namespace crucible;
 using crucible::ledger::Confidence;
@@ -511,15 +515,16 @@ void test_parser_rejects_malformed_and_tampered_records() {
 
 // ── Store round-trip on a real filesystem ─────────────────────────────
 
+// The prefix of the cache root of the store test under /tmp.
+constexpr std::string_view kStorePrefix = "crucible-ledger-test";
+
 void test_store_round_trips_through_the_filesystem() {
-    char directory_template[] = "/tmp/crucible-ledger-test-XXXXXX";
-    const char* directory = ::mkdtemp(directory_template);
-    assert(directory != nullptr);
-    // setenv rather than a parameter: the cache root is discovered from
-    // the environment in production, and a test that bypassed that would
-    // not exercise the path sanitizer the discovery runs through.
-    const int overrode = ::setenv("XDG_CACHE_HOME", directory, 1);
-    assert(overrode == 0);
+    // XDG_CACHE_HOME rather than a parameter: the cache root is discovered
+    // from the environment in production, and a test that bypassed that
+    // would not exercise the path sanitizer the discovery runs through.  The
+    // guard removes the directory when the test ends, and the next run
+    // removes the directory of a run that aborted.
+    const crucible::test::ScopedCacheHome cache_home{kStorePrefix};
 
     constexpr ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     static_assert(ledger::CtxFitsLedgerStore<::fixy::TestRunnerCtx>);
@@ -584,9 +589,28 @@ void test_store_round_trips_through_the_filesystem() {
     assert(mismatched.error() == LedgerError::FingerprintMismatch);
     assert(!ledger::mint_ledger_view(ctx, written.fingerprint).is_loaded());
 
-    std::error_code ignored{};
-    std::filesystem::remove_all(directory, ignored);
     std::printf("  test_store_round_trips_through_fs:         PASSED\n");
+}
+
+// A run of the store test that aborts runs no destructor and leaves its
+// cache root.  The planted directory stands for one: no process can have the
+// id 999999999, because it is above the largest process id of Linux.  The
+// last six characters come from the id of this process, so two runs at the
+// same time plant two different directories.  The store test removes the
+// planted directory.  test_ledger_probes_refresh shows that the guard
+// removes its own directory when it ends.
+void test_store_leaves_no_directory() {
+    std::error_code error;
+    const std::string suffix = std::to_string(1000000 + ::getpid() % 1000000).substr(1);
+    const std::string planted =
+        std::string{crucible::test::ScratchDir::kDirectory} + "/" + std::string{kStorePrefix} + "-999999999-" + suffix;
+    (void)std::filesystem::create_directory(planted, error);
+    assert(std::filesystem::is_directory(planted, error));
+
+    test_store_round_trips_through_the_filesystem();
+
+    assert(!std::filesystem::exists(planted, error));
+    std::printf("  test_store_leaves_no_directory:            PASSED\n");
 }
 
 // ── The refresh seam ──────────────────────────────────────────────────
@@ -776,7 +800,7 @@ int main() {
     test_reader_returns_the_callers_conservative_answer();
     test_serialization_round_trips();
     test_parser_rejects_malformed_and_tampered_records();
-    test_store_round_trips_through_the_filesystem();
+    test_store_leaves_no_directory();
     test_refresh_plan_and_run();
     test_refusals_name_the_bar_they_missed();
     test_store_is_bounded();
