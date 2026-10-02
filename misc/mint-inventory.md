@@ -307,6 +307,12 @@ apply to the row.
 | `HappensBeforeLattice::mint_from_image` | `include/foundation/algebra/lattices/HappensBefore.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `StrongCounterLattice::mint_from_image` | `include/foundation/algebra/lattices/StrongCounterLattice.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
+## include/foundation/core/
+
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_box` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 4 |
+
 ## include/foundation/diag/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
@@ -347,4 +353,4 @@ apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 89 | 48 | 32 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 113 | 53 | 57 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 114 | 53 | 58 | 3 | 0 | 4 |

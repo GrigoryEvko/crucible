@@ -11,5 +11,6 @@ static_assert(std::is_same_v<::fixy::Option<int>, ::foundation::core::Option<int
 static_assert(std::is_same_v<::fixy::NoValue, ::foundation::core::NoValue>);
 static_assert(std::is_same_v<decltype(::fixy::none), decltype(::foundation::core::none)>);
 static_assert(::fixy::Option<int>{::fixy::none}.is_none());
+static_assert(std::is_same_v<::fixy::Box<int>, ::foundation::core::Box<int>>);
 
 }  // namespace fixy::detail::core_checks

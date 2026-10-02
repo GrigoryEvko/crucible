@@ -117,6 +117,9 @@ fixy::session::SessionFromMachine<int, fixy::session::End> | fixy/session/Machin
 # A cursor of an Option comes only from begin() of an Option, so no
 # pointer that a caller holds becomes a cursor.
 foundation::core::OptionCursor<int> | foundation/core/Choice.h | foundation::core::OptionCursor<int>{forge::rvalue<int*>()} | private | closed
+# A Box comes only from mint_box, so the destructor frees only storage
+# that mint_box allocated.
+foundation::core::Box<int> | foundation/core/Ref.h | foundation::core::Box<int>{forge::rvalue<int*>()} | private | closed
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

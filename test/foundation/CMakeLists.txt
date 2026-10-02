@@ -1844,6 +1844,29 @@ foundation_neg_compile_test(neg_core_option_owning_copied
   "use of deleted function .foundation::core::Option<Owner>::Option\\(const foundation::core::Option<Owner>&\\)."
   "an owning Option is move-only: a copy would duplicate what the payload owns")
 
+# ── The Ref family: Box ───────────────────────────────────────────────
+#
+# A Box owns one object on the heap and comes only from mint_box, which
+# takes the allocation capability.  A copy and a borrow of a temporary are
+# refused.
+foundation_test(test_core_box)
+
+foundation_neg_compile_test(neg_core_box_without_allocation_marker
+  "no matching function for call to .mint_box<int>\\(foundation::effects::cap::IO, int\\)."
+  "no type named .grants_allocation. in .struct foundation::effects::cap::IO.")
+foundation_neg_compile_test(neg_core_box_not_constructible
+  "no matching function for call to .mint_box<int>\\(foundation::effects::cap::Alloc, const char \\[6\\]\\)."
+  ".int. is not constructible from .const char \\(&\\)\\[6\\].")
+foundation_neg_compile_test(neg_core_box_array_payload
+  "template constraint failure for .template<class T>  requires  BoxPayload<T> class foundation::core::Box."
+  "the expression .!\\(is_array_v<T>\\) \\[with T = int\\[4\\]\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_box_copied
+  "use of deleted function .foundation::core::Box<T>::Box\\(const foundation::core::Box<T>&\\) \\[with T = int\\]."
+  "a Box owns its object alone: a copy would free the object two times")
+foundation_neg_compile_test(neg_core_box_borrow_of_temporary
+  "use of deleted function .T& foundation::core::Box<T>::get\\(\\) && \\[with T = int\\]."
+  "a borrow of a temporary Box dangles at the end of the full expression")
+
 # ── Hard errors in a body ─────────────────────────────────────────────
 #
 # Neither template has a constraint.  The refusal is an error in the body

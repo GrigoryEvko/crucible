@@ -142,6 +142,11 @@ template <Effect E>
 namespace cap {
 
 struct Alloc {
+    // The families of foundation/core take this tag where they allocate.
+    // That layer is below this one and names no type of it, so its gate
+    // reads this member.
+    using grants_allocation = void;
+
     constexpr Alloc() noexcept = default;
     constexpr Alloc(const Alloc&) noexcept = default;
     constexpr Alloc(Alloc&&) noexcept = default;

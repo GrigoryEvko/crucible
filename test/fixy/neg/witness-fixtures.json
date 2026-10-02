@@ -137,6 +137,11 @@
       "constructor": "\\bSwmrStage\\("
     },
     {
+      "name": "neg_witness_core_box_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBox\\("
+    },
+    {
       "name": "neg_witness_core_optioncursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bOptionCursor\\("

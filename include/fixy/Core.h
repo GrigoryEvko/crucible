@@ -15,11 +15,15 @@
 // valid C++.
 
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 
 namespace fixy {
 
 using ::foundation::core::none;
 using ::foundation::core::NoValue;
 using ::foundation::core::Option;
+
+using ::foundation::core::Box;
+using ::foundation::core::mint_box;
 
 }  // namespace fixy

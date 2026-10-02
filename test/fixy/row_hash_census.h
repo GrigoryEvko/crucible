@@ -854,6 +854,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::niche, kMetafunction},
     {^^::foundation::core::OptionCursor,
      "the position of a loop over an Option: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::Box,
+     "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},
