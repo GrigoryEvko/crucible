@@ -810,7 +810,7 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 
 **Cost of violation:** replay breaks, bit-exactness CI reddens, cross-vendor equivalence lost.
 
-**Compiler enforcement:** no `-ffast-math` family. `-ffp-contract=on` (safe: FMA within a statement only). Pinned FTZ via recipe.
+**Compiler enforcement:** no `-ffast-math` family. `cmake/FpStrict.cmake` gives each target `-ffp-contract=off`, so GCC contracts no multiply and add into an FMA (§V). The recipe pins FTZ.
 
 **Discipline:**
 - DAG fixes execution order (topological sort with hash-based tiebreak).

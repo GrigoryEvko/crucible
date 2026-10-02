@@ -176,8 +176,8 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
 // The rollback target is the transaction that the last activation displaced.
 // The activations here do not follow the order of the claims, so the
 // rollback target is not the superseded transaction with the newest claim.
-void previous_follows_the_order_of_displacements(::foundation::effects::Alloc alloc,
-                                                 const ::fixy::TestRunnerCtx& ctx, const SoloOwner& owner) {
+void previous_follows_the_order_of_displacements(::foundation::effects::Alloc alloc, const ::fixy::TestRunnerCtx& ctx,
+                                                 const SoloOwner& owner) {
     constexpr uint32_t kSteps = 4;
     Log log{ctx};
     crucible::Arena arena(1 << 12);
