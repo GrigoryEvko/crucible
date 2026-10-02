@@ -88,8 +88,7 @@ void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause)
 // and the value first, first + 1, and so on, into `out`, and its cell
 // counts each one.  The session then stops with no crash of its own, so a
 // report of the detector is the crash, and the report carries this count.
-void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& in, Mailbox& out, int first,
-             int count);
+void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& in, Mailbox& out, int first, int count);
 
 // Ends the child process of an attack with the exit of its outcome.
 [[noreturn]] void finish(Outcome outcome);

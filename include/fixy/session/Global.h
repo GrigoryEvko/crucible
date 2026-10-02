@@ -175,14 +175,22 @@ struct Crashed {
 // combinator and fails when one has a member that no claim names.
 namespace detail {
 
+// True when the reader below reads `type` as a node: End, Var, or a
+// specialization of Rec, Branch, Comm, EnRouteChoice or Crashed.
+[[nodiscard]] consteval bool is_global_node(std::meta::info type) {
+    if (type == ^^End || type == ^^Var) return true;
+    const std::meta::info shape = ::foundation::algebra::transition::shape_of(type);
+    if (shape == type) return false;
+    return shape == ^^Rec || shape == ^^Branch || shape == ^^Comm || shape == ^^EnRouteChoice || shape == ^^Crashed;
+}
+
 [[nodiscard]] consteval ::foundation::algebra::transition::node_members global_node_members(std::meta::info type) {
     using ::foundation::algebra::transition::member_claim;
     ::foundation::algebra::transition::node_members result{};
+    result.is_node = is_global_node(type);
+    if (!result.is_node || type == ^^End || type == ^^Var) return result;
     const std::meta::info shape = ::foundation::algebra::transition::shape_of(type);
-    result.is_node = type == ^^End || type == ^^Var;
-    if (result.is_node || shape == type) return result;
     const auto arguments = std::meta::template_arguments_of(type);
-    result.is_node = true;
     if (shape == ^^Rec) {
         result.claims = {member_claim{"body", arguments[0]}};
         result.children = {arguments[0]};
@@ -203,8 +211,6 @@ namespace detail {
         result.children.push_back(arguments[1]);
     } else if (shape == ^^Crashed) {
         result.claims = {member_claim{"role", arguments[0]}};
-    } else {
-        result.is_node = false;
     }
     return result;
 }
@@ -230,10 +236,14 @@ concept GlobalMembersAgreeBelow = global_members_agree_below(^^Node);
     const tr::node_members view = global_node_members(node_type);
     if (!view.is_node) return true;
     if (!tr::members_agree(node_type, view.claims, view.bases)) return false;
-    for (const std::meta::info child : view.children) {
-        if (!std::meta::extract<bool>(std::meta::substitute(^^GlobalMembersAgreeBelow, {std::meta::dealias(child)}))) {
-            return false;
-        }
+    // A child that is no node agrees, so the walk asks the concept only
+    // about a node.  Each question is a substitution, which costs about
+    // 1.6 million instructions in a constant evaluation of this GCC 16 build.
+    const std::meta::info* const child = view.children.data();
+    for (std::size_t place = 0; place < view.children.size(); ++place) {
+        const std::meta::info child_type = std::meta::dealias(child[place]);
+        if (!is_global_node(child_type)) continue;
+        if (!std::meta::extract<bool>(std::meta::substitute(^^GlobalMembersAgreeBelow, {child_type}))) return false;
     }
     return true;
 }

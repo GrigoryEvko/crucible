@@ -429,7 +429,7 @@ consteval void grow(stack<T>& pile, std::size_t count) {
         pile.made = grown_capacity;
     } else {
         for (std::size_t index = 0; index < pile.top; ++index)
-            ::new (static_cast<void*>(grown + index)) T(pile.items[index]);
+            ::new(static_cast<void*>(grown + index)) T(pile.items[index]);
         pile.made = pile.top;
     }
     release_storage_(pile.items, pile.capacity);
@@ -447,7 +447,7 @@ template <class T>
 consteval void make_room(stack<T>& pile, std::size_t count) {
     detail::grow(pile, count);
     for (; pile.made < pile.top + count; ++pile.made)
-        ::new (static_cast<void*>(pile.items + pile.made)) T();
+        ::new(static_cast<void*>(pile.items + pile.made)) T();
 }
 
 // `value` must not be an element of the stack, because the stack can move
@@ -458,7 +458,7 @@ consteval void push(stack<T>& pile, const T& value) {
     if (pile.top < pile.made) {
         pile.items[pile.top] = value;
     } else {
-        ::new (static_cast<void*>(pile.items + pile.top)) T(value);
+        ::new(static_cast<void*>(pile.items + pile.top)) T(value);
         pile.made = pile.top + 1;
     }
     ++pile.top;
@@ -964,13 +964,15 @@ struct node_members {
 
 using node_reader = node_members (*)(std::meta::info);
 
-// True when the first member of `type` with the identifier of `claim` has
-// the claimed value: an alias of the claimed type, or a static data member
-// with the claimed constant.  An inherited member is not a member here.
-// The walk sees private members, so the reflection of a member stays in
-// this function.
-[[nodiscard]] consteval bool claim_holds(std::meta::info type, const member_claim& claim) {
-    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::unchecked())) {
+// True when the first of `count` members at `members` with the identifier
+// of `claim` has the claimed value: an alias of the claimed type, or a
+// static data member with the claimed constant.  An inherited member is
+// not a member here.  The list comes from a walk that sees private
+// members, so the reflection of a member stays in this function and in
+// members_agree.
+[[nodiscard]] consteval bool claim_holds(const std::meta::info* members, std::size_t count, const member_claim& claim) {
+    for (std::size_t place = 0; place < count; ++place) {
+        const std::meta::info member = members[place];
         if (!std::meta::has_identifier(member) || std::meta::identifier_of(member) != claim.name) continue;
         if (std::meta::is_type(claim.value)) {
             return std::meta::is_type_alias(member) && std::meta::dealias(member) == std::meta::dealias(claim.value);
@@ -983,18 +985,29 @@ using node_reader = node_members (*)(std::meta::info);
 // True when each claimed member of `type` exists with the claimed value,
 // and the direct bases of `type` are exactly `bases`, in order.  A type
 // that is only declared in this translation unit has no member that a
-// reader can read, so it agrees.  Complexity: linear in the members of
+// reader can read, so it agrees.  The walk reads the members of `type`
+// one time for all the claims.  Complexity: linear in the members of
 // `type` for each claim.
 [[nodiscard]] consteval bool members_agree(std::meta::info type, const std::vector<member_claim>& claims,
                                            const std::vector<std::meta::info>& bases) {
     if (!std::meta::is_complete_type(type)) return true;
-    for (const member_claim& claim : claims) {
-        if (!claim_holds(type, claim)) return false;
+    if (!claims.empty()) {
+        const std::vector<std::meta::info> members =
+            std::meta::members_of(type, std::meta::access_context::unchecked());
+        const std::meta::info* const member_list = members.data();
+        const std::size_t member_count = members.size();
+        const member_claim* const claim = claims.data();
+        const std::size_t claim_count = claims.size();
+        for (std::size_t place = 0; place < claim_count; ++place) {
+            if (!claim_holds(member_list, member_count, claim[place])) return false;
+        }
     }
     const std::vector<std::meta::info> actual = std::meta::bases_of(type, std::meta::access_context::unchecked());
     if (actual.size() != bases.size()) return false;
+    const std::meta::info* const base = actual.data();
+    const std::meta::info* const expected = bases.data();
     for (std::size_t index = 0; index < bases.size(); ++index) {
-        if (std::meta::dealias(std::meta::type_of(actual[index])) != std::meta::dealias(bases[index])) return false;
+        if (std::meta::dealias(std::meta::type_of(base[index])) != std::meta::dealias(expected[index])) return false;
     }
     return true;
 }
@@ -2244,8 +2257,8 @@ consteval void add_choice_children(type_graph& graph, graph_node& made, std::siz
 // there when its children are made.
 consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type, bool is_branch) {
     const node view = decompose(registry, type);
-    const std::size_t scope = graph.binders.top == 0 || !has_open_back(registry, view.type) ? npos
-                                                                                          : nearest_binder(graph);
+    const std::size_t scope =
+        graph.binders.top == 0 || !has_open_back(registry, view.type) ? npos : nearest_binder(graph);
     const std::size_t shared = find_built(graph, view.type, is_branch, scope);
     if (shared != npos) return shared;
     push(graph.built, built_node{view.type, is_branch, scope, graph.nodes.top});
