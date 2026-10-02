@@ -41,6 +41,14 @@ and it does not compile.  Then it does the same checks as after a compile: the
 removal of the caret display, the regexes and the independence report.  The
 store holds the output of the compiler, and not the decision to pass or fail.
 
+One entry holds the results of at most four compiles of one key, newest
+first.  Each result has its own inputs (items 2 to 4 below).  The driver uses
+the first result whose inputs are all the same.  So the undo of an edit, or a
+change to a different branch and back, finds the result of the earlier
+compile.  A new result goes first.  A result with the same inputs as the new
+result goes, and the oldest result goes when the entry holds more than four.
+The entry keeps each dependency path one time, for all its results.
+
 CRUCIBLE_NEG_CACHE=0 turns the store off.  CRUCIBLE_NEG_CACHE_MAX_MB sets the
 size limit of the store, and the preset value is 1024 MB.  The store keeps each
 entry in one of 256 buckets, by the first two digits of its key.  Each bucket
@@ -74,22 +82,22 @@ makes.  The store makes sure of each input:
    the codeset of LC_CTYPE.  The key also holds the bytes of each file that the
    command names, for example a plugin.  When the command contains
    `-march=native`, the key holds the model and the flags of the host CPU.
-2. The entry lists each file that GCC read, from the dependency file of the
+2. Each result lists each file that GCC read, from the dependency file of the
    compile, with a hash of its bytes.  The driver reads each file again and
    compares the hashes.  After a fatal error, GCC writes no dependency file.
    Then the driver preprocesses the source again with `-M -MG`, which writes
    the dependency rule and continues after a missing header.  That pass reads
    each file that the compile read before its fatal error, and it can read
    more.  It also names each missing header.
-3. The entry lists the search roots of the compile, with the kind and the real
-   path of each root.  The roots are each directory that GCC names in its
+3. Each result lists the search roots of the compile, with the kind and the
+   real path of each root.  The roots are each directory that GCC names in its
    search list (the output of `-E -v` on an empty file, with each directory
    that GCC ignores), and the directory of each dependency.  For each root
-   that is a directory, the entry holds a hash of the names under it: the name
+   that is a directory, the result holds a hash of the names under it: the name
    and the kind of each entry, the target of each symbolic link, and the names
    under each directory that a link names.  A root inside a different root
    gets no hash of its own.
-4. The entry lists the state of each exact path that an include name with a
+4. Each result lists the state of each exact path that an include name with a
    `..` component, or an absolute name, can reach (item 5), and of its
    precompiled name `NAME.gch`.
 
@@ -124,7 +132,7 @@ Why these inputs are sufficient
    the key again after the compile, and it stores no result when the key
    changed.
 7. A change in a root or of a dependency after the compile changes the hash or
-   the state in the entry.  A change while GCC reads a file can hide.  The
+   the state in the result.  A change while GCC reads a file can hide.  The
    driver does not store a result when a dependency, a directory under a root,
    a root, a probed path or the target of a symbolic link changed in the second
    before the compile started or after that.  For a path that does not exist,
@@ -201,7 +209,7 @@ After each run, from a compile or from the store, the driver writes
 `NAME.inputs` in the scratch directory of the fixture: the result, the CPU
 times, the instruction count, and each file that the compile read.  The list is
 the dependency file of GCC, the list of the `-M -MG` pass after a fatal error,
-or the list in the entry of the store.  utils/scripts/check-parse-cost.py adds
+or the list of the stored result.  utils/scripts/check-parse-cost.py adds
 the bytes of these files for each fixture.
 
 test/neg_compile_driver_test.py holds the tests of the store, of the cost
@@ -533,7 +541,9 @@ def run_compile(argv: list[str], directory: Path, env: Mapping[str, str]) -> Com
 
 # ── The result store ───────────────────────────────────────────────
 
-_STORE_MAGIC = b"crucible-neg-store 5\n"
+_STORE_MAGIC = b"crucible-neg-store 6\n"
+# An entry holds at most this number of results of one key (the module text).
+_RESULTS_PER_ENTRY = 4
 # A change in this period before the compile started can be a change that the
 # compiler did not see.  The period is longer than one tick of the clock that
 # sets file times.
@@ -1311,8 +1321,46 @@ def _is_states(value: object) -> bool:
     )
 
 
+def _is_index_pairs(value: object, count: int) -> bool:
+    """Return True when `value` is a list of pairs of an index below `count` and a text."""
+    return isinstance(value, list) and all(
+        isinstance(item, list) and len(item) == 2 and isinstance(item[0], int) and not isinstance(item[0], bool)
+        and 0 <= item[0] < count and isinstance(item[1], str)
+        for item in value
+    )
+
+
+def _is_result(value: object, path_count: int) -> bool:
+    """Return True when `value` is a correct result of an entry with `path_count` dependency paths."""
+    if not isinstance(value, dict):
+        return False
+    returncode = value.get("returncode")
+    times = (value.get("user_s"), value.get("system_s"))
+    instructions = value.get("instructions", False)
+    return (
+        _is_index_pairs(value.get("dependencies"), path_count)
+        and _is_states(value.get("roots"))
+        and _is_states(value.get("probes"))
+        and _is_text_pairs(value.get("listings"))
+        and isinstance(returncode, int)
+        and not isinstance(returncode, bool)
+        and isinstance(value.get("output"), str)
+        and all(
+            isinstance(time_s, (int, float)) and not isinstance(time_s, bool) and 0 <= time_s < float("inf")
+            for time_s in times
+        )
+        and (instructions is None or (isinstance(instructions, int) and not isinstance(instructions, bool)
+                                      and instructions >= 0))
+    )
+
+
 def decode_entry(blob: bytes) -> dict[str, object] | None:
-    """Return the entry in `blob`, or None when the bytes are not a correct entry."""
+    """Return the entry in `blob`, or None when the bytes are not a correct entry.
+
+    An entry holds `paths`, the dependency paths of all its results, and
+    `results`, from one result to _RESULTS_PER_ENTRY results, newest first.  A
+    dependency of a result is a pair of an index in `paths` and a hash.
+    """
     if not blob.startswith(_STORE_MAGIC):
         return None
     checksum, newline, payload = blob[len(_STORE_MAGIC) :].partition(b"\n")
@@ -1324,25 +1372,120 @@ def decode_entry(blob: bytes) -> dict[str, object] | None:
         return None
     if not isinstance(entry, dict):
         return None
-    returncode = entry.get("returncode")
-    times = (entry.get("user_s"), entry.get("system_s"))
-    instructions = entry.get("instructions", False)
+    paths = entry.get("paths")
+    results = entry.get("results")
     is_well_formed = (
-        _is_text_pairs(entry.get("dependencies"))
-        and _is_states(entry.get("roots"))
-        and _is_states(entry.get("probes"))
-        and _is_text_pairs(entry.get("listings"))
-        and isinstance(returncode, int)
-        and not isinstance(returncode, bool)
-        and isinstance(entry.get("output"), str)
-        and all(
-            isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value < float("inf")
-            for value in times
-        )
-        and (instructions is None or (isinstance(instructions, int) and not isinstance(instructions, bool)
-                                      and instructions >= 0))
+        isinstance(paths, list)
+        and all(isinstance(name, str) for name in paths)
+        and isinstance(results, list)
+        and 1 <= len(results) <= _RESULTS_PER_ENTRY
+        and all(_is_result(result, len(paths)) for result in results)
     )
     return entry if is_well_formed else None
+
+
+def pack_entry(results: list[dict[str, object]]) -> dict[str, object]:
+    """Return the entry of `results`, whose dependencies are pairs of a path and a hash.
+
+    The entry keeps each path one time, in `paths`, and each result names a
+    path by its index there.  The cost is O(r * d) for r results of d
+    dependencies.
+    """
+    indices: dict[str, int] = {}
+    packed: list[dict[str, object]] = []
+    for result in results:
+        dependencies = [[indices.setdefault(name, len(indices)), digest]
+                        for name, digest in result["dependencies"]]  # type: ignore[attr-defined]
+        packed.append({**result, "dependencies": dependencies})
+    return {"paths": list(indices), "results": packed}
+
+
+def unpack_results(entry: dict[str, object]) -> list[dict[str, object]]:
+    """Return the results of a correct entry, with each dependency as a pair of a path and a hash."""
+    paths: list[str] = entry["paths"]  # type: ignore[assignment]
+    return [{**result, "dependencies": [[paths[index], digest] for index, digest in result["dependencies"]]}
+            for result in entry["results"]]  # type: ignore[attr-defined]
+
+
+def _result_inputs(result: Mapping[str, object]) -> tuple[object, ...]:
+    """Return the inputs of a result (items 2 to 4 of the module text), for a comparison."""
+    return result["dependencies"], result["roots"], result["probes"], result["listings"]
+
+
+def merge_results(new_result: dict[str, object], earlier: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Return the results of an entry after the write of `new_result` into an entry with the results `earlier`.
+
+    The new result goes first.  Each earlier result with the same inputs goes,
+    and the list keeps at most _RESULTS_PER_ENTRY results, newest first.
+    """
+    inputs = _result_inputs(new_result)
+    kept = [old for old in earlier if _result_inputs(old) != inputs]
+    return [new_result, *kept][:_RESULTS_PER_ENTRY]
+
+
+class InputCheck:
+    """The check of the inputs of the results of one entry.
+
+    The check finds the hash of each dependency, the state of each root and
+    probed path, and the listing of each root one time, and it compares each
+    result with these answers.  The answers come from the same moment, so a
+    result matches when its inputs are the inputs at that moment.  The cost is
+    O(n + d + r * k): n bytes of dependencies, d directories under the roots,
+    and k inputs in each of r results.
+    """
+
+    def __init__(self, memo_dir: Path) -> None:
+        """Make a check that keeps the memos of the root listings in `memo_dir`."""
+        self.memo_dir = memo_dir
+        self.digests: dict[str, str | None] = {}
+        self.states: dict[str, list[str] | None] = {}
+        self.listings: dict[str, tuple[Listing | None, str]] = {}
+
+    def digest(self, name: str) -> str | None:
+        """Return the hash of the bytes of the file `name`, or None when the file cannot be read."""
+        if name not in self.digests:
+            try:
+                self.digests[name] = _short_digest(Path(name).read_bytes())
+            except OSError:
+                self.digests[name] = None
+        return self.digests[name]
+
+    def state(self, name: str) -> list[str] | None:
+        """Return the `root_state` of the path `name`."""
+        if name not in self.states:
+            self.states[name] = root_state(name)
+        return self.states[name]
+
+    def listing(self, root: str) -> tuple[Listing | None, str]:
+        """Return the `tree_listing` of the root `root`."""
+        if root not in self.listings:
+            self.listings[root] = tree_listing(root, self.memo_dir)
+        return self.listings[root]
+
+    def reason(self, result: Mapping[str, object]) -> str:
+        """Return the reason that `result` does not match, or an empty text when each input is the same.
+
+        The dependencies come first.  An edit changes a dependency more
+        frequently than a new file changes a root, so an edit stops the check
+        before the walk of a root.
+        """
+        for name, digest in result["dependencies"]:  # type: ignore[attr-defined]
+            now = self.digest(name)
+            if now is None:
+                return f"a dependency cannot be read: {name}"
+            if now != digest:
+                return f"a dependency changed: {name}"
+        for name, state in result["roots"]:  # type: ignore[attr-defined]
+            if self.state(name) != state:
+                return f"a search root changed: {name}"
+        for name, state in result["probes"]:  # type: ignore[attr-defined]
+            if self.state(name) != state:
+                return f"a probed path changed: {name}"
+        for root, digest in result["listings"]:  # type: ignore[attr-defined]
+            listing, why = self.listing(root)
+            if listing is None or listing.digest != digest:
+                return why or f"a search directory changed: {root}"
+        return ""
 
 
 class ResultStore:
@@ -1368,13 +1511,11 @@ class ResultStore:
     def lookup(self, key: str) -> tuple[CompileResult | None, str]:
         """Return the stored result for `key`, or None and the reason for a miss.
 
-        The function makes sure that each dependency has the same bytes, that
-        each search root and each probed path has the same state, and that the
-        names under each root are the same.  An edit changes a dependency more
-        frequently than a new file changes a root, so the dependencies come
-        first, and an edit stops the lookup before the walk of a root.  The
-        cost is O(n + d) for n bytes of dependencies and d directories under
-        the roots.
+        The function returns the first result of the entry whose inputs are
+        the same (InputCheck): each dependency has the same bytes, each search
+        root and each probed path has the same state, and the names under each
+        root are the same.  The reason for a miss is the reason of the newest
+        result.  The cost is the cost of one InputCheck.
         """
         path = self.entry_path(key)
         try:
@@ -1384,30 +1525,22 @@ class ResultStore:
         entry = decode_entry(blob)
         if entry is None:
             return None, "the entry is damaged"
-        for name, digest in entry["dependencies"]:  # type: ignore[union-attr]
+        check = InputCheck(self.memo)
+        newest_reason = ""
+        for result in unpack_results(entry):
+            reason = check.reason(result)
+            if reason:
+                newest_reason = newest_reason or reason
+                continue
             try:
-                data = Path(name).read_bytes()
+                os.utime(path)
             except OSError:
-                return None, f"a dependency cannot be read: {name}"
-            if _short_digest(data) != digest:
-                return None, f"a dependency changed: {name}"
-        for name, state in entry["roots"]:  # type: ignore[union-attr]
-            if root_state(name) != state:
-                return None, f"a search root changed: {name}"
-        for name, state in entry["probes"]:  # type: ignore[union-attr]
-            if root_state(name) != state:
-                return None, f"a probed path changed: {name}"
-        for root, digest in entry["listings"]:  # type: ignore[union-attr]
-            listing, reason = tree_listing(root, self.memo)
-            if listing is None or listing.digest != digest:
-                return None, reason or f"a search directory changed: {root}"
-        try:
-            os.utime(path)
-        except OSError:
-            pass
-        inputs = tuple(name for name, _ in entry["dependencies"])  # type: ignore[union-attr]
-        return CompileResult(entry["returncode"], entry["output"], float(entry["user_s"]),  # type: ignore[arg-type]
-                             float(entry["system_s"]), entry["instructions"], inputs), ""  # type: ignore[arg-type]
+                pass
+            inputs = tuple(name for name, _ in result["dependencies"])  # type: ignore[attr-defined]
+            return CompileResult(result["returncode"], result["output"],  # type: ignore[arg-type]
+                                 float(result["user_s"]), float(result["system_s"]),  # type: ignore[arg-type]
+                                 result["instructions"], inputs), ""  # type: ignore[arg-type]
+        return None, newest_reason
 
     def record(
         self,
@@ -1424,9 +1557,12 @@ class ResultStore:
         a fatal error did not find, and `named` each directory of the search
         list.  The function refuses a result whose inputs changed in the settle
         period before `started_ns`, and a result that a precompiled header or a
-        root that it cannot read can change.  The cost is O(n + d) for n bytes of
-        dependencies and d directories under the roots, plus a walk of each root
-        that has no memo.
+        root that it cannot read can change.  The new result goes first in the
+        entry.  The entry drops each earlier result with the same inputs, and
+        keeps at most _RESULTS_PER_ENTRY results.  Two writers of one entry at
+        the same time can lose one result, which costs one compile later.  The
+        cost is O(n + d) for n bytes of dependencies and d directories under the
+        roots, plus a walk of each root that has no memo.
         """
         settled_ns = started_ns - _SETTLE_NS
         recorded: list[list[str]] = []
@@ -1461,7 +1597,7 @@ class ResultStore:
         if changed is not None:
             return False, f"a search root changed less than one second before the compile: {changed}"
         listings = [[root, listing.digest] for root, listing, _ in listed if listing is not None]
-        entry = {
+        new_result: dict[str, object] = {
             "dependencies": recorded,
             "roots": [[path, state] for path, state in states.items()],
             "probes": [[path, state] for path, state in probe_states.items()],
@@ -1474,7 +1610,12 @@ class ResultStore:
         }
         path = self.entry_path(key)
         try:
-            _write_atomic(path, encode_entry(entry))
+            earlier = decode_entry(path.read_bytes())
+        except OSError:
+            earlier = None
+        results = merge_results(new_result, unpack_results(earlier) if earlier is not None else [])
+        try:
+            _write_atomic(path, encode_entry(pack_entry(results)))
         except OSError as error:
             return False, f"the entry cannot be written: {error}"
         self.evict(path)

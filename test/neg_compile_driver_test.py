@@ -151,6 +151,17 @@ class StoreTest:
                 return self.store / "entries" / found.group(1)[:2] / found.group(1)
         return None
 
+    @staticmethod
+    def results_of(entry: Path | None) -> list[dict[str, object]]:
+        """Return the results of the entry at `entry`, newest first, or no result when it is not a correct entry."""
+        decoded = driver.decode_entry(entry.read_bytes()) if entry is not None and entry.is_file() else None
+        return driver.unpack_results(decoded) if decoded is not None else []
+
+    def newest_result(self, entry: Path | None) -> dict[str, object] | None:
+        """Return the newest result of the entry at `entry`, or None."""
+        results = self.results_of(entry)
+        return results[0] if results else None
+
     def entry_files(self) -> list[Path]:
         """Return each file in the entry directory of the store, in sorted sequence."""
         return sorted(path for path in (self.store / "entries").rglob("*") if path.is_file())
@@ -432,13 +443,13 @@ class StoreTest:
         self.expect(planted is not None, "the compile after a damaged entry stores a correct entry")
         if planted is None:
             return
-        planted["output"] = "planted output\n"
+        planted["results"][0]["output"] = "planted output\n"
         entry.write_bytes(driver.encode_entry(planted))
         replaced = self.run("neg_convert", *CONVERT)
         self.expect(replaced[0] == 1 and "expected diagnostic not found for neg_convert" in replaced[2]
                     and replaced[1] == "planted output\n",
                     f"the regexes apply to the stored output: {replaced[0]} {replaced[3]}")
-        planted["returncode"] = 0
+        planted["results"][0]["returncode"] = 0
         entry.write_bytes(driver.encode_entry(planted))
         compiled = self.run("neg_convert", *CONVERT)
         self.expect(compiled[0] == 1 and "compiled successfully" in compiled[2],
@@ -471,7 +482,7 @@ class StoreTest:
         budget(1000, 2000)
         quiet = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         entry = self.entry_path(quiet[3])
-        stored = driver.decode_entry(entry.read_bytes()) if entry is not None and entry.is_file() else None
+        stored = self.newest_result(entry)
         self.expect(quiet[0] == 0 and finding(quiet[1], "warning") is None and stored is not None
                     and stored["user_s"] > 0 and stored["instructions"] is None,
                     f"a compile under the budget gives no finding and stores its CPU time and no count: "
@@ -557,7 +568,7 @@ class StoreTest:
         budget((0, 0), (1000, 2000))
         loaded = self.run("neg_convert", *CONVERT, warnings_dir=warnings, **env)
         entry = self.entry_path(loaded[3])
-        stored = driver.decode_entry(entry.read_bytes()) if entry is not None and entry.is_file() else None
+        stored = self.newest_result(entry)
         line = finding(loaded[1], "warning", "fixture-cpu")
         self.expect(loaded[0] == 0 and line is not None and "fixture-instructions holds the error level" in line
                     and finding(loaded[1], "error", "fixture-cpu") is None and stored is not None
@@ -633,6 +644,30 @@ class StoreTest:
                     and str(self.root / "neg/neg_missing.cpp") in fatal_paths,
                     f"a fatal error with the store off writes the inputs of the -M -MG pass: {fatal_head} "
                     f"{fatal_paths}")
+
+    def check_several_results(self) -> None:
+        """An entry keeps the result of earlier inputs, so the undo of an edit uses the store."""
+        header = self.root / "include/a/A.h"
+        original = header.read_text()
+        first = self.run("neg_size", *SIZE)
+        entry = self.entry_path(first[3])
+        self.expect(self.has(first[3], "stored") and len(self.results_of(entry)) == 1,
+                    f"the first compile stores one result: {first[3]}")
+        header.write_text(original + "// an edit\n")
+        self.settle()
+        edited = self.run("neg_size", *SIZE)
+        self.expect(self.has(edited[3], f"compiled (a dependency changed: {header})") and self.has(edited[3], "stored")
+                    and len(self.results_of(entry)) == 2,
+                    f"an edit adds a second result to the entry: {edited[3]} {len(self.results_of(entry))}")
+        header.write_text(original)
+        undone = self.run("neg_size", *SIZE)
+        self.expect(undone[0] == 0 and self.has(undone[3], "the result comes from the store") and undone[1] == first[1],
+                    f"the undo of the edit uses the earlier result: {undone[3]}")
+        self.expect(len(self.results_of(entry)) == 2, "a result from the store writes no result")
+        header.write_text(original + "// an edit\n")
+        redone = self.run("neg_size", *SIZE)
+        self.expect(self.has(redone[3], "the result comes from the store"),
+                    f"the edit again uses the newest result: {redone[3]}")
 
     def check_command_memo(self) -> None:
         """The driver keeps the command of a fixture, and uses it only while the compile database is the same."""
@@ -718,6 +753,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_instruction_budget,
     StoreTest.check_inputs_record,
     StoreTest.check_command_memo,
+    StoreTest.check_several_results,
 )
 
 SEARCH_LIST = """\
@@ -783,6 +819,38 @@ def check_parsers(failures: list[str]) -> None:
     env = driver.compile_environment({"LC_ALL": "de_DE.UTF-8", "LANG": "en_US.UTF-8", "LANGUAGE": "de"})
     if env != {"LC_CTYPE": "de_DE.UTF-8", "LANG": "en_US.UTF-8", "LANGUAGE": "de", "LC_MESSAGES": "C"}:
         failures.append(f"the compile environment is {env}")
+    check_entry_format(failures)
+
+
+def planted_result(digest: str, output: str = "planted output\n") -> dict[str, object]:
+    """Return a result whose first dependency has the hash `digest`."""
+    return {"dependencies": [["/w/a.h", digest], ["/w/b.h", "b" * 32]], "roots": [["/w", ["dir", "/w"]]],
+            "probes": [], "listings": [["/w", "c" * 32]], "output": output, "returncode": 1, "user_s": 0.5,
+            "system_s": 0.1, "instructions": None}
+
+
+def check_entry_format(failures: list[str]) -> None:
+    """Check the packed entry, its decode and the merge of a new result on planted results."""
+    count = driver._RESULTS_PER_ENTRY
+    results = [planted_result(f"{index:032x}") for index in range(count)]
+    entry = driver.pack_entry(results)
+    if entry["paths"] != ["/w/a.h", "/w/b.h"] or driver.unpack_results(entry) != results:
+        failures.append(f"an entry keeps each path one time and gives its results back: {entry['paths']}")
+    if driver.decode_entry(driver.encode_entry(entry)) != entry:
+        failures.append("a packed entry decodes")
+    too_many = driver.pack_entry([*results, planted_result("f" * 32)])
+    if driver.decode_entry(driver.encode_entry(too_many)) is not None:
+        failures.append(f"an entry with more than {count} results is refused")
+    outside = driver.pack_entry(results[:1])
+    outside["results"][0]["dependencies"][0][0] = 2
+    if driver.decode_entry(driver.encode_entry(outside)) is not None:
+        failures.append("a dependency index outside the path list is refused")
+    newest = planted_result("e" * 32, "newest output\n")
+    if driver.merge_results(newest, results) != [newest, *results[: count - 1]]:
+        failures.append("a new result goes first, and the oldest result goes from a full entry")
+    same = planted_result(f"{1:032x}", "the same inputs\n")
+    if driver.merge_results(same, results[:3]) != [same, results[0], results[2]]:
+        failures.append("a new result replaces the earlier result with the same inputs")
 
 
 def main(arguments: list[str]) -> int:
