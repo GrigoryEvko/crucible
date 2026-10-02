@@ -54,6 +54,7 @@ utils/scripts/check-header-constexpr-ops.py | compiler,json,text | the budget ta
 utils/scripts/check-heavy-includes.py | tsast,compiler,text | the cost table utils/scripts/header-costs.txt, the ledger rows, the budget table, and in --measure the diagnostics and the -E output of the compiler
 utils/scripts/check-host-owners.py | tsast,text | the roster utils/scripts/host-owner-roster.txt
 utils/scripts/check-layer-boundary.py | tsast,text | the layer rows of the rule table utils/scripts/layer-rules.txt
+utils/scripts/check-libstdcxx-symbols.py | compiler,text | the nm symbol lists of the static libraries and of the libstdc++ of the compiler, the c++filt names, the target lines of the compiler, the inputs file, the build kind, CMakeCache.txt and the ledger rows
 utils/scripts/check-lifetime-twin.py | tsast |
 utils/scripts/check-lock-free-asserts.py | tsast |
 utils/scripts/check-mint-pattern.py | tsast,text | the allowlist rows

@@ -356,6 +356,22 @@ set_tests_properties(no_throw_no_rtti PROPERTIES
 if(CRUCIBLE_UBSAN_STRICT)
   set_tests_properties(no_throw_no_rtti PROPERTIES DISABLED TRUE)
 endif()
+# libstdcxx_symbols — utils/scripts/check-libstdcxx-symbols.py holds the
+# libstdc++ symbols of the libraries foundation, fixy and crucible against
+# utils/scripts/libstdcxx-symbols-ledger.txt, for each build kind that the
+# ledger holds (rule R5 of the quarantine plan).  A new symbol fails, and a
+# symbol that goes fails until --write.  The inputs file names the archives
+# and the compiler, so a --write by hand reads the inputs of the test.  The
+# check exits 3 for a kind or a target that the ledger does not hold.
+file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/libstdcxx-symbols-inputs.txt
+  CONTENT "compiler ${CRUCIBLE_REAL_CXX}\narchive $<TARGET_FILE:foundation>\narchive $<TARGET_FILE:fixy>\narchive $<TARGET_FILE:crucible>\n")
+add_test(NAME libstdcxx_symbols
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-libstdcxx-symbols.py --build-dir ${CMAKE_BINARY_DIR}
+          --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+add_test(NAME libstdcxx_symbols_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-libstdcxx-symbols.py --self-test)
+set_tests_properties(libstdcxx_symbols_self_test PROPERTIES ENVIRONMENT "CRUCIBLE_CXX=${CRUCIBLE_REAL_CXX}")
+set_tests_properties(libstdcxx_symbols libstdcxx_symbols_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
 
 # Every configure refuses a compiler that does not have each fix in
 # utils/toolchain/gcc/patches.  This test runs the probes on the compiler of the

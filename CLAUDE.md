@@ -2447,6 +2447,7 @@ Each translation unit that includes a header compiles that header again, and eac
 | `cache-size` | The size of one cache under the root of `utils/scripts/cache_dir.py`, from a sample of its files, as a multiple of its row of `LIMITS` | 1 | 2 | The test `cache_size` | Test run |
 | Raised threshold, grown ledger | A threshold of the budget table above its lowest committed value, and a ledger above its lowest committed row count, from the git history | Each one, with the commits that raised it | A rise whose commits give no measurement of the row, unless `utils/scripts/budget-history-ledger.txt` admits it | The test `budget_history` | Test run |
 | Quarantine findings | The distinct findings of the quarantine plugin in each file and kind, from the sections of the objects of `all` (§XXII "The ratchet") | Each directory with a row of `utils/scripts/quarantine-ledger.txt` | A count above or below its ledger row, and a finding in a file that the ledger does not hold | The test `quarantine_ratchet` | Test run, CI build job |
+| libstdc++ symbols | The libstdc++ symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference, for each build kind of `utils/scripts/libstdcxx-symbols-ledger.txt` (§XXII "The doors (R4, R5)") | Each library of the ledger | A symbol with no row, or a row whose symbol goes | The test `libstdcxx_symbols` | Test run |
 | `fixture-cpu` | The user and system CPU time of one cold fixture compile | 5 s | 15 s. A warning only when the compile has an instruction count | The fixture driver | Test run |
 | `fixture-instructions` | The user instructions of one cold fixture compile | 28 G | 45 G | The fixture driver | Test run |
 | `parse-total` | The bytes that the compiles of the objects of `all` and of the fixtures read, against the baseline | A growth over 2 % | A growth over 5 %, or a fall over 2 % | The test `parse_total` | Test run, after the fixtures |
@@ -3031,7 +3032,9 @@ In a `REPORT` build, the plugin gives a finding for each include that does not o
 
 Only `include/fixy/os` and `src/fixy/os` can include a system header, a Linux UAPI header or a glibc header. Each such header has one owner file, its door. A `door` row of the rule table names the door of a header, and only that file can include the header. No system type is part of a public signature of a door. glibc stays the process runtime: startup, thread-local storage, thread start, `malloc` and `dlopen`. The plan moves each other system header of the base to its door.
 
-Under R5, no object of `libcrucible.a` uses a libstdc++ symbol outside a short allowlist. The same rule applies to each binary other than the vessel library. A link guard for R5 is planned.
+Under R5, no object of `libcrucible.a` uses a libstdc++ symbol outside a short allowlist. The same rule applies to each binary other than the vessel library. The plan adds a link guard for R5 at the S4 gate.
+
+Until that gate, the test `libstdcxx_symbols` (`utils/scripts/check-libstdcxx-symbols.py`) holds R5 as a ratchet. `utils/scripts/libstdcxx-symbols-ledger.txt` holds the libstdc++ symbols that the objects of `libfoundation.a`, `libfixy.a` and `libcrucible.a` reference. It holds them for each build kind that a kind row names, at this time the Debug build and the Release build on x86_64. A new symbol fails the test. A row whose symbol goes also fails the test, until the same commit writes the ledger again with `--write`. A symbol of the allowlist of plan §13.4 has the mark `allow`, and each other symbol has the mark `ratchet`.
 
 ### The admitted list and its audit
 

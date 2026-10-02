@@ -1,0 +1,153 @@
+# utils/scripts/libstdcxx-symbols-ledger.txt — the libstdc++ symbols that the libraries of the base and
+# libcrucible.a use, for each build kind.  utils/scripts/check-libstdcxx-symbols.py reads it (the test
+# libstdcxx_symbols), and the head comment of the check gives the rules.
+#
+# A kind row:    kind | KIND | TARGET
+#   The ledger holds the sets of the build kind KIND (BUILD_DIR/build-kind.txt) on the target TARGET, the
+#   value of -march that the compiler gives for the flags of the build.
+#
+# A symbol row:  KIND | LIBRARY | MARK | CLASS | SYMBOL | DEMANGLED NAME
+#   An object of LIBRARY has an undefined reference to SYMBOL, and the libstdc++ of the compiler defines
+#   it.  MARK is allow for a symbol of the allowlist of plan section 13.4, and ratchet for each other
+#   symbol.  At the S4 gate, no ratchet row can stay.  CLASS is alloc, abi, std, gnu, c or other.
+#
+# A new symbol fails the test.  A row whose symbol goes fails too, until the same commit writes the rows
+# of the kind again:
+#   python3 utils/scripts/check-libstdcxx-symbols.py --build-dir build --write
+# --write refuses a new ratchet symbol.  The head comment of the check gives the reasons for --raise.
+
+kind | x86_64-debug-asan | x86-64
+x86_64-debug-asan | libcrucible.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
+x86_64-debug-asan | libcrucible.a | ratchet | std | _ZNSt3_V215system_categoryEv | std::_V2::system_category()
+x86_64-debug-asan | libcrucible.a | ratchet | std | _ZNSt3_V216generic_categoryEv | std::_V2::generic_category()
+x86_64-debug-asan | libcrucible.a | ratchet | std | _ZSt21__glibcxx_assert_failPKciS0_S0_ | std::__glibcxx_assert_fail(char const*, int, char const*, char const*)
+x86_64-debug-asan | libcrucible.a | ratchet | std | _ZSt24__throw_out_of_range_fmtPKcz | std::__throw_out_of_range_fmt(char const*, ...)
+x86_64-debug-asan | libcrucible.a | ratchet | std | _ZSt9terminatev | std::terminate()
+x86_64-debug-asan | libfixy.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
+x86_64-debug-asan | libfixy.a | ratchet | abi | __cxa_allocate_exception | __cxa_allocate_exception
+x86_64-debug-asan | libfixy.a | ratchet | abi | __cxa_begin_catch | __cxa_begin_catch
+x86_64-debug-asan | libfixy.a | ratchet | abi | __cxa_call_terminate | __cxa_call_terminate
+x86_64-debug-asan | libfixy.a | ratchet | abi | __cxa_end_catch | __cxa_end_catch
+x86_64-debug-asan | libfixy.a | ratchet | abi | __cxa_rethrow | __cxa_rethrow
+x86_64-debug-asan | libfixy.a | ratchet | abi | __cxa_throw | __cxa_throw
+x86_64-debug-asan | libfixy.a | ratchet | alloc | _ZdlPvm | operator delete(void*, unsigned long)
+x86_64-debug-asan | libfixy.a | ratchet | alloc | _Znwm | operator new(unsigned long)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNKSt10filesystem7__cxx1118directory_iteratordeEv | std::filesystem::__cxx11::directory_iterator::operator*() const
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNKSt10filesystem7__cxx114path5_List13_Impl_deleterclEPNS2_5_ImplE | std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()(std::filesystem::__cxx11::path::_List::_Impl*) const
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNKSt10filesystem7__cxx114path5_List3endEv | std::filesystem::__cxx11::path::_List::end() const
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNKSt10filesystem7__cxx114path5_List5beginEv | std::filesystem::__cxx11::path::_List::begin() const
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNKSt12__basic_fileIcE7is_openEv | std::__basic_file<char>::is_open() const
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNKSt5ctypeIcE13_M_widen_initEv | std::ctype<char>::_M_widen_init() const
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt10filesystem6statusERKNS_7__cxx114pathE | std::filesystem::status(std::filesystem::__cxx11::path const&)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx1118directory_iteratorC1ERKNS0_4pathENS_17directory_optionsEPSt10error_code | std::filesystem::__cxx11::directory_iterator::directory_iterator(std::filesystem::__cxx11::path const&, std::filesystem::directory_options, std::error_code*)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx1118directory_iteratorppEv | std::filesystem::__cxx11::directory_iterator::operator++()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx114path14_M_split_cmptsEv | std::filesystem::__cxx11::path::_M_split_cmpts()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx114path5_ListC1ERKS2_ | std::filesystem::__cxx11::path::_List::_List(std::filesystem::__cxx11::path::_List const&)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx114path5_ListC1Ev | std::filesystem::__cxx11::path::_List::_List()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt12__basic_fileIcED1Ev | std::__basic_file<char>::~__basic_file()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEE4openEPKcSt13_Ios_Openmode | std::basic_filebuf<char, std::char_traits<char> >::open(char const*, std::_Ios_Openmode)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEE5closeEv | std::basic_filebuf<char, std::char_traits<char> >::close()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEEC1Ev | std::basic_filebuf<char, std::char_traits<char> >::basic_filebuf()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEED1Ev | std::basic_filebuf<char, std::char_traits<char> >::~basic_filebuf()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt14basic_ifstreamIcSt11char_traitsIcEED1Ev | std::basic_ifstream<char, std::char_traits<char> >::~basic_ifstream()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt6localeD1Ev | std::locale::~locale()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt6thread20hardware_concurrencyEv | std::thread::hardware_concurrency()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt8ios_baseC2Ev | std::ios_base::ios_base()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt8ios_baseD2Ev | std::ios_base::~ios_base()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt9bad_allocD1Ev | std::bad_alloc::~bad_alloc()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt9basic_iosIcSt11char_traitsIcEE4initEPSt15basic_streambufIcS1_E | std::basic_ios<char, std::char_traits<char> >::init(std::basic_streambuf<char, std::char_traits<char> >*)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZNSt9basic_iosIcSt11char_traitsIcEE5clearESt12_Ios_Iostate | std::basic_ios<char, std::char_traits<char> >::clear(std::_Ios_Iostate)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt16__throw_bad_castv | std::__throw_bad_cast()
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt18_Rb_tree_decrementPSt18_Rb_tree_node_base | std::_Rb_tree_decrement(std::_Rb_tree_node_base*)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt19__throw_logic_errorPKc | std::__throw_logic_error(char const*)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt20__throw_length_errorPKc | std::__throw_length_error(char const*)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt21__glibcxx_assert_failPKciS0_S0_ | std::__glibcxx_assert_fail(char const*, int, char const*, char const*)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt24__throw_out_of_range_fmtPKcz | std::__throw_out_of_range_fmt(char const*, ...)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt29_Rb_tree_insert_and_rebalancebPSt18_Rb_tree_node_baseS0_RS_ | std::_Rb_tree_insert_and_rebalance(bool, std::_Rb_tree_node_base*, std::_Rb_tree_node_base*, std::_Rb_tree_node_base&)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZSt7getlineIcSt11char_traitsIcESaIcEERSt13basic_istreamIT_T0_ES7_RNSt7__cxx1112basic_stringIS4_S5_T1_EES4_ | std::basic_istream<char, std::char_traits<char> >& std::getline<char, std::char_traits<char>, std::allocator<char> >(std::basic_istream<char, std::char_traits<char> >&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, char)
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZTISt9bad_alloc | typeinfo for std::bad_alloc
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZTTSt14basic_ifstreamIcSt11char_traitsIcEE | VTT for std::basic_ifstream<char, std::char_traits<char> >
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZTVSt13basic_filebufIcSt11char_traitsIcEE | vtable for std::basic_filebuf<char, std::char_traits<char> >
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZTVSt14basic_ifstreamIcSt11char_traitsIcEE | vtable for std::basic_ifstream<char, std::char_traits<char> >
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZTVSt15basic_streambufIcSt11char_traitsIcEE | vtable for std::basic_streambuf<char, std::char_traits<char> >
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZTVSt9bad_alloc | vtable for std::bad_alloc
+x86_64-debug-asan | libfixy.a | ratchet | std | _ZTVSt9basic_iosIcSt11char_traitsIcEE | vtable for std::basic_ios<char, std::char_traits<char> >
+x86_64-debug-asan | libfoundation.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
+x86_64-debug-asan | libfoundation.a | ratchet | abi | _ZTVN10__cxxabiv120__si_class_type_infoE | vtable for __cxxabiv1::__si_class_type_info
+x86_64-debug-asan | libfoundation.a | ratchet | abi | __cxa_begin_catch | __cxa_begin_catch
+x86_64-debug-asan | libfoundation.a | ratchet | alloc | _ZdlPvm | operator delete(void*, unsigned long)
+x86_64-debug-asan | libfoundation.a | ratchet | alloc | _Znwm | operator new(unsigned long)
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE | std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)())
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZNSt6thread4joinEv | std::thread::join()
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZNSt6thread6_StateD2Ev | std::thread::_State::~_State()
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZNSt8__detail13__notify_implEPKvbRKNS_16__wait_args_baseE | std::__detail::__notify_impl(void const*, bool, std::__detail::__wait_args_base const&)
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZSt20__throw_length_errorPKc | std::__throw_length_error(char const*)
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZSt21__glibcxx_assert_failPKciS0_S0_ | std::__glibcxx_assert_fail(char const*, int, char const*, char const*)
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZSt24__throw_out_of_range_fmtPKcz | std::__throw_out_of_range_fmt(char const*, ...)
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZSt9terminatev | std::terminate()
+x86_64-debug-asan | libfoundation.a | ratchet | std | _ZTINSt6thread6_StateE | typeinfo for std::thread::_State
+kind | x86_64-release | znver5
+x86_64-release | libcrucible.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
+x86_64-release | libcrucible.a | ratchet | std | _ZNSt3_V215system_categoryEv | std::_V2::system_category()
+x86_64-release | libcrucible.a | ratchet | std | _ZNSt3_V216generic_categoryEv | std::_V2::generic_category()
+x86_64-release | libcrucible.a | ratchet | std | _ZSt24__throw_out_of_range_fmtPKcz | std::__throw_out_of_range_fmt(char const*, ...)
+x86_64-release | libfixy.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
+x86_64-release | libfixy.a | ratchet | abi | __cxa_allocate_exception | __cxa_allocate_exception
+x86_64-release | libfixy.a | ratchet | abi | __cxa_begin_catch | __cxa_begin_catch
+x86_64-release | libfixy.a | ratchet | abi | __cxa_call_terminate | __cxa_call_terminate
+x86_64-release | libfixy.a | ratchet | abi | __cxa_end_catch | __cxa_end_catch
+x86_64-release | libfixy.a | ratchet | abi | __cxa_rethrow | __cxa_rethrow
+x86_64-release | libfixy.a | ratchet | abi | __cxa_throw | __cxa_throw
+x86_64-release | libfixy.a | ratchet | alloc | _ZdlPvm | operator delete(void*, unsigned long)
+x86_64-release | libfixy.a | ratchet | alloc | _Znwm | operator new(unsigned long)
+x86_64-release | libfixy.a | ratchet | std | _ZNKSt10filesystem7__cxx1118directory_iteratordeEv | std::filesystem::__cxx11::directory_iterator::operator*() const
+x86_64-release | libfixy.a | ratchet | std | _ZNKSt10filesystem7__cxx114path5_List13_Impl_deleterclEPNS2_5_ImplE | std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()(std::filesystem::__cxx11::path::_List::_Impl*) const
+x86_64-release | libfixy.a | ratchet | std | _ZNKSt10filesystem7__cxx114path5_List3endEv | std::filesystem::__cxx11::path::_List::end() const
+x86_64-release | libfixy.a | ratchet | std | _ZNKSt12__basic_fileIcE7is_openEv | std::__basic_file<char>::is_open() const
+x86_64-release | libfixy.a | ratchet | std | _ZNKSt5ctypeIcE13_M_widen_initEv | std::ctype<char>::_M_widen_init() const
+x86_64-release | libfixy.a | ratchet | std | _ZNSt10filesystem6statusERKNS_7__cxx114pathE | std::filesystem::status(std::filesystem::__cxx11::path const&)
+x86_64-release | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx1118directory_iteratorC1ERKNS0_4pathENS_17directory_optionsEPSt10error_code | std::filesystem::__cxx11::directory_iterator::directory_iterator(std::filesystem::__cxx11::path const&, std::filesystem::directory_options, std::error_code*)
+x86_64-release | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx1118directory_iteratorppEv | std::filesystem::__cxx11::directory_iterator::operator++()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx114path14_M_split_cmptsEv | std::filesystem::__cxx11::path::_M_split_cmpts()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx114path5_ListC1ERKS2_ | std::filesystem::__cxx11::path::_List::_List(std::filesystem::__cxx11::path::_List const&)
+x86_64-release | libfixy.a | ratchet | std | _ZNSt10filesystem7__cxx114path5_ListC1Ev | std::filesystem::__cxx11::path::_List::_List()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt12__basic_fileIcED1Ev | std::__basic_file<char>::~__basic_file()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEE4openEPKcSt13_Ios_Openmode | std::basic_filebuf<char, std::char_traits<char> >::open(char const*, std::_Ios_Openmode)
+x86_64-release | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEE5closeEv | std::basic_filebuf<char, std::char_traits<char> >::close()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEEC1Ev | std::basic_filebuf<char, std::char_traits<char> >::basic_filebuf()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt13basic_filebufIcSt11char_traitsIcEED1Ev | std::basic_filebuf<char, std::char_traits<char> >::~basic_filebuf()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt14basic_ifstreamIcSt11char_traitsIcEED1Ev | std::basic_ifstream<char, std::char_traits<char> >::~basic_ifstream()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt6localeD1Ev | std::locale::~locale()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt6thread20hardware_concurrencyEv | std::thread::hardware_concurrency()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE15_M_replace_coldEPcmPKcmm | std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_replace_cold(char*, unsigned long, char const*, unsigned long, unsigned long)
+x86_64-release | libfixy.a | ratchet | std | _ZNSt8ios_baseC2Ev | std::ios_base::ios_base()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt8ios_baseD2Ev | std::ios_base::~ios_base()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt9bad_allocD1Ev | std::bad_alloc::~bad_alloc()
+x86_64-release | libfixy.a | ratchet | std | _ZNSt9basic_iosIcSt11char_traitsIcEE4initEPSt15basic_streambufIcS1_E | std::basic_ios<char, std::char_traits<char> >::init(std::basic_streambuf<char, std::char_traits<char> >*)
+x86_64-release | libfixy.a | ratchet | std | _ZNSt9basic_iosIcSt11char_traitsIcEE5clearESt12_Ios_Iostate | std::basic_ios<char, std::char_traits<char> >::clear(std::_Ios_Iostate)
+x86_64-release | libfixy.a | ratchet | std | _ZSt16__throw_bad_castv | std::__throw_bad_cast()
+x86_64-release | libfixy.a | ratchet | std | _ZSt18_Rb_tree_decrementPSt18_Rb_tree_node_base | std::_Rb_tree_decrement(std::_Rb_tree_node_base*)
+x86_64-release | libfixy.a | ratchet | std | _ZSt19__throw_logic_errorPKc | std::__throw_logic_error(char const*)
+x86_64-release | libfixy.a | ratchet | std | _ZSt20__throw_length_errorPKc | std::__throw_length_error(char const*)
+x86_64-release | libfixy.a | ratchet | std | _ZSt29_Rb_tree_insert_and_rebalancebPSt18_Rb_tree_node_baseS0_RS_ | std::_Rb_tree_insert_and_rebalance(bool, std::_Rb_tree_node_base*, std::_Rb_tree_node_base*, std::_Rb_tree_node_base&)
+x86_64-release | libfixy.a | ratchet | std | _ZSt7getlineIcSt11char_traitsIcESaIcEERSt13basic_istreamIT_T0_ES7_RNSt7__cxx1112basic_stringIS4_S5_T1_EES4_ | std::basic_istream<char, std::char_traits<char> >& std::getline<char, std::char_traits<char>, std::allocator<char> >(std::basic_istream<char, std::char_traits<char> >&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, char)
+x86_64-release | libfixy.a | ratchet | std | _ZTISt9bad_alloc | typeinfo for std::bad_alloc
+x86_64-release | libfixy.a | ratchet | std | _ZTTSt14basic_ifstreamIcSt11char_traitsIcEE | VTT for std::basic_ifstream<char, std::char_traits<char> >
+x86_64-release | libfixy.a | ratchet | std | _ZTVSt13basic_filebufIcSt11char_traitsIcEE | vtable for std::basic_filebuf<char, std::char_traits<char> >
+x86_64-release | libfixy.a | ratchet | std | _ZTVSt14basic_ifstreamIcSt11char_traitsIcEE | vtable for std::basic_ifstream<char, std::char_traits<char> >
+x86_64-release | libfixy.a | ratchet | std | _ZTVSt15basic_streambufIcSt11char_traitsIcEE | vtable for std::basic_streambuf<char, std::char_traits<char> >
+x86_64-release | libfixy.a | ratchet | std | _ZTVSt9bad_alloc | vtable for std::bad_alloc
+x86_64-release | libfixy.a | ratchet | std | _ZTVSt9basic_iosIcSt11char_traitsIcEE | vtable for std::basic_ios<char, std::char_traits<char> >
+x86_64-release | libfoundation.a | allow | abi | __gxx_personality_v0 | __gxx_personality_v0
+x86_64-release | libfoundation.a | ratchet | abi | _ZTVN10__cxxabiv120__si_class_type_infoE | vtable for __cxxabiv1::__si_class_type_info
+x86_64-release | libfoundation.a | ratchet | abi | __cxa_begin_catch | __cxa_begin_catch
+x86_64-release | libfoundation.a | ratchet | alloc | _ZdlPvm | operator delete(void*, unsigned long)
+x86_64-release | libfoundation.a | ratchet | alloc | _Znwm | operator new(unsigned long)
+x86_64-release | libfoundation.a | ratchet | std | _ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE | std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)())
+x86_64-release | libfoundation.a | ratchet | std | _ZNSt6thread4joinEv | std::thread::join()
+x86_64-release | libfoundation.a | ratchet | std | _ZNSt6thread6_StateD2Ev | std::thread::_State::~_State()
+x86_64-release | libfoundation.a | ratchet | std | _ZNSt8__detail13__notify_implEPKvbRKNS_16__wait_args_baseE | std::__detail::__notify_impl(void const*, bool, std::__detail::__wait_args_base const&)
+x86_64-release | libfoundation.a | ratchet | std | _ZSt20__throw_length_errorPKc | std::__throw_length_error(char const*)
+x86_64-release | libfoundation.a | ratchet | std | _ZSt24__throw_out_of_range_fmtPKcz | std::__throw_out_of_range_fmt(char const*, ...)
+x86_64-release | libfoundation.a | ratchet | std | _ZSt9terminatev | std::terminate()
+x86_64-release | libfoundation.a | ratchet | std | _ZTINSt6thread6_StateE | typeinfo for std::thread::_State
