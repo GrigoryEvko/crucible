@@ -18,6 +18,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Instance.h>
 
@@ -26,6 +27,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace foundation::effects {
 
@@ -191,8 +193,9 @@ namespace detail {
 
 template <Effect E>
 [[nodiscard]] consteval std::meta::info bare_tag_info_() noexcept {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^cap, std::meta::access_context::current()));
+    static constexpr auto members = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<std::meta::reflect_constant(E), std::vector<std::meta::info>>>(
+            std::meta::members_of(^^cap, std::meta::access_context::current())));
 // An expansion statement unrolls into successive scopes that each
 // declare the same induction variable, so -Wshadow fires once per
 // iteration.

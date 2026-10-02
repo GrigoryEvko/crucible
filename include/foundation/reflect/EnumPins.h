@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <array>
@@ -22,6 +23,7 @@
 #include <meta>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace foundation::reflect {
 
@@ -49,7 +51,8 @@ struct enum_pin {
 template <ScopedEnum E, std::size_t N>
 [[nodiscard]] consteval bool pin_enum(std::array<enum_pin<E>, N> const& expected) noexcept {
     using Underlying = std::underlying_type_t<E>;
-    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+    static constexpr auto enumerators = std::define_static_array(
+        static_cast<anchored_t<^^E, std::vector<std::meta::info>>>(std::meta::enumerators_of(^^E)));
     if (enumerators.size() != N) return false;
 
     for (std::size_t i = 0; i < N; ++i) {

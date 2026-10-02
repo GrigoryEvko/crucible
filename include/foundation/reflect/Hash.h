@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <array>
@@ -513,10 +514,13 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
 }
 
 // The refusal text for a type that has no identity.  Built only when
-// the verdict is a fault.
+// the verdict is a fault.  The function is a template only so that its
+// text can depend on Anchor (foundation/reflect/Anchor.h).  No check reads
+// the text.
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view identity_refusal_text(std::meta::info type, identity_verdict verdict) {
     if (verdict.fault == identity_fault::none) return "";
-    std::string text{"foundation::reflect: a stable id refuses the type "};
+    anchored_t<^^Anchor, std::string> text{"foundation::reflect: a stable id refuses the type "};
     text += std::meta::display_string_of(type);
     text += ", because its part ";
     text += std::meta::display_string_of(verdict.culprit);
@@ -584,8 +588,8 @@ namespace detail {
 // the part of the type that has no identity.
 template <typename T>
 [[nodiscard]] consteval std::string_view checked_stable_name() {
-    static_assert(HasStableIdentity<T>, identity_refusal_text(^^T, identity_of_type(^^T)));
-    std::string suffix;
+    static_assert(HasStableIdentity<T>, identity_refusal_text<anchored_t<^^T, void>>(^^T, identity_of_type(^^T)));
+    anchored_t<^^T, std::string> suffix;
     (void)identity_of_type(^^T, &suffix);
     if (suffix.empty()) return std::meta::display_string_of(^^T);
     return std::define_static_string(std::string{std::meta::display_string_of(^^T)} + suffix);

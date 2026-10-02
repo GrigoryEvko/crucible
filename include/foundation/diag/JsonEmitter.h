@@ -12,6 +12,7 @@
 #include <foundation/Platform.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/RowMismatch.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <array>
 #include <charconv>
@@ -23,6 +24,7 @@
 #include <meta>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 namespace foundation::diag {
 
@@ -78,8 +80,9 @@ inline constexpr std::array<std::string_view, 8> json_record_fields{
 // The members of Record, in declaration order, are exactly `expected`.
 template <typename Record, std::size_t N>
 [[nodiscard]] consteval bool record_fields_are(std::array<std::string_view, N> const& expected) noexcept {
-    static constexpr auto members =
-        std::define_static_array(std::meta::nonstatic_data_members_of(^^Record, std::meta::access_context::current()));
+    static constexpr auto members = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<^^Record, std::vector<std::meta::info>>>(
+            std::meta::nonstatic_data_members_of(^^Record, std::meta::access_context::current())));
     if (members.size() != N) return false;
     std::size_t index = 0;
     bool matched = true;

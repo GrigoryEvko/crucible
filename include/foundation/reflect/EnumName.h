@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The enumerator-name half of the reflection helpers, split out so that
-// it names nothing outside <meta> and the standard library.
+// it names nothing outside <meta>, the standard library and
+// foundation/reflect/Anchor.h.
 //
 // Enumerate.h, which holds bits_to_string, states one precondition
 // through foundation::decide, and that pulls contracts/Decide.h, which
@@ -12,6 +13,9 @@
 
 #pragma once
 
+#include <foundation/reflect/Anchor.h>
+
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -30,28 +34,43 @@ namespace foundation::reflect {
 template <class E>
 concept ScopedEnum = std::is_scoped_enum_v<E>;
 
-// The type that std::meta::enumerators_of returns, spelled so that it
-// depends on E.
-//
-// GCC resolves a call where its template is declared when no argument has
-// a type that depends on a template parameter.  std::define_static_array
-// deduces its return type, so that resolution instantiates it in each
-// includer, at a cost of about 68 M instructions.  A cast of the list of
-// enumerators to this type makes the call depend on E.  Then only a
-// translation unit that reads the enumerators of an enum instantiates it.
-// The alias cannot be specialized, and neither can std::enable_if.
-template <ScopedEnum E>
-using enumerator_list_t = std::enable_if_t<std::is_scoped_enum_v<E>, std::vector<std::meta::info>>;
-
 // `f` takes the value and the name as ordinary runtime parameters, not
 // as an NTTP `std::meta::info`.  `info` is consteval-only, so a lambda
 // taking it as an NTTP is immediate-escalated and can no longer mutate
 // runtime state such as an output buffer.
+//
+// Each walk below holds its enumerators in a std::array, and no walk
+// calls std::define_static_array.  A function that is not a template
+// instantiates a walk where the function stands, for example a name
+// function of one enum.  The first instantiation of define_static_array
+// costs about 68 M instructions in a unit, and a std::array of a size
+// that the enum gives costs almost nothing.  The size depends on E, so a
+// unit that instantiates no walk evaluates no list.
+
+namespace detail {
+
+// Copies the enumerators of the enum that `enumeration` reflects into the
+// `count` slots at `target`, one slot for each of them.  The function is
+// not a template, so no translation unit can specialize the list that a
+// walk reads.  It takes a pointer and a count, and not a std::span: a
+// std::span<std::meta::info> in a function that is not a template costs
+// each includer about 32 M instructions.  Complexity: linear in the number
+// of enumerators.
+consteval void copy_enumerators(std::meta::info enumeration, std::meta::info* target, std::size_t count) {
+    const std::vector<std::meta::info> found = std::meta::enumerators_of(enumeration);
+    const std::meta::info* const source = found.data();
+    for (std::size_t index = 0; index < count; ++index) target[index] = source[index];
+}
+
+}  // namespace detail
 
 template <ScopedEnum E, typename F>
 constexpr void for_each_enumerator(F&& f) {
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
+    static constexpr auto enumerators = [] consteval {
+        std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
+        detail::copy_enumerators(^^E, items.data(), items.size());
+        return items;
+    }();
 // An expansion statement unrolls into successive scopes that each
 // declare the same induction variable, so -Wshadow fires once per
 // iteration.
@@ -72,8 +91,11 @@ constexpr void for_each_enumerator(F&& f) {
 template <ScopedEnum E, typename F>
 constexpr void for_each_single_bit_enumerator(F&& f) {
     using U = std::underlying_type_t<E>;
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
+    static constexpr auto enumerators = [] consteval {
+        std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
+        detail::copy_enumerators(^^E, items.data(), items.size());
+        return items;
+    }();
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto e : enumerators) {
@@ -111,14 +133,26 @@ inline constexpr std::size_t enum_count = std::meta::enumerators_of(^^E).size();
 namespace detail {
 
 // The text is "<unknown E>" with the unqualified name of E.  It lives
-// in static storage, so the view stays valid for the whole program.
+// in a static array of its own length, so the view stays valid for the
+// whole program.  A name function of one enum instantiates the sentinel
+// where the function stands, and the array costs almost nothing there.
+// A call of std::define_static_string would instantiate that function.
 
 template <ScopedEnum E>
 [[nodiscard]] consteval std::string_view make_unknown_enum_sentinel() {
-    std::string text{"<unknown "};
-    text += std::meta::identifier_of(^^E);
-    text += '>';
-    return std::define_static_string(text);
+    static constexpr std::string_view prefix = "<unknown ";
+    static constexpr std::string_view name = std::meta::identifier_of(^^E);
+    static constexpr auto text = [] consteval {
+        std::array<char, prefix.size() + name.size() + 1> chars{};
+        const char* const head = prefix.data();
+        const char* const tail = name.data();
+        char* const target = chars.data();
+        for (std::size_t index = 0; index < prefix.size(); ++index) target[index] = head[index];
+        for (std::size_t index = 0; index < name.size(); ++index) target[prefix.size() + index] = tail[index];
+        target[prefix.size() + name.size()] = '>';
+        return chars;
+    }();
+    return std::string_view{text.data(), text.size()};
 }
 
 }  // namespace detail
@@ -144,9 +178,12 @@ namespace detail {
 // upper-case letter that follows a lower-case letter or a digit starts a
 // new word.  So CopyHostToDevice reads copy_host_to_device with '_', and
 // SocketOracle reads socket-oracle with '-'.  The text lives in static
-// storage.  Complexity: linear in the length of the identifier.
+// storage.  Complexity: linear in the length of the identifier.  The
+// function is a template only so that its text can depend on Anchor
+// (foundation/reflect/Anchor.h).
+template <class Anchor = void>
 [[nodiscard]] consteval std::string_view lower_words_of(std::string_view identifier, char separator) {
-    std::string words;
+    anchored_t<^^Anchor, std::string> words;
     for (std::size_t index = 0; index < identifier.size(); ++index) {
         const char letter = identifier[index];
         const bool is_upper = letter >= 'A' && letter <= 'Z';
@@ -168,8 +205,11 @@ namespace detail {
 // in enumerator_name.
 template <ScopedEnum E, char Separator>
 [[nodiscard]] constexpr std::string_view enum_words(E value) noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
+    static constexpr auto enumerators = [] consteval {
+        std::array<std::meta::info, std::meta::enumerators_of(^^E).size()> items{};
+        detail::copy_enumerators(^^E, items.data(), items.size());
+        return items;
+    }();
     std::string_view words = unknown_enum_sentinel<E>;
     bool is_found = false;
 #pragma GCC diagnostic push

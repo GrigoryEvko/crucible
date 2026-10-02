@@ -9,10 +9,12 @@
 // parameters.
 
 #include <foundation/Platform.h>
+#include <foundation/reflect/Anchor.h>
 
 #include <cstddef>
 #include <meta>
 #include <type_traits>
+#include <vector>
 
 namespace foundation::reflect {
 
@@ -25,7 +27,9 @@ struct signature_traits {
     // The query returns a vector, whose allocation is not a constant
     // expression in the context an expansion statement needs.  Landing it
     // in static storage first is what makes the elements spliceable.
-    static constexpr auto params = std::define_static_array(std::meta::parameters_of(function_reflection));
+    static constexpr auto params = std::define_static_array(
+        static_cast<anchored_t<function_reflection, std::vector<std::meta::info>>>(
+            std::meta::parameters_of(function_reflection)));
 
     static constexpr std::size_t arity = params.size();
 

@@ -34,6 +34,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Enumerate.h>
 
@@ -44,6 +45,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace foundation::algebra::lattices {
 
@@ -82,7 +84,7 @@ namespace detail {
 template <typename Outer, auto Value>
 [[nodiscard]] consteval std::string_view make_pinned_at_name() {
     using E = decltype(Value);
-    std::string text{Outer::name()};
+    ::foundation::reflect::anchored_t<^^Outer, std::string> text{Outer::name()};
     text += "::At<";
     const std::string_view identifier = ::foundation::reflect::enum_name(Value);
     if (identifier == ::foundation::reflect::unknown_enum_sentinel<E>) {
@@ -96,7 +98,7 @@ template <typename Outer, auto Value>
 
 template <typename Outer>
 [[nodiscard]] consteval std::string_view make_pinned_at_sentinel() {
-    std::string text{Outer::name()};
+    ::foundation::reflect::anchored_t<^^Outer, std::string> text{Outer::name()};
     text += "::At<?>";
     return std::define_static_string(text);
 }
@@ -172,7 +174,8 @@ template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
     static constexpr auto enumerators = std::define_static_array(
-        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
+        static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^EnumT)));
     // `template for` unrolls into successive scopes that each declare the
     // induction variable, so -Wshadow fires on the body.
 #pragma GCC diagnostic push
@@ -194,7 +197,8 @@ template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_distributive_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
     static constexpr auto enumerators = std::define_static_array(
-        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
+        static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^EnumT)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -219,7 +223,8 @@ template <typename L>
 [[nodiscard]] consteval bool verify_enum_lattice_exhaustive() noexcept {
     using EnumT = typename L::element_type;
     static constexpr auto enumerators = std::define_static_array(
-        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
+        static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^EnumT)));
     if (!verify_chain_lattice_exhaustive<L>()) {
         return false;
     }
@@ -252,7 +257,7 @@ template <typename L, typename E = typename L::element_type>
     requires std::is_scoped_enum_v<E>
 [[nodiscard]] consteval bool verify_pinned_at() noexcept {
     static constexpr auto enumerators = std::define_static_array(
-        static_cast<::foundation::reflect::enumerator_list_t<E>>(std::meta::enumerators_of(^^E)));
+        static_cast<::foundation::reflect::anchored_t<^^E, std::vector<std::meta::info>>>(std::meta::enumerators_of(^^E)));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -292,7 +297,8 @@ template <typename L>
 [[nodiscard]] consteval bool verify_chain_lattice() noexcept {
     using EnumT = typename L::element_type;
     static constexpr auto enumerators = std::define_static_array(
-        static_cast<::foundation::reflect::enumerator_list_t<EnumT>>(std::meta::enumerators_of(^^EnumT)));
+        static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
+            std::meta::enumerators_of(^^EnumT)));
     if constexpr (enumerators.empty()) {
         return false;
     } else {

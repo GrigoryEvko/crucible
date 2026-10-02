@@ -28,6 +28,7 @@
 // this header refuse an axis that lacks one of them.
 
 #include <foundation/diag/RowHash.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <concepts>
@@ -36,6 +37,7 @@
 #include <meta>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace foundation::effects {
 
@@ -191,8 +193,9 @@ namespace detail {
 // of the namespace.
 template <ResourceKind K>
 [[nodiscard]] consteval std::meta::info tag_template_of_() noexcept {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^resource, std::meta::access_context::current()));
+    static constexpr auto members = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<std::meta::reflect_constant(K), std::vector<std::meta::info>>>(
+            std::meta::members_of(^^resource, std::meta::access_context::current())));
     std::meta::info found = ^^void;
     std::size_t matches = 0;
 #pragma GCC diagnostic push

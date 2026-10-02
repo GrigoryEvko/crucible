@@ -23,6 +23,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
@@ -63,7 +64,7 @@ namespace detail {
 template <QttGrade Grade>
 [[nodiscard]] consteval std::string_view make_qtt_at_name() {
     const std::string_view symbol = qtt_grade_name(Grade);
-    std::string text{"QttSemiring::At<"};
+    ::foundation::reflect::anchored_t<std::meta::reflect_constant(Grade), std::string> text{"QttSemiring::At<"};
     text += symbol == unknown_qtt_grade_name ? std::string_view{"?"} : symbol;
     text += '>';
     return std::define_static_string(text);
