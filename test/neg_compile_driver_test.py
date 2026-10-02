@@ -1076,12 +1076,110 @@ class StoreTest:
         utils/tools/quarantine/Quarantine.cmake.  The source root is
         CMAKE_HOME_DIRECTORY of the cache of the build, or an empty text.
         """
-        rows = json.loads((self.tree_build / "compile_commands.json").read_text())
-        row = next((row for row in rows if str(row.get("file", "")).endswith((".cpp", ".cc", ".cxx"))), {})
-        command = list(row["arguments"]) if row.get("arguments") else shlex.split(row.get("command", ""))
+        command = self.tree_command()
         kept = set(store._strip_plugin_flags(command, False))
         found = store._CACHE_SOURCE.search((self.tree_build / "CMakeCache.txt").read_text())
         return [arg for arg in command if arg not in kept], found.group(1) if found else ""
+
+    def tree_command(self) -> list[str]:
+        """Return the first C++ compile command of the compile database of the build of the source tree."""
+        rows = json.loads((self.tree_build / "compile_commands.json").read_text())
+        row = next((row for row in rows if str(row.get("file", "")).endswith((".cpp", ".cc", ".cxx"))), {})
+        return list(row["arguments"]) if row.get("arguments") else shlex.split(row.get("command", ""))
+
+    def cc1plus_view(self, command: list[str]) -> tuple[list[str], bool] | None:
+        """Return the plugin options that the GCC driver gives cc1plus for `command`, and True when it defines the macro.
+
+        `-###` prints the command of each program that the GCC driver runs,
+        and it runs none.  The command of cc1plus names each plugin option and
+        each macro definition in the spelling of cc1plus, whatever spelling
+        `command` uses.  The macro is QUARANTINE_MACRO of the driver.  The
+        result is None when the GCC driver refuses `command` and prints no
+        command of cc1plus, so a refused command never looks like a clean one.
+        """
+        proc = subprocess.run([self.cxx, "-###", *command[1:]], capture_output=True, text=True, check=False)
+        words: list[str] = []
+        for line in proc.stderr.splitlines():
+            parts = shlex.split(line) if line.startswith(" ") else []
+            if parts and parts[0].endswith("/cc1plus"):
+                words = parts
+                break
+        if proc.returncode != 0 or not words:
+            return None
+        options = [word for word in words if word.startswith(("-fplugin=", "-fplugin-arg-"))]
+        names = [following for word, following in zip(words, words[1:]) if word == "-D"]
+        names += [word[2:] for word in words if word.startswith("-D") and len(word) > 2]
+        return options, any(name.partition("=")[0] == store.QUARANTINE_MACRO for name in names)
+
+    def check_plugin_flag_spellings(self) -> None:
+        """The driver removes the plugin flags in each spelling that GCC takes, and it refuses each other spelling.
+
+        The flags come from the compile database of the build (plugin_flags),
+        so the check copies no flag of utils/tools/quarantine/Quarantine.cmake.
+        GCC is the judge (cc1plus_view): the command of the build loads the
+        plugin and defines the macro, and the command that the driver keeps
+        does neither.  With CRUCIBLE_NEG_KEEP_PLUGIN=1 the command stays the
+        same.  Each flag that the driver removes, alone, loads the plugin,
+        gives it an argument or defines the macro.  GCC also takes the aliases
+        --plugin= and --plugin-arg-, the definition in the spellings -D NAME,
+        --define-macro=NAME and --define-macro NAME, after -Xpreprocessor and in
+        a -Wp, list, and the check makes each of them from the flags of the
+        build.  An abbreviation of a long option stops the driver.
+        """
+        command = self.tree_command()
+        flags, _ = self.plugin_flags()
+        view = self.cc1plus_view(command)
+        options, defines = view if view is not None else ([], False)
+        self.expect(bool(options) and defines,
+                    f"the command of the build loads the plugin and defines {store.QUARANTINE_MACRO}: {view}")
+        kept = store._strip_plugin_flags(command, False)
+        self.expect(self.cc1plus_view(kept) == ([], False),
+                    f"the command that the driver keeps loads no plugin and defines no macro: {self.cc1plus_view(kept)}")
+        self.expect(store._strip_plugin_flags(command, True) == command,
+                    "with CRUCIBLE_NEG_KEEP_PLUGIN=1 the driver keeps each flag")
+        for flag in flags:
+            alone = self.cc1plus_view([self.cxx, flag, "-x", "c++", "-c", os.devnull])
+            self.expect(alone is not None and alone != ([], False),
+                        f"the driver removes only plugin flags, and {flag} alone is one: {alone}")
+        define = next((flag for flag in flags if flag.startswith("-D")), "")
+        if not define:
+            self.expect(False, f"the driver removes the definition of {store.QUARANTINE_MACRO} from the command of the "
+                               f"build: {flags}")
+            return
+        definition = define[len("-D"):]
+        aliases = [f"--plugin={flag[len('-fplugin='):]}" if flag.startswith("-fplugin=")
+                   else f"--plugin-arg-{flag[len('-fplugin-arg-'):]}" if flag.startswith("-fplugin-arg-") else flag
+                   for flag in flags if flag != define]
+        spellings = (["-D", definition], [f"--define-macro={definition}"], ["--define-macro", definition],
+                     ["-Xpreprocessor", define], [f"-Wp,-Wall,{define}"])
+        for spelling in spellings:
+            variant = [arg for arg in command if arg not in flags] + aliases + spelling
+            variant_view = self.cc1plus_view(variant)
+            self.expect(variant_view is not None and sorted(variant_view[0]) == sorted(options) and variant_view[1],
+                        f"GCC takes the aliases of the plugin options and the definition {spelling}: {variant_view}")
+            stripped = store._strip_plugin_flags(variant, False)
+            self.expect(self.cc1plus_view(stripped) == ([], False),
+                        f"the driver removes the aliases and the definition {spelling}: {self.cc1plus_view(stripped)}")
+        abbreviated = [*kept, "--def", definition]
+        refused = ""
+        try:
+            store._strip_plugin_flags(abbreviated, False)
+        except store.PluginFlagError as error:
+            refused = str(error)
+        abbreviated_view = self.cc1plus_view(abbreviated)
+        self.expect(abbreviated_view is not None and abbreviated_view[1] and definition in refused,
+                    f"GCC takes the abbreviation --def {definition}, and the driver refuses it: {abbreviated_view} "
+                    f"{refused}")
+        database = self.build / "compile_commands.json"
+        rows = json.loads(database.read_text())
+        for row in rows:
+            if row["file"].endswith("neg_size.cpp"):
+                row["arguments"] = [*row["arguments"], "--def", definition]
+        database.write_text(json.dumps(rows))
+        stopped = self.run("neg_size", *SIZE)
+        self.expect(stopped[0] == 2 and not self.has(stopped[3], "compiled") and "does not remove" in stopped[2],
+                    f"a spelling that the driver does not remove stops the driver before a compile: {stopped[0]} "
+                    f"{stopped[2]}")
 
     def plant_plugin_tree(self) -> bool:
         """Add the plugin fixtures, the planted headers, a rule table and a compile row for each fixture to the tree.
@@ -1221,6 +1319,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_unmatched_error,
     StoreTest.check_plugin_extra_error,
     StoreTest.check_region_macros,
+    StoreTest.check_plugin_flag_spellings,
 )
 
 SEARCH_LIST = """\

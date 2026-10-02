@@ -64,11 +64,15 @@ The quarantine plugin
 Each compile of the tree loads the quarantine plugin, and the plugin reports
 the findings of each fixture, because test/ is a quarantined directory.  A
 fixture tests a compile-time rejection of the language or of the base, so the
-driver removes the plugin from the command (`_strip_plugin_flags`).  A test
-that sets CRUCIBLE_NEG_KEEP_PLUGIN=1 keeps the plugin: the fixtures of the
-contract rule test the plugin itself.  The same rule of the reason applies
-with the plugin kept, so an error of the plugin that no regex matches fails
-the fixture.
+driver removes the plugin from the command (`_strip_plugin_flags`).  It
+removes each spelling that the GCC driver takes for a plugin option and for
+the definition of CRUCIBLE_QUARANTINE_ACTIVE, with which the region macros
+of foundation/Quarantine.h give the pragmas of the plugin.  A command that
+names one of them in a different spelling stops the driver, with exit code 2.
+A test that sets CRUCIBLE_NEG_KEEP_PLUGIN=1 keeps the plugin: the fixtures of
+the contract rule test the plugin itself.  The same rule of the reason
+applies with the plugin kept, so an error of the plugin that no regex matches
+fails the fixture.
 
 The result store
 ----------------
@@ -648,23 +652,88 @@ def _strip_dependency_flags(argv: list[str]) -> list[str]:
     return result
 
 
+# The macro that makes the region macros of foundation/Quarantine.h expand to
+# the pragmas of the quarantine plugin.  The build defines it with the plugin.
+QUARANTINE_MACRO = "CRUCIBLE_QUARANTINE_ACTIVE"
+# The options that load a plugin or give a plugin an argument, and their
+# aliases of the GCC driver.  Each option joins its value.
+_PLUGIN_OPTIONS = ("-fplugin=", "-fplugin-arg-", "--plugin=", "--plugin-arg-")
+# The options of _PLUGIN_OPTIONS that load a plugin.
+_PLUGIN_LOAD = ("-fplugin=", "--plugin=")
+# A macro definition with its value joined, and with its value in the next
+# argument, as the GCC driver takes them.
+_DEFINE_JOINED = ("--define-macro=", "-D")
+_DEFINE_SEPARATE = ("-D", "--define-macro")
+# A text in an argument that names a plugin option or QUARANTINE_MACRO.
+_PLUGIN_TRACES = ("-fplugin", "--plugin", QUARANTINE_MACRO)
+
+
+class PluginFlagError(ValueError):
+    """A command names a plugin option or QUARANTINE_MACRO in a spelling that `_strip_plugin_flags` does not remove."""
+
+
+def _defines_quarantine_macro(definition: str) -> bool:
+    """Return True when the macro definition `definition`, NAME or NAME=VALUE, defines QUARANTINE_MACRO."""
+    return definition.partition("=")[0] == QUARANTINE_MACRO
+
+
+def _is_plugin_option(option: str) -> bool:
+    """Return True when the one option `option` loads a plugin, gives a plugin argument or defines QUARANTINE_MACRO."""
+    if option.startswith(_PLUGIN_OPTIONS):
+        return True
+    return any(option.startswith(prefix) and len(option) > len(prefix)
+               and _defines_quarantine_macro(option[len(prefix):]) for prefix in _DEFINE_JOINED)
+
+
 def _strip_plugin_flags(argv: list[str], keep: bool) -> list[str]:
-    """Return `argv` without the options that load a GCC plugin, give it an argument or tell the code of it.
+    """Return `argv` without the options that load a GCC plugin, give it an argument or define QUARANTINE_MACRO.
 
     A fixture tests a compile-time rejection of the language or of the base,
     and the quarantine plugin of the build reports a finding in each fixture.
     So a fixture compiles with no plugin, unless `keep` is True: its test sets
     CRUCIBLE_NEG_KEEP_PLUGIN=1, because the fixture tests the plugin itself.
-    CRUCIBLE_QUARANTINE_ACTIVE goes too, because the region macros of
+    QUARANTINE_MACRO goes too, because the region macros of
     foundation/Quarantine.h expand to a pragma that only the plugin knows.
     The key of a stored result then holds no plugin, so a change of the plugin
     compiles no other fixture again.
+
+    The function removes each spelling that the GCC driver takes: an option of
+    _PLUGIN_OPTIONS, a definition in each spelling of _DEFINE_JOINED and
+    _DEFINE_SEPARATE, such an option after -Xpreprocessor, and such an option
+    of a -Wp, list.  The cost is O(n) in the length of the command.
+
+    Raises:
+        PluginFlagError: If an argument that stays names a plugin option or
+            QUARANTINE_MACRO, such as an abbreviation of a long option of the
+            GCC driver.  The driver then stops, and it compiles nothing.
     """
     if keep:
         return list(argv)
-    return [arg for arg in argv
-            if not arg.startswith(("-fplugin=", "-fplugin-arg-"))
-            and arg != "-DCRUCIBLE_QUARANTINE_ACTIVE" and not arg.startswith("-DCRUCIBLE_QUARANTINE_ACTIVE=")]
+    result: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        following = argv[index + 1] if index + 1 < len(argv) else None
+        index += 1
+        if _is_plugin_option(arg):
+            continue
+        if following is not None and ((arg in _DEFINE_SEPARATE and _defines_quarantine_macro(following))
+                                      or (arg == "-Xpreprocessor" and _is_plugin_option(following))):
+            index += 1
+            continue
+        if arg.startswith("-Wp,"):
+            parts = [part for part in arg[len("-Wp,"):].split(",") if not _is_plugin_option(part)]
+            if parts:
+                result.append("-Wp," + ",".join(parts))
+            continue
+        result.append(arg)
+    stray = next((arg for arg in result if any(trace in arg for trace in _PLUGIN_TRACES)), None)
+    if stray is not None:
+        raise PluginFlagError(
+            f"the compile command names a plugin option or {QUARANTINE_MACRO} in a spelling that the driver does not "
+            f"remove: {stray}.  Spell a plugin option as -fplugin=PATH or -fplugin-arg-NAME-KEY=VALUE and the "
+            f"definition as -D{QUARANTINE_MACRO}, or set CRUCIBLE_NEG_KEEP_PLUGIN=1 in a test of the plugin")
+    return result
 
 
 def compile_argv(command: list[str], output: Path, depfile: Path) -> list[str]:
@@ -857,7 +926,7 @@ _GCC_ENVIRONMENT = frozenset({
     "SOURCE_DATE_EPOCH", "SUNPRO_DEPENDENCIES", "TEMP", "TERM", "TERM_URLS", "TMP", "TMPDIR",
 })
 _GCC_ENVIRONMENT_PREFIXES = ("GCC_", "LC_", "LD_")
-_PLUGIN_OUTPUT = re.compile(r"-fplugin-arg-[^=]*-out=")
+_PLUGIN_OUTPUT = re.compile(r"(?:-fplugin-arg-|--plugin-arg-)[^=]*-out=")
 _PROFILE_INPUT = ("-fprofile-use", "-fauto-profile")
 # The options that name a file which GCC looks for in the working directory
 # first, before the search list.
@@ -1173,7 +1242,7 @@ def _key_refusal(argv: list[str], directory: Path) -> str:
             return "the command names a response file"
         if arg.startswith("-B"):
             return "the command names a -B prefix"
-        if arg.startswith("-fplugin="):
+        if arg.startswith(_PLUGIN_LOAD):
             plugin = arg.split("=", 1)[1]
             # GCC looks for a plugin name with no directory part in its plugin
             # directory or in the search path of the loader.
@@ -1224,7 +1293,7 @@ def compile_key(argv: list[str], directory: Path, protected: set[str], memo_dir:
         specs_text = specs or ""
         has_specs = os.path.isabs(specs_text) and os.path.isfile(specs_text)
         identity.append(["specs", specs_text, file_digest(specs_text, memo_dir) if has_specs else None])
-        plugins = [os.path.join(directory, arg.split("=", 1)[1]) for arg in argv if arg.startswith("-fplugin=")]
+        plugins = [os.path.join(directory, arg.split("=", 1)[1]) for arg in argv if arg.startswith(_PLUGIN_LOAD)]
         for path in [*programs, *plugins]:
             # cc1plus loads a plugin, so its loader maps the objects of the plugin.
             interpreter = elf_interpreter(path) or (elf_interpreter(programs[1]) if path in plugins else None)
@@ -2882,7 +2951,11 @@ def main(arguments: list[str]) -> int:
     command, directory = found
     output = scratch / f"{fixture_name}.o"
     depfile = scratch / f"{fixture_name}.{os.getpid()}.d"
-    argv = compile_argv(command, output, depfile)
+    try:
+        argv = compile_argv(command, output, depfile)
+    except PluginFlagError as error:
+        print(f"neg-compile {fixture_name}: {error}", file=sys.stderr)
+        return 2
     store, store_reason = open_store()
     budget = read_cost_budget(store.memo if store is not None else None)
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget, store, store_reason,

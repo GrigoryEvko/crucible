@@ -1461,14 +1461,16 @@ endfunction()
 # its flags from the compile database of this build, and it plants fixtures
 # that the plugin checks: an error of the plugin that no regex matches must
 # fail a fixture that keeps the plugin, and the region macros must work with
-# no plugin and with the plugin kept.  Each check waits about one second for
+# no plugin and with the plugin kept.  It also makes each spelling that GCC
+# takes for the plugin flags of this build, and GCC must show that the driver
+# removes each one.  Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
 # whose position modulo the count of parts is K, and the count of parts is the
 # count of checks, so each part runs one check.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 30)
+set(FIXTURE_STORE_SELF_TEST_PARTS 31)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   add_test(NAME fixture_store_self_test_${part}
