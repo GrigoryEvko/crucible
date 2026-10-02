@@ -562,7 +562,7 @@ jobs:
 
       # Two ledgers depend on the build kind and the target tier
       # (utils/scripts/build_target.py): the quarantine ratchet, whose findings
-      # of each file and kind can only decrease, and the libstdc++ symbols of
+      # of each file, kind and entity can only decrease, and the libstdc++ symbols of
       # the libraries.  A build that a ledger does not hold gives exit 3 with
       # one line that names its tier and the tiers of the ledger, for example
       # the x86_64 release leg on a runner of another native tier.  Then the

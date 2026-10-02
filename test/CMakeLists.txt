@@ -5714,8 +5714,8 @@ set_tests_properties(elf_file_self_test PROPERTIES LABELS "ci_guard")
 add_test(NAME quarantine_sections_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/quarantine_sections.py --self-test)
 # quarantine_ratchet — utils/scripts/check-quarantine-ratchet.py counts the
-# distinct findings of the sections of the objects of all in each file and kind,
-# against utils/scripts/quarantine-ledger.txt.  A count above or below its row
+# distinct findings of the sections of the objects of all in each file, kind and
+# entity, against utils/scripts/quarantine-ledger.txt.  A count above or below its row
 # fails, and so does a finding in a file that the ledger does not hold.  It exits
 # 3 for a build whose compiles do not load the quarantine plugin, for a build of
 # a configuration that the ledger does not have, and for a build that made only

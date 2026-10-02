@@ -38,14 +38,16 @@ THE FINDINGS
       ledger with the row name quarantine-ledger and the column error changes
       the error to a warning.  Each raised count that stays above its count
       before the commit gives a warning on each run, which names the commit.
-      No count rises in a change of the ledger format if no total of a kind
-      rises, in a file that git moved, or in a new configuration.  A count of
-      a configuration other than the base rises only with its difference
-      from the base, and not when it comes back to a count of its history.
-      Its raise is no error after a change of the plugin or the rule table
-      that did not write its rows (utils/scripts/check-quarantine-ratchet.py,
-      A CONFIGURATION THAT ONLY CI BUILDS).  A change of the format starts a
-      new history of each count.
+      A change from or to format 1, which counts directories, raises no
+      count if no total of a kind rises, and it starts a new history of each
+      count.  A version of format 2 and a version with entities compare the
+      count of each file and kind, so the history stays.  No count rises in a
+      file that git moved, or in a new configuration.  A count of a
+      configuration other than the base rises only with its difference from
+      the base, and not when it comes back to a count of its history.  Its
+      raise is no error after a change of the plugin or the rule table that
+      did not write its rows (utils/scripts/check-quarantine-ratchet.py,
+      A CONFIGURATION THAT ONLY CI BUILDS).
     * A commit that raised a threshold, and whose body holds no measurement of
       the row, gives an error.  A row of the admission ledger that names the
       commit, the row and the column changes the error to a warning.
@@ -565,23 +567,34 @@ def evaluate_ledgers(history: History, budgets: dict[str, Row]) -> list[check_re
 
 # ── The quarantine ledger ──────────────────────────────────────────
 
-# The configuration, the file and the kind of one count of the quarantine ledger.
-CountKey = tuple[str, str, str]
+# The configuration, the file, the kind and the entity of one count of the quarantine ledger.  A count of a ledger of
+# format 1 or 2 has an empty entity.
+CountKey = tuple[str, str, str, str]
+# The first format of the quarantine ledger whose rows count files, and the first whose rows have an entity.
+FILE_FORMAT = 2
+ENTITY_FORMAT = 3
 
 
 @dataclass(frozen=True, slots=True)
 class LedgerRise:
-    """One count of the quarantine ledger that a commit raised: its configuration, file, kind and the two counts."""
+    """One count of the quarantine ledger that a commit raised: its configuration, file, kind, entity and two counts."""
 
     configuration: str
     file: str
     kind: str
+    entity: str
     old: int
     new: int
 
+    @property
+    def key(self) -> tuple[str, str, str]:
+        """The file, the kind and the entity of the count, as the ledger keys it."""
+        return self.file, self.kind, self.entity
+
     def text(self) -> str:
         """Return the rise as words for a message."""
-        return f"{self.file} {self.kind} in {self.configuration} from {self.old} to {self.new}"
+        what = f"{self.kind} {self.entity}" if self.entity else self.kind
+        return f"{self.file} {what} in {self.configuration} from {self.old} to {self.new}"
 
 
 def load_ratchet() -> Any:
@@ -601,25 +614,51 @@ def load_ratchet() -> Any:
     return module
 
 
-def absolute_counts(ledger: Any) -> dict[CountKey, int]:
-    """Return the count of each configuration, file and kind of a ledger: the base count plus the difference."""
-    return {(name, file, kind): count for name in ledger.configurations
-            for (file, kind), count in ledger.expected(name).items()}
+def absolute_counts(ledger: Any, has_entity: bool = True) -> dict[CountKey, int]:
+    """Return the count of each configuration, file, kind and entity of a ledger: the base count plus the difference.
+
+    With `has_entity` false, each count is the sum of the counts of its file and kind, with an empty entity.
+    """
+    counts: dict[CountKey, int] = {}
+    for name in ledger.configurations:
+        for (file, kind, entity), count in ledger.expected(name).items():
+            key = (name, file, kind, entity if has_entity else "")
+            counts[key] = counts.get(key, 0) + count
+    return counts
+
+
+def difference_of(ledger: Any, name: str, row: tuple[str, str, str], has_entity: bool) -> int:
+    """Return the difference of one row of a configuration from the base, or the sum for its file and kind."""
+    deltas = ledger.deltas.get(name, {})
+    if has_entity:
+        return deltas.get(row, 0)
+    return sum(delta for (file, kind, _entity), delta in deltas.items() if (file, kind) == row[:2])
 
 
 def kind_totals(ledger: Any) -> dict[str, int]:
     """Return the sum of the base counts of each kind of a ledger."""
     totals: dict[str, int] = {}
-    for (_file, kind), count in ledger.counts.items():
+    for (_file, kind, _entity), count in ledger.counts.items():
         totals[kind] = totals.get(kind, 0) + count
     return totals
+
+
+def comparable(before: Any, after: Any) -> bool:
+    """Tell whether two versions of the quarantine ledger compare row by row: both count files, or one format."""
+    return before.format == after.format or min(before.format, after.format) >= FILE_FORMAT
+
+
+def has_entities(before: Any, after: Any) -> bool:
+    """Tell whether two comparable versions compare by entity: both versions have rows with an entity."""
+    return min(before.format, after.format) >= ENTITY_FORMAT
 
 
 def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[CountKey, int]) -> list[LedgerRise]:
     """Return each count that rose from one version of the quarantine ledger to the next.
 
-    * Two versions of different formats compare the total of each kind of the base, because their rows count
-      different things.
+    * Two versions of different formats compare the total of each kind of the base when one of them counts
+      directories (format 1), because their rows count different things.  A version of format 2 and a version with
+      entities compare the count of each file and kind, with an empty entity, so a format change keeps the history.
     * A configuration that the old version does not have is new coverage, and no rise.  The base keeps its history
       when its name changes.
     * A file that git moved keeps the rows of its old path: no rise when the old path has no row after the commit
@@ -628,31 +667,42 @@ def ledger_rises(before: Any, after: Any, moves: dict[str, str], peaks: dict[Cou
       raise of a base count is one rise.  Such a count that comes back to a value of its history, `peaks`, is no
       rise.  A CI leg or a later --write can write such a configuration after a commit that lowered the base rows.
 
-    Complexity: O(r log r) for r counts.
+    Complexity: O(r log r) for r counts, and O(r * d) for d difference rows when the versions compare by file.
     """
-    if before.format != after.format:
+    if not comparable(before, after):
         old_totals, new_totals = kind_totals(before), kind_totals(after)
-        return [LedgerRise(after.base, TOTAL, kind, old_totals.get(kind, 0), count)
+        return [LedgerRise(after.base, TOTAL, kind, "", old_totals.get(kind, 0), count)
                 for kind, count in sorted(new_totals.items()) if count > old_totals.get(kind, 0)]
+    keyed = has_entities(before, after)
     # A new name of the base keeps the history of the base.
-    old_counts = {(after.base if name == before.base else name, file, kind): count
-                  for (name, file, kind), count in absolute_counts(before).items()}
-    new_counts = absolute_counts(after)
+    old_counts = {(after.base if name == before.base else name, file, kind, entity): count
+                  for (name, file, kind, entity), count in absolute_counts(before, keyed).items()}
+    new_counts = absolute_counts(after, keyed)
     rises: list[LedgerRise] = []
     for key in sorted(new_counts):
-        name, file, kind = key
+        name, file, kind, entity = key
         new, old = new_counts[key], old_counts.get(key, 0)
         if new <= old or (name not in before.configurations and name != after.base):
             continue
         source = moves.get(file)
-        if (source is not None and old == 0 and new_counts.get((name, source, kind), 0) == 0
-                and old_counts.get((name, source, kind), 0) >= new):
+        if (source is not None and old == 0 and new_counts.get((name, source, kind, entity), 0) == 0
+                and old_counts.get((name, source, kind, entity), 0) >= new):
             continue
-        if name != after.base and (new <= peaks.get(key, 0) or after.deltas.get(name, {}).get((file, kind), 0)
-                                   <= before.deltas.get(name, {}).get((file, kind), 0)):
+        row = (file, kind, entity)
+        if name != after.base and (new <= peaks.get(key, 0) or difference_of(after, name, row, keyed)
+                                   <= difference_of(before, name, row, keyed)):
             continue
-        rises.append(LedgerRise(name, file, kind, old, new))
+        rises.append(LedgerRise(name, file, kind, entity, old, new))
     return rises
+
+
+def rise_line(ledger: Any, rise: LedgerRise) -> int:
+    """Return the line of the row of a rise in a ledger.  A rise of a file and kind gives the first row of its file."""
+    if rise.entity or ledger.format < ENTITY_FORMAT:
+        return ledger.line_of(rise.configuration, rise.key)
+    lines = [line for (name, file, kind, _entity), line in ledger.lines.items()
+             if (file, kind) == (rise.file, rise.kind) and name in (rise.configuration, ledger.base)]
+    return min(lines, default=0)
 
 
 def changes_machinery(change: Change) -> bool:
@@ -669,7 +719,8 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
       write its rows.  A raise of a stale configuration is no error, and the commit that writes its rows makes it
       current again.  A CI leg writes the rows of an aarch64 configuration only after the change of the plugin.
     * A raised count that stays above its value before the commit gives a warning on each run, which names the
-      commit.  A change of the format starts a new history of each row.
+      commit.  A change from or to format 1 starts a new history of each row.  A change between two formats that
+      count files keeps the history: a raised count of a file and kind compares with the sum of its entities.
     * A raise in the working tree gives a warning only.
 
     Complexity: O(c * r) for c commits of the ledger, the plugin and the rule table, and r counts.
@@ -695,7 +746,7 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
     standing: list[tuple[Commit, LedgerRise]] = []
     stale: set[str] = set()
     known: set[str] = set()
-    last_format = 0
+    last: Any = None
     by_sha = {commit.sha: commit for commit in history.commits if QUARANTINE_LEDGER in commit.paths}
     for sha, change in reversed(list(history.changes.items())):
         commit = by_sha.get(sha)
@@ -706,9 +757,12 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
         before = parse(history.before.get((commit.sha, QUARANTINE_LEDGER)), f"{commit.short}^:{QUARANTINE_LEDGER}")
         if after is None:
             continue
-        if before is None or before.format != after.format:
+        if before is None or not comparable(before, after):
             peaks, standing = {}, []
-        last_format = after.format
+        elif before.format != after.format:
+            # A peak of the old format has the keys of that format.
+            peaks = {}
+        last = after
         rises = ledger_rises(before, after, change.moves, peaks) if before is not None else []
         for key, count in absolute_counts(after).items():
             peaks[key] = max(peaks.get(key, 0), count)
@@ -738,22 +792,25 @@ def evaluate_quarantine(history: History, admissions: list[Admission], used: set
                 f"{said}.  A change can only lower a count.  Remove the new findings, or add a row to {ADMISSIONS} "
                 f"that gives the commit, {QUARANTINE_ROW}, error and the reason"))
     current = parse(history.working.get(QUARANTINE_LEDGER), QUARANTINE_LEDGER)
-    if current is None or current.format != last_format:
+    if current is None or last is None or not comparable(last, current):
         return findings
     counts = absolute_counts(current)
+    # A rise with no entity is a rise of a file and kind: of format 2, or of a kind with no entity.
+    file_counts = absolute_counts(current, has_entity=False)
     for commit, rise in standing:
-        value = counts.get((rise.configuration, rise.file, rise.kind), 0)
+        value = (counts if rise.entity else file_counts).get((rise.configuration, *rise.key), 0)
         if value > rise.old:
+            what = f"{rise.kind} {rise.entity}" if rise.entity else rise.kind
             findings.append(check_report.Finding(
-                "warning", QUARANTINE_LEDGER, current.line_of(rise.configuration, (rise.file, rise.kind)), CHECK,
-                f"{rise.file} {rise.kind} in the configuration {rise.configuration} has {value} findings, above "
+                "warning", QUARANTINE_LEDGER, rise_line(current, rise), CHECK,
+                f"{rise.file} {what} in the configuration {rise.configuration} has {value} findings, above "
                 f"{rise.old} before the commit {commit.short} ({commit.subject}) raised it to {rise.new}.  Lower it "
                 f"again"))
     head = parse(history.head.get(QUARANTINE_LEDGER), f"HEAD:{QUARANTINE_LEDGER}")
-    if head is not None and head.format == current.format:
+    if head is not None and comparable(head, current):
         for rise in ledger_rises(head, current, {}, peaks):
             findings.append(check_report.Finding(
-                "warning", QUARANTINE_LEDGER, current.line_of(rise.configuration, (rise.file, rise.kind)), CHECK,
+                "warning", QUARANTINE_LEDGER, rise_line(current, rise), CHECK,
                 f"{WORKING_TREE} (not committed) raises {rise.text()}.  The commit must change the plugin or the "
                 f"rule table, or lower the count again"))
     return findings
@@ -857,6 +914,13 @@ def quarantine_text(base: dict[str, int], deltas: dict[str, dict[str, int]] | No
     lines += [f"{file} std_object {count}" for file, count in sorted(base.items()) if count]
     lines += [f"{name} {file} std_object {delta:+d}" for name, table in deltas.items()
               for file, delta in sorted(table.items()) if delta]
+    return "\n".join(lines) + "\n"
+
+
+def entity_text(base: dict[tuple[str, str], int]) -> str:
+    """Return a format 3 quarantine ledger with base counts of the kind std_object, each keyed by file and entity."""
+    lines = ["# a planted ledger", "format 3", "configuration default machine x86_64"]
+    lines += [f"{file} std_object {count} {entity}" for (file, entity), count in sorted(base.items()) if count]
     return "\n".join(lines) + "\n"
 
 
@@ -969,6 +1033,28 @@ def quarantine_cases(expect: Any, scratch: Path) -> None:
     status, found, _ = jump.run()
     expect("a change of the format that raises a total is an error",
            status == 1 and any(grown[:9] in f.message and TOTAL in f.message for f in errors_of(found)))
+
+    keyed = Scratch(scratch / "quarantine-entity")
+    keyed.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 2}))
+    keyed.commit("Count each file", "The first counts.")
+    keyed.write("utils/tools/quarantine/quarantine.cpp", "// a new rule\n")
+    keyed.write(QUARANTINE_LEDGER, quarantine_text({"test/a.cpp": 3}))
+    plugin = keyed.commit("Report a new kind in the plugin", "The plugin finds one more.")
+    keyed.write(QUARANTINE_LEDGER, entity_text({("test/a.cpp", "std::span"): 1, ("test/a.cpp", "std::vector"): 2}))
+    keyed.commit("Count each entity", "The format changes, and each count of a file stays.")
+    status, found, _ = keyed.run()
+    expect("a change to the format of entities with the same count of each file is no raise, and the history stays",
+           status == 0 and not errors_of(found) and [f.line for f in standing_of(found)] == [4]
+           and plugin[:9] in standing_of(found)[0].message
+           and "has 3 findings, above 2" in standing_of(found)[0].message)
+    keyed.write(QUARANTINE_LEDGER, entity_text({("test/a.cpp", "std::span"): 1, ("test/a.cpp", "std::vector"): 1,
+                                                ("test/a.cpp", "std::map"): 1}))
+    swapped = keyed.commit("Swap an entity", "One std::vector goes and std::map comes.")
+    status, found, _ = keyed.run()
+    expect("an entity swap with the same count of the file and kind is an error that names the new entity",
+           status == 1 and any(swapped[:9] in f.message and "test/a.cpp std_object std::map in default from 0 to 1"
+                               in f.message for f in errors_of(found))
+           and any("std_object std::map" in f.message and swapped[:9] in f.message for f in standing_of(found)))
 
 
 def self_test() -> int:
