@@ -181,12 +181,22 @@ stays an error.  CRUCIBLE_NEG_BUDGETS, CRUCIBLE_NEG_CPU_LEDGER and
 CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a different table and ledgers, for the
 tests of the driver.
 
-test/neg_compile_driver_test.py holds the tests of the store and of the cost
-budget.
+The record of a run
+-------------------
+After each run, from a compile or from the store, the driver writes
+`NAME.inputs` in the scratch directory of the fixture: the result, the CPU
+times, the instruction count, and each file that the compile read.  The list is
+the dependency file of GCC, the list of the `-M -MG` pass after a fatal error,
+or the list in the entry of the store.  utils/scripts/check-parse-cost.py adds
+the bytes of these files for each fixture.
+
+test/neg_compile_driver_test.py holds the tests of the store, of the cost
+budget and of the record.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import locale
@@ -309,12 +319,14 @@ def summarise_errors(stripped: str, source: Path) -> tuple[int, list[int]]:
 
 @dataclass(frozen=True, slots=True)
 class CompileResult:
-    """The exit code, the combined standard output and error, and the cost of one compile.
+    """The exit code, the combined standard output and error, the cost and the inputs of one compile.
 
     `user_s` and `system_s` are the user and the system CPU time of the
     compile in seconds.  `instructions` is the exact count of its user
-    instructions, or None when the host gives no exact count.  A result from
-    the store gives the cost of the compile that made it.
+    instructions, or None when the host gives no exact count.  `inputs` is
+    each file that the compile read, by absolute path, or None when the driver
+    does not know them.  A result from the store gives the cost and the inputs
+    of the compile that made it.
     """
 
     returncode: int
@@ -322,6 +334,7 @@ class CompileResult:
     user_s: float
     system_s: float
     instructions: int | None
+    inputs: tuple[str, ...] | None = None
 
 
 def _replace_output(argv: list[str], output: Path) -> list[str]:
@@ -1336,8 +1349,9 @@ class ResultStore:
             os.utime(path)
         except OSError:
             pass
+        inputs = tuple(name for name, _ in entry["dependencies"])  # type: ignore[union-attr]
         return CompileResult(entry["returncode"], entry["output"], float(entry["user_s"]),  # type: ignore[arg-type]
-                             float(entry["system_s"]), entry["instructions"]), ""  # type: ignore[arg-type]
+                             float(entry["system_s"]), entry["instructions"], inputs), ""  # type: ignore[arg-type]
 
     def record(
         self,
@@ -1666,26 +1680,47 @@ def report_cost(fixture_name: str, source: Path, result: CompileResult, is_store
     return status
 
 
-def _record_compile(store: ResultStore, key: str, result: CompileResult, dependencies: list[str] | None,
-                    argv: list[str], directory: Path, source: Path, env: Mapping[str, str],
-                    started_ns: int) -> tuple[bool, str]:
-    """Find the inputs of a compile that the store needs, and store its result.
+def _record_compile(store: ResultStore, key: str, result: CompileResult, missing: list[str], argv: list[str],
+                    directory: Path, source: Path, env: Mapping[str, str], started_ns: int) -> tuple[bool, str]:
+    """Find the search list of a compile, and store its result.
 
-    `dependencies` is the list of the dependency file of GCC, or None after a
-    fatal error.  Then the `-M -MG` pass gives the list and the missing
-    headers.  The search query gives the directories of the search list.  The
-    two runs of the compiler use the scratch directory of the dependency file.
+    `result.inputs` is the list of the dependency file of GCC, or after a
+    fatal error the list of the `-M -MG` pass, and `missing` holds each header
+    that the pass did not find.  The search query gives the directories of the
+    search list, and it uses the scratch directory of the dependency file.
     """
-    scratch = Path(argv[-1]).parent
-    missing: list[str] = []
-    if dependencies is None:
-        dependencies, missing, reason = dependency_pass(argv, directory, scratch, env)
-        if dependencies is None:
-            return False, reason
-    named, reason = search_directories(argv, directory, source, scratch, env)
+    if result.inputs is None:
+        return False, "the driver does not know the files that the compile read"
+    named, reason = search_directories(argv, directory, source, Path(argv[-1]).parent, env)
     if named is None:
         return False, reason
-    return store.record(key, result, dependencies, missing, named, started_ns)
+    return store.record(key, result, list(result.inputs), missing, named, started_ns)
+
+
+_INPUTS_FORMAT = 1
+_INPUTS_SUFFIX = ".inputs"
+
+
+def write_inputs_record(scratch: Path, fixture_name: str, result: CompileResult, is_stored: bool) -> None:
+    """Write the record of a run of the fixture: the cost and each file that its compile read.
+
+    The record is `scratch/NAME.inputs`.  Its first line is a JSON object,
+    and each line after it is one absolute path.  utils/scripts/check-parse-cost.py
+    reads it.  A path with a line break, which no file of the tree has, gives a
+    record that says that the driver does not know the inputs.  A failure to
+    write changes no verdict.
+    """
+    inputs = result.inputs
+    if inputs is not None and any("\n" in path for path in inputs):
+        inputs = None
+    header = {"format": _INPUTS_FORMAT, "fixture": fixture_name, "result": "stored" if is_stored else "compiled",
+              "user_s": round(result.user_s, 3), "system_s": round(result.system_s, 3),
+              "instructions": result.instructions, "has_inputs": inputs is not None}
+    text = json.dumps(header) + "\n" + "".join(f"{path}\n" for path in inputs or ())
+    try:
+        _write_atomic(scratch / f"{fixture_name}{_INPUTS_SUFFIX}", text.encode("utf-8", "surrogateescape"))
+    except OSError:
+        pass
 
 
 def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: Path, output: Path,
@@ -1717,7 +1752,8 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
     started_ns = time.time_ns()
     result = run_compile(argv, directory, env)
     dependencies: list[str] | None = None
-    is_readable = True
+    missing: list[str] = []
+    dependency_reason = "the dependency file of GCC does not hold exactly one rule"
     try:
         text = depfile.read_text(errors="surrogateescape")
         os.replace(depfile, depfile.with_name(f"{fixture_name}.d"))
@@ -1725,12 +1761,16 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
         text = None
     if text is not None:
         parsed = parse_dependency_file(text)
-        is_readable = parsed is not None
         if parsed is not None:
             dependencies = list(dict.fromkeys(os.path.join(directory, name) for name in parsed))
+    else:
+        # GCC writes no dependency file after a fatal error.  The `-M -MG`
+        # pass reads each file that the compile read before it stopped.
+        dependencies, missing, dependency_reason = dependency_pass(argv, directory, depfile.parent, env)
+    result = dataclasses.replace(result, inputs=None if dependencies is None else tuple(dependencies))
     if store is not None and key is not None:
-        if not is_readable:
-            is_stored, why = False, "the dependency file of GCC does not hold exactly one rule"
+        if dependencies is None:
+            is_stored, why = False, dependency_reason
         elif result.returncode not in (0, 1):
             # A signal or an internal error of the compiler can give a different
             # output on the next run.
@@ -1742,8 +1782,7 @@ def obtain_result(fixture_name: str, argv: list[str], directory: Path, source: P
             # file of the command changed between the key and the compile.
             is_stored, why = False, "the compiler identity changed during the compile"
         else:
-            is_stored, why = _record_compile(store, key, result, dependencies, argv, directory, source, env,
-                                             started_ns)
+            is_stored, why = _record_compile(store, key, result, missing, argv, directory, source, env, started_ns)
         _note(fixture_name, f"stored (entry {key})" if is_stored else f"not stored ({why})")
     return result, False
 
@@ -1876,6 +1915,7 @@ def main(arguments: list[str]) -> int:
     argv = compile_argv(command, output, depfile)
     budget = read_cost_budget()
     result, is_stored = obtain_result(fixture_name, argv, directory, source, output, budget)
+    write_inputs_record(scratch, fixture_name, result, is_stored)
     verdict = evaluate(fixture_name, source, expected_regexes, result)
     sys.stdout.flush()
     over_budget = report_cost(fixture_name, source, result, is_stored, budget, warnings_dir)

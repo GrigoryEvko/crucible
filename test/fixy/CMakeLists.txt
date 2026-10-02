@@ -65,6 +65,7 @@ function(fixy_neg_compile_test name)
   set_tests_properties(${name} PROPERTIES
     LABELS "fixy_neg"
     ENVIRONMENT "CRUCIBLE_NEG_STRICT_SINGLE_ERROR=1")
+  set_property(GLOBAL APPEND PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS ${name})
 endfunction()
 
 # The fixture that proves the harness fires through the fixy target.

@@ -347,6 +347,7 @@ function(layer_neg_compile_test name)
             ${name}
             ${ARGN})
   set_tests_properties(${name} PROPERTIES LABELS "layer_neg")
+  set_property(GLOBAL APPEND PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS ${name})
 endfunction()
 
 layer_neg_compile_test(neg_layer_foundation_includes_fixy

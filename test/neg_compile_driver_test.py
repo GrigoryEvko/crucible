@@ -584,6 +584,40 @@ class StoreTest:
         self.expect(missing[0] == 1 and line is not None and "has no row fixture-instructions" in line,
                     f"a budget table with no row fixture-instructions fails: {missing[0]} {line}")
 
+    def check_inputs_record(self) -> None:
+        """Each run writes NAME.inputs: its result, its cost and each file that its compile read."""
+
+        def record(fixture: str) -> tuple[dict[str, object], list[str]]:
+            """Return the header and the paths of the record of one fixture, or an empty header."""
+            path = self.build / "neg-compile" / fixture / f"{fixture}.inputs"
+            try:
+                first, *paths = path.read_text().splitlines()
+                return json.loads(first), paths
+            except (OSError, ValueError):
+                return {}, []
+
+        source = str(self.root / "neg/neg_size.cpp")
+        header_file = str(self.root / "include/a/A.h")
+        compiled = self.run("neg_size", *SIZE)
+        head, paths = record("neg_size")
+        self.expect(compiled[0] == 0 and head.get("result") == "compiled" and head.get("has_inputs") is True
+                    and head.get("format") == 1 and float(head.get("user_s", -1)) > 0
+                    and source in paths and header_file in paths and len(paths) == len(set(paths)),
+                    f"a compile writes a record with its cost and its inputs: {head} {paths}")
+        stored = self.run("neg_size", *SIZE)
+        stored_head, stored_paths = record("neg_size")
+        self.expect(self.has(stored[3], "the result comes from the store") and stored_head.get("result") == "stored"
+                    and stored_paths == paths and stored_head.get("user_s") == head.get("user_s")
+                    and stored_head.get("instructions") == head.get("instructions"),
+                    f"a result from the store writes the inputs and the cost of the compile that made it: "
+                    f"{stored_head} {stored_paths}")
+        missing = self.run("neg_missing", *MISSING, CRUCIBLE_NEG_CACHE="0")
+        fatal_head, fatal_paths = record("neg_missing")
+        self.expect(missing[0] == 0 and fatal_head.get("has_inputs") is True
+                    and str(self.root / "neg/neg_missing.cpp") in fatal_paths,
+                    f"a fatal error with the store off writes the inputs of the -M -MG pass: {fatal_head} "
+                    f"{fatal_paths}")
+
     def check_eviction(self) -> None:
         """A store above its limit removes the entries that it did not use for the longest time."""
         bucket = self.store / "entries" / "00"
@@ -622,6 +656,7 @@ CHECKS: tuple[Callable[[StoreTest], None], ...] = (
     StoreTest.check_eviction,
     StoreTest.check_cpu_budget,
     StoreTest.check_instruction_budget,
+    StoreTest.check_inputs_record,
 )
 
 SEARCH_LIST = """\

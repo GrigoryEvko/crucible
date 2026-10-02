@@ -1324,6 +1324,7 @@ function(crucible_neg_compile_test name)
             ${expected_diags})
   set_tests_properties(${name} PROPERTIES LABELS "${subject}")
   set_property(DIRECTORY APPEND PROPERTY CRUCIBLE_NEG_REGISTERED_SOURCES "${source}")
+  set_property(GLOBAL APPEND PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS ${name})
 endfunction()
 
 # The driver keeps the result of each fixture compile in a store, and it uses
@@ -1336,13 +1337,14 @@ endfunction()
 # with a host language that has a GCC catalog, and damages and changes an
 # entry.  It also gives the driver a budget table and ledgers of its own, and
 # checks the warning, the error and the ledger rows of the CPU budget and of
-# the instruction budget of a compile.  Each check waits about one second for
+# the instruction budget of a compile, and the record of the inputs of each
+# run.  Each check waits about one second for
 # the files of its tree to age, and the checks run as
 # FIXTURE_STORE_SELF_TEST_PARTS parts at the same time.  Part K runs each check
 # whose position modulo the count of parts is K.  Exit 3 reports a skip when
 # the compiler cannot run, or when the host cannot give the condition of each
 # check of the part, for example an instruction counter.
-set(FIXTURE_STORE_SELF_TEST_PARTS 17)
+set(FIXTURE_STORE_SELF_TEST_PARTS 18)
 math(EXPR fixture_store_last_part "${FIXTURE_STORE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${fixture_store_last_part})
   add_test(NAME fixture_store_self_test_${part}
@@ -5422,6 +5424,29 @@ endforeach()
 add_test(NAME compile_cost_self_test
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-compile-cost.py --self-test)
 set_tests_properties(compile_cost_self_test PROPERTIES LABELS "ci_guard")
+
+# parse_total — the sum, over each object of the target all and each negative
+# fixture, of the bytes that its compile reads, against the baseline of the
+# build kind in utils/scripts/parse-total-ledger.txt (the row parse-total of
+# utils/scripts/budgets.txt gives the levels).  utils/scripts/build_census.py
+# reads the files of an object from the ninja dependency log and the files of a
+# fixture from the record that its driver writes after each run.  The check
+# exits 3 for a build that made only some targets and for a build whose
+# fixtures did not run.  Each fixture registration appends its name to the
+# global property CRUCIBLE_NEG_FIXTURE_TESTS, and a call at the end of the top
+# directory makes the check DEPEND on each of them, so that ctest runs the
+# check after the last fixture of the run.
+add_test(NAME parse_total
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-cost.py --check parse-total
+          --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
+add_test(NAME parse_cost_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/scripts/check-parse-cost.py --self-test)
+set_tests_properties(parse_total parse_cost_self_test PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 3)
+function(crucible_order_census_checks)
+  get_property(_fixtures GLOBAL PROPERTY CRUCIBLE_NEG_FIXTURE_TESTS)
+  set_tests_properties(parse_total DIRECTORY ${CMAKE_SOURCE_DIR}/test PROPERTIES DEPENDS "${_fixtures}")
+endfunction()
+cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_checks)
 
 # affected_tests_self_test — utils/scripts/run-affected-tests.py builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is
