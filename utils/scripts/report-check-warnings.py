@@ -28,6 +28,20 @@ THE TIME TOTALS
     not apply to the build (only some targets built, no fixture ran), the
     script tells why and gives no total.
 
+THE BUILD TOTALS
+    Four more values come from each record of a compile or a link of the
+    build launcher in the build directory, and from the configure, also when
+    the census does not apply.  Each one gives a warning only:
+
+      link-count          the number of link records
+      total-link-cpu      the CPU time of the link records, added
+      build-peak-memory   the largest sum of the peak memory of the steps
+                          whose wall times overlap (utils/scripts/loop_history.py,
+                          THE COST RECORDS)
+      configure-time      the last configure, from configure-time.txt and
+                          build.ninja (utils/scripts/loop_history.py, THE
+                          CONFIGURE TIME)
+
     python3 utils/scripts/report-check-warnings.py BUILD_DIR
     python3 utils/scripts/report-check-warnings.py --self-test
 
@@ -50,6 +64,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_census  # noqa: E402
 import check_report  # noqa: E402
 import cost_meter  # noqa: E402
+import loop_history  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 TEST_RECORD_SUFFIX = ".test" + cost_meter.RECORD_SUFFIX
@@ -106,6 +121,73 @@ def time_totals(census: build_census.Census, test_times: list[float | None], bud
     return findings, lines
 
 
+def read_build_records(build_dir: Path) -> list[dict[str, object]]:
+    """Return each record of a compile or a link of the build launcher in a build directory.
+
+    Complexity: linear in the files of the build directory.
+    """
+    records: list[dict[str, object]] = []
+    for path in build_dir.rglob(f"*{cost_meter.RECORD_SUFFIX}"):
+        if path.name.endswith(TEST_RECORD_SUFFIX):
+            continue
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict) and record.get("step") in ("compile", "link"):
+            records.append(record)
+    return records
+
+
+def build_totals(records: list[dict[str, object]], configure: dict[str, object] | None,
+                 budgets: dict[str, check_report.Budget], place: str) -> tuple[list[check_report.Finding], list[str]]:
+    """Return the warnings and the summary lines of the four build totals (THE BUILD TOTALS).
+
+    Args:
+        records: The records of the compiles and the links of the build directory
+        configure: The times of the last configure, or None
+        budgets: The budget table
+        place: The path that a finding names
+
+    Returns:
+        A warning for each total over its threshold, and one summary line for each total
+    """
+    links = [record for record in records if record.get("step") == "link"]
+    link_cpu = round(sum(loop_history.number(record.get("cost"), "cpu_s") or 0.0 for record in links), 1)
+    peak = loop_history.peak_concurrent_gb([record["cost"] for record in records if isinstance(record.get("cost"), dict)])
+    configured = loop_history.number(configure, "total_s")
+    detail = "" if configure is None else (f" (configure {configure['configure_s']} s, generate {configure['generate_s']} "
+                                           f"s, reply of the file API {configure.get('file_api_s', 0)} s, at "
+                                           f"{configure['start']})")
+    values = (("link-count", float(len(links)), "links", "the link records of the build directory", ""),
+              ("total-link-cpu", link_cpu, "s", "the link records of the build directory together", ""),
+              ("build-peak-memory", peak, "GB", "the compiles and links whose wall times overlap", ""),
+              ("configure-time", configured, "s", "the last configure of the build directory", detail))
+    findings: list[check_report.Finding] = []
+    lines: list[str] = []
+    for row, value, unit, what, extra in values:
+        budget = budgets.get(row)
+        threshold = f", warning threshold {budget.warn:g} {unit}" if budget is not None else ", no budget row"
+        shown = "no value" if value is None else f"{value:g} {unit}"
+        lines.append(f"report-check-warnings: {row} {shown}{extra}{threshold}")
+        findings += loop_history.warning_over(budgets, row, value, unit, what, place)
+    return findings, lines
+
+
+def report_build(build_dir: Path) -> list[check_report.Finding]:
+    """Print the build totals of a build directory, and return their warnings."""
+    try:
+        budgets = check_report.read_budgets()
+    except (OSError, ValueError) as reason:
+        print(f"report-check-warnings: no build totals: {reason}")
+        return []
+    findings, lines = build_totals(read_build_records(build_dir), loop_history.configure_time(build_dir), budgets,
+                                   build_census.shown(build_dir, REPO_ROOT))
+    for line in lines:
+        print(line)
+    return findings
+
+
 def report_totals(build_dir: Path) -> list[check_report.Finding]:
     """Print the time totals of a build directory, and return the warnings of the totals."""
     try:
@@ -138,6 +220,7 @@ def main(argv: list[str]) -> int:
     warnings_dir = build_dir / check_report.WARNINGS_SUBDIR
     findings, problems = check_report.read_warnings_dir(warnings_dir)
     findings += report_totals(build_dir)
+    findings += report_build(build_dir)
     annotate = cost_meter.is_github_actions()
     for found in findings:
         print(found.text())
@@ -187,6 +270,28 @@ def self_test() -> int:
     expect("the repository table has a row for each total",
            all(row in check_report.read_budgets() for row, _, _ in TOTALS))
 
+    gigabyte = loop_history.KB_PER_GB
+    planted = [{"step": "link", "result": "built", "cost": {"cpu_s": 2.0, "end": 10.0, "wall_s": 4.0,
+                                                          "peak_rss_kb": 2 * gigabyte}},
+               {"step": "compile", "result": "built", "cost": {"cpu_s": 5.0, "end": 9.0, "wall_s": 5.0,
+                                                             "peak_rss_kb": 3 * gigabyte}},
+               {"step": "compile", "result": "hit"}]
+    build_rows = {row: check_report.Budget(row, limit, limit, "u", "m")
+                  for row, limit in (("link-count", 1.0), ("total-link-cpu", 1.5), ("build-peak-memory", 4.0),
+                                     ("configure-time", 10.0))}
+    configure = {"start": "2026-10-02T00:00:00Z", "configure_s": 9.0, "generate_s": 3.0, "total_s": 12.0}
+    found, lines = build_totals(planted, configure, build_rows, "build")
+    expect("build_totals warns on the link CPU, on the peak memory of the steps that overlap and on the configure, and "
+           "not on a count at its threshold",
+           sorted(f.check for f in found) == ["build-peak-memory", "configure-time", "total-link-cpu"]
+           and all(f.level == "warning" for f in found) and any("5 GB" in f.message for f in found))
+    expect("build_totals gives one line for each total, with the parts of the configure",
+           len(lines) == 4 and "link-count 1 links" in lines[0] and "(configure 9.0 s, generate 3.0 s" in lines[3])
+    found, lines = build_totals([], None, build_rows, "build")
+    expect("build_totals gives no warning with no record and no configure", not found and "no value" in lines[3])
+    expect("the repository table has a row for each build total",
+           all(row in check_report.read_budgets() for row in build_rows))
+
     with tempfile.TemporaryDirectory(prefix="report-warnings-") as scratch:
         build = Path(scratch)
         warnings_dir = build / check_report.WARNINGS_SUBDIR
@@ -197,6 +302,10 @@ def self_test() -> int:
         record.parent.mkdir()
         record.write_text(json.dumps({"format": 1, "step": "test", "cost": {"cpu_s": 2.5}}), encoding="utf-8")
         expect("a test record gives its CPU time", read_test_times(build) == [2.5])
+        (build / "test" / f"test_planted{cost_meter.RECORD_SUFFIX}").write_text(json.dumps(planted[0]), encoding="utf-8")
+        (build / "test" / f"a.cpp.o{cost_meter.RECORD_SUFFIX}").write_text(json.dumps(planted[1]), encoding="utf-8")
+        expect("read_build_records reads the records of the links and the compiles, and no record of a test",
+               sorted(str(item["step"]) for item in read_build_records(build)) == ["compile", "link"])
         with contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()):
             status = main([str(build)])
         expect("a build with no census prints the warnings and tells why it has no totals",

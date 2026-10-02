@@ -48,6 +48,11 @@ THE BUDGET ROWS
     was quiet, too: other processes used at most QUIET_OTHERS_PCT percent of
     the host CPU time in the step, in each run.  Else the report gives the
     wall time and the reason, and no finding.
+    Three rows give warnings only: configure-time for the first and the
+    second configure, noop-build-time for the build with nothing to do, and
+    build-peak-memory for the median of the peak concurrent memory of the
+    edit builds.  For each build step, the report also gives the critical
+    path (utils/scripts/loop_history.py, THE CRITICAL PATH).
 
 THE REPORT
     The report prints each finding in the format of utils/scripts/check_report.py,
@@ -85,6 +90,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_report  # noqa: E402
 import cost_meter  # noqa: E402
 import loop_history  # noqa: E402
+import ninja_files  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
@@ -112,7 +118,7 @@ class GaugeError(Exception):
 
 @dataclass(slots=True)
 class StepResult:
-    """The measures of one step."""
+    """The measures of one step, and for a build step its peak concurrent memory and its critical path."""
 
     name: str
     status: int
@@ -121,6 +127,9 @@ class StepResult:
     system_s: float
     others_pct: float | None
     instructions_g: float | None
+    peak_memory_gb: float | None = None
+    critical_path_s: float | None = None
+    critical_path: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -232,7 +241,8 @@ def clone_tree(source: Path, destination: Path) -> str:
 # ── The steps ──────────────────────────────────────────────────────────────
 
 
-def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, str], logs: Path) -> StepResult:
+def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, str], logs: Path,
+             build: Path | None = None) -> StepResult:
     """Run one step with its output in a log, and measure it.
 
     Args:
@@ -241,19 +251,29 @@ def run_step(name: str, command: list[str], cwd: Path, environment: dict[str, st
         cwd: The working directory
         environment: The environment of the command
         logs: The directory of the logs
+        build: For a build step, the build directory, whose ninja log gives the edges that ran
 
     Returns:
         The measures
     """
+    before = ninja_files.read_log(build) if build is not None else {}
     counter = cost_meter.open_instruction_counter()
     with (logs / f"{name}.log").open("w", encoding="utf-8") as log, loop_history.StepTimer() as timer:
         status = subprocess.run(command, cwd=cwd, env=environment, stdout=log, stderr=subprocess.STDOUT,
                                 check=False).returncode
     instructions = cost_meter.read_instruction_counter(counter) if counter is not None else None
     result = timer.result
-    return StepResult(name, status, float(result["wall_s"]), float(result["cpu_s"]), float(result["system_s"]),
+    step = StepResult(name, status, float(result["wall_s"]), float(result["cpu_s"]), float(result["system_s"]),
                       None if result["others_pct"] is None else float(result["others_pct"]),
                       None if instructions is None else round(instructions / GIGA, 1))
+    if build is not None:
+        facts = loop_history.summarize_build(build, loop_history.load_graph(build), before, ninja_files.read_log(build),
+                                             timer.started_epoch)
+        step.peak_memory_gb = loop_history.number(facts, "peak_memory_gb")
+        step.critical_path_s = loop_history.number(facts, "critical_path_s")
+        path = facts.get("critical_path")
+        step.critical_path = tuple(str(item) for item in path) if isinstance(path, list) else ()
+    return step
 
 
 def median_of(results: list[StepResult]) -> Median:
@@ -320,6 +340,34 @@ def judge(medians: dict[str, Median], budgets: dict[str, check_report.Budget], p
             notes.append(f"the {step} wall time {median.wall_s:g} s is not judged: other processes used {shown} of the "
                          f"host CPU time in one run, more than {QUIET_OTHERS_PCT:g} %")
     return findings, notes
+
+
+def judge_others(results: list[StepResult], budgets: dict[str, check_report.Budget],
+                 place: str) -> list[check_report.Finding]:
+    """Return the warnings of the configure steps, of the build with nothing to do, and of the peak memory.
+
+    Args:
+        results: The measures of each step
+        budgets: The budget table
+        place: The path that a finding names
+
+    Returns:
+        The warnings
+    """
+    findings: list[check_report.Finding] = []
+    for result in results:
+        if result.name in ("configure", "reconfigure"):
+            findings += loop_history.warning_over(budgets, "configure-time", result.wall_s, "s",
+                                                  f"the step {result.name}", place)
+        elif result.name == "noop-build":
+            findings += loop_history.warning_over(budgets, "noop-build-time", result.wall_s, "s",
+                                                  "the build with no edge to run", place)
+    peaks = [result.peak_memory_gb for result in results
+             if result.name.startswith("edit-build-") and result.peak_memory_gb is not None]
+    if peaks:
+        findings += loop_history.warning_over(budgets, "build-peak-memory", statistics.median(peaks), "GB",
+                                              "the median of the edit builds", place)
+    return findings
 
 
 def available_gb() -> float | None:
@@ -395,11 +443,15 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
     results: list[StepResult] = []
 
     def step(name: str, command: list[str]) -> StepResult:
-        result = run_step(name, command, tree, environment, logs)
+        result = run_step(name, command, tree, environment, logs, build if command is build_command else None)
         results.append(result)
+        path = ""
+        if result.critical_path:
+            path = (f", peak {loop_history.cell(result.peak_memory_gb)} GB, critical path {result.critical_path_s:g} s: "
+                    f"{' -> '.join(result.critical_path)}")
         print(f"edit-loop-gauge: {name}: status {result.status}, {result.wall_s:.1f} s wall, {result.cpu_s:.0f} s CPU, "
               f"{loop_history.cell(result.instructions_g)} G instructions, others "
-              f"{loop_history.cell(result.others_pct)} %", flush=True)
+              f"{loop_history.cell(result.others_pct)} %{path}", flush=True)
         return result
 
     failed = False
@@ -432,7 +484,9 @@ def measure(source: Path, work: Path, options: argparse.Namespace) -> tuple[int,
         return 1, True
     medians = {step_name: median_of(step_results) for step_name, step_results in runs.items()}
     print(table(results, medians))
-    findings, notes = judge(medians, check_report.read_budgets(), str(EDIT_HEADER), options.jobs)
+    budgets = check_report.read_budgets()
+    findings, notes = judge(medians, budgets, str(EDIT_HEADER), options.jobs)
+    findings += judge_others(results, budgets, str(EDIT_HEADER))
     for note in notes:
         print(f"edit-loop-gauge: {note}")
     status = 0
@@ -553,6 +607,19 @@ def self_test() -> int:
         expect("at another job count, the wall time gives no finding and a note that names the job count",
                not any(f.check.endswith("-wall") for f in found)
                and len([note for note in notes if f"{WALL_JOBS // 8} jobs" in note]) == 2)
+        other_rows = {row: check_report.Budget(row, limit, limit, "u", "m")
+                      for row, limit in (("configure-time", 10.0), ("noop-build-time", 0.5),
+                                         ("build-peak-memory", 100.0))}
+        steps = [result("configure", 12.0, 1, 1, None), result("noop-build", 0.3, 0, 1, None),
+                 result("reconfigure", 6.0, 1, 1, None)]
+        for name, peak in (("edit-build-1", 90.0), ("edit-build-2", 120.0), ("edit-build-3", 130.0)):
+            steps.append(result(name, 20, 200, 1, 60))
+            steps[-1].peak_memory_gb = peak
+        found = judge_others(steps, other_rows, "h")
+        expect("judge_others warns on a slow configure and on the median peak memory of the edit builds, and not on a "
+               "fast build with nothing to do",
+               sorted(f.check for f in found) == ["build-peak-memory", "configure-time"]
+               and all(f.level == "warning" for f in found) and any("120 GB" in f.message for f in found))
 
     if failures:
         print(f"edit-loop-gauge --self-test: FAILED, {len(failures)} case(s) did not hold")

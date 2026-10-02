@@ -70,6 +70,23 @@ THE HOST LOAD
     step.  A wall time is comparable with another one only when others_pct
     is small for the two.
 
+THE WARNINGS OF A LINE
+    judge_line() compares one line with three rows of utils/scripts/budgets.txt,
+    and each finding is a warning: noop-build-time for the wall time of a
+    build that ran no edge but the glob check, build-peak-memory for the peak
+    concurrent memory of the build, and configure-time for a CMake run inside
+    the build.  run-affected-tests.py prints the warnings of its line, and
+    the table prints the warnings of each line that it shows.
+
+THE CONFIGURE TIME
+    The root CMakeLists.txt writes the start and the end of each configure to
+    BUILD_DIR/configure-time.txt, and CMake then writes build.ninja.  When a
+    query of the CMake file API exists, CMake writes the reply after
+    build.ninja, and the index file of the reply last.  configure_time()
+    gives the configure, the generate step, the reply and their sum.  The
+    start is the first line of the root CMakeLists.txt, approximately 0.5 s
+    after the start of the cmake process.
+
 THE TABLE
     loop_history.py BUILD_DIR [-n N] prints the last N lines (20 by default)
     as a table.
@@ -95,10 +112,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import check_report  # noqa: E402
 import cost_meter  # noqa: E402
 import ninja_files  # noqa: E402
 import throwaway_repo  # noqa: E402
 
+CONFIGURE_TIME_FILE = "configure-time.txt"
+# The end of the configure can be a few milliseconds after the time that the file system gives build.ninja.
+CONFIGURE_SLACK_S = 0.05
+# The directory of the reply of the CMake file API, and the pattern of its index file.
+FILE_API_REPLY = Path(".cmake") / "api" / "v1" / "reply"
+REPLY_INDEX = "index-*.json"
 HISTORY_DIR = "loop-history"
 HISTORY_NAME = "history.jsonl"
 GRAPH_NAME = "graph.json"
@@ -521,6 +545,84 @@ def summarize_build(build: Path, graph: CompactGraph | None, before: dict[str, n
     return facts
 
 
+def configure_time(build: Path) -> dict[str, object] | None:
+    """Return the times of the last configure of a build directory.
+
+    Args:
+        build: The build directory
+
+    Returns:
+        The start (ISO 8601, UTC), and the configure, the generate step, the reply of the file API and their sum in
+        seconds.  None when the build directory has no configure-time.txt, or when the last configure wrote no
+        build.ninja after its end
+    """
+    try:
+        start_text, end_text = (build / CONFIGURE_TIME_FILE).read_text(encoding="ascii").split()
+        start, end = float(start_text), float(end_text)
+        written = (build / "build.ninja").stat().st_mtime
+    except (OSError, ValueError):
+        return None
+    if not start <= end <= written + CONFIGURE_SLACK_S:
+        return None
+    replied = written
+    for index in (build / FILE_API_REPLY).glob(REPLY_INDEX):
+        try:
+            replied = max(replied, index.stat().st_mtime)
+        except OSError:
+            continue
+    return {"start": iso_time(start), "configure_s": round(end - start, 2), "generate_s": round(max(0.0, written - end), 2),
+            "file_api_s": round(replied - written, 2), "total_s": round(replied - start, 2)}
+
+
+def warning_over(budgets: dict[str, check_report.Budget], row: str, value: float | None, unit: str, what: str,
+                 place: str) -> list[check_report.Finding]:
+    """Return a warning when a value is over the warning threshold of its row, else no finding.
+
+    Args:
+        budgets: The budget table
+        row: The row
+        value: The value, or None for no value
+        unit: The unit of the value
+        what: The words that name the value
+        place: The path that the finding names
+
+    Returns:
+        The warning, or an empty list
+    """
+    budget = budgets.get(row)
+    if budget is None or value is None or value <= budget.warn:
+        return []
+    return [check_report.Finding("warning", place, 0, row, f"{what} took {value:g} {unit}, over the warning threshold "
+                                                           f"of {budget.warn:g} {unit} of the row {row}")]
+
+
+def judge_line(line: dict[str, object], budgets: dict[str, check_report.Budget],
+               place: str) -> list[check_report.Finding]:
+    """Return the warnings of one history line (THE WARNINGS OF A LINE).
+
+    Args:
+        line: The line
+        budgets: The budget table
+        place: The path that a finding names
+
+    Returns:
+        The warnings
+    """
+    build = line.get("build")
+    if not isinstance(build, dict):
+        return []
+    findings: list[check_report.Finding] = []
+    did_nothing = build.get("status") == 0 and build.get("edges") == 0 and "reconfigure_s" not in build
+    if did_nothing:
+        findings += warning_over(budgets, "noop-build-time", number(build, "wall_s"), "s",
+                                 "the build with no edge to run", place)
+    findings += warning_over(budgets, "build-peak-memory", number(build, "peak_memory_gb"), "GB",
+                             "the compiles and links of the build together", place)
+    findings += warning_over(budgets, "configure-time", number(build, "reconfigure_s"), "s",
+                             "the CMake run inside the build", place)
+    return findings
+
+
 # ── The source tree ────────────────────────────────────────────────────────
 
 
@@ -759,12 +861,15 @@ def show(build: Path, count: int) -> int:
         return 2
     shown = lines[-count:]
     print(table(shown))
+    budgets = check_report.read_budgets()
     for line in shown:
         build_part = line.get("build")
         if isinstance(build_part, dict) and build_part.get("critical_path"):
             path = build_part["critical_path"]
             assert isinstance(path, list)
             print(f"{line.get('time')}: critical path {' -> '.join(str(item) for item in path)}")
+        for finding in judge_line(line, budgets, str(history_path(build))):
+            print(f"{line.get('time')}: {finding.text()}")
         for problem in line.get("problems") or []:
             print(f"{line.get('time')}: problem of the history: {problem}")
     return 0
@@ -873,6 +978,39 @@ def self_test() -> int:
         changed = load_graph(build)
         expect("load_graph reads build.ninja again after it changes",
                changed is not None and str(build / "extra") in changed.edge_of)
+
+        expect("configure_time gives nothing for a build directory with no configure-time.txt",
+               configure_time(build) is None)
+        written = (build / "build.ninja").stat().st_mtime
+        (build / CONFIGURE_TIME_FILE).write_text(f"{written - 6.5} {written - 2.0}\n", encoding="ascii")
+        times = configure_time(build)
+        expect("configure_time gives the configure, the generate step and their sum",
+               times is not None and times["configure_s"] == 4.5 and times["generate_s"] == 2.0
+               and times["file_api_s"] == 0.0 and times["total_s"] == 6.5)
+        reply = build / FILE_API_REPLY
+        reply.mkdir(parents=True)
+        for name, offset in (("index-old.json", -100.0), ("index-new.json", 1.5)):
+            (reply / name).write_text("{}", encoding="ascii")
+            os.utime(reply / name, (written + offset, written + offset))
+        times = configure_time(build)
+        expect("configure_time adds the reply of the file API that CMake writes after build.ninja",
+               times is not None and times["file_api_s"] == 1.5 and times["total_s"] == 8.0)
+        (build / CONFIGURE_TIME_FILE).write_text(f"{written + 1.0} {written + 3.0}\n", encoding="ascii")
+        expect("configure_time gives nothing when the last configure wrote no build.ninja after its end",
+               configure_time(build) is None)
+        budgets = {row: check_report.Budget(row, limit, limit, "u", "m")
+                   for row, limit in (("noop-build-time", 0.5), ("build-peak-memory", 100.0), ("configure-time", 10.0))}
+        idle = {"build": {"status": 0, "wall_s": 0.9, "edges": 0, "peak_memory_gb": None}}
+        expect("judge_line warns on a slow build that ran no edge",
+               [(found.check, found.level) for found in judge_line(idle, budgets, "h")]
+               == [("noop-build-time", "warning")])
+        busy = {"build": {"status": 0, "wall_s": 90.0, "edges": 900, "peak_memory_gb": 150.0, "reconfigure_s": 12.0}}
+        expect("judge_line warns on the peak memory and on a slow CMake run, and not on the time of a build with work",
+               sorted(found.check for found in judge_line(busy, budgets, "h")) == ["build-peak-memory",
+                                                                                    "configure-time"])
+        expect("judge_line gives no warning for a line with no build or with values under the thresholds",
+               judge_line({"build": None}, budgets, "h") == []
+               and judge_line({"build": {"status": 0, "wall_s": 0.2, "edges": 0}}, budgets, "h") == [])
 
         expect("read_lines gives no line for a build with no history", read_lines(build) == [])
         recorder = Recorder(build, build, 4)

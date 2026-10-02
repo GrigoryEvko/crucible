@@ -108,6 +108,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import check_report  # noqa: E402
 import loop_history  # noqa: E402
 
 # ── Constants ──────────────────────────────────────────────────────────────
@@ -702,6 +703,13 @@ def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
     if parts:
         print(f"run-affected-tests: {'; '.join(parts)}.  `python3 utils/scripts/loop_history.py {build_dir}` prints "
               f"the history.")
+    try:
+        budgets = check_report.read_budgets()
+        for finding in loop_history.judge_line(recorder.line, budgets, str(loop_history.history_path(build_dir))):
+            print(finding.text())
+    except (OSError, ValueError) as problem:
+        print(f"run-affected-tests: the budget table cannot be read, so the line of the loop history has no "
+              f"warnings: {problem}")
 
 
 def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only: bool,

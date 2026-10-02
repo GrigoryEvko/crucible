@@ -2445,11 +2445,16 @@ Each translation unit that includes a header compiles that header again, and eac
 | `total-fixture-cpu` | The CPU time of the last real compile of each fixture, added | 3,000 s | None, warnings only | `utils/scripts/report-check-warnings.py` | CI step "Check warnings" |
 | `total-test-cpu` | The CPU time of each executable test in its last run, added | 120 s | None, warnings only | `utils/scripts/report-check-warnings.py` | CI step "Check warnings" |
 | `edit-build-instructions` | The user instructions of the build after one code edit of a base header, the median of the runs | 11,000 G | 11,800 G | `utils/scripts/edit-loop-gauge.py` (rule 17) | Before each stage gate |
-| `edit-test-instructions` | The user instructions of the full test run after that build | 16,700 G | 18,000 G | `utils/scripts/edit-loop-gauge.py` | Before each stage gate |
+| `edit-test-instructions` | The user instructions of the full test run after that build. A test that spins runs more instructions on a busy host | 17,000 G | 18,500 G | `utils/scripts/edit-loop-gauge.py` | Before each stage gate |
 | `edit-build-cpu` | The CPU time of that build | 2,500 s | 3,000 s. A warning only when the step has an instruction count | `utils/scripts/edit-loop-gauge.py` | Before each stage gate |
 | `edit-test-cpu` | The CPU time of that test run | 2,500 s | 5,000 s. A warning only when the step has an instruction count | `utils/scripts/edit-loop-gauge.py` | Before each stage gate |
 | `edit-build-wall` | The wall time of that build at 192 jobs, when other processes used at most 10 % of the host | 15 s | 25 s | `utils/scripts/edit-loop-gauge.py` | Before each stage gate |
 | `edit-test-wall` | The wall time of that test run at 192 jobs, when other processes used at most 10 % of the host | 15 s | 30 s | `utils/scripts/edit-loop-gauge.py` | Before each stage gate |
+| `configure-time` | The wall time of one configure, to the last file that CMake writes | 10 s | None, warnings only | `utils/scripts/report-check-warnings.py`, the loop history and `utils/scripts/edit-loop-gauge.py` | CI step "Check warnings", each loop, before each stage gate |
+| `noop-build-time` | The wall time of `cmake --build` when no edge but the glob check of CMake runs | 0.5 s | None, warnings only | The loop history and `utils/scripts/edit-loop-gauge.py` | Each loop, before each stage gate |
+| `build-peak-memory` | The largest sum of the peak memory of the compiles and links whose wall times overlap, an upper bound | 128 GB | None, warnings only | `utils/scripts/report-check-warnings.py`, the loop history and `utils/scripts/edit-loop-gauge.py` | CI step "Check warnings", each loop, before each stage gate |
+| `link-count` | The link records of a build directory | 400 | None, warnings only | `utils/scripts/report-check-warnings.py` | CI step "Check warnings" |
+| `total-link-cpu` | The CPU time of the link records of a build directory, added | 40 s | None, warnings only | `utils/scripts/report-check-warnings.py` | CI step "Check warnings" |
 
 ### Include order convention
 

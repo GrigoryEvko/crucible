@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.27)
 
+# The time of the configure.  The deferred call runs after the last line of
+# this file, before CMake writes build.ninja.  It writes the start and the end
+# of the configure to configure-time.txt, and the time of build.ninja gives
+# the end of the generate step (utils/scripts/loop_history.py, configure_time).
+string(TIMESTAMP CRUCIBLE_CONFIGURE_START "%s.%f" UTC)
+function(crucible_write_configure_time)
+  string(TIMESTAMP _crucible_configure_end "%s.%f" UTC)
+  file(WRITE "${CMAKE_BINARY_DIR}/configure-time.txt" "${CRUCIBLE_CONFIGURE_START} ${_crucible_configure_end}\n")
+endfunction()
+cmake_language(DEFER CALL crucible_write_configure_time)
+
 # The ccache launcher: cmake/Ccache.cmake.  The second half runs after the
 # probe of the compiler, because it hashes the compiler that ccache runs.
 include(cmake/Ccache.cmake)
