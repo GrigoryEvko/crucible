@@ -63,6 +63,12 @@ struct Transaction {
     // the slot, and it is the log's own fill counter that keeps the sequence
     // of slots ordered.
     ::fixy::Monotonic<uint64_t> step_id = ::fixy::mint_monotonic<uint64_t>(0);
+    // The place of the last displacement of this transaction in the order of
+    // the displacements of its log, or zero when no activation displaced it.
+    // A rollback restores the superseded transaction with the largest place,
+    // so the order of the claims does not choose the rollback target.  A
+    // restored transaction that the log displaces again gets a later place.
+    ::fixy::Monotonic<uint64_t> displacement_order = ::fixy::mint_monotonic<uint64_t>(0);
     ContentHash content_hash;  // zero until the transaction commits
     MerkleHash merkle_root;  // zero until the transaction commits
     ArenaRegion region = ::fixy::mint_tagged<::fixy::tags::source::Arena, RegionNode*>(nullptr);
@@ -219,6 +225,8 @@ public:
         Transaction* prev = nullptr;
         if (active_tx_.value() != nullptr) {
             active_tx_.value()->status = TxStatus::SUPERSEDED;
+            displacements_.bump();
+            active_tx_.value()->displacement_order.advance(displacements_.get());
             stamp_transaction(*active_tx_.value(), clock_.read());
             prev = active_tx_.value();
         }
@@ -227,15 +235,19 @@ public:
         stamp_transaction(*tx, clock_.read());
         active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring>(tx);
         // The displaced transaction must end up in the superseded state, since
-        // that is what a rollback searches for.
+        // that is what a rollback searches for.  It must also hold the newest
+        // place in the order of displacements, because a rollback restores
+        // the superseded transaction with the largest place.
         //
-        // The last clause is written as a disjunction rather than through the
-        // named implication predicate, because that predicate is an ordinary
-        // call and evaluates both of its arguments. With a null antecedent the
-        // consequent would dereference null before the predicate could fold.
+        // The last two clauses are written as disjunctions rather than through
+        // the named implication predicate, because that predicate is an
+        // ordinary call and evaluates both of its arguments. With a null
+        // antecedent the consequent would dereference null before the
+        // predicate could fold.
         CRUCIBLE_POST(prev, tx->status == TxStatus::ACTIVE);
         CRUCIBLE_POST(prev, active_tx_.value() == tx);
         CRUCIBLE_POST(prev, prev == nullptr || prev->status == TxStatus::SUPERSEDED);
+        CRUCIBLE_POST(prev, prev == nullptr || prev->displacement_order.get() == displacements_.get());
         return prev;
     }
 
@@ -258,14 +270,33 @@ public:
     // Not const: the caller may need to change the transaction it returns.
     [[nodiscard]] Transaction* active(Owner const&) CRUCIBLE_LIFETIMEBOUND { return active_tx_.value(); }
 
+    // Returns the rollback target, or null when no transaction in the ring is
+    // superseded.  The target is the superseded transaction with the newest
+    // displacement.  A caller can activate an older transaction after a
+    // newer one, so the order of the claims does not give the target.  The
+    // scan is O(N) in the ring capacity.
     [[nodiscard]] Transaction* previous(Owner const&) CRUCIBLE_LIFETIMEBOUND {
-        // Walks back from the most recently claimed slot, so the first
-        // displaced transaction it finds is the newest one.
+        Transaction* target = nullptr;
         for (typename Ring::size_type i = 0; i < ring_.size(); i++) {
-            Transaction& e = ring_.recent(i);
-            if (e.status == TxStatus::SUPERSEDED) return &e;
+            Transaction& entry = ring_.recent(i);
+            const bool is_newer_displacement =
+                entry.status == TxStatus::SUPERSEDED
+                && (target == nullptr || entry.displacement_order.get() > target->displacement_order.get());
+            if (!is_newer_displacement) continue;
+            target = &entry;
+            // No place is larger than the count of displacements.  When no
+            // rollback undid the last displacement, the scan stops at its
+            // transaction.  In a log that begins, commits and activates each
+            // transaction in sequence, that transaction is in the second
+            // newest slot.
+            if (entry.displacement_order.get() == displacements_.get()) break;
         }
-        return nullptr;
+        // Each displacement takes a new place, so no two superseded
+        // transactions share a place, and the scan order cannot change the
+        // result.
+        CRUCIBLE_POST(target, target == nullptr || target->status == TxStatus::SUPERSEDED);
+        CRUCIBLE_POST(target, target == nullptr || target->displacement_order.get() != 0);
+        return target;
     }
 
     [[nodiscard]] uint32_t size(Owner const&) const {
@@ -291,6 +322,10 @@ private:
 
     Ring ring_{};
     ActiveTxPtr active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring, Transaction*>(nullptr);
+    // The count of displacements.  Each activation that displaces a
+    // transaction advances it and gives the new value to the displaced
+    // transaction as its place.
+    ::fixy::Monotonic<uint64_t> displacements_ = ::fixy::mint_monotonic<uint64_t>(0);
     // The reader clamps its readings, so two stamps through it never
     // regress even when the clock steps backward.
     ::fixy::time::MonotonicClock clock_;

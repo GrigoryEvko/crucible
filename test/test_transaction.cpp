@@ -171,6 +171,48 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
     expect_active(log, owner, 1, regions[1]);
 }
 
+// The rollback target is the transaction that the last activation displaced.
+// The activations here do not follow the order of the claims, so the
+// rollback target is not the superseded transaction with the newest claim.
+void previous_follows_the_order_of_displacements(::foundation::effects::Alloc alloc,
+                                                 const ::fixy::TestRunnerCtx& ctx, const SoloOwner& owner) {
+    constexpr uint32_t kSteps = 4;
+    Log log{ctx};
+    crucible::Arena arena(1 << 12);
+    std::array<crucible::RegionNode*, kSteps + 1> regions{};
+    std::array<crucible::Transaction*, kSteps + 1> txs{};
+    for (uint32_t step = 1; step <= kSteps; ++step) {
+        regions[step] = region_of_step(alloc, arena, step);
+        txs[step] = log.begin_tx(owner, step);
+        assert(log.commit(owner, txs[step], arena_region(regions[step]), regions[step]->content_hash,
+                          regions[step]->merkle_hash));
+    }
+
+    // The third transaction displaces nothing, the first displaces the
+    // third, and the second displaces the first.
+    assert(log.activate(owner, txs[3]) == nullptr);
+    assert(log.activate(owner, txs[1]) == txs[3]);
+    assert(log.activate(owner, txs[2]) == txs[1]);
+    assert(log.previous(owner) == txs[1]);
+
+    assert(log.rollback(owner));
+    expect_active(log, owner, 1, regions[1]);
+    assert(log.previous(owner) == txs[3]);
+
+    // A second displacement of the restored first transaction comes after
+    // the displacement of the third, although its claim comes before.
+    assert(log.activate(owner, txs[4]) == txs[1]);
+    assert(log.previous(owner) == txs[1]);
+
+    assert(log.rollback(owner));
+    expect_active(log, owner, 1, regions[1]);
+    assert(log.previous(owner) == txs[3]);
+    assert(log.rollback(owner));
+    expect_active(log, owner, 3, regions[3]);
+    assert(log.previous(owner) == nullptr);
+    assert(!log.rollback(owner));
+}
+
 }  // namespace
 
 [[gnu::cold]] int main() {
@@ -278,6 +320,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
 
     claim_passes_over_the_active_slot(test.alloc, ctx, owner, RollbackOrder::AfterEachPublication);
     claim_passes_over_the_active_slot(test.alloc, ctx, owner, RollbackOrder::InARow);
+    previous_follows_the_order_of_displacements(test.alloc, ctx, owner);
 
     // A failed clock read leaves the transaction with no reading.  The
     // result of a failed read stands in for a clock that fails, because a
