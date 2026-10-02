@@ -20,6 +20,19 @@ HOW THE GUARD READS A FILE
     parsed on its own by tsast.macro_bodies.  A body that is not C++ on its
     own, because it uses # or ##, is read from its preprocessing tokens.
 
+THE CACHE OF THE LEXICAL PASS
+    The store of utils/scripts/preprocessed.py keeps the facts of each file
+    text under its SHA-256 and a name that hashes this guard and the parser:
+    the diagnostic of the parse, the static data members of rule 6, the
+    namespaces that the file declares, the doors with no door macro, the
+    names that can be the use of a macro, and the name, the doors and the
+    names of each macro body.  The door macros and the namespaces come from
+    all files, so a warm run joins them from the facts.  It parses again
+    each file whose verdict depends on them: a file with a function that
+    uses unchecked, which rule 7 reads against the namespaces, and a file
+    whose names or macro bodies name a door macro.  So a warm run parses few
+    files and gives the verdict of a cold run.
+
 WHAT COUNTS AS THE DOOR
       1. A member named unchecked: the name of a qualified name, or the field
          of a member access.  Every qualifier counts, so a namespace alias, a
@@ -126,6 +139,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -141,7 +155,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cache_dir  # noqa: E402
 import throwaway_repo  # noqa: E402
 import tsast  # noqa: E402
-from preprocessed import Store, chunk_text  # noqa: E402
+from preprocessed import Store, chunk_text, map_batches, text_results  # noqa: E402
 from repo_root import REPO_ROOT  # noqa: E402
 
 ALLOWLIST = "utils/scripts/unchecked-access-allowlist.txt"
@@ -181,6 +195,8 @@ ELEMENT_ACCESSORS = frozenset({"front", "back", "at"})
 RANGE_LOOPS = ("for_range_loop", "expansion_statement")
 # How many local variables rule 7 follows back from a return statement.
 TRACE_DEPTH = 8
+# The namespaces that a walk can name and that no scanned file declares.
+STD_NAMESPACES = frozenset({("std",), ("std", "meta")})
 
 Door = tuple[int, str]
 Target = tuple[str, int, str, str]
@@ -366,7 +382,12 @@ def body_doors(body: tsast.MacroBody, door_macros: frozenset[str] = frozenset())
 
 
 def door_macro_names(bodies: Sequence[tsast.MacroBody]) -> frozenset[str]:
-    """Return the names of the macros whose body opens the door, directly or through another macro.
+    """Return the names of the macros whose body opens the door, directly or through another macro."""
+    return door_macro_closure([(body.name, bool(body_doors(body)), frozenset(body_names(body))) for body in bodies])
+
+
+def door_macro_closure(bodies: Sequence[tuple[str, bool, frozenset[str]]]) -> frozenset[str]:
+    """Return the door macros from (name, whether the body opens the door, names in the body) for each body.
 
     A macro that names a door macro opens the door when it expands, so the
     set grows until no body adds a name.
@@ -374,12 +395,11 @@ def door_macro_names(bodies: Sequence[tsast.MacroBody]) -> frozenset[str]:
     Complexity: O(B * R) for B bodies and R rounds, and R is at most the
     depth of the deepest chain of macros.
     """
-    names = {body.name for body in bodies if body_doors(body)}
-    mentions = [(body.name, body_names(body)) for body in bodies]
+    names = {name for name, opens, _mentioned in bodies if opens}
     grown = True
     while grown:
         grown = False
-        for name, mentioned in mentions:
+        for name, _opens, mentioned in bodies:
             if name not in names and mentioned & names:
                 names.add(name)
                 grown = True
@@ -402,7 +422,7 @@ def namespace_names(trees: Iterable[tsast.Tree]) -> frozenset[tuple[str, ...]]:
     Complexity: linear in the nodes of the parses, times the depth of the
     deepest namespace.
     """
-    names: set[tuple[str, ...]] = {("std",), ("std", "meta")}
+    names: set[tuple[str, ...]] = set(STD_NAMESPACES)
     for tree in trees:
         for node in tree.find("namespace_definition", "namespace_alias_definition"):
             path: list[str] = []
@@ -706,43 +726,129 @@ def with_defines(trees: Iterable[tsast.Tree]) -> Iterable[tsast.Tree]:
             yield tree
 
 
+def has_unchecked_function(tree: tsast.Tree) -> bool:
+    """Return whether a function or a lambda of a parse has a body that uses unchecked, the functions of rule 7."""
+    return any(body is not None and uses_unchecked(body)
+               for body in (function.child_by_field("body") for function in tree.find(*FUNCTIONS)))
+
+
+def file_facts(paths: Sequence[Path]) -> list[tuple[str, dict]]:
+    """Parse files, and return the SHA-256 of each text with the facts that the guard reads from that text alone.
+
+    The facts of a file are the diagnostic of its parse, or the static data
+    members of rule 6, the namespaces that it declares, whether a function
+    of rule 7 uses unchecked, the doors with no door macro, the names that
+    can be the use of a macro, and the name, the doors and the names of each
+    macro body.  preprocessed.map_batches runs this function in a worker
+    process.
+
+    Complexity: linear in the nodes of each parse and of each macro body.
+    """
+    found: list[tuple[str, dict]] = []
+    defining: list[tsast.Tree] = []
+    owner: dict[int, int] = {}
+    for tree in tsast.parse(paths, strict=False):
+        key = hashlib.sha256(tree.source).hexdigest()
+        if tree.diagnostic is not None:
+            found.append((key, {"diagnostic": tree.diagnostic}))
+            continue
+        found.append((key, {
+            "members": [[node.line, access, name] for node, access, name in class_members(tree)],
+            "namespaces": sorted(list(name) for name in namespace_names([tree]) - STD_NAMESPACES),
+            "unchecked": has_unchecked_function(tree),
+            "doors": [list(door) for door in node_doors(tree.root, lambda node: node.line)],
+            "names": sorted({leaf.text for leaf in tree.root.descendants(*NAME_LEAVES) if is_macro_use(leaf)}),
+            "bodies": []}))
+        if any(True for _ in tree.find("preproc_def", "preproc_function_def")):
+            owner[id(tree)] = len(found) - 1
+            defining.append(tree)
+    for body in tsast.macro_bodies(defining):
+        found[owner[id(body.define.tree)]][1]["bodies"].append(
+            {"name": body.name, "doors": [list(door) for door in body_doors(body)],
+             "mentions": sorted(body_names(body))})
+    return found
+
+
+def cached_facts(root: Path, files: list[str]) -> dict[str, dict]:
+    """Return the facts of each file, from the store or from one parse in worker processes.
+
+    Complexity: one hash of each file, plus one parse of each file that the
+    store does not hold.
+    """
+    results = text_results("no-unchecked-access-lexical", Path(__file__), tsast.parser_identity())
+    facts: dict[str, dict] = {}
+    missed: list[str] = []
+    for rel in files:
+        stored = None if results is None else results.get(hashlib.sha256((root / rel).read_bytes()).hexdigest())
+        if isinstance(stored, dict):
+            facts[rel] = stored
+        else:
+            missed.append(rel)
+    jobs = min(16, os.cpu_count() or 1)
+    for rel, (key, fact) in zip(missed, map_batches(file_facts, [root / rel for rel in missed], jobs), strict=True):
+        facts[rel] = fact
+        if results is not None:
+            results.put(key, fact)
+    return facts
+
+
 def lexical(root: Path,
             files: list[str]) -> tuple[dict[str, list[Door]], list[Target], list[Publisher], list[str], int]:
-    """Parse each file once, and return what the guard reads from the parses.
+    """Read the facts of each file, and return what the guard reads from the parses.
 
     The result holds the doors of each file, the open targets, the functions
     that rule 7 refuses, the problems and the number of member files read.
     Every file gives its doors and the functions that rule 7 refuses.  A file
     of the member roots also gives its open static data members.  A file
-    that the parser cannot read fails.
+    that the parser cannot read fails.  A file whose verdict depends on the
+    door macros or on the namespaces of all files is parsed again, and gives
+    its doors and the functions of rule 7 from that parse.
 
-    Complexity: one parse of each file and of each macro body, linear in
-    their nodes, plus the closure of door_macro_names.
+    Complexity: one hash of each file, one parse of each file that the store
+    does not hold or whose verdict depends on all files, plus the closure of
+    door_macro_closure.
     """
-    parsed: dict[str, tsast.Tree] = {}
+    facts = cached_facts(root, files)
+    usable: dict[str, dict] = {}
     targets: list[Target] = []
     refused: list[Publisher] = []
     problems: list[str] = []
     member_files = 0
-    for tree in tsast.parse([root / rel for rel in files], strict=False):
-        rel = str(Path(tree.path).relative_to(root))
-        if tree.diagnostic is not None:
+    for rel in files:
+        fact = facts[rel]
+        if "diagnostic" in fact:
             problems.append(f"PARSE     {rel} — the parser cannot read it, so the guard cannot see its doors "
-                            f"and its static data members: {tree.diagnostic}")
+                            f"and its static data members: {fact['diagnostic']}")
             continue
-        parsed[rel] = tree
+        usable[rel] = fact
         if reads_members(rel):
             member_files += 1
-            targets += [(rel, node.line, access, name) for node, access, name in class_members(tree)]
-    namespaces = namespace_names(parsed.values())
-    for rel, tree in parsed.items():
+            targets += [(rel, line, access, name) for line, access, name in fact["members"]]
+    namespaces = frozenset(STD_NAMESPACES | {tuple(name) for fact in usable.values() for name in fact["namespaces"]})
+    door_macros = door_macro_closure([(body["name"], bool(body["doors"]), frozenset(body["mentions"]))
+                                      for fact in usable.values() for body in fact["bodies"]])
+    live = [rel for rel, fact in usable.items()
+            if fact["unchecked"] or not door_macros.isdisjoint(fact["names"])
+            or any(not door_macros.isdisjoint(body["mentions"]) for body in fact["bodies"])]
+    trees = dict(zip(live, tsast.parse([root / rel for rel in live], strict=False), strict=True))
+    bodies_of: dict[str, list[tsast.MacroBody]] = {rel: [] for rel in live}
+    for body in tsast.macro_bodies(tree for tree in with_defines(trees.values()) if tree.diagnostic is None):
+        bodies_of[str(Path(body.define.tree.path).relative_to(root))].append(body)
+    doors: dict[str, list[Door]] = {}
+    for rel, fact in usable.items():
+        tree = trees.get(rel)
+        if tree is None:
+            doors[rel] = [(line, shape) for line, shape in fact["doors"]]
+            doors[rel] += [(line, shape) for body in fact["bodies"] for line, shape in body["doors"]]
+            continue
+        if tree.diagnostic is not None:
+            problems.append(f"PARSE     {rel} — the file changed during the run, and the parser cannot read it "
+                            f"now: {tree.diagnostic}")
+            continue
         refused += publishers(tree, rel, namespaces)
-    bodies = tsast.macro_bodies(with_defines(parsed.values()))
-    door_macros = door_macro_names(bodies)
-    doors = {rel: node_doors(tree.root, lambda node: node.line, door_macros) for rel, tree in parsed.items()}
-    for body in bodies:
-        rel = str(Path(body.define.tree.path).relative_to(root))
-        doors[rel] += body_doors(body, door_macros)
+        doors[rel] = node_doors(tree.root, lambda node: node.line, door_macros)
+        for body in bodies_of[rel]:
+            doors[rel] += body_doors(body, door_macros)
     return doors, targets, refused, problems, member_files
 
 
@@ -1093,6 +1199,43 @@ def planted_cases(caches: Path) -> int:
         expect(root, 0, "1 file(s) open", "a walk that returns a count, a hash, printed text, a public member, a "
                                           "type or a member of a namespace passes")
         write(root, "include/foundation/Walk.h", walk)
+
+        # The cache of the lexical pass.  A warm run gives the report of a cold
+        # run, and a file that did not change gets a new verdict when a door
+        # macro or a namespace of another file changes.
+        write(root, "src/Cached.cpp", "auto c = std::meta::access_context::unchecked();\n")
+        cold, warm = captured(root), captured(root)
+        same_report = cold[0] == 1 and cold == warm and "REFUSED   src/Cached.cpp:1" in cold[1]
+        negatives += 1
+        print(f"  {'ok  ' if same_report else 'FAIL'} a warm run gives the report of a cold run")
+        if not same_report:
+            failures.append(f"a warm run gave another report:\n{cold[1]}\n---\n{warm[1]}")
+        (root / "src/Cached.cpp").unlink()
+        write(root, "include/foundation/Later.h", "#define LATER_DOOR 1\n")
+        write(root, "src/UsesLater.cpp", "auto c = LATER_DOOR;\n")
+        write(root, "src/WrapsLater.cpp", "#define WRAPS LATER_DOOR\n")
+        expect(root, 0, "1 file(s) open", "a macro with no door and its uses pass")
+        write(root, "include/foundation/Later.h", "#define LATER_DOOR std::meta::access_context::unchecked()\n")
+        expect(root, 1, "REFUSED   src/UsesLater.cpp:1 — a use of the macro LATER_DOOR",
+               "a file that did not change is refused when a macro that it uses gains a door", True)
+        expect(root, 1, "REFUSED   src/WrapsLater.cpp:1 — a use of the macro LATER_DOOR",
+               "a macro body that did not change is refused when a macro that it names gains a door", True)
+        for rel in ("include/foundation/Later.h", "src/UsesLater.cpp", "src/WrapsLater.cpp"):
+            (root / rel).unlink()
+        # The walk lives in a file with no macro, so only its function makes
+        # the warm run parse it again.
+        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n"
+                               "include/foundation/Listing.h — a reviewed walk of a namespace\n")
+        write(root, "include/foundation/Listing.h", "consteval std::meta::info first_listed() {\n"
+              f"    for (auto m : std::meta::members_of(^^listed, {unchecked})) return m;\n    return ^^void;\n}}\n")
+        write(root, "src/Listed.cpp", "namespace listed { struct Entry {}; }\n")
+        expect(root, 0, "2 file(s) open", "a walk of a namespace that another file declares passes")
+        write(root, "src/Listed.cpp", "struct listed { int n_; };\n")
+        expect(root, 1, "REFUSED   include/foundation/Listing.h:1 — first_listed uses unchecked and returns a member",
+               "a function that did not change is refused when the namespace that it walks leaves another file", True)
+        write(root, ALLOWLIST, "# planted\ninclude/foundation/Walk.h — a reviewed walk\n")
+        (root / "include/foundation/Listing.h").unlink()
+        (root / "src/Listed.cpp").unlink()
 
         # An untracked file is out of scope, because the export of a guard run
         # can appear under the tree while the guard reads it.
