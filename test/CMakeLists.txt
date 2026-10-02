@@ -887,16 +887,23 @@ set_tests_properties(no_coordination_refs no_coordination_refs_self_test
 # runs only when a person regenerates golden.csv.
 #
 # The self-test has SESSION_ORACLE_SELF_TEST_PARTS disjoint parts, and each
-# part is one test.  Part K compiles each unit whose position in the list of
+# part is one test.  Part K builds each unit whose position in the list of
 # units, modulo the count of parts, is K.  The parts then hold each unit one
 # time, and no part takes much more than one compile of its largest unit.
-# A part runs about 30 compiles at the same time, and PROCESSORS gives that
-# count to CTest.  CTest then starts no more parts and tests than its job
-# count lets run, and a part keeps its time.
+# The store of utils/tools/session_oracle/unit_store.py keeps the result of
+# each unit, so a part builds only the units whose inputs changed.  A part
+# that takes each result from the store uses one core for about 3 s.  A part
+# with no stored result runs about 25 compiles for about 6 s.  PROCESSORS 8
+# lets CTest run the three parts together at -j24: a warm run then takes
+# 6 s of wall time and not 12 s, and a cold run 9 s and not 24 s.  The store
+# self-test proves each rule of the store on scratch units.
 add_test(NAME session_oracle_check
   COMMAND bash ${CMAKE_SOURCE_DIR}/utils/scripts/session-oracle.sh --check)
 set_tests_properties(session_oracle_check PROPERTIES LABELS "ci_guard;session_oracle")
-set(SESSION_ORACLE_SELF_TEST_PARTS 6)
+add_test(NAME session_oracle_store_self_test
+  COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/tools/session_oracle/unit_store.py --self-test --cxx ${CMAKE_CXX_COMPILER})
+set_tests_properties(session_oracle_store_self_test PROPERTIES LABELS "ci_guard;session_oracle")
+set(SESSION_ORACLE_SELF_TEST_PARTS 3)
 math(EXPR session_oracle_last_part "${SESSION_ORACLE_SELF_TEST_PARTS} - 1")
 foreach(part RANGE ${session_oracle_last_part})
   add_test(NAME session_oracle_self_test_${part}
@@ -904,7 +911,7 @@ foreach(part RANGE ${session_oracle_last_part})
             --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
   set_tests_properties(session_oracle_self_test_${part} PROPERTIES
     LABELS "ci_guard;session_oracle"
-    PROCESSORS 30)
+    PROCESSORS 8)
 endforeach()
 
 # The row-membership discipline.  utils/scripts/check-row-contains-discipline.py

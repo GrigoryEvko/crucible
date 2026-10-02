@@ -58,11 +58,15 @@
 #                  compile a copy with one wrong row planted in each
 #                  test, which must fail and name the planted case.
 #                  Then make sure that the drift check sees a one-line
-#                  change and a stale generated file.  The compiles run
-#                  in parallel, at most 64 at one time.  Give the
-#                  compiler as the second argument.  With --part K/N
-#                  after it, the self-test does only part K of N
-#                  disjoint parts, and CTest runs each part as one test.
+#                  change and a stale generated file.  The units run
+#                  in parallel, at most 64 at one time.  The store of
+#                  utils/tools/session_oracle/unit_store.py keeps the
+#                  result of each unit, so a unit whose inputs did not
+#                  change builds nothing.  CRUCIBLE_CACHE_DIR=off turns
+#                  the store off.  Give the compiler as the second
+#                  argument.  With --part K/N after it, the self-test
+#                  does only part K of N disjoint parts, and CTest runs
+#                  each part as one test.
 #   --emit         Write the emitted tests from golden.csv, and remove
 #                  each generated file that golden.csv does not emit.
 #                  Use it after a note in golden.csv changes.
