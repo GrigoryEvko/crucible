@@ -151,6 +151,11 @@ endfunction()
 # an offset pointer.  A compiler without the fix cannot compile it.
 crucible_test(test_gcc_memchr_fold)
 
+# A public function that reaches a cold call on each path only after the
+# inlining of the build.  The build has no -Wsuggest-attribute=cold, so
+# -Werror lets this file compile.
+crucible_test(test_cold_suggestion_off)
+
 crucible_test(test_fp_strict_floor)  # the crucible_fp_strict floor reaches a crucible consumer: compile definition and runtime witness
 crucible_test(test_philox_box_muller_polynomial)  # Philox::box_muller_polynomial_det runtime witness and tier
 crucible_test(test_welford_variance)  # bench_harness Welford-on-double variance — type-shape + ill-conditioned stability witness

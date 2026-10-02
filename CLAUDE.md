@@ -1174,7 +1174,7 @@ All UB-adjacent and lifetime-adjacent warnings are hard errors.
 Non-error warnings (informational, not yet hard):
 - `-Wpadded` (off). A class can have a padding byte, except the element type of a large fixed list, which `utils/scripts/check-padded-lists.py` rejects (§XV "Compile time")
 
-The `-Wsuggest-*` flags of sections 1.8 and 3.10 of `CMakeLists.txt` are on, and `-Werror` makes each one an error. GCC suggests the `cold` attribute for a function that calls a cold function on each path. So a constructor, a destructor or another function on the normal path of a hot caller has no `cold` attribute.
+Sections 1.8 and 3.10 of `CMakeLists.txt` turn on `-Wsuggest-override`, `-Wsuggest-final-types`, `-Wsuggest-final-methods` and four forms of `-Wsuggest-attribute`: `noreturn`, `format`, `malloc` and `returns_nonnull`. `-Werror` makes each one an error. No build takes `-Wsuggest-attribute=cold`. GCC suggests `cold` for a function when each path of the function reaches a cold call. GCC reads those paths after the inlining of the target. The aarch64 Release build gave that warning on a source that the x86_64 build compiles clean, and no build on the x86_64 host can find it. Review rule: a constructor, a destructor or another function on the normal path of a hot caller has no `cold` attribute. GCC compiles a caller that reaches a cold call on each path as an unlikely function, for size.
 
 ---
 

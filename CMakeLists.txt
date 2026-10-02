@@ -89,10 +89,7 @@ crucible_relocatable_objects()
 # training, because the profile comes from the bench suite: a function
 # the suite did not run is optimized as usual, not shrunk as cold.
 # -Wno-missing-profile for the same reason, because CRUCIBLE_WERROR
-# would stop every test TU that has no counters.  -Wno-suggest-
-# attribute=cold, because the profile is what makes the compiler sure
-# a function is cold, and an attribute that repeats the profile adds
-# nothing.
+# would stop every test TU that has no counters.
 #
 # crucible_perf links crucible_dialect through foundation, so the profile
 # covers it as it covers every other target.
@@ -246,8 +243,7 @@ if(NOT CRUCIBLE_PGO STREQUAL "off")
       -fprofile-use=${CRUCIBLE_PGO_PROFILE_DIR}
       -fprofile-prefix-path=${CMAKE_BINARY_DIR}
       -fprofile-partial-training
-      -Wno-missing-profile
-      -Wno-suggest-attribute=cold)
+      -Wno-missing-profile)
     # The same flags at link time, because LTO applies the profile there.
     # Without LTO the driver ignores them, so the day -flto lands in the
     # release preset, PGO stays applied.
@@ -1154,10 +1150,20 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wtemplate-id-cdtor                 # 154  template-id in ctor/dtor
 
     # ── 3.10  Attributes / suggestions (7) ───────────────────
+    # No build takes -Wsuggest-attribute=cold.  GCC suggests the cold
+    # attribute for a function when each path of the function reaches a
+    # cold call.  GCC reads those paths after the inlining and the static
+    # prediction of the target, and a profile changes them too.  The same
+    # source gave the warning on main() of test/test_pool_allocator.cpp in
+    # the aarch64 Release build and none on x86_64.  A warning that
+    # depends on the target cannot be an error, because no host builds
+    # each target.  Each other suggestion below stays an error.
+    # Review rule: a function that a hot caller calls on its normal path
+    # has no cold attribute.  GCC compiles a caller that reaches a cold
+    # call on each path as an unlikely function, for size.
     -Wattribute-alias=2                 # 156  alias type mismatch
     -Wsuggest-attribute=noreturn        # 157  suggest [[noreturn]]
     -Wsuggest-attribute=format          # 158  suggest format attr
-    -Wsuggest-attribute=cold            # 159  suggest cold attr
     -Wsuggest-attribute=malloc          # 160  suggest malloc attr
     -Wsuggest-attribute=returns_nonnull # 161  suggest returns_nonnull
     -Wsuggest-final-types               # 162  suggest final class
