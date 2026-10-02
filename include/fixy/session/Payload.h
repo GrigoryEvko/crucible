@@ -404,6 +404,14 @@ enum class DelegationCarrier : std::uint8_t {
 
 namespace detail {
 
+// A walk of this header changes no vector in a loop.  Each list that a walk
+// makes is a stack of foundation/algebra/Transition.h, and the walk reads it
+// through a pointer.  That header states the costs of a vector in a
+// constant evaluation of this GCC 16 build.
+using ::foundation::algebra::transition::make_room;
+using ::foundation::algebra::transition::push;
+using ::foundation::algebra::transition::stack;
+
 // ── Why a payload is refused ────────────────────────────────────────
 
 enum class PayloadRefusal : std::uint8_t {
@@ -468,11 +476,21 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
     return false;
 }
 
-[[nodiscard]] consteval bool holds_type(const std::vector<std::meta::info>& types, std::meta::info type) {
-    for (const std::meta::info held : types) {
-        if (held == type) return true;
+// True when one of the `count` types at `types` is `type`.  Complexity:
+// linear in `count`.
+[[nodiscard]] consteval bool holds_type(const std::meta::info* types, std::size_t count, std::meta::info type) noexcept {
+    for (std::size_t place = 0; place < count; ++place) {
+        if (types[place] == type) return true;
     }
     return false;
+}
+
+[[nodiscard]] consteval bool holds_type(const std::vector<std::meta::info>& types, std::meta::info type) {
+    return holds_type(types.data(), types.size(), type);
+}
+
+[[nodiscard]] consteval bool holds_type(const stack<std::meta::info>& types, std::meta::info type) {
+    return holds_type(types.items, types.top, type);
 }
 
 // ── What delegates ──────────────────────────────────────────────────
@@ -575,16 +593,16 @@ struct PayloadNode {
         && lhs.in_ct_carrier == rhs.in_ct_carrier;
 }
 
-// What the walk found in one payload.  This form holds vectors, so it
+// What the walk found in one payload.  This form holds stacks, so it
 // lives only inside a constant evaluation.  payload_facts below keeps the
 // results in a form that a static data member can hold.
 struct PayloadCensus {
     // The tags that the payload moves, lends and releases.
-    std::vector<std::meta::info> moved;
-    std::vector<std::meta::info> lent;
-    std::vector<std::meta::info> released;
+    stack<std::meta::info> moved;
+    stack<std::meta::info> lent;
+    stack<std::meta::info> released;
     // Each DelegatedSession that the payload holds by value.
-    std::vector<std::meta::info> hand_offs;
+    stack<std::meta::info> hand_offs;
     bool carries_share = false;
     PayloadRefusal refusal = PayloadRefusal::None;
     std::meta::info refused_type{};
@@ -602,9 +620,13 @@ struct PayloadVisit {
     std::meta::info first_token{};
 };
 
+// `parts` holds one run of parts for each class that the walk is inside.
+// The run of a class is above the run of the class that holds it, and the
+// walk takes the run off when it leaves the class.
 struct PayloadWalk {
     PayloadCensus census;
-    std::vector<PayloadVisit> visits;
+    stack<PayloadVisit> visits;
+    stack<PayloadNode> parts;
 };
 
 // The walk stops when it has a refusal and knows the first carrier.
@@ -631,7 +653,7 @@ consteval void note_carrier(PayloadWalk& walk, std::optional<DelegationCarrier> 
 // Records one tag that the payload moves, lends or releases, and refuses
 // a tag that the payload names already.  A refused payload changes no
 // set, so the walk records nothing after a refusal.
-consteval void record_payload_tag(PayloadWalk& walk, std::vector<std::meta::info> PayloadCensus::* into,
+consteval void record_payload_tag(PayloadWalk& walk, stack<std::meta::info> PayloadCensus::* into,
                                   std::meta::info tag, std::meta::info at) {
     if (walk.census.refusal != PayloadRefusal::None) return;
     const std::meta::info bare_tag = std::meta::dealias(tag);
@@ -641,7 +663,7 @@ consteval void record_payload_tag(PayloadWalk& walk, std::vector<std::meta::info
             return;
         }
     }
-    (walk.census.*into).push_back(bare_tag);
+    push(walk.census.*into, bare_tag);
 }
 
 [[nodiscard]] consteval PayloadRefusal payload_refusal_for_reach(PayloadReach reach) noexcept {
@@ -698,55 +720,70 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
 // pointer, in a union or in an array is refused: it travels by value, one
 // time, so that one recipient holds the endpoint and its tokens.  The
 // first token of a hand-off is the hand-off, when its set holds a tag.
-[[nodiscard]] consteval std::meta::info take_hand_off(PayloadWalk& walk, const PayloadNode& node) {
+// `argument` points to the template arguments of the hand-off.
+[[nodiscard]] consteval std::meta::info take_hand_off(PayloadWalk& walk, const PayloadNode& node,
+                                                      const std::meta::info* argument) {
     if (node.reach == PayloadReach::Named) return {};
     if (node.reach != PayloadReach::Owned) {
         refuse_payload(walk, PayloadRefusal::HandOffNotOwned, node.type);
         return {};
     }
-    const std::meta::info inner_set = std::meta::dealias(std::meta::template_arguments_of(node.type)[3]);
+    const std::meta::info inner_set = std::meta::dealias(argument[3]);
     const std::vector<std::meta::info> inner_tags = std::meta::template_arguments_of(inner_set);
-    for (const std::meta::info tag : inner_tags)
-        record_payload_tag(walk, &PayloadCensus::moved, tag, node.type);
-    if (walk.census.refusal == PayloadRefusal::None) walk.census.hand_offs.push_back(node.type);
-    return inner_tags.empty() ? std::meta::info{} : node.type;
+    const std::meta::info* const tag = inner_tags.data();
+    const std::size_t tag_count = inner_tags.size();
+    for (std::size_t place = 0; place < tag_count; ++place)
+        record_payload_tag(walk, &PayloadCensus::moved, tag[place], node.type);
+    if (walk.census.refusal == PayloadRefusal::None) push(walk.census.hand_offs, node.type);
+    return tag_count == 0 ? std::meta::info{} : node.type;
 }
 
 // A marker records its tag, and the value that it carries is a by-value
-// member of the marker.
+// member of the marker.  `argument` points to the template arguments of
+// the marker.
 [[nodiscard]] consteval std::meta::info take_marker(PayloadWalk& walk, const PayloadNode& node,
-                                                    std::vector<std::meta::info> PayloadCensus::* into) {
+                                                    const std::meta::info* argument,
+                                                    stack<std::meta::info> PayloadCensus::* into) {
     if (!is_owned_or_refused(walk, node)) return {};
-    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(node.type);
-    record_payload_tag(walk, into, arguments[1], node.type);
+    record_payload_tag(walk, into, argument[1], node.type);
     static_cast<void>(visit_payload_node(
-        walk, PayloadNode{::foundation::reflect::bare_type(arguments[0]), true, PayloadReach::Owned}));
+        walk, PayloadNode{::foundation::reflect::bare_type(argument[0]), true, PayloadReach::Owned}));
     return node.type;
 }
 
-// The nodes one step below a class: each base and each non-static data
-// member, in declaration order.
-[[nodiscard]] consteval std::vector<PayloadNode> payload_parts_of(const PayloadNode& node) {
+// Puts the nodes one step below a class on `parts`: each base and each
+// non-static data member, in declaration order.  Returns their count.
+[[nodiscard]] consteval std::size_t push_payload_parts(stack<PayloadNode>& parts, const PayloadNode& node) {
     namespace refl = ::foundation::reflect;
     const bool is_union = std::meta::is_union_type(node.type);
     const PayloadReach part_reach = is_union && node.reach == PayloadReach::Owned ? PayloadReach::InUnion : node.reach;
     const PayloadReach alias_reach = node.reach == PayloadReach::Named ? PayloadReach::Named : PayloadReach::Aliased;
     const auto unchecked = std::meta::access_context::unchecked();
-    std::vector<PayloadNode> parts;
-    for (const std::meta::info base : std::meta::bases_of(node.type, unchecked)) {
-        parts.push_back(PayloadNode{refl::bare_type(std::meta::type_of(base)), true, part_reach, node.in_ct_carrier});
+    const std::size_t first = parts.top;
+    const std::vector<std::meta::info> bases = std::meta::bases_of(node.type, unchecked);
+    const std::meta::info* const base = bases.data();
+    const std::size_t base_count = bases.size();
+    make_room(parts, base_count);
+    for (std::size_t place = 0; place < base_count; ++place) {
+        parts.items[parts.top++] =
+            PayloadNode{refl::bare_type(std::meta::type_of(base[place])), true, part_reach, node.in_ct_carrier};
     }
-    for (const std::meta::info member : std::meta::nonstatic_data_members_of(node.type, unchecked)) {
-        const std::meta::info member_type = std::meta::type_of(member);
+    const std::vector<std::meta::info> members = std::meta::nonstatic_data_members_of(node.type, unchecked);
+    const std::meta::info* const member = members.data();
+    const std::size_t member_count = members.size();
+    make_room(parts, member_count);
+    for (std::size_t place = 0; place < member_count; ++place) {
+        const std::meta::info member_type = std::meta::type_of(member[place]);
         if (std::meta::is_reference_type(member_type)) {
             const refl::TypeNode reached =
                 refl::node_reached_indirectly(member_type, refl::SpecializationRead::Instantiating);
-            parts.push_back(PayloadNode{reached.type, reached.may_read_members, alias_reach});
+            parts.items[parts.top++] = PayloadNode{reached.type, reached.may_read_members, alias_reach};
         } else {
-            parts.push_back(PayloadNode{refl::bare_type(member_type), true, part_reach, node.in_ct_carrier});
+            parts.items[parts.top++] =
+                PayloadNode{refl::bare_type(member_type), true, part_reach, node.in_ct_carrier};
         }
     }
-    return parts;
+    return parts.top - first;
 }
 
 // The argument that names the value a family carries, or no argument.
@@ -805,13 +842,15 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     const PayloadFamily family = payload_family_of(type);
     std::vector<std::meta::info> arguments;
     if (payload_is_specialization(type)) arguments = std::meta::template_arguments_of(type);
+    const std::meta::info* const argument = arguments.data();
+    const std::size_t argument_count = arguments.size();
 
     if (family != PayloadFamily::Other) {
         // A family that the walk reads by name is no endpoint.  A named one
         // is read for the value that it carries, and for nothing else.
-        const std::optional<std::size_t> carried = carried_value_argument(family, arguments.size());
+        const std::optional<std::size_t> carried = carried_value_argument(family, argument_count);
         if (reach == PayloadReach::Named) {
-            if (carried.has_value()) visit_named_argument(walk, arguments[*carried]);
+            if (carried.has_value()) visit_named_argument(walk, argument[*carried]);
             return {};
         }
     } else {
@@ -822,14 +861,14 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
             refuse_payload(walk, PayloadRefusal::IncompleteType, type);
             return {};
         }
-        if (*carrier == DelegationCarrier::HandOff) return take_hand_off(walk, node);
+        if (*carrier == DelegationCarrier::HandOff) return take_hand_off(walk, node, argument);
         if (*carrier != DelegationCarrier::None) {
             const PayloadRefusal refusal = payload_refusal_for_carrier(*carrier);
             if (refusal != PayloadRefusal::None) refuse_payload(walk, refusal, type);
             return {};
         }
-        for (std::size_t index = arguments.size(); index-- > 0;) {
-            visit_named_argument(walk, arguments[index]);
+        for (std::size_t index = argument_count; index-- > 0;) {
+            visit_named_argument(walk, argument[index]);
             if (is_walk_settled(walk)) return {};
         }
     }
@@ -837,14 +876,14 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     switch (family) {
         case PayloadFamily::Token:
             if (!is_owned_or_refused(walk, node)) return {};
-            record_payload_tag(walk, &PayloadCensus::moved, arguments[0], type);
+            record_payload_tag(walk, &PayloadCensus::moved, argument[0], type);
             return type;
         case PayloadFamily::Moves:
-            return take_marker(walk, node, &PayloadCensus::moved);
+            return take_marker(walk, node, argument, &PayloadCensus::moved);
         case PayloadFamily::Lends:
-            return take_marker(walk, node, &PayloadCensus::lent);
+            return take_marker(walk, node, argument, &PayloadCensus::lent);
         case PayloadFamily::Releases:
-            return take_marker(walk, node, &PayloadCensus::released);
+            return take_marker(walk, node, argument, &PayloadCensus::released);
         case PayloadFamily::Share:
             if (is_owned_or_refused(walk, node)) walk.census.carries_share = true;
             return {};
@@ -853,20 +892,20 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
         // counts as a member of the message.  A payload of void is no
         // class, so it adds nothing.
         case PayloadFamily::Keyed:
-            return visit_payload_node(walk,
-                                      PayloadNode{refl::bare_type(arguments.back()), true, reach, node.in_ct_carrier});
+            return visit_payload_node(
+                walk, PayloadNode{refl::bare_type(argument[argument_count - 1]), true, reach, node.in_ct_carrier});
         // The carrier declassifies at the transport, so the Secret it holds
         // is not read.  The value it will hand over is, for the tokens in
         // it.
         case PayloadFamily::Declassified:
-            return visit_payload_node(walk, PayloadNode{refl::bare_type(arguments[0]), true, reach});
+            return visit_payload_node(walk, PayloadNode{refl::bare_type(argument[0]), true, reach});
         case PayloadFamily::ConstantTime:
-            return visit_payload_node(walk, PayloadNode{refl::bare_type(arguments[0]), true, reach, true});
+            return visit_payload_node(walk, PayloadNode{refl::bare_type(argument[0]), true, reach, true});
         // The walk still reads the classified value for delegation, so the
         // carrier of the payload stays exact.
         case PayloadFamily::Classified:
             refuse_payload(walk, PayloadRefusal::ClassifiedBare, type);
-            visit_named_argument(walk, arguments[0]);
+            visit_named_argument(walk, argument[0]);
             return {};
         case PayloadFamily::Proof:
             refuse_payload(walk, PayloadRefusal::BareBorrowOrShare, type);
@@ -906,13 +945,17 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     }
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return {};
 
-    const std::vector<PayloadNode> parts = payload_parts_of(node);
+    // A visit can make the storage of the parts larger, so the walk reads
+    // each part through the stack, and not through a pointer that it keeps.
+    const std::size_t first = walk.parts.top;
+    const std::size_t part_count = push_payload_parts(walk.parts, node);
     std::meta::info first_token{};
-    for (std::size_t index = parts.size(); index-- > 0;) {
-        const std::meta::info found = visit_payload_node(walk, parts[index]);
+    for (std::size_t index = part_count; index-- > 0;) {
+        const std::meta::info found = visit_payload_node(walk, walk.parts.items[first + index]);
         if (first_token == std::meta::info{}) first_token = found;
         if (is_walk_settled(walk)) break;
     }
+    walk.parts.top = first;
     return first_token;
 }
 
@@ -926,17 +969,19 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
 consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node) {
     if (is_walk_settled(walk)) return {};
     if (node.reach == PayloadReach::Named) node.in_ct_carrier = false;
-    for (const PayloadVisit& seen : walk.visits) {
-        if (!is_same_payload_node(seen.node, node)) continue;
-        if (node.reach == PayloadReach::Owned && seen.first_token != std::meta::info{}) {
-            refuse_payload(walk, PayloadRefusal::DuplicateTag, seen.first_token);
+    const PayloadVisit* const seen = walk.visits.items;
+    const std::size_t seen_count = walk.visits.top;
+    for (std::size_t place = 0; place < seen_count; ++place) {
+        if (!is_same_payload_node(seen[place].node, node)) continue;
+        if (node.reach == PayloadReach::Owned && seen[place].first_token != std::meta::info{}) {
+            refuse_payload(walk, PayloadRefusal::DuplicateTag, seen[place].first_token);
         }
-        return seen.first_token;
+        return seen[place].first_token;
     }
-    const std::size_t index = walk.visits.size();
-    walk.visits.push_back(PayloadVisit{node, {}});
+    const std::size_t index = walk.visits.top;
+    push(walk.visits, PayloadVisit{node, {}});
     const std::meta::info first_token = enter_payload_node(walk, node);
-    walk.visits[index].first_token = first_token;
+    walk.visits.items[index].first_token = first_token;
     return first_token;
 }
 
@@ -968,12 +1013,17 @@ struct PayloadFacts {
     }
 };
 
-[[nodiscard]] consteval std::meta::info payload_wrap_each(std::meta::info wrapper,
-                                                          const std::vector<std::meta::info>& tags) {
-    std::vector<std::meta::info> wrapped;
-    for (const std::meta::info tag : tags)
-        wrapped.push_back(std::meta::substitute(wrapper, {tag}));
-    return std::meta::substitute(^^::foundation::permissions::PermSet, wrapped);
+// The PermSet of the elements of a stack, in the order of the stack.
+[[nodiscard]] consteval std::meta::info payload_perm_set_of(const stack<std::meta::info>& elements) {
+    return std::meta::substitute(^^::foundation::permissions::PermSet,
+                                 std::span<const std::meta::info>{elements.items, elements.top});
+}
+
+[[nodiscard]] consteval std::meta::info payload_wrap_each(std::meta::info wrapper, const stack<std::meta::info>& tags) {
+    stack<std::meta::info> wrapped{};
+    for (std::size_t place = 0; place < tags.top; ++place)
+        push(wrapped, std::meta::substitute(wrapper, {tags.items[place]}));
+    return payload_perm_set_of(wrapped);
 }
 
 // The walk of one payload, and its four sets.  The sender loses what it
@@ -1005,22 +1055,29 @@ struct PayloadFacts {
         facts.sender_requires = facts.sender_gains = facts.receiver_requires = facts.receiver_gains = empty;
         return facts;
     }
-    std::vector<std::meta::info> sender_requires = census.moved;
-    std::vector<std::meta::info> receiver_gains = census.moved;
-    for (const std::meta::info tag : census.lent) {
-        sender_requires.push_back(tag);
-        receiver_gains.push_back(std::meta::substitute(^^BorrowedIn, {tag}));
+    stack<std::meta::info> sender_requires{};
+    stack<std::meta::info> receiver_gains{};
+    for (std::size_t place = 0; place < census.moved.top; ++place) {
+        push(sender_requires, census.moved.items[place]);
+        push(receiver_gains, census.moved.items[place]);
     }
-    for (const std::meta::info tag : census.released) {
-        sender_requires.push_back(std::meta::substitute(^^BorrowedIn, {tag}));
-        receiver_gains.push_back(tag);
+    for (std::size_t place = 0; place < census.lent.top; ++place) {
+        const std::meta::info tag = census.lent.items[place];
+        push(sender_requires, tag);
+        push(receiver_gains, std::meta::substitute(^^BorrowedIn, {tag}));
     }
-    facts.sender_requires = std::meta::substitute(^^::foundation::permissions::PermSet, sender_requires);
+    for (std::size_t place = 0; place < census.released.top; ++place) {
+        const std::meta::info tag = census.released.items[place];
+        push(sender_requires, std::meta::substitute(^^BorrowedIn, {tag}));
+        push(receiver_gains, tag);
+    }
+    facts.sender_requires = payload_perm_set_of(sender_requires);
     facts.sender_gains = payload_wrap_each(^^LentOut, census.lent);
     facts.receiver_requires = payload_wrap_each(^^LentOut, census.released);
-    facts.receiver_gains = std::meta::substitute(^^::foundation::permissions::PermSet, receiver_gains);
+    facts.receiver_gains = payload_perm_set_of(receiver_gains);
     facts.carries_share = census.carries_share;
-    const std::span<const std::meta::info> hand_offs = std::define_static_array(census.hand_offs);
+    const std::span<const std::meta::info> hand_offs =
+        std::define_static_array(std::span<const std::meta::info>{census.hand_offs.items, census.hand_offs.top});
     facts.hand_off_data = hand_offs.data();
     facts.hand_off_count = hand_offs.size();
     return facts;
@@ -1167,9 +1224,17 @@ struct payload_admitted_gate {
 // `kept` already names.  One region in two states at once is two claims
 // on it, which a set must not hold.
 [[nodiscard]] consteval bool regions_disjoint(std::meta::info kept, std::meta::info gains) {
-    for (const std::meta::info gained : std::meta::template_arguments_of(std::meta::dealias(gains))) {
-        for (const std::meta::info held : std::meta::template_arguments_of(std::meta::dealias(kept))) {
-            if (region_of(gained) == region_of(held)) return false;
+    const std::vector<std::meta::info> gained_elements = std::meta::template_arguments_of(std::meta::dealias(gains));
+    const std::size_t gained_count = gained_elements.size();
+    if (gained_count == 0) return true;
+    const std::vector<std::meta::info> held_elements = std::meta::template_arguments_of(std::meta::dealias(kept));
+    const std::size_t held_count = held_elements.size();
+    const std::meta::info* const gained = gained_elements.data();
+    const std::meta::info* const held = held_elements.data();
+    for (std::size_t gained_place = 0; gained_place < gained_count; ++gained_place) {
+        const std::meta::info gained_region = region_of(gained[gained_place]);
+        for (std::size_t held_place = 0; held_place < held_count; ++held_place) {
+            if (gained_region == region_of(held[held_place])) return false;
         }
     }
     return true;
@@ -1298,11 +1363,11 @@ namespace detail {
 // the walk, and then the function returns false.  Complexity: one visit
 // for each distinct node, times the scan of `visited`.
 template <class Visitor>
-consteval bool walk_protocol_spine(std::meta::info protocol, std::vector<std::meta::info>& visited, Visitor& visit) {
+consteval bool walk_protocol_spine(std::meta::info protocol, stack<std::meta::info>& visited, Visitor& visit) {
     namespace tr = ::foundation::algebra::transition;
     const std::meta::info type = std::meta::dealias(protocol);
     if (holds_type(visited, type)) return true;
-    visited.push_back(type);
+    push(visited, type);
     const tr::node view = tr::decompose(protocol_registry, type);
     if (!visit(view)) return false;
     if (!view.is_registered) return true;
@@ -1337,24 +1402,26 @@ consteval bool walk_protocol_spine(std::meta::info protocol, std::vector<std::me
 
 namespace detail {
 
-// The roles that a protocol names as peers: the peer of each PeerMsg that
-// a step carries, and the role of each Sender note of a choice.
-[[nodiscard]] consteval std::vector<std::meta::info> named_peers_of(std::meta::info protocol) {
+// Adds to `peers` each role that a protocol names as a peer and that
+// `peers` does not hold: the peer of each PeerMsg that a step carries, and
+// the role of each Sender note of a choice.  Complexity: one visit for each
+// distinct node, times the scans of `peers` and of the visited nodes.
+consteval void collect_named_peers(std::meta::info protocol, stack<std::meta::info>& peers) {
     namespace tr = ::foundation::algebra::transition;
-    std::vector<std::meta::info> peers;
-    std::vector<std::meta::info> visited;
+    stack<std::meta::info> visited{};
     auto collect = [&peers](const tr::node& view) consteval {
         if (!view.is_registered) return true;
         if (view.entry.kind == tr::shape_kind::step && payload_family_is(view.payload, ^^PeerMsg)) {
-            peers.push_back(std::meta::dealias(std::meta::template_arguments_of(view.payload)[0]));
+            const std::meta::info peer = std::meta::dealias(std::meta::template_arguments_of(view.payload)[0]);
+            if (!holds_type(peers, peer)) push(peers, peer);
         }
         if (view.annotation != std::meta::info{} && payload_family_is(view.annotation, ^^Sender)) {
-            peers.push_back(std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]));
+            const std::meta::info role = std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
+            if (!holds_type(peers, role)) push(peers, role);
         }
         return true;
     };
     static_cast<void>(walk_protocol_spine(protocol, visited, collect));
-    return peers;
 }
 
 // True when a Send of the protocol hands an endpoint of a session to a
@@ -1362,15 +1429,18 @@ namespace detail {
 [[nodiscard]] consteval bool delegates_to_own_peer(std::meta::info protocol) {
     namespace tr = ::foundation::algebra::transition;
     bool is_found = false;
-    std::vector<std::meta::info> visited;
+    stack<std::meta::info> visited{};
     auto check = [&is_found](const tr::node& view) consteval {
         const bool is_send = view.is_registered && view.entry.kind == tr::shape_kind::step
                           && view.entry.direction == tr::polarity::output;
         if (!is_send || !payload_family_is(view.payload, ^^PeerMsg)) return true;
         const std::vector<std::meta::info> parts = std::meta::template_arguments_of(view.payload);
-        const std::meta::info receiver = std::meta::dealias(parts[0]);
-        for (const std::meta::info carried : payload_facts_of(parts[2]).hand_offs()) {
-            if (holds_type(named_peers_of(std::meta::template_arguments_of(carried)[0]), receiver)) {
+        const std::meta::info* const part = parts.data();
+        const std::meta::info receiver = std::meta::dealias(part[0]);
+        for (const std::meta::info carried : payload_facts_of(part[2]).hand_offs()) {
+            stack<std::meta::info> peers{};
+            collect_named_peers(std::meta::template_arguments_of(carried)[0], peers);
+            if (holds_type(peers, receiver)) {
                 is_found = true;
                 return false;
             }
@@ -1425,8 +1495,8 @@ struct DeliveryVerdict {
 };
 
 struct DeliveryWalk {
-    std::vector<std::meta::info> regions;
-    std::vector<std::meta::info> visited;
+    stack<std::meta::info> regions;
+    stack<std::meta::info> visited;
     DeliveryVerdict verdict;
 };
 
@@ -1451,9 +1521,12 @@ consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& wa
         }
         // The set of a delegated endpoint can hold a loan state, and the
         // region of LentOut<Tag> or BorrowedIn<Tag> is Tag.
-        for (const std::meta::info element : std::meta::template_arguments_of(facts.receiver_gains)) {
-            const std::meta::info region = region_of(element);
-            if (!holds_type(walk.regions, region)) walk.regions.push_back(region);
+        const std::vector<std::meta::info> elements = std::meta::template_arguments_of(facts.receiver_gains);
+        const std::meta::info* const element = elements.data();
+        const std::size_t element_count = elements.size();
+        for (std::size_t place = 0; place < element_count; ++place) {
+            const std::meta::info region = region_of(element[place]);
+            if (!holds_type(walk.regions, region)) push(walk.regions, region);
         }
         for (const std::meta::info carried : facts.hand_offs()) {
             walk_delivered_regions(std::meta::template_arguments_of(carried)[0], walk);
@@ -1477,7 +1550,7 @@ struct DeliveryFacts {
     walk_delivered_regions(protocol, walk);
     const std::meta::info regions = delivery_is_refused(walk.verdict)
                                       ? std::meta::dealias(^^::foundation::permissions::EmptyPermSet)
-                                      : std::meta::substitute(^^::foundation::permissions::PermSet, walk.regions);
+                                      : payload_perm_set_of(walk.regions);
     return DeliveryFacts{walk.verdict, regions};
 }
 
@@ -1518,8 +1591,11 @@ struct delivery_gate {
 // True when the set holds an open loan: a LentOut or a BorrowedIn.
 // Complexity: linear in the size of the set.
 [[nodiscard]] consteval bool holds_open_loan(std::meta::info set) {
-    for (const std::meta::info element : std::meta::template_arguments_of(std::meta::dealias(set))) {
-        const std::meta::info bare = std::meta::dealias(element);
+    const std::vector<std::meta::info> elements = std::meta::template_arguments_of(std::meta::dealias(set));
+    const std::meta::info* const element = elements.data();
+    const std::size_t element_count = elements.size();
+    for (std::size_t place = 0; place < element_count; ++place) {
+        const std::meta::info bare = std::meta::dealias(element[place]);
         if (payload_family_is(bare, ^^LentOut) || payload_family_is(bare, ^^BorrowedIn)) return true;
     }
     return false;

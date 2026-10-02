@@ -1060,16 +1060,13 @@ using branch_landing_t = typename decltype(detail::branch_landing_of<Choice, I>(
 namespace detail {
 
 // The number of distinct roles that some local types name as peers,
-// together.  The walk is named_peers_of of fixy/session/Payload.h.
+// together.  The walk is collect_named_peers of fixy/session/Payload.h.
 // Complexity: quadratic in the number of peer names that the walk finds.
 [[nodiscard]] consteval std::size_t distinct_peer_count(std::initializer_list<std::meta::info> protocols) {
-    std::vector<std::meta::info> distinct;
-    for (const std::meta::info protocol : protocols) {
-        for (const std::meta::info peer : named_peers_of(protocol)) {
-            if (!holds_type(distinct, peer)) distinct.push_back(peer);
-        }
-    }
-    return distinct.size();
+    stack<std::meta::info> distinct{};
+    for (const std::meta::info protocol : protocols)
+        collect_named_peers(protocol, distinct);
+    return distinct.top;
 }
 
 }  // namespace detail
