@@ -314,11 +314,22 @@ private:
     friend consteval row_cell walk_row(std::meta::info tag, std::size_t rows_members);
 };
 
+// Reads the edges of permission_rows one time, and counts the edges from
+// the tag in that one read.  Complexity: linear in the edges.
 [[nodiscard]] consteval row_cell walk_row(std::meta::info tag, std::size_t rows_members) {
     row_cell cell{};
     cell.tag_ = tag;
     cell.rows_members_ = rows_members;
-    const std::size_t edges = ::foundation::fail_closed::edge_count_from(^^permission_rows, tag);
+    const ::foundation::fail_closed::edge_list rows = ::foundation::fail_closed::edges_of(^^permission_rows);
+    const std::meta::info wanted = std::meta::dealias(tag);
+    std::size_t edges = 0;
+    std::meta::info edge_row = ^^void;
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        const ::foundation::fail_closed::edge_ends edge = rows[index];
+        if (edge.from != wanted) continue;
+        if (edges == 0) edge_row = edge.to;
+        ++edges;
+    }
     const std::meta::info member_row = member_alias_of(tag, "permission_row");
     const std::meta::info parent = member_alias_of(tag, "parent_type");
     const bool by_member = member_row != std::meta::info{};
@@ -330,7 +341,7 @@ private:
         cell.shape_ = row_shape::two_edges;
     } else if (edges == 1) {
         cell.shape_ = row_shape::by_edge;
-        cell.row_ = ::foundation::fail_closed::unique_target(^^permission_rows, tag);
+        cell.row_ = edge_row;
     } else if (by_member) {
         cell.shape_ = row_shape::by_member;
         cell.row_ = member_row;
@@ -346,26 +357,35 @@ private:
 template <std::meta::info Tag, std::size_t RowsMembers>
 inline constexpr row_cell row_cell_at = walk_row(Tag, RowsMembers);
 
-// The cell of the tag at the member count of permission_rows now.  A cell
-// that names another tag or another count is the walk of another tag,
-// which a specialization put in the place of this walk, and the read
-// stops the build.
-[[nodiscard]] consteval const row_cell& read_row_cell_(std::meta::info tag) {
+// The member count of permission_rows at the point of the evaluation that
+// asks.  The count is the cost of a cached question about a row, because
+// members_of builds a vector of each member.
+[[nodiscard]] consteval std::size_t rows_members_now_() {
     // The count is not const.  GCC evaluates a const integral local with a
     // constant initializer one time, where the function is defined, so a
     // const count would miss each edge of a later part of the namespace.
-    std::size_t rows_members = std::meta::members_of(^^permission_rows, std::meta::access_context::unprivileged()).size();
+    std::size_t rows_members =
+        std::meta::members_of(^^permission_rows, std::meta::access_context::unprivileged()).size();
+    return rows_members;
+}
+
+// The cell of the tag at one member count of permission_rows.  A cell
+// that names another tag or another count is the walk of another tag,
+// which a specialization put in the place of this walk, and the read
+// stops the build.
+[[nodiscard]] consteval const row_cell& read_row_cell_(std::meta::info tag, std::size_t rows_members) {
     const row_cell& cell = std::meta::extract<const row_cell&>(std::meta::substitute(
         ^^row_cell_at, {std::meta::reflect_constant(tag), std::meta::reflect_constant(rows_members)}));
     if (cell.tag() != tag || cell.rows_members() != rows_members) a_row_cell_names_another_tag();
     return cell;
 }
 
-// The reflection of the row of the tag, or of void when no source
-// declares one.  Each refusal is thrown here, in the evaluation that
-// asked, so the diagnostic names the question.
-[[nodiscard]] consteval std::meta::info permission_row_source(std::meta::info tag) {
-    const row_cell& cell = read_row_cell_(tag);
+// The reflection of the row of the tag at one member count of
+// permission_rows, or of void when no source declares one.  Each refusal
+// is thrown here, in the evaluation that asked, so the diagnostic names
+// the question.
+[[nodiscard]] consteval std::meta::info permission_row_source_at_(std::meta::info tag, std::size_t rows_members) {
+    const row_cell& cell = read_row_cell_(tag, rows_members);
     switch (cell.shape()) {
         case row_shape::declared_twice:
             throw std::meta::exception(u8"permission_row: a tag declares its row twice, as an edge in "
@@ -386,10 +406,16 @@ inline constexpr row_cell row_cell_at = walk_row(Tag, RowsMembers);
         case row_shape::two_edges:
             return ::foundation::fail_closed::unique_target(^^permission_rows, tag);
         case row_shape::by_parent:
-            return permission_row_source(cell.parent());
+            return permission_row_source_at_(cell.parent(), rows_members);
         default:
             return cell.row();
     }
+}
+
+// The reflection of the row of the tag at the member count of
+// permission_rows now, or of void when no source declares one.
+[[nodiscard]] consteval std::meta::info permission_row_source(std::meta::info tag) {
+    return permission_row_source_at_(tag, rows_members_now_());
 }
 
 // The row that permission_row_source gave for the tag, after a check that
@@ -414,6 +440,42 @@ inline constexpr row_cell row_cell_at = walk_row(Tag, RowsMembers);
 // The reflection of the row of the tag, after the check of checked_row_.
 [[nodiscard]] consteval std::meta::info permission_row_of(std::meta::info tag) {
     return checked_row_(tag, permission_row_source(tag));
+}
+
+// What the rows of the tags of one mint say together.  A mint without a
+// context reads the facts one time.  It evaluates each assertion that
+// asks has_permission_row or permission_row_empty only when the facts say
+// that the assertion fails, so the diagnostic names the tag.
+struct rows_facts {
+    bool declared = false;  // each tag declares a row
+    bool empty = false;  // each tag declares a foundation::effects::Row with no effect
+};
+
+// The facts of the tags from first to last, in the order of the
+// conjunction of the mint that asks.  The first tag with no row stops the
+// read, as a false has_permission_row stops that conjunction.  A row that
+// is no Row is not empty here, and the assertion that asks
+// permission_row_empty then gives the refusal of checked_row_.  An empty
+// range holds each fact and reads nothing.  The read goes through a
+// pointer, because a std::span costs each includer the instantiation of
+// its constructors.  Complexity: linear in the number of tags, with one
+// read of the member count of permission_rows.
+[[nodiscard]] consteval rows_facts rows_facts_of(const std::meta::info* first, const std::meta::info* last) {
+    rows_facts facts{.declared = true, .empty = true};
+    if (first == last) return facts;
+    std::size_t rows_members = rows_members_now_();
+    for (const std::meta::info* tag = first; tag != last; ++tag) {
+        const std::meta::info row = permission_row_source_at_(*tag, rows_members);
+        if (row == ^^void) return rows_facts{};
+        if (facts.empty) {
+            facts.empty = ::foundation::effects::is_effect_row(row) && ::foundation::effects::row_size(row) == 0;
+        }
+    }
+    return facts;
+}
+
+[[nodiscard]] consteval rows_facts rows_facts_of(std::initializer_list<std::meta::info> tags) {
+    return rows_facts_of(tags.begin(), tags.end());
 }
 
 }  // namespace detail
@@ -903,15 +965,21 @@ template <typename Tag, typename Brand>
 template <typename Tag, typename... Args, typename Brand>
     requires PermissionRootArgs<Tag, Args...>
 [[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_root(Args const&...) noexcept {
-    static_assert(has_permission_row(^^Tag), "mint_permission_root<Tag>: no effect row is declared for Tag, so "
-                                             "nothing says which contexts may own its region.  Declare a "
-                                             "permission_row member on the tag.  A pure tag declares Row<> "
-                                             "explicitly.");
-    // A missing row is reported once, by the assertion above.
-    static_assert(!has_permission_row(^^Tag) || sizeof...(Args) == 1 || permission_row_empty(^^Tag),
-                  "mint_permission_root<Tag>() without an ExecCtx is only valid for "
-                  "permission_row<Tag> == Row<>.  Effectful permission tags must be "
-                  "minted with mint_permission_root<Tag>(ctx) so Ctx admits the tag's row.");
+    // With a context, the fit concept proves the row of the tag.  Without
+    // one, the facts read the row one time.
+    constexpr detail::rows_facts facts =
+        sizeof...(Args) == 0 ? detail::rows_facts_of({^^Tag}) : detail::rows_facts_of({});
+    if constexpr (!facts.declared) {
+        static_assert(has_permission_row(^^Tag), "mint_permission_root<Tag>: no effect row is declared for Tag, so "
+                                                 "nothing says which contexts may own its region.  Declare a "
+                                                 "permission_row member on the tag.  A pure tag declares Row<> "
+                                                 "explicitly.");
+    } else if constexpr (!facts.empty) {
+        static_assert(!has_permission_row(^^Tag) || sizeof...(Args) == 1 || permission_row_empty(^^Tag),
+                      "mint_permission_root<Tag>() without an ExecCtx is only valid for "
+                      "permission_row<Tag> == Row<>.  Effectful permission tags must be "
+                      "minted with mint_permission_root<Tag>(ctx) so Ctx admits the tag's row.");
+    }
     return Permission<Tag, Brand>{perm_mint_key{}};
 }
 
@@ -935,15 +1003,25 @@ template <typename L, typename R, typename... Args>
 mint_permission_split(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
-    static_assert(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R),
-                  "mint_permission_split<L, R>: a tag named here declares no effect row.  Declare an edge in "
-                  "foundation::permissions::permission_rows or a permission_row member on the tag.");
-    static_assert(!(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R))
-                      || detail::leading_ctx_count({^^Args...}) != 0
-                      || (permission_row_empty(^^In) && permission_row_empty(^^L) && permission_row_empty(^^R)),
-                  "mint_permission_split<L, R>(Permission<In>&&) without ExecCtx is "
-                  "only valid when parent and child permission rows are Row<>.  Use "
-                  "the ctx-bound split overload for row-bearing permission tags.");
+    // The fit concept proves the row of each tag that a context admits.
+    // The facts read the row of each other tag one time: each tag without
+    // a context, and the parent beside the two contexts of its children.
+    constexpr std::size_t n_ctx = detail::leading_ctx_count({^^Args...});
+    constexpr detail::rows_facts facts = n_ctx == 0 ? detail::rows_facts_of({^^In, ^^L, ^^R})
+                                       : n_ctx == 2 ? detail::rows_facts_of({^^In})
+                                                    : detail::rows_facts_of({});
+    if constexpr (!facts.declared) {
+        static_assert(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R),
+                      "mint_permission_split<L, R>: a tag named here declares no effect row.  Declare an edge in "
+                      "foundation::permissions::permission_rows or a permission_row member on the tag.");
+    } else if constexpr (n_ctx == 0 && !facts.empty) {
+        static_assert(!(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R))
+                          || detail::leading_ctx_count({^^Args...}) != 0
+                          || (permission_row_empty(^^In) && permission_row_empty(^^L) && permission_row_empty(^^R)),
+                      "mint_permission_split<L, R>(Permission<In>&&) without ExecCtx is "
+                      "only valid when parent and child permission rows are Row<>.  Use "
+                      "the ctx-bound split overload for row-bearing permission tags.");
+    }
     static_assert(can_split_into_v<In, L, R>, "mint_permission_split<L, R>(Permission<In>&&) requires "
                                               "can_split_into<In, L, R>::value to be specialized true.  "
                                               "Declare the split in the same TU that defines the tags.");
@@ -974,14 +1052,22 @@ template <typename In, typename... Args>
                   "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&): the two children carry "
                   "different brands, so they were split from two different regions of one tag.  Only the "
                   "children of one split recombine into their parent.");
-    static_assert(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R),
-                  "mint_permission_combine<In>: a tag named here declares no effect row.  Declare an edge in "
-                  "foundation::permissions::permission_rows or a permission_row member on the tag.");
-    static_assert(!(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R))
-                      || detail::leading_ctx_count({^^Args...}) != 0
-                      || (permission_row_empty(^^In) && permission_row_empty(^^L) && permission_row_empty(^^R)),
-                  "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
-                  "without ExecCtx is only valid for Row<> permission tags.");
+    // With a context, the fit concept proves the row of each tag.  Without
+    // one, the facts read each row one time.
+    constexpr detail::rows_facts facts = detail::leading_ctx_count({^^Args...}) == 0
+                                           ? detail::rows_facts_of({^^In, ^^L, ^^R})
+                                           : detail::rows_facts_of({});
+    if constexpr (!facts.declared) {
+        static_assert(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R),
+                      "mint_permission_combine<In>: a tag named here declares no effect row.  Declare an edge in "
+                      "foundation::permissions::permission_rows or a permission_row member on the tag.");
+    } else if constexpr (!facts.empty) {
+        static_assert(!(has_permission_row(^^In) && has_permission_row(^^L) && has_permission_row(^^R))
+                          || detail::leading_ctx_count({^^Args...}) != 0
+                          || (permission_row_empty(^^In) && permission_row_empty(^^L) && permission_row_empty(^^R)),
+                      "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
+                      "without ExecCtx is only valid for Row<> permission tags.");
+    }
     static_assert(can_split_into_v<In, L, R>, "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
                                               "requires can_split_into<In, L, R>::value true.");
     static_assert(has_split_authoring_witness_v<In, L, R>, "has_split_authoring_witness<In, L, R> missing for "
@@ -996,15 +1082,23 @@ template <typename... Children, typename... Args>
     Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...> mint_permission_split_n(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
-    static_assert(has_permission_row(^^In) && (has_permission_row(^^Children) && ...),
-                  "mint_permission_split_n<Children...>: a tag named here declares no effect row.  Declare an "
-                  "edge in foundation::permissions::permission_rows or a permission_row member on the tag.");
-    static_assert(!(has_permission_row(^^In) && (has_permission_row(^^Children) && ...))
-                      || detail::leading_ctx_count({^^Args...}) != 0
-                      || (permission_row_empty(^^In) && (permission_row_empty(^^Children) && ...)),
-                  "mint_permission_split_n<Children...>(Permission<In>&&) without ExecCtx "
-                  "is only valid when every permission row is Row<>.  Use the ctx-bound "
-                  "split_n overload for row-bearing permission tags.");
+    // With a context, the fit concept proves the row of each tag.  Without
+    // one, the facts read each row one time.
+    constexpr detail::rows_facts facts = detail::leading_ctx_count({^^Args...}) == 0
+                                           ? detail::rows_facts_of({^^In, ^^Children...})
+                                           : detail::rows_facts_of({});
+    if constexpr (!facts.declared) {
+        static_assert(has_permission_row(^^In) && (has_permission_row(^^Children) && ...),
+                      "mint_permission_split_n<Children...>: a tag named here declares no effect row.  Declare an "
+                      "edge in foundation::permissions::permission_rows or a permission_row member on the tag.");
+    } else if constexpr (!facts.empty) {
+        static_assert(!(has_permission_row(^^In) && (has_permission_row(^^Children) && ...))
+                          || detail::leading_ctx_count({^^Args...}) != 0
+                          || (permission_row_empty(^^In) && (permission_row_empty(^^Children) && ...)),
+                      "mint_permission_split_n<Children...>(Permission<In>&&) without ExecCtx "
+                      "is only valid when every permission row is Row<>.  Use the ctx-bound "
+                      "split_n overload for row-bearing permission tags.");
+    }
     static_assert(can_split_into_pack_v<In, Children...>, "mint_permission_split_n<Children...>(Permission<In>&&) "
                                                           "requires can_split_into_pack<In, Children...>::value true.");
     static_assert(has_split_pack_authoring_witness_v<In, Children...>,
@@ -1023,7 +1117,9 @@ namespace detail {
 
 // What a combine of the children into the parent needs to know about the
 // tags.  The facts come from a function that is not a template, so no
-// translation unit can specialize them to call a combine declared.
+// translation unit can specialize them to call a combine declared.  The
+// two row facts are the facts of rows_facts over the tags that no context
+// admits.
 struct combine_n_manifest {
     bool rows_declared = false;
     bool rows_empty = false;
@@ -1033,24 +1129,32 @@ struct combine_n_manifest {
 };
 
 // The facts about a combine of the tags of the tag tuple into the parent.
-// Complexity: quadratic in the number of children, for the distinct test.
-[[nodiscard]] consteval combine_n_manifest combine_n_facts(std::meta::info parent, std::meta::info tag_tuple) {
+// A combine with a context reads no row, because its fit concept proves
+// the row of each tag.  Complexity: quadratic in the number of children,
+// for the distinct test.
+[[nodiscard]] consteval combine_n_manifest combine_n_facts(std::meta::info parent, std::meta::info tag_tuple,
+                                                           bool reads_rows) {
     const std::vector<std::meta::info> children = std::meta::template_arguments_of(std::meta::dealias(tag_tuple));
     std::vector<std::meta::info> manifest_arguments{parent};
     manifest_arguments.insert(manifest_arguments.end(), children.begin(), children.end());
-    combine_n_manifest facts{
-        .rows_declared = has_permission_row(parent),
-        .rows_empty = permission_row_empty(parent),
+    const std::meta::info* const first = manifest_arguments.data();
+    const std::meta::info* const last = reads_rows ? first + manifest_arguments.size() : first;
+    const rows_facts rows = rows_facts_of(first, last);
+    // A row that is no Row stops the build here, at the first tag of the
+    // conjunction of permission_row_empty that reads it.
+    if (!rows.empty) {
+        for (const std::meta::info* tag = first; tag != last; ++tag) {
+            if (!permission_row_empty(*tag)) break;
+        }
+    }
+    return combine_n_manifest{
+        .rows_declared = rows.declared,
+        .rows_empty = rows.empty,
         .declared = std::meta::extract<bool>(std::meta::substitute(^^can_split_into_pack_v, manifest_arguments)),
         .witnessed =
             std::meta::extract<bool>(std::meta::substitute(^^has_split_pack_authoring_witness_v, manifest_arguments)),
         .distinct = tags_are_distinct_(children),
     };
-    for (const std::meta::info child : children) {
-        facts.rows_declared = facts.rows_declared && has_permission_row(child);
-        facts.rows_empty = facts.rows_empty && permission_row_empty(child);
-    }
-    return facts;
 }
 
 }  // namespace detail
@@ -1059,7 +1163,8 @@ template <typename Parent, typename... Args>
     requires PermissionCombineNArgs<Parent, Args...>
 [[nodiscard]] constexpr Permission<Parent, detail::first_perm_brand_t<Args...>>
 mint_permission_combine_n(Args&&...) noexcept {
-    constexpr detail::combine_n_manifest manifest = detail::combine_n_facts(^^Parent, ^^detail::perm_tags_t<Args...>);
+    constexpr detail::combine_n_manifest manifest =
+        detail::combine_n_facts(^^Parent, ^^detail::perm_tags_t<Args...>, detail::leading_ctx_count({^^Args...}) == 0);
     using Brand = detail::first_perm_brand_t<Args...>;
     static_assert(detail::perm_brands_agree({^^Args...}),
                   "mint_permission_combine_n<Parent, Children...>(...): the children carry different brands, "
@@ -1398,14 +1503,21 @@ template <typename... Args>
 mint_permission_share(Args&&...) noexcept {
     using Tag = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
-    static_assert(has_permission_row(^^Tag), "mint_permission_share: the tag declares no effect row.  Declare an "
-                                             "edge in foundation::permissions::permission_rows or a "
-                                             "permission_row member on the tag.");
-    static_assert(!has_permission_row(^^Tag) || detail::leading_ctx_count({^^Args...}) != 0
-                      || permission_row_empty(^^Tag),
-                  "mint_permission_share(Permission<Tag>&&) without ExecCtx is only "
-                  "valid for permission_row<Tag> == Row<>.  Effectful permission tags "
-                  "must use mint_permission_share(ctx, Permission<Tag>&&).");
+    // With a context, the fit concept proves the row of the tag.  Without
+    // one, the facts read the row one time.
+    constexpr detail::rows_facts facts =
+        detail::leading_ctx_count({^^Args...}) == 0 ? detail::rows_facts_of({^^Tag}) : detail::rows_facts_of({});
+    if constexpr (!facts.declared) {
+        static_assert(has_permission_row(^^Tag), "mint_permission_share: the tag declares no effect row.  Declare an "
+                                                 "edge in foundation::permissions::permission_rows or a "
+                                                 "permission_row member on the tag.");
+    } else if constexpr (!facts.empty) {
+        static_assert(!has_permission_row(^^Tag) || detail::leading_ctx_count({^^Args...}) != 0
+                          || permission_row_empty(^^Tag),
+                      "mint_permission_share(Permission<Tag>&&) without ExecCtx is only "
+                      "valid for permission_row<Tag> == Row<>.  Effectful permission tags "
+                      "must use mint_permission_share(ctx, Permission<Tag>&&).");
+    }
     return SharedPermission<Tag, Brand>{};
 }
 
@@ -1588,7 +1700,8 @@ namespace detail {
 // comes from a function that is not a template, so no translation unit
 // can give a token a lighter payload in its hash.
 [[nodiscard]] consteval std::meta::info row_payload_of_tag(std::meta::info tag) {
-    return has_permission_row(tag) ? permission_row_of(tag) : ^^void;
+    const std::meta::info row = permission_row_source(tag);
+    return row == ^^void ? ^^void : checked_row_(tag, row);
 }
 
 template <typename Tag>
