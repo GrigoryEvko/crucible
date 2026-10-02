@@ -2952,14 +2952,15 @@ The base is `include/foundation`, `include/fixy`, `src/foundation` and `src/fixy
 ### The rule for each new line (R6)
 
 In a quarantined file, each line that you write or change holds only objects of base types. The quarantine plugin gives a finding for each of these items in a quarantined file:
-- An object of a std type
+- An object of a std type, also through a typedef of the base
 - A std name that no `admit` row of the rule table holds
-- A call of a C library function, and an object of a C library struct or union
+- A call of a C library function, a use of a C library variable, and an object of a C library struct, union or enumeration
 - A raw object pointer, a raw function pointer and a C array
 - A new-expression and a delete-expression
+- A call of a builtin of GCC, and an asm statement
 - An expansion of `assert`.
 
-The plugin examines each use at its spelling location. A base template that a quarantined file instantiates gives no finding. The lines that a change does not touch can stay as they are. A new quarantined file has no finding.
+The plugin examines each use at its spelling location. A token that a macro of a system header spells counts at the place where the quarantined file uses the macro. A base template that a quarantined file instantiates gives no finding. The lines that a change does not touch can stay as they are. A new quarantined file has no finding.
 
 ### Callers of a changed API
 

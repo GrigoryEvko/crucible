@@ -627,17 +627,31 @@ def run_include_rules(section: Section) -> None:
                    unclassified.stderr[-2000:])
 
 
-# (fixture, extra flags, line, the whole entity of a std_entity finding)
+# (fixture, extra flags, line, kind, the whole entity of the one finding of that
+# kind on the line).  An object of a library enumeration is a std_object.
 LIBRARY_NAMES = (
-    ("nonclass.cpp", (), 13, "std::size_t"),
-    ("nonclass.cpp", (), 14, "std::byte"),
-    ("nonclass.cpp", (), 15, "std::nullptr_t"),
-    ("nonclass.cpp", (), 16, "std::align_val_t"),
-    ("nonclass.cpp", (), 17, "std::tuple_element_t"),
-    ("nonclass.cpp", (), 19, "std::size_t"),
-    ("nonclass.cpp", (), 25, "std::tuple_size_v"),
-    ("header_exact.cpp", (), 8, "std::experimental::nonesuch"),
-    ("meta_info.cpp", ("-freflection",), 7, "std::meta::info"),
+    ("nonclass.cpp", (), 13, "std_entity", "std::size_t"),
+    ("nonclass.cpp", (), 14, "std_object", "std::byte (std::byte)"),
+    ("nonclass.cpp", (), 15, "std_entity", "std::nullptr_t"),
+    ("nonclass.cpp", (), 16, "std_object", "std::align_val_t (std::align_val_t)"),
+    ("nonclass.cpp", (), 17, "std_entity", "std::tuple_element_t"),
+    ("nonclass.cpp", (), 19, "std_entity", "std::size_t"),
+    ("nonclass.cpp", (), 25, "std_entity", "std::tuple_size_v"),
+    ("header_exact.cpp", (), 8, "std_entity", "std::experimental::nonesuch"),
+    ("meta_info.cpp", ("-freflection",), 7, "std_entity", "std::meta::info"),
+    ("gaps.cpp", (), 14, "std_object", "std::byte (fixy::GapsByte)"),
+    ("gaps.cpp", (), 15, "c_library_call", "optind"),
+    ("gaps.cpp", (), 17, "c_library_call", "__errno_location"),
+    ("gaps.cpp", (), 19, "compiler_builtin", "__builtin_trap"),
+    ("gaps.cpp", (), 21, "c_library_call", "memcpy (__builtin_memcpy)"),
+    ("gaps.cpp", (), 23, "compiler_builtin", "__atomic_load_n"),
+    ("gaps.cpp", (), 25, "compiler_builtin", "__builtin_bit_cast"),
+    ("gaps.cpp", (), 35, "compiler_builtin", "__builtin_c23_va_start"),
+    ("gaps.cpp", (), 36, "compiler_builtin", "__builtin_va_arg"),
+    ("gaps.cpp", (), 37, "compiler_builtin", "__builtin_va_end"),
+    ("gaps.cpp", (), 41, "inline_asm", "asm"),
+    ("gaps.cpp", (), 45, "assert_expansion", "assert"),
+    ("gaps.cpp", ("-DNDEBUG",), 45, "assert_expansion", "assert"),
 )
 # (fixture, line): no finding of any kind there.
 LIBRARY_NAMES_ABSENT = (
@@ -645,32 +659,51 @@ LIBRARY_NAMES_ABSENT = (
     ("nonclass.cpp", 20),  # a project alias of std::size_t names no library entity
     ("nonclass.cpp", 23),  # the entry std::tuple_size admits std::tuple_size<T>::value
     ("header_exact.cpp", 7),  # <type_traits> admits std::is_same
+    ("gaps.cpp", 29),  # the front end calls the atomic load of the guard of the static local
+)
+# (fixture, extra flags, line, kind): no finding of that kind there.
+LIBRARY_KINDS_ABSENT = (
+    ("gaps.cpp", (), 45, "c_library_call"),  # assert_expansion stands for __assert_fail
+    ("gaps.cpp", (), 45, "compiler_builtin"),  # and for __builtin_FILE and __builtin_LINE
 )
 
 
 def run_library_names(section: Section) -> None:
-    """Compile the fixtures of the library names that are not classes, and of the exact header entry.
+    """Compile the fixtures of the library names that are not classes, of the exact headers and of the gaps.
 
-    Each compile writes its report to a directory of its own, and the part
-    compares each report with LIBRARY_NAMES and LIBRARY_NAMES_ABSENT.
+    gaps.cpp holds the paths around the rules: a typedef of fixy, a variable
+    of the C library, builtins, va_arg and asm.  Each compile writes its
+    report to a directory of its own, and the part compares each report with
+    LIBRARY_NAMES and LIBRARY_NAMES_ABSENT.
     """
-    fixtures = sorted({(fixture, extra) for fixture, extra, _, _ in LIBRARY_NAMES})
+    fixtures = sorted({(fixture, extra) for fixture, extra, _, _, _ in LIBRARY_NAMES})
     calls: list[tuple[object, ...]] = []
-    for fixture, extra in fixtures:
-        out = section.work / f"library-names-{Path(fixture).stem}"
+    for index, (fixture, extra) in enumerate(fixtures):
+        out = section.work / f"library-names-{index}"
         calls.append((fixture, {"root": str(HERE), "mode": "report", "rules": str(TEST_RULES), "out": str(out)},
                       ("-S", "-o", os.devnull), extra))
-    findings: list[Finding] = []
-    for (fixture, _), compiled in zip(fixtures, section.compile_all(calls), strict=True):
-        section.expect(f"{fixture} compiles in report mode", compiled.returncode == 0, compiled.stderr[-2000:])
-        findings += read_reports(section.work / f"library-names-{Path(fixture).stem}")
-    for fixture, _, line, entity in LIBRARY_NAMES:
-        hits = [f for f in findings if f.kind == "std_entity" and f.file == fixture and f.line == line]
-        section.expect(f"std_entity {entity} at {fixture}:{line}", [f.entity for f in hits] == [entity],
-                       "; ".join(map(str, hits)))
+    # include_exact.cpp: the second directive of fixy/GapsUser.h enters no
+    # file, and the plugin resolves it as libcpp does.
+    calls.append(("include_exact.cpp", {"root": str(HERE), "mode": "error", "rules": str(TEST_RULES)}))
+    results = section.compile_all(calls)
+    findings: dict[tuple[str, tuple[str, ...]], list[Finding]] = {}
+    for index, ((fixture, extra), compiled) in enumerate(zip(fixtures, results, strict=False)):
+        section.expect(f"{fixture} {' '.join(extra)} compiles in report mode".replace("  ", " "),
+                       compiled.returncode == 0, compiled.stderr[-2000:])
+        findings[(fixture, extra)] = read_reports(section.work / f"library-names-{index}")
+    for fixture, extra, line, kind, entity in LIBRARY_NAMES:
+        hits = [f for f in findings[(fixture, extra)] if f.kind == kind and f.file == fixture and f.line == line]
+        section.expect(f"{kind} {entity} at {fixture}:{line} {' '.join(extra)}".rstrip(),
+                       [f.entity for f in hits] == [entity], "; ".join(map(str, hits)))
     for fixture, line in LIBRARY_NAMES_ABSENT:
-        hits = [f for f in findings if f.file == fixture and f.line == line]
+        hits = [f for f in findings[(fixture, ())] if f.file == fixture and f.line == line]
         section.expect(f"no finding at {fixture}:{line}", not hits, "; ".join(map(str, hits)))
+    for fixture, extra, line, kind in LIBRARY_KINDS_ABSENT:
+        hits = [f for f in findings[(fixture, extra)] if f.file == fixture and f.line == line and f.kind == kind]
+        section.expect(f"no {kind} at {fixture}:{line}", not hits, "; ".join(map(str, hits)))
+    exact = results[-1]
+    section.expect("a directive that enters no file resolves through the search chain, not by the end of a path",
+                   exact.returncode == 0 and "upward_include" not in exact.stderr, exact.stderr[-2000:])
 
 
 # (the macro of the plant of a restriction, the kind, a text in the entity)
@@ -680,7 +713,7 @@ RESTRICTION_PLANTS = (
     ("PLANT_LIST_OBJECT", "std_object", "std::initializer_list"),
     ("PLANT_TO_INTEGER", "std_entity", "std::to_integer"),
     ("PLANT_BYTE_OPERATOR", "std_entity", "std::operator<<"),
-    ("PLANT_ALIGNMENT", "std_entity", "std::align_val_t"),
+    ("PLANT_ALIGNMENT", "std_object", "std::align_val_t"),
 )
 
 

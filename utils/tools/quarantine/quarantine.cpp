@@ -22,18 +22,32 @@
 //
 // THE KINDS
 //     std_entity            a named reference to a declaration in namespace std.
-//                           A typedef, an alias template or an enumeration of
-//                           namespace std that the type of a declaration names
-//                           is one too, such as std::size_t or std::byte
+//                           A typedef or an alias template of namespace std that
+//                           the type of a declaration names is one too, such as
+//                           std::size_t
 //     std_object            a variable, data member, parameter or return type whose
-//                           type holds a class of the standard library
-//     c_library_object      the same, for a C struct or union of a system header
+//                           type holds a class or an enumeration of the standard
+//                           library, also through a typedef of fixy, such as
+//                           std::memory_order
+//     c_library_object      the same, for a C struct, union or enumeration of a
+//                           system header
 //     raw_pointer_object    a variable, data member or parameter of type T*
 //     raw_function_pointer  the same, for a pointer to a function or to a member
 //     c_array_object        a variable or data member of type T[N]
 //     raw_new_delete        a new-expression or a delete-expression
-//     c_library_call        a use of a function of a system header in the global
-//                           namespace
+//     c_library_call        a use of a function or a variable of a system header
+//                           in the global namespace, such as memcpy or optind,
+//                           and a call of a builtin that has a function of the C
+//                           library behind it, such as __builtin_memcpy
+//     compiler_builtin      a call of each other builtin of GCC that the source
+//                           spells, such as __builtin_trap or __atomic_load_n,
+//                           __builtin_bit_cast and va_arg
+//     inline_asm            an asm statement
+//     assert_expansion      an expansion of the macro assert of a system header.
+//                           libcpp reports the expansion, so the finding is the
+//                           same with and without NDEBUG.  A token that the
+//                           definition of assert spells, such as __assert_fail
+//                           or __builtin_FILE, is no finding of its own
 //     layer_header          an include of a header outside the root that the
 //                           allow rows do not give the layer of the base file
 //     door_header           an include of a door header by a file that is not
@@ -51,7 +65,8 @@
 //                            delete.  A template instantiation is skipped, because
 //                            its pattern is read instead: a dependent name that
 //                            only the instantiation resolves is not a named
-//                            reference in the source.
+//                            reference in the source.  The function of the
+//                            dynamic initializers of the unit is read too.
 //     PLUGIN_FINISH_UNIT     one walk of every namespace that a system header does
 //                            not own: namespace-scope objects, classes and their
 //                            data members, bases, aliases, function signatures,
@@ -65,8 +80,10 @@
 //                            each #include directive, before the preprocessor
 //                            looks for the file.  A directive that enters no
 //                            file names a file that the unit entered before:
-//                            the plugin finds it beside the includer, or as
-//                            the entered file whose path ends with the name.
+//                            the plugin finds it as libcpp does, beside the
+//                            includer and in the search chain of the directive.
+//     the macro callback of libcpp
+//                            each expansion of a macro: the expansions of assert.
 //     plugin_core.h gives the hooks of the contract rule and of the two opt-out
 //     pragmas.
 //
@@ -107,11 +124,15 @@
 //
 // The plugin cannot see what the front end keeps as no tree, or as a tree with
 // no source location: a use in an unevaluated operand, a dependent member of a
-// template, a using-declaration, a default argument that no call uses, and the
-// dynamic initializer of a namespace-scope variable.  A constructor, a
-// destructor and a conversion function of a library class are not findings:
-// the compiler calls them for an object that the plugin reports where the code
-// declares it.
+// template, a using-declaration and a default argument that no call uses.  The
+// front end folds the initializer of a variable while it parses, when a call
+// of a constexpr function in it gives a constant.  Such a call is no finding.
+// The libstdc++ assertions of the Debug, TSan and UBSan-strict presets stop
+// some of these folds, so a call such as std::optional::operator-> in an
+// initializer can be a finding in those presets and not in Release.  A
+// constructor, a destructor and a conversion function of a library class are
+// not findings: the compiler calls them for an object that the plugin reports
+// where the code declares it.
 
 #include <algorithm>
 #include <cerrno>
@@ -129,6 +150,9 @@
 #include <unistd.h>
 
 #include "plugin_core.h"
+#include "diagnostic.h"
+#include "diagnostics/file-cache.h"
+#include "incpath.h"
 #include "output.h"
 #include "tree-iterator.h"
 
@@ -153,6 +177,9 @@ enum class Kind : std::uint8_t {
     c_array_object,
     raw_new_delete,
     c_library_call,
+    compiler_builtin,
+    inline_asm,
+    assert_expansion,
     layer_header,
     door_header,
     upward_include,
@@ -176,6 +203,12 @@ const char* kind_name(Kind kind) {
             return "raw_new_delete";
         case Kind::c_library_call:
             return "c_library_call";
+        case Kind::compiler_builtin:
+            return "compiler_builtin";
+        case Kind::inline_asm:
+            return "inline_asm";
+        case Kind::assert_expansion:
+            return "assert_expansion";
         case Kind::layer_header:
             return "layer_header";
         case Kind::door_header:
@@ -216,9 +249,11 @@ struct PendingInclude {
     Place place;  // the directive
     std::string spelled;  // the name inside the delimiters
     bool is_angle = false;
+    bool is_next = false;  // an #include_next directive
 };
 
 using IncludeCallback = void (*)(cpp_reader*, location_t, const unsigned char*, const char*, int, const cpp_token**);
+using MacroCallback = void (*)(cpp_reader*, location_t, cpp_hashnode*);
 
 // The state of the quarantine rule.  plugin_core.h holds the state that the
 // two rules share: the root, the rule table, the files, the findings and the
@@ -241,7 +276,9 @@ struct State {
     // The include rules.
     IncludeCallback previous_include = nullptr;
     PendingInclude pending;
-    std::unordered_map<std::string, std::vector<const FileEntry*>> entered_by_name;  // by the last path component
+
+    // The expansions of assert.
+    MacroCallback previous_used = nullptr;
 
     // Caches keyed by tree.  A garbage collection can free a tree and reuse
     // its address, so each collection clears them.  Nothing depends on them
@@ -260,10 +297,6 @@ void finish_pending_include(const FileEntry* entered);
 
 // ── Paths and places ────────────────────────────────────────────────────
 
-bool has_suffix(const std::string& text, const std::string& suffix) {
-    return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
 bool is_quarantined(location_t location) {
     return place_of(location, Scope::quarantine).file_class == FileClass::quarantined;
 }
@@ -280,8 +313,8 @@ bool is_worth_a_walk(location_t location) {
 // and its member function in one expression, are two findings, and so are two
 // headers that one place includes.
 void add_finding(Kind kind, const Place& place, const std::string& entity) {
-    bool is_name = kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::layer_header
-                || kind == Kind::door_header || kind == Kind::upward_include;
+    bool is_name = kind == Kind::std_entity || kind == Kind::c_library_call || kind == Kind::compiler_builtin
+                || kind == Kind::layer_header || kind == Kind::door_header || kind == Kind::upward_include;
     std::string key = std::string(kind_name(kind)) + ' ' + place.file->relative + ':' + std::to_string(place.line) + ':'
                     + std::to_string(place.column) + (is_name ? ' ' + entity : std::string{});
     if (!core.finding_keys.insert(key).second) {
@@ -297,8 +330,37 @@ void add_finding(Kind kind, const Place& place, const std::string& entity) {
     core.findings.push_back(std::move(finding));
 }
 
+bool is_system_assert(const cpp_hashnode* node) {
+    return node != nullptr && cpp_user_macro_p(node) && node->value.macro != nullptr && node->value.macro->syshdr
+        && std::strcmp(reinterpret_cast<const char*>(NODE_NAME(node)), "assert") == 0;
+}
+
+// True when a macro of a system header spells the token at LOCATION inside an
+// expansion of the macro assert of a system header.  The finding
+// assert_expansion stands for each such token, such as __assert_fail or
+// __builtin_FILE.  A token of the condition is spelled where assert is used,
+// so it stays a finding.  Complexity: O(depth of the macro expansion).
+bool is_inside_system_assert(location_t location) {
+    if (!linemap_location_from_macro_expansion_p(line_table, location)
+        || !in_system_header_at(linemap_resolve_location(line_table, location, LRK_SPELLING_LOCATION, nullptr))) {
+        return false;
+    }
+    location_t current = location;
+    for (int depth = 0; depth < 64 && linemap_location_from_macro_expansion_p(line_table, current); ++depth) {
+        const line_map* map = linemap_lookup(line_table, current);
+        if (is_system_assert(MACRO_MAP_MACRO(linemap_check_macro(map)))) {
+            return true;
+        }
+        current = linemap_unwind_toward_expansion(line_table, current, &map);
+    }
+    return false;
+}
+
 // A finding of the quarantine rule, at a place in a quarantined file.
 void record(Kind kind, location_t location, const std::string& entity) {
+    if (is_inside_system_assert(location)) {
+        return;
+    }
     Place place = place_of(location, Scope::quarantine);
     if (place.file_class == FileClass::quarantined) {
         add_finding(kind, place, entity);
@@ -593,9 +655,11 @@ tree library_class_in_template_arguments(tree class_type, int depth) {
     return NULL_TREE;
 }
 
-// The first class of the standard library or of a C header that TYPE holds.
-// The walk looks through pointers, references, arrays, template arguments and
-// the enclosing class, and stops at an admitted class.  A function type is not
+// The first class or enumeration of the standard library or of a C header
+// that TYPE holds.  The walk looks through typedefs, pointers, references,
+// arrays, template arguments and the enclosing class, and stops at an
+// admitted class or enumeration.  So a typedef of fixy that names
+// std::memory_order gives an object of a library type.  A function type is not
 // read: a callback that takes a std::string is not an object of that type.
 // USE applies to the class at the outer level, through pointers and
 // references.  A template argument and an enclosing class are other uses.
@@ -618,6 +682,7 @@ tree library_class_in(tree type, int depth, Use use) {
             return library_class_in(PACK_EXPANSION_PATTERN(type), depth + 1, use);
         case RECORD_TYPE:
         case UNION_TYPE:
+        case ENUMERAL_TYPE:
             break;
         default:
             return NULL_TREE;
@@ -651,14 +716,14 @@ tree library_class_in(tree type, int depth, Use use) {
 }
 
 // The library name that TYPE spells at its outer level, when the type is not
-// a class: a typedef or an alias template of namespace std, such as
-// std::size_t or std::tuple_element_t, or an enumeration of namespace std,
-// such as std::byte.  The walk looks through pointers, references and arrays,
-// and it stops at a typedef that is not of the library: a project alias of
-// std::size_t names no library entity where the code uses it.  Returns the
-// declaration of the alias template, of the typedef or of the enumeration, or
-// null when the table admits it.  A template argument loses its typedef, so a
-// typedef inside a template argument is no finding.
+// a class or an enumeration: a typedef or an alias template of namespace std,
+// such as std::size_t or std::tuple_element_t.  The walk looks through
+// pointers, references and arrays, and it stops at a typedef that is not of
+// the library: a project alias of std::size_t names no library entity where
+// the code uses it, because the type itself is a fundamental type.  Returns
+// the declaration of the alias template or of the typedef, or null when the
+// table admits it.  A template argument loses its typedef, so a typedef inside
+// a template argument is no finding.  library_class_in finds an enumeration.
 tree library_type_name_in(tree type, int depth) {
     if (type == NULL_TREE || type == error_mark_node || depth > 64) {
         return NULL_TREE;
@@ -676,10 +741,6 @@ tree library_type_name_in(tree type, int depth) {
             decl = TI_TEMPLATE(info);
         }
         return library_of(decl) == Library::standard && !is_admitted(decl) ? decl : NULL_TREE;
-    }
-    if (TREE_CODE(type) == ENUMERAL_TYPE) {
-        tree decl = TYPE_MAIN_DECL(type);
-        return decl != NULL_TREE && library_of(decl) == Library::standard && !is_admitted(decl) ? decl : NULL_TREE;
     }
     return NULL_TREE;
 }
@@ -793,13 +854,74 @@ bool is_placement_new(tree function) {
         && (after == NULL_TREE || after == void_list_node);
 }
 
+bool is_identifier_byte(char byte) {
+    return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9') || byte == '_';
+}
+
+// The identifier that the source spells at the start of the range of
+// LOCATION, after each space, '(' and ':' there, or "" when none.  The
+// spelling location decides, so a macro of a system header gives the
+// identifier of its definition.  Complexity: O(length of the line).
+std::string identifier_spelled_at(location_t location) {
+    location_t start = linemap_resolve_location(line_table, get_start(location), LRK_SPELLING_LOCATION, nullptr);
+    expanded_location from = expand_location(start);
+    if (from.file == nullptr || from.line <= 0 || from.column <= 0) {
+        return {};
+    }
+    diagnostics::char_span line = global_dc->get_file_cache().get_source_line(from.file, from.line);
+    if (!line) {
+        return {};
+    }
+    std::string text(line.get_buffer(), line.length());
+    std::size_t at = static_cast<std::size_t>(from.column - 1);
+    while (at < text.size() && (text[at] == ' ' || text[at] == '\t' || text[at] == '(' || text[at] == ':')) {
+        ++at;
+    }
+    std::size_t end = at;
+    while (end < text.size() && is_identifier_byte(text[end])) {
+        ++end;
+    }
+    return text.substr(at, end - at);
+}
+
+// A builtin of GCC that the code calls.  The front end makes some calls of a
+// builtin itself, such as the atomic load of the guard of a static local, and
+// gives them the location of the declaration that needs them.  So the call
+// counts only when the source spells the builtin, or a name with a prefix that
+// GCC keeps for its builtins, at the start of the call: __atomic_load_n
+// resolves to __atomic_load_4.  A builtin with a function of the C library
+// behind it, such as __builtin_memcpy, has that function as its assembler
+// name.  Returns true when it made a finding.
+bool check_builtin_use(tree function, location_t location) {
+    tree name = DECL_NAME(function);
+    if (name == NULL_TREE || !is_quarantined(location)) {
+        return false;
+    }
+    std::string spelled = identifier_spelled_at(location);
+    bool is_spelled = spelled == IDENTIFIER_POINTER(name) || spelled.rfind("__builtin_", 0) == 0
+                   || spelled.rfind("__atomic_", 0) == 0 || spelled.rfind("__sync_", 0) == 0;
+    if (!is_spelled) {
+        return false;
+    }
+    tree library = DECL_ASSEMBLER_NAME_SET_P(function) ? DECL_ASSEMBLER_NAME_RAW(function) : NULL_TREE;
+    if (DECL_BUILT_IN_CLASS(function) == BUILT_IN_NORMAL && library != NULL_TREE && library != name) {
+        record(Kind::c_library_call, location, identifier_text(library) + " (" + spelled + ")");
+    } else {
+        record(Kind::compiler_builtin, location, spelled);
+    }
+    return true;
+}
+
 // One function that the code names.  Returns true when it made a finding.
 bool check_function_use(tree function, location_t location) {
     if (TREE_CODE(function) == TEMPLATE_DECL) {
         function = DECL_TEMPLATE_RESULT(function);
     }
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_IS_UNDECLARED_BUILTIN(function)) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
         return false;
+    }
+    if (DECL_IS_UNDECLARED_BUILTIN(function)) {
+        return fndecl_built_in_p(function) && check_builtin_use(function, location);
     }
     if (DECL_IS_OPERATOR_NEW_P(function)) {
         record(Kind::raw_new_delete, location, is_placement_new(function) ? "placement new" : "new");
@@ -881,7 +1003,9 @@ void check_overload_use(tree overload, location_t location, int arguments = -1) 
 // A variable that the code names.  Only a variable of a namespace or a
 // static data member can be a library entity.  A constexpr variable of an
 // enumeration or an arithmetic type, such as std::memory_order_acquire, is a
-// named constant: it makes no object, as an enumerator makes none.
+// named constant: it makes no object, as an enumerator makes none.  A global
+// variable of the C library, such as optind or stderr, is a use of the C
+// library.
 void check_variable_use(tree variable, location_t location) {
     if (DECL_ARTIFICIAL(variable) || !(DECL_NAMESPACE_SCOPE_P(variable) || DECL_CLASS_SCOPE_P(variable))) {
         return;
@@ -891,8 +1015,17 @@ void check_variable_use(tree variable, location_t location) {
         && (TREE_CODE(type) == ENUMERAL_TYPE || ARITHMETIC_TYPE_P(type))) {
         return;
     }
-    if (library_of(variable) == Library::standard && !is_admitted(variable)) {
-        record(Kind::std_entity, location, qualified_name(variable));
+    switch (library_of(variable)) {
+        case Library::standard:
+            if (!is_admitted(variable)) {
+                record(Kind::std_entity, location, qualified_name(variable));
+            }
+            break;
+        case Library::c_library:
+            record(Kind::c_library_call, location, qualified_name(variable));
+            break;
+        case Library::none:
+            break;
     }
 }
 
@@ -1135,6 +1268,15 @@ void check_named_operands(tree node, location_t location) {
         default:
             break;
     }
+    // A builtin that a call names counts at the location of the call: the
+    // front end can give the address of the callee the location of the next
+    // token.
+    if (TREE_CODE(node) == CALL_EXPR) {
+        tree called = cp_get_callee_fndecl_nofold(node);
+        if (called != NULL_TREE && DECL_IS_UNDECLARED_BUILTIN(called) && fndecl_built_in_p(called)) {
+            check_builtin_use(called, location);
+        }
+    }
     if (EXPR_P(node)) {
         tree callee = TREE_CODE(node) == CALL_EXPR ? CALL_EXPR_FN(node) : NULL_TREE;
         int arguments = callee != NULL_TREE ? call_expr_nargs(node) : -1;
@@ -1222,6 +1364,17 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
         case VEC_DELETE_EXPR:
             record(Kind::raw_new_delete, walk.last, "delete");
             return NULL_TREE;
+        // Only the keyword __builtin_bit_cast, the macro va_arg and an asm
+        // statement make these trees.
+        case BIT_CAST_EXPR:
+            record(Kind::compiler_builtin, walk.last, "__builtin_bit_cast");
+            return NULL_TREE;
+        case VA_ARG_EXPR:
+            record(Kind::compiler_builtin, walk.last, "__builtin_va_arg");
+            return NULL_TREE;
+        case ASM_EXPR:
+            record(Kind::inline_asm, walk.last, "asm");
+            return NULL_TREE;
         case SCOPE_REF:
             check_scope_use(node, walk.last);
             *walk_subtrees = 0;
@@ -1264,13 +1417,33 @@ void check_signature(tree function) {
     }
 }
 
+// The function that the front end makes for the dynamic initializers of the
+// variables of a namespace, of the static data members and of each
+// thread_local.  Its body holds each initializer with the location that the
+// source gives it.
+bool is_static_initializer(tree function) {
+    tree name = DECL_NAME(function);
+    if (!DECL_ARTIFICIAL(function) || name == NULL_TREE) {
+        return false;
+    }
+    std::string text = identifier_text(name);
+    return text.rfind("__static_initialization_and_destruction_", 0) == 0 || text == "__tls_init";
+}
+
 // The signature, and the body when IS_PATTERN or when the plugin reads it
-// from PLUGIN_PRE_GENERICIZE.
+// from PLUGIN_PRE_GENERICIZE.  The body of a static initializer has places in
+// each file, so it gets no location gate.
 void walk_body(tree function, bool is_pattern) {
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || state.walked.count(function) != 0) {
         return;
     }
     state.walked.insert(function);
+    if (is_static_initializer(function)) {
+        if (DECL_SAVED_TREE(function) != NULL_TREE) {
+            walk_root(&DECL_SAVED_TREE(function), DECL_SOURCE_LOCATION(function), false);
+        }
+        return;
+    }
     if (!is_worth_a_walk(DECL_SOURCE_LOCATION(function))) {
         return;
     }
@@ -1716,28 +1889,34 @@ const std::string& layer_name(int layer) { return core.table.layers[static_cast<
 int layer_rank(int layer) { return core.table.layers[static_cast<std::size_t>(layer)].rank; }
 
 // The target of a directive that entered no file.  An include guard or
-// #pragma once stopped it, so the unit entered the target before: the file
-// beside the includer for a quoted name, or else the entered file whose real
-// path ends with the name.  Returns null for a name that the unit entered
-// under no such path, which the rules treat as a header outside the root.
+// #pragma once stopped it, so the unit entered the target before.  The plugin
+// looks for the file as libcpp does: beside the includer for a quoted name,
+// and then in each directory of the search chain of the directive, in order.
+// An #include_next starts after the directory of the chain that holds the
+// includer.  Returns null when no directory holds the name, which the rules
+// treat as a header outside the root.  Complexity: O(directories of the chain).
 const FileEntry* resolve_skipped_include(const PendingInclude& pending) {
     const std::string& includer = pending.place.file->real;
-    if (!pending.is_angle && !includer.empty()) {
-        std::string beside = real_path((includer.substr(0, includer.rfind('/')) + "/" + pending.spelled).c_str());
+    std::string includer_directory = includer.substr(0, includer.rfind('/'));
+    if (!pending.is_angle && !pending.is_next && !includer.empty()) {
+        std::string beside = real_path((includer_directory + "/" + pending.spelled).c_str());
         if (!beside.empty()) {
             return &entry_of_real_path(beside);
         }
     }
-    std::size_t slash = pending.spelled.rfind('/');
-    auto found =
-        state.entered_by_name.find(slash == std::string::npos ? pending.spelled : pending.spelled.substr(slash + 1));
-    if (found == state.entered_by_name.end()) {
-        return nullptr;
+    cpp_dir* first = get_added_cpp_dirs(pending.is_angle ? INC_BRACKET : INC_QUOTE);
+    if (pending.is_next && !includer.empty()) {
+        for (cpp_dir* directory = first; directory != nullptr; directory = directory->next) {
+            if (real_path(directory->name) == includer_directory) {
+                first = directory->next;
+                break;
+            }
+        }
     }
-    std::string suffix = "/" + pending.spelled;
-    for (const FileEntry* candidate : found->second) {
-        if (has_suffix(candidate->real, suffix)) {
-            return candidate;
+    for (cpp_dir* directory = first; directory != nullptr; directory = directory->next) {
+        std::string candidate = real_path((std::string(directory->name) + "/" + pending.spelled).c_str());
+        if (!candidate.empty()) {
+            return &entry_of_real_path(candidate);
         }
     }
     return nullptr;
@@ -1804,6 +1983,21 @@ void on_include(cpp_reader* reader, location_t location, const unsigned char* di
     state.pending.place = place;
     state.pending.spelled = name;
     state.pending.is_angle = is_angle != 0;
+    state.pending.is_next =
+        directive != nullptr && std::strcmp(reinterpret_cast<const char*>(directive), "include_next") == 0;
+}
+
+// The macro callback of libcpp: one expansion of a macro, after libcpp read
+// its arguments.  libcpp also calls it for a test of a macro in a directive,
+// with the location of the directive line, where the source spells no
+// identifier at the start.
+void on_macro_used(cpp_reader* reader, location_t location, cpp_hashnode* node) {
+    if (state.previous_used != nullptr) {
+        state.previous_used(reader, location, node);
+    }
+    if (is_system_assert(node) && identifier_spelled_at(location) == "assert") {
+        record(Kind::assert_expansion, location, "assert");
+    }
 }
 
 // Each file that the preprocessor enters.  The file that the last directive
@@ -1815,13 +2009,6 @@ void on_include_file(void* gcc_data, void*) {
         return;
     }
     const FileEntry& entry = classify_file(name);
-    if (!entry.real.empty()) {
-        std::size_t slash = entry.real.rfind('/');
-        std::vector<const FileEntry*>& named = state.entered_by_name[entry.real.substr(slash + 1)];
-        if (std::find(named.begin(), named.end(), &entry) == named.end()) {
-            named.push_back(&entry);
-        }
-    }
     const line_map_ordinary* map = LINEMAPS_LAST_ORDINARY_MAP(line_table);
     if (map == nullptr || map->reason != LC_ENTER) {
         return;
@@ -1942,6 +2129,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     cpp_callbacks* callbacks = cpp_get_callbacks(parse_in);
     state.previous_include = callbacks->include;
     callbacks->include = on_include;
+    state.previous_used = callbacks->used;
+    callbacks->used = on_macro_used;
     register_callback(plugin_info->base_name, PLUGIN_INCLUDE_FILE, on_include_file, nullptr);
     register_contract_rule(plugin_info->base_name);
     register_callback(plugin_info->base_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);

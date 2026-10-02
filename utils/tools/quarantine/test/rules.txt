@@ -21,7 +21,10 @@ admit std::tuple_size | a compile-time trait of the tuple protocol
 quarantine contracts.cpp
 quarantine end_without_region.cpp
 quarantine enforced.cpp
+quarantine gaps.cpp
+quarantine gapsother/
 quarantine header_exact.cpp
+quarantine include_exact.cpp
 quarantine low_includes_high.cpp
 quarantine meta_info.cpp
 quarantine nonclass.cpp
