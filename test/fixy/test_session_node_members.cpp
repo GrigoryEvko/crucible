@@ -43,13 +43,14 @@ consteval bool is_readable_member(std::meta::info member) {
 // A reader outside the class sees only the public members, so the walk
 // takes the access of this scope.
 consteval bool every_member_claimed(t::node_reader read, std::meta::info type) {
-    const t::node_members view = read(type);
+    t::node_members view{};
+    read(type, view);
     if (!view.is_node) return false;
     for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::current())) {
         if (!is_readable_member(member)) continue;
         bool is_claimed = false;
-        for (const t::member_claim& claim : view.claims)
-            is_claimed = is_claimed || claim.name == std::meta::identifier_of(member);
+        for (std::size_t place = 0; place < view.claims.top; ++place)
+            is_claimed = is_claimed || view.claims.items[place].name == std::meta::identifier_of(member);
         if (!is_claimed) return false;
     }
     return true;

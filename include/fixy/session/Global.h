@@ -184,35 +184,39 @@ namespace detail {
     return shape == ^^Rec || shape == ^^Branch || shape == ^^Comm || shape == ^^EnRouteChoice || shape == ^^Crashed;
 }
 
-[[nodiscard]] consteval ::foundation::algebra::transition::node_members global_node_members(std::meta::info type) {
-    using ::foundation::algebra::transition::member_claim;
-    ::foundation::algebra::transition::node_members result{};
+consteval void global_node_members(std::meta::info type, ::foundation::algebra::transition::node_members& result) {
+    namespace tr = ::foundation::algebra::transition;
+    using tr::member_claim;
     result.is_node = is_global_node(type);
-    if (!result.is_node || type == ^^End || type == ^^Var) return result;
-    const std::meta::info shape = ::foundation::algebra::transition::shape_of(type);
-    const auto arguments = std::meta::template_arguments_of(type);
+    if (!result.is_node || type == ^^End || type == ^^Var) return;
+    const std::meta::info shape = tr::shape_of(type);
+    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
+    const std::meta::info* const argument = arguments.data();
+    const std::size_t argument_count = arguments.size();
     if (shape == ^^Rec) {
-        result.claims = {member_claim{"body", arguments[0]}};
-        result.children = {arguments[0]};
+        tr::push(result.claims, member_claim{"body", argument[0]});
+        tr::push(result.children, argument[0]);
     } else if (shape == ^^Branch) {
-        result.claims = {member_claim{"label", arguments[0]}, member_claim{"payload", arguments[1]},
-                         member_claim{"next", arguments[2]}};
-        result.children = {arguments[2]};
+        tr::push(result.claims, member_claim{"label", argument[0]});
+        tr::push(result.claims, member_claim{"payload", argument[1]});
+        tr::push(result.claims, member_claim{"next", argument[2]});
+        tr::push(result.children, argument[2]);
     } else if (shape == ^^Comm || shape == ^^EnRouteChoice) {
         // A Comm has two leading arguments and an en-route choice three,
         // the chosen label the third.  The branches follow, and a role can
         // be a Crashed node.
-        const std::ptrdiff_t first_branch = shape == ^^Comm ? 2 : 3;
-        result.children = {arguments.begin() + first_branch, arguments.end()};
-        result.claims = {member_claim{"from", arguments[0]}, member_claim{"to", arguments[1]},
-                         member_claim{"branch_count", std::meta::reflect_constant(result.children.size())}};
-        if (shape == ^^EnRouteChoice) result.claims.push_back(member_claim{"chosen", arguments[2]});
-        result.children.push_back(arguments[0]);
-        result.children.push_back(arguments[1]);
+        const std::size_t first_branch = shape == ^^Comm ? 2 : 3;
+        for (std::size_t place = first_branch; place < argument_count; ++place)
+            tr::push(result.children, argument[place]);
+        tr::push(result.claims, member_claim{"from", argument[0]});
+        tr::push(result.claims, member_claim{"to", argument[1]});
+        tr::push(result.claims, member_claim{"branch_count", std::meta::reflect_constant(result.children.top)});
+        if (shape == ^^EnRouteChoice) tr::push(result.claims, member_claim{"chosen", argument[2]});
+        tr::push(result.children, argument[0]);
+        tr::push(result.children, argument[1]);
     } else if (shape == ^^Crashed) {
-        result.claims = {member_claim{"role", arguments[0]}};
+        tr::push(result.claims, member_claim{"role", argument[0]});
     }
-    return result;
 }
 
 // True when the members of the global node `type` and of each node below
@@ -233,14 +237,15 @@ concept GlobalMembersAgreeBelow = global_members_agree_below(^^Node);
 [[nodiscard]] consteval bool global_members_agree_below(std::meta::info type) {
     namespace tr = ::foundation::algebra::transition;
     const std::meta::info node_type = std::meta::dealias(type);
-    const tr::node_members view = global_node_members(node_type);
+    tr::node_members view{};
+    global_node_members(node_type, view);
     if (!view.is_node) return true;
-    if (!tr::members_agree(node_type, view.claims, view.bases)) return false;
+    if (!tr::members_agree(node_type, view)) return false;
     // A child that is no node agrees, so the walk asks the concept only
     // about a node.  Each question is a substitution, which costs about
     // 1.6 million instructions in a constant evaluation of this GCC 16 build.
-    const std::meta::info* const child = view.children.data();
-    for (std::size_t place = 0; place < view.children.size(); ++place) {
+    const std::meta::info* const child = view.children.items;
+    for (std::size_t place = 0; place < view.children.top; ++place) {
         const std::meta::info child_type = std::meta::dealias(child[place]);
         if (!is_global_node(child_type)) continue;
         if (!std::meta::extract<bool>(std::meta::substitute(^^GlobalMembersAgreeBelow, {child_type}))) return false;

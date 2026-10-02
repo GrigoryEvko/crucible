@@ -955,14 +955,17 @@ struct member_claim {
     std::meta::info value{};
 };
 
+// The claims, the direct bases and the children that a node reader gives
+// for one node.  Each list is a stack, so a reader changes no vector.  A
+// stack has no copy, so a reader fills the node_members of its caller.
 struct node_members {
     bool is_node = false;
-    std::vector<member_claim> claims{};
-    std::vector<std::meta::info> bases{};
-    std::vector<std::meta::info> children{};
+    stack<member_claim> claims{};
+    stack<std::meta::info> bases{};
+    stack<std::meta::info> children{};
 };
 
-using node_reader = node_members (*)(std::meta::info);
+using node_reader = void (*)(std::meta::info, node_members&);
 
 // True when the first of `count` members at `members` with the identifier
 // of `claim` has the claimed value: an alias of the claimed type, or a
@@ -982,31 +985,31 @@ using node_reader = node_members (*)(std::meta::info);
     return false;
 }
 
-// True when each claimed member of `type` exists with the claimed value,
-// and the direct bases of `type` are exactly `bases`, in order.  A type
-// that is only declared in this translation unit has no member that a
-// reader can read, so it agrees.  The walk reads the members of `type`
-// one time for all the claims.  Complexity: linear in the members of
-// `type` for each claim.
-[[nodiscard]] consteval bool members_agree(std::meta::info type, const std::vector<member_claim>& claims,
-                                           const std::vector<std::meta::info>& bases) {
+// True when each member that a claim of `view` names exists in `type` with
+// the claimed value, and the direct bases of `type` are exactly the bases
+// of `view`, in order.  A type that is only declared in this translation
+// unit has no member that a reader can read, so it agrees.  The walk reads
+// the members of `type` one time for all the claims.  Complexity: linear in
+// the members of `type` for each claim.
+[[nodiscard]] consteval bool members_agree(std::meta::info type, const node_members& view) {
     if (!std::meta::is_complete_type(type)) return true;
-    if (!claims.empty()) {
+    const std::size_t claim_count = view.claims.top;
+    if (claim_count != 0) {
         const std::vector<std::meta::info> members =
             std::meta::members_of(type, std::meta::access_context::unchecked());
         const std::meta::info* const member_list = members.data();
         const std::size_t member_count = members.size();
-        const member_claim* const claim = claims.data();
-        const std::size_t claim_count = claims.size();
+        const member_claim* const claim = view.claims.items;
         for (std::size_t place = 0; place < claim_count; ++place) {
             if (!claim_holds(member_list, member_count, claim[place])) return false;
         }
     }
     const std::vector<std::meta::info> actual = std::meta::bases_of(type, std::meta::access_context::unchecked());
-    if (actual.size() != bases.size()) return false;
+    const std::size_t base_count = view.bases.top;
+    if (actual.size() != base_count) return false;
     const std::meta::info* const base = actual.data();
-    const std::meta::info* const expected = bases.data();
-    for (std::size_t index = 0; index < bases.size(); ++index) {
+    const std::meta::info* const expected = view.bases.items;
+    for (std::size_t index = 0; index < base_count; ++index) {
         if (std::meta::dealias(std::meta::type_of(base[index])) != std::meta::dealias(expected[index])) return false;
     }
     return true;
@@ -1019,11 +1022,12 @@ using node_reader = node_members (*)(std::meta::info);
 // times their members.
 [[nodiscard]] consteval std::meta::info first_disagreeing_node(node_reader read, std::meta::info type) {
     const std::meta::info node_type = std::meta::dealias(type);
-    const node_members view = read(node_type);
+    node_members view{};
+    read(node_type, view);
     if (!view.is_node) return {};
-    if (!members_agree(node_type, view.claims, view.bases)) return node_type;
-    for (const std::meta::info child : view.children) {
-        const std::meta::info below = first_disagreeing_node(read, child);
+    if (!members_agree(node_type, view)) return node_type;
+    for (std::size_t place = 0; place < view.children.top; ++place) {
+        const std::meta::info below = first_disagreeing_node(read, view.children.items[place]);
         if (below != std::meta::info{}) return below;
     }
     return {};

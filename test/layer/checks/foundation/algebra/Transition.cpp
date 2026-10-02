@@ -527,7 +527,10 @@ struct Step<short, Done> : Step<int, Halt> {
 };
 [[nodiscard]] consteval bool step_agrees(std::meta::info type) {
     const auto arguments = std::meta::template_arguments_of(type);
-    return members_agree(type, {member_claim{"message_type", arguments[0]}, member_claim{"next", arguments[1]}}, {});
+    node_members view{};
+    push(view.claims, member_claim{"message_type", arguments[0]});
+    push(view.claims, member_claim{"next", arguments[1]});
+    return members_agree(type, view);
 }
 static_assert(step_agrees(^^Step<bool, Done>), "a member that the arguments give agrees");
 static_assert(!step_agrees(^^Step<int, Done>), "a member that names another type is refused");

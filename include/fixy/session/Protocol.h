@@ -480,64 +480,65 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
 // branch of a choice (the crash branches among them), the body of a loop,
 // the protocol under a pin, and the protocol that a delegation head
 // carries.  The payload of a step is a child too, so the members of a
-// crash label and of a keyed message are claimed.
-[[nodiscard]] consteval ::foundation::algebra::transition::node_members session_node_members(std::meta::info type) {
-    using ::foundation::algebra::transition::member_claim;
-    ::foundation::algebra::transition::node_members result{};
+// crash label and of a keyed message are claimed.  The reader puts each
+// claim, base and child on the stacks of `result`, which its caller owns.
+consteval void session_node_members(std::meta::info type, ::foundation::algebra::transition::node_members& result) {
+    namespace tr = ::foundation::algebra::transition;
+    using tr::member_claim;
     // A payload with a rule of the registry is read by its members too:
     // the peer of a crash label, and the peer, label and payload of a
     // keyed message.
     if (std::meta::is_type(type) && std::meta::has_template_arguments(type)) {
         const std::meta::info family = std::meta::template_of(type);
-        const auto arguments = std::meta::template_arguments_of(type);
-        if (family == ^^Crash) {
+        if (family == ^^Crash || family == ^^PeerMsg || family == ^^Labelled) {
+            const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
+            const std::meta::info* const argument = arguments.data();
             result.is_node = true;
-            result.claims = {member_claim{"peer", arguments[0]}};
-            return result;
-        }
-        if (family == ^^PeerMsg) {
-            result.is_node = true;
-            result.claims = {member_claim{"peer", arguments[0]}, member_claim{"label", arguments[1]},
-                             member_claim{"payload", arguments[2]}};
-            return result;
-        }
-        if (family == ^^Labelled) {
-            result.is_node = true;
-            result.claims = {member_claim{"label", arguments[0]}, member_claim{"payload", arguments[1]}};
-            return result;
+            if (family == ^^Crash) {
+                tr::push(result.claims, member_claim{"peer", argument[0]});
+            } else if (family == ^^PeerMsg) {
+                tr::push(result.claims, member_claim{"peer", argument[0]});
+                tr::push(result.claims, member_claim{"label", argument[1]});
+                tr::push(result.claims, member_claim{"payload", argument[2]});
+            } else {
+                tr::push(result.claims, member_claim{"label", argument[0]});
+                tr::push(result.claims, member_claim{"payload", argument[1]});
+            }
+            return;
         }
     }
-    const ::foundation::algebra::transition::node view =
-        ::foundation::algebra::transition::decompose(protocol_registry, type);
-    if (!view.is_registered) return result;
+    const tr::node view = tr::decompose(protocol_registry, type);
+    if (!view.is_registered) return;
     result.is_node = true;
     const std::meta::info shape = view.entry.shape;
     if (shape == ^^Send || shape == ^^Recv) {
-        result.claims = {member_claim{"message_type", view.payload}, member_claim{"next", view.next}};
+        tr::push(result.claims, member_claim{"message_type", view.payload});
+        tr::push(result.claims, member_claim{"next", view.next});
     } else if (shape == ^^Delegate || shape == ^^Accept) {
-        result.claims = {member_claim{"delegated_proto", view.payload}, member_claim{"next", view.next}};
+        tr::push(result.claims, member_claim{"delegated_proto", view.payload});
+        tr::push(result.claims, member_claim{"next", view.next});
     } else if (shape == ^^Loop) {
-        result.claims = {member_claim{"body", view.next}};
+        tr::push(result.claims, member_claim{"body", view.next});
     } else if (shape == ^^Commit) {
-        result.claims = {member_claim{"next", view.next}};
+        tr::push(result.claims, member_claim{"next", view.next});
     } else if (shape == ^^VendorPinned) {
-        result.claims = {member_claim{"protocol", view.next}, member_claim{"vendor_backend", view.value}};
-        result.bases = {view.next};
+        tr::push(result.claims, member_claim{"protocol", view.next});
+        tr::push(result.claims, member_claim{"vendor_backend", view.value});
+        tr::push(result.bases, view.next);
     } else if (shape == ^^Select || shape == ^^Offer) {
-        result.claims = {member_claim{"branch_count", std::meta::reflect_constant(view.branches.size())},
-                         member_claim{"branches_tuple", std::meta::substitute(^^std::tuple, view.branches)}};
+        tr::push(result.claims, member_claim{"branch_count", std::meta::reflect_constant(view.branches.size())});
+        tr::push(result.claims, member_claim{"branches_tuple", std::meta::substitute(^^std::tuple, view.branches)});
         if (shape == ^^Offer) {
             const std::meta::info sender = view.annotation == std::meta::info{}
                                              ? ^^AnonymousPeer
                                              : std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
-            result.claims.push_back(member_claim{"sender", sender});
+            tr::push(result.claims, member_claim{"sender", sender});
         }
     }
-    if (view.payload != std::meta::info{}) result.children.push_back(view.payload);
-    if (view.next != std::meta::info{}) result.children.push_back(view.next);
+    if (view.payload != std::meta::info{}) tr::push(result.children, view.payload);
+    if (view.next != std::meta::info{}) tr::push(result.children, view.next);
     for (const std::meta::info branch : view.branches)
-        result.children.push_back(branch);
-    return result;
+        tr::push(result.children, branch);
 }
 
 // True when the members of the node `type` and of each node below it agree
@@ -556,13 +557,13 @@ concept MembersAgreeBelow = members_agree_below(^^Node);
 [[nodiscard]] consteval bool members_agree_below(std::meta::info type) {
     namespace tr = ::foundation::algebra::transition;
     const std::meta::info node_type = std::meta::dealias(type);
-    const tr::node_members view = session_node_members(node_type);
+    tr::node_members view{};
+    session_node_members(node_type, view);
     if (!view.is_node) return true;
-    if (!tr::members_agree(node_type, view.claims, view.bases)) return false;
-    for (const std::meta::info child : view.children) {
-        if (!std::meta::extract<bool>(std::meta::substitute(^^MembersAgreeBelow, {std::meta::dealias(child)}))) {
-            return false;
-        }
+    if (!tr::members_agree(node_type, view)) return false;
+    for (std::size_t place = 0; place < view.children.top; ++place) {
+        const std::meta::info child = std::meta::dealias(view.children.items[place]);
+        if (!std::meta::extract<bool>(std::meta::substitute(^^MembersAgreeBelow, {child}))) return false;
     }
     return true;
 }
