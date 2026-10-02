@@ -3,9 +3,10 @@
 // test_ledger_probes tests the contract that every probe family shares.
 //
 // In an uninstrumented build the probe streams a buffer of eight times the
-// L3 instance of one core, in four runs of at least kMinSampleCount samples
-// each, so this test takes some seconds.  An instrumented build declines at
-// once.
+// L3 instance of one core, in four runs.  The production settings give each
+// run at least kMinSampleCount samples.  This test checks the structure of
+// the probe and not a number worth storing, so it gives each streaming run
+// two samples.  An instrumented build declines at once.
 
 #include <crucible/ledger/probes/VectorWidth.h>
 
@@ -69,13 +70,26 @@ void test_stream_buffer_outgrows_the_reachable_cache() {
     std::printf("  test_stream_buffer_outgrows_the_reachable_cache: PASSED\n");
 }
 
+// The sample count of a streaming run.  The default settings derive it from
+// sample_count and keep it at or above the floor of the ledger, and a
+// positive stream_sample_count replaces it.
+void test_stream_sample_count_follows_the_settings() {
+    ledger::set_probe_settings(ledger::ProbeSettings{});
+    assert(ledger::probes::stream_sample_count() == 64u);
+    ledger::set_probe_settings(ledger::ProbeSettings{.sample_count = 64, .pin_core = -1});
+    assert(ledger::probes::stream_sample_count() == ledger::kMinSampleCount);
+    ledger::set_probe_settings(ledger::ProbeSettings{.sample_count = 64, .pin_core = -1, .stream_sample_count = 2});
+    assert(ledger::probes::stream_sample_count() == 2u);
+    std::printf("  test_stream_sample_count_follows_the_settings: PASSED\n");
+}
+
 void test_vector_width_probe_answers_or_declines() {
     // Cheap settings: the probe is exercised for its structure — the two
     // shapes, the memo, the guard that keeps a 512-bit kernel off a host
     // without one — and not for a number worth storing. The numbers this
     // host actually produces come from crucible-hwprobe, which measures at
     // the sample counts the verdicts want.
-    ledger::set_probe_settings(ledger::ProbeSettings{.sample_count = 64, .pin_core = -1});
+    ledger::set_probe_settings(ledger::ProbeSettings{.sample_count = 64, .pin_core = -1, .stream_sample_count = 2});
     ledger::probes::vector_width_detail::g_memo.forget();
 
     const auto preferred = ledger::probes::probe_vector_width_preferred_bits(probe_ctx, fit_host());
@@ -134,7 +148,8 @@ void test_vector_width_probe_answers_or_declines() {
 int main() {
     std::printf("test_ledger_probes_vector_width:\n");
     test_stream_buffer_outgrows_the_reachable_cache();
+    test_stream_sample_count_follows_the_settings();
     test_vector_width_probe_answers_or_declines();
-    std::printf("test_ledger_probes_vector_width: 2 groups, all passed\n");
+    std::printf("test_ledger_probes_vector_width: 3 groups, all passed\n");
     return 0;
 }

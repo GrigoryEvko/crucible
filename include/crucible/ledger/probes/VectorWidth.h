@@ -127,10 +127,14 @@ inline constexpr std::size_t kMinStreamCacheMultiple = 4;
 // sample count. The streaming shape's call is milliseconds, so taking the
 // same number would run for an hour; it is divided down and then floored
 // at the ledger's own minimum, because a sample count below that bar is
-// refused at admission anyway and measuring it would be wasted time.
+// refused at admission anyway and measuring it would be wasted time.  A
+// positive stream_sample_count of the settings replaces that derived count.
 [[nodiscard]] inline std::size_t stream_sample_count() noexcept {
-    const std::size_t configured = probe_settings().sample_count;
-    return std::clamp<std::size_t>(configured / 64u, kMinSampleCount, 256u);
+    const ProbeSettings settings = probe_settings();
+    if (settings.stream_sample_count > 0u) {
+        return settings.stream_sample_count;
+    }
+    return std::clamp<std::size_t>(settings.sample_count / 64u, kMinSampleCount, 256u);
 }
 
 #if defined(__x86_64__) || defined(__i386__)
@@ -348,9 +352,12 @@ inline MeasurementMemo<VectorWidthMeasurement> g_memo{};
     const bench::Report wide_first = compute_wide();
     const bench::Report wide_second = compute_wide();
 
+    // One streaming pass is milliseconds, so a batch of one pass is far above
+    // the floor of the timer.  The explicit batch skips the pilot of the
+    // harness, which would time one hundred passes to find the same batch.
     auto stream_run = [&](const char* name, bool use_wide) {
         bench::Run run{name};
-        (void)run.samples(stream_sample_count()).warmup(2).max_wall_ms(20000);
+        (void)run.samples(stream_sample_count()).warmup(2).batch(1).max_wall_ms(20000);
         const int core = probe_settings().pin_core;
         if (core >= 0) {
             (void)run.core(core);

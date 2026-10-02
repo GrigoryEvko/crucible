@@ -1,10 +1,11 @@
 #pragma once
 
-// The two measurement parameters that every probe reads: how many samples,
-// and which core.  The probes of ledger/probes/, the refresh daemon of
-// RefreshDaemon.h and crucible-hwprobe read and write them through this
-// header.  It includes no bench harness, so a translation unit that only
-// sets the parameters compiles none of the measurement machinery.
+// The measurement parameters that the probes read: how many samples, which
+// core, which helper cores, and how many passes a streaming shape takes.
+// The probes of ledger/probes/, the refresh daemon of RefreshDaemon.h and
+// crucible-hwprobe read and write them through this header.  It includes no
+// bench harness, so a translation unit that only sets the parameters
+// compiles none of the measurement machinery.
 
 #include <foundation/Platform.h>
 
@@ -44,6 +45,14 @@ struct ProbeSettings {
     // Cores for helper threads, used only by the probe that splits work
     // across cores. A negative entry ends the list.
     std::array<int, kMaxHelperCores> helper_cores{-1, -1, -1, -1};
+
+    // Samples per run of a streaming shape, which passes over a buffer
+    // several times the last-level cache.  Zero, the default, derives the
+    // count from sample_count and keeps it at or above the minimum sample
+    // count that the ledger admits.  A positive value is the count itself.
+    // A test that checks the structure of a probe sets a value below that
+    // minimum, and the ledger refuses the evidence of such a run.
+    std::uint32_t stream_sample_count = 0;
 
     [[nodiscard]] constexpr std::uint32_t helper_count() const noexcept {
         std::uint32_t found = 0;
