@@ -1358,6 +1358,17 @@ foundation_neg_compile_test(neg_permission_row_not_a_row
   "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: the row declared for this permission tag is not a foundation::effects::Row"
   "using foundation::permissions::permission_row_t = .* \\[with Tag = \\{anonymous\\}::RowIsAnInt\\]")
 
+# The row of a tag is the walk that the variable template row_cell_at
+# keeps, which a translation unit can specialize.  A specialization cannot
+# copy a cell, and the walk of another tag names that tag, which the read
+# refuses.
+foundation_neg_compile_test(neg_permission_row_cell_forged_by_copy
+  "row_cell::row_cell\\(const foundation::permissions::detail::row_cell&\\). is private within this context"
+  "neg_permission_row_cell_forged_by_copy\\.cpp:33:[0-9]+: error:")
+foundation_neg_compile_test(neg_permission_row_cell_of_another_tag
+  "call to non-.constexpr. function .void foundation::permissions::detail::a_row_cell_names_another_tag\\(\\)."
+  "in .constexpr. expansion of .foundation::permissions::permission_row_empty\\(\\^\\^\\{anonymous\\}::IoTag\\).")
+
 # ── The tag, the context and the token concepts ───────────────────────
 
 # A tag with a data member is a class, and the emptiness half of

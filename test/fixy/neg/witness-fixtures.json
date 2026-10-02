@@ -292,6 +292,11 @@
       "constructor": "\\bOwnedRegion\\("
     },
     {
+      "name": "neg_witness_permissions_detail_row_cell_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\brow_cell\\("
+    },
+    {
       "name": "neg_witness_permissions_erase_brand_key_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\berase_brand_key\\("

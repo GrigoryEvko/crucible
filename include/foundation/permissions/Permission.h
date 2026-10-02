@@ -261,39 +261,141 @@ namespace detail {
     return std::meta::dealias(member);
 }
 
-// The reflection of the row of the tag, or of void when no source
-// declares one.
-[[nodiscard]] consteval std::meta::info permission_row_source(std::meta::info tag) {
-    const bool by_edge = ::foundation::fail_closed::has_edge_from(^^permission_rows, tag);
+// How the declarations of a tag state its row.
+enum class row_shape : unsigned char {
+    none,                  // no source declares a row
+    by_edge,               // one edge of permission_rows
+    by_member,             // a permission_row member
+    by_parent,             // the row of the parent_type member
+    declared_twice,        // an edge and a permission_row member
+    derived_with_own_row,  // a parent_type, and an edge or a permission_row member
+    two_edges,             // more than one edge of permission_rows
+};
+
+// Has no constant definition.  A call to it stops the constant
+// evaluation, and the diagnostic names it.
+void a_row_cell_names_another_tag() noexcept;
+
+class row_cell;
+
+// Reads the declarations of the tag one time, and the edges that
+// permission_rows holds when it has rows_members members.
+[[nodiscard]] consteval row_cell walk_row(std::meta::info tag, std::size_t rows_members);
+
+// What one walk found about the row of one tag, at one count of the
+// members of permission_rows.  The cell is the value of row_cell_at, so a
+// repeated question about a tag reads it through a pointer.  The two
+// constructors are private and user-provided, and the walk is their one
+// friend.  So a specialization of row_cell_at can only hold the walk of
+// another tag, which the read refuses.
+class row_cell {
+public:
+    [[nodiscard]] consteval std::meta::info tag() const noexcept { return tag_; }
+    [[nodiscard]] consteval std::size_t rows_members() const noexcept { return rows_members_; }
+    [[nodiscard]] consteval row_shape shape() const noexcept { return shape_; }
+    [[nodiscard]] consteval std::meta::info row() const noexcept { return row_; }
+    [[nodiscard]] consteval std::meta::info parent() const noexcept { return parent_; }
+
+private:
+    consteval row_cell() noexcept {}
+    consteval row_cell(const row_cell& other) noexcept
+        : tag_{other.tag_},
+          rows_members_{other.rows_members_},
+          shape_{other.shape_},
+          row_{other.row_},
+          parent_{other.parent_} {}
+
+    std::meta::info tag_{};
+    std::size_t rows_members_ = 0;
+    row_shape shape_ = row_shape::none;
+    std::meta::info row_ = ^^void;
+    std::meta::info parent_{};
+
+    friend consteval row_cell walk_row(std::meta::info tag, std::size_t rows_members);
+};
+
+[[nodiscard]] consteval row_cell walk_row(std::meta::info tag, std::size_t rows_members) {
+    row_cell cell{};
+    cell.tag_ = tag;
+    cell.rows_members_ = rows_members;
+    const std::size_t edges = ::foundation::fail_closed::edge_count_from(^^permission_rows, tag);
     const std::meta::info member_row = member_alias_of(tag, "permission_row");
     const std::meta::info parent = member_alias_of(tag, "parent_type");
     const bool by_member = member_row != std::meta::info{};
-    if (by_edge && by_member) {
-        throw std::meta::exception(u8"permission_row: a tag declares its row twice, as an edge in "
-                                   u8"foundation::permissions::permission_rows and as a permission_row member.  One "
-                                   u8"row has one source; remove one of them.",
-                                   tag);
+    if (edges != 0 && by_member) {
+        cell.shape_ = row_shape::declared_twice;
+    } else if (parent != std::meta::info{} && (edges != 0 || by_member)) {
+        cell.shape_ = row_shape::derived_with_own_row;
+    } else if (edges > 1) {
+        cell.shape_ = row_shape::two_edges;
+    } else if (edges == 1) {
+        cell.shape_ = row_shape::by_edge;
+        cell.row_ = ::foundation::fail_closed::unique_target(^^permission_rows, tag);
+    } else if (by_member) {
+        cell.shape_ = row_shape::by_member;
+        cell.row_ = member_row;
+    } else if (parent != std::meta::info{}) {
+        cell.shape_ = row_shape::by_parent;
+        cell.parent_ = parent;
     }
-    // A derived tag has the row of its parent and no row of its own.  An
-    // edge or a member for a shard would replace the row of its parent with
-    // a lighter one, and a region whose touches do IO would mint its shards
-    // under a context that admits none.
-    if (parent != std::meta::info{} && (by_edge || by_member)) {
-        throw std::meta::exception(u8"permission_row: a derived tag declares a row of its own.  A tag with a "
-                                   u8"parent_type has the row of its parent; remove its edge in "
-                                   u8"foundation::permissions::permission_rows or its permission_row member.",
-                                   tag);
-    }
-    if (by_edge) return ::foundation::fail_closed::unique_target(^^permission_rows, tag);
-    if (by_member) return member_row;
-    if (parent != std::meta::info{}) return permission_row_source(parent);
-    return ^^void;
+    return cell;
 }
 
-// The reflection of the row of the tag.  A tag with no row, or with a row
-// that is no foundation::effects::Row, stops the build here.
-[[nodiscard]] consteval std::meta::info permission_row_of(std::meta::info tag) {
-    const std::meta::info row = permission_row_source(tag);
+// The walk of the tag Tag when permission_rows has RowsMembers members.
+// GCC evaluates the initializer one time for each key.
+template <std::meta::info Tag, std::size_t RowsMembers>
+inline constexpr row_cell row_cell_at = walk_row(Tag, RowsMembers);
+
+// The cell of the tag at the member count of permission_rows now.  A cell
+// that names another tag or another count is the walk of another tag,
+// which a specialization put in the place of this walk, and the read
+// stops the build.
+[[nodiscard]] consteval const row_cell& read_row_cell_(std::meta::info tag) {
+    // The count is not const.  GCC evaluates a const integral local with a
+    // constant initializer one time, where the function is defined, so a
+    // const count would miss each edge of a later part of the namespace.
+    std::size_t rows_members = std::meta::members_of(^^permission_rows, std::meta::access_context::unprivileged()).size();
+    const row_cell& cell = std::meta::extract<const row_cell&>(std::meta::substitute(
+        ^^row_cell_at, {std::meta::reflect_constant(tag), std::meta::reflect_constant(rows_members)}));
+    if (cell.tag() != tag || cell.rows_members() != rows_members) a_row_cell_names_another_tag();
+    return cell;
+}
+
+// The reflection of the row of the tag, or of void when no source
+// declares one.  Each refusal is thrown here, in the evaluation that
+// asked, so the diagnostic names the question.
+[[nodiscard]] consteval std::meta::info permission_row_source(std::meta::info tag) {
+    const row_cell& cell = read_row_cell_(tag);
+    switch (cell.shape()) {
+        case row_shape::declared_twice:
+            throw std::meta::exception(u8"permission_row: a tag declares its row twice, as an edge in "
+                                       u8"foundation::permissions::permission_rows and as a permission_row member.  "
+                                       u8"One row has one source; remove one of them.",
+                                       tag);
+        // A derived tag has the row of its parent and no row of its own.  An
+        // edge or a member for a shard would replace the row of its parent
+        // with a lighter one, and a region whose touches do IO would mint its
+        // shards under a context that admits none.
+        case row_shape::derived_with_own_row:
+            throw std::meta::exception(u8"permission_row: a derived tag declares a row of its own.  A tag with a "
+                                       u8"parent_type has the row of its parent; remove its edge in "
+                                       u8"foundation::permissions::permission_rows or its permission_row member.",
+                                       tag);
+        // The relation is a function of its From, so two edges are refused
+        // by the query that reads it as one.
+        case row_shape::two_edges:
+            return ::foundation::fail_closed::unique_target(^^permission_rows, tag);
+        case row_shape::by_parent:
+            return permission_row_source(cell.parent());
+        default:
+            return cell.row();
+    }
+}
+
+// The row that permission_row_source gave for the tag, after a check that
+// it is one.  A tag with no row, or with a row that is no
+// foundation::effects::Row, stops the build here.
+[[nodiscard]] consteval std::meta::info checked_row_(std::meta::info tag, std::meta::info row) {
     if (row == ^^void) {
         throw std::meta::exception(u8"permission_row: no effect row is declared for this permission tag, so no "
                                    u8"token for it can be minted.  Declare `using permission_row = "
@@ -307,6 +409,11 @@ namespace detail {
             u8"permission_row: the row declared for this permission tag is not a foundation::effects::Row.", tag);
     }
     return row;
+}
+
+// The reflection of the row of the tag, after the check of checked_row_.
+[[nodiscard]] consteval std::meta::info permission_row_of(std::meta::info tag) {
+    return checked_row_(tag, permission_row_source(tag));
 }
 
 }  // namespace detail
@@ -325,7 +432,9 @@ using permission_row_t = [:detail::permission_row_of(^^Tag):];
 // without naming the row, so one undeclared tag reports the one refusal
 // that names the fix rather than a cascade behind it.
 [[nodiscard]] consteval bool permission_row_empty(std::meta::info tag) {
-    return has_permission_row(tag) && ::foundation::effects::row_size(detail::permission_row_of(tag)) == 0;
+    const std::meta::info row = detail::permission_row_source(tag);
+    if (row == ^^void) return false;
+    return ::foundation::effects::row_size(detail::checked_row_(tag, row)) == 0;
 }
 
 template <typename Tag, typename Ctx>

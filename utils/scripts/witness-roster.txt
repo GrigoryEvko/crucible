@@ -68,6 +68,9 @@ foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTa
 # The pool's only constructor consumes the exclusive permission it
 # parks: there is no pool without the evidence.
 foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation/permissions/Permission.h | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{} | no-match | closed
+# Only the walk of a tag builds the cell that holds its row, so a
+# specialization of row_cell_at cannot give a tag a lighter row.
+foundation::permissions::detail::row_cell | foundation/permissions/Permission.h | foundation::permissions::detail::row_cell{} | private | closed
 
 # -- Fail-closed relations -------------------------------------------
 # Only the walk of a relation builds its cells, so a specialization of
