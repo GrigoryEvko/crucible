@@ -57,7 +57,6 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
-#include <crucible/Vigil.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
@@ -68,6 +67,12 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+
+// The helpers below name the Vigil only through a pointer, so a declaration
+// is sufficient, and this header does not include crucible/Vigil.h.
+namespace crucible {
+class Vigil;
+}  // namespace crucible
 
 namespace crucible::vessel {
 
@@ -121,11 +126,16 @@ static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 160);
 
 namespace detail {
 
+// The alignment of crucible::Vigil.  The class is only declared here, so
+// alignof cannot read it.  vessel_api.cpp includes crucible/Vigil.h and
+// checks that the two values are equal.
+inline constexpr std::size_t kVigilHandleAlignment = 64;
+
 inline void assert_plausible_vigil_handle(CrucibleHandle handle) noexcept {
 #ifndef NDEBUG
     const auto bits = std::bit_cast<std::uintptr_t>(handle);
     CRUCIBLE_DEBUG_ASSERT(handle != nullptr);
-    CRUCIBLE_DEBUG_ASSERT((bits & (alignof(Vigil) - 1U)) == 0U);
+    CRUCIBLE_DEBUG_ASSERT((bits & (kVigilHandleAlignment - 1U)) == 0U);
     CRUCIBLE_DEBUG_ASSERT(bits >= 4096U);
 #else
     (void)handle;

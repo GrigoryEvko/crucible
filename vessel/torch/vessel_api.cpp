@@ -35,6 +35,12 @@
 // file because the struct is only consumed at this boundary.
 static_assert(sizeof(CrucibleDispatchResult) == 8);
 
+// The handle check of vessel_api_typed.h reads the alignment of the Vigil
+// from a constant, because that header only declares the class.  This file
+// makes each Vigil, so the constant is checked here.
+static_assert(alignof(crucible::Vigil) == crucible::vessel::detail::kVigilHandleAlignment,
+              "vessel_api_typed.h: kVigilHandleAlignment must equal alignof(crucible::Vigil)");
+
 // ── FNV-1a 64-bit ────────────────────────────────────────────────────
 
 static uint64_t fnv1a_bytes(const void* data, size_t len, uint64_t h) {
